@@ -12,7 +12,7 @@ import (
 type Handler struct{}
 
 // Put 将文件流保存到指定目录
-func (handler Handler) Put(ctx context.Context, file io.ReadCloser, dst string) error {
+func (handler Handler) Put(ctx context.Context, file io.ReadCloser, dst string, size uint64) error {
 	defer file.Close()
 
 	// 如果目标目录不存在，创建
