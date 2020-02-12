@@ -70,3 +70,12 @@ func TestTask_SetProgress(t *testing.T) {
 	asserts.NoError(task.SetProgress(1))
 	asserts.NoError(mock.ExpectationsWereMet())
 }
+
+func TestGetTasksByID(t *testing.T) {
+	asserts := assert.New(t)
+	mock.ExpectQuery("SELECT(.+)").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+	res, err := GetTasksByID(1)
+	asserts.NoError(mock.ExpectationsWereMet())
+	asserts.NoError(err)
+	asserts.EqualValues(1, res.ID)
+}
