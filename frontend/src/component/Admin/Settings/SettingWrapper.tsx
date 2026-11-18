@@ -25,14 +25,15 @@ export interface SettingContextProps {
 }
 
 const SavingFloatContainer = styled(Box)(({ theme }) => ({
-  padding: theme.spacing(2),
+  padding: theme.spacing(1),
+  display: "flex",
+  gap: theme.spacing(1),
   border: `1px solid ${theme.palette.divider}`,
   borderRadius: theme.shape.borderRadius,
-  marginTop: theme.spacing(2),
   position: "fixed",
-  backgroundColor: theme.palette.background.paper,
-  bottom: 23,
-  zIndex: theme.zIndex.modal,
+  backgroundColor: theme.palette.mode === "dark" ? theme.palette.grey[900] : theme.palette.background.paper,
+  bottom: 12,
+  zIndex: theme.zIndex.appBar,
 }));
 
 export interface SavingFloatProps {
@@ -47,7 +48,7 @@ export const SavingFloat = ({ in: inProp, submitting, revert, submit, disabled }
   const { t } = useTranslation("dashboard");
   return (
     <>
-      <Box sx={{ height: 70 }} />
+      <Box sx={{ height: { xs: 64, sm: 54 } }} />
       <Grow in={inProp}>
         <SavingFloatContainer>
           <LoadingButton
@@ -62,7 +63,6 @@ export const SavingFloat = ({ in: inProp, submitting, revert, submit, disabled }
           <SecondaryButton
             disabled={submitting}
             onClick={revert}
-            sx={{ ml: 1 }}
             variant={"contained"}
             startIcon={<ArrowHookUpRight />}
           >
@@ -161,7 +161,7 @@ const SettingsWrapper = ({ settings, children }: SettingsWrapperProps) => {
           classNames="fade"
           key={`${loading}`}
         >
-          <Box sx={{ mt: 3 }}>
+          <Box sx={{ mt: 2 }}>
             {loading && (
               <Box
                 sx={{

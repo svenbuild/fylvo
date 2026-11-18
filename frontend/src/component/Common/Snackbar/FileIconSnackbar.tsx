@@ -41,11 +41,15 @@ const FileIconSnackbar = forwardRef<HTMLDivElement, FileIconSnackbarProps>((prop
     <MuiSnackbarContent
       ref={ref}
       sx={{
-        borderRadius: "12px",
+        bgcolor: "background.paper",
+        color: "text.primary",
+        border: 1,
+        borderColor: "divider",
+        boxShadow: "none",
         width: "100%",
-        "& .MuiSnackbarContent-message": {
-          width: "100%",
-        },
+        px: "10px",
+        py: 0,
+        "& .MuiSnackbarContent-message": { width: "100%", py: "6px" },
       }}
       message={
         <Box
@@ -56,7 +60,7 @@ const FileIconSnackbar = forwardRef<HTMLDivElement, FileIconSnackbarProps>((prop
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1, gap: 1 }}>
-            <FileTypeIcon sx={{ width: 20, height: 20 }} reverseDarkMode name={file.name} fileType={file.type} />
+            <FileTypeIcon sx={{ width: 16, height: 16 }} name={file.name} fileType={file.type} />
             <Box>{message}</Box>
           </Box>
 

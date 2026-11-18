@@ -8,6 +8,8 @@ import { deepmerge } from "@mui/utils";
 
 const FONT = '"Inter Variable", Inter, "Segoe UI", system-ui, -apple-system, sans-serif';
 const RADIUS = 8;
+// Fingers need bigger targets than a mouse pointer.
+const TOUCH = "@media (pointer: coarse)";
 
 const isDark = (theme: Theme) => theme.palette.mode === "dark";
 const hairline = (theme: Theme) => `1px solid ${theme.palette.divider}`;
@@ -47,11 +49,19 @@ const fylvoOptions: ThemeOptions = {
         body: { fontFeatureSettings: '"cv11", "ss01"' },
       },
     },
-    MuiButtonBase: { defaultProps: { disableRipple: true } },
+    MuiButtonBase: {
+      defaultProps: { disableRipple: true },
+      styleOverrides: {
+        // Ripples are off, so keyboard focus gets its own ring.
+        root: ({ theme }) => ({
+          "&.Mui-focusVisible": { outline: `2px solid ${alpha(theme.palette.primary.main, 0.8)}`, outlineOffset: 1 },
+        }),
+      },
+    },
     MuiButton: {
       defaultProps: { size: "small", disableElevation: true },
       styleOverrides: {
-        root: { borderRadius: RADIUS, minHeight: 30, padding: "3px 10px", lineHeight: 1.4 },
+        root: { borderRadius: RADIUS, minHeight: 30, padding: "3px 10px", lineHeight: 1.4, [TOUCH]: { minHeight: 40 } },
         sizeLarge: { minHeight: 34, padding: "5px 14px" },
         outlined: ({ theme }) => ({ borderColor: theme.palette.divider }),
         startIcon: { marginRight: 6, "& > *:nth-of-type(1)": { fontSize: 16 } },
@@ -100,7 +110,14 @@ const fylvoOptions: ThemeOptions = {
     },
     MuiMenuItem: {
       styleOverrides: {
-        root: {
+        root: ({ theme }) => ({
+          ...neutralSelected(theme),
+          // Same focus mark in every menu: neutral fill and a thin ring inside the item.
+          "&.Mui-focusVisible": {
+            outline: `1px solid ${theme.palette.primary.main}`,
+            outlineOffset: -1,
+            backgroundColor: selectedSurface(theme),
+          },
           borderRadius: "6px",
           margin: "0px 4px",
           minHeight: 30,
@@ -110,12 +127,19 @@ const fylvoOptions: ThemeOptions = {
           paddingRight: "8px",
           fontSize: "0.8125rem",
           "@media (min-width: 600px)": { minHeight: 30 },
-        },
+          [TOUCH]: { minHeight: 40 },
+        }),
       },
     },
     MuiListItemButton: {
       styleOverrides: {
-        root: { borderRadius: RADIUS, paddingTop: 4, paddingBottom: 4 },
+        root: ({ theme }) => ({
+          ...neutralSelected(theme),
+          borderRadius: RADIUS,
+          paddingTop: 4,
+          paddingBottom: 4,
+          [TOUCH]: { minHeight: 40 },
+        }),
       },
     },
     MuiListItemIcon: {
@@ -148,23 +172,47 @@ const fylvoOptions: ThemeOptions = {
     },
     MuiTextField: { defaultProps: { size: "small" } },
     MuiFormControl: { defaultProps: { size: "small" } },
-    MuiSelect: { defaultProps: { size: "small" } },
+    MuiSelect: {
+      defaultProps: { size: "small" },
+      // A value shown with the menu item's own text block must not make the field taller.
+      styleOverrides: { select: { "& .MuiListItemText-root": { marginTop: 0, marginBottom: 0 } } },
+    },
     MuiAutocomplete: {
       defaultProps: { size: "small" },
-      styleOverrides: { paper: ({ theme }) => floating(theme) },
+      styleOverrides: {
+        paper: ({ theme }) => floating(theme),
+        option: ({ theme }) => ({
+          '&[aria-selected="true"], &[aria-selected="true"].Mui-focused': {
+            backgroundColor: selectedSurface(theme),
+          },
+        }),
+      },
     },
     MuiInputBase: {
       styleOverrides: { root: { fontSize: "0.8125rem" } },
     },
     MuiInputLabel: {
-      styleOverrides: { root: { fontSize: "0.8125rem" } },
+      styleOverrides: {
+        root: { fontSize: "0.8125rem" },
+        // Floating labels stay readable (11 px instead of under 10 px).
+        shrink: {
+          "&.MuiInputLabel-outlined": { transform: "translate(14px, -10px) scale(0.85)", maxWidth: "calc(117% - 32px)" },
+          "&.MuiInputLabel-filled": { transform: "translate(12px, 6px) scale(0.85)" },
+          "&.MuiInputLabel-filled.MuiInputLabel-sizeSmall": { transform: "translate(12px, 3px) scale(0.85)" },
+        },
+      },
     },
     MuiOutlinedInput: {
       styleOverrides: {
         root: ({ theme }) => ({
           borderRadius: RADIUS,
           "& .MuiOutlinedInput-notchedOutline": { borderColor: theme.palette.divider },
+          [TOUCH]: { minHeight: 40 },
         }),
+        // 32 px high on desktop.
+        inputSizeSmall: { paddingTop: 6.5, paddingBottom: 6.5 },
+        // The gap in the border follows the larger floating label.
+        notchedOutline: { "& legend": { fontSize: "0.85em" } },
       },
     },
     MuiFilledInput: {
@@ -190,6 +238,14 @@ const fylvoOptions: ThemeOptions = {
     MuiTab: {
       styleOverrides: {
         root: { minHeight: 36, padding: "6px 12px", fontSize: "0.8125rem", minWidth: 0 },
+      },
+    },
+    MuiTableRow: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          "&.MuiTableRow-hover:hover": { backgroundColor: hoverSurface(theme) },
+          ...neutralSelected(theme),
+        }),
       },
     },
     MuiTableCell: {
@@ -233,6 +289,12 @@ const fylvoOptions: ThemeOptions = {
       },
     },
     MuiPagination: { defaultProps: { size: "small" } },
+    MuiPaginationItem: {
+      styleOverrides: {
+        root: ({ theme }) => ({ borderRadius: RADIUS, ...neutralSelected(theme) }),
+        ellipsis: { display: "inline-flex", alignItems: "center", justifyContent: "center" },
+      },
+    },
     MuiBreadcrumbs: {
       styleOverrides: { root: { fontSize: "0.8125rem" } },
     },
@@ -257,6 +319,11 @@ const fylvoOptions: ThemeOptions = {
 };
 
 // Selected rows and items use a neutral tint, the accent color stays rare.
+const neutralSelected = (theme: Theme) => ({
+  "&.Mui-selected, &.Mui-selected:hover, &.Mui-selected.Mui-focusVisible": {
+    backgroundColor: selectedSurface(theme),
+  },
+});
 export const selectedSurface = (theme: Theme) =>
   isDark(theme) ? "#1e1e22" : alpha(theme.palette.common.black, 0.07);
 export const hoverSurface = (theme: Theme) =>

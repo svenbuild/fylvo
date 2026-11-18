@@ -1,17 +1,16 @@
 import * as React from "react";
 import { useCallback, useState } from "react";
-import { Box, Container, FormControl, Grid, ListItemText, SelectChangeEvent } from "@mui/material";
+import { Container, FormControl, Grid, ListItemText, SelectChangeEvent } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import PageHeader from "../PageHeader.tsx";
 import { getShares } from "../../../api/api.ts";
 import { useAppDispatch } from "../../../redux/hooks.ts";
-import Nothing from "../../Common/Nothing.tsx";
 import { setSelected } from "../../../redux/fileManagerSlice.ts";
 import ShareCard from "./ShareCard.tsx";
 import { Share } from "../../../api/explorer.ts";
 import { DenseSelect } from "../../Common/StyledComponents.tsx";
 import { SquareMenuItem } from "../../FileManager/ContextMenu/ContextMenu.tsx";
-import PageContainer from "../PageContainer.tsx";
+import PageContainer, { PageEmpty } from "../PageContainer.tsx";
 
 const defaultPageSize = 50;
 
@@ -71,7 +70,7 @@ const ShareList = () => {
   );
 
   return (
-    <PageContainer>
+    <PageContainer compact>
       <Container maxWidth="lg">
         <PageHeader
           secondaryAction={
@@ -103,7 +102,7 @@ const ShareList = () => {
           title={t("application:navbar.myShare")}
         />
 
-        <Grid container spacing={1}>
+        <Grid container sx={{ "& > .MuiGrid-item + .MuiGrid-item": { mt: "4px" } }}>
           {shares.map((share) => (
             <ShareCard share={share} key={share.id} onShareDeleted={onShareDeleted} />
           ))}
@@ -122,9 +121,7 @@ const ShareList = () => {
         </Grid>
 
         {nextPageToken == undefined && shares.length == 0 && (
-          <Box sx={{ p: 1, width: "100%", textAlign: "center" }}>
-            <Nothing size={0.8} top={63} primary={t("setting.listEmpty")} />
-          </Box>
+          <PageEmpty>{t("setting.listEmpty")}</PageEmpty>
         )}
       </Container>
     </PageContainer>

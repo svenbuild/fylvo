@@ -9,7 +9,7 @@ const MarkdownEditor = lazy(() => import("../../Viewers/MarkdownEditor/Editor.ts
 
 const Loading = () => {
   return (
-    <Box sx={{ p: 2 }}>
+    <Box sx={{ p: 1.5 }}>
       <Skeleton variant="text" width="100%" height={24} />
       <Skeleton variant="text" width="40%" height={24} />
       <Skeleton variant="text" width="75%" height={24} />
@@ -55,8 +55,7 @@ const ReadMeContent = () => {
         sx={{
           width: "100%",
           bgcolor: "background.paper",
-          borderTop: 1,
-          borderColor: "divider",
+          minHeight: 0,
           overflow: "auto",
         }}
       >

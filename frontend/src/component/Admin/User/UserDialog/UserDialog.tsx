@@ -2,6 +2,7 @@ import { Box, Button, Collapse, DialogActions, DialogContent } from "@mui/materi
 import * as React from "react";
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { adminControlSx } from "../../Common/AdminPage.tsx";
 import { CSSTransition, SwitchTransition } from "react-transition-group";
 import { getUserDetail, upsertUser } from "../../../../api/api.ts";
 import { UpsertUserService, User } from "../../../../api/dashboard.ts";
@@ -128,7 +129,7 @@ const UserDialog = ({ open, onClose, userID, onUpdated }: UserDialogProps) => {
           onClose: onClose,
         }}
       >
-        <DialogContent>
+        <DialogContent sx={adminControlSx}>
           <AutoHeight>
             <SwitchTransition>
               <CSSTransition
@@ -140,7 +141,7 @@ const UserDialog = ({ open, onClose, userID, onUpdated }: UserDialogProps) => {
                   {loading && (
                     <Box
                       sx={{
-                        py: 15,
+                        py: 6,
                         height: "100%",
                         display: "flex",
                         justifyContent: "center",
@@ -157,7 +158,7 @@ const UserDialog = ({ open, onClose, userID, onUpdated }: UserDialogProps) => {
           </AutoHeight>
         </DialogContent>
         <Collapse in={showSaveButton}>
-          <DialogActions>
+          <DialogActions sx={adminControlSx}>
             <Button disabled={submitting} onClick={revert}>
               {t("settings.revert")}
             </Button>

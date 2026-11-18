@@ -4,6 +4,7 @@ import { IconButton, ListItemText, Menu, Skeleton, TableRow } from "@mui/materia
 import { useTranslation } from "react-i18next";
 import { useAppDispatch } from "../../../redux/hooks.ts";
 import { NoWrapCell, SquareChip } from "../../Common/StyledComponents.tsx";
+import { hoverSurface } from "../../../fylvoTheme.ts";
 import { DavAccount, DavAccountOption } from "../../../api/setting.ts";
 import FileBadge from "../../FileManager/FileBadge.tsx";
 import { FileType } from "../../../api/explorer.ts";
@@ -79,9 +80,9 @@ const DavAccountRow = ({ account, onAccountDeleted, onLoad, loading, onClick, on
   };
 
   return (
-    <TableRow ref={ref} hover sx={{ cursor: "pointer" }} onClick={onClick}>
+    <TableRow ref={ref} hover sx={{ cursor: "pointer", "&.MuiTableRow-hover:hover": { bgcolor: hoverSurface } }} onClick={onClick}>
       <NoWrapCell component="th" scope="row">
-        {loading ? <Skeleton variant={"text"} width={200} sx={{ my: "6px" }} /> : account?.name}
+        {loading ? <Skeleton variant={"text"} width={100} /> : account?.name}
       </NoWrapCell>
       <NoWrapCell>
         {loading ? (
@@ -90,7 +91,7 @@ const DavAccountRow = ({ account, onAccountDeleted, onLoad, loading, onClick, on
           <FileBadge
             variant={"outlined"}
             clickable
-            sx={{ px: 1 }}
+            sx={{ px: 1, minHeight: 24, maxWidth: "100%" }}
             simplifiedFile={{
               path: account?.uri ?? defaultPath,
               type: FileType.folder,
@@ -113,9 +114,6 @@ const DavAccountRow = ({ account, onAccountDeleted, onLoad, loading, onClick, on
         ) : proxy ? (
           <SquareChip
             icon={<CloudFilled />}
-            sx={{
-              backgroundColor: (theme) => theme.palette.primary.light,
-            }}
             color={"success"}
             size={"small"}
             label={t("application:setting.proxied")}
@@ -133,7 +131,7 @@ const DavAccountRow = ({ account, onAccountDeleted, onLoad, loading, onClick, on
       </NoWrapCell>
       <NoWrapCell onClick={(e) => e.stopPropagation()}>
         {account && (
-          <IconButton size={"small"} {...bindTrigger(actionMenuState)}>
+          <IconButton size="small" aria-label={t("fileManager.actions")} {...bindTrigger(actionMenuState)}>
             <MoreVertical fontSize={"small"} />
           </IconButton>
         )}

@@ -66,35 +66,45 @@ const WallPaper = styled("div")({
   },
 });
 
+const PlayerPopover = styled(Popover)({
+  "& .MuiPopover-paper": { boxShadow: "none" },
+});
+
 const Widget = styled("div")(({ theme }) => ({
-  padding: 16,
-  width: 343,
+  padding: "10px 12px",
+  width: 300,
   maxWidth: "100%",
   margin: "auto",
   position: "relative",
   zIndex: 1,
-  backgroundColor: theme.palette.mode === "dark" ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.4)",
-  backdropFilter: "blur(40px)",
+  backgroundColor: theme.palette.background.paper,
+  "& .MuiIconButton-root.Mui-focusVisible": { outline: `1px solid ${theme.palette.primary.main}` },
+  "@media (max-width: 599.95px), (pointer: coarse)": {
+    "& .MuiIconButton-root": { minWidth: 40, minHeight: 40 },
+  },
 }));
 
-const CoverImage = styled("div")({
-  width: 100,
-  height: 100,
+const CoverImage = styled("div")(({ theme }) => ({
+  width: 36,
+  height: 36,
   objectFit: "cover",
   overflow: "hidden",
   flexShrink: 0,
-  backgroundColor: "rgba(0,0,0,0.08)",
+  backgroundColor: theme.palette.action.hover,
+  color: theme.palette.text.secondary,
+  borderRadius: 6,
   "& > img": {
     width: "100%",
   },
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-});
+}));
 
 const TinyText = styled(Typography)({
   fontSize: "0.75rem",
-  opacity: 0.38,
+  color: "inherit",
+  opacity: 0.75,
   fontWeight: 500,
   letterSpacing: 0.2,
 });
@@ -220,8 +230,8 @@ export const PlayerPopup = ({
     const secondLeft = value - minute * 60;
     return `${minute}:${secondLeft < 10 ? `0${secondLeft}` : secondLeft}`;
   }
-  const mainIconColor = theme.palette.mode === "dark" ? "#fff" : "#000";
-  const lightIconColor = theme.palette.mode === "dark" ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)";
+  const mainIconColor = theme.palette.text.primary;
+  const lightIconColor = theme.palette.text.secondary;
 
   useEffect(() => {
     setThumbBgLoaded(false);
@@ -261,7 +271,7 @@ export const PlayerPopup = ({
   });
 
   return (
-    <Popover
+    <PlayerPopover
       anchorOrigin={{
         vertical: "bottom",
         horizontal: "left",
@@ -294,7 +304,7 @@ export const PlayerPopup = ({
       <Widget>
         <Box sx={{ display: "flex", alignItems: "center" }}>
           <CoverImage>
-            {!thumbSrc && <MusicNote1 fontSize={"large"} />}
+            {!thumbSrc && <MusicNote1 fontSize="small" />}
             {thumbSrc && <img src={thumbSrc} onError={() => setThumbSrc(null)} alt="cover" />}
           </CoverImage>
           <Box sx={{ ml: 1.5, minWidth: 0, maxWidth: "210px", width: "100%" }}>
@@ -352,24 +362,13 @@ export const PlayerPopup = ({
           onChange={(_, value) => setProgress(value as number)}
           onChangeCommitted={(_, value) => onSeekCommit(value as number)}
           sx={{
-            color: theme.palette.mode === "dark" ? "#fff" : "rgba(0,0,0,0.87)",
-            height: 4,
+            color: "primary.main",
+            height: 2,
             "& .MuiSlider-thumb": {
-              width: 8,
-              height: 8,
-              transition: "0.3s cubic-bezier(.47,1.64,.41,.8)",
-              "&::before": {
-                boxShadow: "0 2px 12px 0 rgba(0,0,0,0.4)",
-              },
-              "&:hover, &.Mui-focusVisible": {
-                boxShadow: `0px 0px 0px 8px ${
-                  theme.palette.mode === "dark" ? "rgb(255 255 255 / 16%)" : "rgb(0 0 0 / 16%)"
-                }`,
-              },
-              "&.Mui-active": {
-                width: 20,
-                height: 20,
-              },
+              width: 10,
+              height: 10,
+              "&::before, &:hover, &.Mui-active, &.Mui-focusVisible": { boxShadow: "none" },
+              "&.Mui-focusVisible": { outline: "2px solid currentColor", outlineOffset: 2 },
             },
             "& .MuiSlider-rail": {
               opacity: 0.28,
@@ -409,17 +408,17 @@ export const PlayerPopup = ({
             }}
           >
             <IconButton aria-label="previous song" onClick={() => manualNavigate(false)}>
-              <FastRewindRounded fontSize="large" htmlColor={mainIconColor} />
+              <FastRewindRounded fontSize="small" htmlColor={mainIconColor} />
             </IconButton>
             <IconButton aria-label={!playing ? "play" : "pause"} onClick={togglePause}>
               {!playing ? (
-                <PlayArrowRounded sx={{ fontSize: "3rem" }} htmlColor={mainIconColor} />
+                <PlayArrowRounded sx={{ fontSize: 20 }} htmlColor={mainIconColor} />
               ) : (
-                <PauseRounded sx={{ fontSize: "3rem" }} htmlColor={mainIconColor} />
+                <PauseRounded sx={{ fontSize: 20 }} htmlColor={mainIconColor} />
               )}
             </IconButton>
             <IconButton aria-label="next song" onClick={() => manualNavigate(true)}>
-              <FastForwardRounded fontSize="large" htmlColor={mainIconColor} />
+              <FastForwardRounded fontSize="small" htmlColor={mainIconColor} />
             </IconButton>
           </Box>
           <IconButton aria-label="play list" onClick={(e) => setAnchorEl(e.currentTarget)}>
@@ -438,20 +437,14 @@ export const PlayerPopup = ({
               onChangeCommitted={(_e, value) => SessionManager.set(UserSettings.MusicVolume, value as number)}
               step={0.01}
               sx={{
-                color: theme.palette.mode === "dark" ? "#fff" : "rgba(0,0,0,0.87)",
-                "& .MuiSlider-track": {
-                  border: "none",
-                },
+                color: "text.secondary",
+                height: 2,
+                "& .MuiSlider-track": { border: 0 },
                 "& .MuiSlider-thumb": {
-                  width: 24,
-                  height: 24,
-                  backgroundColor: "#fff",
-                  "&::before": {
-                    boxShadow: "0 4px 8px rgba(0,0,0,0.4)",
-                  },
-                  "&:hover, &.Mui-focusVisible, &.Mui-active": {
-                    boxShadow: "none",
-                  },
+                  width: 10,
+                  height: 10,
+                  "&::before, &:hover, &.Mui-active, &.Mui-focusVisible": { boxShadow: "none" },
+                  "&.Mui-focusVisible": { outline: "2px solid currentColor", outlineOffset: 2 },
                 },
               }}
             />
@@ -475,7 +468,7 @@ export const PlayerPopup = ({
           src={thumbSrc}
         />
       )}
-    </Popover>
+    </PlayerPopover>
   );
 };
 

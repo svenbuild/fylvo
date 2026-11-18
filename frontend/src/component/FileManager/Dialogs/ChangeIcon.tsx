@@ -41,8 +41,8 @@ function CustomTabPanel(props: TabPanelProps) {
 const StyledTab = styled(Tab)(({ theme }) => ({
   minWidth: 0,
   minHeight: 0,
-  fontSize: theme.typography.h6.fontSize,
-  padding: "8px 10px",
+  fontSize: theme.typography.body2.fontSize,
+  padding: "6px 8px",
 }));
 
 const EmojiButton = styled(Button)(({ theme }) => ({
@@ -129,7 +129,7 @@ const ChangeIcon = () => {
         maxWidth: "sm",
       }}
       secondaryAction={
-        <LoadingButton onClick={onAccept()} loading={loading} color="primary">
+        <LoadingButton onClick={onAccept()} loading={loading} color="inherit">
           <span>{t("application:modals.resetToDefault")}</span>
         </LoadingButton>
       }

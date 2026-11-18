@@ -148,6 +148,7 @@ const ManageShares = () => {
           onClose: onClose,
           fullWidth: true,
           maxWidth: "md",
+          PaperProps: { sx: { maxWidth: 680 } },
         }}
       >
         <DialogContent>

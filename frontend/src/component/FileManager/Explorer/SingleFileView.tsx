@@ -48,7 +48,6 @@ const ShareContainer = styled(Box)(({ theme }) => ({
   padding: theme.spacing(2),
   width: "100%",
   backgroundColor: theme.palette.background.default,
-  boxShadow: `0 0 10px 0 rgba(0, 0, 0, 0.1)`,
 }));
 
 const FileList = ({ file }: { file: FileResponse }) => {
@@ -76,7 +75,7 @@ const FileList = ({ file }: { file: FileResponse }) => {
     <>
       <Box
         {...(noThumb || isMobile || isTouch ? {} : hoverState)}
-        sx={{ display: "flex", alignItems: "flex-start", my: 3 }}
+        sx={{ display: "flex", alignItems: "center", my: 1.5 }}
       >
         <Box>
           <FileIcon
@@ -84,9 +83,9 @@ const FileList = ({ file }: { file: FileResponse }) => {
             sx={{ py: 0 }}
             iconProps={{
               sx: {
-                fontSize: "32px",
-                height: "32px",
-                width: "32px",
+                fontSize: "24px",
+                height: "24px",
+                width: "24px",
               },
             }}
             file={file}
@@ -183,11 +182,11 @@ const SingleFileView = forwardRef((_props, ref: React.Ref<any>) => {
       }}
     >
       {shareInfo && (
-        <Container maxWidth="sm">
+        <Container maxWidth="sm" sx={{ "&&": { maxWidth: 480 } }}>
           <ShareContainer>
-            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", py: 2, px: 1 }}>
-              <UserAvatar enablePopover overwriteTextSize sx={{ width: 56, height: 56 }} user={shareInfo.owner} />
-              <Typography variant={isMobile ? "subtitle1" : "h6"} sx={{ mt: 2, fontWeight: 600 }}>
+            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", pt: 1, pb: 1.5, px: 1 }}>
+              <UserAvatar enablePopover overwriteTextSize sx={{ width: 40, height: 40 }} user={shareInfo.owner} />
+              <Typography variant={isMobile ? "subtitle1" : "h6"} sx={{ mt: 1, fontWeight: 600, textAlign: "center" }}>
                 <Trans
                   i18nKey="application:share.sharedBy"
                   components={[
@@ -208,20 +207,19 @@ const SingleFileView = forwardRef((_props, ref: React.Ref<any>) => {
                   display: "flex",
                   alignItems: "center",
                   flexWrap: "wrap",
-                  mt: isMobile ? 1 : 0,
+                  mt: 0.5,
                   gap: 1,
                   columnGap: 2,
                 }}
               >
                 <PropTypography variant={"caption"} color={"text.secondary"}>
-                  <Eye sx={{ fontSize: "20px!important" }} />
+                  <Eye sx={{ fontSize: "16px!important" }} />
                   <ShareStatistics shareInfo={shareInfo} />
                 </PropTypography>
               </Box>
             </Box>
             <Divider />
             {file && <FileList file={file} />}
-            <Divider />
             <Divider />
             {(shareInfo.remain_downloads || shareInfo.expires) && (
               <Alert sx={{ mt: 2 }} severity="info" icon={<Timer />}>

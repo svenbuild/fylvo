@@ -1,6 +1,7 @@
-import { Box, Button, Popover, PopoverProps, Stack } from "@mui/material";
+import { Box, Button, PopoverProps, Stack } from "@mui/material";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AdminFilterPopover } from "../Common/AdminPage.tsx";
 import { DenseFilledTextField } from "../../Common/StyledComponents";
 import SettingForm from "../../Pages/Setting/SettingForm";
 
@@ -52,7 +53,7 @@ const ShareFilterPopover = ({
   };
 
   return (
-    <Popover
+    <AdminFilterPopover
       anchorOrigin={{
         vertical: "bottom",
         horizontal: "left",
@@ -60,15 +61,6 @@ const ShareFilterPopover = ({
       transformOrigin={{
         vertical: "top",
         horizontal: "left",
-      }}
-      slotProps={{
-        paper: {
-          sx: {
-            p: 2,
-            width: 300,
-            maxWidth: "100%",
-          },
-        },
       }}
       onClose={onClose}
       open={open}
@@ -104,7 +96,7 @@ const ShareFilterPopover = ({
           </Button>
         </Box>
       </Stack>
-    </Popover>
+    </AdminFilterPopover>
   );
 };
 

@@ -176,7 +176,7 @@ const ShareDialog = () => {
             : undefined
         }
       >
-        <DialogContent sx={{ pb: 0 }}>
+        <DialogContent sx={{ pb: shareLink ? "12px" : 0 }}>
           <AutoHeight>
             <SwitchTransition>
               <CSSTransition
@@ -208,9 +208,14 @@ const ShareDialog = () => {
                               <IconButton
                                 onClick={() => copyToClipboard(finalShareLink)}
                                 size="small"
-                                sx={{ marginRight: -1 }}
+                                sx={{
+                                  mr: -0.5,
+                                  bgcolor: "primary.main",
+                                  color: "primary.contrastText",
+                                  "&:hover": { bgcolor: "primary.dark" },
+                                }}
                               >
-                                <CopyOutlined />
+                                <CopyOutlined fontSize="small" />
                               </IconButton>
                             ),
                           },

@@ -9,7 +9,7 @@ import FileTypeIcon from "./FileTypeIcon.tsx";
 
 export interface FileIconProps {
   file?: FileResponse;
-  variant?: "default" | "small" | "large";
+  variant?: "default" | "small" | "large" | "largeMobile" | "medium" | "shareSingle" | "preview";
   loading?: boolean;
   notLoaded?: boolean;
   [key: string]: any;
@@ -17,7 +17,7 @@ export interface FileIconProps {
 }
 
 interface StyledBadgeProps extends BadgeProps {
-  iconVariant?: "default" | "small" | "large" | "largeMobile" | "shareSingle";
+  iconVariant?: FileIconProps["variant"];
 }
 
 const StyledBadge = styled(Badge)<StyledBadgeProps>(({ iconVariant }) => ({
@@ -38,6 +38,7 @@ const variantTop = {
   large: 70,
   largeMobile: 52,
   shareSingle: 26,
+  preview: 25,
 };
 
 const variantAvatarSize = {
@@ -47,6 +48,7 @@ const variantAvatarSize = {
   large: 32,
   largeMobile: 24,
   shareSingle: 20,
+  preview: 12,
 };
 
 const FileIcon = memo(

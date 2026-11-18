@@ -30,7 +30,7 @@ import { NoWrapTableCell, SecondaryButton, StyledTableContainerPaper } from "../
 import ArrowImport from "../../Icons/ArrowImport";
 import ArrowSync from "../../Icons/ArrowSync";
 import Filter from "../../Icons/Filter";
-import PageContainer from "../../Pages/PageContainer";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader from "../../Pages/PageHeader";
 import TablePagination from "../Common/TablePagination";
 import { OrderByQuery, OrderDirectionQuery, PageQuery, PageSizeQuery } from "../StoragePolicy/StoragePolicySetting";
@@ -197,7 +197,7 @@ const FileSetting = () => {
   };
 
   return (
-    <PageContainer>
+    <AdminPage>
       {/* <NewUserDialog
         open={createNewOpen}
         onClose={() => setCreateNewOpen(false)}
@@ -254,7 +254,7 @@ const FileSetting = () => {
           {selected.length > 0 && !isMobile && (
             <>
               <Divider orientation="vertical" flexItem />
-              <Button startIcon={<Delete />} variant="contained" color="error" onClick={handleDelete}>
+              <Button startIcon={<Delete />} variant="outlined" color="error" onClick={handleDelete}>
                 {t("file.deleteXFiles", { num: selected.length })}
               </Button>
             </>
@@ -262,7 +262,7 @@ const FileSetting = () => {
         </Stack>
         {isMobile && selected.length > 0 && (
           <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-            <Button startIcon={<Delete />} variant="contained" color="error" onClick={handleDelete}>
+            <Button startIcon={<Delete />} variant="outlined" color="error" onClick={handleDelete}>
               {t("file.deleteXFiles", { num: selected.length })}
             </Button>
           </Stack>
@@ -296,7 +296,7 @@ const FileSetting = () => {
                     {t("file.size")}
                   </TableSortLabel>
                 </NoWrapTableCell>
-                <NoWrapTableCell width={70}>{t("file.sizeUsed")}</NoWrapTableCell>
+                <NoWrapTableCell width={130}>{t("file.sizeUsed")}</NoWrapTableCell>
                 <NoWrapTableCell width={150}>{t("file.uploader")}</NoWrapTableCell>
                 <NoWrapTableCell width={150}>
                   <TableSortLabel
@@ -346,7 +346,7 @@ const FileSetting = () => {
           </Box>
         )}
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

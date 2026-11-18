@@ -86,18 +86,20 @@ export interface ColumnProps {
 export const ColumnTypeDefaults: { [key: number]: ColumTypeDefaults } = {
   [ColumType.name]: {
     title: "application:fileManager.name",
-    widthMobile: 300,
-    width: 600,
+    widthMobile: 140,
+    width: 240,
     order_by: "name",
   },
   [ColumType.size]: {
     title: "application:fileManager.size",
-    width: 100,
+    widthMobile: 68,
+    width: 110,
     order_by: "size",
   },
   [ColumType.date_modified]: {
     title: "application:fileManager.lastModified",
-    width: 200,
+    widthMobile: 126,
+    width: 176,
     order_by: "updated_at",
   },
   [ColumType.date_created]: {
@@ -219,10 +221,7 @@ export const getColumnTypeDefaults = (
   if (ColumnTypeDefaults[c.type]) {
     return {
       ...ColumnTypeDefaults[c.type],
-      width:
-        isMobile && ColumnTypeDefaults[c.type].widthMobile
-          ? ColumnTypeDefaults[c.type].widthMobile
-          : ColumnTypeDefaults[c.type].width,
+      width: (isMobile ? ColumnTypeDefaults[c.type].widthMobile : undefined) ?? ColumnTypeDefaults[c.type].width,
     };
   }
 
@@ -240,15 +239,11 @@ export const getColumnTypeDefaults = (
   };
 };
 
-const ColumnContainer = styled(Box)<{
-  w: number;
-}>(({ w }) => ({
-  height: "39px",
-  width: `${w}px`,
-  display: "flex",
-  alignItems: "center",
-  padding: "0 10px",
-}));
+export const listColumnStyle = (column: ListViewColumn) => ({
+  flex: `${column.width === undefined && column.type === ColumType.name ? 1 : 0} 0 ${column.width ?? column.defaults.width}px`,
+  minWidth: 0,
+  px: { xs: 1, sm: 1.5 },
+});
 
 const DividerContainer = styled(Box)(({ theme }) => ({
   color: theme.palette.divider,
@@ -263,14 +258,14 @@ const DividerContainer = styled(Box)(({ theme }) => ({
     duration: theme.transitions.duration.shortest,
   }),
   position: "relative",
-  right: "-8px",
+  right: "-4px",
 }));
 
 const SortArrow = styled(ArrowSortDownFilled)<{
   direction?: string;
 }>(({ theme, direction }) => ({
-  width: "18px",
-  height: "18px",
+  width: 14,
+  height: 14,
   color: !direction ? theme.palette.action.disabled : theme.palette.action.active,
   transform: `rotate(${direction === "asc" ? 180 : 0}deg)`,
   transition: theme.transitions.create(["color", "transform"], {
@@ -288,7 +283,13 @@ const Column = ({ column, showDivider, index, startResizing, sortDirection, setS
   }, [setSortBy, sortDirection, sortable, column]);
 
   return (
-    <ColumnContainer w={column.width ?? column.defaults.width}>
+    <Box
+      sx={{
+        ...listColumnStyle(column),
+        display: "flex",
+        alignItems: "center",
+      }}
+    >
       <Box
         sx={{
           width: "100%",
@@ -300,14 +301,14 @@ const Column = ({ column, showDivider, index, startResizing, sortDirection, setS
         onMouseLeave={() => setShowSortButton(false)}
         onClick={sortable ? onSortOptionChange : undefined}
       >
-        <NoWrapTypography variant={"body2"} fontWeight={600}>
+        <NoWrapTypography variant="caption" color="text.secondary" fontWeight={600}>
           {t(column.defaults.title, {
             metadata: column.props?.metadata_key,
           })}
         </NoWrapTypography>
         {sortable && (
-          <Fade in={showSortButton || !!sortDirection}>
-            <IconButton sx={{ ml: 1 }} size={"small"}>
+          <Fade in={showSortButton || !!sortDirection} mountOnEnter unmountOnExit>
+            <IconButton sx={{ ml: 0.5, p: "2px" }} size={"small"}>
               <SortArrow direction={sortDirection} />
             </IconButton>
           </Fade>
@@ -325,7 +326,7 @@ const Column = ({ column, showDivider, index, startResizing, sortDirection, setS
           <Divider />
         </DividerContainer>
       </Fade>
-    </ColumnContainer>
+    </Box>
   );
 };
 

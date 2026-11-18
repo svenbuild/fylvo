@@ -13,30 +13,26 @@ export default function Nothing({ primary, secondary, top = 20, size = 1 }: Noth
   return (
     <Box
       sx={{
-        margin: `${50 * size}px auto`,
+        margin: `${16 * size}px auto`,
         paddingTop: `${top}px`,
-        bottom: "0",
-
-        color: (theme) => theme.palette.action.disabled,
+        color: "text.secondary",
         textAlign: "center",
       }}
     >
       <PackageOpen
         sx={{
-          fontSize: 100 * size,
+          fontSize: 32 * size,
+          mb: "4px",
         }}
       />
       <Typography
-        variant={"h5"}
-        sx={{
-          fontWeight: 500,
-          color: (theme) => theme.palette.action.disabled,
-        }}
+        variant="subtitle2"
+        color="text.primary"
       >
         {primary}
       </Typography>
       {secondary && (
-        <Typography variant={"body2"} sx={{ color: (theme) => theme.palette.action.disabled }}>
+        <Typography variant="caption" color="text.secondary">
           {secondary}
         </Typography>
       )}

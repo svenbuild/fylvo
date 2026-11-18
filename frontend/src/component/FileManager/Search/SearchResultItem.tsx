@@ -1,6 +1,7 @@
 import { ListItem, ListItemAvatar, ListItemButton, ListItemText } from "@mui/material";
 import React from "react";
 import { FileResponse, FileType } from "../../../api/explorer.ts";
+import { selectedSurface } from "../../../fylvoTheme.ts";
 import { ContextMenuTypes } from "../../../redux/fileManagerSlice.ts";
 import { useAppDispatch } from "../../../redux/hooks.ts";
 import { openFileContextMenu } from "../../../redux/thunks/file.ts";
@@ -21,26 +22,41 @@ const SearchResultItem = ({ file, primary, secondary }: SearchResultItemProps) =
   return (
     <ListItem disablePadding dense>
       <ListItemButton
-        sx={{ py: 0 }}
+        sx={(theme) => ({
+          p: "0 8px",
+          gap: "4px",
+          minHeight: 34,
+          [theme.breakpoints.down("sm")]: { minHeight: 40 },
+          "@media (pointer: coarse)": { minHeight: 40 },
+          "& .highlight-marker, & em": {
+            color: theme.palette.text.primary,
+            backgroundColor: selectedSurface(theme),
+            boxShadow: "none",
+            borderRadius: 3,
+            fontStyle: "normal",
+            fontWeight: 600,
+          },
+        })}
         onClick={(e) =>
           dispatch(openFileContextMenu(FileManagerIndex.main, file, true, e, ContextMenuTypes.searchResult))
         }
       >
-        <ListItemAvatar sx={{ minWidth: 48 }}>
+        <ListItemAvatar sx={{ minWidth: 24, display: "flex" }}>
           <FileIcon
             variant={"default"}
             file={file}
-            sx={{ p: 0 }}
+            sx={{ p: 0, display: "flex" }}
             iconProps={{
               sx: {
-                fontSize: "24px",
-                height: "32px",
-                width: "32px",
+                fontSize: 18,
+                height: 18,
+                width: 18,
               },
             }}
           />
         </ListItemAvatar>
         <ListItemText
+          sx={{ my: "2px", overflowWrap: "anywhere" }}
           primary={primary}
           secondary={secondary}
           slotProps={{
@@ -48,14 +64,15 @@ const SearchResultItem = ({ file, primary, secondary }: SearchResultItemProps) =
               variant: "body2",
             },
             secondary: {
-              variant: "body2",
+              variant: "caption",
+              component: "div",
             },
           }}
         />
         <FileBadge
           clickable
           variant={"outlined"}
-          sx={{ px: 1, ml: 1, mt: "2px" }}
+          sx={{ px: 1, minWidth: 0, maxWidth: { xs: 140, sm: 160 } }}
           simplifiedFile={{
             path: new CrUri(file.path).parent().toString(),
             type: FileType.folder,

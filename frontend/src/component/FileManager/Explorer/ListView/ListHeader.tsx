@@ -1,5 +1,5 @@
 import Column, { ListViewColumn } from "./Column.tsx";
-import { Box, Fade, IconButton, Tooltip } from "@mui/material";
+import { Box, IconButton, Tooltip } from "@mui/material";
 import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { FmIndexContext } from "../../FmIndexContext.tsx";
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks.ts";
@@ -90,6 +90,10 @@ const ListHeader = ({ setColumns, commitColumnSetting, columns }: ListHeaderProp
       onMouseLeave={() => setShowDivider(false)}
       sx={{
         display: "flex",
+        flexShrink: 0,
+        minHeight: 30,
+        "& .Mui-focusVisible": { outline: "1px solid", outlineColor: "primary.main", outlineOffset: -1 },
+        "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
         borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
       }}
     >
@@ -105,26 +109,26 @@ const ListHeader = ({ setColumns, commitColumnSetting, columns }: ListHeaderProp
           sortDirection={sortBy && sortBy === column.defaults.order_by ? sortDirection : undefined}
         />
       ))}
-      <Fade in={showDivider}>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            mr: 1,
-          }}
-        >
+      <Box
+        sx={{
+          flex: "0 0 32px",
+          display: "grid",
+          placeItems: "center",
+          "& button": { opacity: { xs: 1, sm: showDivider ? 1 : 0 } },
+          "& button:focus-visible": { opacity: 1 },
+        }}
+      >
           <Tooltip title={t("fileManager.addColumn")}>
-            <IconButton onClick={() => dispatch(setListViewColumnSettingDialog(true))} sx={{ ml: 1 }} size={"small"}>
+            <IconButton onClick={() => dispatch(setListViewColumnSettingDialog(true))} size={"small"}>
               <Add
                 sx={{
-                  width: "18px",
-                  height: "18px",
+                  width: 16,
+                  height: 16,
                 }}
               />
             </IconButton>
           </Tooltip>
-        </Box>
-      </Fade>
+      </Box>
     </Box>
   );
 };

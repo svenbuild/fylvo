@@ -1,5 +1,6 @@
-import { alpha, Box, Skeleton, styled } from "@mui/material";
+import { Box, Skeleton, styled } from "@mui/material";
 import { memo, useCallback, useEffect } from "react";
+import { hoverSurface, selectedSurface } from "../../../../fylvoTheme.ts";
 import { useAppDispatch } from "../../../../redux/hooks.ts";
 import { navigateReconcile } from "../../../../redux/thunks/filemanager.ts";
 import { NoWrapTypography } from "../../../Common/StyledComponents.tsx";
@@ -7,43 +8,32 @@ import useActionDisplayOpt from "../../ContextMenu/useActionDisplayOpt.ts";
 import { FileBlockProps } from "../Explorer.tsx";
 import { useFileBlockState } from "../GridView/GridFile.tsx";
 import Cell from "./Cell.tsx";
+import { ColumType, listColumnStyle } from "./Column.tsx";
 
-const RowContainer = styled(Box)<{
+const RowContainer = styled(Box, {
+  shouldForwardProp: (prop) => !["selected", "transparent", "isDropOver", "disabled"].includes(String(prop)),
+})<{
   selected: boolean;
   transparent?: boolean;
   isDropOver?: boolean;
   disabled?: boolean;
-  taller?: boolean;
-}>(({ theme, disabled, transparent, isDropOver, selected, taller }) => {
-  let bgColor = "initial";
-  let bgColorHover = theme.palette.action.hover;
-
-  if (selected) {
-    bgColor = alpha(theme.palette.primary.main, 0.18);
-    bgColorHover = bgColor;
-  }
+}>(({ theme, disabled, transparent, isDropOver, selected }) => {
   return {
-    minHeight: taller ? "60px" : "36px",
+    minHeight: 32,
+    "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
+    paddingRight: 32,
     borderBottom: `1px solid ${theme.palette.divider}`,
     display: "flex",
-    backgroundColor: bgColor,
+    backgroundColor: selected || isDropOver ? selectedSurface(theme) : "transparent",
     "&:hover": {
-      backgroundColor: bgColorHover,
+      backgroundColor: selected || isDropOver ? selectedSurface(theme) : hoverSurface(theme),
     },
     pointerEvents: disabled ? "none" : "auto",
     opacity: transparent || disabled ? 0.5 : 1,
-    transition: "all 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms",
-    transitionProperty: "background-color,opacity,box-shadow",
-    boxShadow: isDropOver ? `inset 0 0 0 2px ${theme.palette.primary.light}` : "none",
+    outline: isDropOver ? `1px solid ${theme.palette.primary.main}` : undefined,
+    outlineOffset: -1,
   };
 });
-
-const Column = styled(Box)<{ w: number }>(({ theme, w }) => ({
-  display: "flex",
-  alignItems: "center",
-  width: `${w}px`,
-  padding: "0 10px",
-}));
 
 const Row = memo((props: FileBlockProps) => {
   const { file, columns, search, isDragging, isDropOver, showThumb } = props;
@@ -71,6 +61,10 @@ const Row = memo((props: FileBlockProps) => {
   } = useFileBlockState(props);
 
   const targetDisplayOptions = useActionDisplayOpt([file]);
+  const nameMeta = {
+    size: !columns?.some((column) => column.type === ColumType.size),
+    modified: !columns?.some((column) => column.type === ColumType.date_modified),
+  };
 
   useEffect(() => {
     if (!inView) {
@@ -95,7 +89,6 @@ const Row = memo((props: FileBlockProps) => {
       isDropOver={isDropOver && !isDragging}
       ref={setRefFunc}
       selected={!!isSelected}
-      taller={showThumb}
       onMouseDown={stopPop}
       onClick={onClick}
       onDoubleClick={onDoubleClicked}
@@ -105,10 +98,11 @@ const Row = memo((props: FileBlockProps) => {
       disabled={disabled}
     >
       {columns?.map((column, index) => (
-        <Column w={column.width ?? column.defaults.width} key={index}>
+        <Box key={index} sx={{ ...listColumnStyle(column), display: "flex", alignItems: "center" }}>
           <NoWrapTypography
             sx={{
               width: "100%",
+              color: column.type === ColumType.name ? "text.primary" : "text.secondary",
             }}
             variant={"body2"}
           >
@@ -123,6 +117,7 @@ const Row = memo((props: FileBlockProps) => {
                 fileTag={fileTag}
                 noThumb={noThumb}
                 showThumb={showThumb}
+                nameMeta={nameMeta}
                 thumbWidth={thumbWidth}
                 thumbHeight={thumbHeight}
               />
@@ -130,7 +125,7 @@ const Row = memo((props: FileBlockProps) => {
 
             {file.placeholder && <Skeleton variant={"text"} width={0.5 * (column.width ?? column.defaults.width)} />}
           </NoWrapTypography>
-        </Column>
+        </Box>
       ))}
     </RowContainer>
   );

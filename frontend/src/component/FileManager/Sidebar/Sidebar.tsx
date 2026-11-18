@@ -65,7 +65,7 @@ const Sidebar = ({ inPhotoViewer }: SideBarProps) => {
       >
         <RadiusFrame
           sx={{
-            width: "300px",
+            width: "288px",
             height: "100%",
             ml: 1,
             borderRadius: (theme) => (inPhotoViewer ? 0 : theme.shape.borderRadius / 8),

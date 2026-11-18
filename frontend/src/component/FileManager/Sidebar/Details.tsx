@@ -43,7 +43,20 @@ const Details = ({ target, inPhotoViewer, setTarget, targetDisplayOptions }: Det
   }, [target]);
 
   return (
-    <Stack spacing={1}>
+    <Stack
+      spacing={1}
+      sx={{
+        "& .MuiTypography-subtitle1": {
+          fontSize: 12,
+          fontWeight: 600,
+          color: "text.secondary",
+          borderTop: 1,
+          borderColor: "divider",
+          pt: 1,
+        },
+        "& > .MuiTypography-subtitle1:first-child": { borderTop: 0, pt: 0 },
+      }}
+    >
       {thumbSrc && !inPhotoViewer && (
         <Box
           onError={() => {
@@ -52,6 +65,11 @@ const Details = ({ target, inPhotoViewer, setTarget, targetDisplayOptions }: Det
           src={thumbSrc}
           sx={{
             borderRadius: "8px",
+            border: 1,
+            borderColor: "divider",
+            width: "100%",
+            maxHeight: 144,
+            objectFit: "contain",
           }}
           component={"img"}
         />

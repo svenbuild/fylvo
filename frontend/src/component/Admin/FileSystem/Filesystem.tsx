@@ -9,7 +9,7 @@ import Icons from "../../Icons/Icons.tsx";
 import Search from "../../Icons/Search.tsx";
 import SettingsOutlined from "../../Icons/SettingsOutlined.tsx";
 import TextBulletListSquareEdit from "../../Icons/TextBulletListSquareEdit.tsx";
-import PageContainer from "../../Pages/PageContainer.tsx";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader, { PageTabQuery } from "../../Pages/PageHeader.tsx";
 import SettingsWrapper from "../Settings/SettingWrapper.tsx";
 import CustomPropsSetting from "./CustomProps/CustomPropsSetting.tsx";
@@ -65,7 +65,7 @@ const FileSystem = () => {
   }, [t]);
 
   return (
-    <PageContainer>
+    <AdminPage>
       <Container maxWidth="xl">
         <PageHeader title={t("dashboard:nav.fileSystem")} />
         <ResponsiveTabs
@@ -158,7 +158,7 @@ const FileSystem = () => {
           </CSSTransition>
         </SwitchTransition>
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

@@ -1,9 +1,10 @@
 import React, { useCallback, useContext, useMemo, useState } from "react";
 
-import { Fade, IconButton, Skeleton, styled, Tooltip } from "@mui/material";
+import { Box, Fade, IconButton, Skeleton, styled, Tooltip, Typography } from "@mui/material";
 import { TreeItem, treeItemClasses, TreeItemContentProps, TreeItemProps, useTreeItem } from "@mui/x-tree-view";
 import clsx from "clsx";
 import { useTranslation } from "react-i18next";
+import { hoverSurface } from "../../../fylvoTheme.ts";
 import { FileResponse } from "../../../api/explorer.ts";
 import { useAppDispatch } from "../../../redux/hooks.ts";
 import { openFileContextMenu } from "../../../redux/thunks/file.ts";
@@ -11,7 +12,6 @@ import { loadChild, navigateToPath } from "../../../redux/thunks/filemanager.ts"
 import { unPinFromSidebar } from "../../../redux/thunks/settings.ts";
 import { mergeRefs } from "../../../util";
 import FacebookCircularProgress from "../../Common/CircularProgress.tsx";
-import { NoWrapTypography } from "../../Common/StyledComponents.tsx";
 import NavIconTransition from "../../Frame/NavBar/NavIconTransition.tsx";
 import { SideNavItemBase } from "../../Frame/NavBar/SideNavItem.tsx";
 import CaretDown from "../../Icons/CaretDown.tsx";
@@ -26,17 +26,28 @@ const CustomContentRoot = styled(SideNavItemBase)<{
   isDragging?: boolean;
   isDropOver?: boolean;
 }>(({ theme, isDragging, isDropOver }) => ({
-  "& .MuiTreeItem-iconContainer": {
-    marginLeft: theme.spacing(1),
+  "&&": {
+    paddingBlock: 0,
+    paddingRight: 6,
+    "&:hover, &.Mui-focused": {
+      backgroundColor: hoverSurface(theme),
+    },
+  },
+  "&& .MuiTreeItem-iconContainer": {
+    width: 16,
+    flexShrink: 0,
+    marginRight: 4,
+    color: theme.palette.text.secondary,
   },
   opacity: isDragging ? 0.5 : 1,
-  transition: "all 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms",
-  transitionProperty: "opacity,box-shadow,background-color",
   boxShadow: isDropOver ? `inset 0 0 0 2px ${theme.palette.primary.light}` : "none",
-  height: "32px",
 }));
 
-const StyledTreeItemRoot = styled(TreeItem)(() => ({
+const StyledTreeItemRoot = styled(TreeItem)(({ theme }) => ({
+  [`&:focus-visible > .${treeItemClasses.content}`]: {
+    outline: `1px solid ${theme.palette.primary.main}`,
+    outlineOffset: -1,
+  },
   [`& .${treeItemClasses.group}`]: {
     marginLeft: 0,
     [`& .${treeItemClasses.content}`]: {
@@ -168,28 +179,21 @@ const CustomContent = React.memo(
 
     const FileItemIcon = useMemo(() => {
       if (props.loading) {
-        return <Skeleton sx={{ mr: "14px" }} variant={"rounded"} width={20} height={20} />;
+        return <Skeleton variant={"rounded"} width={16} height={16} />;
       }
       if (fileIcon && fileIcon.Icons) {
-        return (
-          <NavIconTransition
-            sx={{ px: 0, py: 0, pr: "14px", height: "20px" }}
-            iconProps={{ fontSize: "small", color: "action" }}
-            fileIcon={fileIcon.Icons}
-            active={selected}
-          />
-        );
+        return <NavIconTransition iconProps={{ fontSize: "small" }} fileIcon={fileIcon.Icons} active={selected} />;
       }
       if (fileIcon && fileIcon.Element) {
-        return <fileIcon.Element sx={{ height: 20, width: 20, mr: "14px" }} />;
+        return <fileIcon.Element sx={{ height: 16, width: 16 }} />;
       }
       return (
         <FileIcon
           variant={"small"}
           file={file}
-          sx={{ px: 0, py: 0, mr: "14px", height: "20px" }}
+          sx={{ p: 0, display: "flex" }}
           fontSize={"small"}
-          iconProps={{ fontSize: "small", sx: { minWidth: "20px" } }}
+          iconProps={{ fontSize: "small", sx: { display: "block", color: "text.secondary" } }}
           notLoaded={props.notLoaded}
         />
       );
@@ -208,9 +212,10 @@ const CustomContent = React.memo(
     const fileName = useMemo(
       () => (
         <Tooltip title={label} disableInteractive>
-          <NoWrapTypography
+          <Typography
             onClick={handleSelectionClick}
             component="div"
+            noWrap
             sx={{
               flexGrow: 1,
               textAlign: "left",
@@ -219,7 +224,7 @@ const CustomContent = React.memo(
           >
             {!props.loading && label}
             {props.loading && <Skeleton variant={"text"} width={75} />}
-          </NoWrapTypography>
+          </Typography>
         </Tooltip>
       ),
       [label, handleSelectionClick, props.loading],
@@ -256,13 +261,12 @@ const CustomContent = React.memo(
         className={clsx(className, classes.root, {
           [classes.expanded]: expanded,
           [classes.selected]: selected,
-          [classes.focused]: selected,
+          [classes.focused]: focused,
           [classes.disabled]: disabled,
         })}
         active={selected}
         sx={{
-          py: "4px!important",
-          pl: (theme) => `${theme.spacing((props.level ?? 0) * 2)}!important`,
+          "&&": { paddingLeft: `${4 + (props.level ?? 0) * 10}px` },
         }}
         onClick={handleSelectionClick}
         ref={mergedRef}
@@ -270,9 +274,9 @@ const CustomContent = React.memo(
         {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events,jsx-a11y/no-static-element-interactions */}
         <div onClick={handleExpansionClick} className={classes.iconContainer}>
           {icon && !loading && <CaretDownIcon expanded={expanded} />}
-          {icon && loading && <FacebookCircularProgress size={15} sx={{ pt: 0.5 }} />}
+          {icon && loading && <FacebookCircularProgress size={12} />}
         </div>
-        {FileItemIcon}
+        <Box sx={{ width: 16, mr: 1, flexShrink: 0, display: "flex", color: "text.secondary" }}>{FileItemIcon}</Box>
         {fileName}
         <UnpinButton show={showDelete} uri={uri} />
       </CustomContentRoot>

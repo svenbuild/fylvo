@@ -3,6 +3,7 @@ import { Android } from "@mui/icons-material";
 import { Box, SvgIconProps, useTheme } from "@mui/material";
 import SvgIcon from "@mui/material/SvgIcon/SvgIcon";
 import { useMemo } from "react";
+import { FileType } from "../../../api/explorer.ts";
 import { useAppSelector } from "../../../redux/hooks.ts";
 import { fileExtension } from "../../../util";
 import Book from "../../Icons/Book.tsx";
@@ -12,7 +13,6 @@ import DocumentPDF from "../../Icons/DocumentPDF.tsx";
 import FileExclBox from "../../Icons/FileExclBox.tsx";
 import FilePowerPointBox from "../../Icons/FilePowerPointBox.tsx";
 import FileWordBox from "../../Icons/FileWordBox.tsx";
-import Folder from "../../Icons/Folder.tsx";
 import FolderOutlined from "../../Icons/FolderOutlined.tsx";
 import FolderZip from "../../Icons/FolderZip.tsx";
 import Image from "../../Icons/Image.tsx";
@@ -101,7 +101,7 @@ interface IconComponentProps {
 const FileTypeIcon = ({
   name,
   fileType,
-  notLoaded,
+  notLoaded: _notLoaded,
   sx,
   hideUnknown,
   customizedColor,
@@ -111,8 +111,8 @@ const FileTypeIcon = ({
   const theme = useTheme();
   const iconOptions = useAppSelector((state) => state.siteConfig.explorer.typed?.icons) as ExpandedIconSettings;
   const IconComponent: IconComponentProps = useMemo(() => {
-    if (fileType === 1) {
-      return notLoaded ? { icon: FolderOutlined } : { icon: Folder };
+    if (fileType === FileType.folder) {
+      return { icon: FolderOutlined };
     }
 
     if (name) {
@@ -143,18 +143,21 @@ const FileTypeIcon = ({
     }
 
     return { icon: Document, isDefault: true };
-  }, [fileType, name, notLoaded]);
+  }, [fileType, name, iconOptions]);
 
   const iconColor = useMemo(() => {
     if (customizedColor) {
       return customizedColor;
+    }
+    if (fileType === FileType.folder) {
+      return theme.palette.text.secondary;
     }
     if (theme.palette.mode == (reverseDarkMode ? "light" : "dark")) {
       return IconComponent.color_dark ?? IconComponent.color ?? theme.palette.action.active;
     } else {
       return IconComponent.color ?? theme.palette.action.active;
     }
-  }, [IconComponent, theme, customizedColor]);
+  }, [IconComponent, theme, fileType, customizedColor, reverseDarkMode]);
 
   if (IconComponent.icon) {
     if (IconComponent.isDefault && hideUnknown) {

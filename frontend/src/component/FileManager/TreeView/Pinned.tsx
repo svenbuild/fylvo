@@ -41,7 +41,7 @@ const Pinned = memo(() => {
     <>
       {pined?.map((p, index) => (
         <TreeFiles
-          sx={{ mt: index == 0 ? 2 : 0 }}
+          sx={{ mt: index == 0 ? "8px" : 0 }}
           flatten={
             p.crUri.fs() != Filesystem.share ||
             (p.crUri.fs() == Filesystem.share && (!p.crUri.is_root() || p.crUri.is_search()))

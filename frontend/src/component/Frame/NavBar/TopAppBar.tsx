@@ -1,5 +1,4 @@
-import { AppBarProps as MuiAppBarProps } from "@mui/material/AppBar";
-import { shellSurface } from "../../../fylvoTheme.ts";
+import { hoverSurface, shellSurface } from "../../../fylvoTheme.ts";
 import { AppBar, Box, Collapse, IconButton, Stack, Toolbar, Tooltip, useMediaQuery, useTheme } from "@mui/material";
 import { Menu } from "@mui/icons-material";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
@@ -17,10 +16,6 @@ import SessionManager from "../../../session";
 import { useContext, useState } from "react";
 import { DrawerPopover } from "./AppDrawer.tsx";
 import { PageVariant, PageVariantContext } from "../NavBarFrame.tsx";
-
-interface AppBarProps extends MuiAppBarProps {
-  open?: boolean;
-}
 
 const TopAppBar = () => {
   const dispatch = useAppDispatch();
@@ -73,15 +68,28 @@ const TopAppBar = () => {
       position="fixed"
     >
       <Toolbar
-        sx={{
-          "&.MuiToolbar-root.MuiToolbar-gutters": {
-            paddingLeft: open && !isMobile ? theme.spacing(0) : theme.spacing(isMobile ? 2 : 3),
-            transition: theme.transitions.create("padding", {
-              easing: theme.transitions.easing.easeInOut,
-              duration: theme.transitions.duration.standard,
-            }),
+        disableGutters
+        sx={(theme) => ({
+          "&&": {
+            minHeight: 44,
+            [theme.breakpoints.down("sm")]: { minHeight: 48 },
+            "@media (pointer: coarse)": { minHeight: 48 },
           },
-        }}
+          pl: open && !isMobile ? 0 : 2,
+          pr: 2,
+          "& .MuiIconButton-root": {
+            width: 30,
+            height: 30,
+            color: theme.palette.text.secondary,
+            "&:hover": { backgroundColor: hoverSurface(theme), color: theme.palette.text.primary },
+            [theme.breakpoints.down("sm")]: { width: 40, height: 40 },
+            "@media (pointer: coarse)": { width: 40, height: 40 },
+          },
+          "& .MuiButtonBase-root.Mui-focusVisible": {
+            outline: `1px solid ${theme.palette.primary.main}`,
+            outlineOffset: -1,
+          },
+        })}
       >
         <Collapse orientation={"horizontal"} in={!open || isMobile}>
           <IconButton
@@ -89,11 +97,7 @@ const TopAppBar = () => {
             aria-label="open drawer"
             // @ts-ignore
             onClick={isMobile ? onMobileMenuClicked : () => dispatch(setDrawerOpen(true))}
-            edge="start"
-            sx={{
-              mr: isMobile ? 1 : 2,
-              ml: isMobile ? -1 : -1.5,
-            }}
+            sx={{ mr: 1 }}
           >
             <Menu />
           </IconButton>
@@ -104,7 +108,16 @@ const TopAppBar = () => {
           </>
         )}
         {!isMobile && isMainPage && (
-          <Stack direction={"row"} spacing={1} sx={{ height: 42 }}>
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              height: 32,
+              minWidth: 0,
+              "& > .MuiButton-root": { flexShrink: 0 },
+              "@media (pointer: coarse)": { height: 40 },
+            }}
+          >
             <NewButton />
             <NavBarMainActions />
           </Stack>
@@ -114,8 +127,9 @@ const TopAppBar = () => {
           direction={"row"}
           sx={{
             alignItems: "center",
+            flexShrink: 0,
           }}
-          spacing={isMobile ? 1 : 0}
+          spacing={0.5}
         >
           {!isMobile && <TaskListIconButton />}
           {musicPlayer && <MusicPlayer />}
@@ -124,7 +138,7 @@ const TopAppBar = () => {
               <DarkThemeSwitcher />
               {isLogin && (
                 <Tooltip title={t("navbar.setting")}>
-                  <IconButton size="large" onClick={() => navigate("/settings")}>
+                  <IconButton onClick={() => navigate("/settings")}>
                     <Setting />
                   </IconButton>
                 </Tooltip>

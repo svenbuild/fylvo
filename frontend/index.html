@@ -25,64 +25,51 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        background-color: #f5f5f5;
+        background-color: #fff;
+        color: #62626a;
         z-index: 9999;
       }
       #app-loader .logo {
-        width: 120px;
-        height: 120px;
-        margin-bottom: 32px;
+        width: 48px;
+        height: 48px;
+        margin-bottom: 12px;
         background-image: url("{pwa_medium_icon}");
         background-position: center;
         background-repeat: no-repeat;
         background-size: contain;
-        opacity: 0;
-        transform: scale(0.8);
-        animation: fadeIn 0.6s ease-out 0.3s forwards;
       }
       #app-loader .spinner {
-        width: 28px;
-        height: 28px;
-        position: relative;
-        opacity: 0;
-        transform: scale(0.8);
-        animation: fadeIn 0.6s ease-out 0.3s forwards;
-      }
-      #app-loader .spinner {
-        display: inline-block;
-        width: 40px;
-        height: 40px;
+        width: 18px;
+        height: 18px;
       }
       #app-loader .spinner svg {
         display: block;
+        animation: loader-spin 1.4s linear infinite;
       }
       #app-loader .spinner .stroke {
-        stroke: var(--defaultThemeColor);
+        stroke: var(--defaultThemeColor, currentColor);
         stroke-linecap: round;
-        animation: spinDash 1.4s ease-in-out infinite;
+        stroke-dasharray: 28 126;
       }
       #app-loader .spinner .background {
-        stroke: rgba(0, 0, 0, 0.1)
+        stroke: currentColor;
+        opacity: 0.2;
       }
 
-      @keyframes spinDash {
-        0% {
-          stroke-dasharray: 1px, 200px;
-          stroke-dashoffset: 0;
-        }
-        50% {
-          stroke-dasharray: 100px, 200px;
-          stroke-dashoffset: -15px;
-        }
-        100% {
-          stroke-dasharray: 1px, 200px;
-          stroke-dashoffset: -126px;
+      @media (prefers-color-scheme: dark) {
+        #app-loader {
+          background-color: #0a0a0a;
+          color: #a9a9b0;
         }
       }
-      @keyframes fadeIn {
+      @media (prefers-reduced-motion: reduce) {
+        #app-loader .spinner svg {
+          animation: none;
+        }
+      }
+      @keyframes loader-spin {
         to {
-          opacity: 1;
-          transform: scale(1);
+          transform: rotate(360deg);
         }
       }
     </style>
@@ -102,6 +89,13 @@
     <div id="root"></div>
     <script>
       document.addEventListener("DOMContentLoaded", function () {
+        // The server swaps the script placeholder at the end of this file for the site script.
+        // The Vite dev server does not, so remove the leftover text there. The name is split
+        // on purpose: written in one piece, the server would replace it here as well.
+        const leftover = "{" + "siteScript}";
+        Array.from(document.body.childNodes).forEach(function (node) {
+          if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() === leftover) node.remove();
+        });
         // Hide loader when the app has loaded
         const appRoot = document.getElementById("root");
         const observer = new MutationObserver(function (mutations) {

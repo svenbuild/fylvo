@@ -9,7 +9,7 @@ import { useAppDispatch } from "../../../redux/hooks";
 import { SecondaryButton } from "../../Common/StyledComponents";
 import ArrowSync from "../../Icons/ArrowSync";
 import QuestionCircle from "../../Icons/QuestionCircle";
-import PageContainer from "../../Pages/PageContainer";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader from "../../Pages/PageHeader";
 import { BorderedCardClickable } from "../Common/AdminCard";
 import TablePagination from "../Common/TablePagination";
@@ -65,7 +65,7 @@ const NodeSetting = () => {
   };
 
   return (
-    <PageContainer>
+    <AdminPage>
       <NewNodeDialog open={createNewOpen} onClose={() => setCreateNewOpen(false)} />
       <Container maxWidth="xl">
         <PageHeader
@@ -124,7 +124,7 @@ const NodeSetting = () => {
           </Box>
         )}
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

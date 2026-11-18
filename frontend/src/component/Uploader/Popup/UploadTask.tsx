@@ -1,12 +1,13 @@
-import { alpha, Box, Divider, Grow, IconButton, ListItemButton, ListItemText, styled, Tooltip } from "@mui/material";
+import { Box, Divider, Grow, IconButton, ListItemButton, ListItemText, styled, Tooltip } from "@mui/material";
 import MuiAccordion from "@mui/material/Accordion";
 import MuiAccordionDetails from "@mui/material/AccordionDetails";
 import MuiAccordionSummary from "@mui/material/AccordionSummary";
 import Chip from "@mui/material/Chip";
-import { lighten, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { hoverSurface } from "../../../fylvoTheme.ts";
 import { FileType } from "../../../api/explorer.ts";
 import { navigateToPath } from "../../../redux/thunks/filemanager.ts";
 import { sizeToString } from "../../../util";
@@ -26,9 +27,8 @@ import TaskDetail from "./TaskDetail.js";
 const Accordion = styled(MuiAccordion)(() => ({
   maxWidth: "100%",
   boxShadow: "none",
-  "&:not(:last-child)": {
-    borderBottom: 0,
-  },
+  border: 0,
+  backgroundColor: "transparent",
   "&:before": {
     display: "none",
   },
@@ -38,7 +38,7 @@ const Accordion = styled(MuiAccordion)(() => ({
 }));
 
 const AccordionSummary = styled(MuiAccordionSummary)(() => ({
-  minHeight: "56px",
+  minHeight: 0,
   padding: 0,
   display: "block",
   "& .MuiAccordionSummary-content": {
@@ -51,6 +51,8 @@ const AccordionSummary = styled(MuiAccordionSummary)(() => ({
 }));
 
 const AccordionDetails = styled(MuiAccordionDetails)(({ theme }) => ({
+  padding: "6px 10px",
+  backgroundColor: theme.palette.background.default,
   "& .MuiAccordionActions-root": {
     paddingLeft: 16,
     paddingRight: 16,
@@ -134,15 +136,11 @@ export default function UploadTask({
         return (
           <Box
             sx={{
-              color: theme.palette.warning.main,
+              color: theme.palette.mode === "light" ? theme.palette.warning.dark : theme.palette.warning.main,
               wordBreak: "break-all",
-              ...(theme.breakpoints.up("sm")
-                ? {
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }
-                : {}),
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
             }}
           >
             {getErrMsg(error)}
@@ -181,7 +179,7 @@ export default function UploadTask({
         return (
           <Box
             sx={{
-              color: theme.palette.success.main,
+              color: theme.palette.mode === "light" ? theme.palette.success.dark : theme.palette.success.main,
             }}
           >
             {t("uploaded")}
@@ -218,7 +216,7 @@ export default function UploadTask({
             fontSize: (theme) => theme.typography.caption.fontSize,
           }}
           size="small"
-          color={"secondary"}
+          color="default"
           label={t("resumable")}
         />
       ) : null,
@@ -230,17 +228,14 @@ export default function UploadTask({
       (status === Status.processing || status === Status.finishing || status === Status.resumable) && progress ? (
         <Box
           sx={{
-            backgroundColor:
-              theme.palette.mode === "light"
-                ? lighten(theme.palette.primary.main, 0.8)
-                : alpha(theme.palette.primary.main, 0.18),
+            backgroundColor: "primary.main",
             width: progress.total.percent + "%",
             transition: "width .4s linear",
             zIndex: 1,
-            height: "100%",
+            height: 2,
             position: "absolute",
             left: 0,
-            top: 0,
+            bottom: 0,
           }}
         />
       ) : null,
@@ -281,35 +276,35 @@ export default function UploadTask({
         show: status === Status.error && !isConflict,
         title: t("retry"),
         click: () => retry(),
-        icon: <ArrowClockwiseFilled sx={{ fontSize: "20px" }} />,
+        icon: <ArrowClockwiseFilled fontSize="small" />,
         loading: false,
       },
       {
         show: status === Status.error && isConflict,
         title: t("rename"),
         click: () => retry({ new_prefix: t("fileCopyName") }),
-        icon: <RenameFilled sx={{ fontSize: "20px" }} />,
+        icon: <RenameFilled fontSize="small" />,
         loading: false,
       },
       {
         show: status === Status.error && isConflict,
         title: t("overwrite"),
         click: () => retry({ overwrite: true }),
-        icon: <DocumentArrowDownFilled sx={{ fontSize: "20px" }} />,
+        icon: <DocumentArrowDownFilled fontSize="small" />,
         loading: false,
       },
       {
         show: true,
         title: status === Status.finished ? t("deleteTask") : t("cancelAndDelete"),
         click: cancel,
-        icon: <Delete sx={{ fontSize: "20px" }} />,
+        icon: <Delete fontSize="small" />,
         loading: loading,
       },
       {
         show: status === Status.resumable,
         title: t("selectAndResume"),
         click: () => selectFile(uploader.task.dst, SelectType.File, uploader),
-        icon: <Play sx={{ fontSize: "20px" }} />,
+        icon: <Play fontSize="small" />,
         loading: false,
       },
     ];
@@ -344,7 +339,7 @@ export default function UploadTask({
 
   const fileIcon = useMemo(() => {
     if (!fullScreen) {
-      return <FileTypeIcon name={uploader.task.name} fileType={FileType.file} />;
+      return <FileTypeIcon name={uploader.task.name} fileType={FileType.file} sx={{ width: 16, height: 16 }} />;
     }
   }, [uploader, fullScreen]);
 
@@ -363,16 +358,24 @@ export default function UploadTask({
             <ListItemButton
               sx={{
                 borderRadius: 0,
-                position: "relative",
-                zIndex: 9,
+                minHeight: { xs: 43, md: 32 },
+                px: "10px",
+                py: 0,
+                gap: "8px",
+                "&:hover": { bgcolor: hoverSurface },
+                "& .MuiIconButton-root": { p: "4px" },
+                "@media (max-width: 599.95px), (pointer: coarse)": {
+                  minHeight: 43,
+                  "& .MuiIconButton-root": { minWidth: 40, minHeight: 40 },
+                },
               }}
             >
               {fileIcon}
               <ListItemText
                 sx={{
-                  marginLeft: "16px",
-                  marginRight: "20px",
+                  minWidth: 0,
                   my: 0,
+                  "& .MuiTypography-root": { lineHeight: 1.1 },
                 }}
                 primary={
                   <Box
@@ -411,7 +414,7 @@ export default function UploadTask({
                   },
                 }}
               />
-              <Box sx={{ display: "flex", gap: 1 }}>{secondaryAction}</Box>
+              <Box sx={{ display: "flex", gap: 0.5 }}>{secondaryAction}</Box>
             </ListItemButton>
           </Box>
         </AccordionSummary>

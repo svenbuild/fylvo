@@ -8,12 +8,22 @@ const StyledButtonBase = styled(ButtonBase)<{
 }>(({ theme, active }) => ({
   borderRadius: "8px",
   display: "flex",
-  justifyContent: "left",
-  alignItems: "initial",
+  justifyContent: "flex-start",
+  alignItems: "center",
   width: "100%",
+  height: 28,
+  color: active ? theme.palette.text.primary : theme.palette.text.secondary,
   backgroundColor: active ? `${selectedSurface(theme)}!important` : "initial",
-  transition:
-    "background-color 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,border 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms",
+  "&:hover": {
+    backgroundColor: hoverSurface(theme),
+    color: theme.palette.text.primary,
+  },
+  "&.Mui-focusVisible": {
+    outline: `1px solid ${theme.palette.primary.main}`,
+    outlineOffset: -1,
+  },
+  [theme.breakpoints.down("sm")]: { height: 40 },
+  "@media (pointer: coarse)": { height: 40 },
 }));
 
 export interface SideNavItemBaseProps {
@@ -21,20 +31,13 @@ export interface SideNavItemBaseProps {
   [key: string]: any;
 }
 export const SideNavItemBase = React.forwardRef(
-  ({ active, ...rest }: SideNavItemBaseProps, ref: React.Ref<HTMLElement>) => {
+  ({ active, ...rest }: SideNavItemBaseProps, ref: React.Ref<HTMLButtonElement>) => {
     return <StyledButtonBase active={active} {...rest} ref={ref} />;
   },
 );
 
-const StyledSideNavItem = styled(SideNavItemBase)<{ level?: number }>(({ theme, level }) => ({
-  "&:hover": {
-    backgroundColor: hoverSurface(theme),
-  },
-  padding: "4px",
-  paddingLeft: `${24 + (level ?? 0) * 14}px`,
-  height: "28px",
-  display: "flex",
-  alignItems: "center",
+const StyledSideNavItem = styled(SideNavItemBase)<{ level?: number }>(({ level }) => ({
+  padding: `0 6px 0 ${24 + (level ?? 0) * 10}px`,
 }));
 
 export interface SideNavItemProps extends SideNavItemBaseProps {
@@ -45,7 +48,7 @@ export interface SideNavItemProps extends SideNavItemBaseProps {
 }
 
 const SideNavItem = React.forwardRef(
-  ({ icon, label, level, sx, ...rest }: SideNavItemProps, ref: React.Ref<HTMLElement>) => {
+  ({ icon, label, level, sx, ...rest }: SideNavItemProps, ref: React.Ref<HTMLButtonElement>) => {
     return (
       <StyledSideNavItem
         level={level}
@@ -57,10 +60,12 @@ const SideNavItem = React.forwardRef(
       >
         <Box
           sx={{
-            width: 18,
-            mr: "10px",
+            width: 16,
+            flexShrink: 0,
+            mr: 1,
             display: "flex",
             alignItems: "center",
+            color: "text.secondary",
           }}
         >
           {icon}

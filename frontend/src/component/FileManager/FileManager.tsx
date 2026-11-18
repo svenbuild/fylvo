@@ -85,6 +85,8 @@ export const FileManager = ({ index = 0, initialPath, skipRender }: FileManagerP
         direction={"column"}
         sx={{
           flexGrow: 1,
+          minWidth: 0,
+          minHeight: 0,
           mb: index == FileManagerIndex.main && !isMobile ? 1 : 0,
           overflow: "auto",
           "&:focus": {
@@ -92,10 +94,10 @@ export const FileManager = ({ index = 0, initialPath, skipRender }: FileManagerP
           },
         }}
         tabIndex={0}
-        spacing={1}
+        spacing={0}
       >
         <NavHeader />
-        <Box sx={{ display: "flex", flexGrow: 1, overflowY: "auto" }}>
+        <Box sx={{ display: "flex", flexGrow: 1, minHeight: 0, pt: { xs: 0, sm: 1 }, overflowY: "auto" }}>
           <Explorer />
           {index == FileManagerIndex.main && (isTablet ? <SidebarDialog /> : <Sidebar />)}
           {index == FileManagerIndex.main && <ReadMe />}

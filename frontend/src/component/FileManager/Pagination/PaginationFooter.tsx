@@ -2,6 +2,7 @@ import { Box, Pagination, Slide, styled, useMediaQuery, useTheme } from "@mui/ma
 import { forwardRef, useContext } from "react";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { changePage } from "../../../redux/thunks/filemanager.ts";
+import { selectedSurface } from "../../../fylvoTheme.ts";
 import { RadiusFrame } from "../../Frame/RadiusFrame.tsx";
 import { MinPageSize } from "../TopBar/ViewOptionPopover.tsx";
 import PaginationItem from "./PaginationItem.tsx";
@@ -57,12 +58,20 @@ const PaginationFooter = forwardRef((_props, ref) => {
 
   return (
     <Slide direction={"up"} unmountOnExit in={paginationState.usePagination}>
-      <Box ref={ref} sx={{ display: "flex", px: isMobile ? 1 : 0, pb: isMobile ? 1 : 0 }}>
+      <Box ref={ref} sx={{ display: "flex", px: isMobile ? 1.5 : 0, py: 1 }}>
         <PaginationFrame withBorder>
           <Pagination
             renderItem={(item) => <PaginationItem {...item} />}
             shape="rounded"
-            color="primary"
+            sx={{
+              "& .MuiPaginationItem-root": {
+                minWidth: 28,
+                height: 28,
+                "@media (max-width: 599.95px), (pointer: coarse)": { minWidth: 40, height: 40 },
+                "&.Mui-selected, &.Mui-selected:hover": { bgcolor: selectedSurface },
+                "&.Mui-focusVisible": { outline: "1px solid", outlineColor: "primary.main" },
+              },
+            }}
             count={paginationState.totalPages}
             page={paginationState.currentPage}
             onChange={onPageChange}

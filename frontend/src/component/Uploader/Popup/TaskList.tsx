@@ -2,7 +2,6 @@ import React, { useMemo, useState } from "react";
 import {
   Accordion,
   AccordionDetails,
-  alpha,
   AppBar,
   Box,
   Dialog,
@@ -16,7 +15,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { lighten, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import UploadTask from "./UploadTask.tsx";
 import MoreActions from "./MoreActions.js";
@@ -44,6 +43,16 @@ const StyledDialog = styled(Dialog)(({ fullScreen, theme }) => ({
   },
   "& .MuiDialog-paper": {
     border: `1px solid ${theme.palette.divider}`,
+    boxShadow: "none",
+    borderRadius: 10,
+    margin: 12,
+    width: fullScreen ? "calc(100% - 24px)" : 360,
+    height: "auto",
+    maxHeight: "calc(100dvh - 24px)",
+    "& .MuiButtonBase-root.Mui-focusVisible": {
+      outline: `1px solid ${theme.palette.primary.main}`,
+      outlineOffset: -1,
+    },
   },
   ...(fullScreen
     ? {
@@ -54,15 +63,12 @@ const StyledDialog = styled(Dialog)(({ fullScreen, theme }) => ({
     : { top: "auto!important", left: "auto!important" }),
 }));
 
-const StyledDialogContent = styled(DialogContent)(({ theme }) => ({
-  [theme.breakpoints.up("md")]: {
-    width: 500,
-    minHeight: 300,
-    maxHeight: "calc(100vh - 140px)",
+const StyledDialogContent = styled(DialogContent)({
+  padding: "0 !important",
+  "& [data-virtuoso-scroller]:has(.MuiAccordion-root.Mui-expanded)": {
+    minHeight: "min(220px, calc(100dvh - 68px))",
   },
-  padding: 0,
-  paddingTop: "0!important",
-}));
+});
 
 const CaretDownIcon = styled(ExpandMoreRounded)<{ expanded: boolean }>(({ theme, expanded }) => ({
   transform: `rotate(${expanded ? 0 : 180}deg)`,
@@ -110,6 +116,7 @@ export default function TaskList({
   const { t } = useTranslation("application", { keyPrefix: "uploader" });
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down("md"));
+  const isTouch = useMediaQuery("(pointer: coarse)");
   const path = useAppSelector((state) => state.fileManager[0].pure_path);
   const [expanded, setExpanded] = useState(true);
   const [useAvgSpeed, setUseAvgSpeed] = useState<boolean>(SessionManager.getWithFallback(UserSettings.UseAvgSpeed));
@@ -155,17 +162,14 @@ export default function TaskList({
           <div>
             <Box
               sx={{
-                backgroundColor:
-                  theme.palette.mode === "light"
-                    ? lighten(theme.palette.primary.main, 0.8)
-                    : alpha(theme.palette.primary.main, 0.18),
+                backgroundColor: "primary.main",
                 width: (progress.processedSize / progress.totalSize) * 100 + "%",
                 transition: "width .4s linear",
                 zIndex: -1,
-                height: "100%",
+                height: 2,
                 position: "absolute",
                 left: 0,
-                top: 0,
+                bottom: 0,
               }}
             />
           </div>
@@ -177,20 +181,14 @@ export default function TaskList({
   const list = useMemo(() => {
     const currentList = taskList.filter(filters[filter]).sort(sorters[sorter]);
     if (currentList.length === 0) {
-      return <Nothing size={0.5} top={63} primary={t("taskListEmpty")} />;
+      return <Nothing size={0.75} top={0} primary={t("taskListEmpty")} />;
     }
 
     return (
       <Virtuoso
         style={{
-          height: (fullScreen ? 500 : 66) * currentList.length,
-          maxHeight: "calc(100vh - 56px)",
-          ...(theme.breakpoints.up("md")
-            ? {
-                minHeight: 300,
-                maxHeight: "calc(100vh - 140px)",
-              }
-            : {}),
+          height: (fullScreen || isTouch ? 44 : 33) * currentList.length,
+          maxHeight: "min(400px, calc(100dvh - 68px))",
         }}
         increaseViewportBy={180}
         data={currentList}
@@ -207,7 +205,7 @@ export default function TaskList({
         )}
       />
     );
-  }, [taskList, useAvgSpeed, fullScreen, filter, sorter, refreshList]);
+  }, [taskList, useAvgSpeed, fullScreen, isTouch, filter, sorter, refreshList]);
 
   const retryFailed = () => {
     taskList.forEach((task) => {
@@ -252,13 +250,7 @@ export default function TaskList({
         //disable elevation
       >
         <Accordion
-          sx={
-            fullScreen
-              ? {
-                  boxShadow: "none",
-                }
-              : undefined
-          }
+          sx={{ border: 0, bgcolor: "transparent", "&::before": { display: "none" } }}
           expanded={expanded || fullScreen}
           onChange={handlePanelChange}
         >
@@ -266,20 +258,31 @@ export default function TaskList({
             color={"default"}
             onClick={() => setExpanded(!expanded)}
             sx={{
-              boxShadow: "none",
+              bgcolor: "background.paper",
+              borderBottom: expanded ? 1 : 0,
+              borderColor: "divider",
               position: "relative",
               cursor: "pointer",
             }}
           >
             {progressBar}
-            <Toolbar disableGutters sx={{ px: 1, minHeight: "52px!important" }}>
+            <Toolbar
+              disableGutters
+              sx={{
+                px: 1,
+                "&&": { minHeight: 40 },
+                "@media (max-width: 599.95px), (pointer: coarse)": {
+                  "& .MuiIconButton-root": { minWidth: 40, minHeight: 40 },
+                },
+              }}
+            >
               <Tooltip title={t("hideTaskList")}>
                 <IconButton color="inherit" onClick={stopPop(() => close(null, ""))} aria-label="Close">
                   <Dismiss fontSize={"small"} />
                 </IconButton>
               </Tooltip>
               <Typography
-                variant="subtitle1"
+                variant="subtitle2"
                 color="inherit"
                 sx={{
                   flex: "1",
@@ -289,7 +292,7 @@ export default function TaskList({
               >
                 {t("uploadTasks")}
               </Typography>
-              <Box sx={{ display: "flex", gap: 1 }}>
+              <Box sx={{ display: "flex", gap: 0.5 }}>
                 <Tooltip title={t("moreActions")}>
                   <IconButton color="inherit" onClick={stopPop(handleActionClick)}>
                     <MoreHorizontal fontSize={"small"} />

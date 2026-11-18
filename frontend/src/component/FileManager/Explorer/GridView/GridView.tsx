@@ -1,4 +1,4 @@
-import { Box, Grid, Stack, styled, Typography } from "@mui/material";
+import { Box, Stack, styled, Typography } from "@mui/material";
 import React, { useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { FileResponse, FileType } from "../../../../api/explorer.ts";
@@ -23,20 +23,15 @@ interface listComponents {
   Files: JSX.Element[];
 }
 
-const AutoFillGrid = styled(Grid)(({ theme }) => ({
+const AutoFillGrid = styled(Box)(({ theme }) => ({
   [theme.breakpoints.down("md")]: {
-    gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))!important",
+    gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 144px), 1fr))",
   },
   [theme.breakpoints.up("md")]: {
-    gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))!important",
+    gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))",
   },
-  gridGap: theme.spacing(2),
-  display: "grid!important",
-  padding: theme.spacing(1),
-}));
-
-const GridItem = styled(Grid)(() => ({
-  flex: "1 1 220px!important",
+  gap: 8,
+  display: "grid",
 }));
 
 export const loadingPlaceHolderNumb = 3;
@@ -60,7 +55,7 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
             list.Folders = [];
           }
           list.Folders.push(
-            <GridItem item key={`${file.id}`}>
+            <Box key={file.id} sx={{ minWidth: 0 }}>
               <DndWrappedFile
                 component={GridFile}
                 search={search_params}
@@ -68,11 +63,11 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
                 showThumb={mixedType}
                 file={file}
               />
-            </GridItem>,
+            </Box>,
           );
         } else {
           list.Files.push(
-            <GridItem item key={`${file.id}`}>
+            <Box key={file.id} sx={{ minWidth: 0 }}>
               <DndWrappedFile
                 component={GridFile}
                 search={search_params}
@@ -80,7 +75,7 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
                 showThumb={showThumb}
                 file={file}
               />
-            </GridItem>,
+            </Box>,
           );
         }
       });
@@ -90,7 +85,7 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
         for (let i = 0; i < loadingPlaceHolderNumb; i++) {
           const id = `loadingPlaceholder-${pagination.next_token}-${i}`;
           const loadingPlaceholder = (
-            <GridItem item key={id}>
+            <Box key={id} sx={{ minWidth: 0 }}>
               <DndWrappedFile
                 component={GridFile}
                 showThumb={list.Files.length > 0 ? showThumb : mixedType}
@@ -102,7 +97,7 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
                   placeholder: true,
                 }}
               />
-            </GridItem>
+            </Box>
           );
           const _ =
             list.Files.length > 0 ? list.Files.push(loadingPlaceholder) : list.Folders?.push(loadingPlaceholder);
@@ -116,16 +111,16 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
       ref={ref}
       {...rest}
       sx={{
-        p: 1,
+        p: { xs: 1.5, sm: 2 },
       }}
     >
-      <Stack spacing={1}>
+      <Stack spacing={2}>
         {list.Folders && list.Folders.length > 0 && (
           <Box>
-            <Typography fontWeight={"medium"} sx={{ p: 1 }} variant="body2">
+            <Typography component="h2" variant="caption" color="text.secondary" fontWeight={600} sx={{ mb: 1 }}>
               {t("fileManager.folders")}
             </Typography>
-            <AutoFillGrid container alignItems="flex-start" spacing={0}>
+            <AutoFillGrid>
               {list.Folders.map((f) => f)}
             </AutoFillGrid>
           </Box>
@@ -133,11 +128,11 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
         {list.Files.length > 0 && (
           <Box>
             {!mixedType && (
-              <Typography sx={{ p: 1 }} fontWeight={"medium"} variant="body2">
+              <Typography component="h2" variant="caption" color="text.secondary" fontWeight={600} sx={{ mb: 1 }}>
                 {t("fileManager.files")}
               </Typography>
             )}
-            <AutoFillGrid container alignItems="flex-start" spacing={0}>
+            <AutoFillGrid>
               {list.Files.map((f) => f)}
             </AutoFillGrid>
           </Box>

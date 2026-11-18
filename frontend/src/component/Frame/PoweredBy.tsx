@@ -10,7 +10,6 @@ const PoweredBy = ({ ...rest }: PoweredByProps) => {
     <Box {...rest}>
       <Box
         component="a"
-        marginBottom={2}
         href="/"
         sx={{
           width: "100%",
@@ -20,7 +19,7 @@ const PoweredBy = ({ ...rest }: PoweredByProps) => {
           textDecoration: "none",
           "& img": {
             filter: "grayscale(100%)",
-            opacity: 0.3,
+            opacity: 0.55,
           },
           "&:hover": {
             "& img": {
@@ -31,11 +30,8 @@ const PoweredBy = ({ ...rest }: PoweredByProps) => {
         }}
       >
         <Typography
-          variant="body2"
-          sx={{
-            color: (theme) => theme.palette.action.disabled,
-          }}
-          fontWeight={500}
+          variant="caption"
+          color="text.secondary"
         >
           Powered by
         </Typography>
@@ -43,7 +39,7 @@ const PoweredBy = ({ ...rest }: PoweredByProps) => {
           component="img"
           alt="Fylvo"
           sx={{
-            height: 20,
+            height: 14,
           }}
           src={theme.palette.mode === "dark" ? LogoIconDark : LogoIcon}
         />

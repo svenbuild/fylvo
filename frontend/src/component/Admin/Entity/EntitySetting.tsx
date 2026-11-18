@@ -27,7 +27,7 @@ import { useAppDispatch } from "../../../redux/hooks";
 import { NoWrapTableCell, SecondaryButton, StyledTableContainerPaper } from "../../Common/StyledComponents";
 import ArrowSync from "../../Icons/ArrowSync";
 import Filter from "../../Icons/Filter";
-import PageContainer from "../../Pages/PageContainer";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader from "../../Pages/PageHeader";
 import TablePagination from "../Common/TablePagination";
 import { OrderByQuery, OrderDirectionQuery, PageQuery, PageSizeQuery } from "../StoragePolicy/StoragePolicySetting";
@@ -182,7 +182,7 @@ const EntitySetting = () => {
   };
 
   return (
-    <PageContainer>
+    <AdminPage>
       <EntityDialog open={entityDialogOpen} onClose={() => setEntityDialogOpen(false)} entityID={entityDialogID} />
       <UserDialog open={userDialogOpen} onClose={() => setUserDialogOpen(false)} userID={userDialogID} />
       <EntityDeleteDialog
@@ -218,7 +218,7 @@ const EntitySetting = () => {
           {selected.length > 0 && !isMobile && (
             <>
               <Divider orientation="vertical" flexItem />
-              <Button startIcon={<Delete />} variant="contained" color="error" onClick={handleDelete}>
+              <Button startIcon={<Delete />} variant="outlined" color="error" onClick={handleDelete}>
                 {t("entity.deleteXEntities", { num: selected.length })}
               </Button>
             </>
@@ -226,7 +226,7 @@ const EntitySetting = () => {
         </Stack>
         {isMobile && selected.length > 0 && (
           <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-            <Button startIcon={<Delete />} variant="contained" color="error" onClick={handleDelete}>
+            <Button startIcon={<Delete />} variant="outlined" color="error" onClick={handleDelete}>
               {t("entity.deleteXEntities", { num: selected.length })}
             </Button>
           </Stack>
@@ -321,7 +321,7 @@ const EntitySetting = () => {
           </Box>
         )}
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

@@ -14,12 +14,14 @@ export const CascadingContext = createContext<{
 export const SquareHoverMenu = styled(HoverMenu)(() => ({
   "& .MuiPaper-root": {
     minWidth: "200px",
+    boxShadow: "none",
   },
 }));
 
 export const SquareMenu = styled(Menu)(() => ({
   "& .MuiPaper-root": {
     minWidth: "200px",
+    boxShadow: "none",
   },
 }));
 

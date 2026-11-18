@@ -1,6 +1,7 @@
-import { Box, Button, ListItemText, Popover, PopoverProps, Stack } from "@mui/material";
+import { Box, Button, ListItemText, PopoverProps, Stack } from "@mui/material";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AdminFilterPopover } from "../Common/AdminPage.tsx";
 import { TaskStatus, TaskType } from "../../../api/workflow";
 import { DenseFilledTextField, DenseSelect } from "../../Common/StyledComponents";
 import { SquareMenuItem } from "../../FileManager/ContextMenu/ContextMenu";
@@ -71,7 +72,7 @@ const TaskFilterPopover = ({
   };
 
   return (
-    <Popover
+    <AdminFilterPopover
       anchorOrigin={{
         vertical: "bottom",
         horizontal: "left",
@@ -79,15 +80,6 @@ const TaskFilterPopover = ({
       transformOrigin={{
         vertical: "top",
         horizontal: "left",
-      }}
-      slotProps={{
-        paper: {
-          sx: {
-            p: 2,
-            width: 300,
-            maxWidth: "100%",
-          },
-        },
       }}
       onClose={onClose}
       open={open}
@@ -206,7 +198,7 @@ const TaskFilterPopover = ({
           </Button>
         </Box>
       </Stack>
-    </Popover>
+    </AdminFilterPopover>
   );
 };
 

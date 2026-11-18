@@ -1,7 +1,7 @@
 import { Box, Drawer, Popover, PopoverProps, Stack, useMediaQuery, useTheme } from "@mui/material";
 import { shellSurface } from "../../../fylvoTheme.ts";
 import { useContext, useRef } from "react";
-import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
+import { useAppSelector } from "../../../redux/hooks.ts";
 import SessionManager from "../../../session";
 import TreeNavigation from "../../FileManager/TreeView/TreeNavigation.tsx";
 import { PageVariant, PageVariantContext } from "../NavBarFrame.tsx";
@@ -22,13 +22,12 @@ const DrawerContent = () => {
       <DrawerHeader />
       <Stack
         direction={"column"}
-        spacing={2}
         ref={scrollRef}
         sx={{
-          px: 1,
-          pb: 1,
+          p: "0 8px 8px",
+          gap: "8px",
           flexGrow: 1,
-          mx: 1,
+          minHeight: 0,
           overflow: "auto",
         }}
       >
@@ -51,12 +50,16 @@ const DrawerContent = () => {
 };
 
 export const DrawerPopover = (props: PopoverProps) => {
-  const dispatch = useAppDispatch();
-  const open = useAppSelector((state) => state.globalState.drawerOpen);
-  const drawerWidth = useAppSelector((state) => state.globalState.drawerWidth);
   return (
-    <Popover {...props}>
-      <Box sx={{ width: "70vw" }}>
+    <Popover anchorOrigin={{ vertical: "bottom", horizontal: "left" }} {...props}>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          width: "min(300px, calc(100vw - 32px))",
+          maxHeight: "calc(100dvh - 68px)",
+        }}
+      >
         <DrawerContent />
       </Box>
     </Popover>

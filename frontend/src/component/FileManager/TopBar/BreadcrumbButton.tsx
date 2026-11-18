@@ -28,17 +28,23 @@ import PeopleTeam from "../../Icons/PeopleTeam.tsx";
 import PeopleTeamOutlined from "../../Icons/PeopleTeamOutlined.tsx";
 import Video from "../../Icons/Video.tsx";
 import VideoOutlined from "../../Icons/VideoOutlined.tsx";
+import { hoverSurface, selectedSurface } from "../../../fylvoTheme.ts";
 import { useFileDrag } from "../Dnd/DndWrappedFile.tsx";
 import { FileManagerIndex } from "../FileManager.tsx";
 import { FmIndexContext } from "../FmIndexContext.tsx";
 import ShareInfoPopover from "./ShareInfoPopover.tsx";
 
-export const BreadcrumbButtonBase = styled(Button)<{ isDropOver?: boolean }>(({ theme, isDropOver }) => ({
+export const BreadcrumbButtonBase = styled(Button, {
+  shouldForwardProp: (prop) => prop !== "isDropOver",
+})<{ isDropOver?: boolean }>(({ theme, isDropOver }) => ({
   color: theme.palette.text.secondary,
-  transition: "all 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms !important",
-  transitionProperty: "background-color,opacity,box-shadow",
-  boxShadow: isDropOver ? `inset 0 0 0 2px ${theme.palette.primary.light}` : "none",
-  minHeight: theme.spacing(4),
+  backgroundColor: isDropOver ? selectedSurface(theme) : undefined,
+  minHeight: 28,
+  padding: "3px 6px",
+  "&:hover": { backgroundColor: hoverSurface(theme) },
+  "&.Mui-focusVisible": { outline: `1px solid ${theme.palette.primary.main}`, outlineOffset: -1 },
+  ...(isDropOver && { outline: `1px solid ${theme.palette.primary.main}`, outlineOffset: -1 }),
+  "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
 }));
 
 export interface BreadcrumbButtonProps {

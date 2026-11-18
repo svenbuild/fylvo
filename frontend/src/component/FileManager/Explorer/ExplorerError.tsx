@@ -25,8 +25,8 @@ const RetryPassword = () => {
 
   return (
     <Box sx={{ textAlign: "center" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-      <LockClosed sx={{ fontSize: 80 }} color={"action"} />
-      <Box sx={{ mt: 1 }}>
+      <LockClosed sx={{ fontSize: 24 }} color={"action"} />
+      <Box sx={{ mt: 1, display: "flex", alignItems: "stretch", justifyContent: "center", gap: 1 }}>
         <FilledTextField
           variant={"filled"}
           autoFocus
@@ -38,7 +38,7 @@ const RetryPassword = () => {
           disabled={password == ""}
           onClick={() => dispatch(retrySharePassword(fmIndex, password))}
           variant={"contained"}
-          sx={{ ml: 1, height: "56px" }}
+          sx={{ minWidth: 44, px: 1 }}
         >
           <ArrowLeft
             sx={{
@@ -79,9 +79,9 @@ const ExplorerError = memo(
         case Code.AnonymouseAccessDenied:
           return (
             <Box sx={{ textAlign: "center" }}>
-              <LockClosed sx={{ fontSize: 60 }} color={"action"} />
+              <LockClosed sx={{ fontSize: 24 }} color={"action"} />
               <Typography color={"text.secondary"}>{t("application:fileManager.anonymousAccessDenied")}</Typography>
-              <SecondaryButton variant={"contained"} color={"inherit"} onClick={signIn} sx={{ mt: 4 }}>
+              <SecondaryButton variant={"contained"} color={"inherit"} onClick={signIn} sx={{ mt: 1.5 }}>
                 {t("application:login.signIn")}
               </SecondaryButton>
             </Box>
@@ -93,18 +93,18 @@ const ExplorerError = memo(
           if (fs == Filesystem.share) {
             return (
               <Box sx={{ textAlign: "center" }}>
-                <LinkDismiss sx={{ fontSize: 60 }} color={"action"} />
+                <LinkDismiss sx={{ fontSize: 24 }} color={"action"} />
                 <Typography color={"text.secondary"}>{t("application:share.shareNotExist")}</Typography>
               </Box>
             );
           }
         default:
           return (
-            <Alert severity="warning">
-              <AlertTitle> {t("application:fileManager.listError")}</AlertTitle>
+            <Alert severity="warning" variant="outlined" sx={{ maxWidth: 420 }}>
+              <AlertTitle sx={{ fontSize: 13, fontWeight: 600 }}> {t("application:fileManager.listError")}</AlertTitle>
               {appErr && appErr.message}
               {error?.correlation_id && (
-                <Box sx={{ typography: "caption", mt: 2, opacity: 0.5 }}>
+                <Box sx={{ typography: "caption", mt: 1, color: "text.secondary" }}>
                   <code>{t("common:requestID", { id: error.correlation_id })}</code>
                 </Box>
               )}

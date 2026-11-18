@@ -23,6 +23,10 @@ const ResponsiveTabs = <T,>({ tabs, value, onChange }: ResponsiveTabsProps<T>) =
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [hideTabs, setHideTabs] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
+  // Width all tabs need side by side, measured while all of them are shown.
+  const neededWidth = useRef(0);
+  const allShown = useRef(true);
+  allShown.current = !isMobile && !hideTabs;
   const { t } = useTranslation();
   const moreOptionState = usePopupState({
     variant: "popover",
@@ -30,21 +34,52 @@ const ResponsiveTabs = <T,>({ tabs, value, onChange }: ResponsiveTabsProps<T>) =
   });
   const { onClose, ...menuProps } = bindMenu(moreOptionState);
   useLayoutEffect(() => {
-    const checkOverflow = () => {
-      if (tabsRef.current?.children[0]?.children[0]) {
-        setHideTabs((e) =>
-          e
-            ? true
-            : (tabsRef.current?.children[0]?.children[0]?.scrollWidth ?? 0) >
-              (tabsRef.current?.children[0]?.children[0]?.clientWidth ?? 0),
-        );
+    // On phones the tabs are always folded into the menu, nothing to measure.
+    if (isMobile) {
+      return;
+    }
+
+    const list = () => tabsRef.current?.children[0]?.children[0] as HTMLElement | undefined;
+    const fit = () => {
+      const el = list();
+      if (el) {
+        setHideTabs(neededWidth.current > el.clientWidth);
       }
     };
+    const measure = () => {
+      const last = list()?.lastElementChild as HTMLElement | null | undefined;
+      if (last) {
+        neededWidth.current = last.offsetLeft + last.offsetWidth;
+      }
+      fit();
+    };
 
-    checkOverflow();
-    window.addEventListener("resize", checkOverflow);
-    return () => window.removeEventListener("resize", checkOverflow);
-  }, []);
+    // Measuring needs all tabs on screen: show them, then measure on the next frame.
+    let frame = 0;
+    let active = true;
+    const remeasure = () => {
+      if (!active) {
+        return;
+      }
+      setHideTabs(false);
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+
+    if (allShown.current) {
+      measure();
+    } else {
+      remeasure();
+    }
+    // Tab widths change once the web font has replaced the fallback font.
+    document.fonts?.ready.then(remeasure);
+    window.addEventListener("resize", fit);
+    return () => {
+      active = false;
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", fit);
+    };
+  }, [isMobile, tabs.length]);
 
   return (
     <Box

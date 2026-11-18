@@ -7,8 +7,10 @@ import { sizeToString } from "../../../util";
 import { RadiusFrame } from "../RadiusFrame.tsx";
 
 const StyledBox = styled(RadiusFrame)(({ theme }) => ({
-  padding: theme.spacing(1, 2, 1, 2),
-  margin: theme.spacing(0, 2, 0, 2),
+  padding: "6px 8px",
+  backgroundColor: theme.palette.grey[theme.palette.mode === "light" ? 50 : 900],
+  flexShrink: 0,
+  "& .MuiTypography-caption": { lineHeight: 1.35 },
 }));
 
 const StorageHeaderContainer = styled("div")(() => ({
@@ -18,16 +20,15 @@ const StorageHeaderContainer = styled("div")(() => ({
 }));
 
 const BorderLinearProgress = styled(LinearProgress)<{ warning: boolean }>(({ theme, warning }) => ({
-  height: 8,
-  borderRadius: 5,
+  height: 4,
   [`&.${linearProgressClasses.colorPrimary}`]: {
     backgroundColor: theme.palette.grey[theme.palette.mode === "light" ? 200 : 800],
   },
   [`& .${linearProgressClasses.bar}`]: {
-    borderRadius: 5,
+    borderRadius: 4,
     backgroundColor: warning ? theme.palette.warning.main : theme.palette.primary.main,
   },
-  marginTop: theme.spacing(1),
+  marginBlock: "4px",
 }));
 
 const StorageSummary = memo(() => {
@@ -43,7 +44,9 @@ const StorageSummary = memo(() => {
   return (
     <StyledBox withBorder>
       <StorageHeaderContainer>
-        <Typography variant={"subtitle2"}>{t("application:navbar.storage")}</Typography>
+        <Typography variant="caption" color="text.secondary" fontWeight={600}>
+          {t("application:navbar.storage")}
+        </Typography>
       </StorageHeaderContainer>
       {capacity && (
         <BorderLinearProgress
@@ -52,8 +55,8 @@ const StorageSummary = memo(() => {
           value={Math.min(100, (capacity.used / capacity.total) * 100)}
         />
       )}
-      {!capacity && <Skeleton sx={{ mt: 1, height: 8 }} variant="rounded" />}
-      <Typography variant={"caption"} color={"text.secondary"}>
+      {!capacity && <Skeleton sx={{ my: "4px", height: 4 }} variant="rounded" />}
+      <Typography variant="caption" color="text.secondary" component="div" sx={{ fontVariantNumeric: "tabular-nums" }}>
         {capacity ? (
           `${sizeToString(capacity.used)} / ${sizeToString(capacity.total)}`
         ) : (

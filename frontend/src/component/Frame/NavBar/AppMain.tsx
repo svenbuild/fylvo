@@ -57,7 +57,7 @@ const AppMain = () => {
           duration: theme.transitions.duration.leavingScreen,
         }),
         marginRight: isMobile ? 0 : 2,
-        marginLeft: isMobile ? 0 : `-${drawerWidth - 16}px`,
+        marginLeft: isMobile ? 0 : `-${drawerWidth - 12}px`,
         ...(open && {
           transition: theme.transitions.create("margin", {
             easing: theme.transitions.easing.easeOut,

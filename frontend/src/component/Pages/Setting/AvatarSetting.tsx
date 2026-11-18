@@ -4,7 +4,7 @@ import SettingForm from "./SettingForm.tsx";
 import { useTranslation } from "react-i18next";
 import Edit from "../../Icons/Edit.tsx";
 import { SecondaryButton } from "../../Common/StyledComponents.tsx";
-import { ListItemIcon, ListItemText, Menu } from "@mui/material";
+import { Box, ListItemIcon, ListItemText, Menu } from "@mui/material";
 import { SquareMenuItem } from "../../FileManager/ContextMenu/ContextMenu.tsx";
 import React, { useState } from "react";
 import { bindMenu, bindTrigger, usePopupState } from "material-ui-popup-state/hooks";
@@ -67,17 +67,18 @@ const AvatarSetting = ({ user }: AvatarSettingProps) => {
   };
 
   return (
-    <SettingForm title={t("setting.avatar")} lgWidth={6}>
-      <UserAvatar
-        square
-        cacheKey={avatarGeneration.toString()}
-        user={user}
-        sx={{ width: 200, height: 200 }}
-        overwriteTextSize
-      />
-      <SecondaryButton sx={{ mt: 1 }} variant={"contained"} startIcon={<Edit />} {...bindTrigger(popupState)}>
-        {t("fileManager.edit")}
-      </SecondaryButton>
+    <SettingForm title={t("setting.avatar")} lgWidth={12}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+        <UserAvatar
+          square
+          cacheKey={avatarGeneration.toString()}
+          user={user}
+          sx={{ width: 44, height: 44, fontSize: 16, borderRadius: 1 }}
+        />
+        <SecondaryButton variant="outlined" startIcon={<Edit />} {...bindTrigger(popupState)}>
+          {t("fileManager.edit")}
+        </SecondaryButton>
+      </Box>
       <AvatarCropperDialog
         onAvatarUpdated={onAvatarUpdated}
         file={avtarFile}

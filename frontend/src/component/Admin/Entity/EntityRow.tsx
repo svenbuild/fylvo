@@ -84,7 +84,7 @@ const EntityRow = ({
 
   if (loading) {
     return (
-      <TableRow sx={{ height: "43px" }}>
+      <TableRow>
         <NoWrapTableCell>
           <Skeleton variant="circular" width={24} height={24} />
         </NoWrapTableCell>

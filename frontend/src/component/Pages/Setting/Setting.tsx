@@ -1,5 +1,6 @@
 import { PersonOutline } from "@mui/icons-material";
-import { Box, Container } from "@mui/material";
+import { Box, Container, Paper } from "@mui/material";
+import { selectedSurface } from "../../../fylvoTheme.ts";
 import { useQueryState } from "nuqs";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -68,7 +69,7 @@ const Setting = () => {
   }, [t]);
 
   return (
-    <PageContainer>
+    <PageContainer compact contentWidth={780}>
       <Container maxWidth="lg">
         <PageHeader title={t("application:navbar.setting")} />
         <ResponsiveTabs
@@ -86,7 +87,7 @@ const Setting = () => {
               {loading && (
                 <Box
                   sx={{
-                    pt: 20,
+                    pt: 6,
                     height: "100%",
                     display: "flex",
                     justifyContent: "center",
@@ -97,9 +98,24 @@ const Setting = () => {
                 </Box>
               )}
               {!loading && setting && (
-                <Box
+                <Paper
+                  variant="outlined"
                   sx={{
-                    mt: 3,
+                    mt: 2,
+                    p: "14px",
+                    bgcolor: "background.paper",
+                    "& [data-setting-label]": { fontSize: 12, color: "text.secondary" },
+                    "& .MuiToggleButton-root": {
+                      textTransform: "none",
+                      minHeight: 30,
+                      "&.Mui-selected, &.Mui-selected:hover": {
+                        color: "text.primary",
+                        bgcolor: selectedSurface,
+                      },
+                    },
+                    "@media (max-width: 599.95px), (pointer: coarse)": {
+                      "& .MuiToggleButton-root, & .MuiFormControlLabel-root": { minHeight: 40 },
+                    },
                   }}
                 >
                   {(!tab || tab == SettingPageTab.Profile) && (
@@ -107,7 +123,7 @@ const Setting = () => {
                   )}
                   {tab == SettingPageTab.Preference && <PreferenceSetting setting={setting} setSetting={setSetting} />}
                   {tab == SettingPageTab.Security && <SecuritySetting setting={setting} setSetting={setSetting} />}
-                </Box>
+                </Paper>
               )}
             </Box>
           </CSSTransition>

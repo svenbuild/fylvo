@@ -199,7 +199,8 @@ const VersionControl = () => {
           open: open ?? false,
           onClose: onClose,
           fullWidth: true,
-          maxWidth: "sm",
+          maxWidth: "md",
+          PaperProps: { sx: { maxWidth: 680 } },
         }}
       >
         <DialogContent>
@@ -210,7 +211,7 @@ const VersionControl = () => {
               </Alert>
             )}
             <TableContainer component={StyledTableContainerPaper}>
-              <Table sx={{ width: "100%" }} size="small">
+              <Table sx={{ width: "100%", "& .MuiTableCell-root": { px: "8px" } }} size="small">
                 <TableHead>
                   <TableRow>
                     <NoWrapTableCell>{t("fileManager.actions")}</NoWrapTableCell>

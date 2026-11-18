@@ -73,7 +73,7 @@ const TaskRow = ({
 
   if (loading) {
     return (
-      <TableRow sx={{ height: "44px" }}>
+      <TableRow>
         <NoWrapTableCell>
           <Skeleton variant="circular" width={24} height={24} />
         </NoWrapTableCell>

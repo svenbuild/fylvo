@@ -22,11 +22,12 @@ export interface ProfileSettingProps {
 const ProfileDropButton = styled(DefaultButton)(({ theme }) => ({
   color: theme.palette.text.secondary,
   minWidth: 0,
-  minHeight: 0,
+  minHeight: 26,
   fontSize: theme.typography.body2.fontSize,
   fontWeight: theme.typography.body2.fontWeight,
-  borderRadius: "4px",
+  borderRadius: "6px",
   padding: "0px 4px",
+  textAlign: "left",
   position: "relative",
   left: "-4px",
 }));
@@ -88,18 +89,18 @@ const ProfileSetting = ({ setting, setSetting }: ProfileSettingProps) => {
   };
 
   return (
-    <Stack spacing={3}>
+    <Stack spacing={2}>
       <Grid2
         container
-        spacing={isMobile ? 3 : 4}
+        spacing={2}
         direction={isMobile ? "column" : "row-reverse"}
         sx={{ width: "100%" }}
       >
-        <Grid2 spacing={3} sx={{ flexGrow: 1, width: "100%" }} size={{ md: 6, xs: 12 }}>
+        <Grid2 size={{ md: 4, xs: 12 }}>
           {user && <AvatarSetting user={user?.user} />}
         </Grid2>
-        <Grid2 spacing={3} sx={{ flexGrow: 1, width: "100%" }} size={{ md: 6, xs: 12 }}>
-          <Stack spacing={3}>
+        <Grid2 sx={{ minWidth: 0 }} size={{ md: 8, xs: 12 }}>
+          <Stack spacing={2}>
             <SettingForm title={t("login.email")} noContainer lgWidth={12}>
               <DenseFilledTextField disabled fullWidth value={user?.user.email} />
             </SettingForm>
@@ -119,20 +120,20 @@ const ProfileSetting = ({ setting, setSetting }: ProfileSettingProps) => {
                 </LoadingButton>
               </Collapse>
             </SettingForm>
-            <Grid2 spacing={isMobile ? 3 : 4} container sx={{ width: "100%" }}>
-              <SettingForm title={t("setting.uid")} noContainer lgWidth={6}>
+            <Grid2 spacing={2} container sx={{ width: "100%" }}>
+              <SettingForm title={t("setting.uid")} noContainer lgWidth={6} xsWidth={6}>
                 <Typography variant={"body2"} color={"textSecondary"}>
                   {user?.user.id}
                 </Typography>
               </SettingForm>
-              <SettingForm title={t("setting.regTime")} noContainer lgWidth={6}>
+              <SettingForm title={t("setting.regTime")} noContainer lgWidth={6} xsWidth={6}>
                 <Typography variant={"body2"} color={"textSecondary"}>
                   <TimeBadge datetime={user?.user.created_at} variant={"inherit"} />
                 </Typography>
               </SettingForm>
             </Grid2>
 
-            <Grid2 spacing={isMobile ? 3 : 4} container sx={{ width: "100%" }}>
+            <Grid2 spacing={2} container sx={{ width: "100%" }}>
               <SettingForm title={t("setting.group")} noContainer lgWidth={6}>
                 <Typography variant={"body2"} color={"textSecondary"}>
                   {user?.user.group?.name}

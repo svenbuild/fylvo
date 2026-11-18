@@ -11,7 +11,7 @@ import { sizeToString } from "../../../util";
 import { NoWrapBox, SquareChip } from "../../Common/StyledComponents";
 import Delete from "../../Icons/Delete";
 import Info from "../../Icons/Info";
-import { BorderedCardClickableBaImg } from "../Common/AdminCard";
+import { BorderedCardClickable } from "../Common/AdminCard";
 import { PolicyPropsMap } from "./StoragePolicySetting";
 
 export interface StoragePolicyCardProps {
@@ -70,7 +70,7 @@ const StoragePolicyCard = ({ policy, onRefresh, loading }: StoragePolicyCardProp
           lg: 4,
         }}
       >
-        <BorderedCardClickableBaImg img="/static/img/local.png">
+        <BorderedCardClickable>
           <Box
             sx={{
               display: "flex",
@@ -99,7 +99,7 @@ const StoragePolicyCard = ({ policy, onRefresh, loading }: StoragePolicyCardProp
             <Skeleton variant="text" width="40%" height={20} />
             <Skeleton variant="circular" width={30} height={30} />
           </Box>
-        </BorderedCardClickableBaImg>
+        </BorderedCardClickable>
       </Grid>
     );
   }
@@ -112,9 +112,8 @@ const StoragePolicyCard = ({ policy, onRefresh, loading }: StoragePolicyCardProp
         lg: 4,
       }}
     >
-      <BorderedCardClickableBaImg
+      <BorderedCardClickable
         onClick={() => navigate(`/admin/policy/${policy?.id}`)}
-        img={policy ? PolicyPropsMap[policy.type].img : undefined}
       >
         <Box
           sx={{
@@ -138,7 +137,7 @@ const StoragePolicyCard = ({ policy, onRefresh, loading }: StoragePolicyCardProp
           ))}
           {!policy?.edges.groups && (
             <Box sx={{ display: "flex", alignItems: "center", minHeight: "25px" }} color={"text.secondary"}>
-              <Info sx={{ mr: 0.5, fontSize: 20 }} />
+              <Info sx={{ mr: 0.5, fontSize: 16 }} />
               <Typography variant="caption">{t("policy.noGroupBinded")}</Typography>
             </Box>
           )}
@@ -170,7 +169,7 @@ const StoragePolicyCard = ({ policy, onRefresh, loading }: StoragePolicyCardProp
             <Delete fontSize="small" />
           </IconButton>
         </Box>
-      </BorderedCardClickableBaImg>
+      </BorderedCardClickable>
     </Grid>
   );
 };

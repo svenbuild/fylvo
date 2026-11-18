@@ -7,6 +7,7 @@ import Sunny from "../../Icons/Sunny.tsx";
 import Moon from "../../Icons/Moon.tsx";
 import SunWithTime from "../../Icons/SunWithTime.tsx";
 import { setDarkMode } from "../../../redux/globalStateSlice.ts";
+import { hoverSurface, selectedSurface } from "../../../fylvoTheme.ts";
 import SessionManager, { UserSettings } from "../../../session";
 
 interface SwitchPopoverProps {
@@ -40,12 +41,35 @@ export const SwitchPopover = ({ open, anchorEl, onClose }: SwitchPopoverProps) =
 
   const inner = (
     <ToggleButtonGroup
-      color="primary"
+      color={onClose ? "standard" : "primary"}
       value={currentMode}
       exclusive
       onChange={handleChange}
       size={onClose ? undefined : "small"}
       aria-label="Platform"
+      sx={
+        onClose
+          ? (theme) => ({
+              p: "4px",
+              gap: "2px",
+              "& .MuiToggleButtonGroup-grouped": {
+                margin: 0,
+                minHeight: 30,
+                border: "1px solid transparent",
+                borderRadius: "6px",
+                textTransform: "none",
+                color: theme.palette.text.secondary,
+                "&:hover": { backgroundColor: hoverSurface(theme), color: theme.palette.text.primary },
+                "&.Mui-selected, &.Mui-selected:hover": {
+                  backgroundColor: selectedSurface(theme),
+                  color: theme.palette.text.primary,
+                },
+                "&.Mui-focusVisible": { borderColor: theme.palette.primary.main },
+                "@media (pointer: coarse)": { minHeight: 40 },
+              },
+            })
+          : undefined
+      }
     >
       <ToggleButton value="light">
         <Sunny fontSize="small" sx={{ mr: 1 }} />
@@ -69,8 +93,10 @@ export const SwitchPopover = ({ open, anchorEl, onClose }: SwitchPopoverProps) =
       onClose={onClose}
       anchorOrigin={{
         vertical: "bottom",
-        horizontal: "left",
+        horizontal: "right",
       }}
+      transformOrigin={{ vertical: "top", horizontal: "right" }}
+      slotProps={{ paper: { sx: { mt: "4px" } } }}
     >
       {inner}
     </Popover>
@@ -90,7 +116,7 @@ const DarkThemeSwitcher = () => {
   return (
     <>
       <Tooltip title={t("navbar.darkModeSwitch")}>
-        <IconButton onClick={handleClick} size="large">
+        <IconButton onClick={handleClick}>
           <DarkTheme />
         </IconButton>
       </Tooltip>

@@ -7,7 +7,6 @@ import {
   MenuList,
   Popover,
   PopoverProps,
-  styled,
   Typography,
   useMediaQuery,
   useTheme,
@@ -29,10 +28,6 @@ import Person from "../../Icons/Person.tsx";
 import SettingsOutlined from "../../Icons/SettingsOutlined.tsx";
 import SignOut from "../../Icons/SignOut.tsx";
 import WrenchSettings from "../../Icons/WrenchSettings.tsx";
-
-const StyledTypography = styled(Typography)(() => ({
-  lineHeight: 1,
-}));
 
 const UserPopover = ({ open, onClose, ...rest }: PopoverProps) => {
   const user = SessionManager.currentUser();
@@ -87,33 +82,45 @@ const UserPopover = ({ open, onClose, ...rest }: PopoverProps) => {
         vertical: "top",
         horizontal: "right",
       }}
+      slotProps={{ paper: { sx: { mt: "4px" } } }}
     >
       <Box
         sx={{
-          px: "12px",
-          py: "10px",
-          minWidth: "230px",
+          p: "8px 10px",
+          minWidth: "204px",
           display: "flex",
           maxWidth: "300px",
           width: "100%",
           flexDirection: "column",
-          gap: "4px",
+          gap: "2px",
         }}
       >
         <Box sx={{ display: "flex" }}>
-          <StyledTypography paragraph={false} variant={"body2"} fontWeight={600}>
+          <Typography variant="body2" fontWeight={600}>
             {user.nickname}
-          </StyledTypography>
-          <StyledTypography variant={"body2"} paragraph={false} color={"textSecondary"} sx={{ ml: 1 }}>
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
             {user.group?.name}
-          </StyledTypography>
+          </Typography>
         </Box>
-        <StyledTypography variant={"caption"} color={"textSecondary"}>
+        <Typography variant="caption" color="text.secondary" noWrap>
           {user.email}
-        </StyledTypography>
+        </Typography>
       </Box>
       <Divider />
-      <MenuList dense sx={{ mx: 0.5 }}>
+      <MenuList
+        dense
+        sx={(theme) => ({
+          py: "4px",
+          "& .MuiListItemIcon-root": { minWidth: 24, color: theme.palette.text.secondary },
+          "& .MuiMenuItem-root.Mui-focusVisible": {
+            outline: `1px solid ${theme.palette.primary.main}`,
+            outlineOffset: -1,
+          },
+          [theme.breakpoints.down("sm")]: { "& .MuiMenuItem-root": { minHeight: 40 } },
+          "@media (pointer: coarse)": { "& .MuiMenuItem-root": { minHeight: 40 } },
+        })}
+      >
         {isAdmin && (
           <SquareMenuItem onClick={openDashboard}>
             <ListItemIcon>
@@ -161,9 +168,9 @@ const UserAction = () => {
   }, []);
   return (
     <>
-      <IconButton size={current ? "large" : undefined} {...(current ? bindTrigger(popupState) : {})}>
+      <IconButton {...(current ? bindTrigger(popupState) : {})}>
         {!current && <Person onClick={() => navigate("/session")} />}
-        {current && <UserAvatar sx={{ width: 30, height: 30 }} user={current.user} />}
+        {current && <UserAvatar sx={{ width: 22, height: 22, fontSize: "0.75rem" }} user={current.user} />}
       </IconButton>
       <UserPopover {...bindPopover(popupState)} />
     </>

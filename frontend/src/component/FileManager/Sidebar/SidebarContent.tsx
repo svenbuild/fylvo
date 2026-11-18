@@ -28,7 +28,7 @@ function TabPanel(props: TabPanelProps) {
       aria-labelledby={`full-width-tab-${index}`}
       {...other}
     >
-      {value === index && <Box sx={{ px: 2, py: 1 }}>{children}</Box>}
+      {value === index && <Box sx={{ px: 2, py: 1.5 }}>{children}</Box>}
     </div>
   );
 }
@@ -40,26 +40,16 @@ const SidebarContent = ({ target, inPhotoViewer, setTarget }: SidebarContentProp
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <Header target={target} />
       {target != null && (
-        <>
-          <Box
-            sx={{
-              width: "100%",
-              bgcolor: "background.paper",
-              borderBottom: 1,
-              borderColor: "divider",
-            }}
-          ></Box>
-          <Box sx={{ overflow: "auto" }}>
-            <TabPanel value={0} index={0}>
-              <Details
-                inPhotoViewer={inPhotoViewer}
-                target={target}
-                setTarget={setTarget}
-                targetDisplayOptions={targetDisplayOptions}
-              />
-            </TabPanel>
-          </Box>
-        </>
+        <Box sx={{ overflow: "auto", minHeight: 0 }}>
+          <TabPanel value={0} index={0}>
+            <Details
+              inPhotoViewer={inPhotoViewer}
+              target={target}
+              setTarget={setTarget}
+              targetDisplayOptions={targetDisplayOptions}
+            />
+          </TabPanel>
+        </Box>
       )}
     </Box>
   );

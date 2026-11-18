@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import PageHeader from "../PageHeader.tsx";
 import { getUserShares } from "../../../api/api.ts";
 import { useAppDispatch } from "../../../redux/hooks.ts";
-import Nothing from "../../Common/Nothing.tsx";
 import { setSelected } from "../../../redux/fileManagerSlice.ts";
 import { Share } from "../../../api/explorer.ts";
 import { DenseSelect } from "../../Common/StyledComponents.tsx";
@@ -15,7 +14,7 @@ import { useParams } from "react-router-dom";
 import { ShareLinksInProfileLevel, User } from "../../../api/user.ts";
 import { loadUserInfo } from "../../../redux/thunks/session.ts";
 import { UserProfile } from "../../Common/User/UserPopover.tsx";
-import PageContainer from "../PageContainer.tsx";
+import PageContainer, { PageEmpty } from "../PageContainer.tsx";
 
 const defaultPageSize = 50;
 
@@ -93,16 +92,17 @@ const Profile = () => {
   );
 
   return (
-    <PageContainer>
+    <PageContainer compact>
       <Container maxWidth="lg">
         <PageHeader title={user?.nickname ?? "-"} />
         <Box
           sx={{
-            backgroundColor: (theme) =>
-              theme.palette.mode == "light" ? "rgba(0, 0, 0, 0.06)" : "rgba(255, 255, 255, 0.09)",
-            borderRadius: (theme) => `${theme.shape.borderRadius}px`,
-            mb: 4,
-            p: 2,
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            mb: 2,
+            p: "14px",
+            "& .MuiAvatar-root": { width: 44, height: 44, fontSize: 16 },
           }}
         >
           {user && <UserProfile user={user} open={true} displayOnly />}
@@ -146,10 +146,10 @@ const Profile = () => {
           })}
         />
 
-        <Grid container spacing={1}>
+        <Grid container sx={{ "& > .MuiGrid-item + .MuiGrid-item": { mt: "4px" } }}>
           {user &&
             user.share_links_in_profile !== ShareLinksInProfileLevel.hide_share &&
-            shares.map((share) => <ShareCard share={share} onShareDeleted={onShareDeleted} />)}
+            shares.map((share) => <ShareCard key={share.id} share={share} onShareDeleted={onShareDeleted} />)}
           {nextPageToken != undefined &&
             user &&
             user?.share_links_in_profile !== ShareLinksInProfileLevel.hide_share && (
@@ -166,17 +166,13 @@ const Profile = () => {
             )}
           {user && user.share_links_in_profile === ShareLinksInProfileLevel.hide_share && (
             <>
-              <Box sx={{ p: 1, width: "100%", textAlign: "center" }}>
-                <Nothing size={0.8} top={63} primary={t("setting.userHideShare")} />
-              </Box>
+              <PageEmpty>{t("setting.userHideShare")}</PageEmpty>
             </>
           )}
         </Grid>
 
         {nextPageToken == undefined && shares.length == 0 && (
-          <Box sx={{ p: 1, width: "100%", textAlign: "center" }}>
-            <Nothing size={0.8} top={63} primary={t("setting.listEmpty")} />
-          </Box>
+          <PageEmpty>{t("setting.listEmpty")}</PageEmpty>
         )}
       </Container>
     </PageContainer>

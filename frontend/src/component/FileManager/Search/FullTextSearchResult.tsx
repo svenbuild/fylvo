@@ -1,5 +1,5 @@
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import { Box, List, ListItem, ListItemText, Skeleton, styled } from "@mui/material";
+import { Box, List, ListItem, ListItemText, Skeleton } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { FullTextSearchResult as FullTextSearchResultType } from "../../../api/explorer.ts";
 import { SecondaryButton } from "../../Common/StyledComponents.tsx";
@@ -11,15 +11,6 @@ export interface FullTextSearchResultProps {
   hasMore?: boolean;
   onLoadMore?: () => void;
 }
-
-const HighlightedContent = styled("span")({
-  "& em": {
-    fontStyle: "normal",
-    backgroundColor: "#ffc1079e",
-    borderRadius: "4px",
-    boxShadow: "0 0 0 2px #ffc1079e",
-  },
-});
 
 const contextChars = 80;
 
@@ -74,18 +65,18 @@ const FullTextSearchResult = ({ results, loading, hasMore, onLoadMore }: FullTex
   const { t } = useTranslation();
 
   return (
-    <List sx={{ width: "100%", px: 1 }} dense>
+    <List sx={{ width: "100%", p: "4px" }} dense>
       {results.map((result) => (
         <SearchResultItem
           key={result.file.id}
           file={result.file}
           primary={result.file.name}
           secondary={
-            <HighlightedContent>
+            <span>
               {parseHighlightedContent(trimContent(result.content)).map((segment, i) =>
                 segment.highlighted ? <em key={i}>{segment.text}</em> : segment.text,
               )}
-            </HighlightedContent>
+            </span>
           }
         />
       ))}
@@ -93,7 +84,7 @@ const FullTextSearchResult = ({ results, loading, hasMore, onLoadMore }: FullTex
         [0].map((i) => (
           <ListItem key={i} dense sx={{ px: 1 }}>
             <Box sx={{ display: "flex", alignItems: "center", width: "100%", gap: 1, py: 0.5 }}>
-              <Skeleton variant="rounded" width={32} height={32} sx={{ flexShrink: 0 }} />
+              <Skeleton variant="rounded" width={18} height={18} sx={{ flexShrink: 0 }} />
               <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                 <Skeleton variant="text" width="40%" />
                 <Skeleton variant="text" width="70%" />

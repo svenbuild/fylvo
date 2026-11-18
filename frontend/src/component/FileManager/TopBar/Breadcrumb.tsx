@@ -28,8 +28,8 @@ const PathTextField = styled(TextField)(() => ({
 }));
 
 const RightIcon = styled(ChevronRight)(({ theme }) => ({
-  fontSize: 15,
-  mx: 0.5,
+  fontSize: 12,
+  marginInline: 2,
   verticalAlign: "middle",
   color: theme.palette.text.disabled,
 }));
@@ -177,6 +177,8 @@ const Breadcrumb = (props: BreadcrumbProps) => {
         ref={props.displayOnly ? undefined : chainRef}
         sx={{
           flexGrow: 1,
+          minWidth: 0,
+          alignContent: "center",
           whiteSpace: props.displayOnly ? "initial" : "nowrap",
           cursor: "text",
           overflow: "auto",

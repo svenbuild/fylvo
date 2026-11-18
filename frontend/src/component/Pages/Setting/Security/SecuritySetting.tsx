@@ -249,19 +249,27 @@ const SecuritySetting = ({ setting, setSetting }: ProfileSettingProps) => {
   };
 
   return (
-    <Stack spacing={3}>
+    <Stack
+      spacing={1.5}
+      sx={{
+        "& > .MuiGrid2-container + .MuiGrid2-container": {
+          pt: 1.5,
+          borderTop: 1,
+          borderColor: "divider",
+        },
+      }}
+    >
       <SettingForm title={t("login.password")} lgWidth={5}>
         <Collapse in={!showResetPassword}>
           <SecondaryButton
-            sx={{ mt: 1 }}
             onClick={() => setShowResetPassword(true)}
-            variant={"contained"}
+            variant="outlined"
             startIcon={<Edit />}
           >
             {t("login.resetPassword")}
           </SecondaryButton>
         </Collapse>
-        <Collapse in={showResetPassword} sx={{ mt: 2 }} unmountOnExit>
+        <Collapse in={showResetPassword} sx={{ mt: 1 }} unmountOnExit>
           <form ref={resetPwdFormRef}>
             <Stack spacing={2}>
               <DenseFilledTextField
@@ -331,9 +339,8 @@ const SecuritySetting = ({ setting, setSetting }: ProfileSettingProps) => {
         lgWidth={5}
       >
         <SecondaryButton
-          sx={{ mt: 1 }}
           onClick={() => (setting.two_fa_enabled ? setDisable2FAOpen(true) : setEnable2FAOpen(true))}
-          variant={"contained"}
+          variant="outlined"
           startIcon={<Open />}
         >
           {t(`setting.${setting.two_fa_enabled ? "disable" : "enable"}2FA`)}

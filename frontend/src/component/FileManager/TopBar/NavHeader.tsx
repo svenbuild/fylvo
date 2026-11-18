@@ -11,31 +11,34 @@ const NavHeader = () => {
   return (
     <Stack
       direction={"row"}
-      spacing={1}
       sx={{
-        px: isMobile ? 2 : "initial",
+        px: { xs: 1.5, sm: 1 },
+        gap: { xs: "4px", sm: "6px" },
+        minHeight: 36,
+        "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
+        alignItems: "center",
+        flexShrink: 0,
+        borderBottom: 1,
+        borderColor: "divider",
+        bgcolor: "background.paper",
       }}
     >
       <RadiusFrame
         sx={{
           flexGrow: 1,
-          p: 0.5,
+          minWidth: 0,
+          bgcolor: "transparent",
           overflow: "hidden",
           display: "flex",
         }}
-        withBorder
       >
         <Breadcrumb />
         <SearchIndicator />
       </RadiusFrame>
       {!isMobile && (
-        <RadiusFrame>
-          <TopActionsSecondary />
-        </RadiusFrame>
+        <TopActionsSecondary />
       )}
-      <RadiusFrame>
-        <TopActions />
-      </RadiusFrame>
+      <TopActions />
     </Stack>
   );
 };

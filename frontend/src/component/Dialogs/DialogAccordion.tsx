@@ -3,17 +3,14 @@ import MuiAccordion, { AccordionProps } from "@mui/material/Accordion";
 import MuiAccordionSummary, { AccordionSummaryProps } from "@mui/material/AccordionSummary";
 import MuiAccordionDetails from "@mui/material/AccordionDetails";
 import { useState } from "react";
+import { selectedSurface } from "../../fylvoTheme.ts";
 import { CaretDownIcon } from "../FileManager/TreeView/TreeFile.tsx";
 import { DefaultButton } from "../Common/StyledComponents.tsx";
 
 const Accordion = styled((props: AccordionProps) => <MuiAccordion disableGutters elevation={0} square {...props} />)(
   ({ theme, expanded }) => ({
     borderRadius: theme.shape.borderRadius,
-    backgroundColor: expanded
-      ? theme.palette.mode == "light"
-        ? "rgba(0, 0, 0, 0.06)"
-        : "rgba(255, 255, 255, 0.09)"
-      : "initial",
+    backgroundColor: expanded ? selectedSurface(theme) : "transparent",
     "&:not(:last-child)": {
       borderBottom: 0,
     },
@@ -32,20 +29,11 @@ const AccordionSummary = styled((props: AccordionSummaryProps) => <MuiAccordionS
   },
 }));
 
-const AccordionDetails = styled(MuiAccordionDetails)(({ theme }) => ({
-  padding: theme.spacing(2),
-}));
+const AccordionDetails = styled(MuiAccordionDetails)({ padding: "6px 10px 10px" });
 
-const SummaryButton = styled(DefaultButton)<{ expanded: boolean }>(({ theme, expanded }) => ({
+const SummaryButton = styled(DefaultButton)(({ theme }) => ({
   justifyContent: "flex-start",
-  backgroundColor: expanded
-    ? "initial"
-    : theme.palette.mode == "light"
-      ? "rgba(0, 0, 0, 0.06)"
-      : "rgba(255, 255, 255, 0.09)",
-  "&:hover": {
-    backgroundColor: theme.palette.mode == "light" ? "rgba(0, 0, 0, 0.09)" : "rgba(255, 255, 255, 0.13)",
-  },
+  "&:hover": { backgroundColor: selectedSurface(theme) },
 }));
 
 export interface DialogAccordionProps {
@@ -64,7 +52,7 @@ const DialogAccordion = (props: DialogAccordionProps) => {
     <Box>
       <Accordion expanded={expanded} onChange={handleChange}>
         <AccordionSummary aria-controls="panel1d-content" id="panel1d-header">
-          <SummaryButton expanded={expanded} fullWidth startIcon={<CaretDownIcon expanded={expanded} />}>
+          <SummaryButton fullWidth startIcon={<CaretDownIcon expanded={expanded} />}>
             {props.title}
           </SummaryButton>
         </AccordionSummary>

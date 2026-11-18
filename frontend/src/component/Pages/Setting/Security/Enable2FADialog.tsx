@@ -111,28 +111,30 @@ const Enable2FADialog = ({ open, onClose, on2FAEnabled }: Enable2FADialogProps) 
                   </Box>
                 )}
                 {!loading && (
-                  <Stack spacing={1} direction={isMobile ? "column" : "row"}>
+                  <Stack spacing={2} direction={isMobile ? "column" : "row"}>
                     <Box
                       sx={{
-                        minWidth: 176,
+                        flexShrink: 0,
+                        alignSelf: "center",
                         textAlign: "center",
                         p: 1,
-                        backgroundColor: "#fff",
+                        backgroundColor: (theme) => theme.palette.common.white,
+                        borderRadius: 1,
                       }}
                     >
                       <QRCodeSVG
-                        size={isMobile ? 144 : 160}
+                        size={132}
                         value={`otpauth://totp/${siteTitle}:${user?.user?.nickname}?secret=${secret}`}
                       />
                     </Box>
-                    <Box>
-                      <Typography variant={"body2"} sx={{ mt: 1 }}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" color="text.secondary">
                         {t("setting.2faDescription")}
                       </Typography>
                       <Typography variant={"body2"} sx={{ mt: 1 }}>
                         {t("setting.inputCurrent2FACode")}
                       </Typography>
-                      <FormControl variant="standard" margin="normal" required>
+                      <FormControl variant="standard" margin="dense" fullWidth required>
                         <MuiOtpInputStyled
                           TextFieldsProps={{ disabled: loading }}
                           autoFocus

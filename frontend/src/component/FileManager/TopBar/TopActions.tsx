@@ -4,6 +4,7 @@ import { bindMenu, bindTrigger, usePopupState } from "material-ui-popup-state/ho
 import { useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppSelector } from "../../../redux/hooks.ts";
+import { hoverSurface } from "../../../fylvoTheme.ts";
 import ArrowSort from "../../Icons/ArrowSort.tsx";
 import TableSettingsOutlined from "../../Icons/TableSettings.tsx";
 import SortMethodMenu from "./SortMethodMenu.tsx";
@@ -14,17 +15,28 @@ import { FmIndexContext } from "../FmIndexContext.tsx";
 import MoreActionMenu from "./MoreActionMenu.tsx";
 
 export const ActionButton = styled(Button)(({ theme }) => ({
-  border: `1px solid ${theme.palette.divider}`,
-  color: theme.palette.text.primary,
+  color: theme.palette.text.secondary,
+  minWidth: 30,
+  minHeight: 28,
+  padding: "3px 7px",
+  "&:hover": { backgroundColor: hoverSurface(theme), color: theme.palette.text.primary },
+  "&.Mui-focusVisible": {
+    outline: `1px solid ${theme.palette.primary.main}`,
+    outlineOffset: -1,
+  },
+  "@media (max-width: 599.95px), (pointer: coarse)": { minWidth: 40, minHeight: 40 },
 }));
 
 export const ActionButtonGroup = styled(ButtonGroup)(({ theme }) => ({
-  "& .MuiButtonGroup-firstButton, .MuiButtonGroup-middleButton, .MuiButtonGroup-lastButton": {
-    "&:hover": {
-      "border-color": theme.palette.primary.main,
-    },
+  flexShrink: 0,
+  "& .MuiButtonGroup-grouped": {
+    borderColor: theme.palette.divider,
+    "&:hover": { borderColor: theme.palette.divider },
   },
-  height: "100%",
+  "& .MuiButtonGroup-grouped:not(:last-of-type)": {
+    borderRightColor: theme.palette.divider,
+    "&:hover": { borderRightColor: theme.palette.divider },
+  },
 }));
 
 const TopActions = () => {
@@ -50,6 +62,7 @@ const TopActions = () => {
     <>
       <ActionButtonGroup variant="outlined">
         <ActionButton
+          aria-label={t("application:fileManager.view")}
           disabled={isSingleFileView}
           {...bindTrigger(viewPopupState)}
           startIcon={!isMobile && <TableSettingsOutlined />}
@@ -58,6 +71,7 @@ const TopActions = () => {
         </ActionButton>
         {(!(!sortOptions || isSingleFileView) || !isMobile) && (
           <ActionButton
+            aria-label={t("application:fileManager.sortMethod")}
             disabled={!sortOptions || isSingleFileView}
             startIcon={!isMobile && <ArrowSort />}
             {...bindTrigger(sortPopupState)}
@@ -66,7 +80,7 @@ const TopActions = () => {
           </ActionButton>
         )}
         {isMobile && (
-          <ActionButton {...bindTrigger(morePopupState)}>
+          <ActionButton aria-label={t("application:fileManager.moreActions")} {...bindTrigger(morePopupState)}>
             <MoreHorizontal fontSize={"small"} />
           </ActionButton>
         )}

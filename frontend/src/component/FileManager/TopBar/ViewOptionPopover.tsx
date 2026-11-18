@@ -19,6 +19,7 @@ import {
   setLayoutSetting,
   setThumbToggle,
 } from "../../../redux/thunks/filemanager.ts";
+import { hoverSurface, selectedSurface } from "../../../fylvoTheme.ts";
 import NavIconTransition from "../../Frame/NavBar/NavIconTransition.tsx";
 import AppsList from "../../Icons/AppsList.tsx";
 import AppsListOutlined from "../../Icons/AppsListOutlined.tsx";
@@ -131,7 +132,30 @@ const ViewOptionPopover = ({ ...rest }: PopoverProps) => {
       }}
       {...rest}
     >
-      <Box sx={{ p: 2, minWidth: "300px" }}>
+      <Box
+        sx={{
+          p: 1.5,
+          width: 384,
+          maxWidth: "100%",
+          "& .MuiTypography-subtitle2": { fontSize: 12 },
+          "& .MuiToggleButton-root": {
+            minHeight: 30,
+            gap: "4px",
+            px: "4px",
+            fontSize: 12,
+            textTransform: "none",
+            "&.Mui-selected, &.Mui-selected:hover": {
+              color: "text.primary",
+              bgcolor: selectedSurface,
+            },
+            "&:hover": { bgcolor: hoverSurface },
+            "&.Mui-focusVisible": { outline: "1px solid", outlineColor: "primary.main", outlineOffset: -1 },
+            "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
+          },
+          "& .MuiToggleButton-root svg": { flexShrink: 0 },
+          "& .MuiToggleButton-root .MuiBox-root": { flexShrink: 0 },
+        }}
+      >
         <Box>
           <Typography variant="subtitle2" sx={{ mb: 0.5, ml: 0.5 }} color={"text.secondary"}>
             {t("application:fileManager.layout")}
@@ -148,7 +172,7 @@ const ViewOptionPopover = ({ ...rest }: PopoverProps) => {
               <ToggleButton key={option.value} value={option.value}>
                 <NavIconTransition
                   iconProps={{ fontSize: "small" }}
-                  sx={{ mr: 1, height: "20px" }}
+                  sx={{ height: 16 }}
                   fileIcon={option.icon}
                   active={layout === option.value}
                 />
@@ -171,7 +195,7 @@ const ViewOptionPopover = ({ ...rest }: PopoverProps) => {
           >
             {thumbOptions.map((option) => (
               <ToggleButton key={option.label} value={option.value}>
-                <option.icon sx={{ mr: 1, height: "20px" }} fontSize={"small"} />
+                <option.icon sx={{ height: 16 }} fontSize={"small"} />
                 {t(option.label)}
               </ToggleButton>
             ))}
@@ -183,7 +207,7 @@ const ViewOptionPopover = ({ ...rest }: PopoverProps) => {
           </Typography>
           <ToggleButtonGroup value={0} fullWidth size="small" color="primary" exclusive>
             <ToggleButton value={1} onClick={() => dispatch(setListViewColumnSettingDialog(true))}>
-              <Setting sx={{ mr: 1, height: "20px" }} fontSize={"small"} />
+              <Setting sx={{ height: 16 }} fontSize={"small"} />
               {t("application:fileManager.listColumnSetting")}
             </ToggleButton>
           </ToggleButtonGroup>

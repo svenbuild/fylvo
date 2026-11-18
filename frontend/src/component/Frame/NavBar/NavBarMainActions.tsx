@@ -19,7 +19,7 @@ const NavBarMainActions = () => {
           classNames="fade"
           key={`${targets.length > 0}`}
         >
-          <Box sx={{ height: "100%" }}>
+          <Box sx={{ height: "100%", minWidth: 0 }}>
             {targets.length == 0 && <SearchBar />}
             {targets.length > 0 && <FileSelectedActions targets={targets} />}
           </Box>

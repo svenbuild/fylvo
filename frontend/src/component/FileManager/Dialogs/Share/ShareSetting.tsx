@@ -19,6 +19,7 @@ import MuiAccordionDetails from "@mui/material/AccordionDetails";
 import MuiAccordionSummary from "@mui/material/AccordionSummary";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
+import { hoverSurface, selectedSurface } from "../../../../fylvoTheme.ts";
 import { FileResponse, FileType } from "../../../../api/explorer.ts";
 import { Code } from "../../../Common/Code.tsx";
 import { FilledTextField, SmallFormControlLabel } from "../../../Common/StyledComponents.tsx";
@@ -29,7 +30,8 @@ import TableSettingsOutlined from "../../../Icons/TableSettings.tsx";
 import Timer from "../../../Icons/Timer.tsx";
 
 const Accordion = styled(MuiAccordion)(() => ({
-  border: "0px solid rgba(0, 0, 0, .125)",
+  border: 0,
+  backgroundColor: "transparent",
   boxShadow: "none",
   "&:not(:last-child)": {
     borderBottom: 0,
@@ -49,6 +51,7 @@ const Accordion = styled(MuiAccordion)(() => ({
 
 const AccordionSummary = styled(MuiAccordionSummary)(({ theme }) => ({
   padding: 0,
+  minHeight: 32,
   "& .MuiAccordionSummary-content": {
     margin: 0,
     display: "initial",
@@ -57,21 +60,30 @@ const AccordionSummary = styled(MuiAccordionSummary)(({ theme }) => ({
     },
   },
   "&.Mui-expanded": {
-    borderRadius: "12px 12px 0 0",
-    backgroundColor: theme.palette.mode == "light" ? "rgba(0, 0, 0, 0.06)" : "rgba(255, 255, 255, 0.09)",
+    borderRadius: "8px 8px 0 0",
+    backgroundColor: selectedSurface(theme),
     minHeight: "0px!important",
   },
 }));
 
 const AccordionDetails = styled(MuiAccordionDetails)(({ theme }) => ({
-  padding: 24,
-  backgroundColor: theme.palette.mode == "light" ? "rgba(0, 0, 0, 0.06)" : "rgba(255, 255, 255, 0.09)",
-  borderRadius: "0 0 12px 12px",
+  padding: "8px 10px 12px",
+  backgroundColor: selectedSurface(theme),
+  borderRadius: "0 0 8px 8px",
+  flexWrap: "wrap",
   fontSize: theme.typography.body2.fontSize,
   color: theme.palette.text.secondary,
 }));
 
-const StyledListItemButton = styled(ListItemButton)(() => ({}));
+const StyledListItemButton = styled(ListItemButton)(({ theme }) => ({
+  minHeight: 32,
+  padding: "3px 40px 3px 8px",
+  "&:hover": { backgroundColor: hoverSurface(theme) },
+  "& .MuiListItemIcon-root": { minWidth: 26 },
+  "& .MuiListItemText-root": { margin: 0 },
+  "& .MuiListItemSecondaryAction-root": { right: 4 },
+  "& .MuiCheckbox-root": { padding: 4 },
+}));
 
 export interface ShareSetting {
   is_private?: boolean;
@@ -368,7 +380,7 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
                 }
                 disableClearable
                 options={downloadOptions}
-                renderInput={(params) => <TextField sx={{ width: 200 }} {...params} variant={"standard"} />}
+                renderInput={(params) => <TextField sx={{ width: { xs: 132, sm: 180 } }} {...params} variant={"standard"} />}
               />
             </FormControl>
             <Typography>{t("application:modals.expireSuffix")}</Typography>

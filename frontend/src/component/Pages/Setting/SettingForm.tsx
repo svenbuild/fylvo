@@ -14,6 +14,7 @@ export interface SettingFormProps {
   title?: React.ReactNode;
   children: React.ReactNode;
   lgWidth?: number;
+  xsWidth?: number;
   secondary?: React.ReactNode;
   spacing?: number;
   anchorId?: string;
@@ -25,6 +26,7 @@ const SettingForm = ({
   title,
   children,
   lgWidth = 8,
+  xsWidth = 12,
   secondary,
   spacing,
   noContainer,
@@ -61,11 +63,12 @@ const SettingForm = ({
         }}
         size={{
           md: lgWidth,
-          xs: 12,
+          xs: xsWidth,
         }}
       >
         {title && (
           <Typography
+            data-setting-label
             fontWeight={600}
             sx={{ mb: 0.5, display: "flex", alignItems: "center" }}
             variant={"body2"}

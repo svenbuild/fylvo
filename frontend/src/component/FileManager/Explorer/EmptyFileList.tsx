@@ -10,7 +10,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { grey } from "@mui/material/colors";
+import { hoverSurface, selectedSurface } from "../../../fylvoTheme.ts";
 import React, { memo, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { NavigatorCapability } from "../../../api/explorer.ts";
@@ -49,27 +49,17 @@ export const SharedWithMeEmpty = () => {
   const { t } = useTranslation("application");
 
   return (
-    <Stack spacing={1}>
+    <Stack spacing={1.5} sx={{ width: 300, maxWidth: "100%" }}>
       <Box
         sx={{
-          width: "300px",
-          height: "200px",
+          height: 156,
           overflow: "hidden",
-          backgroundColor: (t) => (t.palette.mode == "dark" ? grey[900] : grey[100]),
+          bgcolor: hoverSurface,
+          border: 1,
+          borderColor: "divider",
           borderRadius: (t) => `${t.shape.borderRadius}px`,
           p: 1,
-          position: "relative",
-          "&::after": {
-            content: '""',
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            width: "100%",
-            height: "50px",
-            background: (t) =>
-              `linear-gradient(to bottom, transparent, ${t.palette.mode == "dark" ? grey[900] : grey[100]})`,
-            pointerEvents: "none",
-          },
+
         }}
       >
         <Box
@@ -87,7 +77,7 @@ export const SharedWithMeEmpty = () => {
                 flexGrow: 1,
                 border: (t) => `1px solid ${t.palette.divider}`,
                 backgroundColor: (t) => t.palette.background.paper,
-                height: "42px",
+                height: 30,
                 borderRadius: (t) => `${t.shape.borderRadius}px`,
               }}
             />
@@ -95,7 +85,7 @@ export const SharedWithMeEmpty = () => {
               variant="outlined"
               sx={{
                 backgroundColor: (t) => t.palette.background.paper,
-                height: "42px",
+                height: 30,
               }}
             >
               <Tooltip enterDelay={200} title={t("application:fileManager.refresh")}>
@@ -113,7 +103,7 @@ export const SharedWithMeEmpty = () => {
             </ActionButtonGroup>
           </Box>
           <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-            <Paper elevation={3} sx={{ borderRadius: "8px" }}>
+            <Paper variant="outlined" sx={{ borderRadius: "8px", mt: "4px" }}>
               <MenuList dense sx={{ padding: "4px 0", minWidth: "200px" }}>
                 <SquareMenuItem>
                   <ListItemIcon>
@@ -123,7 +113,7 @@ export const SharedWithMeEmpty = () => {
                     {t("application:fileManager.pin")}
                   </ListItemText>
                 </SquareMenuItem>
-                <SquareMenuItem selected>
+                <SquareMenuItem selected sx={{ "&.Mui-selected": { bgcolor: selectedSurface } }}>
                   <ListItemIcon>
                     <FolderLink fontSize="small" />
                   </ListItemIcon>
@@ -214,10 +204,20 @@ const EmptyFileList = memo(
         )}
         {currentFs != Filesystem.shared_with_me && (
           <>
-            <Nothing
-              primary={search_params || !canCreate ? t("fileManager.nothingFound") : t("fileManager.dropFileHere")}
-              secondary={search_params || !canCreate ? undefined : t("fileManager.orClickUploadButton")}
-            />
+            <Box
+              sx={{
+                "& .MuiTypography-root": { color: "text.secondary" },
+                "& .MuiTypography-h5": { fontSize: 15, fontWeight: 600 },
+                "& .MuiSvgIcon-root": { color: "text.secondary", mb: "4px" },
+              }}
+            >
+              <Nothing
+                size={0.36}
+                top={0}
+                primary={search_params || !canCreate ? t("fileManager.nothingFound") : t("fileManager.dropFileHere")}
+                secondary={search_params || !canCreate ? undefined : t("fileManager.orClickUploadButton")}
+              />
+            </Box>
             {recursion_limit_reached && <SearchLimitReached />}
           </>
         )}

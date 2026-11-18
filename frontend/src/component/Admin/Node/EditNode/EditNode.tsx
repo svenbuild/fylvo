@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { Node } from "../../../../api/dashboard";
-import PageContainer from "../../../Pages/PageContainer";
+import AdminPage from "../../Common/AdminPage.tsx";
 import PageHeader from "../../../Pages/PageHeader";
 import BasicInfoSection from "./BasicInfoSection";
 import CapabilitiesSection from "./CapabilitiesSection";
@@ -17,7 +17,7 @@ const EditNode = () => {
   const nodeID = parseInt(id ?? "0");
 
   return (
-    <PageContainer>
+    <AdminPage>
       <Container maxWidth="xl">
         <PageHeader title={t("node.editNode", { node: node?.name })} />
         <NodeSettingWrapper nodeID={nodeID} onNodeChange={setNode}>
@@ -27,7 +27,7 @@ const EditNode = () => {
           </NodeForm>
         </NodeSettingWrapper>
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

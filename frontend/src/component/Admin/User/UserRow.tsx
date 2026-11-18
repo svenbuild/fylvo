@@ -74,7 +74,7 @@ const UserRow = ({ user, loading, deleting, selected, onDelete, onDetails, onSel
 
   if (loading) {
     return (
-      <TableRow sx={{ height: "43px" }}>
+      <TableRow>
         <NoWrapTableCell>
           <Skeleton variant="circular" width={24} height={24} />
         </NoWrapTableCell>

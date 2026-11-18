@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect } from "react";
 import { Box, DialogContent, styled, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
+import { hoverSurface } from "../../fylvoTheme.ts";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks.ts";
 import DraggableDialog from "../Dialogs/DraggableDialog.tsx";
 import { setUploadFromClipboardDialog } from "../../redux/globalStateSlice.ts";
@@ -16,11 +17,12 @@ export interface PasteTargetProps extends PasteUploadDialogProps {
 
 const PasteTargetContainer = styled(Box)(({ theme }) => ({
   borderRadius: theme.shape.borderRadius,
-  backgroundColor: theme.palette.mode == "light" ? "rgba(0, 0, 0, 0.06)" : "rgba(255, 255, 255, 0.09)",
+  border: `1px solid ${theme.palette.divider}`,
+  backgroundColor: hoverSurface(theme),
   display: "flex",
   justifyContent: "center",
   alignItems: "center",
-  flexDirection: "column",
+  gap: 8,
   padding: theme.spacing(2),
   color: theme.palette.text.secondary,
 }));
@@ -50,9 +52,9 @@ const PasteTarget = ({ onFilePasted, onClose }: PasteTargetProps) => {
     return false;
   }, []);
   return (
-    <PasteTargetContainer sx={{ py: 5, mt: 0.5 }}>
-      <Clipboard sx={{ fontSize: 60 }} />
-      <Typography sx={{ pt: 1 }}>{t("uploader.pasteFilesHere")}</Typography>
+    <PasteTargetContainer>
+      <Clipboard fontSize="small" />
+      <Typography variant="body2">{t("uploader.pasteFilesHere")}</Typography>
     </PasteTargetContainer>
   );
 };

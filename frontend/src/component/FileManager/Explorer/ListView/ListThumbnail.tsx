@@ -10,16 +10,15 @@ import { FmIndexContext } from "../../FmIndexContext.tsx";
 import FileIcon from "../FileIcon.tsx";
 import { FmFile } from "../GridView/GridView.tsx";
 
-const ThumbSquareSize = 48;
+const ThumbSquareSize = 24;
 
-const ThumbSquare = styled(Box)(({ theme }) => ({
+const ThumbSquare = styled(Box)(() => ({
   position: "relative",
   width: ThumbSquareSize,
   height: ThumbSquareSize,
   borderRadius: 6,
   overflow: "hidden",
   flexShrink: 0,
-  backgroundColor: theme.palette.mode === "light" ? theme.palette.grey[200] : theme.palette.grey[800],
   cursor: "pointer",
 }));
 
@@ -45,19 +44,18 @@ const ThumbSquareLayer = styled(Box)(() => ({
   height: "100%",
 }));
 
-const ThumbSquareFallback = styled(ThumbSquareLayer)(({ theme }) => ({
+const ThumbSquareFallback = styled(ThumbSquareLayer)(() => ({
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  backgroundColor: theme.palette.background.default,
 }));
 
 const FileTypeBadge = styled(Box)(({ theme }) => ({
   position: "absolute",
   bottom: 2,
   right: 2,
-  width: 20,
-  height: 20,
+  width: 14,
+  height: 14,
   borderRadius: 4,
   backgroundColor: alpha(theme.palette.background.paper, 0.62),
   display: "flex",
@@ -70,9 +68,9 @@ const SelectOverlay = styled(Box)(({ theme }) => ({
   position: "absolute",
   top: 2,
   left: 2,
-  width: 22,
-  height: 22,
-  borderRadius: "50%",
+  width: 18,
+  height: 18,
+  borderRadius: 4,
   backgroundColor: alpha(theme.palette.background.paper, 0.62),
   display: "flex",
   alignItems: "center",
@@ -160,9 +158,9 @@ const ListThumbnail = memo(({ file, isSelected, noThumb, showLock }: ListThumbna
                 variant={"medium"}
                 iconProps={{
                   sx: {
-                    fontSize: 28,
-                    height: 32,
-                    width: 32,
+                    fontSize: 16,
+                    height: 16,
+                    width: 16,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -181,9 +179,9 @@ const ListThumbnail = memo(({ file, isSelected, noThumb, showLock }: ListThumbna
             sx={{ p: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
             iconProps={{
               sx: {
-                fontSize: 14,
-                height: 16,
-                width: 16,
+                fontSize: 12,
+                height: 12,
+                width: 12,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -195,9 +193,9 @@ const ListThumbnail = memo(({ file, isSelected, noThumb, showLock }: ListThumbna
       {showSelectOverlay && (
         <SelectOverlay>
           {isSelected ? (
-            <CheckmarkCircle color={"primary"} sx={{ width: 20, height: 20 }} />
+            <CheckmarkCircle color={"primary"} sx={{ width: 14, height: 14 }} />
           ) : (
-            <CheckUnchecked color={"action"} sx={{ width: 18, height: 18 }} />
+            <CheckUnchecked color={"action"} sx={{ width: 14, height: 14 }} />
           )}
         </SelectOverlay>
       )}

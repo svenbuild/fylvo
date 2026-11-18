@@ -80,7 +80,7 @@ const OAuthClientCard = ({ client, onRefresh, loading }: OAuthClientCardProps) =
               <Skeleton variant="text" width={60} />
             </Typography>
           </Box>
-          <NoWrapBox sx={{ mt: 1, mb: 2 }}>
+          <NoWrapBox sx={{ my: 0.5 }}>
             <Box sx={{ display: "flex", alignItems: "center", minHeight: "25px" }}>
               <Skeleton width={60} height={25} sx={{ mr: 1 }} />
             </Box>
@@ -122,14 +122,14 @@ const OAuthClientCard = ({ client, onRefresh, loading }: OAuthClientCardProps) =
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             {client?.props?.icon ? (
               isIconUrl(client.props.icon) ? (
-                <Box component="img" src={client.props.icon} sx={{ width: 32, height: 32, borderRadius: 1 }} />
+                <Box component="img" src={client.props.icon} sx={{ width: 24, height: 24, borderRadius: 1 }} />
               ) : (
-                <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main" }}>
+                <Avatar sx={{ width: 24, height: 24, bgcolor: "action.hover", color: "text.secondary" }}>
                   <Icon icon={client.props.icon} style={{ fontSize: 18 }} />
                 </Avatar>
               )
             ) : (
-              <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main" }}>
+              <Avatar sx={{ width: 24, height: 24, bgcolor: "action.hover", color: "text.secondary" }}>
                 <ShieldLockFilled sx={{ fontSize: 18 }} />
               </Avatar>
             )}
@@ -139,12 +139,12 @@ const OAuthClientCard = ({ client, onRefresh, loading }: OAuthClientCardProps) =
           </Box>
           {client?.is_system && <SquareChip label={t("oauth.systemClient")} size="small" color="primary" />}
         </Box>
-        <NoWrapBox sx={{ mt: 1, mb: 2 }}>
+        <NoWrapBox sx={{ my: 0.5 }}>
           {scopes.length > 0 ? (
             scopes.slice(0, 3).map((scope) => <SquareChip sx={{ mr: 1 }} key={scope} label={scope} size="small" />)
           ) : (
             <Box sx={{ display: "flex", alignItems: "center", minHeight: "25px" }} color={"text.secondary"}>
-              <Info sx={{ mr: 0.5, fontSize: 20 }} />
+              <Info sx={{ mr: 0.5, fontSize: 16 }} />
               <Typography variant="caption">{t("oauth.noScopes")}</Typography>
             </Box>
           )}
@@ -161,14 +161,14 @@ const OAuthClientCard = ({ client, onRefresh, loading }: OAuthClientCardProps) =
           <Box sx={{ display: "flex", alignItems: "center" }}>
             {client?.is_enabled ? (
               <>
-                <CheckCircleFilled sx={{ mr: 0.5, fontSize: 20, color: "success.main" }} />
+                <CheckCircleFilled sx={{ mr: 0.5, fontSize: 16, color: "success.main" }} />
                 <Typography variant="body2" color="success.main">
                   {t("oauth.enabled")}
                 </Typography>
               </>
             ) : (
               <>
-                <DismissCircleFilled sx={{ mr: 0.5, fontSize: 20, color: "text.secondary" }} />
+                <DismissCircleFilled sx={{ mr: 0.5, fontSize: 16, color: "text.secondary" }} />
                 <Typography variant="body2" color="text.secondary">
                   {t("oauth.disabled")}
                 </Typography>

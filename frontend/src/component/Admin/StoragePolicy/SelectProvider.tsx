@@ -9,6 +9,7 @@ import {
   styled,
   Typography,
 } from "@mui/material";
+import { hoverSurface } from "../../../fylvoTheme.ts";
 import { useTranslation } from "react-i18next";
 import { PolicyType } from "../../../api/explorer";
 import { SecondaryButton } from "../../Common/StyledComponents";
@@ -27,8 +28,8 @@ export interface SelectProviderProps {
 
 const StyledCard = styled(Card)(({ theme }) => ({
   display: "flex",
-  boxShadow: "none",
-  border: `1px solid ${theme.palette.divider}`,
+  "&:hover": { backgroundColor: hoverSurface(theme) },
+  "&:focus-within": { borderColor: theme.palette.primary.main },
 }));
 
 const SelectProvider = ({ open, onClose, onSelect }: SelectProviderProps) => {
@@ -46,19 +47,29 @@ const SelectProvider = ({ open, onClose, onSelect }: SelectProviderProps) => {
     >
       <ProDialog open={proOpen} onClose={() => setProOpen(false)} />
       <DialogContent dividers>
-        <Grid2 container spacing={2} sx={{ mt: 2 }}>
+        <Grid2 container spacing={1} sx={{ py: 1 }}>
           {Object.values(PolicyType).map((type) => (
-            <Grid2 key={type.toString()} size={{ sm: 12, md: 6 }}>
-              <StyledCard sx={{ display: "flex" }}>
+            <Grid2 key={type.toString()} size={{ xs: 12, sm: 6 }}>
+              <StyledCard>
                 <CardActionArea
-                  sx={{ display: "flex", justifyContent: "flex-start" }}
+                  sx={{ display: "flex", justifyContent: "flex-start", minHeight: 40, px: 1, gap: 1 }}
                   onClick={() => (PolicyPropsMap[type].pro ? setProOpen(true) : onSelect(type))}
                 >
-                  <CardMedia component="img" image={PolicyPropsMap[type].img} sx={{ width: 100, height: 60 }} />
-                  <CardContent>
-                    <Typography variant="subtitle1" color="textSecondary">
+                  <CardMedia
+                    component="img"
+                    image={PolicyPropsMap[type].img}
+                    sx={{ width: 44, height: 32, objectFit: "contain" }}
+                  />
+                  <CardContent sx={{ p: 0, "&:last-child": { pb: 0 } }}>
+                    <Typography variant="body2" color="text.primary">
                       {t(PolicyPropsMap[type].name)}
-                      {PolicyPropsMap[type].pro && <ProChip size="small" label="Pro" />}
+                      {PolicyPropsMap[type].pro && (
+                        <ProChip
+                          sx={{ background: "none", color: "text.secondary", border: 1, borderColor: "divider" }}
+                          size="small"
+                          label="Pro"
+                        />
+                      )}
                     </Typography>
                   </CardContent>
                 </CardActionArea>
@@ -67,7 +78,7 @@ const SelectProvider = ({ open, onClose, onSelect }: SelectProviderProps) => {
           ))}
         </Grid2>
       </DialogContent>
-      <DialogActions sx={{ justifyContent: "flex-start", p: 2, px: 3 }}>
+      <DialogActions sx={{ justifyContent: "flex-start" }}>
         <SecondaryButton
           startIcon={<Open />}
           variant="contained"

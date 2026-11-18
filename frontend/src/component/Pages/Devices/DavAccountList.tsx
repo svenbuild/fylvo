@@ -7,7 +7,6 @@ import { useAppDispatch } from "../../../redux/hooks.ts";
 import { DavAccount } from "../../../api/setting.ts";
 import DavAccountRow from "./DavAccountRow.tsx";
 import { NoWrapTableCell } from "../../Common/StyledComponents.tsx";
-import { CellHeaderWithPadding } from "../../FileManager/Dialogs/LockConflictDetails.tsx";
 import CreateDAVAccountDialog from "./CreateDAVAccountDialog.tsx";
 import ConnectionInfoDialog from "./ConnectionInfoDialog.tsx";
 
@@ -95,18 +94,35 @@ const DavAccountList = ({ creatAccountDialog, setCreateAccountDialog }: DavAccou
         account={accountInfoTarget}
         onClose={() => setAccountInfoTarget(undefined)}
       />
-      <TableContainer sx={{ mt: 1 }}>
-        <Table sx={{ width: "100%", tableLayout: "fixed" }} size="small">
+      <TableContainer sx={{ mt: 2, border: 1, borderColor: "divider", borderRadius: 1 }}>
+        <Table
+          size="small"
+          sx={{
+            width: "100%",
+            minWidth: 690,
+            tableLayout: "fixed",
+            "& .MuiTableCell-root": { height: 32, py: 0.5, px: 1.5, overflow: "hidden", textOverflow: "ellipsis" },
+            "& .MuiTableBody-root > tr:last-child > :is(td, th)": { borderBottom: 0 },
+            "@media (max-width: 599.95px), (pointer: coarse)": {
+              "& .MuiTableCell-root": { height: 40, py: 0 },
+              "& .MuiTableCell-root:last-child": {
+                position: "sticky",
+                right: 0,
+                bgcolor: "background.paper",
+                borderLeft: 1,
+                borderColor: "divider",
+              },
+            },
+          }}
+        >
           <TableHead>
             <TableRow>
-              <NoWrapTableCell width={200}>{t("setting.annotation")}</NoWrapTableCell>
-              <NoWrapTableCell width={200}>
-                <CellHeaderWithPadding>{t("setting.rootFolder")}</CellHeaderWithPadding>
-              </NoWrapTableCell>
-              <NoWrapTableCell width={150}>{t("fileManager.permissions")}</NoWrapTableCell>
-              <NoWrapTableCell width={150}>{t("setting.proxy")}</NoWrapTableCell>
-              <NoWrapTableCell width={200}>{t("fileManager.createdAt")}</NoWrapTableCell>
-              <NoWrapTableCell width={100}>{t("fileManager.actions")}</NoWrapTableCell>
+              <NoWrapTableCell width={124}>{t("setting.annotation")}</NoWrapTableCell>
+              <NoWrapTableCell width={168}>{t("setting.rootFolder")}</NoWrapTableCell>
+              <NoWrapTableCell width={116}>{t("fileManager.permissions")}</NoWrapTableCell>
+              <NoWrapTableCell width={116}>{t("setting.proxy")}</NoWrapTableCell>
+              <NoWrapTableCell width={138}>{t("fileManager.createdAt")}</NoWrapTableCell>
+              <NoWrapTableCell width={66}>{t("fileManager.actions")}</NoWrapTableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -134,7 +150,7 @@ const DavAccountList = ({ creatAccountDialog, setCreateAccountDialog }: DavAccou
           </TableBody>
         </Table>
         {nextPageToken == undefined && accounts.length == 0 && (
-          <Box sx={{ p: 1, width: "100%", textAlign: "center" }}>
+          <Box sx={{ p: 2.5 }}>
             <Typography variant={"caption"} color={"text.secondary"}>
               {t("application:setting.listEmpty")}
             </Typography>

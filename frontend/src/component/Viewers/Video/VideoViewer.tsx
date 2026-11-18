@@ -365,6 +365,9 @@ const VideoViewer = () => {
         onClose: onClose,
         fullWidth: true,
         maxWidth: "md",
+        PaperProps: {
+          sx: { "&.MuiDialog-paperFullScreen": { bgcolor: "common.black" } },
+        },
       }}
     >
       <SubtitleStyleDialog
@@ -437,8 +440,8 @@ const VideoViewer = () => {
           getEntityUrl={getUnmaskedEntityUrl}
           sx={{
             width: "100%",
-            height: "100%",
-            minHeight: "calc(100vh - 350px)",
+            height: { xs: "calc(100dvh - 44px)", sm: "100%" },
+            minHeight: { xs: 0, sm: "calc(100dvh - 350px)" },
           }}
           chapters={chapters}
           getInstance={(instance) => setArt(instance)}

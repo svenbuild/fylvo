@@ -29,7 +29,7 @@ const FuzzySearchResult = ({ files, keyword }: FuzzySearchResultProps) => {
   );
 
   return (
-    <List sx={{ width: "100%", px: 1 }} dense>
+    <List sx={{ width: "100%", p: "4px" }} dense>
       {files.map((file) => (
         <SearchResultItem
           key={file.id}

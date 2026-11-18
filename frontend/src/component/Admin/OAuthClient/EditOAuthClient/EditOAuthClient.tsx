@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { GetOAuthClientResponse } from "../../../../api/dashboard";
-import PageContainer from "../../../Pages/PageContainer";
+import AdminPage from "../../Common/AdminPage.tsx";
 import PageHeader from "../../../Pages/PageHeader";
 import OAuthClientForm from "./OAuthClientForm";
 import OAuthClientSettingWrapper from "./OAuthClientSettingWrapper";
@@ -16,7 +16,7 @@ const EditOAuthClient = () => {
   const isNew = clientID === 0;
 
   return (
-    <PageContainer>
+    <AdminPage>
       <Container maxWidth="xl">
         <PageHeader
           title={isNew ? t("oauth.newOAuthClient") : t("oauth.editOAuthClient", { name: t(client?.name ?? "") })}
@@ -25,7 +25,7 @@ const EditOAuthClient = () => {
           <OAuthClientForm />
         </OAuthClientSettingWrapper>
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

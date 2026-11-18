@@ -12,10 +12,10 @@ const FacebookCircularProgress = forwardRef(({ sx, bgColor, fgColor, ...rest }: 
       <CircularProgress
         variant="determinate"
         sx={{
-          color: (theme) => bgColor ?? theme.palette.grey[theme.palette.mode === "light" ? 200 : 800],
+          color: (theme) => bgColor ?? theme.palette.divider,
         }}
-        size={40}
-        thickness={4}
+        size={24}
+        thickness={3}
         {...rest}
         value={100}
       />
@@ -28,8 +28,8 @@ const FacebookCircularProgress = forwardRef(({ sx, bgColor, fgColor, ...rest }: 
             strokeLinecap: "round",
           },
         }}
-        size={40}
-        thickness={4}
+        size={24}
+        thickness={3}
         {...rest}
       />
     </Box>

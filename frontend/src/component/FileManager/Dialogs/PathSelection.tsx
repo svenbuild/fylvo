@@ -176,16 +176,33 @@ const PathSelection = () => {
         open: open ?? false,
         onClose: onClose,
         fullWidth: true,
-        maxWidth: "lg",
+        maxWidth: "md",
         disableRestoreFocus: true,
         PaperProps: {
           sx: {
-            height: "100%",
+            height: { xs: "auto", sm: 500 },
           },
         },
       }}
     >
-      <DialogContent sx={{ display: "flex", pb: 0 }}>
+      <DialogContent
+        sx={{
+          display: "flex",
+          pb: 0,
+          "& > .MuiBox-root > .MuiGrid2-container": { m: 0 },
+          "& > .MuiBox-root > .MuiGrid2-container > .MuiGrid2-root:first-of-type": {
+            width: { xs: "100%", md: 170 },
+            height: { xs: "auto", md: "100%" },
+            maxHeight: { sm: 140, md: "none" },
+          },
+          "& > .MuiBox-root > .MuiGrid2-container > .MuiGrid2-root:nth-of-type(2)": {
+            width: { md: "calc(100% - 182px)" },
+            height: { sm: "auto", md: "100%" },
+            minHeight: { sm: 260, md: 0 },
+            minWidth: 0,
+          },
+        }}
+      >
         <FolderPicker
           disableSharedWithMe={variantProps.disableSharedWithMe}
           disableTrash={variantProps.disableTrash}

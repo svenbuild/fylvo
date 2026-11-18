@@ -2,6 +2,7 @@ import { Badge, Box, IconButton, Stack, styled, Tooltip, useMediaQuery, useTheme
 import React, { forwardRef } from "react";
 import { useTranslation } from "react-i18next";
 import { FileResponse } from "../../../api/explorer.ts";
+import { hoverSurface } from "../../../fylvoTheme.ts";
 import { clearSelected, ContextMenuTypes } from "../../../redux/fileManagerSlice.ts";
 import { useAppDispatch } from "../../../redux/hooks.ts";
 import { downloadFiles } from "../../../redux/thunks/download.ts";
@@ -33,16 +34,30 @@ export interface FileSelectedActionsProps {
 }
 
 const StyledActionButton = styled(ActionButton)(({ theme }) => ({
-  // disabled
   "&.MuiButtonBase-root.Mui-disabled": {
-    color: theme.palette.text.primary,
+    minWidth: "auto",
+    paddingInline: 8,
+    color: theme.palette.text.secondary,
     fontWeight: theme.typography.fontWeightRegular,
     fontSize: theme.typography.body2.fontSize,
   },
 }));
 
 const StyledActionButtonGroup = styled(ActionButtonGroup)(({ theme }) => ({
-  backgroundColor: theme.palette.background.default,
+  flexShrink: 0,
+  backgroundColor: theme.palette.grey[theme.palette.mode === "light" ? 50 : 900],
+  "& .MuiButtonGroup-grouped": {
+    minWidth: 32,
+    paddingInline: 6,
+    color: theme.palette.text.secondary,
+    whiteSpace: "nowrap",
+    "&:hover": {
+      borderColor: theme.palette.divider,
+      backgroundColor: hoverSurface(theme),
+      color: theme.palette.text.primary,
+    },
+    "@media (pointer: coarse)": { minWidth: 40 },
+  },
 }));
 
 const FileSelectedActions = forwardRef(({ targets }: FileSelectedActionsProps, ref: React.Ref<HTMLElement>) => {
@@ -80,7 +95,7 @@ const FileSelectedActions = forwardRef(({ targets }: FileSelectedActionsProps, r
   }
 
   return (
-    <Box ref={ref} sx={{ height: "100%" }}>
+    <Box ref={ref} sx={{ height: "100%", overflowX: "auto", scrollbarWidth: "none" }}>
       <Stack direction={"row"} spacing={1} sx={{ height: "100%" }}>
         <StyledActionButtonGroup variant="outlined">
           <ActionButton
@@ -95,7 +110,7 @@ const FileSelectedActions = forwardRef(({ targets }: FileSelectedActionsProps, r
           >
             <Dismiss fontSize={"small"} />
           </ActionButton>
-          <StyledActionButton disabled sx={{ color: (theme) => theme.palette.text.primary }}>
+          <StyledActionButton disabled>
             {t("application:navbar.objectsSelected", {
               num: targets.length,
             })}

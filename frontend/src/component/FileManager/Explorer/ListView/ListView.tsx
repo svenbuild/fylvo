@@ -49,7 +49,7 @@ const ListView = React.forwardRef(
           }),
         ),
       );
-    }, [columnSetting, customProps]);
+    }, [columnSetting, customProps, isMobile]);
 
     const totalWidth = useMemo(() => {
       return columns.reduce((acc, column) => acc + (column.width ?? column.defaults.width), 0);
@@ -77,7 +77,7 @@ const ListView = React.forwardRef(
         ref={ref}
         {...rest}
         sx={{
-          minWidth: totalWidth + 44,
+          minWidth: totalWidth + 32,
           height: "100%",
           display: "flex",
           flexDirection: "column",

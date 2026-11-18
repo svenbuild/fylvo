@@ -9,13 +9,12 @@ import DavAccountList from "./DavAccountList.tsx";
 import Add from "../../Icons/Add.tsx";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { loadSiteConfig } from "../../../redux/thunks/site.ts";
-import Nothing from "../../Common/Nothing.tsx";
 import SessionManager from "../../../session";
 import Boolset from "../../../util/boolset.ts";
 import { GroupPermission } from "../../../api/user.ts";
 import AppPromotion from "./AppPromotion.tsx";
 import DesktopAppPromotion from "./DesktopAppPromotion.tsx";
-import PageContainer from "../PageContainer.tsx";
+import PageContainer, { PageEmpty } from "../PageContainer.tsx";
 
 export enum DevicePageTab {
   Dav = "dav",
@@ -74,7 +73,7 @@ const Devices = () => {
   }, []);
 
   return (
-    <PageContainer>
+    <PageContainer compact>
       <Container maxWidth="lg">
         <PageHeader
           secondaryAction={
@@ -93,7 +92,7 @@ const Devices = () => {
         {tab == DevicePageTab.App && appPromotion && <AppPromotion />}
         {tab == DevicePageTab.DesktopApp && desktopAppPromotion && <DesktopAppPromotion />}
 
-        {!webDavEnabled && !appPromotion && !desktopAppPromotion && <Nothing primary={t("setting.deviceNothing")} />}
+        {!webDavEnabled && !appPromotion && !desktopAppPromotion && <PageEmpty>{t("setting.deviceNothing")}</PageEmpty>}
       </Container>
     </PageContainer>
   );

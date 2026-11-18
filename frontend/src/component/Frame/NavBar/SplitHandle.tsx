@@ -56,6 +56,9 @@ const SplitHandle = (_props: SplitHandleProps) => {
             width: 8,
             left: cursor,
             zIndex: (theme) => theme.zIndex.drawer + 2,
+            // Own layer: without it Chrome paints this see-through strip in the
+            // sidebar color and cuts 4 px off the page edge.
+            willChange: "transform",
           }}
         />
       )}

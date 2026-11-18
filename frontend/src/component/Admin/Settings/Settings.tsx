@@ -15,7 +15,7 @@ import MailOutlined from "../../Icons/MailOutlined.tsx";
 import PersonPasskey from "../../Icons/PersonPasskey.tsx";
 import SendLogging from "../../Icons/SendLogging.tsx";
 import Server from "../../Icons/Server.tsx";
-import PageContainer from "../../Pages/PageContainer.tsx";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader, { PageTabQuery } from "../../Pages/PageHeader.tsx";
 import Appearance from "./Appearance/Appearance.tsx";
 import Captcha from "./Captcha/Captcha.tsx";
@@ -37,17 +37,23 @@ export const SettingSection = styled(Box)(({ theme }) => ({
   display: "flex",
   flexDirection: "column",
   gap: theme.spacing(1),
-  [theme.breakpoints.up("md")]: {
-    padding: theme.spacing(0, 4),
+  maxWidth: 960,
+  padding: 14,
+  border: `1px solid ${theme.palette.divider}`,
+  borderRadius: theme.shape.borderRadius,
+  "&&:not(:first-child)": { marginTop: theme.spacing(2) },
+  "& > .MuiTypography-h6, & > div > .MuiTypography-h6": {
+    color: theme.palette.text.secondary,
+    fontSize: theme.typography.caption.fontSize,
+    fontWeight: 600,
+    marginBottom: 0,
   },
 }));
 export const SettingSectionContent = styled(Box)(({ theme }) => ({
-  [theme.breakpoints.up("md")]: {
-    padding: theme.spacing(0, 4),
-  },
   display: "flex",
   flexDirection: "column",
-  gap: theme.spacing(3),
+  minWidth: 0,
+  gap: theme.spacing(1.5),
 }));
 export const NoMarginHelperText = styled(FormHelperText)(() => ({
   marginLeft: 0,
@@ -143,7 +149,7 @@ const Settings = () => {
   }, [t]);
 
   return (
-    <PageContainer>
+    <AdminPage>
       <Container maxWidth="xl">
         <PageHeader title={t("dashboard:nav.settings")} />
         <ResponsiveTabs
@@ -341,7 +347,7 @@ const Settings = () => {
           </CSSTransition>
         </SwitchTransition>
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

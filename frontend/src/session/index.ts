@@ -39,7 +39,7 @@ export enum UserSettings {
 export const UserSettingsDefault: { [key: string]: any } = {
   [UserSettings.DrawerWidth]: 240,
   [UserSettings.PageSize]: 100,
-  [UserSettings.Layout]: "grid",
+  [UserSettings.Layout]: "list",
   [UserSettings.ShowThumb]: true,
   [UserSettings.SortBy]: "created_at",
   [UserSettings.SortDirection]: "asc",
@@ -62,7 +62,7 @@ export const UserSettingsDefault: { [key: string]: any } = {
   ],
   [UserSettings.GalleryWidth]: 220,
   [UserSettings.UploadOverwrite]: false,
-  [UserSettings.TimeZone]: "Asia/Shanghai",
+  [UserSettings.TimeZone]: "Europe/Zurich",
   [UserSettings.TreeViewAutoExpand]: true,
   [UserSettings.FolderClickAction]: "open",
 };

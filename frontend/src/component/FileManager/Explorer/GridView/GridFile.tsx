@@ -1,5 +1,4 @@
 import {
-  alpha,
   Box,
   ButtonBase,
   Fade,
@@ -18,6 +17,7 @@ import React, { memo, useCallback, useContext, useEffect, useMemo, useState } fr
 import { useInView } from "react-intersection-observer";
 import { TransitionGroup } from "react-transition-group";
 import { FileType, Metadata } from "../../../../api/explorer.ts";
+import { hoverSurface, selectedSurface } from "../../../../fylvoTheme.ts";
 import { bindDelayedHover } from "../../../../hooks/delayedHover.tsx";
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks.ts";
 import { fileClicked, fileDoubleClicked, loadFileThumb, openFileContextMenu } from "../../../../redux/thunks/file.ts";
@@ -36,41 +36,29 @@ import { FileBlockProps } from "../Explorer.tsx";
 import UploadingTag from "../UploadingTag.tsx";
 import { useInlineRename } from "../useInlineRename.ts";
 
-const StyledButtonBase = styled(ButtonBase)<{
+const StyledButtonBase = styled(ButtonBase, {
+  shouldForwardProp: (prop) => !["selected", "transparent", "isDropOver"].includes(String(prop)),
+})<{
   selected: boolean;
-  square?: boolean;
   transparent?: boolean;
   isDropOver?: boolean;
-}>(({ theme, transparent, isDropOver, square, selected }) => {
-  let bgColor = theme.palette.mode === "light" ? theme.palette.grey[100] : theme.palette.grey[900];
-  let bgColorHover = theme.palette.mode === "light" ? theme.palette.grey[300] : theme.palette.grey[700];
-
-  if (selected) {
-    bgColor = alpha(theme.palette.primary.main, 0.18);
-    bgColorHover = bgColor;
-  }
-  return {
-    opacity: transparent ? 0.5 : 1,
-    borderRadius: theme.shape.borderRadius,
-    backgroundColor: bgColor,
-    width: "100%",
-    display: "flex",
-    alignItems: "stretch",
-    transition: "all 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms",
-    transitionProperty: "background-color,opacity,box-shadow",
-    boxShadow: isDropOver ? `0 0 0 2px ${theme.palette.primary.light}` : "none",
-    "&:hover": {
-      backgroundColor: bgColorHover,
-    },
-    "&::before": square && {
-      content: "''",
-      display: "inline-block",
-      flex: "0 0 0px",
-      height: 0,
-      paddingBottom: "100%",
-    },
-  };
-});
+}>(({ theme, transparent, isDropOver, selected }) => ({
+  opacity: transparent ? 0.5 : 1,
+  borderRadius: theme.shape.borderRadius,
+  border: `1px solid ${isDropOver ? theme.palette.primary.main : theme.palette.divider}`,
+  backgroundColor: selected || isDropOver ? selectedSurface(theme) : hoverSurface(theme),
+  width: "100%",
+  display: "flex",
+  alignItems: "stretch",
+  "&:hover": {
+    backgroundColor: selectedSurface(theme),
+    borderColor: isDropOver ? theme.palette.primary.main : theme.palette.text.disabled,
+  },
+  "&.Mui-focusVisible": {
+    outline: `1px solid ${theme.palette.primary.main}`,
+    outlineOffset: 1,
+  },
+}));
 
 const Content = styled(Box)(() => ({
   display: "flex",
@@ -80,17 +68,20 @@ const Content = styled(Box)(() => ({
 }));
 
 export const Header = styled(Box)(() => ({
-  height: 48,
+  minHeight: 36,
+  padding: "0 8px",
+  gap: 8,
+  "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
   display: "flex",
   justifyContent: "left",
-  alignItems: "initial",
+  alignItems: "center",
   width: "100%",
 }));
 
 const ThumbContainer = styled(Box)(({ theme }) => ({
-  flexGrow: "1",
-  borderRadius: "8px",
-  height: "100%",
+  borderRadius: 6,
+  height: 72,
+  border: `1px solid ${theme.palette.divider}`,
   overflow: "hidden",
   margin: `0 ${theme.spacing(1)} ${theme.spacing(1)} ${theme.spacing(1)}`,
   position: "relative",
@@ -102,7 +93,7 @@ export const FileNameText = styled(Typography)(() => ({
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
   overflow: "hidden",
-  padding: "14px 12px 14px 0",
+  minWidth: 0,
 }));
 
 export const ThumbBoxContainer = styled(Box)(() => ({
@@ -266,7 +257,6 @@ const GridFile = memo((props: FileBlockProps) => {
   const { file, isDragging, isDropOver, search, showThumb, index, dragRef } = props;
   const dispatch = useAppDispatch();
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const isTouch = useMediaQuery("(pointer: coarse)");
   const {
     fmIndex,
@@ -361,7 +351,6 @@ const GridFile = memo((props: FileBlockProps) => {
         onContextMenu={onContextMenu}
         data-rect-id={index ?? ""}
         selected={!!isSelected}
-        square={showThumb}
         disabled={disabled}
         onClick={onClick}
         ref={setRefFunc}
@@ -389,8 +378,8 @@ const GridFile = memo((props: FileBlockProps) => {
                 fullWidth
                 sx={{
                   flex: 1,
-                  fontSize: "0.875rem",
-                  padding: "14px 12px 14px 0",
+                  minWidth: 0,
+                  fontSize: "inherit",
                   "& .MuiInputBase-input": {
                     py: 0,
                     px: 0.5,
@@ -417,16 +406,16 @@ const GridFile = memo((props: FileBlockProps) => {
               </Tooltip>
             )}
             {!isEditing && !uploading && fileTag && fileTag.length > 0 && (
-              <FileTagSummary sx={{ p: "14px 12px 14px 0", maxWidth: "50%" }} tags={fileTag} />
+              <FileTagSummary sx={{ maxWidth: "50%" }} tags={fileTag} />
             )}
-            {!isEditing && uploading && <UploadingTag sx={{ p: "14px 12px 14px 0", maxWidth: "50%" }} />}
+            {!isEditing && uploading && <UploadingTag sx={{ maxWidth: "50%" }} />}
             {isLoadingIndicator && (
               <Skeleton
                 variant="text"
                 sx={{
                   fontVariant: "body2",
                   width: "100%",
-                  margin: "14px 12px 14px 0",
+                  mr: 1,
                 }}
               />
             )}
@@ -460,12 +449,12 @@ const GridFile = memo((props: FileBlockProps) => {
                   <Fade key={"icon"}>
                     <LargeIconContainer>
                       <FileIcon
-                        variant={isMobile ? "largeMobile" : "large"}
+                        variant="preview"
                         iconProps={{
                           sx: {
-                            fontSize: `${isMobile ? 48 : 64}px`,
-                            height: `${isMobile ? 72 : 96}px`,
-                            width: `${isMobile ? 56 : 64}px`,
+                            fontSize: 30,
+                            height: 30,
+                            width: 30,
                           },
                         }}
                         file={file}

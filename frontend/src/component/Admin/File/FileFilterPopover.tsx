@@ -1,6 +1,7 @@
-import { Box, Button, Checkbox, Popover, PopoverProps, Stack, styled } from "@mui/material";
+import { Box, Button, Checkbox, PopoverProps, Stack, styled } from "@mui/material";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AdminFilterPopover } from "../Common/AdminPage.tsx";
 import { DenseFilledTextField, SmallFormControlLabel } from "../../Common/StyledComponents";
 import SettingForm from "../../Pages/Setting/SettingForm";
 import SinglePolicySelectionInput from "../Common/SinglePolicySelectionInput";
@@ -21,11 +22,11 @@ export interface FileFilterPopoverProps extends PopoverProps {
   clearFilters: () => void;
 }
 
-const StyledCheckbox = styled(Checkbox)(({ theme }) => ({
+const StyledCheckbox = styled(Checkbox)({
   paddingTop: 0,
   paddingBottom: 0,
   paddingLeft: 0,
-}));
+});
 
 const FileFilterPopover = ({
   storagePolicy,
@@ -91,7 +92,7 @@ const FileFilterPopover = ({
   };
 
   return (
-    <Popover
+    <AdminFilterPopover
       anchorOrigin={{
         vertical: "bottom",
         horizontal: "left",
@@ -99,15 +100,6 @@ const FileFilterPopover = ({
       transformOrigin={{
         vertical: "top",
         horizontal: "left",
-      }}
-      slotProps={{
-        paper: {
-          sx: {
-            p: 2,
-            width: 300,
-            maxWidth: "100%",
-          },
-        },
       }}
       onClose={onClose}
       open={open}
@@ -190,7 +182,7 @@ const FileFilterPopover = ({
           </Button>
         </Box>
       </Stack>
-    </Popover>
+    </AdminFilterPopover>
   );
 };
 

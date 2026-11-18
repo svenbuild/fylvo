@@ -1,6 +1,5 @@
 import { LoadingButton } from "@mui/lab";
 import {
-  alpha,
   Autocomplete,
   Box,
   Button,
@@ -21,10 +20,14 @@ import {
   Typography,
 } from "@mui/material";
 
+import { hoverSurface, selectedSurface } from "../../fylvoTheme.ts";
+
 export const DefaultButton = styled(({ variant, ...rest }: ButtonProps) => <Button variant={variant} {...rest} />)(
   ({ variant, theme }) => ({
     color: theme.palette.text.primary,
-    minHeight: theme.spacing(4),
+    minHeight: 30,
+    "&.Mui-focusVisible": { outline: `1px solid ${theme.palette.primary.main}`, outlineOffset: -1 },
+    "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
     "& .MuiButton-startIcon": {
       marginLeft: 0,
     },
@@ -177,25 +180,21 @@ export const NoWrapTableCell = styled(TableCell)({
   whiteSpace: "nowrap",
 });
 
-export const StyledCheckbox = styled(Checkbox)(({ theme }) => ({
+export const StyledCheckbox = styled(Checkbox)({
   width: 16,
   height: 16,
-}));
+});
 
 export const SecondaryButton = styled(Button)(({ theme }) => ({
   color: theme.palette.text.secondary,
-  backgroundColor: theme.palette.action.hover,
-  "&:hover": {
-    backgroundColor: theme.palette.action.focus,
-  },
+  backgroundColor: hoverSurface(theme),
+  "&:hover": { backgroundColor: selectedSurface(theme) },
 }));
 
 export const SecondaryLoadingButton = styled(LoadingButton)(({ theme }) => ({
   color: theme.palette.text.secondary,
-  backgroundColor: theme.palette.action.hover,
-  "&:hover": {
-    backgroundColor: theme.palette.action.focus,
-  },
+  backgroundColor: hoverSurface(theme),
+  "&:hover": { backgroundColor: selectedSurface(theme) },
 }));
 
 export const NoWrapBox = styled(Box)({
@@ -204,8 +203,9 @@ export const NoWrapBox = styled(Box)({
   overflow: "hidden",
 });
 
-export const DenseSelect = styled(Select)(({ theme }) => ({
-  minHeight: "39px",
+export const DenseSelect = styled(Select)({
+  minHeight: 32,
+  "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
   "& .MuiOutlinedInput-input": {
     display: "flex",
     alignItems: "center",
@@ -217,9 +217,9 @@ export const DenseSelect = styled(Select)(({ theme }) => ({
     paddingBottom: "4px",
   },
   "& .MuiListItemIcon-root": {
-    minWidth: 36,
+    minWidth: 26,
   },
-}));
+});
 
 export const StyledTab = styled(Tab)(({ theme }) => ({
   padding: "8px 0px",
@@ -260,12 +260,12 @@ export const StyledTab = styled(Tab)(({ theme }) => ({
       backgroundColor: theme.palette.action.hover,
     },
     "&.Mui-selected::after": {
-      backgroundColor: alpha(theme.palette.primary.main, 0.06),
+      backgroundColor: selectedSurface(theme),
     },
   },
 }));
 
-export const StyledTabs = styled(Tabs)(({ theme }) => ({
+export const StyledTabs = styled(Tabs)({
   minHeight: 36,
   overflow: "initial",
   "& .MuiTabs-flexContainer": {
@@ -277,7 +277,7 @@ export const StyledTabs = styled(Tabs)(({ theme }) => ({
   "& .MuiTabs-indicator": {
     bottom: "initial",
   },
-}));
+});
 
 export const NoWrapCell = styled(TableCell)({
   textOverflow: "ellipsis",
@@ -286,7 +286,7 @@ export const NoWrapCell = styled(TableCell)({
 });
 
 export const SquareChip = styled(Chip)(() => ({
-  borderRadius: 8,
+  borderRadius: 6,
 }));
 
 export const SmallFormControlLabel = styled((props: FormControlLabelProps) => (

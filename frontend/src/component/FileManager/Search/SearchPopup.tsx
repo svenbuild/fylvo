@@ -43,13 +43,41 @@ const StyledDialog = styled(Dialog)<{
     alignItems: "flex-start",
     height: expanded ? "100%" : "initial",
   },
+  "& .MuiDialog-paper": {
+    margin: "52px 12px 12px",
+    width: "calc(100% - 24px)",
+    maxWidth: 560,
+    maxHeight: "calc(100% - 64px)",
+    [theme.breakpoints.down("sm")]: {
+      marginTop: 56,
+      maxHeight: "calc(100% - 68px)",
+    },
+  },
   zIndex: theme.zIndex.modal - 1,
 }));
 
-const StyledOutlinedIconTextFiled = styled(OutlineIconTextField)(() => ({
-  "& .MuiOutlinedInput-notchedOutline": {
-    border: "none",
+const SearchInput = styled(OutlineIconTextField)(({ theme }) => ({
+  "& .MuiOutlinedInput-root": {
+    height: 32,
+    paddingLeft: 8,
+    [theme.breakpoints.down("sm")]: { height: 40, paddingLeft: 0 },
+    "@media (pointer: coarse)": { height: 40 },
+    "& .MuiOutlinedInput-notchedOutline": { borderColor: "transparent" },
+    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+      borderColor: theme.palette.primary.main,
+      borderWidth: 1,
+    },
   },
+  "& .MuiInputAdornment-root": {
+    color: theme.palette.text.secondary,
+  },
+}));
+
+const SearchSectionLabel = styled(Typography)(({ theme }) => ({
+  padding: "8px 12px 0",
+  color: theme.palette.text.secondary,
+  fontSize: theme.typography.caption.fontSize,
+  fontWeight: 600,
 }));
 
 export const GrowDialogTransition = forwardRef(function Transition(
@@ -236,10 +264,12 @@ const SearchPopup = () => {
         sx={{
           display: "flex",
           alignItems: "center",
+          gap: "4px",
+          p: "4px",
         }}
       >
-        <StyledOutlinedIconTextFiled
-          icon={<SearchOutlined />}
+        <SearchInput
+          icon={<SearchOutlined fontSize="small" />}
           variant="outlined"
           autoFocus
           onKeyDown={onEnter}
@@ -250,11 +280,15 @@ const SearchPopup = () => {
         />
         <Tooltip title={t("application:navbar.advancedSearch")}>
           <IconButton
-            sx={{
-              width: 40,
-              height: 40,
-              mr: 1.5,
-            }}
+            sx={(theme) => ({
+              width: 32,
+              height: 32,
+              flexShrink: 0,
+              color: "text.secondary",
+              "&.Mui-focusVisible": { outline: `1px solid ${theme.palette.primary.main}`, outlineOffset: -1 },
+              [theme.breakpoints.down("sm")]: { width: 40, height: 40 },
+              "@media (pointer: coarse)": { width: 40, height: 40 },
+            })}
             onClick={() => dispatch(openAdvancedSearch(FileManagerIndex.main, keywords))}
           >
             <Options />
@@ -272,34 +306,14 @@ const SearchPopup = () => {
         <AutoHeight>
           {fullSearchOptions.length > 0 && (
             <>
-              <Typography
-                variant={"body2"}
-                color={"textSecondary"}
-                sx={{
-                  px: 3,
-                  pt: 1.5,
-                  fontWeight: 600,
-                }}
-              >
-                {t("navbar.searchFilesTitle")}
-              </Typography>
+              <SearchSectionLabel>{t("navbar.searchFilesTitle")}</SearchSectionLabel>
               <FullSearchOption keyword={keywords} options={fullSearchOptions} />
               {(fullTextResults.length > 0 || fullTextLoading || treeSearchResults.length > 0) && <Divider />}
             </>
           )}
           {fullTextSearchEnabled && isLoggedIn && (fullTextResults.length > 0 || fullTextLoading) && (
             <>
-              <Typography
-                variant={"body2"}
-                color={"textSecondary"}
-                sx={{
-                  px: 3,
-                  pt: 1.5,
-                  fontWeight: 600,
-                }}
-              >
-                {t("navbar.fullTextSearch")}
-              </Typography>
+              <SearchSectionLabel>{t("navbar.fullTextSearch")}</SearchSectionLabel>
               <FullTextSearchResultList
                 results={fullTextResults}
                 loading={fullTextLoading}
@@ -311,17 +325,7 @@ const SearchPopup = () => {
           )}
           {treeSearchResults.length > 0 && (
             <>
-              <Typography
-                variant={"body2"}
-                color={"textSecondary"}
-                sx={{
-                  px: 3,
-                  pt: 1.5,
-                  fontWeight: 600,
-                }}
-              >
-                {t("navbar.recentlyViewed")}
-              </Typography>
+              <SearchSectionLabel>{t("navbar.recentlyViewed")}</SearchSectionLabel>
               <FuzzySearchResult keyword={searchedKeyword} files={treeSearchResults} />
             </>
           )}

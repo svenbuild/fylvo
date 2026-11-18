@@ -15,8 +15,7 @@ const Loading = () => {
       sx={{
         display: "flex",
         justifyContent: "center",
-        pt: 7,
-        pb: 9,
+        py: 4,
       }}
     >
       <CircularProgress />
@@ -38,23 +37,22 @@ const HeadlessFrame = () => {
   return (
     <Box
       sx={{
-        backgroundColor: (theme) =>
-          shellSurface(theme),
+        backgroundColor: shellSurface,
         flexGrow: 1,
-        height: "100vh",
+        height: "100dvh",
         overflow: "auto",
       }}
     >
-      <Container maxWidth={"xs"}>
+      <Container maxWidth={false} sx={{ maxWidth: 416, px: 2 }}>
         <Grid
           container
           spacing={0}
           direction="column"
           alignItems="center"
           justifyContent="center"
-          sx={{ minHeight: "100vh" }}
+          sx={{ minHeight: "100dvh", py: 2 }}
         >
-          <Box sx={{ width: "100%", py: 2 }}>
+          <Box sx={{ width: "100%", mb: 1.5 }}>
             {/* OAuth App Card - shown above the login panel */}
             {showOAuthCard && (
               <>
@@ -62,28 +60,39 @@ const HeadlessFrame = () => {
                 <ConnectingLine />
               </>
             )}
-            <Paper
+            <Box
               sx={{
-                padding: (theme) => `${theme.spacing(2)} ${theme.spacing(3)} ${theme.spacing(3)}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                mb: 1,
+                "& .MuiIconButton-root": { color: "text.secondary" },
+                "@media (max-width: 599.95px), (pointer: coarse)": {
+                  "& .MuiIconButton-root": { minWidth: 40, minHeight: 40 },
+                },
               }}
             >
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  mb: 2,
-                }}
-              >
-                <Logo
-                  sx={{
-                    maxWidth: "40%",
-                    maxHeight: "40px",
-                  }}
-                />
-                {/* 语言切换按钮 */}
-                <LanguageSwitcher />
-              </Box>
+              <Logo sx={{ width: 112, maxHeight: 28, objectFit: "contain", objectPosition: "left" }} />
+              <LanguageSwitcher />
+            </Box>
+            <Paper
+              variant="outlined"
+              sx={{
+                p: "16px",
+                bgcolor: (theme) => theme.palette.mode === "dark" ? theme.palette.grey[900] : theme.palette.background.paper,
+                // Room for the label that sits on the top border of each field.
+                "& .MuiFormControl-marginNormal": { mt: 2, mb: 0 },
+                "& .MuiOutlinedInput-root:not(.MuiInputBase-multiline) > .MuiOutlinedInput-input": { py: "6px" },
+                "& .MuiButton-outlined": { color: "text.primary" },
+                "& .MuiButtonBase-root.Mui-focusVisible": {
+                  outline: (theme) => `1px solid ${theme.palette.primary.main}`,
+                  outlineOffset: -2,
+                },
+                "@media (max-width: 599.95px), (pointer: coarse)": {
+                  "& .MuiButton-root, & .MuiOutlinedInput-root": { minHeight: 40 },
+                },
+              }}
+            >
               <AutoHeight>
                 <div>
                   <Box

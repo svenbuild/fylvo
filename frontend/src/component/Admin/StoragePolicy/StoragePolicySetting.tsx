@@ -12,7 +12,7 @@ import { DenseSelect, SecondaryButton } from "../../Common/StyledComponents";
 import { SquareMenuItem } from "../../FileManager/ContextMenu/ContextMenu";
 import Add from "../../Icons/Add";
 import ArrowSync from "../../Icons/ArrowSync";
-import PageContainer from "../../Pages/PageContainer";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader from "../../Pages/PageHeader";
 import { BorderedCardClickable } from "../Common/AdminCard";
 import { Code } from "../../Common/Code.tsx";
@@ -395,7 +395,7 @@ const StoragePolicySetting = () => {
   }, []);
 
   return (
-    <PageContainer>
+    <AdminPage>
       <SelectProvider
         open={selectProviderOpen}
         onClose={() => setSelectProviderOpen(false)}
@@ -453,6 +453,7 @@ const StoragePolicySetting = () => {
               onClick={() => setSelectProviderOpen(true)}
               sx={{
                 height: "100%",
+                minHeight: 44,
                 borderStyle: "dashed",
                 display: "flex",
                 alignItems: "center",
@@ -462,7 +463,7 @@ const StoragePolicySetting = () => {
               }}
             >
               <Add />
-              <Typography variant="h6">{t("policy.newStoragePolicy")}</Typography>
+              <Typography variant="subtitle2">{t("policy.newStoragePolicy")}</Typography>
             </BorderedCardClickable>
           </Grid>
           {!loading && policies.map((p) => <StoragePolicyCard key={p.id} policy={p} onRefresh={fetchPolicies} />)}
@@ -486,7 +487,7 @@ const StoragePolicySetting = () => {
           </Box>
         )}
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

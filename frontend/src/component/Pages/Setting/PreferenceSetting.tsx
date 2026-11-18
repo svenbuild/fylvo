@@ -1,5 +1,6 @@
 import { LoadingButton } from "@mui/lab";
 import {
+  Autocomplete,
   Box,
   Checkbox,
   Chip,
@@ -60,8 +61,10 @@ interface ThemeOption {
 const OutlinedSettingBox = styled(Box)(({ theme }) => ({
   borderRadius: theme.shape.borderRadius,
   padding: theme.spacing(1),
-  border: `1px solid ${theme.palette.mode === "light" ? "rgba(0, 0, 0, 0.23)" : "rgba(255, 255, 255, 0.23)"}`,
+  border: `1px solid ${theme.palette.divider}`,
 }));
+
+const FileExtensionAutocomplete = DenseAutocomplete as typeof Autocomplete<string, true, false, true>;
 
 const PreferenceSetting = ({ setting, setSetting }: PreferenceSettingProps) => {
   const { t } = useTranslation();
@@ -154,7 +157,7 @@ const PreferenceSetting = ({ setting, setSetting }: PreferenceSettingProps) => {
       });
   };
 
-  const onDisableViewSyncChange = (e: React.MouseEvent<HTMLElement>, enabled: boolean) => {
+  const onDisableViewSyncChange = (_event: React.MouseEvent<HTMLElement>, enabled: boolean) => {
     setSetting({ ...setting, disable_view_sync: !enabled });
     setLoading(true);
     dispatch(
@@ -191,8 +194,17 @@ const PreferenceSetting = ({ setting, setSetting }: PreferenceSettingProps) => {
   };
 
   return (
-    <Stack spacing={3}>
-      <SettingForm title={t("setting.language")} lgWidth={3}>
+    <Stack
+      spacing={1.5}
+      sx={{
+        "& > .MuiGrid2-container + .MuiGrid2-container": {
+          pt: 1.5,
+          borderTop: 1,
+          borderColor: "divider",
+        },
+      }}
+    >
+      <SettingForm title={t("setting.language")} lgWidth={4}>
         <FormControl fullWidth>
           <DenseSelect value={i18next.language} onChange={(e) => dispatch(selectLanguage(e.target.value as string))}>
             {languages.map((l) => (
@@ -233,9 +245,10 @@ const PreferenceSetting = ({ setting, setSetting }: PreferenceSettingProps) => {
       </SettingForm>
       <SettingForm title={t("setting.themeColor")} lgWidth={12}>
         <SelectorBox sx={{ gap: 1 }}>
-          {Object.keys(themeOptions).map((color, index) => (
+          {Object.keys(themeOptions).map((color) => (
             <ColorCircle
-              size={30}
+              key={color}
+              size={22}
               color={color}
               onClick={() => applyTheme(color)}
               selected={(preferredTheme && preferredTheme == color) || (!preferredTheme && defaultTheme == color)}
@@ -269,7 +282,7 @@ const PreferenceSetting = ({ setting, setSetting }: PreferenceSettingProps) => {
                 }}
                 spacing={1}
               >
-                <DenseAutocomplete
+                <FileExtensionAutocomplete
                   multiple
                   options={[]}
                   value={versionRetentionExts ?? []}

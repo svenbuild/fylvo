@@ -95,6 +95,27 @@ const MarkdownEditor = (props: MarkdownEditorProps) => {
         display: "flex",
         flexDirection: "column",
         minHeight: props.displayOnly ? "100%" : "calc(100vh - 200px)",
+        "& .mdxeditor": {
+          "--basePageBg": (theme) => theme.palette.background.paper,
+        },
+        "& .mdxeditor-toolbar": {
+          borderRadius: 0,
+          borderBottom: 1,
+          borderColor: "divider",
+          bgcolor: "background.paper",
+          color: "text.primary",
+          minHeight: 40,
+          padding: "4px 8px",
+          gap: "4px",
+          flexWrap: "nowrap",
+          overflowX: "auto",
+          "& [role=group]": { flexShrink: 0 },
+          "& button > svg": { width: 16, height: 16 },
+          "@media (max-width: 599.95px), (pointer: coarse)": {
+            paddingBlock: "2px",
+            "& button": { minHeight: 40, minWidth: 40 },
+          },
+        },
       }}
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "s") {

@@ -1,5 +1,5 @@
 import { Icon as Iconify } from "@iconify/react";
-import { Box, SvgIconProps, useTheme } from "@mui/material";
+import { Box, SvgIconProps } from "@mui/material";
 import SvgIcon from "@mui/material/SvgIcon/SvgIcon";
 import { memo, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -88,7 +88,6 @@ export const SideNavItemComponent = ({ item }: { item: NavigationItem }) => {
   const { t } = useTranslation("application");
   const navigate = useNavigate();
   const location = useLocation();
-  const theme = useTheme();
   const [proOpen, setProOpen] = useState(false);
   const active = useMemo(() => {
     return location.pathname == item.path || location.pathname.startsWith(item.path + "/");
@@ -122,27 +121,9 @@ export const SideNavItemComponent = ({ item }: { item: NavigationItem }) => {
         active={active}
         icon={
           !item.icon ? (
-            <Box
-              sx={{
-                width: 20,
-                height: 20,
-              }}
-            >
-              <Iconify
-                icon={item.iconifyName ?? ""}
-                height={20}
-                style={{
-                  color: theme.palette.action.active,
-                }}
-              />
-            </Box>
+            <Iconify icon={item.iconifyName ?? ""} width={16} height={16} />
           ) : (
-            <NavIconTransition
-              sx={{ px: 0, py: 0, pr: "14px", height: "20px" }}
-              iconProps={{ fontSize: "small", color: "action" }}
-              fileIcon={item.icon}
-              active={active}
-            />
+            <NavIconTransition iconProps={{ fontSize: "small" }} fileIcon={item.icon} active={active} />
           )
         }
       />
@@ -253,7 +234,6 @@ export const AdminPageNavigation = memo(() => {
 });
 
 const PageNavigation = () => {
-  const shopNavEnabled = useAppSelector((state) => state.siteConfig.basic.config.shop_nav_enabled);
   const appPromotionEnabled = useAppSelector((state) => state.siteConfig.basic.config.app_promotion);
   const user = SessionManager.currentLoginOrNull();
   const isAdmin = useMemo(() => {

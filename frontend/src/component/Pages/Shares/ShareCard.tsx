@@ -16,7 +16,6 @@ import { useSnackbar } from "notistack";
 import { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useInView } from "react-intersection-observer";
-import { useNavigate } from "react-router-dom";
 import { sendDeleteShare } from "../../../api/api.ts";
 import { FileType, Share } from "../../../api/explorer.ts";
 import { useAppDispatch } from "../../../redux/hooks.ts";
@@ -25,13 +24,14 @@ import { openShareEditByID } from "../../../redux/thunks/share.ts";
 import SessionManager from "../../../session";
 import { copyToClipboard } from "../../../util/index.ts";
 import { DefaultCloseAction } from "../../Common/Snackbar/snackbar.tsx";
-import { NoWrapBox, NoWrapTypography } from "../../Common/StyledComponents.tsx";
+import { NoWrapBox } from "../../Common/StyledComponents.tsx";
 import TimeBadge from "../../Common/TimeBadge.tsx";
 import { DenseDivider, SquareMenuItem } from "../../FileManager/ContextMenu/ContextMenu.tsx";
 import FileTypeIcon from "../../FileManager/Explorer/FileTypeIcon.tsx";
 import Clipboard from "../../Icons/Clipboard.tsx";
 import DeleteOutlined from "../../Icons/DeleteOutlined.tsx";
 import Eye from "../../Icons/Eye.tsx";
+import MoreHorizontal from "../../Icons/MoreHorizontal.tsx";
 import LinkEdit from "../../Icons/LinkEdit.tsx";
 import LockClosedOutlined from "../../Icons/LockClosedOutlined.tsx";
 import Open from "../../Icons/Open.tsx";
@@ -129,7 +129,6 @@ const ActionMenu = ({ share, onShareDeleted, onClose, ...rest }: ActionMenuProps
 
 const ShareCard = ({ share, onShareDeleted, onLoad, loading }: ShareCardProps) => {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { ref, inView } = useInView({
     rootMargin: "200px 0px",
     triggerOnce: true,
@@ -156,7 +155,7 @@ const ShareCard = ({ share, onShareDeleted, onLoad, loading }: ShareCardProps) =
   return (
     <>
       {share && <ActionMenu onShareDeleted={onShareDeleted} share={share} {...bindMenu(popupState)} />}
-      <Grid item xs={12} sm={6} md={4} ref={ref}>
+      <Grid item xs={12} ref={ref}>
         <SummaryButton
           disabled={loading}
           expanded={false}
@@ -166,7 +165,7 @@ const ShareCard = ({ share, onShareDeleted, onLoad, loading }: ShareCardProps) =
               popupState.open(e);
             }
           }}
-          sx={{ p: 0, minHeight: 0, width: "100%", textAlign: "left" }}
+          sx={{ px: 1.5, py: 0, width: "100%", border: 1, borderColor: "divider", textAlign: "left" }}
           {...(share?.owner?.id != user?.user.id
             ? {
                 onClick: () => {
@@ -177,84 +176,63 @@ const ShareCard = ({ share, onShareDeleted, onLoad, loading }: ShareCardProps) =
         >
           <Box
             sx={{
-              display: "flex",
+              display: "grid",
+              gridTemplateColumns: "18px minmax(0, 1fr) auto auto",
+              alignItems: "center",
+              gap: 1,
               width: "100%",
+              minWidth: 0,
             }}
           >
+            {share ? (
+              <FileTypeIcon
+                fontSize="small"
+                name={share.name ?? ""}
+                fileType={share.source_type ?? FileType.file}
+              />
+            ) : (
+              <Skeleton variant="rounded" width={16} height={16} />
+            )}
+            <NoWrapBox sx={{ display: "flex", gap: 0.75, alignItems: "center" }}>
+              {share?.password_protected && <LockClosedOutlined fontSize="small" color="action" />}
+              <Tooltip title={share?.name ?? ""}>
+                <Typography variant="body2" fontWeight={500} noWrap>
+                  {loading ? <Skeleton width={110} /> : share?.name}
+                </Typography>
+              </Tooltip>
+              {share?.expired && (
+                <Chip size="small" label={t("application:share.expired")} sx={{ height: 18, flexShrink: 0 }} />
+              )}
+            </NoWrapBox>
             <Box
               sx={{
-                height: 48,
-                p: 1.5,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                flexWrap: "wrap",
+                gap: { xs: 0.5, sm: 2 },
+                maxWidth: { xs: 104, sm: "none" },
+                color: "text.secondary",
+                whiteSpace: "nowrap",
               }}
             >
-              {share ? (
-                <FileTypeIcon
-                  sx={{
-                    fontSize: 32,
-                  }}
-                  name={share?.name ?? ""}
-                  fileType={share?.source_type ?? FileType.file}
-                />
+              {share?.created_at ? (
+                <>
+                  <TimeBadge variant="caption" datetime={share.created_at} />
+                  <Typography variant="caption" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                    <Eye sx={{ fontSize: 14 }} />
+                    {share.visited ?? 0}
+                  </Typography>
+                </>
               ) : (
-                <Skeleton variant={"circular"} width={32} height={32} />
+                <Skeleton width={60} />
               )}
             </Box>
-            <NoWrapBox sx={{ flexGrow: 1, p: 1, pl: 0, pr: 2 }}>
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                }}
-              >
-                <NoWrapBox sx={{ display: "flex", gap: 0.5, alignItems: "center" }}>
-                  {share && share?.password_protected && <LockClosedOutlined sx={{ fontSize: "16px" }} />}
-                  <Tooltip title={share?.name ?? ""}>
-                    <Typography variant={"body2"} fontWeight={500} noWrap>
-                      {loading ? <Skeleton variant={"text"} width={200} /> : share?.name}
-                    </Typography>
-                  </Tooltip>
-                </NoWrapBox>
-                {share?.expired && (
-                  <Chip size="small" label={t("application:share.expired")} sx={{ ml: 1, height: 18 }} />
-                )}
-              </Box>
-              <Box>
-                <Tooltip title={share?.name ?? ""}>
-                  <NoWrapTypography variant={"body2"} color={"text.secondary"}>
-                    {!share?.created_at ? (
-                      <Skeleton variant={"text"} width={"50%"} />
-                    ) : (
-                      <Box
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                        }}
-                      >
-                        <TimeBadge
-                          sx={{
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                          }}
-                          variant={"body2"}
-                          datetime={share?.created_at}
-                        />
-                        <Box
-                          sx={{
-                            display: "flex",
-                            alignItems: "center",
-                          }}
-                        >
-                          <Eye sx={{ ml: 1, mr: 0.5 }} fontSize={"small"} />
-                          {share?.visited ?? 0}
-                        </Box>
-                      </Box>
-                    )}
-                  </NoWrapTypography>
-                </Tooltip>
-              </Box>
-            </NoWrapBox>
+            {share && (
+              share.owner?.id === user?.user.id
+                ? <MoreHorizontal fontSize="small" color="action" />
+                : <Open fontSize="small" color="action" />
+            )}
           </Box>
         </SummaryButton>
       </Grid>

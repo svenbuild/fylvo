@@ -9,6 +9,8 @@ import { FmFile, loadingPlaceHolderNumb } from "../GridView/GridView.tsx";
 import GalleryImage from "./GalleryImage.tsx";
 import { CrUriPrefix } from "../../../../util/uri.ts";
 
+const galleryGap = 8;
+
 const GalleryView = React.forwardRef(
   (
     {
@@ -65,10 +67,10 @@ const GalleryView = React.forwardRef(
 
     const resizeGallery = useCallback(
       (containerWidth: number, boxSize: number) => {
-        const boxCount = Math.floor(containerWidth / boxSize);
+        const boxCount = Math.round((containerWidth + galleryGap) / (boxSize + galleryGap));
         const newCols = Math.max(1, boxCount);
-        const boxHeight = containerWidth / newCols;
-        setBoxHeight(boxHeight);
+        const boxHeight = (containerWidth - (newCols - 1) * galleryGap) / newCols;
+        setBoxHeight(Math.max(40, boxHeight * 0.6));
         setCol(newCols);
       },
       [setBoxHeight, setCol],
@@ -77,7 +79,7 @@ const GalleryView = React.forwardRef(
     useEffect(() => {
       if (!containerRef.current) return;
       const resizeObserver = new ResizeObserver(() => {
-        const containerWidth = containerRef.current?.clientWidth ?? 100;
+        const containerWidth = containerRef.current?.getBoundingClientRect().width ?? 100;
         resizeGallery(containerWidth, galleryWidth);
       });
       resizeObserver.observe(containerRef.current);
@@ -85,9 +87,10 @@ const GalleryView = React.forwardRef(
     }, [galleryWidth]);
 
     return (
-      <Box ref={mergedRef} component={"div"} {...rest}>
+      <Box sx={{ p: { xs: 1.5, sm: 2 } }} {...rest}>
         <ImageList
-          gap={2}
+          ref={mergedRef}
+          gap={galleryGap}
           cols={col}
           rowHeight={boxHeight}
           sx={{

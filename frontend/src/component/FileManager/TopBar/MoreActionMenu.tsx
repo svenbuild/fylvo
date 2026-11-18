@@ -64,6 +64,7 @@ const MoreActionMenu = ({ onClose, ...rest }: MenuProps) => {
 
   return (
     <SquareMenu
+      sx={{ "& .MuiMenuItem-root": { "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 } } }}
       MenuListProps={{
         dense: true,
       }}

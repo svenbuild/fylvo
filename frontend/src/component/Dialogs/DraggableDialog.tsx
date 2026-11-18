@@ -18,6 +18,7 @@ import { LoadingButton } from "@mui/lab";
 import { useCallback } from "react";
 import Draggable from "react-draggable";
 import { useTranslation } from "react-i18next";
+import { hoverSurface, selectedSurface } from "../../fylvoTheme.ts";
 import Dismiss from "../Icons/Dismiss.tsx";
 
 function PaperComponent(props: PaperProps) {
@@ -28,22 +29,76 @@ function PaperComponent(props: PaperProps) {
   );
 }
 
+const CompactDialog = styled(Dialog)(({ theme }) => ({
+  "& .MuiDialog-paper:not(.MuiDialog-paperFullScreen)": {
+    boxShadow: "none",
+    [theme.breakpoints.down("sm")]: {
+      margin: 12,
+      width: "calc(100% - 24px)",
+      maxHeight: "calc(100% - 24px)",
+    },
+  },
+  "& .MuiDialog-paperWidthSm:not(.MuiDialog-paperFullScreen)": { maxWidth: 480 },
+  "& .MuiDialogContent-root .MuiOutlinedInput-root:not(.MuiInputBase-multiline) .MuiOutlinedInput-input": {
+    paddingTop: 7,
+    paddingBottom: 7,
+  },
+  "& .MuiDialogContent-root .MuiInputLabel-outlined.MuiInputLabel-sizeSmall:not(.MuiInputLabel-shrink)": {
+    transform: "translate(14px, 7px) scale(1)",
+  },
+  "& .MuiDialogContent-root .MuiAutocomplete-inputRoot": { paddingBlock: 0 },
+  "& .MuiDialogContent-root .MuiFormControl-root:has(.MuiInputLabel-filled) .MuiFilledInput-root:not(.MuiInputBase-multiline) .MuiFilledInput-input": {
+    paddingTop: 15,
+    paddingBottom: 3,
+  },
+  "& .MuiDialogContent-root .MuiFilledInput-root.Mui-focused": {
+    outline: `1px solid ${theme.palette.primary.main}`,
+    outlineOffset: -1,
+  },
+  "& .MuiDialogContent-root .MuiListItemButton-root:hover, & .MuiDialogContent-root .MuiTableRow-hover:hover": {
+    backgroundColor: theme.palette.mode === "dark" ? selectedSurface(theme) : hoverSurface(theme),
+  },
+  "& .MuiDialogContent-root .MuiListItemButton-root.Mui-selected, & .MuiDialogContent-root .MuiTableRow-root.Mui-selected": {
+    backgroundColor: selectedSurface(theme),
+  },
+  "& .MuiButtonBase-root.Mui-focusVisible": {
+    outline: `1px solid ${theme.palette.primary.main}`,
+    outlineOffset: -1,
+  },
+  "@media (max-width: 599.95px), (pointer: coarse)": {
+    "& .MuiDialogContent-root .MuiInputBase-root, & .MuiDialogContent-root .MuiListItemButton-root, & .MuiDialogActions-root .MuiButton-root, & .MuiDialogTitle-root .MuiIconButton-root": {
+      minHeight: 40,
+    },
+    "& .MuiDialogTitle-root .MuiIconButton-root": { minWidth: 40 },
+    "& .MuiDialogContent-root .MuiInputLabel-outlined.MuiInputLabel-sizeSmall:not(.MuiInputLabel-shrink)": {
+      transform: "translate(14px, 11px) scale(1)",
+    },
+  },
+}));
+
 export const StyledDialogActions = styled(DialogActions)<{
   denseAction?: boolean;
 }>(({ theme, denseAction }) => ({
-  padding: `${theme.spacing(denseAction ? 0.5 : 2)} ${theme.spacing(3)}`,
-  justifyContent: "space-between",
+  padding: denseAction ? "6px 16px" : "10px 16px 14px",
+  borderTop: `1px solid ${theme.palette.divider}`,
+  gap: 8,
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+  "& > .MuiBox-root:first-child": { marginInlineEnd: "auto", minWidth: 0 },
+  "& > :empty": { display: "none" },
+  "&.MuiDialogActions-spacing > :not(:first-of-type)": { marginLeft: 0 },
 }));
 
 export const StyledDialogContentText = styled(DialogContentText)(({ theme }) => ({
   fontSize: theme.typography.body2.fontSize,
-  wordBreak: "break-all",
+  overflowWrap: "anywhere",
 }));
 
 export const StyledDialogTitle = styled(DialogTitle)<{ moveable?: boolean }>(({ moveable }) => ({
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
+  gap: 8,
   cursor: moveable ? "move" : "initial",
 }));
 
@@ -71,15 +126,15 @@ const DraggableDialog = (props: DraggableDialogProps) => {
     props.dialogProps.onClose && props.dialogProps.onClose({}, "backdropClick");
   }, [props.dialogProps.onClose]);
   return (
-    <Dialog
+    <CompactDialog
       PaperComponent={isTouch ? undefined : PaperComponent}
       {...props.dialogProps}
       onClose={props.loading ? undefined : props.dialogProps.onClose}
     >
       {props.title != undefined && (
         <Box>
-          <StyledDialogTitle moveable id="draggable-dialog-title">
-            <Box>{props.title}</Box>
+          <StyledDialogTitle sx={{ px: "16px", py: "10px" }} moveable id="draggable-dialog-title">
+            <Box sx={{ minWidth: 0, overflowWrap: "anywhere" }}>{props.title}</Box>
             <IconButton disabled={props.loading} onClick={onClose}>
               <Dismiss fontSize={"small"} />
             </IconButton>
@@ -92,7 +147,7 @@ const DraggableDialog = (props: DraggableDialogProps) => {
           <Box sx={{ flexGrow: props.secondaryFullWidth ? 1 : "unset" }}>{props.secondaryAction}</Box>
           <Stack direction={"row"} spacing={1}>
             {props.showCancel && (
-              <Button disabled={props.loading} onClick={onClose}>
+              <Button color="inherit" disabled={props.loading} onClick={onClose}>
                 {props.cancelText ?? t("common:cancel")}
               </Button>
             )}
@@ -110,7 +165,7 @@ const DraggableDialog = (props: DraggableDialogProps) => {
           </Stack>
         </StyledDialogActions>
       )}
-    </Dialog>
+    </CompactDialog>
   );
 };
 

@@ -1,4 +1,4 @@
-import { Box, Fade, Grow, InputBase, PopoverProps, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Fade, Grow, InputBase, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import React, { memo, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { sizeToString } from "../../../../util";
 import CrUri, { SearchParam } from "../../../../util/uri.ts";
@@ -11,6 +11,7 @@ import dayjs, { Dayjs } from "dayjs";
 import { bindPopover } from "material-ui-popup-state";
 import { usePopupState } from "material-ui-popup-state/hooks";
 import HoverPopover from "material-ui-popup-state/HoverPopover";
+// @ts-expect-error The package does not provide TypeScript declarations.
 import Highlighter from "react-highlight-words";
 import { useTranslation } from "react-i18next";
 import { TransitionGroup } from "react-transition-group";
@@ -71,13 +72,14 @@ export interface CellProps {
   uploading?: boolean;
   noThumb?: boolean;
   showThumb?: boolean;
+  nameMeta?: { size: boolean; modified: boolean };
   thumbWidth?: number;
   thumbHeight?: number;
 }
 
 export interface ThumbPopoverProps {
   file: FmFile;
-  popupState: PopoverProps;
+  popupState: ReturnType<typeof bindPopover>;
   thumbWidth?: number;
   thumbHeight?: number;
 }
@@ -169,7 +171,7 @@ const FileNameCell = memo((props: CellProps) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const isTouch = useMediaQuery("(pointer: coarse)");
-  const { file, uploading, noThumb, fileTag, search, isSelected, showThumb, thumbWidth, thumbHeight } = props;
+  const { file, uploading, noThumb, fileTag, search, isSelected, showThumb, nameMeta, thumbWidth, thumbHeight } = props;
   const isFolder = file.type === FileType.folder;
 
   const {
@@ -229,7 +231,8 @@ const FileNameCell = memo((props: CellProps) => {
   );
 
   if (showThumb) {
-    const showSize = !isFolder && !file.metadata?.[Metadata.share_redirect];
+    const showSize = nameMeta?.size && !isFolder && !file.metadata?.[Metadata.share_redirect];
+    const showModified = nameMeta?.modified;
     return (
       <>
         <Box
@@ -241,14 +244,18 @@ const FileNameCell = memo((props: CellProps) => {
           sx={{
             display: "flex",
             alignItems: "center",
-            gap: 1.25,
-            py: 0.5,
+            gap: 1,
+            py: "1px",
             width: "100%",
             minWidth: 0,
           }}
         >
           <Box {...(noThumb || isMobile || isTouch ? {} : hoverState)} sx={{ display: "flex", alignItems: "center" }}>
-            <ListThumbnail file={file} isSelected={isSelected} noThumb={noThumb} />
+            {noThumb ? (
+              <FileSmallIcon variant="list" selected={!!isSelected} file={file} />
+            ) : (
+              <ListThumbnail file={file} isSelected={isSelected} noThumb={noThumb} />
+            )}
           </Box>
           <Box
             sx={{
@@ -266,20 +273,13 @@ const FileNameCell = memo((props: CellProps) => {
               )}
               {!isEditing && uploading && <UploadingTag sx={{ maxWidth: "50%" }} />}
             </Box>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 1,
-                color: "text.secondary",
-                fontSize: "0.75rem",
-                minWidth: 0,
-              }}
-            >
-              {showSize && <Box component="span">{sizeToString(file.size)}</Box>}
-              {showSize && <Box component="span">·</Box>}
-              <TimeBadge variant={"inherit"} datetime={file.updated_at} />
-            </Box>
+            {(showSize || showModified) && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, color: "text.secondary", typography: "caption" }}>
+                {showSize && <Box component="span">{sizeToString(file.size)}</Box>}
+                {showSize && showModified && <Box component="span">·</Box>}
+                {showModified && <TimeBadge variant="inherit" datetime={file.updated_at} />}
+              </Box>
+            )}
           </Box>
         </Box>
         {!noThumb && (
@@ -306,6 +306,7 @@ const FileNameCell = memo((props: CellProps) => {
           display: "flex",
           alignItems: "center",
           gap: 1,
+          minWidth: 0,
         }}
       >
         <Box {...(noThumb || isMobile || isTouch ? {} : hoverState)}>

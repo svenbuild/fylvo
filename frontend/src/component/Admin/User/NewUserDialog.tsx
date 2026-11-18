@@ -1,6 +1,7 @@
 import { DialogContent, Stack } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { adminControlSx } from "../Common/AdminPage.tsx";
 import { useNavigate } from "react-router-dom";
 import { upsertUser } from "../../../api/api";
 import { User, UserStatus } from "../../../api/dashboard";
@@ -73,9 +74,9 @@ const NewUserDialog = ({ open, onClose, onCreated }: NewUserDialogProps) => {
         maxWidth: "sm",
       }}
     >
-      <DialogContent>
+      <DialogContent sx={adminControlSx}>
         <form ref={formRef}>
-          <Stack spacing={2}>
+          <Stack spacing={1.5}>
             <SettingForm title={t("user.email")} lgWidth={12}>
               <DenseFilledTextField
                 fullWidth

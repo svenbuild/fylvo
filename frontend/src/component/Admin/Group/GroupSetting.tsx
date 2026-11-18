@@ -20,7 +20,7 @@ import { useAppDispatch } from "../../../redux/hooks";
 import { NoWrapTableCell, SecondaryButton, StyledTableContainerPaper } from "../../Common/StyledComponents";
 import Add from "../../Icons/Add";
 import ArrowSync from "../../Icons/ArrowSync";
-import PageContainer from "../../Pages/PageContainer";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader from "../../Pages/PageHeader";
 import TablePagination from "../Common/TablePagination";
 import { OrderByQuery, OrderDirectionQuery, PageQuery, PageSizeQuery } from "../StoragePolicy/StoragePolicySetting";
@@ -81,7 +81,7 @@ const GroupSetting = () => {
   };
 
   return (
-    <PageContainer>
+    <AdminPage>
       <NewGroupDialog open={createNewOpen} onClose={() => setCreateNewOpen(false)} />
       <Container maxWidth="xl">
         <PageHeader title={t("dashboard:nav.groups")} />
@@ -145,7 +145,7 @@ const GroupSetting = () => {
           </Box>
         )}
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

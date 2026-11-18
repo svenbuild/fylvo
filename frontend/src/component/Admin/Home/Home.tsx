@@ -16,7 +16,6 @@ import {
   styled,
   Typography,
 } from "@mui/material";
-import { blue, green, red, yellow } from "@mui/material/colors";
 import Grid from "@mui/material/Grid";
 import { useTheme } from "@mui/material/styles";
 import dayjs from "dayjs";
@@ -41,15 +40,20 @@ import PeopleFilled from "../../Icons/PeopleFilled.tsx";
 import ShareFilled from "../../Icons/ShareFilled.tsx";
 import SparkleFilled from "../../Icons/SparkleFilled.tsx";
 import Telegram from "../../Icons/Telegram.tsx";
-import PageContainer from "../../Pages/PageContainer.tsx";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader from "../../Pages/PageHeader.tsx";
 import ProDialog from "../Common/ProDialog.tsx";
 import SiteUrlWarning from "./SiteUrlWarning.tsx";
 import CommentMultiple from "../../Icons/CommentMultiple.tsx";
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
-  padding: theme.spacing(3),
-  boxShadow: "initial",
+  padding: 14,
+  boxShadow: "none",
+  "& > .MuiTypography-subtitle1": {
+    fontSize: theme.typography.caption.fontSize,
+    fontWeight: 600,
+    color: theme.palette.text.secondary,
+  },
   border: "1px solid " + theme.palette.divider,
 }));
 
@@ -89,7 +93,7 @@ const Home = () => {
   }, []);
 
   return (
-    <PageContainer>
+    <AdminPage>
       <ProDialog open={proDialogOpen} onClose={() => setProDialogOpen(false)} />
       <SiteUrlWarning
         open={siteUrlWarning}
@@ -98,7 +102,7 @@ const Home = () => {
       />
       <Container maxWidth="xl">
         <PageHeader title={t("nav.summary")} />
-        <Grid container spacing={3}>
+        <Grid container spacing={2}>
           <Grid alignContent={"stretch"} item xs={12} md={8} lg={9}>
             <StyledPaper>
               <Typography
@@ -121,7 +125,7 @@ const Home = () => {
                   )}
                 </Typography>
               </Typography>
-              <Divider sx={{ mb: 2, mt: 1 }} />
+              <Divider sx={{ my: 1 }} />
               <SwitchTransition>
                 <CSSTransition
                   addEndListener={(node, done) => node.addEventListener("transitionend", done, false)}
@@ -130,9 +134,8 @@ const Home = () => {
                 >
                   <Box>
                     {summary?.metrics_summary && (
-                      <ResponsiveContainer width="100%" height={300}>
+                      <ResponsiveContainer width="100%" height={216}>
                         <LineChart
-                          height={350}
                           data={summary?.metrics_summary.dates.map((i, d) => ({
                             name: dayjs(i).format("MM-DD"),
                             user: summary?.metrics_summary?.users[d] ?? 0,
@@ -140,10 +143,12 @@ const Home = () => {
                             share: summary?.metrics_summary?.shares[d] ?? 0,
                           }))}
                         >
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="name" />
+                          <CartesianGrid stroke={theme.palette.divider} vertical={false} />
+                          <XAxis dataKey="name" tick={{ fill: theme.palette.text.secondary, fontSize: 11 }} tickLine={false} />
                           <YAxis
                             allowDecimals={false}
+                            tick={{ fill: theme.palette.text.secondary, fontSize: 11 }}
+                            tickLine={false}
                             width={(() => {
                               const yAxisValue = [
                                 ...(summary?.metrics_summary?.users ?? []),
@@ -155,18 +160,21 @@ const Home = () => {
                               return 3 + yAxisDigits * 9;
                             })()}
                           />
-                          <Tooltip />
+                          <Tooltip
+                            contentStyle={{ background: theme.palette.background.paper, borderColor: theme.palette.divider }}
+                            itemStyle={{ color: theme.palette.text.primary }}
+                          />
                           <Legend />
-                          <Line name={t("nav.users")} type="monotone" dataKey="user" stroke={blue[600]} />
-                          <Line name={t("nav.files")} type="monotone" dataKey="file" stroke={yellow[800]} />
-                          <Line name={t("nav.shares")} type="monotone" dataKey="share" stroke={green[800]} />
+                          <Line name={t("nav.users")} type="monotone" dataKey="user" stroke={theme.palette.primary.main} dot={false} />
+                          <Line name={t("nav.files")} type="monotone" dataKey="file" stroke={theme.palette.warning.main} dot={false} />
+                          <Line name={t("nav.shares")} type="monotone" dataKey="share" stroke={theme.palette.success.main} dot={false} />
                         </LineChart>
                       </ResponsiveContainer>
                     )}
                     {chartLoading && (
                       <Box
                         sx={{
-                          height: "300px",
+                          height: 216,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -178,7 +186,7 @@ const Home = () => {
                     {!summary?.metrics_summary?.generated_at && !chartLoading && (
                       <Box
                         sx={{
-                          height: "300px",
+                          height: 216,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -199,7 +207,7 @@ const Home = () => {
               <Typography variant={"subtitle1"} fontWeight={500}>
                 {t("summary.summary")}
               </Typography>
-              <Divider sx={{ mb: 2, mt: 1 }} />
+              <Divider sx={{ my: 1 }} />
               <SwitchTransition>
                 <CSSTransition
                   addEndListener={(node, done) => node.addEventListener("transitionend", done, false)}
@@ -208,15 +216,22 @@ const Home = () => {
                 >
                   <Box>
                     {summary?.metrics_summary && (
-                      <List disablePadding sx={{ minHeight: "300px" }}>
+                      <List
+                        disablePadding
+                        sx={{
+                          display: "grid",
+                          gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "1fr" },
+                          gap: 0.5,
+                          "& .MuiListItem-root": { p: 0.75, minWidth: 0, border: 1, borderColor: "divider", borderRadius: 1 },
+                          "& .MuiListItemAvatar-root": { minWidth: 26 },
+                          "& .MuiListItemText-root": { my: 0 },
+                          "& .MuiAvatar-root": { width: 20, height: 20, bgcolor: "transparent", color: "text.secondary" },
+                          "& .MuiSvgIcon-root": { fontSize: 16 },
+                        }}
+                      >
                         <ListItem>
                           <ListItemAvatar>
-                            <Avatar
-                              sx={{
-                                backgroundColor: blue[100],
-                                color: blue[600],
-                              }}
-                            >
+                            <Avatar>
                               <PeopleFilled />
                             </Avatar>
                           </ListItemAvatar>
@@ -227,12 +242,7 @@ const Home = () => {
                         </ListItem>
                         <ListItem>
                           <ListItemAvatar>
-                            <Avatar
-                              sx={{
-                                backgroundColor: yellow[100],
-                                color: yellow[800],
-                              }}
-                            >
+                            <Avatar>
                               <DocumentCopyFilled />
                             </Avatar>
                           </ListItemAvatar>
@@ -243,12 +253,7 @@ const Home = () => {
                         </ListItem>
                         <ListItem>
                           <ListItemAvatar>
-                            <Avatar
-                              sx={{
-                                backgroundColor: green[100],
-                                color: green[800],
-                              }}
-                            >
+                            <Avatar>
                               <ShareFilled />
                             </Avatar>
                           </ListItemAvatar>
@@ -259,12 +264,7 @@ const Home = () => {
                         </ListItem>
                         <ListItem>
                           <ListItemAvatar>
-                            <Avatar
-                              sx={{
-                                backgroundColor: red[100],
-                                color: red[800],
-                              }}
-                            >
+                            <Avatar>
                               <BoxMultipleFilled />
                             </Avatar>
                           </ListItemAvatar>
@@ -278,7 +278,7 @@ const Home = () => {
                     {chartLoading && (
                       <Box
                         sx={{
-                          height: "300px",
+                          minHeight: 48,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -290,7 +290,7 @@ const Home = () => {
                     {!summary?.metrics_summary?.generated_at && !chartLoading && (
                       <Box
                         sx={{
-                          height: "300px",
+                          minHeight: 48,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -308,10 +308,10 @@ const Home = () => {
           </Grid>
           <Grid item xs={12} md={5} lg={4}>
             <StyledPaper sx={{ p: 0 }}>
-              <Box sx={{ p: 3, display: "flex", alignItems: "center" }}>
-                <Box component={"img"} sx={{ width: 70 }} alt="Fylvo" src={"/static/img/fylvo.svg"} />
-                <Box sx={{ ml: 2 }}>
-                  <Typography variant={"h5"} fontWeight={600}>
+              <Box sx={{ p: 2, display: "flex", alignItems: "center" }}>
+                <Box component={"img"} sx={{ width: 38 }} alt="Fylvo" src={"/static/img/fylvo.svg"} />
+                <Box sx={{ ml: 1.5 }}>
+                  <Typography variant={"body2"} fontWeight={600}>
                     Fylvo
                     {summary && summary.version.pro && (
                       <SquareChip sx={{ ml: 1, height: "initial" }} size={"small"} color={"primary"} label={"Pro"} />
@@ -328,7 +328,7 @@ const Home = () => {
                 </Box>
               </Box>
               <Divider />
-              <List component="nav" aria-label="main mailbox folders" sx={{ mx: 2 }}>
+              <List component="nav" aria-label="main mailbox folders" sx={{ mx: 1, py: 0.5, "& .MuiListItemText-root": { my: 0 }, "& .MuiListItemButton-root": { minHeight: { xs: 40, sm: 28 } } }}>
                 <ListItemButton onClick={() => window.open("https://cloudreve.org")}>
                   <ListItemIcon>
                     <HomeIcon />
@@ -392,7 +392,6 @@ const Home = () => {
                   </ListItemButton>
                 )}
               </List>
-              <Divider />
             </StyledPaper>
           </Grid>
           <Grid item xs={12} md={7} lg={8}>
@@ -400,7 +399,7 @@ const Home = () => {
               <Typography variant={"subtitle1"} fontWeight={500}>
                 公告
               </Typography>
-              <Divider sx={{ mb: 2, mt: 1 }} />
+              <Divider sx={{ my: 1 }} />
               <Giscus
                 id="comments"
                 repo="cloudreve/cloudreve"
@@ -418,7 +417,7 @@ const Home = () => {
           </Grid>
         </Grid>
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

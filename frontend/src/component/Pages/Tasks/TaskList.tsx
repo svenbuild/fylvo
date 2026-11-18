@@ -1,14 +1,13 @@
 import * as React from "react";
 import { useCallback, useEffect, useState } from "react";
 import { ListTaskCategory, TaskResponse } from "../../../api/workflow.ts";
-import { Box, Container, FormControlLabel, FormGroup, Switch, Typography } from "@mui/material";
+import { Container, FormControlLabel, FormGroup, Switch, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import PageHeader from "../PageHeader.tsx";
 import { getTasks } from "../../../api/api.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
-import Nothing from "../../Common/Nothing.tsx";
 import TaskCard from "./TaskCard.tsx";
-import PageContainer from "../PageContainer.tsx";
+import PageContainer, { PageEmpty } from "../PageContainer.tsx";
 
 const defaultPageSize = 25;
 const autoRefreshInterval = 20 * 1000;
@@ -84,13 +83,13 @@ const TaskList = () => {
   };
 
   return (
-    <PageContainer>
+    <PageContainer compact>
       <Container maxWidth="lg">
         <PageHeader
           secondaryAction={
             <FormGroup>
               <FormControlLabel
-                sx={{ mr: 0 }}
+                sx={{ mx: 0 }}
                 control={<Switch size={"small"} onChange={toggleAutoRefresh} checked={autoRefresh} />}
                 label={
                   <Typography variant={"body2"} color={"text.secondary"}>
@@ -112,9 +111,7 @@ const TaskList = () => {
         )}
 
         {nextPageToken == undefined && tasks.length == 0 && (
-          <Box sx={{ p: 1, width: "100%", textAlign: "center" }}>
-            <Nothing size={0.8} top={63} primary={t("setting.listEmpty")} />
-          </Box>
+          <PageEmpty>{t("setting.listEmpty")}</PageEmpty>
         )}
       </Container>
     </PageContainer>

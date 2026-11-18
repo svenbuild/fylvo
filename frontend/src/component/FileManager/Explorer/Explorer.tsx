@@ -112,7 +112,7 @@ const Explorer = () => {
     <RadiusFrame
       withBorder={!isMobile}
       square={isMobile}
-      sx={{ flexGrow: 1, overflow: "auto" }}
+      sx={{ flex: "1 1 0", minWidth: 0, overflow: "auto" }}
       ref={selectContainerRef}
       onContextMenu={onContextMenu}
       onMouseDown={isMobile || isTouch ? undefined : handleMouseDown}

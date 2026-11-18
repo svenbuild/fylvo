@@ -11,7 +11,7 @@ import { CustomPropsItem } from "./CustomProps.tsx";
 const BorderedCard = styled(Box)(({ theme }) => ({
   border: `1px solid ${theme.palette.divider}`,
   borderRadius: theme.shape.borderRadius,
-  padding: theme.spacing(2),
+  padding: "4px 8px",
   backgroundColor: theme.palette.background.paper,
 }));
 
@@ -21,7 +21,8 @@ const BorderedCardClickable = styled(BorderedCard)<{ disabled?: boolean }>(({ th
     backgroundColor: theme.palette.action.hover,
   },
   transition: "background-color 0.3s ease",
-  height: "100%",
+  minHeight: 30,
+  "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
   borderStyle: "dashed",
   display: "flex",
   alignItems: "center",
@@ -68,7 +69,7 @@ const AddButton = ({ options, existingPropIds, onPropAdd, disabled }: AddButtonP
   return (
     <>
       <BorderedCardClickable disabled={disabled} {...bindTrigger(propPopupState)}>
-        <Add sx={{ width: 20, height: 20 }} />
+        <Add fontSize="small" />
         <Typography variant="body1" fontWeight={500}>
           {t("fileManager.add")}
         </Typography>

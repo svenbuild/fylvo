@@ -47,7 +47,17 @@ const LoadingSnackbar = forwardRef<HTMLDivElement, LoadingSnackbarProps>((props,
   return (
     <MuiSnackbarContent
       ref={ref}
-      sx={{ borderRadius: "12px", maxWidth: 600 }}
+      sx={{
+        bgcolor: "background.paper",
+        color: "text.primary",
+        border: 1,
+        borderColor: "divider",
+        boxShadow: "none",
+        maxWidth: 480,
+        px: "10px",
+        py: 0,
+        "& .MuiSnackbarContent-message": { width: "100%", py: "6px" },
+      }}
       message={
         <Box
           sx={{
@@ -59,8 +69,8 @@ const LoadingSnackbar = forwardRef<HTMLDivElement, LoadingSnackbarProps>((props,
         >
           <Box>
             <CircularProgress
-              size={20}
-              sx={{ height: 20, mr: 2 }}
+              size={16}
+              sx={{ height: 16, mr: 1 }}
               variant={progress ? "determinate" : "indeterminate"}
               value={progress}
             />

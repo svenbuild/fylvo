@@ -272,19 +272,24 @@ const getPreferredTheme = (
   return themeConfig.light;
 };
 
+// Toasts are a quiet bordered surface, only the status icon carries color.
 const StyledMaterialDesignContent = styled(MaterialDesignContent)(({ theme }) => ({
   "&.notistack-MuiContent": {
-    borderRadius: 12,
+    backgroundColor: theme.palette.background.paper,
+    color: theme.palette.text.primary,
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: 8,
+    boxShadow: "none",
+    fontSize: theme.typography.body2.fontSize,
+    padding: "0 10px",
+    maxWidth: 480,
+    "& #notistack-snackbar": { padding: "6px 0" },
+    "& #notistack-snackbar > svg": { fontSize: "16px !important" },
   },
-  "&.notistack-MuiContent-success": {
-    backgroundColor: theme.palette.success.main,
-  },
-  "&.notistack-MuiContent-error": {
-    backgroundColor: theme.palette.error.main,
-  },
-  "&.notistack-MuiContent-warning": {
-    backgroundColor: theme.palette.warning.main,
-  },
+  "&.notistack-MuiContent-success #notistack-snackbar > svg": { color: theme.palette.success.main },
+  "&.notistack-MuiContent-error #notistack-snackbar > svg": { color: theme.palette.error.main },
+  "&.notistack-MuiContent-warning #notistack-snackbar > svg": { color: theme.palette.warning.main },
+  "&.notistack-MuiContent-info #notistack-snackbar > svg": { color: theme.palette.info.main },
 }));
 
 const AppContent = () => {
@@ -355,6 +360,7 @@ const AppContent = () => {
           success: StyledMaterialDesignContent,
           error: StyledMaterialDesignContent,
           warning: StyledMaterialDesignContent,
+          info: StyledMaterialDesignContent,
           loading: LoadingSnackbar,
           default: StyledMaterialDesignContent,
           file: FileIconSnackbar,

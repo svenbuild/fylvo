@@ -12,24 +12,15 @@ export interface NavIconTransitionProps {
 
 const NavIconTransition = ({ fileIcon, active, iconProps, ...rest }: NavIconTransitionProps) => {
   const [Active, InActive] = fileIcon;
+  const Icon = active ? Active : InActive;
   return (
     <Box {...rest}>
-      <TransitionGroup>
-        {active && (
-          <Fade key={"active"}>
-            <span>
-              <Active sx={{ position: "absolute" }} {...iconProps} />
-            </span>
-          </Fade>
-        )}
-        {!active && (
-          <Fade key={"inactive"}>
-            <span>
-              <InActive sx={{ position: "absolute" }} key={"inactive"} {...iconProps} />
-            </span>
-          </Fade>
-        )}
-        <InActive key={"3"} sx={{ visibility: "hidden" }} {...iconProps} />
+      <TransitionGroup style={{ display: "grid", placeItems: "center", height: "100%" }}>
+        <Fade key={active ? "active" : "inactive"}>
+          <span style={{ gridArea: "1 / 1", display: "flex" }}>
+            <Icon {...iconProps} />
+          </span>
+        </Fade>
       </TransitionGroup>
     </Box>
   );

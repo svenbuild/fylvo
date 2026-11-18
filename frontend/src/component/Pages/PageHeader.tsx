@@ -16,9 +16,9 @@ export interface PageHeaderProps {
 const PageHeader = ({ title, secondaryAction, onRefresh, loading, skipChangingDocumentTitle }: PageHeaderProps) => {
   const { t } = useTranslation();
   return (
-    <Box sx={{ mb: 4 }}>
+    <Box data-page-header sx={{ mb: 4 }}>
       <Box sx={{ display: "flex", alignItems: "center" }}>
-        <Typography variant={"h4"} fontWeight={600}>
+        <Typography data-page-title variant={"h4"} fontWeight={600}>
           {title}
         </Typography>
         {!skipChangingDocumentTitle && <PageTitle title={title} />}

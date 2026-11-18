@@ -110,15 +110,15 @@ const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loa
   return (
     <Box component={"form"} ref={formRef} onSubmit={(e) => e.preventDefault()}>
       <ProDialog open={proOpen} onClose={() => setProOpen(false)} />
-      <Stack spacing={isMobile ? 2 : 3} direction={isMobile ? "column" : "row"}>
-        <Stack spacing={isMobile ? 2 : 3} direction={"column"} sx={{ minWidth: 200 }}>
+      <Stack spacing={2} direction={isMobile ? "column" : "row"}>
+        <Stack spacing={2} direction={"column"} sx={{ minWidth: { xs: 0, sm: 168 } }}>
           <SettingForm title={t("user.avatar")} noContainer lgWidth={12}>
             <UserAvatar
               square
               overwriteTextSize
               sx={{
-                width: 150,
-                height: 150,
+                width: { xs: 64, sm: 80 },
+                height: { xs: 64, sm: 80 },
               }}
               user={{
                 created_at: values.created_at,
@@ -158,9 +158,9 @@ const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loa
             </SecondaryButton>
           </Box>
         </Stack>
-        <Divider orientation="vertical" flexItem />
-        <Box sx={{ flexGrow: 1 }}>
-          <Grid container spacing={isMobile ? 2 : 3}>
+        <Divider orientation={isMobile ? "horizontal" : "vertical"} flexItem />
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+          <Grid container spacing={2}>
             <SettingForm title={t("user.email")} noContainer lgWidth={6}>
               <DenseFilledTextField fullWidth type="email" value={values.email} required onChange={onEmailChange} />
             </SettingForm>

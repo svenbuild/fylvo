@@ -30,64 +30,35 @@ const FileSmallIcon = memo(({ selected, variant, loading, file, ignoreHovered }:
     },
     [file, loading, dispatch],
   );
-  const isInList = variant === "list";
+  const iconSize = variant === "list" ? 16 : 18;
+  const showCheckbox = selected || (hovered && !ignoreHovered);
   return (
-    <TransitionGroup onClick={onIconClick}>
-      {!selected && (!hovered || ignoreHovered) && (
+    <TransitionGroup
+      onClick={onIconClick}
+      style={{ position: "relative", display: "grid", placeItems: "center", flexShrink: 0, width: 24, height: 24 }}
+    >
+      {!showCheckbox && (
         <Fade>
           <FileIcon
             file={file}
             loading={loading}
-            sx={
-              isInList
-                ? {
-                    position: "absolute",
-                    p: 0,
-                  }
-                : { position: "absolute" }
-            }
+            variant="small"
+            iconProps={{ sx: { width: iconSize, height: iconSize, fontSize: iconSize } }}
+            sx={{ position: "absolute", display: "flex", p: 0 }}
           />
         </Fade>
       )}
-      {!selected && hovered && !ignoreHovered && (
+      {showCheckbox && (
         <Fade>
-          <Box sx={{ position: "absolute" }}>
-            <CheckUnchecked
-              sx={{
-                width: isInList ? "20px" : "24px",
-                height: "24px",
-                mx: isInList ? "2px" : 2,
-                my: isInList ? 0 : 1.5,
-                position: "absolute",
-              }}
-              color={"action"}
-            />
+          <Box sx={{ position: "absolute", display: "flex" }}>
+            {selected ? (
+              <CheckmarkCircle color="primary" fontSize="small" />
+            ) : (
+              <CheckUnchecked sx={{ color: "text.secondary" }} fontSize="small" />
+            )}
           </Box>
         </Fade>
       )}
-      {selected && (
-        <Fade>
-          <Box sx={{ position: "absolute" }}>
-            <CheckmarkCircle
-              sx={{
-                width: isInList ? "20px" : "24px",
-                height: "24px",
-                mx: isInList ? "2px" : 2,
-                my: isInList ? 0 : 1.5,
-              }}
-              color={"primary"}
-            />
-          </Box>
-        </Fade>
-      )}
-      <Box
-        sx={{
-          width: "24px",
-          height: "24px",
-          mx: isInList ? "2px" : 2,
-          my: isInList ? 0 : 1.5,
-        }}
-      />
     </TransitionGroup>
   );
 });

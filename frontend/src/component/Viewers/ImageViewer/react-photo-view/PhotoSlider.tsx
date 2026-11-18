@@ -1,4 +1,5 @@
 import { Box, IconButton, Tooltip, useMediaQuery, useTheme } from "@mui/material";
+import { hoverSurface, shellSurface } from "../../../../fylvoTheme.ts";
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { setSidebar } from "../../../../redux/globalStateSlice.ts";
@@ -418,7 +419,22 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
           onAnimationEnd={onAnimationEnd}
         />
         {bannerVisible && (
-          <div className="PhotoView-Slider__BannerWrap">
+          <Box
+            className="PhotoView-Slider__BannerWrap"
+            sx={{
+              bgcolor: shellSurface,
+              color: "text.secondary",
+              borderBottom: 1,
+              borderColor: "divider",
+              "& .MuiIconButton-root:hover": { bgcolor: hoverSurface },
+              "& .MuiIconButton-root.Mui-focusVisible": {
+                outline: (theme) => `1px solid ${theme.palette.primary.main}`,
+              },
+              "@media (max-width: 599.95px), (pointer: coarse)": {
+                "& .MuiIconButton-root": { minWidth: 40, minHeight: 40 },
+              },
+            }}
+          >
             <div className="PhotoView-Slider__Counter">
               {index + 1} / {moreFiles ? imageLength - 1 : imageLength}
               {moreFiles ? "+" : ""}
@@ -471,7 +487,7 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
                 <Dismiss fontSize={"small"} />
               </IconButton>
             </div>
-          </div>
+          </Box>
         )}
         {adjacentImages.map((item: DataType, currentIndex) => {
           // 截取之前的索引位置

@@ -15,22 +15,16 @@ const NoMatch = () => {
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        pt: 7,
+        gap: 1,
       }}
     >
-      <DismissCircleFilled fontSize={"large"} color={"action"} />
-      <Typography
-        variant={"h6"}
-        sx={{
-          color: (theme) => theme.palette.action.active,
-          mt: 1,
-        }}
-      >
+      <DismissCircleFilled color="action" />
+      <Typography variant="h6">
         {t("common:pageNotFound")}
       </Typography>
       <LoadingButton
         sx={{
-          mt: 7,
+          mt: 1,
         }}
         onClick={() => navigate("/")}
         fullWidth

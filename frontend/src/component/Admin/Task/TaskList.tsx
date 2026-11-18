@@ -29,7 +29,7 @@ import { NoWrapTableCell, SecondaryButton, StyledTableContainerPaper } from "../
 import ArrowSync from "../../Icons/ArrowSync";
 import Broom from "../../Icons/Broom";
 import Filter from "../../Icons/Filter";
-import PageContainer from "../../Pages/PageContainer";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader from "../../Pages/PageHeader";
 import TablePagination from "../Common/TablePagination";
 import EntityDialog from "../Entity/EntityDialog/EntityDialog";
@@ -206,7 +206,7 @@ const TaskList = () => {
   };
 
   return (
-    <PageContainer>
+    <AdminPage>
       <UserDialog open={userDialogOpen} onClose={() => setUserDialogOpen(false)} userID={userDialogID} />
       <EntityDialog open={openEntityDialogOpen} onClose={() => setOpenEntityDialogOpen(false)} entityID={openEntity} />
       <FileDialog open={openFileDialogOpen} onClose={() => setOpenFileDialogOpen(false)} fileID={openFileID} />
@@ -249,7 +249,7 @@ const TaskList = () => {
           {selected.length > 0 && !isMobile && (
             <>
               <Divider orientation="vertical" flexItem />
-              <Button startIcon={<Delete />} variant="contained" color="error" onClick={handleDelete}>
+              <Button startIcon={<Delete />} variant="outlined" color="error" onClick={handleDelete}>
                 {t("task.deleteXTasks", { num: selected.length })}
               </Button>
             </>
@@ -257,7 +257,7 @@ const TaskList = () => {
         </Stack>
         {isMobile && selected.length > 0 && (
           <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-            <Button startIcon={<Delete />} variant="contained" color="error" onClick={handleDelete}>
+            <Button startIcon={<Delete />} variant="outlined" color="error" onClick={handleDelete}>
               {t("task.deleteXTasks", { num: selected.length })}
             </Button>
           </Stack>
@@ -284,7 +284,7 @@ const TaskList = () => {
                   </TableSortLabel>
                 </NoWrapTableCell>
                 <NoWrapTableCell width={400}>{t("task.content")}</NoWrapTableCell>
-                <NoWrapTableCell width={120}>{t("task.status")}</NoWrapTableCell>
+                <NoWrapTableCell width={150}>{t("task.status")}</NoWrapTableCell>
                 <NoWrapTableCell width={150}>{t("file.creator")}</NoWrapTableCell>
                 <NoWrapTableCell width={100}>{t("task.node")}</NoWrapTableCell>
                 <NoWrapTableCell width={180}>
@@ -337,7 +337,7 @@ const TaskList = () => {
           </Box>
         )}
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

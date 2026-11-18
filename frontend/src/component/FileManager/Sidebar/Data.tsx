@@ -52,8 +52,17 @@ const Data = ({ target }: DataProps) => {
       <Typography sx={{ pt: 1 }} color="textPrimary" fontWeight={500} variant={"subtitle1"}>
         {t("application:fileManager.data")}
       </Typography>
-      <TableContainer component={StyledTableContainerPaper}>
-        <Table sx={{ width: "100%" }} size="small">
+      <TableContainer
+        component={StyledTableContainerPaper}
+        tabIndex={0}
+        sx={{
+          overflowX: "auto",
+          "& .MuiTableCell-root": { px: "8px", py: "4px" },
+          "& .MuiTableCell-root:first-child": { whiteSpace: "normal", minWidth: 110, maxWidth: 150 },
+          "&:focus-visible": { outline: "1px solid", outlineColor: "primary.main" },
+        }}
+      >
+        <Table sx={{ width: "max-content", minWidth: "100%" }} size="small">
           <TableHead>
             <TableRow>
               <NoWrapTableCell>{t("fileManager.type")}</NoWrapTableCell>

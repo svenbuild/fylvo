@@ -47,7 +47,7 @@ export const TablePagination = ({
   return (
     <Box
       sx={{
-        py: 1,
+        py: 0.5,
         display: "flex",
         flexDirection: isMobile ? "column" : "row",
         justifyContent: "space-between",
@@ -56,14 +56,31 @@ export const TablePagination = ({
       }}
     >
       <Pagination
-        size={isMobile ? "small" : "medium"}
+        size="small"
+        sx={{
+          maxWidth: "100%",
+          overflowX: "auto",
+          "& .MuiPagination-ul": { flexWrap: "nowrap" },
+          "& .MuiPaginationItem-root": {
+            minWidth: 26,
+            height: 26,
+            mx: 0.25,
+          },
+          "@media (max-width: 599.95px), (pointer: coarse)": {
+            "& .MuiPaginationItem-root": { minWidth: 40, height: 40, mx: 0 },
+          },
+        }}
         count={Math.ceil(totalItems / rowsPerPage)}
         page={page}
         onChange={onChange}
         {...props}
       />
       <DenseSelect
-        variant="filled"
+        variant="outlined"
+        sx={{
+          minHeight: { xs: 40, sm: 30 },
+          "@media (pointer: coarse)": { minHeight: 40 },
+        }}
         value={rowsPerPage}
         onChange={onDenseSelectChange}
         renderValue={(value) => (

@@ -25,20 +25,21 @@ const FullSearchOption = ({ options, keyword }: FullSearchOptionProps) => {
   );
 
   return (
-    <List sx={{ width: "100%", px: 1 }} dense>
+    <List sx={{ width: "100%", p: "4px" }} dense>
       {options.map((option) => (
         <ListItem disablePadding dense>
-          <ListItemButton onClick={onClick(option)} sx={{ py: 0 }}>
-            <ListItemAvatar sx={{ minWidth: 48 }}>
-              <SearchOutlined
-                sx={{
-                  color: (theme) => theme.palette.action.active,
-                  width: 24,
-                  height: 24,
-                  mt: "7px",
-                  ml: "5px",
-                }}
-              />
+          <ListItemButton
+            onClick={onClick(option)}
+            sx={(theme) => ({
+              p: "0 8px",
+              gap: "4px",
+              minHeight: 32,
+              [theme.breakpoints.down("sm")]: { minHeight: 40 },
+              "@media (pointer: coarse)": { minHeight: 40 },
+            })}
+          >
+            <ListItemAvatar sx={{ minWidth: 24, display: "flex", color: "text.secondary" }}>
+              <SearchOutlined fontSize="small" />
             </ListItemAvatar>
             <ListItemText
               primary={
@@ -54,13 +55,14 @@ const FullSearchOption = ({ options, keyword }: FullSearchOptionProps) => {
               slotProps={{
                 primary: {
                   variant: "body2",
+                  sx: { overflowWrap: "anywhere" },
                 },
               }}
             />
             <FileBadge
               clickable
               variant={"outlined"}
-              sx={{ px: 1, my: "4px" }}
+              sx={{ px: 1, my: "4px", minWidth: 0, maxWidth: { xs: 140, sm: 160 } }}
               simplifiedFile={{
                 path: option,
                 type: FileType.folder,

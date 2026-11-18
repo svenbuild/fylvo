@@ -8,13 +8,13 @@ export interface InfoRowProps {
 
 const InfoRow = ({ title, content }: InfoRowProps) => {
   return (
-    <Box>
-      <Typography variant={"body2"} color="textPrimary" fontWeight={500}>
+    <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 3fr)", gap: 1.5, alignItems: "baseline" }}>
+      <Typography component="span" variant="caption" color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
         {title}
       </Typography>
-      <Typography variant={"body2"} color={"text.secondary"}>
+      <Box sx={{ typography: "body2", color: "text.primary", minWidth: 0, overflowWrap: "anywhere" }}>
         {content}
-      </Typography>
+      </Box>
     </Box>
   );
 };

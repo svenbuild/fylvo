@@ -10,7 +10,7 @@ import { useAppDispatch } from "../../../redux/hooks";
 import { SecondaryButton } from "../../Common/StyledComponents";
 import Add from "../../Icons/Add";
 import ArrowSync from "../../Icons/ArrowSync";
-import PageContainer from "../../Pages/PageContainer";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader from "../../Pages/PageHeader";
 import { BorderedCardClickable } from "../Common/AdminCard";
 import TablePagination from "../Common/TablePagination";
@@ -67,7 +67,7 @@ const OAuthClientSetting = () => {
   }, [navigate]);
 
   return (
-    <PageContainer>
+    <AdminPage>
       <Container maxWidth="xl">
         <PageHeader title={t("oauth.oauthClients")} />
         <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
@@ -122,7 +122,7 @@ const OAuthClientSetting = () => {
           </Box>
         )}
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

@@ -1,9 +1,8 @@
 import {
   Avatar,
   Box,
+  Button,
   DialogContent,
-  Divider,
-  Grid,
   List,
   ListItem,
   ListItemAvatar,
@@ -21,8 +20,7 @@ import { builtInViewers, openViewer } from "../../../redux/thunks/viewer.ts";
 import SessionManager, { UserSettings } from "../../../session";
 import { fileExtension } from "../../../util";
 import AutoHeight from "../../Common/AutoHeight.tsx";
-import { SecondaryButton } from "../../Common/StyledComponents.tsx";
-import DraggableDialog, { StyledDialogContentText } from "../../Dialogs/DraggableDialog.tsx";
+import DraggableDialog, { StyledDialogActions, StyledDialogContentText } from "../../Dialogs/DraggableDialog.tsx";
 import Book from "../../Icons/Book.tsx";
 import DocumentPDF from "../../Icons/DocumentPDF.tsx";
 import FolderZip from "../../Icons/FolderZip.tsx";
@@ -57,22 +55,22 @@ export const ViewerIcon = ({ viewer, size = 32, py = 0.5 }: ViewerIconProps) => 
     if (viewer.type == ViewerType.builtin) {
       switch (viewer.id) {
         case builtInViewers.image:
-          return <Image sx={{ width: size, height: size, color: "#d32f2f" }} />;
+          return <Image sx={{ width: size, height: size, color: "text.secondary" }} />;
         case builtInViewers.pdf:
-          return <DocumentPDF sx={{ width: size, height: size, color: "#f44336" }} />;
+          return <DocumentPDF sx={{ width: size, height: size, color: "text.secondary" }} />;
         case builtInViewers.epub:
-          return <Book sx={{ width: size, height: size, color: "#81b315" }} />;
+          return <Book sx={{ width: size, height: size, color: "text.secondary" }} />;
         case builtInViewers.music:
-          return <MusicNote1 sx={{ width: size, height: size, color: "#651fff" }} />;
+          return <MusicNote1 sx={{ width: size, height: size, color: "text.secondary" }} />;
         case builtInViewers.archive:
-          return <FolderZip sx={{ width: size, height: size, color: "#f9a825" }} />;
+          return <FolderZip sx={{ width: size, height: size, color: "text.secondary" }} />;
         case builtInViewers.markdown:
           return (
             <Markdown
               sx={{
                 width: size,
                 height: size,
-                color: (theme) => (theme.palette.mode == "dark" ? "#cbcbcb" : "#383838"),
+                color: "text.secondary",
               }}
             />
           );
@@ -174,7 +172,9 @@ const OpenWith = () => {
           <List
             sx={{
               width: "100%",
-              maxHeight: "calc(100vh - 400px)",
+              maxHeight: "min(360px, 50dvh)",
+              "& .MuiListItemButton-root": { minHeight: 32, px: "6px" },
+              "& .MuiListItemText-root": { my: 0 },
               overflow: "auto",
             }}
           >
@@ -186,8 +186,8 @@ const OpenWith = () => {
                 onClick={() => onViewerClick(viewer)}
               >
                 <ListItemButton selected={viewer.id == selectedViewer?.id}>
-                  <ListItemAvatar sx={{ minWidth: "48px" }}>
-                    <ViewerIcon viewer={viewer} />
+                  <ListItemAvatar sx={{ minWidth: "28px" }}>
+                    <ViewerIcon viewer={viewer} size={18} py={0} />
                   </ListItemAvatar>
                   <ListItemText primary={t(viewer.display_name)} />
                 </ListItemButton>
@@ -196,8 +196,8 @@ const OpenWith = () => {
             {!expanded && (
               <ListItem onClick={() => setExpanded(true)} disablePadding>
                 <ListItemButton>
-                  <ListItemAvatar sx={{ minWidth: "48px" }}>
-                    <Avatar sx={{ width: 32, height: 32 }}>
+                  <ListItemAvatar sx={{ minWidth: "28px" }}>
+                    <Avatar sx={{ width: 18, height: 18, bgcolor: "transparent", color: "text.secondary" }}>
                       <MoreHorizontal />
                     </Avatar>
                   </ListItemAvatar>
@@ -208,21 +208,14 @@ const OpenWith = () => {
           </List>
         </DialogContent>
         {!!selectedViewer && (
-          <>
-            <Divider />
-            <Grid container spacing={2} sx={{ p: 2 }}>
-              <Grid md={6} xs={12} item>
-                <SecondaryButton fullWidth variant={"contained"} onClick={() => openWith(true)}>
-                  {t("modals.always")}
-                </SecondaryButton>
-              </Grid>
-              <Grid md={6} xs={12} item>
-                <SecondaryButton fullWidth variant={"contained"} onClick={() => openWith(false)}>
-                  {t("modals.justOnce")}
-                </SecondaryButton>
-              </Grid>
-            </Grid>
-          </>
+          <StyledDialogActions>
+            <Button color="inherit" onClick={() => openWith(true)}>
+              {t("modals.always")}
+            </Button>
+            <Button variant="contained" onClick={() => openWith(false)}>
+              {t("modals.justOnce")}
+            </Button>
+          </StyledDialogActions>
         )}
       </AutoHeight>
     </DraggableDialog>

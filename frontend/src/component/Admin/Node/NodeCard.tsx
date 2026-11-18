@@ -99,7 +99,7 @@ const NodeCard = ({ node, onRefresh, loading }: NodeCardProps) => {
               <Skeleton variant="text" width={60} />
             </Typography>
           </Box>
-          <NoWrapBox sx={{ mt: 1, mb: 2 }}>
+          <NoWrapBox sx={{ my: 0.5 }}>
             <Box sx={{ display: "flex", alignItems: "center", minHeight: "25px" }}>
               <Skeleton width={60} height={25} sx={{ mr: 1 }} />
             </Box>
@@ -148,14 +148,14 @@ const NodeCard = ({ node, onRefresh, loading }: NodeCardProps) => {
             </Typography>
           </Box>
         </Box>
-        <NoWrapBox sx={{ mt: 1, mb: 2 }}>
+        <NoWrapBox sx={{ my: 0.5 }}>
           {capabilities.length > 0 ? (
             capabilities.map((capability) => (
               <SquareChip sx={{ mr: 1 }} key={capability.id} label={capability.name} size="small" />
             ))
           ) : (
             <Box sx={{ display: "flex", alignItems: "center", minHeight: "25px" }} color={"text.secondary"}>
-              <Info sx={{ mr: 0.5, fontSize: 20 }} />
+              <Info sx={{ mr: 0.5, fontSize: 16 }} />
               <Typography variant="caption">{t("node.noCapabilities")}</Typography>
             </Box>
           )}
@@ -171,14 +171,14 @@ const NodeCard = ({ node, onRefresh, loading }: NodeCardProps) => {
           <Box sx={{ display: "flex", alignItems: "center" }}>
             {node?.status === NodeStatus.active ? (
               <>
-                <CheckCircleFilled sx={{ mr: 0.5, fontSize: 20, color: "success.main" }} />
+                <CheckCircleFilled sx={{ mr: 0.5, fontSize: 16, color: "success.main" }} />
                 <Typography variant="body2" color="success.main">
                   {t("node.active")}
                 </Typography>
               </>
             ) : (
               <>
-                <DismissCircleFilled sx={{ mr: 0.5, fontSize: 20, color: "text.secondary" }} />
+                <DismissCircleFilled sx={{ mr: 0.5, fontSize: 16, color: "text.secondary" }} />
                 <Typography variant="body2" color="text.secondary">
                   {t("node.suspended")}
                 </Typography>

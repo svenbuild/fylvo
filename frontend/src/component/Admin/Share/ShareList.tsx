@@ -28,7 +28,7 @@ import { confirmOperation } from "../../../redux/thunks/dialog";
 import { NoWrapTableCell, SecondaryButton, StyledTableContainerPaper } from "../../Common/StyledComponents";
 import ArrowSync from "../../Icons/ArrowSync";
 import Filter from "../../Icons/Filter";
-import PageContainer from "../../Pages/PageContainer";
+import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader from "../../Pages/PageHeader";
 import TablePagination from "../Common/TablePagination";
 import FileDialog from "../File/FileDialog/FileDialog";
@@ -187,7 +187,7 @@ const ShareList = () => {
   };
 
   return (
-    <PageContainer>
+    <AdminPage>
       <UserDialog open={userDialogOpen} onClose={() => setUserDialogOpen(false)} userID={userDialogID} />
       <FileDialog open={openFileDialogOpen} onClose={() => setOpenFileDialogOpen(false)} fileID={openFile} />
       <ShareDialog open={openShareDialogOpen} onClose={() => setOpenShareDialogOpen(false)} shareID={openShare} />
@@ -216,7 +216,7 @@ const ShareList = () => {
           {selected.length > 0 && !isMobile && (
             <>
               <Divider orientation="vertical" flexItem />
-              <Button startIcon={<Delete />} variant="contained" color="error" onClick={handleDelete}>
+              <Button startIcon={<Delete />} variant="outlined" color="error" onClick={handleDelete}>
                 {t("share.deleteXShares", { num: selected.length })}
               </Button>
             </>
@@ -224,7 +224,7 @@ const ShareList = () => {
         </Stack>
         {isMobile && selected.length > 0 && (
           <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-            <Button startIcon={<Delete />} variant="contained" color="error" onClick={handleDelete}>
+            <Button startIcon={<Delete />} variant="outlined" color="error" onClick={handleDelete}>
               {t("share.deleteXShares", { num: selected.length })}
             </Button>
           </Stack>
@@ -329,7 +329,7 @@ const ShareList = () => {
           </Box>
         )}
       </Container>
-    </PageContainer>
+    </AdminPage>
   );
 };
 

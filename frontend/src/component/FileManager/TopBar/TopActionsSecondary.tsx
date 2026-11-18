@@ -40,7 +40,7 @@ const TopActionsSecondary = () => {
     <>
       <ActionButtonGroup variant="outlined">
         <Tooltip enterDelay={200} title={t("application:fileManager.refresh")}>
-          <ActionButton onClick={() => refresh()}>
+          <ActionButton aria-label={t("application:fileManager.refresh")} onClick={() => refresh()}>
             <SpinArrowSync
               sx={[
                 loading && {
@@ -52,7 +52,7 @@ const TopActionsSecondary = () => {
           </ActionButton>
         </Tooltip>
         {fmIndex == FileManagerIndex.main && (
-          <ActionButton {...bindTrigger(morePopupState)}>
+          <ActionButton aria-label={t("application:fileManager.moreActions")} {...bindTrigger(morePopupState)}>
             <MoreHorizontal fontSize={"small"} />
           </ActionButton>
         )}

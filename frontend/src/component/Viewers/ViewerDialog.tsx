@@ -1,4 +1,5 @@
-import { Box, Chip, Dialog, DialogProps, Divider, IconButton, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Chip, Dialog, DialogProps, Divider, IconButton, styled, useMediaQuery, useTheme } from "@mui/material";
+import { hoverSurface, shellSurface } from "../../fylvoTheme.ts";
 import React, { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileResponse } from "../../api/explorer.ts";
@@ -9,6 +10,11 @@ import FileIcon from "../FileManager/Explorer/FileIcon.tsx";
 import Dismiss from "../Icons/Dismiss.tsx";
 import FullScreenMaximize from "../Icons/FullScreenMaximize.tsx";
 import FullScreenMinimize from "../Icons/FullScreenMinimize.tsx";
+
+const ViewerFrame = styled(Dialog)({
+  "& .MuiDialog-paper": { boxShadow: "none" },
+  "& .MuiDialog-paperFullScreen": { border: 0, borderRadius: 0 },
+});
 
 export interface ViewerDialogProps {
   file?: FileResponse;
@@ -47,20 +53,40 @@ const ViewerDialog = (props: ViewerDialogProps) => {
     props.dialogProps.onClose && props.dialogProps.onClose({}, "closeButtonClick" as any);
   }, [props.dialogProps.onClose]);
   return (
-    <Dialog
+    <ViewerFrame
       fullScreen={fullScreen}
       {...props.dialogProps}
       onClose={props.loading ? undefined : props.dialogProps.onClose}
     >
       <Box>
-        <StyledDialogTitle sx={{ py: "8px", px: "14px" }} id="draggable-dialog-title">
+        <StyledDialogTitle
+          sx={{
+            minHeight: 42,
+            px: "10px",
+            py: "2px",
+            bgcolor: shellSurface,
+            "& > :first-child": { minWidth: 0 },
+            "& .MuiIconButton-root:hover": { bgcolor: hoverSurface },
+            "& .MuiButtonBase-root.Mui-focusVisible": {
+              outline: (theme) => `1px solid ${theme.palette.primary.main}`,
+              outlineOffset: -1,
+            },
+            "@media (max-width: 599.95px), (pointer: coarse)": {
+              px: "6px",
+              gap: "4px",
+              "& .MuiIconButton-root": { minWidth: 40, minHeight: 40 },
+              "& .MuiButton-root": { minHeight: 40 },
+            },
+          }}
+          id="draggable-dialog-title"
+        >
           {props.actions && props.actions}
           <Box sx={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-            <FileIcon variant={"default"} file={props.file} sx={{ px: 0, py: 0, pt: 0.5, mr: 1 }} fontSize={"small"} />
+            <FileIcon variant={"default"} file={props.file} sx={{ p: 0, mr: 1, flexShrink: 0 }} fontSize={"small"} />
             <NoWrapTypography variant={"subtitle2"}>{props.file?.name}</NoWrapTypography>
-            {props.readOnly && <Chip size="small" sx={{ ml: 1 }} label={t("fileManager.readOnly")} />}
+            {props.readOnly && <Chip size="small" sx={{ ml: 1, height: 20 }} label={t("fileManager.readOnly")} />}
           </Box>
-          <Box sx={{ display: "flex" }}>
+          <Box sx={{ display: "flex", flexShrink: 0 }}>
             {props.fullScreenToggle && (
               <IconButton
                 onClick={() => {
@@ -78,7 +104,7 @@ const ViewerDialog = (props: ViewerDialogProps) => {
         <Divider />
       </Box>
       {props.children}
-    </Dialog>
+    </ViewerFrame>
   );
 };
 

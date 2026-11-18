@@ -116,22 +116,16 @@ const PasskeyList = (props: PasskeyProps) => {
           onClick={addPasskey}
           sx={{
             display: "flex",
-            flexDirection: "column",
             alignItems: "center",
-            borderRadius: (theme) => `${theme.shape.borderRadius}px`,
-            border: (theme) =>
-              `1px solid ${theme.palette.mode === "light" ? "rgba(0, 0, 0, 0.23)" : "rgba(255, 255, 255, 0.23)"}`,
-            textAlign: "center",
-            p: 1,
-            py: 2,
+            gap: 1,
+            borderRadius: 1,
+            border: 1,
+            borderColor: "divider",
+            px: 1.5,
+            py: 1,
           }}
         >
-          <Fingerprint
-            sx={{
-              fontSize: 40,
-              color: (theme) => theme.palette.text.secondary,
-            }}
-          />
+          <Fingerprint fontSize="small" sx={{ color: "text.secondary", flexShrink: 0 }} />
           <Typography color={"textSecondary"} variant={"caption"}>
             {t("setting.noAuthenticator")}
           </Typography>
@@ -182,7 +176,7 @@ const PasskeyList = (props: PasskeyProps) => {
       </List>
       <SecondaryLoadingButton
         sx={{ mt: 1 }}
-        variant={"contained"}
+        variant="outlined"
         loading={loading}
         onClick={addPasskey}
         startIcon={<ShieldAdd />}
