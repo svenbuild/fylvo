@@ -1,22 +1,17 @@
-import { Box, ButtonBase, darken, lighten, styled } from "@mui/material";
+import { Box, ButtonBase, styled } from "@mui/material";
 import * as React from "react";
+import { hoverSurface, selectedSurface } from "../../../fylvoTheme.ts";
 import { NoWrapTypography } from "../../Common/StyledComponents.tsx";
 
 const StyledButtonBase = styled(ButtonBase)<{
   active?: boolean;
 }>(({ theme, active }) => ({
-  borderRadius: "90px",
+  borderRadius: "8px",
   display: "flex",
   justifyContent: "left",
   alignItems: "initial",
   width: "100%",
-  backgroundColor: active
-    ? `${
-        theme.palette.mode == "light"
-          ? lighten(theme.palette.primary.main, 0.7)
-          : darken(theme.palette.primary.main, 0.7)
-      }!important`
-    : "initial",
+  backgroundColor: active ? `${selectedSurface(theme)}!important` : "initial",
   transition:
     "background-color 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,box-shadow 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms,border 250ms cubic-bezier(0.4, 0, 0.2, 1) 0ms",
 }));
@@ -33,11 +28,11 @@ export const SideNavItemBase = React.forwardRef(
 
 const StyledSideNavItem = styled(SideNavItemBase)<{ level?: number }>(({ theme, level }) => ({
   "&:hover": {
-    backgroundColor: theme.palette.action.hover,
+    backgroundColor: hoverSurface(theme),
   },
   padding: "4px",
-  paddingLeft: `${28 + (level ?? 0) * 16}px`,
-  height: "32px",
+  paddingLeft: `${24 + (level ?? 0) * 14}px`,
+  height: "28px",
   display: "flex",
   alignItems: "center",
 }));
@@ -62,8 +57,10 @@ const SideNavItem = React.forwardRef(
       >
         <Box
           sx={{
-            width: 20,
-            mr: "14px",
+            width: 18,
+            mr: "10px",
+            display: "flex",
+            alignItems: "center",
           }}
         >
           {icon}

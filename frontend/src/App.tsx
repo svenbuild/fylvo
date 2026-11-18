@@ -14,9 +14,12 @@ import GlobalDialogs from "./component/Dialogs/GlobalDialogs.tsx";
 import { GrowDialogTransition } from "./component/FileManager/Search/SearchPopup.tsx";
 import Warning from "./component/Icons/Warning.tsx";
 import { useAppSelector } from "./redux/hooks.ts";
+import { withFylvoLook } from "./fylvoTheme.ts";
 import { changeThemeColor } from "./util";
 
-export const applyThemeWithOverrides = (themeConfig: ThemeOptions): ThemeOptions => {
+export const applyThemeWithOverrides = (themeConfig: ThemeOptions): ThemeOptions => withFylvoLook(baseThemeOverrides(themeConfig));
+
+const baseThemeOverrides = (themeConfig: ThemeOptions): ThemeOptions => {
   return {
     ...themeConfig,
     shape: {

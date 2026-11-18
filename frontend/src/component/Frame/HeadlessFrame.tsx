@@ -1,4 +1,5 @@
 import { Box, Container, Grid, Paper } from "@mui/material";
+import { shellSurface } from "../../fylvoTheme.ts";
 import { Outlet, useNavigation } from "react-router-dom";
 import { useAppSelector } from "../../redux/hooks.ts";
 import AutoHeight from "../Common/AutoHeight.tsx";
@@ -38,7 +39,7 @@ const HeadlessFrame = () => {
     <Box
       sx={{
         backgroundColor: (theme) =>
-          theme.palette.mode === "light" ? theme.palette.grey[100] : theme.palette.grey[900],
+          shellSurface(theme),
         flexGrow: 1,
         height: "100vh",
         overflow: "auto",

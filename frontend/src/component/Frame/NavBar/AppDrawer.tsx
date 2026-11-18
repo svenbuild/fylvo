@@ -1,4 +1,5 @@
 import { Box, Drawer, Popover, PopoverProps, Stack, useMediaQuery, useTheme } from "@mui/material";
+import { shellSurface } from "../../../fylvoTheme.ts";
 import { useContext, useRef } from "react";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import SessionManager from "../../../session";
@@ -66,7 +67,7 @@ const AppDrawer = () => {
   const theme = useTheme();
   const open = useAppSelector((state) => state.globalState.drawerOpen);
   const drawerWidth = useAppSelector((state) => state.globalState.drawerWidth);
-  const appBarBg = theme.palette.mode === "light" ? theme.palette.grey[100] : theme.palette.grey[900];
+  const appBarBg = shellSurface(theme);
 
   return (
     <Drawer

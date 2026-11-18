@@ -1,4 +1,5 @@
 import { AppBarProps as MuiAppBarProps } from "@mui/material/AppBar";
+import { shellSurface } from "../../../fylvoTheme.ts";
 import { AppBar, Box, Collapse, IconButton, Stack, Toolbar, Tooltip, useMediaQuery, useTheme } from "@mui/material";
 import { Menu } from "@mui/icons-material";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
@@ -35,7 +36,7 @@ const TopAppBar = () => {
   const musicPlayer = useAppSelector((state) => state.globalState.musicPlayer);
   const [mobileMenuAnchor, setMobileMenuAnchor] = useState<null | HTMLElement>(null);
 
-  const appBarBg = theme.palette.mode === "light" ? theme.palette.grey[100] : theme.palette.grey[900];
+  const appBarBg = shellSurface(theme);
   const isLogin = !!SessionManager.currentLoginOrNull();
 
   const onMobileMenuClicked = (e: React.MouseEvent<HTMLElement>) => {

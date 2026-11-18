@@ -1,4 +1,5 @@
 import { Box, useMediaQuery, useTheme } from "@mui/material";
+import { shellSurface } from "../../fylvoTheme.ts";
 import { createContext, useEffect } from "react";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
@@ -48,7 +49,7 @@ const NavBarFrame = ({ variant }: NavBarFrameProps) => {
     <PageVariantContext.Provider value={variant ?? PageVariant.default}>
       <Box
         sx={{
-          bgcolor: (theme) => (theme.palette.mode === "light" ? theme.palette.grey[100] : theme.palette.grey[900]),
+          bgcolor: (theme) => (shellSurface(theme)),
           display: "flex",
         }}
       >

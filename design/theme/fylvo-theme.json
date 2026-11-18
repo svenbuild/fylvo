@@ -10,10 +10,10 @@
       "palette": {
         "primary": { "main": "#7484F4", "light": "#A3AEFA", "dark": "#5565E8", "contrastText": "#FFFFFF" },
         "secondary": { "main": "#A78BFA", "light": "#C9B8FD", "dark": "#7C4DDB" },
-        "background": { "default": "#0C131F", "paper": "#0E1623" },
-        "text": { "primary": "#F1F5FC", "secondary": "#AAB9CD" },
-        "divider": "rgba(148, 170, 205, 0.16)",
-        "grey": { "900": "#101A28", "800": "#152233", "700": "#26364A" }
+        "background": { "default": "#0A0A0A", "paper": "#0A0A0A" },
+        "text": { "primary": "#F4F4F5", "secondary": "#A9A9B0" },
+        "divider": "rgba(255, 255, 255, 0.09)",
+        "grey": { "900": "#141416", "800": "#1E1E22", "700": "#26262B" }
       }
     }
   }
