@@ -1,76 +1,36 @@
-[中文版本](https://github.com/cloudreve/cloudreve/blob/master/README_zh-CN.md)
+<img src="assets/icon.svg" width="64" height="64" alt="">
 
-<h1 align="center">
-  <br>
-  <a href="https://cloudreve.org/" alt="logo" ><img src="https://raw.githubusercontent.com/cloudreve/frontend/master/public/static/img/logo192.png" width="150"/></a>
-  <br>
-  Cloudreve
-  <br>
-</h1>
-<h4 align="center">Self-hosted file management system with multi-cloud support.</h4>
+# Fylvo
 
-<p align="center">
-  <a href="https://dev.azure.com/abslantliu/cloudreve/_build?definitionId=6">
-    <img src="https://img.shields.io/github/check-runs/cloudreve/cloudreve/master"
-         alt="Azure pipelines">
-  </a>
-  <a href="https://github.com/cloudreve/cloudreve/releases">
-    <img src="https://img.shields.io/github/v/release/cloudreve/cloudreve?include_prereleases" />
-  </a>
-  <a href="https://github.com/cloudreve/cloudreve/releases">
-     <img src="https://badgen.net/static/release%20size/34%20MB/blue"/>
-  </a>
-  <a href="https://hub.docker.com/r/cloudreve/cloudreve">
-  <img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/cloudreve/cloudreve" />
-  </a>
-</p>
-<p align="center">
-  <a href="https://cloudreve.org">Homepage</a> •
-  <a href="https://demo.cloudreve.org">Try it</a> •
-  <a href="https://github.com/cloudreve/cloudreve/discussions">Discussion</a> •
-  <a href="https://docs.cloudreve.org">Documents</a> •
-  <a href="https://github.com/cloudreve/cloudreve/releases">Download</a> •
-  <a href="https://t.me/cloudreve_official">Telegram</a> •
-  <a href="https://discord.com/invite/WTpMFpZT76">Discord</a>
-</p>
+Your files. Your cloud.
 
-![Screenshot](https://raw.githubusercontent.com/cloudreve/docs/master/images/homepage.png)
+Fylvo is a private cloud based on [Cloudreve](https://github.com/cloudreve/cloudreve) (GPL-3.0).
+See [NOTICE](NOTICE) for attribution and [LICENSE](LICENSE) for the license.
 
-## :sparkles: Features
+## Layout
 
-- :cloud: Support storing files into Local, Remote node, OneDrive, S3 compatible API, Qiniu Kodo, Aliyun OSS, Tencent COS, Huawei Cloud OBS, Kingsoft Cloud KS3, Upyun.
-- :outbox_tray: Upload/Download in directly transmission from client to storage providers.
-- 💾 Integrate with Aria2/qBittorrent to download files in background, use multiple download nodes to share the load.
-- 📚 Compress/Extract/Preview archived files, download files in batch.
-- 💻 WebDAV support covering all storage providers.
-- :zap:Drag&Drop to upload files or folders, with parallel resumable upload support.
-- :card_file_box: Extract media metadata from files, search files by metadata or tags.
-- :family_woman_girl_boy: Multi-users with multi-groups.
-- :link: Create share links for files and folders with expiration date.
-- :eye_speech_bubble: Preview videos, images, audios, ePub files online; edit texts, diagrams, Markdown, images, Office documents online.
-- :art: Customize theme colors, dark mode, PWA application, SPA, i18n.
-- :rocket: All-in-one packaging, with all features out of the box.
-- 🌈 ... ...
+| Path | What it is | Comes from |
+| --- | --- | --- |
+| `/` (Go code) | Server | `cloudreve/cloudreve`, remote `upstream` |
+| `frontend/` | Web app | `cloudreve/frontend`, remote `upstream-frontend` |
+| `desktop/` | Windows sync client | `cloudreve/desktop`, remote `upstream-desktop` |
+| `scripts/` | Build and deploy scripts | Fylvo |
 
-## :hammer_and_wrench: Deploy
+## Build and deploy
 
-To deploy Cloudreve, you can refer to [Getting started](https://docs.cloudreve.org/overview/quickstart) for a quick local deployment to test.
+Needs Go, Node.js (with corepack) and Python or `zip` on the build machine.
 
-When you're ready to deploy Cloudreve to a production environment, you can refer to [Deploy](https://docs.cloudreve.org/overview/deploy/) for a complete deployment.
+```bash
+scripts/build.sh                                  # builds release/cloudreve for linux/amd64
+scripts/deploy-nas.sh /srv/fylvo-test # builds the image on the NAS and restarts the stack
+```
 
-## :gear: Build
+`deploy-nas.sh` reads the sudo password of the NAS user from stdin.
 
-Please refer to [Build](https://docs.cloudreve.org/overview/build/) for how to build Cloudreve from source code.
+## Updates from Cloudreve
 
-## :rocket: Contributing
-
-If you're interested in contributing to Cloudreve, please refer to [Contributing](https://docs.cloudreve.org/api/contributing/) for how to contribute to Cloudreve.
-
-## :alembic: Stacks
-
-- [Go](https://golang.org/) + [Gin](https://github.com/gin-gonic/gin) + [ent](https://github.com/ent/ent)
-- [React](https://github.com/facebook/react) + [Redux](https://github.com/reduxjs/redux) + [Material-UI](https://github.com/mui-org/material-ui)
-
-## :scroll: License
-
-GPL V3
+```bash
+git fetch upstream && git merge upstream/master
+git subtree pull --prefix=frontend upstream-frontend master --squash
+git subtree pull --prefix=desktop upstream-desktop main --squash
+```

@@ -1,0 +1,15 @@
+Fylvo
+=====
+
+Fylvo is a private, modified version of Cloudreve.
+
+  Cloudreve server    https://github.com/cloudreve/cloudreve   GPL-3.0
+  Cloudreve frontend  https://github.com/cloudreve/frontend    (frontend/)
+  Cloudreve Desktop   https://github.com/cloudreve/desktop     MIT (desktop/)
+
+All original work is by the Cloudreve authors (https://cloudreve.org).
+Their copyright and license notices are kept in the source tree.
+Fylvo is not affiliated with or endorsed by the Cloudreve authors.
+
+Fylvo as a whole is licensed under GPL-3.0, see LICENSE.
+No code from the proprietary Cloudreve Pro edition is used.
