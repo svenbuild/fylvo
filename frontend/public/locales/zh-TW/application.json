@@ -63,7 +63,7 @@
     "appRequestsAccess": "{{appName}} 正在請求存取你的帳號",
     "consentDescription": "你正在授權 <0>{{appName}}</0> 存取帳號 <1>{{userEmail}}</1> 下的資訊：",
     "deny": "取消",
-    "desktop": "Cloudreve 桌面客戶端",
+    "desktop": "Fylvo 桌面客戶端",
     "scope": {
       "readonly": "唯讀",
       "readwrite": "讀寫",

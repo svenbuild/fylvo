@@ -485,8 +485,8 @@ var mailTemplateContents = []MailTemplateContent{
 
 var DefaultSettings = map[string]string{
 	"siteURL":                                    `http://localhost:5212`,
-	"siteName":                                   `Cloudreve`,
-	"siteDes":                                    "Cloudreve",
+	"siteName":                                   `Fylvo`,
+	"siteDes":                                    "Your files. Your cloud.",
 	"siteID":                                     uuid.Must(uuid.NewV4()).String(),
 	"siteTitle":                                  "Cloud storage for everyone",
 	"siteScript":                                 "",
@@ -498,7 +498,7 @@ var DefaultSettings = map[string]string{
 	"pwa_background_color":                       "#ffffff",
 	"register_enabled":                           `1`,
 	"default_group":                              `2`,
-	"fromName":                                   `Cloudreve`,
+	"fromName":                                   `Fylvo`,
 	"mail_keepalive":                             `30`,
 	"fromAdress":                                 `no-reply@cloudreve.org`,
 	"smtpHost":                                   `smtp.cloudreve.com`,

@@ -160,9 +160,9 @@ func (s *TestSMTPService) Test(c *gin.Context) error {
 	}
 	m.ReplyToFormat(s.Settings["fromName"], s.Settings["replyTo"])
 	m.To(s.To)
-	m.Subject("Cloudreve SMTP Test")
+	m.Subject("Fylvo SMTP Test")
 	m.SetMessageID()
-	m.SetBodyString(mail.TypeTextHTML, "This is a test email from Cloudreve.")
+	m.SetBodyString(mail.TypeTextHTML, "This is a test email from Fylvo.")
 
 	err = d.DialAndSendWithContext(c, m)
 	if err != nil {

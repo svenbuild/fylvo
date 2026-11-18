@@ -63,7 +63,7 @@
     "appRequestsAccess": "{{appName}} 正在请求访问你的账号",
     "consentDescription": "你正在授权 <0>{{appName}}</0> 访问账号 <1>{{userEmail}}</1> 下的信息：",
     "deny": "取消",
-    "desktop": "Cloudreve 桌面客户端",
+    "desktop": "Fylvo 桌面客户端",
     "scope": {
       "readonly": "只读",
       "readwrite": "读写",

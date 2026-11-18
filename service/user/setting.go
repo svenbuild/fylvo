@@ -36,7 +36,7 @@ func Init2FA(c *gin.Context) (string, error) {
 	user := inventory.UserFromContext(c)
 
 	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      "Cloudreve",
+		Issuer:      "Fylvo",
 		AccountName: user.Email,
 	})
 	if err != nil {
