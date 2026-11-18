@@ -1,3 +1,4 @@
 # Shell scripts and container files must keep Unix line endings, also on Windows.
 *.sh text eol=lf
 .build/* text eol=lf
+Dockerfile* text eol=lf
