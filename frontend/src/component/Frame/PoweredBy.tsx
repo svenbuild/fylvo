@@ -11,8 +11,7 @@ const PoweredBy = ({ ...rest }: PoweredByProps) => {
       <Box
         component="a"
         marginBottom={2}
-        href="https://cloudreve.org"
-        target="_blank"
+        href="/"
         sx={{
           width: "100%",
           display: "flex",
@@ -42,7 +41,7 @@ const PoweredBy = ({ ...rest }: PoweredByProps) => {
         </Typography>
         <Box
           component="img"
-          alt="Cloudreve"
+          alt="Fylvo"
           sx={{
             height: 20,
           }}

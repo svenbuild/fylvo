@@ -309,10 +309,10 @@ const Home = () => {
           <Grid item xs={12} md={5} lg={4}>
             <StyledPaper sx={{ p: 0 }}>
               <Box sx={{ p: 3, display: "flex", alignItems: "center" }}>
-                <Box component={"img"} sx={{ width: 70 }} alt="cloudreve" src={"/static/img/cloudreve.svg"} />
+                <Box component={"img"} sx={{ width: 70 }} alt="Fylvo" src={"/static/img/fylvo.svg"} />
                 <Box sx={{ ml: 2 }}>
                   <Typography variant={"h5"} fontWeight={600}>
-                    Cloudreve
+                    Fylvo
                     {summary && summary.version.pro && (
                       <SquareChip sx={{ ml: 1, height: "initial" }} size={"small"} color={"primary"} label={"Pro"} />
                     )}
