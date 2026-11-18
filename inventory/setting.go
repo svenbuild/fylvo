@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"crypto/rand"
+	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -81,6 +82,11 @@ func (c *settingClient) Set(ctx context.Context, settings map[string]string) err
 
 	return nil
 }
+
+// fylvoTheme holds the color themes of the web app (MUI theme options per mode).
+//
+//go:embed fylvo_theme.json
+var fylvoTheme string
 
 var (
 	defaultIcons = []types.FileTypeIconSetting{
@@ -528,7 +534,7 @@ var DefaultSettings = map[string]string{
 	"forget_captcha":                             `0`,
 	"gravatar_server":                            `https://www.gravatar.com/`,
 	"defaultTheme":                               `#7484F4`,
-	"theme_options":                              `{"#7484F4":{"light":{"palette":{"primary":{"main":"#5565E8","light":"#7484F4","dark":"#3F4FCB","contrastText":"#FFFFFF"},"secondary":{"main":"#7C4DDB","light":"#A78BFA","dark":"#5B34B0"}}},"dark":{"palette":{"primary":{"main":"#7484F4","light":"#A3AEFA","dark":"#5565E8","contrastText":"#FFFFFF"},"secondary":{"main":"#A78BFA","light":"#C9B8FD","dark":"#7C4DDB"},"background":{"default":"#0C131F","paper":"#0E1623"},"text":{"primary":"#F1F5FC","secondary":"#AAB9CD"},"divider":"rgba(148, 170, 205, 0.16)","grey":{"900":"#101A28","800":"#152233","700":"#26364A"}}}}}`,
+	"theme_options":                              fylvoTheme,
 	"max_parallel_transfer":                      `4`,
 	"secret_key":                                 util.RandStringRunesCrypto(256),
 	"temp_path":                                  "temp",

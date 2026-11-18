@@ -26,7 +26,7 @@ const API = process.env.FYLVO_API || "http://127.0.0.1:5212";
 const USER = { email: "test@fylvo.local", password: "fylvo-local-test-1" };
 const CHROME = process.env.CHROME || "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const here = path.dirname(fileURLToPath(import.meta.url));
-const themeFile = path.join(here, "..", "..", "design", "theme", "fylvo-theme.json");
+const themeFile = path.join(here, "..", "..", "inventory", "fylvo_theme.json");
 
 const out = opt("out", "shot.png");
 const route = opt("route", "home").replace(/^\/+/, "");
@@ -44,10 +44,12 @@ try {
   await page.setExtraHTTPHeaders({ "Accept-Language": lang });
   await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: opt("scheme", "dark") }]);
 
-  // Always show the theme from design/theme, also when the local database holds an older one.
+  // On the dev setup, show the theme from the repo even when the local database holds an older one.
+  // With FYLVO_APP set (a real instance), show what that instance really serves.
   const themes = JSON.stringify(JSON.parse(fs.readFileSync(themeFile, "utf8")));
-  await page.setRequestInterception(true);
-  page.on("request", async (req) => {
+  const useRepoTheme = !process.env.FYLVO_APP;
+  await page.setRequestInterception(useRepoTheme);
+  if (useRepoTheme) page.on("request", async (req) => {
     if (!req.url().includes("/api/v4/site/config/basic")) return req.continue();
     const real = await (await fetch(API + "/api/v4/site/config/basic")).json();
     real.data.themes = themes;

@@ -17,7 +17,7 @@ color stay. This guide is the shared rulebook for every screen.
 
 ## Tokens
 
-Colors come from the MUI theme (`design/theme/fylvo-theme.json` plus `frontend/src/fylvoTheme.ts`).
+Colors come from the MUI theme (`inventory/fylvo_theme.json` plus `frontend/src/fylvoTheme.ts`).
 
 | Role | Dark | How to get it |
 | --- | --- | --- |
