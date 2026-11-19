@@ -1310,8 +1310,9 @@ impl Placeholder {
         }
     }
 
-    /// Fylvo: turn the placeholder back into a normal file. Only works when it is fully on
-    /// disk. The handle stays owned by `self` and is closed once, when `self` is dropped.
+    /// Fylvo: turn the placeholder back into a normal file. Windows may first fetch missing
+    /// content and fails if it cannot. The handle stays owned by `self` and is closed once,
+    /// when `self` is dropped.
     pub fn revert(&mut self) -> core::Result<()> {
         unsafe {
             CfRevertPlaceholder(

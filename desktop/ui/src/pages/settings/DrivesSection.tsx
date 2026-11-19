@@ -63,6 +63,8 @@ export default function DrivesSection() {
   const [patternsText, setPatternsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [patternsError, setPatternsError] = useState<string | null>(null);
+  // Fylvo: one answer at a time for a held deletion.
+  const [resolving, setResolving] = useState(false);
 
   const fetchDrives = useCallback(async () => {
     if (isFetchingRef.current) return;
@@ -104,6 +106,7 @@ export default function DrivesSection() {
       );
       if (!ok) return;
     }
+    setResolving(true);
     try {
       await invoke("resolve_held_deletion", {
         driveId: drive.id,
@@ -114,6 +117,8 @@ export default function DrivesSection() {
     } catch (error) {
       console.error("Failed to resolve held deletion:", error);
       await message(String(error), { kind: "error" });
+    } finally {
+      setResolving(false);
     }
     await fetchDrives();
   };
@@ -440,12 +445,14 @@ export default function DrivesSection() {
                       <Stack direction="row" spacing={1}>
                         <SecondaryErrorButton
                           size="small"
+                          disabled={resolving}
                           onClick={() => handleResolveDeletion(drive, held, true)}
                         >
                           {t("settings.heldDeletion.confirm")}
                         </SecondaryErrorButton>
                         <SecondaryButton
                           size="small"
+                          disabled={resolving}
                           onClick={() => handleResolveDeletion(drive, held, false)}
                         >
                           {t(`settings.heldDeletion.cancel.${held.side}`)}

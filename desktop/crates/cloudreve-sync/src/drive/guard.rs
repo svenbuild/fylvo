@@ -57,8 +57,13 @@ pub enum DeletionSide {
 pub struct HeldDeletion {
     pub paths: Vec<PathBuf>,
     pub count: i64,
-    /// Changes whenever paths are added, so a confirmation always matches what was shown.
+    /// Changes whenever paths and count change, so a confirmation always matches what was
+    /// shown.
     pub version: u64,
+    /// The count matches the paths. An answer is refused while it does not.
+    counted: bool,
+    /// A confirmation is running; other answers are refused until it finished.
+    resolving: bool,
 }
 
 /// Held deletions of one drive, one per side.
@@ -81,7 +86,7 @@ impl DeletionGuardState {
     }
 
     /// Add paths to the hold of a side. Returns `None` if nothing changed, else whether a new
-    /// hold started and all held paths.
+    /// hold started and all held paths, which then need a new count (`set_count`).
     fn add(&mut self, side: DeletionSide, paths: Vec<PathBuf>) -> Option<(bool, Vec<PathBuf>)> {
         let slot = self.slot(side);
         let started = slot.is_none();
@@ -89,10 +94,13 @@ impl DeletionGuardState {
             paths: Vec::new(),
             count: 0,
             version: 0,
+            counted: false,
+            resolving: false,
         });
         let mut changed = false;
         for path in paths {
-            if !held.paths.contains(&path) {
+            // A path inside an already held folder is held already.
+            if !is_under(&path, &held.paths) {
                 held.paths.push(path);
                 changed = true;
             }
@@ -100,15 +108,18 @@ impl DeletionGuardState {
         if !changed {
             return None;
         }
-        held.version = NEXT_VERSION.fetch_add(1, Ordering::SeqCst);
+        held.counted = false;
         Some((started, held.paths.clone()))
     }
 
-    /// Store the count for a hold of `paths_len` paths, unless it changed meanwhile.
-    fn set_count(&mut self, side: DeletionSide, paths_len: usize, count: i64) {
+    /// Store the count for the held paths and publish them under a new version, unless the
+    /// paths changed meanwhile (then the newer call publishes).
+    fn set_count(&mut self, side: DeletionSide, paths: &[PathBuf], count: i64) {
         if let Some(held) = self.slot(side).as_mut() {
-            if held.paths.len() == paths_len {
+            if held.paths == paths {
                 held.count = count;
+                held.counted = true;
+                held.version = NEXT_VERSION.fetch_add(1, Ordering::SeqCst);
             }
         }
     }
@@ -136,24 +147,40 @@ impl DeletionGuardState {
             .extend(paths.into_iter().map(|p| (p, now)));
     }
 
-    /// The held deletion the user answered, if it is still the one they saw.
+    /// The held deletion the user answered, if it is still the one they saw. Claims it, so
+    /// a second answer is refused until `release` or `unclaim`.
     fn answered(&mut self, side: DeletionSide, version: u64) -> Result<Option<HeldDeletion>> {
         match self.slot(side) {
-            Some(held) if held.version == version => Ok(Some(held.clone())),
+            Some(held) if held.resolving => anyhow::bail!("this deletion is being handled"),
+            Some(held) if held.version == version && held.counted => {
+                held.resolving = true;
+                Ok(Some(held.clone()))
+            }
             Some(_) => anyhow::bail!("the held deletion changed, please look at it again"),
             None => Ok(None),
         }
     }
 
-    /// Remove the resolved paths from the hold; paths added meanwhile stay held.
-    fn release(&mut self, side: DeletionSide, resolved: &HeldDeletion) {
-        let slot = self.slot(side);
-        if let Some(held) = slot {
-            held.paths.retain(|p| !resolved.paths.contains(p));
-            if held.paths.is_empty() {
-                *slot = None;
-            }
+    /// Give up a claim without resolving anything (the answer failed).
+    fn unclaim(&mut self, side: DeletionSide) {
+        if let Some(held) = self.slot(side).as_mut() {
+            held.resolving = false;
         }
+    }
+
+    /// Remove the resolved paths from the hold and end the claim; paths added meanwhile stay
+    /// held. Returns the remaining paths if they need a new count.
+    fn release(&mut self, side: DeletionSide, resolved: &[PathBuf]) -> Option<Vec<PathBuf>> {
+        let slot = self.slot(side);
+        let held = slot.as_mut()?;
+        held.resolving = false;
+        held.paths.retain(|p| !resolved.contains(p));
+        if held.paths.is_empty() {
+            *slot = None;
+            return None;
+        }
+        held.counted = false;
+        Some(held.paths.clone())
     }
 
     fn keep(&mut self, paths: &[PathBuf]) {
@@ -220,7 +247,7 @@ impl Mount {
         self.deletion_guard
             .lock()
             .unwrap()
-            .set_count(side, merged.len(), count);
+            .set_count(side, &merged, count);
         tracing::warn!(target: "drive::guard", id = %self.id, side = ?side, count, "Mass deletion held");
         // One notification when a hold starts.
         if started {
@@ -293,36 +320,63 @@ impl Mount {
             (DeletionSide::Server, true) => {
                 // Only what is surely still gone on this PC. The hold stays until the server
                 // answered, so no sync brings the files back meanwhile.
-                let paths: Vec<PathBuf> = held
+                let gone: Vec<PathBuf> = held
                     .paths
                     .iter()
                     .filter(|p| matches!(p.try_exists(), Ok(false)))
                     .cloned()
                     .collect();
-                self.delete_on_server(paths).await?;
-                self.deletion_guard.lock().unwrap().release(side, &held);
+                let failed = match self.delete_on_server(gone).await {
+                    Ok(failed) => failed,
+                    Err(e) => {
+                        self.deletion_guard.lock().unwrap().unclaim(side);
+                        return Err(e);
+                    }
+                };
+                // What the server refused stays held; the user can try again or restore it.
+                let resolved: Vec<PathBuf> = held
+                    .paths
+                    .iter()
+                    .filter(|p| !failed.contains(p))
+                    .cloned()
+                    .collect();
+                self.release_held(side, &resolved);
+                if !failed.is_empty() {
+                    anyhow::bail!(
+                        "{} entries could not be deleted on the server, they stay held",
+                        failed.len()
+                    );
+                }
                 Ok(())
             }
             (DeletionSide::Server, false) => {
                 // Bring the files back from the server.
-                self.deletion_guard.lock().unwrap().release(side, &held);
+                self.release_held(side, &held.paths);
                 self.request_sync(held.paths)
             }
             (DeletionSide::Local, true) => {
-                {
-                    let mut state = self.deletion_guard.lock().unwrap();
-                    state.release(side, &held);
-                    state.allow(held.paths.clone(), Instant::now());
-                }
+                self.allow_local_deletion(held.paths.clone());
+                self.release_held(side, &held.paths);
                 self.request_sync(held.paths)
             }
             (DeletionSide::Local, false) => {
                 // Keep the local files for this run; they are not asked about again.
-                let mut state = self.deletion_guard.lock().unwrap();
-                state.keep(&held.paths);
-                state.release(side, &held);
+                self.deletion_guard.lock().unwrap().keep(&held.paths);
+                self.release_held(side, &held.paths);
                 Ok(())
             }
+        }
+    }
+
+    /// Release resolved paths and count what stays held.
+    fn release_held(&self, side: DeletionSide, resolved: &[PathBuf]) {
+        let remaining = self.deletion_guard.lock().unwrap().release(side, resolved);
+        if let Some(remaining) = remaining {
+            let count = self.count_deletion(&remaining).0;
+            self.deletion_guard
+                .lock()
+                .unwrap()
+                .set_count(side, &remaining, count);
         }
     }
 
@@ -458,9 +512,16 @@ mod tests {
     #[test]
     fn hold_grows_and_changes_version() {
         let mut state = DeletionGuardState::default();
-        let (started, _) = state.add(DeletionSide::Server, paths(&[r"C:\S\a"])).unwrap();
+        let (started, merged) = state.add(DeletionSide::Server, paths(&[r"C:\S\a"])).unwrap();
         assert!(started);
+        // Not answerable before the count is set.
+        let unpublished = state.server.as_ref().unwrap().version;
+        assert!(state.answered(DeletionSide::Server, unpublished).is_err());
+        state.set_count(DeletionSide::Server, &merged, 1);
         let first = state.server.as_ref().unwrap().version;
+
+        // A path inside a held folder is held already.
+        assert!(state.add(DeletionSide::Server, paths(&[r"C:\S\a\x.txt"])).is_none());
 
         // The same path again changes nothing.
         assert!(state.add(DeletionSide::Server, paths(&[r"C:\S\a"])).is_none());
@@ -469,6 +530,7 @@ mod tests {
         let (started, merged) = state.add(DeletionSide::Server, paths(&[r"C:\S\b"])).unwrap();
         assert!(!started);
         assert_eq!(merged.len(), 2);
+        state.set_count(DeletionSide::Server, &merged, 2);
         assert_ne!(state.server.as_ref().unwrap().version, first);
 
         // An answer to the old version is refused; nothing is released.
@@ -479,14 +541,21 @@ mod tests {
     #[test]
     fn release_keeps_paths_added_meanwhile() {
         let mut state = DeletionGuardState::default();
-        state.add(DeletionSide::Local, paths(&[r"C:\S\a"]));
+        let (_, merged) = state.add(DeletionSide::Local, paths(&[r"C:\S\a"])).unwrap();
+        state.set_count(DeletionSide::Local, &merged, 1);
         let version = state.local.as_ref().unwrap().version;
         let answered = state.answered(DeletionSide::Local, version).unwrap().unwrap();
+        // A second answer while the first one runs is refused.
+        assert!(state.answered(DeletionSide::Local, version).is_err());
         // While the confirmed deletion runs, another path is held.
         state.add(DeletionSide::Local, paths(&[r"C:\S\b"]));
-        state.release(DeletionSide::Local, &answered);
-        assert_eq!(state.local.as_ref().unwrap().paths, paths(&[r"C:\S\b"]));
-        state.release(DeletionSide::Local, &state.local.clone().unwrap());
+        let remaining = state.release(DeletionSide::Local, &answered.paths).unwrap();
+        assert_eq!(remaining, paths(&[r"C:\S\b"]));
+        // The rest needs a new count before it can be answered.
+        let version = state.local.as_ref().unwrap().version;
+        assert!(state.answered(DeletionSide::Local, version).is_err());
+        state.set_count(DeletionSide::Local, &remaining, 1);
+        assert!(state.release(DeletionSide::Local, &remaining).is_none());
         assert!(state.local.is_none());
     }
 

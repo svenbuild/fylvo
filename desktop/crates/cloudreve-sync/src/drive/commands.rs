@@ -699,9 +699,15 @@ impl Mount {
                 );
                 let cr_placeholder =
                     CrPlaceholder::new(local_path.clone(), sync_root.clone(), drive_id.clone());
-                cr_placeholder
-                    .delete_placeholder(self.inventory.clone())
-                    .context("failed to delete local placeholder")?;
+                if let Err(e) = cr_placeholder.delete_placeholder(self.inventory.clone()) {
+                    // Nothing was removed: a later deletion by the user must not be hidden.
+                    let path: PathBuf = local_path.clone().into();
+                    if path.exists() {
+                        self.event_blocker
+                            .unregister_once(&EventKind::Remove(RemoveKind::Any), &path);
+                    }
+                    return Err(e.context("failed to delete local placeholder"));
+                }
                 let command = MountCommand::Sync {
                     local_paths: vec![local_path.clone().into()],
                     mode: SyncMode::PathOnly,
@@ -766,9 +772,15 @@ impl Mount {
                 );
                 let cr_placeholder =
                     CrPlaceholder::new(local_path.clone(), sync_root.clone(), drive_id.clone());
-                cr_placeholder
-                    .delete_placeholder(self.inventory.clone())
-                    .context("failed to delete local placeholder")?;
+                if let Err(e) = cr_placeholder.delete_placeholder(self.inventory.clone()) {
+                    // Nothing was removed: a later deletion by the user must not be hidden.
+                    let path: PathBuf = local_path.clone().into();
+                    if path.exists() {
+                        self.event_blocker
+                            .unregister_once(&EventKind::Remove(RemoveKind::Any), &path);
+                    }
+                    return Err(e.context("failed to delete local placeholder"));
+                }
 
                 // Trigger sync to restore the remote version at original path
                 let command = MountCommand::Sync {
@@ -1010,13 +1022,14 @@ impl Mount {
             return Ok(());
         }
 
-        self.delete_on_server(paths).await
+        self.delete_on_server(paths).await.map(|_| ())
     }
 
-    /// Delete the given local paths on the server. They go to the server's trash.
-    pub(crate) async fn delete_on_server(&self, paths: Vec<PathBuf>) -> Result<()> {
+    /// Delete the given local paths on the server. They go to the server's trash. Returns the
+    /// paths the server did not delete (a re-sync for them is already requested).
+    pub(crate) async fn delete_on_server(&self, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
         if paths.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
         let (sync_path, remote_base) = {
             let config = self.config.read().await;
@@ -1090,7 +1103,10 @@ impl Mount {
                 .context("Failed to update local inventory after deletions")?;
         }
 
-        Ok(())
+        Ok(path_uri_mappings
+            .into_values()
+            .filter(|path| !successful_paths.contains(path))
+            .collect())
     }
 
     /// Build a mapping from remote URIs to local paths for the given events.
