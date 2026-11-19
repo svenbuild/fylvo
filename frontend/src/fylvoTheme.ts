@@ -21,7 +21,11 @@ const floating = (theme: Theme) => ({
   border: hairline(theme),
   boxShadow: isDark(theme) ? "0 12px 32px rgba(0, 0, 0, 0.6)" : "0 12px 32px rgba(0, 0, 0, 0.12)",
   // Rows on a raised surface go one step further up, otherwise hover has the color of the surface.
-  "& .MuiListItemButton-root:hover, & .MuiTableRow-root.MuiTableRow-hover:hover": { backgroundColor: raisedHoverSurface(theme) },
+  "@media (hover: hover)": {
+    "& .MuiListItemButton-root:hover, & .MuiTableRow-root.MuiTableRow-hover:hover": {
+      backgroundColor: raisedHoverSurface(theme),
+    },
+  },
   "& .MuiListItemButton-root, & .MuiTableRow-root": neutralSelected(theme, raisedSelectedSurface(theme)),
 });
 
@@ -186,10 +190,14 @@ const fylvoOptions: ThemeOptions = {
       defaultProps: { size: "small" },
       styleOverrides: {
         paper: ({ theme }) => floating(theme),
-        option: ({ theme }) => ({
-          "&.Mui-focused": { backgroundColor: raisedHoverSurface(theme) },
-          '&[aria-selected="true"], &[aria-selected="true"].Mui-focused': {
-            backgroundColor: raisedSelectedSurface(theme),
+        // On the listbox slot: MUI's own option colors live there and would win otherwise.
+        listbox: ({ theme }) => ({
+          "& .MuiAutocomplete-option": {
+            "@media (hover: hover)": { "&.Mui-focused": { backgroundColor: raisedHoverSurface(theme) } },
+            "&.Mui-focusVisible": { backgroundColor: raisedHoverSurface(theme) },
+            '&[aria-selected="true"], &[aria-selected="true"].Mui-focused, &[aria-selected="true"].Mui-focusVisible': {
+              backgroundColor: raisedSelectedSurface(theme),
+            },
           },
         }),
       },

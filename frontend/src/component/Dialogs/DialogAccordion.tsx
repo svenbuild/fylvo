@@ -17,6 +17,8 @@ const Accordion = styled((props: AccordionProps) => <MuiAccordion disableGutters
     "&::before": {
       display: "none",
     },
+    // The open accordion already has the selected fill; a hover fill would make the header darker.
+    "&.Mui-expanded .MuiAccordionSummary-root .MuiButton-root:hover": { backgroundColor: "transparent" },
   }),
 );
 

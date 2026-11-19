@@ -103,6 +103,7 @@ try {
     else if (step.doubleClick) await (await page.waitForSelector(step.doubleClick, { timeout: 8000 })).click({ count: 2 });
     else if (step.hover) await (await page.waitForSelector(step.hover, { timeout: 8000 })).hover();
     else if (step.upload) {
+      if (!step.file) throw new Error("upload step needs a file");
       const target = await page.waitForSelector(step.upload, { timeout: 8000 });
       const [chooser] = await Promise.all([page.waitForFileChooser({ timeout: 8000 }), target.click()]);
       await chooser.accept([step.file]);
