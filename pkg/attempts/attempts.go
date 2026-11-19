@@ -121,7 +121,8 @@ func (l *Limiter) Check(key Key) error {
 	if l.blocked(key.subject, now) || l.blocked(key.address, now) {
 		return ErrTooManyAttempts
 	}
-	if len(l.entries) >= 2*maxKeys && l.entries[key.subject] == nil && l.entries[key.address] == nil {
+	l.prune(now)
+	if len(l.entries) >= 2*maxKeys && !l.live(key.subject, now) && !l.live(key.address, now) {
 		return ErrTooManyAttempts
 	}
 	return nil
@@ -140,6 +141,7 @@ func (l *Limiter) Done(key Key, right bool) error {
 			return ErrTooManyAttempts
 		}
 		delete(l.entries, key.subject)
+		delete(l.entries, key.address)
 		return nil
 	}
 
@@ -150,6 +152,9 @@ func (l *Limiter) Done(key Key, right bool) error {
 	}
 	e := l.entries[id]
 	if !l.live(id, now) {
+		if len(l.entries) >= 2*maxKeys {
+			return nil
+		}
 		e = &entry{}
 		l.entries[id] = e
 	}

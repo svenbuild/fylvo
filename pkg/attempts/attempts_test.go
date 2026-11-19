@@ -150,7 +150,7 @@ func TestExpiredKeysArePruned(t *testing.T) {
 
 // When the map is full, wrong guesses for new subjects still count, per address.
 func TestFullMapStillLimits(t *testing.T) {
-	l, _ := newTestLimiter()
+	l, now := newTestLimiter()
 	for i := 0; i < maxKeys; i++ {
 		l.entries[fmt.Sprint(i)] = &entry{failures: 1, until: l.now().Add(Window)}
 	}
@@ -174,6 +174,12 @@ func TestFullMapStillLimits(t *testing.T) {
 	}
 	if l.Check(KeyFor(from("8.8.8.8"), KindLogin, "sven@example.org")) == nil {
 		t.Fatal("a new key should be refused above twice the cap")
+	}
+
+	// Once the old keys expire, new keys work again, without any further wrong guess.
+	*now = now.Add(Window)
+	if l.Check(KeyFor(from("8.8.8.8"), KindLogin, "sven@example.org")) != nil {
+		t.Fatal("expired keys should be pruned before the cap is checked")
 	}
 }
 
