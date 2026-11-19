@@ -1711,8 +1711,6 @@
     "unpaid": "未払い",
     "paid": "支払い済み",
     "shareLink": "共有リンク",
-    "mobileApp": "モバイルクライアント",
-    "desktopApp": "デスクトップクライアント",
     "customPaymentName": "支払方法名",
     "customPaymentNameDes": "ユーザーに表示される支払方法名",
     "customPaymentSecretDes": "Cloudreve署名用秘密鍵",

@@ -133,6 +133,9 @@ func (s *UpsertOAuthClientService) Create(c *gin.Context) (*GetOAuthClientRespon
 	if s.Client.ID > 0 {
 		return nil, serializer.NewError(serializer.CodeParamErr, "ID must be 0 for creating new OAuth client", nil)
 	}
+	if inventory.IsRetiredOAuthClient(s.Client.GUID) {
+		return nil, serializer.NewError(serializer.CodeParamErr, "This client ID belongs to an unsupported Cloudreve app", nil)
+	}
 
 	client, err := oauthClient.Create(c, s.Client.toEnt())
 	if err != nil {

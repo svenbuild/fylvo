@@ -1708,8 +1708,6 @@
     "unpaid": "미결제",
     "paid": "결제됨",
     "shareLink": "공유 링크",
-    "mobileApp": "모바일 클라이언트",
-    "desktopApp": "데스크톱 클라이언트",
     "customPaymentName": "결제 방식 이름",
     "customPaymentNameDes": "사용자에게 표시할 결제 방식 이름",
     "customPaymentSecretDes": "Cloudreve가 결제 요청에 서명하는 데 사용하는 키입니다.",

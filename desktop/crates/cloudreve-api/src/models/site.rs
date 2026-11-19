@@ -94,8 +94,6 @@ pub struct SiteConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_batch_size: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub app_promotion: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub app_feedback: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app_forum: Option<String>,

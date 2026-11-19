@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/enttest"
 	"github.com/cloudreve/Cloudreve/v4/ent/oauthclient"
 	"github.com/cloudreve/Cloudreve/v4/ent/schema"
@@ -168,4 +169,28 @@ func TestIsRetiredOAuthClient(t *testing.T) {
 	require.False(t, IsRetiredOAuthClient(OAuthClientFylvoDesktopGUID))
 	require.False(t, IsRetiredOAuthClient(OAuthClientCLIGUID))
 	require.False(t, IsRetiredOAuthClient(""))
+}
+
+func TestRetiredOAuthClientLookupFails(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "retired-lookup.db"))
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+
+	// Even a row created by hand with a retired client ID cannot be used to sign in.
+	for _, guid := range RetiredOAuthClientGUIDs {
+		_, err := client.OAuthClient.Create().
+			SetGUID(guid).
+			SetSecret("by-hand").
+			SetName("by-hand").
+			SetRedirectUris([]string{"/callback/by-hand"}).
+			SetScopes([]string{"openid"}).
+			SetIsEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+		clients := NewOAuthClientClient(client, conf.SQLiteDB)
+		_, err = clients.GetByGUID(ctx, guid)
+		require.True(t, ent.IsNotFound(err), guid)
+		_, err = clients.GetByGUIDWithGrants(ctx, strings.ToUpper(guid), 1)
+		require.True(t, ent.IsNotFound(err), guid)
+	}
 }

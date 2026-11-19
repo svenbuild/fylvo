@@ -1711,8 +1711,6 @@
     "unpaid": "غير مدفوع",
     "paid": "مدفوع",
     "shareLink": "رابط المشاركة",
-    "mobileApp": "تطبيق الجوال",
-    "desktopApp": "تطبيق سطح المكتب",
     "customPaymentName": "اسم طريقة الدفع",
     "customPaymentNameDes": "اسم طريقة الدفع التي سيتم عرضها للمستخدم.",
     "customPaymentSecretDes": "المفتاح السري لتوقيع طلبات الدفع.",

@@ -1711,8 +1711,6 @@
     "unpaid": "Nieopłacone",
     "paid": "Opłacone",
     "shareLink": "Udostępniony link",
-    "mobileApp": "Aplikacja mobilna",
-    "desktopApp": "Aplikacja desktopowa",
     "customPaymentName": "Nazwa metody płatności",
     "customPaymentNameDes": "Nazwa metody płatności używana do wyświetlania użytkownikowi.",
     "customPaymentSecretDes": "Tajny klucz do podpisywania żądań płatności.",

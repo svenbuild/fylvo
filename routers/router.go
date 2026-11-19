@@ -433,13 +433,6 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					controllers.DownloadArchive,
 				)
 			}
-
-			// Copy user session
-			sign.GET(
-				"user/session/copy/:id",
-				middleware.MobileRequestOnly(),
-				controllers.UserPerformCopySession,
-			)
 		}
 
 		// Receive calls from slave node

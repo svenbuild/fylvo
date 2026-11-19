@@ -1711,8 +1711,6 @@
     "unpaid": "未支付",
     "paid": "已支付",
     "shareLink": "分享連結",
-    "mobileApp": "移動客戶端",
-    "desktopApp": "桌面客戶端",
     "customPaymentName": "付款方式名稱",
     "customPaymentNameDes": "用於展示給使用者的付款方式名稱",
     "customPaymentSecretDes": "Cloudreve 用於籤名付款請求的金鑰。",

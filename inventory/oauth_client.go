@@ -80,12 +80,18 @@ func (c *oauthClientClient) GetClient() *ent.Client {
 }
 
 func (c *oauthClientClient) GetByGUID(ctx context.Context, guid string) (*ent.OAuthClient, error) {
+	if IsRetiredOAuthClient(guid) {
+		return nil, &ent.NotFoundError{}
+	}
 	return c.client.OAuthClient.Query().
 		Where(oauthclient.GUID(guid), oauthclient.IsEnabled(true)).
 		First(ctx)
 }
 
 func (c *oauthClientClient) GetByGUIDWithGrants(ctx context.Context, guid string, uid int) (*ent.OAuthClient, error) {
+	if IsRetiredOAuthClient(guid) {
+		return nil, &ent.NotFoundError{}
+	}
 	stm := c.client.OAuthClient.Query().
 		Where(oauthclient.GUID(guid), oauthclient.IsEnabled(true))
 	if uid > 0 {
