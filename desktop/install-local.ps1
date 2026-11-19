@@ -117,7 +117,7 @@ function Remove-Aside([string]$Aside, [bool]$WasFylvo) {
     $Marker = Join-Path $Aside $DeleteMarker
     try {
         if (-not (Test-Path -LiteralPath $Marker)) {
-            New-Item -ItemType File -Path (Split-Path $Marker -Parent) -Name $DeleteMarker | Out-Null
+            [IO.File]::WriteAllText($Marker, "")
         }
         Get-ChildItem -LiteralPath $Aside -Force | Where-Object { $_.Name -ne $DeleteMarker } |
             Remove-Item -Recurse -Force
@@ -141,21 +141,40 @@ if (Test-Path -LiteralPath $AsideParent) {
 # backup that could not be removed, not the last working version.
 $RetiredMarker = ".fylvo-retired"
 
-# Finish retiring a backup whose removal failed after a successful registration.
-if ((Test-Path -LiteralPath (Join-Path $OldDir $RetiredMarker)) -and (Test-FylvoFolder $OldDir)) {
-    $Retired = $null
-    if (Invoke-WithAppStopped { $script:Retired = Move-Aside $OldDir }) {
-        Remove-Aside $Retired $true
-    } else {
-        Write-Error "Could not remove the old backup $OldDir, a file is still in use. Close Explorer windows of the sync folder and try again."
-        exit 1
+# Returns the version in a folder's manifest, or $null.
+function Get-FolderVersion([string]$Dir) {
+    try {
+        return ([xml](Get-Content -LiteralPath (Join-Path $Dir "AppxManifest.xml") -Raw)).Package.Identity.Version
+    } catch {
+        return $null
     }
 }
 
-# A backup in .old means a previous run did not finish: a finished run marks it and moves it
-# aside. In that case .old stays the backup for this run, and whatever is in the install
-# folder (maybe a half installed new version) is moved aside instead of being backed up.
+# A .old is stale, not the last working version, if a run marked it after registering, or if
+# Windows has exactly the version in the install folder registered from there (the run was
+# cut off between registering and writing the mark).
+function Test-StaleBackup {
+    if (Test-Path -LiteralPath (Join-Path $OldDir $RetiredMarker)) {
+        return $true
+    }
+    $Registered = Get-AppxPackage -Name $PackageName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $Registered -or -not (Test-FylvoFolder $InstallDir)) {
+        return $false
+    }
+    $Version = Get-FolderVersion $InstallDir
+    return ($Registered.InstallLocation.TrimEnd('\', '/') -eq $InstallDir) -and
+        ($Version -and $Registered.Version.ToString() -eq $Version) -and
+        ((Get-FolderVersion $OldDir) -ne $Version)
+}
+
+# A backup in .old means a previous run did not finish, unless it is stale (see above). For an
+# unfinished run .old stays the backup for this run, and whatever is in the install folder
+# (maybe a half installed new version) is moved aside instead of being backed up.
 $Unfinished = Test-Path -LiteralPath $OldDir
+$StaleBackup = $Unfinished -and (Test-FylvoFolder $OldDir) -and (Test-StaleBackup)
+if ($StaleBackup) {
+    $Unfinished = $false
+}
 if ($Unfinished -and -not (Test-FylvoFolder $OldDir)) {
     Write-Error "$OldDir exists and is not a Fylvo Desktop folder. Remove it by hand first."
     exit 1
@@ -192,6 +211,18 @@ try {
     throw
 } finally {
     Remove-Item -LiteralPath $Zip -Force -ErrorAction SilentlyContinue
+}
+
+# A stale backup is removed now that the new package is known to be good.
+if ($StaleBackup) {
+    $Retired = $null
+    if (Invoke-WithAppStopped { $script:Retired = Move-Aside $OldDir }) {
+        Remove-Aside $Retired $true
+    } else {
+        Remove-Item -LiteralPath $NewDir -Recurse -Force
+        Write-Error "Could not remove the old backup $OldDir, a file is still in use. Close Explorer windows of the sync folder and try again."
+        exit 1
+    }
 }
 
 # 2. Stop the app and clear the install folder: back it up to .old, or after an unfinished run
@@ -249,7 +280,11 @@ try {
 # 4. Retire the backup: mark it as no longer needed, then move it aside. A leftover .old
 #    without the mark always means an unfinished run.
 if (Test-Path -LiteralPath $OldDir) {
-    New-Item -ItemType File -Path $OldDir -Name $RetiredMarker -Force -ErrorAction SilentlyContinue | Out-Null
+    try {
+        [IO.File]::WriteAllText((Join-Path $OldDir $RetiredMarker), "")
+    } catch {
+        # Without the mark the next run still recognizes the registered version (Test-StaleBackup).
+    }
     $Retired = $null
     $Moved = Invoke-WithAppStopped { $script:Retired = Move-Aside $OldDir }
     if ($Moved) {

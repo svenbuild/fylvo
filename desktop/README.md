@@ -28,6 +28,8 @@ page `/callback/fylvo-desktop` in the web app hands the result to `fylvo://mount
 
 The server has no client for the Cloudreve desktop app and removes the one an upstream
 installation created. That app can neither sign in nor refresh its tokens against a Fylvo server.
+Builds of Fylvo Desktop from before this change used that client too: update the app, then use
+"Reauthorize" on drives added with such a build.
 
 ## Requirements
 
