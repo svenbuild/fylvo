@@ -1,0 +1,55 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Go version and toolchain come from go.mod.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      # Node 22 is the version the upstream release pipeline used; the frontend declares none.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      # Builds the frontend, embeds it (application/statics/assets.zip) and builds release/cloudreve.
+      # Must run before the tests: the server packages embed assets.zip and do not compile without it.
+      - name: Build release
+        run: scripts/build.sh
+
+      - name: Go tests
+        run: go test ./pkg/filemanager/... ./pkg/webdav/ ./pkg/setting/ ./pkg/balancer/ ./pkg/util/ ./pkg/searcher/... ./pkg/request/ssrftest/ ./pkg/wopi/ ./inventory/... ./service/... ./routers/...
+
+      - name: Short commit
+        id: commit
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fylvo-${{ steps.commit.outputs.short }}
+          path: release/cloudreve
+          if-no-files-found: error
+          retention-days: 30
