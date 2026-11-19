@@ -4,8 +4,9 @@
 //!   deletion is held until the user confirms it in the settings.
 //! - Read-only drives: a shared folder the user may only read gets no upload attempts.
 //!
-//! Held deletions live in memory only. After a restart a held local deletion is undone by the
-//! full sync (the files come back from the server) and a held server deletion is asked again.
+//! Held deletions live in memory only. After a restart a held deletion on the server side is
+//! undone by the full sync (the files come back from the server) and a held local deletion is
+//! asked again.
 
 use crate::drive::{
     commands::MountCommand, mounts::Mount, placeholder::CrPlaceholder, sync::SyncMode,
@@ -21,7 +22,8 @@ use cloudreve_api::{
 use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
-    sync::atomic::Ordering,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
@@ -31,6 +33,8 @@ const MASS_DELETE_COUNT: i64 = 50;
 /// `MASS_DELETE_SHARE_PERCENT` percent of the drive's known entries is held too.
 const MASS_DELETE_SHARE_MIN: i64 = 10;
 const MASS_DELETE_SHARE_PERCENT: i64 = 30;
+/// How long a confirmation (or a known server rename) lets local deletions under its paths pass.
+const CONFIRMATION_VALID_FOR: Duration = Duration::from_secs(600);
 
 /// Whether deleting `affected` of `total` known entries needs the user's confirmation.
 pub fn is_mass_deletion(affected: i64, total: i64) -> bool {
@@ -53,6 +57,8 @@ pub enum DeletionSide {
 pub struct HeldDeletion {
     pub paths: Vec<PathBuf>,
     pub count: i64,
+    /// Changes whenever paths are added, so a confirmation always matches what was shown.
+    pub version: u64,
 }
 
 /// Held deletions of one drive, one per side.
@@ -60,11 +66,9 @@ pub struct HeldDeletion {
 pub struct DeletionGuardState {
     server: Option<HeldDeletion>,
     local: Option<HeldDeletion>,
-    /// Paths whose local deletion the user confirmed; used by the next sync pass.
-    confirmed_local: Vec<PathBuf>,
-    /// Confirmed paths of the running sync pass.
-    active_confirmed_local: Vec<PathBuf>,
-    /// Paths the user chose to keep; no new notification for them in this run.
+    /// Paths whose local deletion may pass (confirmed by the user, or renamed on the server).
+    confirmed_local: Vec<(PathBuf, Instant)>,
+    /// Paths the user chose to keep here for this run; not deleted and not asked about again.
     kept_local: Vec<PathBuf>,
 }
 
@@ -75,6 +79,86 @@ impl DeletionGuardState {
             DeletionSide::Local => &mut self.local,
         }
     }
+
+    /// Add paths to the hold of a side. Returns `None` if nothing changed, else whether a new
+    /// hold started and all held paths.
+    fn add(&mut self, side: DeletionSide, paths: Vec<PathBuf>) -> Option<(bool, Vec<PathBuf>)> {
+        let slot = self.slot(side);
+        let started = slot.is_none();
+        let held = slot.get_or_insert_with(|| HeldDeletion {
+            paths: Vec::new(),
+            count: 0,
+            version: 0,
+        });
+        let mut changed = false;
+        for path in paths {
+            if !held.paths.contains(&path) {
+                held.paths.push(path);
+                changed = true;
+            }
+        }
+        if !changed {
+            return None;
+        }
+        held.version = NEXT_VERSION.fetch_add(1, Ordering::SeqCst);
+        Some((started, held.paths.clone()))
+    }
+
+    /// Store the count for a hold of `paths_len` paths, unless it changed meanwhile.
+    fn set_count(&mut self, side: DeletionSide, paths_len: usize, count: i64) {
+        if let Some(held) = self.slot(side).as_mut() {
+            if held.paths.len() == paths_len {
+                held.count = count;
+            }
+        }
+    }
+
+    fn is_held(&mut self, side: DeletionSide, path: &Path) -> bool {
+        self.slot(side)
+            .as_ref()
+            .is_some_and(|held| is_under(path, &held.paths))
+    }
+
+    fn is_kept(&self, path: &Path) -> bool {
+        is_under(path, &self.kept_local)
+    }
+
+    fn is_confirmed(&mut self, paths: &[PathBuf], now: Instant) -> bool {
+        self.confirmed_local
+            .retain(|(_, at)| now.duration_since(*at) < CONFIRMATION_VALID_FOR);
+        let confirmed: Vec<PathBuf> = self.confirmed_local.iter().map(|(p, _)| p.clone()).collect();
+        paths.iter().all(|p| is_under(p, &confirmed))
+    }
+
+    fn allow(&mut self, paths: Vec<PathBuf>, now: Instant) {
+        self.kept_local.retain(|kept| !is_under(kept, &paths));
+        self.confirmed_local
+            .extend(paths.into_iter().map(|p| (p, now)));
+    }
+
+    /// The held deletion the user answered, if it is still the one they saw.
+    fn answered(&mut self, side: DeletionSide, version: u64) -> Result<Option<HeldDeletion>> {
+        match self.slot(side) {
+            Some(held) if held.version == version => Ok(Some(held.clone())),
+            Some(_) => anyhow::bail!("the held deletion changed, please look at it again"),
+            None => Ok(None),
+        }
+    }
+
+    /// Remove the resolved paths from the hold; paths added meanwhile stay held.
+    fn release(&mut self, side: DeletionSide, resolved: &HeldDeletion) {
+        let slot = self.slot(side);
+        if let Some(held) = slot {
+            held.paths.retain(|p| !resolved.paths.contains(p));
+            if held.paths.is_empty() {
+                *slot = None;
+            }
+        }
+    }
+
+    fn keep(&mut self, paths: &[PathBuf]) {
+        self.kept_local.extend(paths.iter().cloned());
+    }
 }
 
 /// What the settings page shows about a held deletion.
@@ -82,7 +166,10 @@ impl DeletionGuardState {
 pub struct HeldDeletionInfo {
     pub side: DeletionSide,
     pub count: i64,
+    pub version: u64,
 }
+
+static NEXT_VERSION: AtomicU64 = AtomicU64::new(1);
 
 pub fn is_under(path: &Path, roots: &[PathBuf]) -> bool {
     roots.iter().any(|root| path.starts_with(root))
@@ -105,94 +192,71 @@ pub fn is_read_only_capability(capability: Option<&str>) -> Option<bool> {
 impl Mount {
     /// Number of affected entries if deleting `paths` needs the user's confirmation.
     pub(crate) fn mass_deletion_count(&self, paths: &[PathBuf]) -> Option<i64> {
+        let (affected, total) = self.count_deletion(paths);
+        is_mass_deletion(affected, total).then_some(affected)
+    }
+
+    /// Entries at or under `paths`, and all entries of the drive. Without numbers from the
+    /// database, every path counts as one and the drive as empty, which holds a large batch.
+    fn count_deletion(&self, paths: &[PathBuf]) -> (i64, i64) {
         let strs: Vec<&str> = paths.iter().filter_map(|p| p.to_str()).collect();
         let counts = self
             .inventory
             .count_under_paths(&self.id, &strs)
             .and_then(|affected| Ok((affected, self.inventory.count_for_drive(&self.id)?)));
-        match counts {
-            Ok((affected, total)) if is_mass_deletion(affected, total) => Some(affected),
-            Ok(_) => None,
-            Err(e) => {
-                // Without numbers, hold a large batch to be safe.
-                tracing::error!(target: "drive::guard", id = %self.id, error = ?e, "Failed to count deletion");
-                (paths.len() as i64 >= MASS_DELETE_SHARE_MIN).then_some(paths.len() as i64)
-            }
-        }
+        counts.unwrap_or_else(|e| {
+            tracing::error!(target: "drive::guard", id = %self.id, error = ?e, "Failed to count deletion");
+            (paths.len() as i64, 0)
+        })
     }
 
     /// Hold a deletion until the user decides. Adds to an already held deletion of that side.
-    pub(crate) fn hold_deletion(&self, side: DeletionSide, paths: Vec<PathBuf>, count: i64) {
-        // One notification when a hold starts, none for paths the user already chose to keep.
-        let notify = {
-            let mut state = self.deletion_guard.lock().unwrap();
-            let kept = side == DeletionSide::Local
-                && paths.iter().all(|p| is_under(p, &state.kept_local));
-            match state.slot(side) {
-                Some(held) => {
-                    for path in paths {
-                        if !held.paths.contains(&path) {
-                            held.paths.push(path);
-                        }
-                    }
-                    held.count = held.count.max(count);
-                    false
-                }
-                slot => {
-                    *slot = Some(HeldDeletion { paths, count });
-                    !kept
-                }
-            }
+    pub(crate) fn hold_deletion(&self, side: DeletionSide, paths: Vec<PathBuf>) {
+        let Some((started, merged)) = self.deletion_guard.lock().unwrap().add(side, paths) else {
+            return;
         };
+        // Count outside the lock.
+        let count = self.count_deletion(&merged).0;
+        self.deletion_guard
+            .lock()
+            .unwrap()
+            .set_count(side, merged.len(), count);
         tracing::warn!(target: "drive::guard", id = %self.id, side = ?side, count, "Mass deletion held");
-        if notify {
+        // One notification when a hold starts.
+        if started {
             toast::send_mass_deletion_toast(&self.id, side, count);
         }
     }
 
-    /// Whether a local deletion of `path` is held (so the sync must not bring it back yet).
-    pub(crate) fn is_server_deletion_held(&self, path: &Path) -> bool {
-        let state = self.deletion_guard.lock().unwrap();
-        state
-            .server
-            .as_ref()
-            .is_some_and(|held| is_under(path, &held.paths))
+    /// Whether a deletion of `path` on this side is held.
+    pub(crate) fn is_deletion_held(&self, side: DeletionSide, path: &Path) -> bool {
+        self.deletion_guard.lock().unwrap().is_held(side, path)
+    }
+
+    /// Whether the user chose to keep `path` here although it was deleted on the server.
+    pub(crate) fn is_kept_locally(&self, path: &Path) -> bool {
+        self.deletion_guard.lock().unwrap().is_kept(path)
     }
 
     pub(crate) fn has_server_deletion_held(&self) -> bool {
         self.deletion_guard.lock().unwrap().server.is_some()
     }
 
-    /// Whether the user confirmed the local deletion of all `paths` for the running pass.
+    /// Whether all `paths` may be deleted locally without asking.
     pub(crate) fn is_local_deletion_confirmed(&self, paths: &[PathBuf]) -> bool {
-        let state = self.deletion_guard.lock().unwrap();
-        paths
-            .iter()
-            .all(|p| is_under(p, &state.active_confirmed_local))
+        self.deletion_guard
+            .lock()
+            .unwrap()
+            .is_confirmed(paths, Instant::now())
     }
 
-    /// Mark local deletions as known moves (a rename on the server), so the guard lets them pass.
+    /// Let local deletions under `paths` pass for a while: confirmed by the user, or known
+    /// moves (a rename on the server).
     pub(crate) fn allow_local_deletion(&self, paths: Vec<PathBuf>) {
         self.deletion_guard
             .lock()
             .unwrap()
-            .confirmed_local
-            .extend(paths);
-    }
-
-    /// Called at the start and the end of a sync pass.
-    pub(crate) fn begin_sync_pass(&self) {
-        let mut state = self.deletion_guard.lock().unwrap();
-        let confirmed = std::mem::take(&mut state.confirmed_local);
-        state.active_confirmed_local = confirmed;
-    }
-
-    pub(crate) fn end_sync_pass(&self) {
-        self.deletion_guard
-            .lock()
-            .unwrap()
-            .active_confirmed_local
-            .clear();
+            .allow(paths, Instant::now());
     }
 
     pub fn held_deletions(&self) -> Vec<HeldDeletionInfo> {
@@ -206,48 +270,69 @@ impl Mount {
             held.as_ref().map(|h| HeldDeletionInfo {
                 side,
                 count: h.count,
+                version: h.version,
             })
         })
         .collect()
     }
 
-    /// The user's answer to a held deletion.
-    pub async fn resolve_held_deletion(&self, side: DeletionSide, confirm: bool) -> Result<()> {
-        let held = {
-            let mut state = self.deletion_guard.lock().unwrap();
-            let held = state.slot(side).take();
-            if let (Some(held), DeletionSide::Local) = (&held, side) {
-                if confirm {
-                    state.confirmed_local.extend(held.paths.clone());
-                } else {
-                    state.kept_local.extend(held.paths.clone());
-                }
-            }
-            held
-        };
-        let Some(held) = held else {
+    /// The user's answer to a held deletion. `version` is the one the user saw; if more paths
+    /// were added since, nothing happens and the user is asked to look again.
+    pub async fn resolve_held_deletion(
+        &self,
+        side: DeletionSide,
+        version: u64,
+        confirm: bool,
+    ) -> Result<()> {
+        let Some(held) = self.deletion_guard.lock().unwrap().answered(side, version)? else {
             return Ok(());
         };
         tracing::info!(target: "drive::guard", id = %self.id, side = ?side, confirm, count = held.count, "Held deletion resolved");
 
         match (side, confirm) {
             (DeletionSide::Server, true) => {
-                // Only what is still gone on this PC.
-                let paths: Vec<PathBuf> = held.paths.into_iter().filter(|p| !p.exists()).collect();
-                self.delete_on_server(paths).await
-            }
-            // Bring the files back from the server, or run the confirmed local deletion.
-            (DeletionSide::Server, false) | (DeletionSide::Local, true) => {
-                self.command_tx.send(MountCommand::Sync {
-                    local_paths: held.paths,
-                    mode: SyncMode::PathOnly,
-                    user_initiated: false,
-                })?;
+                // Only what is surely still gone on this PC. The hold stays until the server
+                // answered, so no sync brings the files back meanwhile.
+                let paths: Vec<PathBuf> = held
+                    .paths
+                    .iter()
+                    .filter(|p| matches!(p.try_exists(), Ok(false)))
+                    .cloned()
+                    .collect();
+                self.delete_on_server(paths).await?;
+                self.deletion_guard.lock().unwrap().release(side, &held);
                 Ok(())
             }
-            // Keep the local files. Nothing to do.
-            (DeletionSide::Local, false) => Ok(()),
+            (DeletionSide::Server, false) => {
+                // Bring the files back from the server.
+                self.deletion_guard.lock().unwrap().release(side, &held);
+                self.request_sync(held.paths)
+            }
+            (DeletionSide::Local, true) => {
+                {
+                    let mut state = self.deletion_guard.lock().unwrap();
+                    state.release(side, &held);
+                    state.allow(held.paths.clone(), Instant::now());
+                }
+                self.request_sync(held.paths)
+            }
+            (DeletionSide::Local, false) => {
+                // Keep the local files for this run; they are not asked about again.
+                let mut state = self.deletion_guard.lock().unwrap();
+                state.keep(&held.paths);
+                state.release(side, &held);
+                Ok(())
+            }
         }
+    }
+
+    fn request_sync(&self, paths: Vec<PathBuf>) -> Result<()> {
+        self.command_tx.send(MountCommand::Sync {
+            local_paths: paths,
+            mode: SyncMode::PathOnly,
+            user_initiated: false,
+        })?;
+        Ok(())
     }
 
     pub fn is_read_only(&self) -> bool {
@@ -351,6 +436,8 @@ mod tests {
         // Editor and own drive.
         let editor = capability(&[CREATE_FILE, RENAME_FILE, UPLOAD_FILE, DOWNLOAD_FILE]);
         assert_eq!(is_read_only_capability(Some(&editor)), Some(false));
+        // Taken from a running Fylvo server: an editor of a shared folder.
+        assert_eq!(is_read_only_capability(Some("w8aZAQ==")), Some(false));
         // Nothing sent or garbage: unknown.
         assert_eq!(is_read_only_capability(None), None);
         assert_eq!(is_read_only_capability(Some("%%%")), None);
@@ -362,5 +449,71 @@ mod tests {
         assert!(is_under(Path::new(r"C:\S\a"), &roots));
         assert!(is_under(Path::new(r"C:\S\a\b.txt"), &roots));
         assert!(!is_under(Path::new(r"C:\S\ab.txt"), &roots));
+    }
+
+    fn paths(list: &[&str]) -> Vec<PathBuf> {
+        list.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn hold_grows_and_changes_version() {
+        let mut state = DeletionGuardState::default();
+        let (started, _) = state.add(DeletionSide::Server, paths(&[r"C:\S\a"])).unwrap();
+        assert!(started);
+        let first = state.server.as_ref().unwrap().version;
+
+        // The same path again changes nothing.
+        assert!(state.add(DeletionSide::Server, paths(&[r"C:\S\a"])).is_none());
+
+        // A new path joins the hold, no new notification, new version.
+        let (started, merged) = state.add(DeletionSide::Server, paths(&[r"C:\S\b"])).unwrap();
+        assert!(!started);
+        assert_eq!(merged.len(), 2);
+        assert_ne!(state.server.as_ref().unwrap().version, first);
+
+        // An answer to the old version is refused; nothing is released.
+        assert!(state.answered(DeletionSide::Server, first).is_err());
+        assert_eq!(state.server.as_ref().unwrap().paths.len(), 2);
+    }
+
+    #[test]
+    fn release_keeps_paths_added_meanwhile() {
+        let mut state = DeletionGuardState::default();
+        state.add(DeletionSide::Local, paths(&[r"C:\S\a"]));
+        let version = state.local.as_ref().unwrap().version;
+        let answered = state.answered(DeletionSide::Local, version).unwrap().unwrap();
+        // While the confirmed deletion runs, another path is held.
+        state.add(DeletionSide::Local, paths(&[r"C:\S\b"]));
+        state.release(DeletionSide::Local, &answered);
+        assert_eq!(state.local.as_ref().unwrap().paths, paths(&[r"C:\S\b"]));
+        state.release(DeletionSide::Local, &state.local.clone().unwrap());
+        assert!(state.local.is_none());
+    }
+
+    #[test]
+    fn held_path_stays_held_when_fewer_entries_are_left() {
+        // The planner asks is_held before the threshold; a held path stays held.
+        let mut state = DeletionGuardState::default();
+        state.add(DeletionSide::Local, paths(&[r"C:\S\a", r"C:\S\b"]));
+        assert!(state.is_held(DeletionSide::Local, Path::new(r"C:\S\a\file.txt")));
+        assert!(!state.is_held(DeletionSide::Server, Path::new(r"C:\S\a")));
+        assert!(!state.is_held(DeletionSide::Local, Path::new(r"C:\S\c")));
+    }
+
+    #[test]
+    fn confirmation_is_not_used_up_and_expires() {
+        let mut state = DeletionGuardState::default();
+        let now = Instant::now();
+        state.keep(&paths(&[r"C:\S\a"]));
+        state.allow(paths(&[r"C:\S\a"]), now);
+        // A confirmation ends "keep" for that path.
+        assert!(!state.is_kept(Path::new(r"C:\S\a")));
+        // Any number of passes may check it (an unrelated pass does not use it up).
+        assert!(state.is_confirmed(&paths(&[r"C:\S\a\x.txt"]), now));
+        assert!(state.is_confirmed(&paths(&[r"C:\S\a"]), now));
+        assert!(!state.is_confirmed(&paths(&[r"C:\S\a", r"C:\S\b"]), now));
+        // After the time limit it is gone.
+        let later = now + CONFIRMATION_VALID_FOR + Duration::from_secs(1);
+        assert!(!state.is_confirmed(&paths(&[r"C:\S\a"]), later));
     }
 }

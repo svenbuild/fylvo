@@ -1005,13 +1005,8 @@ impl Mount {
 
         // Fylvo: many deletions at once wait for the user's answer. Once a deletion is held,
         // the following ones wait too, so a large deletion cannot pass in small parts.
-        if self.has_server_deletion_held() {
-            let count = self.mass_deletion_count(&paths).unwrap_or(paths.len() as i64);
-            self.hold_deletion(DeletionSide::Server, paths, count);
-            return Ok(());
-        }
-        if let Some(count) = self.mass_deletion_count(&paths) {
-            self.hold_deletion(DeletionSide::Server, paths, count);
+        if self.has_server_deletion_held() || self.mass_deletion_count(&paths).is_some() {
+            self.hold_deletion(DeletionSide::Server, paths);
             return Ok(());
         }
 

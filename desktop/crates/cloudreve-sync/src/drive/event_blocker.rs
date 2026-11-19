@@ -91,6 +91,21 @@ impl EventBlocker {
         self.register(kind, path, 1);
     }
 
+    /// Fylvo: take back one registration, for an operation that did not happen after all.
+    pub fn unregister_once(&self, kind: &EventKind, path: &PathBuf) {
+        let key = BlockKey {
+            kind: NormalizedEventKind::from(kind),
+            path: path.clone(),
+        };
+        let mut blocked = self.blocked.lock().unwrap();
+        if let Some(count) = blocked.get_mut(&key) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                blocked.remove(&key);
+            }
+        }
+    }
+
     /// Checks if an event should be blocked and decrements the counter if so.
     ///
     /// # Arguments

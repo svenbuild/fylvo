@@ -21,6 +21,8 @@ export interface DriveInfo {
 export interface HeldDeletion {
   side: "server" | "local";
   count: number;
+  // Fylvo: sent back on confirm, so the answer matches what was shown.
+  version: number;
 }
 
 export type DriveStatus = "active" | "event_push_lost" | "credential_expired";

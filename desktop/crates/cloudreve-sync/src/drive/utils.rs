@@ -9,7 +9,7 @@ use windows::Win32::Storage::CloudFilters::{
     CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByPath,
 };
 use windows::Win32::UI::Shell::{
-    FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FOF_WANTNUKEWARNING,
+    FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, FOF_WANTNUKEWARNING,
     SHCNE_ID, SHCNF_PATHW, SHChangeNotify, SHFILEOPSTRUCTW, SHFileOperationW,
 };
 use windows::core::PCWSTR;
@@ -128,9 +128,9 @@ pub fn move_to_recycle_bin(path: &Path) -> Result<()> {
     let mut op = SHFILEOPSTRUCTW {
         wFunc: FO_DELETE,
         pFrom: PCWSTR(from.as_ptr()),
-        fFlags: (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_WANTNUKEWARNING | FOF_SILENT
-            | FOF_NOERRORUI)
-            .0 as u16,
+        // No FOF_NOERRORUI: it is not documented whether it also hides the "delete for
+        // good?" question that FOF_WANTNUKEWARNING asks for.
+        fFlags: (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_WANTNUKEWARNING | FOF_SILENT).0 as u16,
         ..Default::default()
     };
     let code = unsafe { SHFileOperationW(&mut op) };

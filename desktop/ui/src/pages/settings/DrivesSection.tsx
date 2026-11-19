@@ -32,7 +32,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { DriveInfo, HeldDeletion } from "./types";
 import {  SecondaryButton, SecondaryErrorButton } from "../../common/StyledComponent";
-import { ask } from '@tauri-apps/plugin-dialog';
+import { ask, message } from '@tauri-apps/plugin-dialog';
 
 interface DriveInfoResponse {
   id: string;
@@ -108,12 +108,14 @@ export default function DrivesSection() {
       await invoke("resolve_held_deletion", {
         driveId: drive.id,
         side: held.side,
+        version: held.version,
         confirm,
       });
-      await fetchDrives();
     } catch (error) {
       console.error("Failed to resolve held deletion:", error);
+      await message(String(error), { kind: "error" });
     }
+    await fetchDrives();
   };
 
   const handleDelete = async (driveId: string, driveName: string) => {

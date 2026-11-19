@@ -243,6 +243,7 @@ pub async fn resolve_held_deletion(
     state: State<'_, AppStateHandle>,
     drive_id: String,
     side: String,
+    version: u64,
     confirm: bool,
 ) -> CommandResult<()> {
     use cloudreve_sync::drive::guard::DeletionSide;
@@ -256,7 +257,7 @@ pub async fn resolve_held_deletion(
     };
     app_state
         .drive_manager
-        .resolve_held_deletion(&drive_id, side, confirm)
+        .resolve_held_deletion(&drive_id, side, version, confirm)
         .await
         .map_err(|e| e.to_string())
 }

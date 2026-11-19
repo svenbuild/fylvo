@@ -1310,6 +1310,18 @@ impl Placeholder {
         }
     }
 
+    /// Fylvo: turn the placeholder back into a normal file. Only works when it is fully on
+    /// disk. The handle stays owned by `self` and is closed once, when `self` is dropped.
+    pub fn revert(&mut self) -> core::Result<()> {
+        unsafe {
+            CfRevertPlaceholder(
+                self.handle.handle,
+                CloudFilters::CF_REVERT_FLAG_NONE,
+                None,
+            )
+        }
+    }
+
     pub fn dehydrate(&mut self, range: impl RangeBounds<u64>) -> core::Result<()> {
         unsafe {
             CfDehydratePlaceholder(

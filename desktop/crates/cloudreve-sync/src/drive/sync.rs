@@ -399,13 +399,6 @@ impl Mount {
     /// Syncs a list of local paths by grouping them under their parent directories.
     pub async fn sync_paths(&self, local_paths: Vec<PathBuf>, mode: SyncMode) -> Result<()> {
         let _sync_guard = self.sync_lock.lock().await;
-        self.begin_sync_pass();
-        let result = self.sync_paths_locked(local_paths, mode).await;
-        self.end_sync_pass();
-        result
-    }
-
-    async fn sync_paths_locked(&self, local_paths: Vec<PathBuf>, mode: SyncMode) -> Result<()> {
 
         if local_paths.is_empty() {
             tracing::debug!(target: "drive::sync", id = %self.id, "No paths provided for sync");
@@ -713,6 +706,11 @@ impl Mount {
                         error = ?err,
                         "Failed to delete local file/folder and inventory entry"
                     );
+                    // Nothing was removed, so a later deletion by the user must not be hidden.
+                    if path.exists() {
+                        self.event_blocker
+                            .unregister_once(&EventKind::Remove(RemoveKind::Any), path);
+                    }
                     aggregate_error.push(path.clone(), anyhow::Error::from(err));
                 };
             }
@@ -956,7 +954,7 @@ impl Mount {
                 .cloned()
                 .unwrap_or_else(LocalFileInfo::missing);
             // Fylvo: a local deletion waits for the user's answer; do not bring it back yet.
-            if !local_info.exists && self.is_server_deletion_held(path) {
+            if !local_info.exists && self.is_deletion_held(DeletionSide::Server, path) {
                 continue;
             }
             let remote = remote_files.get(path);
@@ -974,13 +972,19 @@ impl Mount {
         if doomed.is_empty() || self.is_local_deletion_confirmed(&doomed) {
             return plan;
         }
-        match self.mass_deletion_count(&doomed) {
-            Some(count) => {
-                self.hold_deletion(DeletionSide::Local, doomed.clone(), count);
-                without_paths(plan, &doomed)
-            }
-            None => plan,
+        // Paths the user chose to keep stay, without asking again.
+        let (kept, doomed): (Vec<PathBuf>, Vec<PathBuf>) =
+            doomed.into_iter().partition(|p| self.is_kept_locally(p));
+        let plan = without_paths(plan, &kept);
+        // Once a deletion is held, it stays held even if a later pass sees fewer entries.
+        let already_held = doomed
+            .iter()
+            .any(|p| self.is_deletion_held(DeletionSide::Local, p));
+        if !doomed.is_empty() && (already_held || self.mass_deletion_count(&doomed).is_some()) {
+            self.hold_deletion(DeletionSide::Local, doomed.clone());
+            return without_paths(plan, &doomed);
         }
+        plan
     }
 
     async fn process_walk_requests(
@@ -1251,7 +1255,9 @@ fn plan_entry_with_remote_and_local(
     let remote_is_dir = remote.file_type == file_type::FOLDER;
 
     if local.is_directory != remote_is_dir {
-        if local.is_placeholder() && local.partial_on_disk() {
+        // Fylvo: only an unchanged online-only placeholder may simply go; anything else is
+        // kept as a conflict copy.
+        if local.is_placeholder() && local.partial_on_disk() && local.in_sync() {
             plan.actions.push(SyncAction::DeleteLocalAndInventory {
                 path: path.clone(),
                 skip_if_not_empty: false,

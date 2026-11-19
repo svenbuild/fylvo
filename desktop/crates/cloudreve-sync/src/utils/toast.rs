@@ -76,7 +76,11 @@ pub fn send_mass_deletion_toast(drive_id: &str, side: crate::drive::guard::Delet
             t!("massDeleteLocalMessage", "count" => count),
         ),
     };
-    let notifier = ToastsNotifier::new(APP_NAME).unwrap();
+    // Runs inside a sync pass: a failing toast must not stop it.
+    let Ok(notifier) = ToastsNotifier::new(APP_NAME) else {
+        tracing::warn!(target: "toast", "Failed to create notifier for mass deletion toast");
+        return;
+    };
     let notif = NotificationBuilder::new()
         .visual(
             Text::create(1, &title)
@@ -95,10 +99,15 @@ pub fn send_mass_deletion_toast(drive_id: &str, side: crate::drive::guard::Delet
                 .with_placement(Placement::AppLogoOverride)
         )
         .with_launch("action=settings")
-        .build(0, &notifier, &format!("mass_delete_{}", drive_id), "mass_delete")
-        .unwrap();
-
-    notif.show().unwrap();
+        .build(0, &notifier, &format!("mass_delete_{}", drive_id), "mass_delete");
+    match notif {
+        Ok(notif) => {
+            if let Err(e) = notif.show() {
+                tracing::warn!(target: "toast", error = ?e, "Failed to show mass deletion toast");
+            }
+        }
+        Err(e) => tracing::warn!(target: "toast", error = ?e, "Failed to build mass deletion toast"),
+    }
 }
 
 /// Send a toast notification for token expiry.

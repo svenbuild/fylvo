@@ -416,13 +416,14 @@ impl DriveManager {
         &self,
         id: &str,
         side: crate::drive::guard::DeletionSide,
+        version: u64,
         confirm: bool,
     ) -> Result<()> {
         let mount = self
             .get_drive(id)
             .await
             .ok_or_else(|| anyhow::anyhow!("Drive not found: {}", id))?;
-        mount.resolve_held_deletion(side, confirm).await
+        mount.resolve_held_deletion(side, version, confirm).await
     }
 
     /// Enable/disable a drive

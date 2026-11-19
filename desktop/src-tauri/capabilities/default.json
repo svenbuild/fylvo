@@ -49,6 +49,7 @@
     },
     "dialog:allow-open",
     "dialog:allow-ask",
+    "dialog:allow-message",
     "os:allow-version"
   ]
 }
