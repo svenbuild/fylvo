@@ -87,6 +87,8 @@ type (
 		UpdateNickname(ctx context.Context, u *ent.User, name string) (*ent.User, error)
 		// UpdatePassword updates user password.
 		UpdatePassword(ctx context.Context, u *ent.User, newPassword string) (*ent.User, error)
+		// UpgradePassword Fylvo: stores a password checked against an old hash with bcrypt.
+		UpgradePassword(ctx context.Context, u *ent.User, password string) (string, error)
 		// UpdateTwoFASecret updates user two factor secret.
 		UpdateTwoFASecret(ctx context.Context, u *ent.User, secret string) (*ent.User, error)
 		// ListPasskeys list user's passkeys.

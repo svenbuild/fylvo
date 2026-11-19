@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/ent"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestNewPasswordsUseBcrypt(t *testing.T) {
@@ -52,9 +53,9 @@ func TestLongPasswordsDifferAfter72Bytes(t *testing.T) {
 	}
 }
 
-func TestCheckPasswordWithoutUser(t *testing.T) {
-	CheckPasswordWithoutUser("irgendwas")
-	if dummyDigest == "" || !isBcrypt(dummyDigest) {
-		t.Fatal("the stand-in check should run bcrypt")
+func TestDummyDigestMatchesCost(t *testing.T) {
+	cost, err := bcrypt.Cost([]byte(dummyDigest))
+	if err != nil || cost != bcryptCost {
+		t.Fatalf("the stand-in hash should use cost %d, got %d (%v)", bcryptCost, cost, err)
 	}
 }

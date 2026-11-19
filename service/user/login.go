@@ -167,8 +167,8 @@ func (service *UserLoginService) Login(c *gin.Context) (*ent.User, string, error
 
 	// Fylvo: replace a password stored in an older, fast format with bcrypt.
 	if inventory.PasswordNeedsUpgrade(expectedUser) {
-		if upgraded, upgradeErr := userClient.UpdatePassword(c, expectedUser, service.Password); upgradeErr == nil {
-			expectedUser.Password = upgraded.Password
+		if stored, upgradeErr := userClient.UpgradePassword(c, expectedUser, service.Password); upgradeErr == nil {
+			expectedUser.Password = stored
 		} else {
 			dep.Logger().Warning("Failed to store the password of user %d with bcrypt: %s", expectedUser.ID, upgradeErr)
 		}
