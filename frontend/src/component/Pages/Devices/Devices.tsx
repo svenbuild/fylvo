@@ -56,7 +56,7 @@ const Devices = () => {
           }
           title={t("application:navbar.connect")}
         />
-        <ResponsiveTabs value={tab} onChange={(_e, newValue) => setTab(newValue)} tabs={tabs} />
+        {webDavEnabled && <ResponsiveTabs value={tab} onChange={(_e, newValue) => setTab(newValue)} tabs={tabs} />}
         {tab == DevicePageTab.Dav && webDavEnabled && (
           <DavAccountList creatAccountDialog={creatAccountDialog} setCreateAccountDialog={setCreateAccountDialog} />
         )}

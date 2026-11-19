@@ -774,7 +774,7 @@
     "clearBlobUrlCacheDes": "To increase cache hit rate, Fylvo caches and reuses Blob URLs. When the CDN address or other settings change, please clear the cache.",
     "cacheCleared": "Cache cleared.",
     "masterEncryptionKeyVault": "Master encryption key storage",
-    "masterEncryptionKeyVaultDes": "Choose how to store the master encryption key, takes effect after restart. If you need to change the storage method or key, proceed very carefully, otherwise data can be lost.",
+    "masterEncryptionKeyVaultDes": "Choose how to store the master encryption key, takes effect after restart. Before switching the storage method, move the current key (command \"master-key get\") to the new location, otherwise encrypted files can no longer be read. To change the key itself, use the command \"master-key rotate\".",
     "masterEncryptionKeyVaultSetting": "Database",
     "masterEncryptionKeyVaultEnv": "Environment variable <0>CR_ENCRYPT_MASTER_KEY</0>",
     "masterEncryptionKeyVaultFile": "File",

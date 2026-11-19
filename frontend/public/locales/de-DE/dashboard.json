@@ -775,7 +775,7 @@
     "clearBlobUrlCacheDes": "Um die Cache-Trefferrate zu erhöhen, speichert und wiederverwendet Fylvo Blob-URLs zwischen. Wenn sich die CDN-Adresse oder andere Einstellungen ändern, löschen Sie bitte den Cache.",
     "cacheCleared": "Cache gelöscht.",
     "masterEncryptionKeyVault": "Speicherung des Hauptverschlüsselungsschlüssels",
-    "masterEncryptionKeyVaultDes": "Wählen Sie aus, wie der Hauptverschlüsselungsschlüssel gespeichert werden soll. Wird nach Neustart wirksam. Wenn Sie die Speichermethode oder den Schlüssel ändern müssen, gehen Sie sehr vorsichtig vor, sonst können Daten verloren gehen.",
+    "masterEncryptionKeyVaultDes": "Wählen Sie aus, wie der Hauptverschlüsselungsschlüssel gespeichert werden soll. Wird nach Neustart wirksam. Bevor Sie die Speichermethode wechseln, übertragen Sie den bisherigen Schlüssel (Befehl \"master-key get\") an den neuen Ort, sonst lassen sich verschlüsselte Dateien nicht mehr lesen. Einen neuen Schlüssel setzen Sie mit dem Befehl \"master-key rotate\".",
     "masterEncryptionKeyVaultSetting": "Datenbank",
     "masterEncryptionKeyVaultEnv": "Umgebungsvariable <0>CR_ENCRYPT_MASTER_KEY</0>",
     "masterEncryptionKeyVaultFile": "Datei",

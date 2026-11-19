@@ -43,26 +43,26 @@ const SelectProvider = ({ open, onClose, onSelect }: SelectProviderProps) => {
           {Object.values(PolicyType)
             .filter((type) => type != PolicyType.load_balance)
             .map((type) => (
-            <Grid2 key={type.toString()} size={{ xs: 12, sm: 6 }}>
-              <StyledCard>
-                <CardActionArea
-                  sx={{ display: "flex", justifyContent: "flex-start", minHeight: 40, px: 1, gap: 1 }}
-                  onClick={() => onSelect(type)}
-                >
-                  <CardMedia
-                    component="img"
-                    image={PolicyPropsMap[type].img}
-                    sx={{ width: 44, height: 32, objectFit: "contain" }}
-                  />
-                  <CardContent sx={{ p: 0, "&:last-child": { pb: 0 } }}>
-                    <Typography variant="body2" color="text.primary">
-                      {t(PolicyPropsMap[type].name)}
-                    </Typography>
-                  </CardContent>
-                </CardActionArea>
-              </StyledCard>
-            </Grid2>
-          ))}
+              <Grid2 key={type.toString()} size={{ xs: 12, sm: 6 }}>
+                <StyledCard>
+                  <CardActionArea
+                    sx={{ display: "flex", justifyContent: "flex-start", minHeight: 40, px: 1, gap: 1 }}
+                    onClick={() => onSelect(type)}
+                  >
+                    <CardMedia
+                      component="img"
+                      image={PolicyPropsMap[type].img}
+                      sx={{ width: 44, height: 32, objectFit: "contain" }}
+                    />
+                    <CardContent sx={{ p: 0, "&:last-child": { pb: 0 } }}>
+                      <Typography variant="body2" color="text.primary">
+                        {t(PolicyPropsMap[type].name)}
+                      </Typography>
+                    </CardContent>
+                  </CardActionArea>
+                </StyledCard>
+              </Grid2>
+            ))}
         </Grid2>
       </DialogContent>
     </DraggableDialog>

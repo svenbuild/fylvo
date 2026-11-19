@@ -430,15 +430,15 @@ const StoragePolicySetting = () => {
               .filter((type) => type != PolicyType.load_balance)
               .map((type) => (
                 <SquareMenuItem key={type} value={type}>
-                <ListItemText
-                  slotProps={{
-                    primary: { variant: "body2" },
-                  }}
-                >
-                  {t(PolicyPropsMap[type].name)}
-                </ListItemText>
-              </SquareMenuItem>
-            ))}
+                  <ListItemText
+                    slotProps={{
+                      primary: { variant: "body2" },
+                    }}
+                  >
+                    {t(PolicyPropsMap[type].name)}
+                  </ListItemText>
+                </SquareMenuItem>
+              ))}
           </DenseSelect>
         </Stack>
         <Grid container spacing={2}>

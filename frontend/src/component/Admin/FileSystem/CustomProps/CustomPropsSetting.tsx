@@ -133,17 +133,17 @@ const CustomPropsSetting = () => {
             {(Object.keys(FieldTypes) as CustomPropsType[])
               .filter((type) => type != CustomPropsType.user)
               .map((type, index) => {
-              const fieldType = FieldTypes[type];
-              const Icon = fieldType.icon;
-              return (
-                <SquareMenuItem dense key={index} onClick={() => onNewProp(type)}>
-                  <ListItemIcon>
-                    <Icon />
-                  </ListItemIcon>
-                  {t(fieldType.title)}
-                </SquareMenuItem>
-              );
-            })}
+                const fieldType = FieldTypes[type];
+                const Icon = fieldType.icon;
+                return (
+                  <SquareMenuItem dense key={index} onClick={() => onNewProp(type)}>
+                    <ListItemIcon>
+                      <Icon />
+                    </ListItemIcon>
+                    {t(fieldType.title)}
+                  </SquareMenuItem>
+                );
+              })}
           </Menu>
         </Box>
         <TableContainer component={StyledTableContainerPaper}>
