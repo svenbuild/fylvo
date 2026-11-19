@@ -605,6 +605,12 @@ impl PlaceholderState {
         }
     }
 
+    /// Fylvo: a state built from flags, for tests of the sync decisions.
+    #[cfg(test)]
+    pub fn from_flags(state: CF_PLACEHOLDER_STATE) -> Self {
+        Self { state }
+    }
+
     // The file or directory whose FileAttributes and ReparseTag examined by the API is a placeholder.
     pub fn is_placeholder(&self) -> bool {
         (self.state & CloudFilters::CF_PLACEHOLDER_STATE_PLACEHOLDER).0 != 0

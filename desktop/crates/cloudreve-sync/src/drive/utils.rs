@@ -1,10 +1,18 @@
-use std::path::PathBuf;
+use std::os::windows::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use cloudreve_api::models::uri::CrUri;
 use url::Url;
 use widestring::U16CString;
-use windows::Win32::UI::Shell::{SHCNE_ID, SHCNF_PATHW, SHChangeNotify};
+use windows::Win32::Storage::CloudFilters::{
+    CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByPath,
+};
+use windows::Win32::UI::Shell::{
+    FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FOF_WANTNUKEWARNING,
+    SHCNE_ID, SHCNF_PATHW, SHChangeNotify, SHFILEOPSTRUCTW, SHFileOperationW,
+};
+use windows::core::PCWSTR;
 
 use crate::drive::mounts::DriveConfig;
 
@@ -92,6 +100,50 @@ pub fn recycle_bin_url(config: &DriveConfig) -> Result<String> {
     Ok(base.to_string())
 }
 
+/// Fylvo: whether `path` lies in a cloud sync folder (Fylvo or another provider).
+pub fn is_in_cloud_sync_root(path: &Path) -> bool {
+    let Ok(wide) = U16CString::from_os_str(path.as_os_str()) else {
+        return false;
+    };
+    let mut info = CF_SYNC_ROOT_BASIC_INFO::default();
+    unsafe {
+        CfGetSyncRootInfoByPath(
+            PCWSTR(wide.as_ptr()),
+            CF_SYNC_ROOT_INFO_BASIC,
+            &mut info as *mut _ as *mut _,
+            std::mem::size_of::<CF_SYNC_ROOT_BASIC_INFO>() as u32,
+            None,
+        )
+    }
+    .is_ok()
+}
+
+/// Fylvo: move a file or folder to the Windows recycle bin. Fails rather than deleting for
+/// good: if Windows cannot recycle it (too big for the bin, drive without a bin), it asks
+/// the user, and a "no" leaves the file in place and returns an error.
+pub fn move_to_recycle_bin(path: &Path) -> Result<()> {
+    // The list of paths ends with two zeros.
+    let mut from: Vec<u16> = path.as_os_str().encode_wide().collect();
+    from.extend([0, 0]);
+    let mut op = SHFILEOPSTRUCTW {
+        wFunc: FO_DELETE,
+        pFrom: PCWSTR(from.as_ptr()),
+        fFlags: (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_WANTNUKEWARNING | FOF_SILENT
+            | FOF_NOERRORUI)
+            .0 as u16,
+        ..Default::default()
+    };
+    let code = unsafe { SHFileOperationW(&mut op) };
+    if code != 0 || op.fAnyOperationsAborted.as_bool() {
+        anyhow::bail!(
+            "could not move {} to the recycle bin (code {})",
+            path.display(),
+            code
+        );
+    }
+    Ok(())
+}
+
 // notify_shell_change notify the shell to refresh the file or directory
 pub fn notify_shell_change(path: &PathBuf, event: SHCNE_ID) -> Result<()> {
     let utf16_path = U16CString::from_os_str(path.as_path())?;
@@ -104,4 +156,29 @@ pub fn notify_shell_change(path: &PathBuf, event: SHCNE_ID) -> Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normal_folder_is_no_sync_root() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_in_cloud_sync_root(dir.path()));
+    }
+
+    /// Puts a small temp file into the Windows recycle bin of the PC running the tests, so it
+    /// only runs when asked: `cargo test -p cloudreve-sync -- --ignored recycle`.
+    #[test]
+    #[ignore]
+    fn recycle_moves_file_away() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("fylvo-recycle-test.txt");
+        std::fs::write(&file, b"fylvo").unwrap();
+        move_to_recycle_bin(&file).unwrap();
+        assert!(!file.exists());
+        // A missing file is an error, never a silent success.
+        assert!(move_to_recycle_bin(&file).is_err());
+    }
 }

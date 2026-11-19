@@ -237,6 +237,30 @@ pub async fn set_ignore_patterns(
     Ok(())
 }
 
+/// Fylvo: confirm or cancel a held mass deletion. `side` is "server" or "local".
+#[tauri::command]
+pub async fn resolve_held_deletion(
+    state: State<'_, AppStateHandle>,
+    drive_id: String,
+    side: String,
+    confirm: bool,
+) -> CommandResult<()> {
+    use cloudreve_sync::drive::guard::DeletionSide;
+    let app_state = state
+        .get()
+        .ok_or_else(|| "App not yet initialized".to_string())?;
+    let side = match side.as_str() {
+        "server" => DeletionSide::Server,
+        "local" => DeletionSide::Local,
+        other => return Err(format!("unknown side: {}", other)),
+    };
+    app_state
+        .drive_manager
+        .resolve_held_deletion(&drive_id, side, confirm)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Get sync status for a drive
 #[tauri::command]
 pub async fn get_sync_status(

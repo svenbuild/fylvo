@@ -62,6 +62,45 @@ pub fn send_warning_toast(title: &str, message: &str) {
     notif.show().unwrap();
 }
 
+/// Fylvo: a mass deletion is held. Always shown (safety), a click opens the settings where
+/// the user confirms or cancels it.
+pub fn send_mass_deletion_toast(drive_id: &str, side: crate::drive::guard::DeletionSide, count: i64) {
+    use crate::drive::guard::DeletionSide;
+    let (title, message) = match side {
+        DeletionSide::Server => (
+            t!("massDeleteServerTitle"),
+            t!("massDeleteServerMessage", "count" => count),
+        ),
+        DeletionSide::Local => (
+            t!("massDeleteLocalTitle"),
+            t!("massDeleteLocalMessage", "count" => count),
+        ),
+    };
+    let notifier = ToastsNotifier::new(APP_NAME).unwrap();
+    let notif = NotificationBuilder::new()
+        .visual(
+            Text::create(1, &title)
+                .with_align_center(true)
+                .with_wrap(true)
+                .with_style(HintStyle::Title),
+        )
+        .visual(
+            Text::create(2, &message)
+                .with_align_center(true)
+                .with_wrap(true)
+                .with_style(HintStyle::Body),
+        )
+        .visual(
+            Image::create(3, "ms-appx:///Images/warning.svg")
+                .with_placement(Placement::AppLogoOverride)
+        )
+        .with_launch("action=settings")
+        .build(0, &notifier, &format!("mass_delete_{}", drive_id), "mass_delete")
+        .unwrap();
+
+    notif.show().unwrap();
+}
+
 /// Send a toast notification for token expiry.
 /// Uses drive_id as the tag to prevent duplicate notifications for the same drive.
 /// Respects the notify_credential_expired config setting.

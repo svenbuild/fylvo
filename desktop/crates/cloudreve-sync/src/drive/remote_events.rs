@@ -59,6 +59,8 @@ impl Mount {
     pub async fn process_remote_events(s: Arc<Self>) {
         tracing::info!(target: "drive::remote_events", "Listening to remote events");
         let mut backoff = BackoffState::new();
+        // Fylvo: know the rights (read-only shared folder) before the first full sync.
+        s.refresh_capabilities().await;
 
         let sync_path = {
             let config = s.config.read().await;
@@ -253,6 +255,9 @@ impl Mount {
 
         // Process from paths (deletions)
         for (parent, paths) in from_grouped_by_parent {
+            // Fylvo: a rename on the server is no mass deletion, the files live on under the
+            // new name.
+            self.allow_local_deletion(paths.clone());
             if let Err(e) = self
                 .sync_last_presented_parent(sync_root.clone(), parent, paths)
                 .await

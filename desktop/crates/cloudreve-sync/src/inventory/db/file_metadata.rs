@@ -114,17 +114,16 @@ impl InventoryDb {
                 .transaction::<i64, diesel::result::Error, _>(|tx_conn| {
                     let mut total: i64 = 0;
                     for path in &paths {
-                        total += diesel::delete(
-                            file_metadata_dsl::file_metadata
-                                .filter(file_metadata_dsl::local_path.eq(path)),
+                        // Fylvo: the path and everything under it. A plain prefix compare, so `_`
+                        // and `%` in names are no wildcards, with the Windows separator.
+                        let prefix = descendant_prefix(path);
+                        total += diesel::sql_query(
+                            "DELETE FROM file_metadata WHERE local_path = ? \
+                             OR substr(local_path, 1, length(?)) = ?",
                         )
-                        .execute(tx_conn)? as i64;
-
-                        let prefix = format!("{}/%", path);
-                        total += diesel::delete(
-                            file_metadata_dsl::file_metadata
-                                .filter(file_metadata_dsl::local_path.like(&prefix)),
-                        )
+                        .bind::<Text, _>(*path)
+                        .bind::<Text, _>(&prefix)
+                        .bind::<Text, _>(&prefix)
                         .execute(tx_conn)? as i64;
                     }
                     Ok(total)
@@ -144,6 +143,44 @@ impl InventoryDb {
             .count()
             .get_result(&mut conn)
             .context("Failed to count inventory metadata")
+    }
+
+    /// Fylvo: number of entries of one drive.
+    pub fn count_for_drive(&self, drive_id: &str) -> Result<i64> {
+        let mut conn = self.connection()?;
+        file_metadata_dsl::file_metadata
+            .filter(file_metadata_dsl::drive_id.eq(drive_id))
+            .count()
+            .get_result(&mut conn)
+            .context("Failed to count inventory metadata of drive")
+    }
+
+    /// Fylvo: number of distinct entries of one drive at or under any of the paths. A path
+    /// without an entry counts as one, so a deletion is never counted as zero.
+    pub fn count_under_paths(&self, drive_id: &str, paths: &[&str]) -> Result<i64> {
+        #[derive(QueryableByName)]
+        struct CountRow {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            n: i64,
+        }
+
+        let mut conn = self.connection()?;
+        let mut total = 0;
+        for path in outermost_paths(paths) {
+            let prefix = descendant_prefix(path);
+            let row: CountRow = diesel::sql_query(
+                "SELECT COUNT(*) AS n FROM file_metadata WHERE drive_id = ? \
+                 AND (local_path = ? OR substr(local_path, 1, length(?)) = ?)",
+            )
+            .bind::<Text, _>(drive_id)
+            .bind::<Text, _>(path)
+            .bind::<Text, _>(&prefix)
+            .bind::<Text, _>(&prefix)
+            .get_result(&mut conn)
+            .context("Failed to count inventory metadata under path")?;
+            total += row.n.max(1);
+        }
+        Ok(total)
     }
 
     /// Clear all entries from the database
@@ -166,9 +203,8 @@ impl InventoryDb {
         }
 
         let mut conn = self.connection()?;
-        let old_prefix = format!("{}{}", old_path, std::path::MAIN_SEPARATOR);
-        let new_prefix = format!("{}{}", new_path, std::path::MAIN_SEPARATOR);
-        let descendant_like = format!("{}%", old_prefix);
+        let old_prefix = descendant_prefix(old_path);
+        let new_prefix = descendant_prefix(new_path);
 
         let total = (&mut *conn)
             .transaction::<usize, diesel::result::Error, _>(|tx_conn| {
@@ -182,11 +218,12 @@ impl InventoryDb {
                 let descendants = diesel::sql_query(
                     "UPDATE file_metadata \
                      SET local_path = ? || substr(local_path, length(?) + 1) \
-                     WHERE local_path LIKE ?",
+                     WHERE substr(local_path, 1, length(?)) = ?",
                 )
                 .bind::<Text, _>(&new_prefix)
                 .bind::<Text, _>(&old_prefix)
-                .bind::<Text, _>(&descendant_like)
+                .bind::<Text, _>(&old_prefix)
+                .bind::<Text, _>(&old_prefix)
                 .execute(tx_conn)?;
 
                 Ok(exact + descendants)
@@ -352,5 +389,91 @@ impl FileMetadataChangeset {
             // Use Some(...) to always update the column, even when clearing to NULL
             conflict_state: Some(entry.conflict_state.map(|s| s.as_str().to_string())),
         })
+    }
+}
+
+/// Fylvo: the prefix every descendant of `path` starts with.
+fn descendant_prefix(path: &str) -> String {
+    format!(
+        "{}{}",
+        path.trim_end_matches(std::path::MAIN_SEPARATOR),
+        std::path::MAIN_SEPARATOR
+    )
+}
+
+/// Fylvo: the paths that are not under another path of the list, without duplicates.
+fn outermost_paths<'a>(paths: &[&'a str]) -> Vec<&'a str> {
+    let mut sorted: Vec<&str> = paths.to_vec();
+    sorted.sort_by_key(|p| p.len());
+    let mut result: Vec<&str> = Vec::new();
+    for path in sorted {
+        let covered = result
+            .iter()
+            .any(|outer| *outer == path || path.starts_with(&descendant_prefix(outer)));
+        if !covered {
+            result.push(path);
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn db() -> (tempfile::TempDir, InventoryDb) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = InventoryDb::with_path(dir.path().join("meta.db")).unwrap();
+        (dir, db)
+    }
+
+    fn add(db: &InventoryDb, drive: Uuid, path: &str) {
+        db.insert(&MetadataEntry::new(drive, path, false)).unwrap();
+    }
+
+    #[test]
+    fn count_under_paths_counts_descendants_once() {
+        let (_dir, db) = db();
+        let drive = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        for path in [
+            r"C:\S\a",
+            r"C:\S\a\1.txt",
+            r"C:\S\a\b\2.txt",
+            r"C:\S\ab.txt",
+            r"C:\S\a_x\3.txt",
+        ] {
+            add(&db, drive, path);
+        }
+        add(&db, other, r"C:\T\a\1.txt");
+        let id = drive.to_string();
+
+        assert_eq!(db.count_for_drive(&id).unwrap(), 5);
+        // "a" and its two children; "ab.txt" and "a_x" are siblings, not children.
+        assert_eq!(db.count_under_paths(&id, &[r"C:\S\a"]).unwrap(), 3);
+        // A nested path is not counted twice.
+        assert_eq!(
+            db.count_under_paths(&id, &[r"C:\S\a", r"C:\S\a\1.txt"]).unwrap(),
+            3
+        );
+        // A path without entry counts as one.
+        assert_eq!(db.count_under_paths(&id, &[r"C:\S\new.txt"]).unwrap(), 1);
+    }
+
+    #[test]
+    fn batch_delete_and_rename_use_literal_windows_prefixes() {
+        let (_dir, db) = db();
+        let drive = Uuid::new_v4();
+        for path in [r"C:\S\a_b", r"C:\S\a_b\1.txt", r"C:\S\axb\2.txt"] {
+            add(&db, drive, path);
+        }
+
+        db.rename_path(r"C:\S\a_b", r"C:\S\c").unwrap();
+        assert!(db.query_by_path(r"C:\S\c\1.txt").unwrap().is_some());
+        assert!(db.query_by_path(r"C:\S\axb\2.txt").unwrap().is_some());
+
+        db.batch_delete_by_path(vec![r"C:\S\c"]).unwrap();
+        assert!(db.query_by_path(r"C:\S\c\1.txt").unwrap().is_none());
+        assert!(db.query_by_path(r"C:\S\axb\2.txt").unwrap().is_some());
     }
 }

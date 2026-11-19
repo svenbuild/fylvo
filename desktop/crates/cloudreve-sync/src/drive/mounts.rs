@@ -6,6 +6,8 @@ use crate::drive::callback::CallbackHandler;
 use crate::drive::commands::ManagerCommand;
 use crate::drive::commands::MountCommand;
 use crate::drive::event_blocker::EventBlocker;
+use crate::drive::guard::DeletionGuardState;
+use std::sync::atomic::AtomicBool;
 use crate::drive::ignore::IgnoreMatcher;
 use crate::drive::sync::group_fs_events;
 use crate::drive::utils::recycle_bin_url;
@@ -146,6 +148,11 @@ pub struct Mount {
     pub ignore_matcher: RwLock<IgnoreMatcher>,
     /// Status flags for the mount (credential expired, event push subscribed, etc.)
     status_flags: Mutex<MountStatusFlags>,
+    /// Fylvo: held mass deletions, see `guard.rs`.
+    pub(crate) deletion_guard: std::sync::Mutex<DeletionGuardState>,
+    /// Fylvo: the user may only read this drive (shared folder with "Lesen").
+    pub(crate) read_only: AtomicBool,
+    pub(crate) read_only_notified: AtomicBool,
 }
 
 impl Mount {
@@ -256,6 +263,9 @@ impl Mount {
             event_blocker: EventBlocker::new(),
             ignore_matcher: RwLock::new(ignore_matcher),
             status_flags: Mutex::new(MountStatusFlags::new()),
+            deletion_guard: std::sync::Mutex::new(DeletionGuardState::default()),
+            read_only: AtomicBool::new(false),
+            read_only_notified: AtomicBool::new(false),
         }
     }
 
@@ -719,6 +729,7 @@ impl Mount {
     /// Refresh drive props from the API (capacity and user settings)
     pub async fn refresh_drive_props(&self) -> Result<()> {
         tracing::debug!(target: "drive::mounts", id=%self.id, "Refreshing drive props");
+        self.refresh_capabilities().await;
 
         let mut update = DrivePropsUpdate::default();
 

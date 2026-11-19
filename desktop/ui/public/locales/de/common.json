@@ -90,6 +90,22 @@
     "ignorePatternsError": "Ungültige Muster: {{message}}",
     "save": "Speichern",
     "cancel": "Abbrechen",
+    "readOnlyHint": "Nur zum Lesen mit dir geteilt. Änderungen auf diesem PC werden nicht hochgeladen.",
+    "heldDeletion": {
+      "message": {
+        "server": "{{count}} Einträge wurden auf diesem PC gelöscht. Auf dem Server bleiben sie, bis du entscheidest.",
+        "local": "{{count}} Einträge wurden auf dem Server gelöscht. Auf diesem PC bleiben sie, bis du entscheidest."
+      },
+      "confirm": "Löschen",
+      "cancel": {
+        "server": "Wiederherstellen",
+        "local": "Vorerst behalten"
+      },
+      "confirmQuestion": {
+        "server": "{{count}} Einträge auch auf dem Server löschen? Sie landen im Papierkorb des Servers.",
+        "local": "{{count}} Einträge auch auf diesem PC löschen? Dateien mit lokalen Daten landen im Papierkorb."
+      }
+    },
     "driveStatus": {
       "active": "Aktiv",
       "eventPushLost": "Echtzeit-Event-Push unterbrochen",
