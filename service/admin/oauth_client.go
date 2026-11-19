@@ -12,7 +12,6 @@ import (
 
 // System OAuth client GUIDs that cannot be deleted
 var systemOAuthClientGUIDs = []string{
-	inventory.OAuthClientiOSGUID,
 	inventory.OAuthClientFylvoDesktopGUID,
 }
 

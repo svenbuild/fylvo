@@ -225,9 +225,8 @@ func (t *tokenAuth) VerifyAndRetrieveUser(c *gin.Context) (bool, error) {
 		return false, serializer.NewError(serializer.CodeNotFound, "User not found", err)
 	}
 
-	// Fylvo: tokens of the removed Cloudreve desktop app stop working at once, not only when
-	// they expire.
-	if strings.EqualFold(claims.ClientID, inventory.OAuthClientCloudreveDesktopGUID) {
+	// Fylvo: tokens of the removed Cloudreve apps stop working at once, not only when they expire.
+	if inventory.IsRetiredOAuthClient(claims.ClientID) {
 		return false, serializer.NewError(serializer.CodeCredentialInvalid, "This app is not supported", nil)
 	}
 

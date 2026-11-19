@@ -971,8 +971,6 @@
     "downloadNumber": "ダウンロード数",
     "viewNumber": "閲覧数",
     "language": "言語",
-    "iOSApp": "iOS/iPadOS クライアント",
-    "connectByiOS": "iOS/iPadOSデバイスから<0>{{title}}</0>に接続",
     "downloadOurApp": "アプリをダウンロードしてインストール：",
     "fillInEndpoint": "アプリを使用するには、下のQRコードをスキャンしてください（他のQRコードスキャンアプリは使用できません）。",
     "loginApp": "バインドが完了したら、クライアントを使用できます。QRコードによるバインドに問題がある場合は、ユーザー名とパスワードを手動で入力してログインすることもできます。",

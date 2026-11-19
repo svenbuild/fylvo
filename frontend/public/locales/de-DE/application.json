@@ -1072,8 +1072,6 @@
     "downloadNumber": "Download-Anzahl",
     "viewNumber": "Aufruf-Anzahl",
     "language": "Sprache",
-    "iOSApp": "iOS/iPadOS Client",
-    "connectByiOS": "Über iOS/iPadOS-Gerät mit <0>{{title}}</0> verbinden",
     "downloadOurApp": "Unsere App herunterladen und installieren:",
     "fillInEndpoint": "QR-Code unten mit der App scannen (andere Scan-Apps sind ungültig):",
     "loginApp": "Bindung abgeschlossen, Sie können den Client jetzt verwenden. Wenn beim QR-Code-Scannen Probleme auftreten, können Sie auch versuchen, Benutzername und Passwort manuell einzugeben.",

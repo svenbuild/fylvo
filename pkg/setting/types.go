@@ -191,11 +191,6 @@ const (
 	CategoryDocument = SearchCategory("document")
 )
 
-type AppSetting struct {
-	Promotion        bool
-	DesktopPromotion bool
-}
-
 type EmailTemplate struct {
 	Title    string `json:"title"`
 	Body     string `json:"body"`

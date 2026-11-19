@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/ent/enttest"
@@ -96,54 +97,75 @@ func TestEnsureFylvoDesktopOAuthClientKeepsSoftDeletedRow(t *testing.T) {
 	require.NoError(t, ensureOAuthClientFylvoDesktop(logger, client, ctx))
 }
 
-func TestRemoveCloudreveDesktopOAuthClient(t *testing.T) {
+func TestRemoveRetiredOAuthClients(t *testing.T) {
 	ctx := context.Background()
-	client := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "cloudreve-desktop.db"))
+	client := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "retired.db"))
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
 	logger := logging.NewConsoleLogger(logging.LevelError)
 
-	// New installations never get the client.
+	// New installations never get the clients of the Cloudreve apps.
 	require.NoError(t, migrateOAuthClient(logger, client, ctx))
-	count, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientCloudreveDesktopGUID)).Count(schema.SkipSoftDelete(ctx))
-	require.NoError(t, err)
-	require.Zero(t, count)
+	for _, guid := range RetiredOAuthClientGUIDs {
+		count, err := client.OAuthClient.Query().Where(oauthclient.GUID(guid)).Count(schema.SkipSoftDelete(ctx))
+		require.NoError(t, err)
+		require.Zero(t, count, guid)
+	}
 
-	// Existing installations have it from the upstream migration, and users who connected the
-	// Store app have a grant for it. Both are removed on start.
-	old, err := client.OAuthClient.Create().
-		SetGUID(OAuthClientCloudreveDesktopGUID).
-		SetSecret("upstream").
-		SetName("application:oauth.desktop").
-		SetRedirectUris([]string{"/callback/desktop"}).
-		SetScopes([]string{"openid"}).
-		SetIsEnabled(true).
-		Save(ctx)
-	require.NoError(t, err)
+	// Existing installations have them from the upstream migration, and users who connected the
+	// apps have grants for them. All are removed on start; the CLI client stays.
 	group, err := client.Group.Create().SetName("Users").SetPermissions(&boolset.BooleanSet{}).Save(ctx)
 	require.NoError(t, err)
 	u, err := client.User.Create().SetEmail("a@fylvo.test").SetNick("a").SetGroup(group).SetSettings(&types.UserSetting{}).Save(ctx)
 	require.NoError(t, err)
-	_, err = client.OAuthGrant.Create().SetUserID(u.ID).SetClientID(old.ID).SetScopes([]string{"openid"}).Save(ctx)
+	u2, err := client.User.Create().SetEmail("b@fylvo.test").SetNick("b").SetGroup(group).SetSettings(&types.UserSetting{}).Save(ctx)
 	require.NoError(t, err)
+	var olds []int
+	for _, guid := range RetiredOAuthClientGUIDs {
+		old, err := client.OAuthClient.Create().
+			SetGUID(guid).
+			SetSecret("upstream").
+			SetName("upstream").
+			SetRedirectUris([]string{"/callback/upstream"}).
+			SetScopes([]string{"openid"}).
+			SetIsEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+		olds = append(olds, old.ID)
+		_, err = client.OAuthGrant.Create().SetUserID(u.ID).SetClientID(old.ID).SetScopes([]string{"openid"}).Save(ctx)
+		require.NoError(t, err)
+	}
 
-	require.NoError(t, removeOAuthClientCloudreveDesktop(logger, client, ctx))
-	count, err = client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientCloudreveDesktopGUID)).Count(ctx)
-	require.NoError(t, err)
-	require.Zero(t, count)
+	require.NoError(t, removeRetiredOAuthClients(logger, client, ctx))
+	for _, guid := range RetiredOAuthClientGUIDs {
+		count, err := client.OAuthClient.Query().Where(oauthclient.GUID(guid)).Count(ctx)
+		require.NoError(t, err)
+		require.Zero(t, count, guid)
+	}
 	grants, err := NewOAuthClientClient(client, conf.SQLiteDB).GetGrantsByUserID(ctx, u.ID)
 	require.NoError(t, err)
 	require.Empty(t, grants, "no empty entry may stay under connected apps")
+	cli, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientCLIGUID)).Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, cli, "the CLI client stays")
 
-	// A grant left behind by an earlier version (client already deleted) is cleaned up too.
-	u2, err := client.User.Create().SetEmail("b@fylvo.test").SetNick("b").SetGroup(group).SetSettings(&types.UserSetting{}).Save(ctx)
-	require.NoError(t, err)
-	_, err = client.OAuthGrant.Create().SetUserID(u2.ID).SetClientID(old.ID).SetScopes([]string{"openid"}).Save(ctx)
-	require.NoError(t, err)
-	require.NoError(t, removeOAuthClientCloudreveDesktop(logger, client, ctx))
+	// Grants left behind by an earlier version (client already deleted) are cleaned up too.
+	for _, id := range olds {
+		_, err = client.OAuthGrant.Create().SetUserID(u2.ID).SetClientID(id).SetScopes([]string{"openid"}).Save(ctx)
+		require.NoError(t, err)
+	}
+	require.NoError(t, removeRetiredOAuthClients(logger, client, ctx))
 	grants, err = NewOAuthClientClient(client, conf.SQLiteDB).GetGrantsByUserID(ctx, u2.ID)
 	require.NoError(t, err)
 	require.Empty(t, grants)
 
 	// Running again is a no-op.
-	require.NoError(t, removeOAuthClientCloudreveDesktop(logger, client, ctx))
+	require.NoError(t, removeRetiredOAuthClients(logger, client, ctx))
+}
+
+func TestIsRetiredOAuthClient(t *testing.T) {
+	require.True(t, IsRetiredOAuthClient(OAuthClientCloudreveDesktopGUID))
+	require.True(t, IsRetiredOAuthClient(strings.ToUpper(OAuthClientCloudreveiOSGUID)))
+	require.False(t, IsRetiredOAuthClient(OAuthClientFylvoDesktopGUID))
+	require.False(t, IsRetiredOAuthClient(OAuthClientCLIGUID))
+	require.False(t, IsRetiredOAuthClient(""))
 }

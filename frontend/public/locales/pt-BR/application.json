@@ -1045,8 +1045,6 @@
     "downloadNumber": "Downloads",
     "viewNumber": "Visualizações",
     "language": "Idioma",
-    "iOSApp": "App iOS/iPadOS",
-    "connectByiOS": "Conectar ao <0>{{title}}</0> através de dispositivos iOS/iPadOS.",
     "downloadOurApp": "Baixe nosso APP:",
     "fillInEndpoint": "Escaneie o código QR abaixo com nosso App (NÃO use outro app para escanear):",
     "loginApp": "Você pode começar a usar o App agora. Se encontrar problemas com o código QR, também pode tentar inserir manualmente seu nome de usuário e senha para fazer login.",

@@ -43,7 +43,7 @@ func InitializeDBClient(l logging.Logger,
 	if err := ensureOAuthClientFylvoDesktop(l, client, ctx); err != nil {
 		return nil, err
 	}
-	if err := removeOAuthClientCloudreveDesktop(l, client, ctx); err != nil {
+	if err := removeRetiredOAuthClients(l, client, ctx); err != nil {
 		return nil, err
 	}
 

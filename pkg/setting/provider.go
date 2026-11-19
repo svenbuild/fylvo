@@ -184,8 +184,6 @@ type (
 		MaxParallelTransfer(ctx context.Context) int
 		// ArchiveDownloadSessionTTL returns the TTL of archive download session.
 		ArchiveDownloadSessionTTL(ctx context.Context) int
-		// AppSetting returns the app related settings.
-		AppSetting(ctx context.Context) *AppSetting
 		// Avatar returns the avatar settings.
 		Avatar(ctx context.Context) *Avatar
 		// AvatarProcess returns the avatar process settings.
@@ -347,13 +345,6 @@ func (s *settingProvider) FileViewers(ctx context.Context) []types.ViewerGroup {
 	}
 
 	return withOfficeViewers(viewers)
-}
-
-func (s *settingProvider) AppSetting(ctx context.Context) *AppSetting {
-	return &AppSetting{
-		Promotion:        s.getBoolean(ctx, "show_app_promotion", false),
-		DesktopPromotion: s.getBoolean(ctx, "show_desktop_app_promotion", false),
-	}
 }
 
 func (s *settingProvider) MaxParallelTransfer(ctx context.Context) int {

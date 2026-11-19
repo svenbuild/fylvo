@@ -968,8 +968,6 @@
     "downloadNumber": "下載次數",
     "viewNumber": "瀏覽次數",
     "language": "語言",
-    "iOSApp": "iOS/iPadOS 客戶端",
-    "connectByiOS": "通過 iOS/iPadOS 裝置連線到 <0>{{title}}</0>",
     "downloadOurApp": "下載並安裝我們的應用：",
     "fillInEndpoint": "使用我們的應用掃描下方二維碼（其他掃碼應用無效）：",
     "loginApp": "完成繫結，你可以開始使用客戶端了。如果掃碼繫結遇到問題，你也可以嘗試手動輸入使用者名稱和密碼登入。",
