@@ -1,9 +1,9 @@
 {
   "addDrive": {
     "title": "Agregar unidad",
-    "description": "Ingrese la URL de su sitio Cloudreve para conectarse",
+    "description": "Ingrese la URL de su sitio Fylvo para conectarse",
     "siteUrl": "URL del sitio",
-    "siteUrlPlaceholder": "https://your-cloudreve-site.com",
+    "siteUrlPlaceholder": "https://cloud.example.com",
     "connect": "Conectar",
     "waitingTitle": "Inicie sesión para continuar",
     "waitingDescription": "Complete el proceso de inicio de sesión en su navegador para conectar su unidad.",

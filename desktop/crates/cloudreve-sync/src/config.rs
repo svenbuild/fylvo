@@ -114,10 +114,10 @@ impl ConfigManager {
         CONFIG_MANAGER.get()
     }
 
-    /// Get the config file path (~/.cloudreve/config.json)
+    /// Get the config file path (~/.fylvo/config.json)
     fn get_config_path() -> Result<PathBuf> {
         let home_dir = dirs::home_dir().context("Failed to get user home directory")?;
-        Ok(home_dir.join(".cloudreve").join("config.json"))
+        Ok(home_dir.join(crate::DATA_DIR).join("config.json"))
     }
 
     /// Load configuration from the specified path, using defaults for missing fields
@@ -304,7 +304,7 @@ impl ConfigManager {
     pub fn get_log_dir() -> PathBuf {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".cloudreve")
+            .join(crate::DATA_DIR)
             .join("logs")
     }
 }

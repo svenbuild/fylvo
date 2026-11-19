@@ -4,7 +4,7 @@ This file provides guidance to coding agents when working with code in this repo
 
 ## Project Overview
 
-Cloudreve Desktop is a Tauri-based Windows desktop application that synchronizes files with a Cloudreve cloud drive server using the Windows Cloud Files API (cfapi). It provides:
+Fylvo Desktop (fork of Cloudreve Desktop) is a Tauri-based Windows desktop application that synchronizes files with a Cloudreve cloud drive server using the Windows Cloud Files API (cfapi). It provides:
 - Real-time bidirectional file synchronization
 - On-demand file hydration (files appear locally but are downloaded only when accessed)
 - Windows Explorer shell integration (context menus, thumbnails, custom states)
@@ -70,7 +70,7 @@ cargo tauri build              # Production build
 - `root/`: Sync root registration and connection
 
 **Persistence (`inventory/`):**
-- SQLite via Diesel ORM at `~/.cloudreve/meta.db`
+- SQLite via Diesel ORM at `~/.fylvo/meta.db`
 - Stores file metadata, task queue, upload sessions, drive properties
 - Migrations in `migrations/inventory/`
 
@@ -104,7 +104,7 @@ React 19 + TypeScript + MUI + Vite application:
 
 - Requires Windows Cloud Files API (`windows` crate with extensive feature flags in Cargo.toml)
 - COM shell extensions for Explorer integration
-- Deep link protocol: `cloudreve://`
+- Deep link protocol: `fylvo://` (the Store app keeps `cloudreve://`)
 - Single instance enforcement via `tauri-plugin-single-instance`
 
 ## Database Migrations

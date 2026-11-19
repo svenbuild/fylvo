@@ -12,7 +12,7 @@ use windows::{
 use tokio::sync::mpsc;
 
 // UUID for our custom state handler - matches the C++ implementation
-pub const CLSID_STATUS_UI_HANDLER: GUID = GUID::from_u128(0xb1d8ef74_822d_401a_a14a_25f45b1f70b7);
+pub const CLSID_STATUS_UI_HANDLER: GUID = GUID::from_u128(0xa3bb5be9_8d58_414b_a6b0_e4a30e5cbef1);
 
 /// Different actions that can be triggered from the Status UI
 #[derive(Clone)]
@@ -191,7 +191,7 @@ impl IStorageProviderStatusUISource_Impl for StatusUIHandler_Impl {
             }
             None => (
                 StorageProviderState::InSync,
-                "Cloudreve".to_string(),
+                "Fylvo".to_string(),
                 format!("{}\\CloudIconSynced.svg", image_path),
                 t!("synced").to_string(),
                 t!("syncedDescription").to_string(),
@@ -200,9 +200,9 @@ impl IStorageProviderStatusUISource_Impl for StatusUIHandler_Impl {
 
         ui.SetProviderState(provider_state)?;
 
-        ui.SetProviderStateLabel(&HSTRING::from("Cloudreve"))?;
+        ui.SetProviderStateLabel(&HSTRING::from("Fylvo"))?;
         ui.SetProviderStateIcon(&Uri::CreateUri(&HSTRING::from(format!(
-            "{}\\cloudreve.svg",
+            "{}\\fylvo.svg",
             image_path
         )))?)?;
 

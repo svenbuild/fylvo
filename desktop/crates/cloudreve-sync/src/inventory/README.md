@@ -33,8 +33,8 @@ The following indexes are created for optimal query performance:
 
 By default, the database file is stored at:
 
-- Windows: `C:\Users\{username}\.cloudreve\meta.db`
-- Linux/macOS: `~/.cloudreve/meta.db`
+- Windows: `C:\Users\{username}\.fylvo\meta.db`
+- Linux/macOS: `~/.fylvo/meta.db`
 
 ## Usage Examples
 

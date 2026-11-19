@@ -35,7 +35,7 @@ impl DriveManager {
         // Ensure config directory exists
         if !config_dir.exists() {
             fs::create_dir_all(&config_dir)
-                .context("Failed to create .cloudreve config directory")?;
+                .context("Failed to create .fylvo config directory")?;
         }
 
         let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -55,10 +55,10 @@ impl DriveManager {
         self.inventory.clone()
     }
 
-    /// Get the .cloudreve config directory path
+    /// Get the .fylvo config directory path
     fn get_config_dir() -> Result<PathBuf> {
         let home_dir = dirs::home_dir().context("Failed to get user home directory")?;
-        Ok(home_dir.join(".cloudreve"))
+        Ok(home_dir.join(crate::DATA_DIR))
     }
 
     /// Get the config file path

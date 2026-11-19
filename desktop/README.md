@@ -1,145 +1,106 @@
-# Cloudreve Desktop
+# Fylvo Desktop
 
-![Hero Image](docs/hero.png)
+Windows sync client for Fylvo. It is a fork of the official
+[Cloudreve Desktop](https://github.com/cloudreve/desktop) client (MIT License, see `LICENSE`),
+built with Tauri and React, and uses the Windows Cloud Files API (placeholders, files on demand).
 
-<p>
-  <a href="https://apps.microsoft.com/store/detail/9p3gh5rnnzfd">
-    <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
-  </a>
-</p>
+Fylvo Desktop can be installed next to the Cloudreve app from the Microsoft Store. The two do not
+share anything:
 
-A Windows desktop client for [Cloudreve](https://github.com/cloudreve/Cloudreve) cloud storage, built with Tauri and React. Provides seamless file synchronization using the Windows Cloud Files API.
+| | Cloudreve (Store) | Fylvo Desktop |
+| --- | --- | --- |
+| Package name | `2106abslant.Cloudreve` | `Fylvo.Desktop` |
+| Executable | `cloudreve-desktop.exe` | `fylvo-desktop.exe` |
+| Data folder (config, database, logs) | `%USERPROFILE%\.cloudreve` | `%USERPROFILE%\.fylvo` |
+| Deep link | `cloudreve://` | `fylvo://` |
+| Sync root provider ID | `cloudreve<hash>` | `fylvo<hash>` |
+| COM class IDs (shell extensions, toasts) | original | new, see `package/AppxManifest.xml` |
 
-## Features
+The app does not contact any server except the Fylvo server you connect it to (no update check,
+no telemetry, no crash reports).
 
-- Real-time bidirectional file synchronization
-- On-demand file hydration (files download only when accessed)
-- Windows Explorer integration (context menus, thumbnails, custom states)
-- Multiple storage provider support, aligned with Cloudreve server
-- System tray application
+## Sign-in and the web app
 
-## Prerequisites
+The app signs in with the server's built-in desktop OAuth client (`/callback/desktop`). The web
+app then opens a deep link to hand the result to the desktop app. Fylvo Desktop marks its OAuth
+`state` with the prefix `fylvo:` (`reauthorize:fylvo:` when signing in again), so the web app can
+open `fylvo://mount?...` for it and keep `cloudreve://mount?...` for the Store app.
 
-### For Users
+## Requirements
 
-- Windows 10 version 1903 (build 18362) or later
-- A Cloudreve server instance
+- Windows 10 1903 or later
+- Rust (rustup), Node.js 18+ and Yarn 1
+- Visual Studio Build Tools with the C++ workload, Windows 10/11 SDK (for `makeappx.exe`)
+- Tauri CLI: `cargo install tauri-cli --version "^2" --locked`
 
-### For Developers
-
-- **Windows 10/11** with [Developer Mode enabled](https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development)
-- **Rust** toolchain (install via [rustup](https://rustup.rs/))
-- **Node.js** 18+ and **Yarn**
-- **Windows SDK** (for MSIX packaging)
-
-Enable Developer Mode:
-```
-Settings → Privacy & security → For developers → Developer Mode → On
-```
-
-Install Rust targets for cross-compilation:
-```powershell
-rustup target add x86_64-pc-windows-msvc
-rustup target add aarch64-pc-windows-msvc
-```
-
-## Build & Run
-
-### Quick Start (Development)
+## Build
 
 ```powershell
-# Install frontend dependencies
 cd ui
-yarn install
+yarn install --frozen-lockfile
 cd ..
-
-# Run in development mode with hot reload
-cargo tauri dev
-```
-
-### Release Build
-
-```powershell
-cargo tauri build
-```
-
-The built binary will be at `target/release/cloudreve-desktop.exe`.
-
-## Development Installation (Full Feature Testing)
-
-The basic `cargo tauri dev/build` only produces the binary. For testing **shell integration features** (context menus, thumbnails, cloud file states), you need to register the app as an MSIX package.
-
-### Using dev-install.ps1
-
-```powershell
-# Build and register for development
-.\dev-install.ps1
-
-# Skip build if binary already exists
-.\dev-install.ps1 -SkipBuild
-
-# Use custom version
-.\dev-install.ps1 -Version "0.2.0"
-```
-
-This script will:
-1. Build the Tauri application (release mode)
-2. Copy the binary to `package/`
-3. Update `AppxManifest.xml` with correct architecture and version
-4. Register the package with `Add-AppxPackage -Register`
-
-### Unregister Development Package
-
-```powershell
-Get-AppxPackage *Cloudreve* | Remove-AppxPackage
-```
-
-## Building MSIX Packages
-
-For distribution, use `build-msix.ps1` to create signed MSIX packages.
-
-```powershell
-# Build for both x64 and ARM64, create bundle
-.\build-msix.ps1
-
-# Build for specific architecture
 .\build-msix.ps1 -Arch x64
-.\build-msix.ps1 -Arch arm64
-
-# Skip build (use existing binaries)
-.\build-msix.ps1 -SkipBuild
-
-# Custom version
-.\build-msix.ps1 -Version "1.0.0"
 ```
 
-Output files:
+Result: `dist\Fylvo.x64.msix`. The build uses `--no-bundle` (the MSIX is made by the script).
+The Tauri Rust crates and the `@tauri-apps` npm packages must stay on the same minor versions;
+`Cargo.lock` and `ui/yarn.lock` are committed, so the build is reproducible.
+
+The app needs package identity (shell extensions, sync root, toasts), so it must run as an MSIX
+package, not as the bare `.exe`.
+
+## Install (unsigned)
+
+The package is not signed. Windows refuses unsigned packages that contain COM servers
+("an unsigned package cannot include Executable activations"), even with `-AllowUnsigned`.
+Without a certificate the package is registered in Developer Mode
+(Settings > System > For developers):
+
+```powershell
+.\install-local.ps1
 ```
-dist/
-├── Cloudreve.x64.msix
-├── Cloudreve.arm64.msix
-└── Cloudreve.msixbundle
+
+It unpacks `dist\Fylvo.x64.msix` to `%LOCALAPPDATA%\Programs\FylvoDesktop` and registers it from
+there. Run it again after a new build to update.
+
+Remove it again with:
+
+```powershell
+Get-AppxPackage Fylvo.Desktop | Remove-AppxPackage
 ```
 
-### Requirements for MSIX Building
+To install it as a normal signed package instead, sign `dist\Fylvo.x64.msix` with `signtool` and
+change the `Publisher` in `package/AppxManifest.xml` (now `CN=Fylvo`) to exactly the subject of
+the signing certificate. The certificate must be trusted on the PC.
 
-- Windows SDK with `makeappx.exe` (automatically detected)
-- For Store submission, packages must be signed with a certificate
+## Development
 
-## Project Structure
+```powershell
+cargo tauri dev        # UI with hot reload (no package identity, shell features off)
+.\dev-install.ps1      # build and register the package folder (needs Developer Mode)
+```
+
+`dev-install.ps1` writes the version and architecture into `package/AppxManifest.xml`; do not
+commit that change.
+
+## Project structure
 
 ```
 ├── src-tauri/           # Tauri application shell
 ├── crates/
 │   ├── cloudreve-sync/  # Core sync service
-│   ├── cloudreve-api/   # REST client for Cloudreve server
+│   ├── cloudreve-api/   # REST client for the server
 │   └── win32_notif/     # Windows notification utilities
 ├── ui/                  # React frontend (Vite + MUI)
-├── package/             # MSIX packaging assets
+├── package/             # MSIX manifest, images, resources.pri
 ├── dev-install.ps1      # Dev build + register script
-└── build-msix.ps1       # Production MSIX builder
+├── install-local.ps1    # Install the built package on this PC (Developer Mode)
+└── build-msix.ps1       # MSIX builder
 ```
+
+`package/resources.pri` is generated with `makepri.exe` from the `package/` folder. Rebuild it
+when images in `package/Images` change.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE), Copyright (c) 2025 Cloudreve.

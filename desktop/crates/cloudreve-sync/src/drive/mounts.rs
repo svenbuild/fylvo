@@ -409,7 +409,7 @@ impl Mount {
             }
             sync_root_info.set_version("1.0.0");
             sync_root_info
-                .set_recycle_bin_uri(recycle_bin_url(&config).unwrap_or_else(|_| "https://cloudreve.org".to_string()))
+                .set_recycle_bin_uri(recycle_bin_url(&config).unwrap_or_else(|_| config.instance_url.clone()))
                 .context("failed to set recycle bin uri")?;
             sync_root_info
                 .set_path(Path::new(&config.sync_path))
@@ -784,7 +784,7 @@ fn generate_sync_root_id(
     // Convert hash to hex string and truncate to reasonable length
     // Use first 16 characters (64 bits) of the hash for the provider name
     let hash_hex = format!("{:x}", hash_result);
-    let provider_name = format!("cloudreve{}", &hash_hex[..16]);
+    let provider_name = format!("fylvo{}", &hash_hex[..16]);
 
     // Build the sync root ID
     let sync_root_id = SyncRootIdBuilder::new(provider_name)

@@ -64,7 +64,7 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
     let log_guard = cloudreve_sync::logging::init_logging(LogConfig::from_config_manager())
         .context("Failed to initialize logging system")?;
 
-    tracing::info!(target: "main", "Starting Cloudreve Sync Service (Tauri)...");
+    tracing::info!(target: "main", "Starting Fylvo Desktop sync service (Tauri)...");
 
     // Initialize EventBroadcaster
     let event_broadcaster = Arc::new(EventBroadcaster::new(100));
@@ -274,7 +274,7 @@ pub fn run() {
             setup_tray(app)?;
 
             #[cfg(desktop)]
-            app.deep_link().register("cloudreve")?;
+            app.deep_link().register("fylvo")?;
 
             // Spawn async setup task - this runs in the background
             // while the app continues to start

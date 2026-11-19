@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Build MSIX packages and bundle for Cloudreve Desktop.
+    Build MSIX packages and bundle for Fylvo Desktop.
 
 .DESCRIPTION
     This script cross-compiles the Tauri application for x64 and/or ARM64,
@@ -125,7 +125,7 @@ if (-not (Test-Path $OutputPath)) {
 }
 
 # Create temp directory for package staging
-$TempBaseDir = Join-Path $env:TEMP "cloudreve-msix-build"
+$TempBaseDir = Join-Path $env:TEMP "fylvo-msix-build"
 if (Test-Path $TempBaseDir) {
     Remove-Item $TempBaseDir -Recurse -Force
 }
@@ -150,7 +150,7 @@ foreach ($TargetArch in $TargetArchs) {
 
         Push-Location $ScriptDir
         try {
-            cargo tauri build --target $RustTarget
+            cargo tauri build --no-bundle --target $RustTarget
             if ($LASTEXITCODE -ne 0) {
                 Write-Error "Build failed for $TargetArch with exit code $LASTEXITCODE"
                 exit $LASTEXITCODE
@@ -163,7 +163,7 @@ foreach ($TargetArch in $TargetArchs) {
     }
 
     # Determine binary path
-    $BinaryPath = Join-Path $ScriptDir "target\$RustTarget\release\cloudreve-desktop.exe"
+    $BinaryPath = Join-Path $ScriptDir "target\$RustTarget\release\fylvo-desktop.exe"
     if (-not (Test-Path $BinaryPath)) {
         Write-Error "Binary not found at: $BinaryPath"
         exit 1
@@ -193,7 +193,7 @@ foreach ($TargetArch in $TargetArchs) {
     [System.IO.File]::WriteAllText($TempManifestPath, $ManifestContent, $Utf8Bom)
 
     # Create MSIX package
-    $MsixPath = Join-Path $OutputPath "Cloudreve.$MsixArch.msix"
+    $MsixPath = Join-Path $OutputPath "Fylvo.$MsixArch.msix"
     Write-Host "Creating MSIX package: $MsixPath" -ForegroundColor Cyan
 
     # Remove existing package if present
@@ -217,7 +217,7 @@ if ($Arch -eq "all" -and $CreatedMsixFiles.Count -gt 1) {
     Write-Host "Creating MSIX Bundle" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Green
 
-    $BundlePath = Join-Path $OutputPath "Cloudreve.msixbundle"
+    $BundlePath = Join-Path $OutputPath "Fylvo.msixbundle"
 
     # Remove existing bundle if present
     if (Test-Path $BundlePath) {

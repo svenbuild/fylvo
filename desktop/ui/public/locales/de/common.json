@@ -1,9 +1,9 @@
 {
   "addDrive": {
     "title": "Laufwerk hinzufügen",
-    "description": "Geben Sie Ihre Cloudreve-Website-URL ein, um eine Verbindung herzustellen",
+    "description": "Geben Sie Ihre Fylvo-URL ein, um eine Verbindung herzustellen",
     "siteUrl": "Website-URL",
-    "siteUrlPlaceholder": "https://your-cloudreve-site.com",
+    "siteUrlPlaceholder": "https://cloud.example.com",
     "connect": "Verbinden",
     "waitingTitle": "Zum Fortfahren anmelden",
     "waitingDescription": "Schließen Sie den Anmeldevorgang in Ihrem Browser ab, um Ihr Laufwerk zu verbinden.",

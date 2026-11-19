@@ -54,7 +54,7 @@ impl IExplorerCommand_Impl for SyncNowCommandHandler_Impl {
     }
 
     fn GetCanonicalName(&self) -> Result<GUID> {
-        Ok(GUID::from_u128(0x50f8d185_47c9_45f8_a592_2d2cfefc9cd0))
+        Ok(GUID::from_u128(0xf80f420f_6ad1_410b_b2af_325bc1a317de))
     }
 
     fn GetState(&self, _items: Option<&IShellItemArray>, _oktobeslow: BOOL) -> Result<u32> {

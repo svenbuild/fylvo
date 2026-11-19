@@ -10,7 +10,7 @@ use windows::{
     core::*,
 };
 
-pub const CLSID_TOAST_ACTIVATOR: GUID = GUID::from_u128(0xeffe04d9_151d_49da_9eb5_34e01442edfe);
+pub const CLSID_TOAST_ACTIVATOR: GUID = GUID::from_u128(0x2e3cbb7d_b6b5_4455_9a0e_30a4df5244dd);
 
 /// Represents the parsed action from toast notification arguments
 #[derive(Debug, Clone)]

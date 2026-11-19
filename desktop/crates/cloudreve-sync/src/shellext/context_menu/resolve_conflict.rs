@@ -86,7 +86,7 @@ impl IExplorerCommand_Impl for ResolveConflictCommandHandler_Impl {
     }
 
     fn GetCanonicalName(&self) -> Result<GUID> {
-        Ok(GUID::from_u128(0x7b8f3c21_e5a4_4d89_b612_9f3e8c7a1b54))
+        Ok(GUID::from_u128(0xa2e29991_bc13_4c1c_a8bc_df6df1556f44))
     }
 
     fn GetState(&self, items: Option<&IShellItemArray>, _oktobeslow: BOOL) -> Result<u32> {

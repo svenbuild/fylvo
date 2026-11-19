@@ -1,9 +1,9 @@
 {
   "addDrive": {
     "title": "Добавить диск",
-    "description": "Введите URL вашего сайта Cloudreve для подключения",
+    "description": "Введите URL вашего сайта Fylvo для подключения",
     "siteUrl": "URL сайта",
-    "siteUrlPlaceholder": "https://your-cloudreve-site.com",
+    "siteUrlPlaceholder": "https://cloud.example.com",
     "connect": "Подключить",
     "waitingTitle": "Войдите для продолжения",
     "waitingDescription": "Завершите процесс входа в браузере для подключения диска.",

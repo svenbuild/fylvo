@@ -11,7 +11,7 @@ use win32_notif::{
 
 use crate::config::ConfigManager;
 
-const APP_NAME: &str = "Cloudreve.Sync";
+const APP_NAME: &str = "Fylvo.Sync";
 
 pub fn send_general_text_toast(title: &str, message: &str) {
     let notifier = ToastsNotifier::new(APP_NAME).unwrap();

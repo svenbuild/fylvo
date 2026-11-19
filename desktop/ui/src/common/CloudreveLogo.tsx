@@ -15,7 +15,7 @@ export default function CloudreveLogo({ height = 28 }: CloudreveLogoProps) {
     <Box
       component="img"
       src={logo}
-      alt="Cloudreve"
+      alt="Fylvo"
       sx={{ height }}
     />
   );

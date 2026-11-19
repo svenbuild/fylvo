@@ -16,14 +16,14 @@
 
 
   <Identity
-    Name="2106abslant.Cloudreve"
-    Publisher="CN=F536B6E6-7669-4531-8549-562FBE156594"
+    Name="Fylvo.Desktop"
+    Publisher="CN=Fylvo"
     ProcessorArchitecture="__ARCH__"
     Version="__VERSION__" />
 
   <Properties>
-    <DisplayName>Cloudreve</DisplayName>
-    <PublisherDisplayName>abslant</PublisherDisplayName>
+    <DisplayName>Fylvo Desktop</DisplayName>
+    <PublisherDisplayName>Fylvo</PublisherDisplayName>
     <Logo>Images\StoreLogo.png</Logo>
   </Properties>
 
@@ -48,12 +48,12 @@
 
 
   <Applications>
-    <Application Id="Cloudreve.Sync"
-      Executable="cloudreve-desktop.exe"
+    <Application Id="Fylvo.Sync"
+      Executable="fylvo-desktop.exe"
       EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="Cloudreve"
-        Description="Cloudreve"
+        DisplayName="Fylvo Desktop"
+        Description="Fylvo Desktop"
         BackgroundColor="transparent"
         Square150x150Logo="Images\Square150x150Logo.png"
         Square44x44Logo="Images\Square44x44Logo.png">
@@ -64,52 +64,52 @@
         <uap8:ActiveCodePage>UTF-8</uap8:ActiveCodePage>
       </uap7:Properties>
       <Extensions>
-        <desktop:Extension Category="windows.startupTask" Executable="cloudreve-desktop.exe" EntryPoint="Windows.FullTrustApplication">
-          <desktop:StartupTask TaskId="cloudreve" Enabled="true" DisplayName="Cloudreve"/>
+        <desktop:Extension Category="windows.startupTask" Executable="fylvo-desktop.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="fylvo" Enabled="true" DisplayName="Fylvo Desktop"/>
         </desktop:Extension>
         <uap:Extension Category="windows.protocol">
-          <uap:Protocol Name="cloudreve" />
+          <uap:Protocol Name="fylvo" />
         </uap:Extension>
         <desktop:Extension Category="windows.toastNotificationActivation">
           <desktop:ToastNotificationActivation
-            ToastActivatorCLSID="effe04d9-151d-49da-9eb5-34e01442edfe" />
+            ToastActivatorCLSID="2e3cbb7d-b6b5-4455-9a0e-30a4df5244dd" />
         </desktop:Extension>
         <desktop3:Extension Category="windows.cloudFiles">
           <desktop3:CloudFiles>
-            <desktop3:CustomStateHandler Clsid="f0c9de6c-6c76-44d7-a58e-579cdf7af263" />
-            <desktop3:ThumbnailProviderHandler Clsid="3d781652-78c5-4038-87a4-ec5940ab560a" />
-            <desktop3:ExtendedPropertyHandler Clsid="20000000-0000-0000-0000-000000000001" />
-            <desktop3:BannersHandler Clsid="20000000-0000-0000-0000-000000000001" />
+            <desktop3:CustomStateHandler Clsid="3a26ed18-5fa7-44e4-b90d-e8a16311dcf6" />
+            <desktop3:ThumbnailProviderHandler Clsid="328647e6-b043-4b66-a028-d6a9fd7806e3" />
+            <desktop3:ExtendedPropertyHandler Clsid="1e4b7500-121f-4f06-88ef-9dfcae2167f1" />
+            <desktop3:BannersHandler Clsid="1e4b7500-121f-4f06-88ef-9dfcae2167f1" />
             <cloudfiles2:StorageProviderStatusUISourceFactory
-              Clsid="b1d8ef74-822d-401a-a14a-25f45b1f70b7" />
+              Clsid="a3bb5be9-8d58-414b-a6b0-e4a30e5cbef1" />
             <desktop3:CloudFilesContextMenus>
-              <desktop3:Verb Id="Command1" Clsid="165cd069-d9c8-42b4-8e37-b6971afa4494" />
+              <desktop3:Verb Id="Command1" Clsid="06cff32f-efcf-4dc0-a648-02de0b23d637" />
             </desktop3:CloudFilesContextMenus>
-            <desktop4:ContentUriSource Clsid="97961bcb-601c-4950-927c-43b9319c7217" />
+            <desktop4:ContentUriSource Clsid="aa0d0dec-1bc4-4d7b-8161-8fd87de872a4" />
           </desktop3:CloudFiles>
         </desktop3:Extension>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
-            <com:ExeServer Executable="cloudreve-desktop.exe"
-              DisplayName="Cloudreve Toast activator">
-              <com:Class Id="effe04d9-151d-49da-9eb5-34e01442edfe"
-                DisplayName="Cloudreve Toast activator" />
+            <com:ExeServer Executable="fylvo-desktop.exe"
+              DisplayName="Fylvo Toast activator">
+              <com:Class Id="2e3cbb7d-b6b5-4455-9a0e-30a4df5244dd"
+                DisplayName="Fylvo Toast activator" />
             </com:ExeServer>
-            <com:ExeServer DisplayName="Cloudreve Command Handler"
-              Executable="cloudreve-desktop.exe">
-              <com:Class Id="165cd069-d9c8-42b4-8e37-b6971afa4494" />
+            <com:ExeServer DisplayName="Fylvo Command Handler"
+              Executable="fylvo-desktop.exe">
+              <com:Class Id="06cff32f-efcf-4dc0-a648-02de0b23d637" />
             </com:ExeServer>
-            <com:ExeServer DisplayName="Cloudreve Custom State Handler"
-              Executable="cloudreve-desktop.exe">
-              <com:Class Id="f0c9de6c-6c76-44d7-a58e-579cdf7af263" />
+            <com:ExeServer DisplayName="Fylvo Custom State Handler"
+              Executable="fylvo-desktop.exe">
+              <com:Class Id="3a26ed18-5fa7-44e4-b90d-e8a16311dcf6" />
             </com:ExeServer>
-            <com:ExeServer DisplayName="Cloudreve Status UI Source Factory"
-              Executable="cloudreve-desktop.exe">
-              <com:Class Id="b1d8ef74-822d-401a-a14a-25f45b1f70b7" />
+            <com:ExeServer DisplayName="Fylvo Status UI Source Factory"
+              Executable="fylvo-desktop.exe">
+              <com:Class Id="a3bb5be9-8d58-414b-a6b0-e4a30e5cbef1" />
             </com:ExeServer>
-            <com:ExeServer DisplayName="Cloudreve Thumbnail Handler"
-              Executable="cloudreve-desktop.exe">
-              <com:Class Id="3d781652-78c5-4038-87a4-ec5940ab560a" />
+            <com:ExeServer DisplayName="Fylvo Thumbnail Handler"
+              Executable="fylvo-desktop.exe">
+              <com:Class Id="328647e6-b043-4b66-a028-d6a9fd7806e3" />
             </com:ExeServer>
           </com:ComServer>
         </com:Extension>
