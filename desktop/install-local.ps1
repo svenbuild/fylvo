@@ -71,8 +71,14 @@ $InstallDir = $InstallDir.TrimEnd('\', '/')
 $NewDir = "$InstallDir.new"
 $OldDir = "$InstallDir.old"
 
-# A previous run stopped between the two renames: put the old version back first.
-if (-not (Test-Path -LiteralPath $InstallDir) -and (Test-Path -LiteralPath $OldDir) -and (Test-FylvoFolder $OldDir)) {
+# A backup in .old means a previous run did not finish. Whatever is in the install folder
+# then may be a half installed new version, so the backup is put back first. It is never
+# deleted before a new registration has succeeded.
+if ((Test-Path -LiteralPath $OldDir) -and (Test-FylvoFolder $OldDir)) {
+    Get-Process fylvo-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
+    if (Test-Path -LiteralPath $InstallDir) {
+        Remove-Item -LiteralPath $InstallDir -Recurse -Force
+    }
     Rename-Item -LiteralPath $OldDir -NewName (Split-Path $InstallDir -Leaf)
     Write-Host "Restored the previous version from $OldDir." -ForegroundColor Yellow
 }
@@ -152,7 +158,7 @@ try {
             Write-Host "Installation failed, the previous version was put back." -ForegroundColor Yellow
         }
     } catch {
-        Write-Warning "Could not put the previous version back. It is in $OldDir; running this script again restores it."
+        Write-Warning "Could not put the previous version back, it is still in $OldDir. Run this script again: it puts that version back first and then installs the new one."
     }
     throw $InstallError
 }

@@ -62,7 +62,7 @@ Without a certificate the package is registered in Developer Mode
 
 It unpacks `dist\Fylvo.x64.msix` to `%LOCALAPPDATA%\Programs\FylvoDesktop` and registers it from
 there. Run it again after a new build to update. `dev-install.ps1` registers the same package
-from `package/`; before switching between the two, remove the package (see below).
+from `target/dev-package`; before switching between the two, remove the package (see below).
 
 Remove it again with:
 
@@ -78,11 +78,11 @@ the signing certificate. The certificate must be trusted on the PC.
 
 ```powershell
 cargo tauri dev        # UI with hot reload (no package identity, shell features off)
-.\dev-install.ps1      # build and register the package folder (needs Developer Mode)
+.\dev-install.ps1      # build and register a copy of package/ (needs Developer Mode)
 ```
 
-`dev-install.ps1` writes the version and architecture into `package/AppxManifest.xml`; do not
-commit that change.
+`dev-install.ps1` registers a copy of `package/` in `target/dev-package`; the files in `package/`
+stay unchanged.
 
 ## Project structure
 

@@ -3,9 +3,11 @@
     Build and register the Fylvo Desktop app for development testing.
 
 .DESCRIPTION
-    This script builds the Tauri application, copies the binary to the package directory,
-    updates AppxManifest.xml with the correct version and architecture, and registers
-    the package for development testing with shell integration.
+    This script builds the Tauri application, copies package/ and the binary to
+    target\dev-package, fills in version and architecture in that copy of AppxManifest.xml
+    and registers it for development testing with shell integration. The files in package/
+    are never changed. "cargo clean" removes the registered folder; run this script again
+    afterwards.
 
 .PARAMETER Version
     Override the version from tauri.conf.json. Format: "X.Y.Z" (will be converted to "X.Y.Z.0")
@@ -36,8 +38,9 @@ $ErrorActionPreference = "Stop"
 # Paths
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $TauriConfigPath = Join-Path $ScriptDir "src-tauri\tauri.conf.json"
-$ManifestPath = Join-Path $ScriptDir "package\AppxManifest.xml"
-$PackageDir = Join-Path $ScriptDir "package"
+$SourcePackageDir = Join-Path $ScriptDir "package"
+$PackageDir = Join-Path $ScriptDir "target\dev-package"
+$ManifestPath = Join-Path $PackageDir "AppxManifest.xml"
 
 # Detect architecture
 $Arch = if ([Environment]::Is64BitOperatingSystem) {
@@ -97,8 +100,13 @@ if (-not (Test-Path $BinaryPath)) {
     exit 1
 }
 
-# Copy binary to package directory
-Write-Host "`nCopying binary to package directory..." -ForegroundColor Green
+# Copy package files and binary to the dev package directory
+Write-Host "`nCopying package files and binary to $PackageDir..." -ForegroundColor Green
+Get-Process fylvo-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
+if (Test-Path $PackageDir) {
+    Remove-Item $PackageDir -Recurse -Force
+}
+Copy-Item $SourcePackageDir -Destination $PackageDir -Recurse
 Copy-Item $BinaryPath -Destination $PackageDir -Force
 
 # Update AppxManifest.xml
