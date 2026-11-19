@@ -223,7 +223,7 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
               setPassword(value);
             }}
             slotProps={{
-              htmlInput: { maxLength: 32 },
+              // No maxLength here: the browser would cut a pasted password before its separators are dropped.
               input: {
                 endAdornment: !editing && (
                   <InputAdornment position="end" sx={{ mr: -1 }}>

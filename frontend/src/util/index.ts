@@ -71,12 +71,13 @@ const copyWithTextarea = (text: string) => {
   const focused = document.activeElement as HTMLElement | null;
   // A focused container (for example the dialog itself) takes the field inside; a focused control
   // cannot hold it, so it goes into the control's parent.
-  const isControl = focused?.matches("input, textarea, select, button, img");
+  const isControl = focused?.matches("input, textarea, select, button, img, a");
   const host =
     !focused || focused == document.body ? document.body : isControl ? focused.parentElement ?? document.body : focused;
   host.appendChild(area);
   area.focus();
   area.select();
+  area.setSelectionRange(0, text.length);
   let copied = false;
   try {
     copied = document.execCommand("copy");
