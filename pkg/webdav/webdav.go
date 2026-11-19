@@ -758,7 +758,10 @@ func performCopyMove(
 	// is removed. Without this, a refused move or copy would still delete the file it was
 	// to replace. A copy between the own files and a shared folder (through a shortcut)
 	// is left to the web app: its rights are only checked after the destination is gone.
+	// The destination itself is checked as well: through a shortcut it can lie in another
+	// tree than its folder.
 	if !dbfs.CanMoveOrCopyTo(srcUri, dstFolderUri, isCopy) || !dbfs.CanMoveOrCopyTo(srcUri, dstFolderUri, false) ||
+		!dbfs.CanMoveOrCopyTo(srcUri, dstUri, false) ||
 		srcUri.PathTrimmed() == "" ||
 		dstFolderUri.EqualOrIsDescendantOf(srcUri, "") {
 		return http.StatusForbidden, fs.ErrNotSupportedAction
@@ -848,7 +851,7 @@ func purposeStatusCodeFromError(err error) int {
 		switch appErr.Code {
 		case serializer.CodeNotFound, serializer.CodeParentNotExist, serializer.CodeEntityNotExist:
 			return http.StatusNotFound
-		case serializer.CodeNoPermissionErr:
+		case serializer.CodeNoPermissionErr, serializer.CodeOwnerOnly:
 			return http.StatusForbidden
 		case serializer.CodeLockConflict:
 			return http.StatusLocked

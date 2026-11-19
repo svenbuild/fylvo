@@ -898,11 +898,12 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 	})
 
 	// Fylvo: only the owner decides about shortcuts and system metadata in their tree, as in
-	// Create. A copy into the tree of somebody else takes none of them along.
+	// Create. A copy into the tree of somebody else takes none of them along. The marker of
+	// an upload in progress stays, as in any copy: the copy shows that it has no content.
 	excludedMetadata := []string{FullTextIndexKey}
 	foreignDestination := !f.isOwnerCall(ctx, destination)
 	if foreignDestination {
-		excludedMetadata = append(excludedMetadata, MetadataUploadSessionID, MetadataSharedRedirect,
+		excludedMetadata = append(excludedMetadata, MetadataSharedRedirect,
 			MetadataSharedOwner, MetadataRestoreUri, MetadataExpectedCollectTime)
 	}
 

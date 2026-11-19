@@ -441,8 +441,9 @@ func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID 
 			ctx = fs.LockSessionToContext(ctx, ls)
 			// Fylvo: the lock of the upload guards the placeholder until it is removed below.
 			// Make sure it does not run out on the way.
+			// Make sure it does not run out on the way. If it is gone, the upload has ended.
 			if _, err := f.ls.Refresh(time.Now(), time.Minute, session.LockToken); err != nil {
-				f.l.Warning("Failed to refresh the lock of upload %q: %s", sessionID, err)
+				return nil, nil, serializer.NewError(serializer.CodeNotFound, "Upload session not found", err)
 			}
 		}
 	}
@@ -463,10 +464,13 @@ func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID 
 	}
 
 	// Fylvo: from here on the lock keeps the path as it is. Before, another file may have
-	// taken the place of the one checked above, if the lock of the upload had run out.
-	if current, err := f.Get(ctx, path, WithNotRoot()); err != nil || current.ID() != filePrivate.ID() {
+	// taken the place of the one checked above, if the lock of the upload had run out, or
+	// the upload may have been completed. What follows works on the file as it is now.
+	current, err := f.Get(ctx, path, WithFileEntities(), WithNotRoot())
+	if err != nil || current.ID() != filePrivate.ID() {
 		return nil, nil, serializer.NewError(serializer.CodeNotFound, "Upload session not found", err)
 	}
+	filePrivate = current.(*File)
 
 	// Find placeholder entity
 	var entity fs.Entity
