@@ -292,7 +292,6 @@ fun FilesScreen(
                             CrUri.isRoot(state.currentUri) -> null
                             else -> CrUri.displayPath(CrUri.parent(state.currentUri))
                         },
-                        state.itemCountLabel,
                     ).joinToString(" • ").ifEmpty { null },
                     // Fylvo: the top of a tab needs no back arrow, the bottom bar leads there.
                     showBack = !atTabRoot,

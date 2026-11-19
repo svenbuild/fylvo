@@ -93,12 +93,6 @@ internal fun FolderTopBar(
             IconButton(onClick = onSearch) {
                 Icon(Icons.Default.Search, contentDescription = "Search")
             }
-            IconButton(onClick = onToggleView) {
-                Icon(
-                    if (viewMode == ViewMode.LIST) Icons.Default.GridView else Icons.AutoMirrored.Filled.ViewList,
-                    contentDescription = if (viewMode == ViewMode.LIST) "Grid view" else "List view",
-                )
-            }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "More options")
@@ -108,6 +102,13 @@ internal fun FolderTopBar(
                         text = { Text("Sort by") },
                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null) },
                         onClick = { menuOpen = false; sortOpen = true },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (viewMode == ViewMode.LIST) "Grid view" else "List view") },
+                        leadingIcon = {
+                            Icon(if (viewMode == ViewMode.LIST) Icons.Default.GridView else Icons.AutoMirrored.Filled.ViewList, null)
+                        },
+                        onClick = { menuOpen = false; onToggleView() },
                     )
                     DropdownMenuItem(
                         text = { Text("Select") },

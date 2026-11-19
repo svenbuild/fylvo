@@ -162,7 +162,7 @@ fun FolderPicker(
                                     leadingContent = {
                                         Icon(
                                             Icons.Default.Folder, contentDescription = null,
-                                            tint = FileKind.FOLDER.tint.copy(alpha = if (disabled) 0.4f else 1f),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (disabled) 0.4f else 1f),
                                         )
                                     },
                                 )

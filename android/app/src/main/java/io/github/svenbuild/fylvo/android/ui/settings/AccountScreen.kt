@@ -17,7 +17,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import io.github.svenbuild.fylvo.android.FylvoApp
 import io.github.svenbuild.fylvo.android.api.CapacityResponse
 import io.github.svenbuild.fylvo.android.ui.files.formatSize
+import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.data.SyncFolderSettings
 import io.github.svenbuild.fylvo.android.work.SyncFolderWorker
 import io.github.svenbuild.fylvo.android.work.TaskPollWorker
@@ -78,16 +79,20 @@ fun AccountScreen(
     val serverUrl by app.sessionManager.serverUrl.collectAsState(initial = "")
     val email by app.sessionManager.userEmail.collectAsState(initial = "")
 
+    // Fylvo: the user edits a plain path below My files ("Sync/Phone"), stored as a cloudreve:// URI.
     var syncFolder by remember(syncSnap?.remoteFolder) {
-        mutableStateOf(syncSnap?.remoteFolder ?: SyncFolderSettings.DEFAULT_FOLDER)
+        mutableStateOf(
+            (syncSnap?.remoteFolder ?: SyncFolderSettings.DEFAULT_FOLDER).removePrefix(CrUri.MY_PREFIX).trim('/')
+        )
     }
+    fun syncFolderUri() = CrUri.join(CrUri.MY_PREFIX, syncFolder.trim('/').ifEmpty { "Sync" })
 
     val treeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             scope.launch {
                 sync.setTreeUri(uri.toString())
-                sync.setRemoteFolder(syncFolder)
+                sync.setRemoteFolder(syncFolderUri())
                 sync.setEnabled(true)
                 SyncFolderWorker.apply(context, syncSnap?.wifiOnly ?: true)
             }
@@ -100,7 +105,7 @@ fun AccountScreen(
         }
     }
     fun persistFolders() = scope.launch {
-        sync.setRemoteFolder(syncFolder)
+        sync.setRemoteFolder(syncFolderUri())
     }
 
     // System back bypasses the TopAppBar button; persist there too.
@@ -170,41 +175,45 @@ fun AccountScreen(
                     }
                 },
             )
-            SwitchRow(
-                title = "Wi-Fi only",
-                checked = syncSnap?.wifiOnly ?: true,
-                onCheckedChange = { wifiOnly ->
-                    scope.launch {
-                        sync.setWifiOnly(wifiOnly)
-                        if (syncSnap?.enabled == true) SyncFolderWorker.apply(context, wifiOnly)
-                    }
-                },
-            )
-            FolderField("Remote folder", syncFolder) { syncFolder = it }
-            syncSnap?.lastSyncAt?.takeIf { it > 0 }?.let {
-                Text(
-                    "Last folder sync ${formatDateTime(it)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            // Fylvo: the details only matter once a folder is mirrored.
+            if (syncSnap?.enabled == true && syncSnap?.treeUri != null) {
+                SwitchRow(
+                    title = "Wi-Fi only",
+                    checked = syncSnap?.wifiOnly ?: true,
+                    onCheckedChange = { wifiOnly ->
+                        scope.launch {
+                            sync.setWifiOnly(wifiOnly)
+                            if (syncSnap?.enabled == true) SyncFolderWorker.apply(context, wifiOnly)
+                        }
+                    },
                 )
-            }
-            Button(
-                onClick = {
-                    persistFolders()
-                    if (syncSnap?.enabled == true) SyncFolderWorker.syncNow(context, syncSnap?.wifiOnly ?: true)
-                },
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Icon(Icons.Default.Sync, contentDescription = null)
-                Text("  Sync now")
+                FolderField("Folder in My files", syncFolder) { syncFolder = it }
+                syncSnap?.lastSyncAt?.takeIf { it > 0 }?.let {
+                    Text(
+                        "Last folder sync ${formatDateTime(it)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+                FilledTonalButton(
+                    onClick = {
+                        persistFolders()
+                        if (syncSnap?.enabled == true) SyncFolderWorker.syncNow(context, syncSnap?.wifiOnly ?: true)
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Icon(Icons.Default.Sync, contentDescription = null)
+                    Text("  Sync now")
+                }
+
             }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionLabel("Notifications")
             SwitchRow(
                 title = "Notify on finished tasks",
-                subtitle = "Server-side jobs such as archive extraction or remote downloads",
+                subtitle = "When a job on the server finishes",
                 checked = notifyEnabled,
                 onCheckedChange = { want ->
                     when {
@@ -254,8 +263,8 @@ fun AccountScreen(
 private fun SectionLabel(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
     )
 }

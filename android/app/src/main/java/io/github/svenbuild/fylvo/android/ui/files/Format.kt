@@ -43,7 +43,7 @@ fun subtitleFor(size: Long, updatedAt: String, isFolder: Boolean, now: Instant =
     return when {
         isFolder -> date
         date.isEmpty() -> formatSize(size)
-        else -> "${formatSize(size)} • $date"
+        else -> "$date · ${formatSize(size)}"
     }
 }
 

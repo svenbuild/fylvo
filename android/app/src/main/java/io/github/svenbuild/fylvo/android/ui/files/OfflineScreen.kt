@@ -124,7 +124,7 @@ private fun OfflineRow(entry: FavoriteEntry, onOpen: () -> Unit, onRefresh: () -
             Modifier
                 .size(48.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(kind.tint.copy(alpha = 0.18f)),
+                .background(MaterialTheme.colorScheme.surfaceContainer),
             contentAlignment = Alignment.Center,
         ) {
             if (kind == FileKind.IMAGE || kind == FileKind.VIDEO) {
@@ -133,11 +133,11 @@ private fun OfflineRow(entry: FavoriteEntry, onOpen: () -> Unit, onRefresh: () -
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
-                    error = { Icon(kind.icon, null, tint = kind.tint, modifier = Modifier.size(24.dp)) },
-                    loading = { Icon(kind.icon, null, tint = kind.tint, modifier = Modifier.size(24.dp)) },
+                    error = { Icon(kind.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp)) },
+                    loading = { Icon(kind.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp)) },
                 )
             } else {
-                Icon(kind.icon, contentDescription = null, tint = kind.tint, modifier = Modifier.size(24.dp))
+                Icon(kind.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
             }
         }
         Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {

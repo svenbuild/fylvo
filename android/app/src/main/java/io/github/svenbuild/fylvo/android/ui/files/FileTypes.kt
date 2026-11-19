@@ -1,19 +1,18 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.Android
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderZip
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Slideshow
-import androidx.compose.material.icons.filled.TableChart
-import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.material.icons.outlined.Android
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FolderZip
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.Slideshow
+import androidx.compose.material.icons.outlined.TableChart
+import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.ui.graphics.vector.ImageVector
 import io.github.svenbuild.fylvo.android.api.FileObject
 
@@ -22,22 +21,21 @@ import io.github.svenbuild.fylvo.android.api.FileObject
  * the server ships in `site/config/explorer.icons`, hardcoded so the list
  * renders before (or without) that call.
  */
-// Tints track the saturated per-type accents the web file manager ships in its
-// icon set rather than M3's muted defaults — the tiles carry colour via an 18%
-// alpha wash, so the glyph hue has to stay vivid or rows read as flat grey.
-enum class FileKind(val icon: ImageVector, val tint: Color) {
-    FOLDER(Icons.Default.Folder, Color(0xFF4F9CF5)),
-    IMAGE(Icons.Default.Image, Color(0xFFF06C8A)),
-    VIDEO(Icons.Default.Videocam, Color(0xFFD062B8)),
-    AUDIO(Icons.Default.MusicNote, Color(0xFF9B7EDE)),
-    PDF(Icons.Default.PictureAsPdf, Color(0xFFF26D4F)),
-    DOCUMENT(Icons.Default.Description, Color(0xFF5B8DEF)),
-    SPREADSHEET(Icons.Default.TableChart, Color(0xFF4CAF7D)),
-    PRESENTATION(Icons.Default.Slideshow, Color(0xFFF0A03C)),
-    ARCHIVE(Icons.Default.FolderZip, Color(0xFFC09A66)),
-    CODE(Icons.Default.Code, Color(0xFF39B8C7)),
-    APK(Icons.Default.Android, Color(0xFF66BB6A)),
-    OTHER(Icons.AutoMirrored.Filled.InsertDriveFile, Color(0xFFA6ADB7));
+// Fylvo: calm outline icons in the neutral text color, as in the web app. Color is kept
+// for meaning (accent), not for file types.
+enum class FileKind(val icon: ImageVector) {
+    FOLDER(Icons.Outlined.Folder),
+    IMAGE(Icons.Outlined.Image),
+    VIDEO(Icons.Outlined.Videocam),
+    AUDIO(Icons.Outlined.MusicNote),
+    PDF(Icons.Outlined.PictureAsPdf),
+    DOCUMENT(Icons.Outlined.Description),
+    SPREADSHEET(Icons.Outlined.TableChart),
+    PRESENTATION(Icons.Outlined.Slideshow),
+    ARCHIVE(Icons.Outlined.FolderZip),
+    CODE(Icons.Outlined.Code),
+    APK(Icons.Outlined.Android),
+    OTHER(Icons.AutoMirrored.Outlined.InsertDriveFile);
 
     companion object {
         private val byExt: Map<String, FileKind> = buildMap {

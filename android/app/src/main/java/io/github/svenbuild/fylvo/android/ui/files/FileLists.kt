@@ -74,7 +74,7 @@ internal fun FileList(
                         downloading = file.path in state.downloading,
                         offline = file.path in state.favoritePaths,
                         actions = actionsFor(file),
-                        subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} • ${CrUri.parentDisplayName(file.path)}",
+                        subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} · ${CrUri.parentDisplayName(file.path)}",
                     )
                 }
             }

@@ -108,7 +108,7 @@ fun HomeScreen(
                     selected = false,
                     offline = file.path in state.favoritePaths,
                     actions = FileActions(onOpen = { onOpenFile(file) }, onLongPress = { onFileMore(file) }, onMore = { onFileMore(file) }),
-                    subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} • ${CrUri.parentDisplayName(file.path)}",
+                    subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} · ${CrUri.parentDisplayName(file.path)}",
                 )
             }
         }
@@ -164,8 +164,8 @@ private fun SearchField(onSearch: () -> Unit) {
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .height(56.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .height(48.dp),
     ) {
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -188,10 +188,15 @@ private fun SectionHeader(title: String, action: Pair<String, () -> Unit>? = nul
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 12.dp, top = 20.dp, bottom = 8.dp),
+            .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
         if (action != null) {
             TextButton(onClick = action.second) { Text(action.first) }
         }

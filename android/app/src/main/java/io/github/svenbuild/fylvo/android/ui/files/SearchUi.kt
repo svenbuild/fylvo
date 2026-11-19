@@ -146,7 +146,7 @@ fun SearchResults(
                         thumbUrl = rememberThumbUrl(viewModel, file),
                         selecting = false,
                         selected = false,
-                        subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} • ${CrUri.parentDisplayName(file.path)}",
+                        subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} · ${CrUri.parentDisplayName(file.path)}",
                         actions = actionsFor(file),
                     )
                 }

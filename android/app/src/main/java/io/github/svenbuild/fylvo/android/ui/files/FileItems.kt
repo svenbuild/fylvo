@@ -78,6 +78,8 @@ fun FileThumb(
     /** Show a progress ring over the tile (determinate when a fraction is known). */
     downloading: Boolean = false,
     downloadProgress: Float? = null,
+    /** Fylvo: list rows show the bare icon; only a real thumbnail gets a rounded frame. */
+    plain: Boolean = false,
 ) {
     val kind = FileKind.of(file)
     val shape = RoundedCornerShape(corner)
@@ -85,7 +87,7 @@ fun FileThumb(
         modifier
             .then(if (size != null) Modifier.size(size) else Modifier)
             .clip(shape)
-            .background(kind.tint.copy(alpha = 0.18f)),
+            .background(if (plain && thumbUrl == null) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer),
         contentAlignment = Alignment.Center,
     ) {
         if (thumbUrl != null) {
@@ -120,7 +122,7 @@ fun FileThumb(
 
 @Composable
 private fun KindIcon(kind: FileKind, size: Dp) {
-    Icon(kind.icon, contentDescription = null, tint = kind.tint, modifier = Modifier.size(size))
+    Icon(kind.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(size))
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -145,22 +147,25 @@ fun FileListItem(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .padding(horizontal = 8.dp, vertical = 1.dp)
             .clip(shape)
             .background(background)
             .combinedClickable(onClick = actions.onOpen, onLongClick = actions.onLongPress)
-            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+            .padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FileThumb(file, thumbUrl, size = 48.dp, downloading = downloading, downloadProgress = downloadProgress)
+        FileThumb(
+            file, thumbUrl, size = 36.dp, corner = 8.dp, iconSize = 22.dp, plain = true,
+            downloading = downloading, downloadProgress = downloadProgress,
+        )
         Column(
             Modifier
                 .weight(1f)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 14.dp),
         ) {
             Text(
                 file.name,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -290,6 +295,10 @@ private fun SelectionMark(selected: Boolean, fileName: String, modifier: Modifie
 private fun FileMenuButton(actions: FileActions, compact: Boolean = false, label: String = "More") {
     val onMore = actions.onMore ?: return
     IconButton(onClick = onMore, modifier = if (compact) Modifier.size(36.dp) else Modifier) {
-        Icon(Icons.Default.MoreVert, contentDescription = label, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(
+            Icons.Default.MoreVert, contentDescription = label,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            modifier = Modifier.size(20.dp),
+        )
     }
 }

@@ -202,7 +202,7 @@ private fun NoPreview(file: FileObject, onOpenWith: () -> Unit) {
     val kind = FileKind.of(file)
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
-            Icon(kind.icon, contentDescription = null, tint = kind.tint, modifier = Modifier.size(72.dp))
+            Icon(kind.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(72.dp))
             Text("No preview for this file type", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
             Button(onClick = onOpenWith, modifier = Modifier.padding(top = 16.dp)) { Text("Open with another app") }
         }
