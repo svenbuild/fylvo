@@ -126,18 +126,17 @@ func (service *UserLoginService) Login(c *gin.Context) (*ent.User, string, error
 	dep := dependency.FromContext(c)
 	userClient := dep.UserClient()
 
-	// Fylvo: limit wrong passwords per account and client address.
-	attemptKey := attempts.Key(c, attempts.KindLogin, service.UserName)
-	if err := attempts.Default.Check(attemptKey); err != nil {
-		return nil, "", err
-	}
-
 	ctx := context.WithValue(c, inventory.LoadUserGroup{}, true)
-	expectedUser, err := userClient.GetByEmail(ctx, service.UserName)
+	var expectedUser *ent.User
+	var err error
+	// Fylvo: limit wrong passwords per account and client address.
+	right, limitErr := attempts.Guard(c, attempts.KindLogin, service.UserName, func() bool {
+		expectedUser, err = userClient.GetByEmail(ctx, service.UserName)
+		return err == nil && inventory.CheckPassword(expectedUser, service.Password) == nil
+	})
 
 	// 一系列校验
-	right := err == nil && inventory.CheckPassword(expectedUser, service.Password) == nil
-	if limitErr := attempts.Default.Done(attemptKey, right); limitErr != nil {
+	if limitErr != nil {
 		return nil, "", limitErr
 	}
 	if !right {
@@ -243,12 +242,10 @@ func (service *OtpValidationService) Verify2FA(c *gin.Context) (*ent.User, error
 
 	if expectedUser.TwoFactorSecret != "" {
 		// Fylvo: limit wrong codes per account and client address.
-		attemptKey := attempts.Key(c, attempts.KindTwoFA, fmt.Sprint(uid))
-		if err := attempts.Default.Check(attemptKey); err != nil {
-			return nil, err
-		}
-		right := totp.Validate(service.OTP, expectedUser.TwoFactorSecret)
-		if err := attempts.Default.Done(attemptKey, right); err != nil {
+		right, err := attempts.Guard(c, attempts.KindTwoFA, fmt.Sprint(uid), func() bool {
+			return totp.Validate(service.OTP, expectedUser.TwoFactorSecret)
+		})
+		if err != nil {
 			return nil, err
 		}
 		if !right {

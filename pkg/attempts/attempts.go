@@ -1,11 +1,11 @@
 // Package attempts limits wrong guesses of secrets (Fylvo): passwords at sign-in, 2FA codes,
 // WebDAV passwords and share link passwords.
 //
-// Tries are counted per kind of secret, per subject (account, share) and per client address
-// (IPv6 per /64 network). After MaxFailures wrong guesses, every further try for that key is
-// refused, even a right one, until Window has passed since the last wrong guess. A right guess
-// clears the count. Counting per address means a stranger cannot lock the
-// owner out from somewhere else, as long as the server knows the real client address (see
+// Wrong guesses are counted per kind of secret, per subject (account, share) and per client
+// address (IPv6 per /64 network). After MaxFailures wrong guesses, every further try for that
+// key is refused, even a right one, until Window has passed since the last wrong guess. A right
+// guess clears the count. Counting per address means a stranger cannot lock the owner out from
+// somewhere else, as long as the server knows the real client address (see
 // routers/fylvo_client_ip.go).
 //
 // The counters live in memory: a restart clears them. That is enough for a private instance.
@@ -13,7 +13,9 @@ package attempts
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"net"
 	"strings"
 	"sync"
@@ -35,8 +37,9 @@ const (
 	KindWebDAV = "webdav"
 	KindShare  = "share"
 
-	// maxKeys caps the memory use. When it is reached, new keys are not counted until old
-	// ones expire; keys already counted keep their state.
+	// maxKeys caps the memory use. Above it, wrong guesses for new subjects are counted per
+	// address alone, so that filling the map does not switch the limit off. Above twice as many
+	// keys, tries with keys not counted yet are refused until old keys expire.
 	maxKeys = 100000
 	// pruneEvery is how often expired keys are dropped.
 	pruneEvery = time.Minute
@@ -74,14 +77,29 @@ var Default = New(MaxFailures, Window)
 var ErrTooManyAttempts = serializer.NewError(serializer.CodeTooManyAttempts,
 	"Too many wrong attempts, please try again later", nil)
 
-// Key builds the key for one kind of secret and one subject, from the client address stored
-// in ctx by middleware.InitializeHandling.
-func Key(ctx context.Context, kind, subject string) string {
+// Key identifies the counts for one try: per subject and address, and per address alone.
+type Key struct {
+	subject string
+	address string
+}
+
+// KeyFor builds the key for one kind of secret and one subject, from the client address stored
+// in ctx by middleware.InitializeHandling. The parts are hashed, so a long subject sent by a
+// client does not take more memory.
+func KeyFor(ctx context.Context, kind, subject string) Key {
 	ip := ""
 	if info := requestinfo.RequestInfoFromContext(ctx); info != nil {
 		ip = addressGroup(info.IP)
 	}
-	return kind + "\x00" + strings.ToLower(subject) + "\x00" + ip
+	return Key{
+		subject: hash(kind, strings.ToLower(subject), ip),
+		address: hash(kind, ip),
+	}
+}
+
+func hash(parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(sum[:16])
 }
 
 // addressGroup returns an IPv4 address as is and an IPv6 address as its /64 network, because
@@ -96,10 +114,14 @@ func addressGroup(ip string) string {
 
 // Check returns ErrTooManyAttempts while key has used up its tries. Call it before checking
 // the secret, then report the result with Done.
-func (l *Limiter) Check(key string) error {
+func (l *Limiter) Check(key Key) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.blocked(key, l.now()) {
+	now := l.now()
+	if l.blocked(key.subject, now) || l.blocked(key.address, now) {
+		return ErrTooManyAttempts
+	}
+	if len(l.entries) >= 2*maxKeys && l.entries[key.subject] == nil && l.entries[key.address] == nil {
 		return ErrTooManyAttempts
 	}
 	return nil
@@ -109,35 +131,44 @@ func (l *Limiter) Check(key string) error {
 // clears the count, unless the key is blocked by now: then Done returns ErrTooManyAttempts and
 // the right guess must be refused too. That second look makes parallel guesses harmless: a
 // right guess only counts if fewer than MaxFailures wrong ones were recorded before it.
-func (l *Limiter) Done(key string, right bool) error {
+func (l *Limiter) Done(key Key, right bool) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
 	if right {
-		if l.blocked(key, now) {
+		if l.blocked(key.subject, now) || l.blocked(key.address, now) {
 			return ErrTooManyAttempts
 		}
-		delete(l.entries, key)
+		delete(l.entries, key.subject)
 		return nil
 	}
 
 	l.prune(now)
-	e, ok := l.entries[key]
-	if !ok || !now.Before(e.until) {
-		if len(l.entries) >= maxKeys {
-			return nil
-		}
+	id := key.subject
+	if !l.live(id, now) && len(l.entries) >= maxKeys {
+		id = key.address
+	}
+	e := l.entries[id]
+	if !l.live(id, now) {
 		e = &entry{}
-		l.entries[key] = e
+		l.entries[id] = e
 	}
 	e.failures++
 	e.until = now.Add(l.window)
 	return nil
 }
 
-func (l *Limiter) blocked(key string, now time.Time) bool {
-	e, ok := l.entries[key]
-	return ok && e.failures >= l.maxFailures && now.Before(e.until)
+// Guard checks a secret with verify under the limit of Default.
+func Guard(ctx context.Context, kind, subject string, verify func() bool) (bool, error) {
+	key := KeyFor(ctx, kind, subject)
+	if err := Default.Check(key); err != nil {
+		return false, err
+	}
+	right := verify()
+	if err := Default.Done(key, right); err != nil {
+		return false, err
+	}
+	return right, nil
 }
 
 // CheckSecret compares a secret sent by the client with the expected one, under the limit of
@@ -146,16 +177,18 @@ func CheckSecret(ctx context.Context, kind, subject, given, want string) (bool, 
 	if given == "" {
 		return false, nil
 	}
+	return Guard(ctx, kind, subject, func() bool {
+		return subtle.ConstantTimeCompare([]byte(given), []byte(want)) == 1
+	})
+}
 
-	key := Key(ctx, kind, subject)
-	if err := Default.Check(key); err != nil {
-		return false, err
-	}
-	right := subtle.ConstantTimeCompare([]byte(given), []byte(want)) == 1
-	if err := Default.Done(key, right); err != nil {
-		return false, err
-	}
-	return right, nil
+func (l *Limiter) live(id string, now time.Time) bool {
+	e, ok := l.entries[id]
+	return ok && now.Before(e.until)
+}
+
+func (l *Limiter) blocked(id string, now time.Time) bool {
+	return l.live(id, now) && l.entries[id].failures >= l.maxFailures
 }
 
 // prune drops expired keys, at most once per pruneEvery. The caller holds l.mu.

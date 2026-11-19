@@ -119,23 +119,23 @@ func WebDAVAuth() gin.HandlerFunc {
 			return
 		}
 
-		// Fylvo: limit wrong passwords per account and client address.
-		attemptKey := attempts.Key(c, attempts.KindWebDAV, username)
-		if err := attempts.Default.Check(attemptKey); err != nil {
-			webDAVTooManyAttempts(c)
-			return
-		}
-
 		dep := dependency.FromContext(c)
 		l := dep.Logger()
 		userClient := dep.UserClient()
-		expectedUser, err := userClient.GetActiveByDavAccount(c, username, password)
+		var expectedUser *ent.User
 		var accounts []*ent.DavAccount
-		if err == nil {
-			accounts, err = expectedUser.Edges.DavAccountsOrErr()
-		}
-		if limitErr := attempts.Default.Done(attemptKey, err == nil && len(accounts) > 0); limitErr != nil {
-			webDAVTooManyAttempts(c)
+		var err error
+		// Fylvo: limit wrong passwords per account and client address.
+		if _, limitErr := attempts.Guard(c, attempts.KindWebDAV, username, func() bool {
+			expectedUser, err = userClient.GetActiveByDavAccount(c, username, password)
+			if err == nil {
+				accounts, err = expectedUser.Edges.DavAccountsOrErr()
+			}
+			return err == nil && len(accounts) > 0
+		}); limitErr != nil {
+			c.Header("Retry-After", strconv.Itoa(int(attempts.Window.Seconds())))
+			c.Status(http.StatusTooManyRequests)
+			c.Abort()
 			return
 		}
 
@@ -190,14 +190,6 @@ func WebDAVAuth() gin.HandlerFunc {
 		SetUserCtxByUser(c, expectedUser)
 		c.Next()
 	}
-}
-
-// webDAVTooManyAttempts answers a WebDAV request whose account is blocked by the limit on
-// wrong passwords (Fylvo).
-func webDAVTooManyAttempts(c *gin.Context) {
-	c.Header("Retry-After", strconv.Itoa(int(attempts.Window.Seconds())))
-	c.Status(http.StatusTooManyRequests)
-	c.Abort()
 }
 
 // 对上传会话进行验证
