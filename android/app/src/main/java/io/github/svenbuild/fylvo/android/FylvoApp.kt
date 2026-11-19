@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import io.github.svenbuild.fylvo.android.api.RefreshTokenRequest
 import io.github.svenbuild.fylvo.android.api.ApiClient
@@ -52,33 +53,36 @@ class FylvoApp : Application() {
      * screen and restarts it (see MainActivity).
      */
     suspend fun endSession(expired: Boolean = false) {
-        if (!expired) {
-            runCatching {
-                apiClient.authService().signOut(RefreshTokenRequest(sessionManager.refreshTokenNow()))
+        // Runs to the end even when the caller's screen or search is cancelled meanwhile.
+        withContext(NonCancellable) {
+            if (!expired) {
+                runCatching {
+                    apiClient.authService().signOut(RefreshTokenRequest(sessionManager.refreshTokenNow()))
+                }
             }
+            withContext(Dispatchers.IO) {
+                WorkManager.getInstance(this@FylvoApp).cancelAllWork().result.get()
+                WorkManager.getInstance(this@FylvoApp).pruneWork()
+            }
+            io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames()
+            favoritesStore.clear()
+            syncFolderSettings.clear()
+            taskNotifySettings.clear()
+            contentResolver.persistedUriPermissions.forEach {
+                val flags = (if (it.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+                    (if (it.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
+                runCatching { contentResolver.releasePersistableUriPermission(it.uri, flags) }
+            }
+            // Grants other apps got to our documents (system Files app) end with the session.
+            revokeUriPermission(
+                Uri.parse("content://$packageName.documents/"),
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+            withContext(Dispatchers.IO) {
+                filesDir.resolve("offline").deleteRecursively()
+                cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+            }
+            if (expired) sessionManager.clearSession() else sessionManager.clear()
         }
-        withContext(Dispatchers.IO) {
-            WorkManager.getInstance(this@FylvoApp).cancelAllWork().result.get()
-            WorkManager.getInstance(this@FylvoApp).pruneWork()
-        }
-        io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames()
-        favoritesStore.clear()
-        syncFolderSettings.clear()
-        taskNotifySettings.clear()
-        contentResolver.persistedUriPermissions.forEach {
-            val flags = (if (it.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
-                (if (it.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
-            runCatching { contentResolver.releasePersistableUriPermission(it.uri, flags) }
-        }
-        // Grants other apps got to our documents (system Files app) end with the session.
-        revokeUriPermission(
-            Uri.parse("content://$packageName.documents/"),
-            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-        )
-        withContext(Dispatchers.IO) {
-            filesDir.resolve("offline").deleteRecursively()
-            cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-        }
-        if (expired) sessionManager.clearSession() else sessionManager.clear()
     }
 }

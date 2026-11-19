@@ -44,6 +44,9 @@ class ApiClient(private val session: SessionManager) {
     @Volatile
     private var cachedAuthService: ApiService? = null
 
+    @Volatile
+    private var cachedAuthBaseUrl: String? = null
+
     suspend fun serverBase(): String = session.serverUrlNow()
 
     suspend fun service(): ApiService {
@@ -51,7 +54,6 @@ class ApiClient(private val session: SessionManager) {
         cachedService?.let { if (cachedBaseUrl == base) return it }
         return buildService(base, followRedirects = true).also {
             cachedService = it
-            cachedAuthService = null
             cachedBaseUrl = base
         }
     }
@@ -63,8 +65,11 @@ class ApiClient(private val session: SessionManager) {
      */
     suspend fun authService(): ApiService {
         val base = session.serverUrlNow().ifEmpty { "http://localhost" } + "/"
-        cachedAuthService?.let { if (cachedBaseUrl == base) return it }
-        return buildService(base, followRedirects = false).also { cachedAuthService = it }
+        cachedAuthService?.let { if (cachedAuthBaseUrl == base) return it }
+        return buildService(base, followRedirects = false).also {
+            cachedAuthService = it
+            cachedAuthBaseUrl = base
+        }
     }
 
     private fun buildService(baseUrl: String, followRedirects: Boolean): ApiService {
