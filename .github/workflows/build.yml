@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main, fylvo/ci-build] # TEMP-BRANCH: fylvo/ci-build is removed again before merging
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
