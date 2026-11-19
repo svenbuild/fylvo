@@ -46,6 +46,9 @@ func InitializeDBClient(l logging.Logger,
 	if err := removeRetiredOAuthClients(l, client, ctx); err != nil {
 		return nil, err
 	}
+	if err := replaceCloudreveOAuthClientIcons(l, client, ctx); err != nil {
+		return nil, err
+	}
 
 	//createMockData(client, ctx)
 	return client, nil
