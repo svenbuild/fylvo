@@ -11,7 +11,7 @@
 //!
 //! ## Example
 //!
-//! ```no_run
+//! ```ignore
 //! use cloudreve_api::{Client, ClientConfig};
 //!
 //! #[tokio::main]

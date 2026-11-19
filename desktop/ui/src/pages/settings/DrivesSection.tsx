@@ -30,9 +30,9 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { DriveInfo } from "./types";
+import type { DriveInfo, HeldDeletion } from "./types";
 import {  SecondaryButton, SecondaryErrorButton } from "../../common/StyledComponent";
-import { ask } from '@tauri-apps/plugin-dialog';
+import { ask, message } from '@tauri-apps/plugin-dialog';
 
 interface DriveInfoResponse {
   id: string;
@@ -50,6 +50,8 @@ interface DriveInfoResponse {
     used: number;
     label: string;
   };
+  read_only: boolean;
+  held_deletions: HeldDeletion[];
 }
 
 export default function DrivesSection() {
@@ -61,6 +63,8 @@ export default function DrivesSection() {
   const [patternsText, setPatternsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [patternsError, setPatternsError] = useState<string | null>(null);
+  // Fylvo: one answer at a time for a held deletion.
+  const [resolving, setResolving] = useState(false);
 
   const fetchDrives = useCallback(async () => {
     if (isFetchingRef.current) return;
@@ -84,7 +88,40 @@ export default function DrivesSection() {
 
   useEffect(() => {
     fetchDrives();
+    // Fylvo: a held deletion can appear while the settings are open.
+    const timer = setInterval(fetchDrives, 5000);
+    return () => clearInterval(timer);
   }, [fetchDrives]);
+
+  // Fylvo: the user's answer to a held mass deletion.
+  const handleResolveDeletion = async (
+    drive: DriveInfo,
+    held: HeldDeletion,
+    confirm: boolean,
+  ) => {
+    if (confirm) {
+      const ok = await ask(
+        t(`settings.heldDeletion.confirmQuestion.${held.side}`, { count: held.count }),
+        { title: t("settings.heldDeletion.confirm"), kind: "warning" },
+      );
+      if (!ok) return;
+    }
+    setResolving(true);
+    try {
+      await invoke("resolve_held_deletion", {
+        driveId: drive.id,
+        side: held.side,
+        version: held.version,
+        confirm,
+      });
+    } catch (error) {
+      console.error("Failed to resolve held deletion:", error);
+      await message(String(error), { kind: "error" });
+    } finally {
+      setResolving(false);
+    }
+    await fetchDrives();
+  };
 
   const handleDelete = async (driveId: string, driveName: string) => {
     const confirmed = await ask(t("settings.deleteDriveConfirm", { name: driveName }), {
@@ -389,8 +426,43 @@ export default function DrivesSection() {
                       </Box>
                     )}
 
+                    {/* Fylvo: read-only shared folder */}
+                    {drive.read_only && (
+                      <Typography variant="caption" color="text.secondary" component="p">
+                        {t("settings.readOnlyHint")}
+                      </Typography>
+                    )}
                   </Box>
                 </Box>
+
+                {/* Fylvo: held mass deletions */}
+                {drive.held_deletions?.map((held) => (
+                  <Alert
+                    key={held.side}
+                    severity="warning"
+                    sx={{ mt: 2 }}
+                    action={
+                      <Stack direction="row" spacing={1}>
+                        <SecondaryErrorButton
+                          size="small"
+                          disabled={resolving}
+                          onClick={() => handleResolveDeletion(drive, held, true)}
+                        >
+                          {t("settings.heldDeletion.confirm")}
+                        </SecondaryErrorButton>
+                        <SecondaryButton
+                          size="small"
+                          disabled={resolving}
+                          onClick={() => handleResolveDeletion(drive, held, false)}
+                        >
+                          {t(`settings.heldDeletion.cancel.${held.side}`)}
+                        </SecondaryButton>
+                      </Stack>
+                    }
+                  >
+                    {t(`settings.heldDeletion.message.${held.side}`, { count: held.count })}
+                  </Alert>
+                ))}
 
                 {/* Action Footer */}
                 <Divider sx={{ my: 2, mx: -2 }} />

@@ -411,6 +411,21 @@ impl DriveManager {
         mount.update_ignore_patterns(patterns).await
     }
 
+    /// Fylvo: the user's answer to a held mass deletion.
+    pub async fn resolve_held_deletion(
+        &self,
+        id: &str,
+        side: crate::drive::guard::DeletionSide,
+        version: u64,
+        confirm: bool,
+    ) -> Result<()> {
+        let mount = self
+            .get_drive(id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Drive not found: {}", id))?;
+        mount.resolve_held_deletion(side, version, confirm).await
+    }
+
     /// Enable/disable a drive
     pub async fn set_drive_enabled(&self, _id: &str, _enabled: bool) -> Result<()> {
         Err(anyhow::anyhow!("Not implemented"))
@@ -614,6 +629,8 @@ impl DriveManager {
                 user_id: config.user_id.clone(),
                 status,
                 capacity,
+                read_only: mount.is_read_only(),
+                held_deletions: mount.held_deletions(),
             });
         }
 

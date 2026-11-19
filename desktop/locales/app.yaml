@@ -467,3 +467,27 @@ localPathCannotBeRootDrive:
   ru: "Локальный путь не может быть корневым диском (например, E:\\). Пожалуйста, выберите подпапку."
   pl: "Ścieżka lokalna nie może być dyskiem głównym (np. E:\\). Proszę wybrać podfolder."
   it: "Il percorso locale non può essere un'unità radice (es. E:\\). Seleziona una sottocartella."
+massDeleteServerTitle:
+  en-US: "Many files deleted"
+  de: "Viele Dateien gelöscht"
+massDeleteServerMessage:
+  en-US: "%{count} entries were deleted on this PC. They stay on the server until you confirm in the Fylvo settings."
+  de: "%{count} Einträge wurden auf diesem PC gelöscht. Auf dem Server bleiben sie, bis du es in den Fylvo-Einstellungen bestätigst."
+massDeleteLocalTitle:
+  en-US: "Many files deleted on the server"
+  de: "Viele Dateien auf dem Server gelöscht"
+massDeleteLocalMessage:
+  en-US: "%{count} entries were deleted on the server. They stay on this PC until you confirm in the Fylvo settings."
+  de: "%{count} Einträge wurden auf dem Server gelöscht. Auf diesem PC bleiben sie, bis du es in den Fylvo-Einstellungen bestätigst."
+readOnlyDriveTitle:
+  en-US: "Read-only folder"
+  de: "Ordner nur zum Lesen"
+readOnlyDriveMessage:
+  en-US: "\"%{drive}\" is shared with you for reading only. Changes on this PC are not uploaded."
+  de: "\"%{drive}\" ist nur zum Lesen mit dir geteilt. Änderungen auf diesem PC werden nicht hochgeladen."
+moveBetweenDrivesTitle:
+  en-US: "Move not possible"
+  de: "Verschieben nicht möglich"
+moveBetweenDrivesMessage:
+  en-US: "Files cannot be moved between sync folders. Copy them instead and delete the original afterwards."
+  de: "Zwischen Sync-Ordnern kann nicht verschoben werden. Kopiere die Dateien und lösche danach das Original."

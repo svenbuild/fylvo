@@ -4,7 +4,7 @@ use crate::{
         placeholder::{ConvertOptions, LocalFileInfo, OpenOptions, UpdateOptions},
         placeholder_file::PlaceholderFile,
     },
-    drive::utils::notify_shell_change,
+    drive::utils::{move_to_recycle_bin, notify_shell_change},
     inventory::{FileMetadata, InventoryDb, MetadataEntry},
 };
 use anyhow::{Context, Result};
@@ -35,6 +35,16 @@ use windows::{
     core::PCWSTR,
 };
 use windows_core::PROPVARIANT;
+
+/// Fylvo: turn a fully hydrated placeholder into a normal file.
+fn revert_placeholder(path: &std::path::Path) -> Result<()> {
+    let mut placeholder = OpenOptions::new()
+        .write_access()
+        .exclusive()
+        .open(path)
+        .context("failed to open placeholder")?;
+    placeholder.revert().context("failed to revert placeholder")
+}
 
 pub struct CrPlaceholder {
     pub local_file_info: LocalFileInfo,
@@ -88,14 +98,30 @@ impl CrPlaceholder {
         self
     }
 
+    /// Remove the local file or folder and its inventory entry.
+    ///
+    /// Fylvo: nothing with local data is deleted for good. Online-only placeholders hold no
+    /// data of their own (the server keeps the file, in its trash if it was deleted there)
+    /// and are removed. A file with local data goes to the Windows recycle bin, first turned
+    /// back into a normal file so it can be restored from there; if that fails, the file is
+    /// kept. A folder is removed only when it is empty on disk (a folder that was never
+    /// opened has nothing on disk).
     pub fn delete_placeholder(&self, inventory: Arc<InventoryDb>) -> Result<()> {
-        // Delete local file/folder if it exists
-        if self.local_file_info.exists {
-            if self.local_path.is_dir() {
-                std::fs::remove_dir_all(&self.local_path)
-                    .context("failed to delete local directory")?;
-            } else {
+        let info = &self.local_file_info;
+        if info.exists {
+            // Online only and unchanged: no byte here that the server does not have.
+            let online_only = info.is_placeholder() && info.partial_on_disk() && info.in_sync();
+            if info.is_directory {
+                std::fs::remove_dir(&self.local_path)
+                    .context("local folder is not empty, it was kept")?;
+            } else if online_only {
                 std::fs::remove_file(&self.local_path).context("failed to delete local file")?;
+            } else {
+                if info.is_placeholder() {
+                    revert_placeholder(&self.local_path)
+                        .context("file kept: it could not be prepared for the recycle bin")?;
+                }
+                move_to_recycle_bin(&self.local_path)?;
             }
         }
 
@@ -284,7 +310,7 @@ impl CrPlaceholder {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```ignore
     /// use std::path::Path;
     ///
     /// // Set error state on a file

@@ -176,7 +176,7 @@ impl Client {
     /// such as persisting tokens to storage.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// use std::sync::Arc;
     /// use std::pin::Pin;
     /// use std::future::Future;

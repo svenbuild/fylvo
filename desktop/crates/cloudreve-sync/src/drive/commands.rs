@@ -5,10 +5,11 @@ use crate::{
         utility::WriteAt,
     },
     drive::{
+        guard::DeletionSide,
         mounts::Mount,
         placeholder::CrPlaceholder,
         sync::{GroupedFsEvents, SyncMode},
-        utils::{local_path_to_cr_uri, notify_shell_change},
+        utils::{is_in_cloud_sync_root, local_path_to_cr_uri, notify_shell_change},
     },
     inventory::ConflictState,
     tasks::TaskPayload,
@@ -497,9 +498,20 @@ impl Mount {
 
         // if target or source is not under sync root, do nothing
         if !target.starts_with(&sync_path) {
-            // Source is being moved out of sync root
-            //self.event_blocker
-            //    .register_once(&EventKind::Remove(RemoveKind::Any), source.clone());
+            // Fylvo: a move into another sync folder (for example from the own drive into a
+            // shared one) would delete the file here, and the other drive would take it for
+            // its own, already synced file. The server cannot move across owners either.
+            // Refuse it; copying works.
+            if source.starts_with(&sync_path)
+                && target.parent().is_some_and(is_in_cloud_sync_root)
+            {
+                toast::send_warning_toast(
+                    &t!("moveBetweenDrivesTitle"),
+                    &t!("moveBetweenDrivesMessage"),
+                );
+                anyhow::bail!("moving into another sync folder is not supported, copy instead");
+            }
+            // Source is being moved out of sync root: the watcher reports it as a deletion.
             return Ok(());
         }
 
@@ -681,15 +693,21 @@ impl Mount {
         match action {
             ConflictAction::KeepRemote => {
                 // Delete local file and trigger sync on origin path
-                let cr_placeholder =
-                    CrPlaceholder::new(local_path.clone(), sync_root.clone(), drive_id.clone());
-                cr_placeholder
-                    .delete_placeholder(self.inventory.clone())
-                    .context("failed to delete local placeholder")?;
                 self.event_blocker.register_once(
                     &EventKind::Remove(RemoveKind::Any),
                     local_path.clone().into(),
                 );
+                let cr_placeholder =
+                    CrPlaceholder::new(local_path.clone(), sync_root.clone(), drive_id.clone());
+                if let Err(e) = cr_placeholder.delete_placeholder(self.inventory.clone()) {
+                    // Nothing was removed: a later deletion by the user must not be hidden.
+                    let path: PathBuf = local_path.clone().into();
+                    if path.exists() {
+                        self.event_blocker
+                            .unregister_once(&EventKind::Remove(RemoveKind::Any), &path);
+                    }
+                    return Err(e.context("failed to delete local placeholder"));
+                }
                 let command = MountCommand::Sync {
                     local_paths: vec![local_path.clone().into()],
                     mode: SyncMode::PathOnly,
@@ -718,8 +736,7 @@ impl Mount {
                 );
 
                 if let Err(err) = self
-                    .task_queue
-                    .enqueue(TaskPayload::upload(local_path.clone()).with_force_override(true))
+                    .enqueue_upload(TaskPayload::upload(local_path.clone()).with_force_override(true))
                     .await
                 {
                     tracing::error!(
@@ -729,7 +746,7 @@ impl Mount {
                         error = ?err,
                         "Failed to enqueue upload task"
                     );
-                    return Err(err.into());
+                    return Err(err);
                 }
             }
             ConflictAction::SaveAsNew => {
@@ -749,15 +766,21 @@ impl Mount {
                 );
 
                 // Delete local file and trigger sync on origin path (same as KeepRemote)
-                let cr_placeholder =
-                    CrPlaceholder::new(local_path.clone(), sync_root.clone(), drive_id.clone());
-                cr_placeholder
-                    .delete_placeholder(self.inventory.clone())
-                    .context("failed to delete local placeholder")?;
                 self.event_blocker.register_once(
                     &EventKind::Remove(RemoveKind::Any),
                     local_path.clone().into(),
                 );
+                let cr_placeholder =
+                    CrPlaceholder::new(local_path.clone(), sync_root.clone(), drive_id.clone());
+                if let Err(e) = cr_placeholder.delete_placeholder(self.inventory.clone()) {
+                    // Nothing was removed: a later deletion by the user must not be hidden.
+                    let path: PathBuf = local_path.clone().into();
+                    if path.exists() {
+                        self.event_blocker
+                            .unregister_once(&EventKind::Remove(RemoveKind::Any), &path);
+                    }
+                    return Err(e.context("failed to delete local placeholder"));
+                }
 
                 // Trigger sync to restore the remote version at original path
                 let command = MountCommand::Sync {
@@ -848,7 +871,8 @@ impl Mount {
                     continue;
                 }
             };
-            if placeholder_info.is_directory() {
+            // Fylvo: gone again (for example moved to the recycle bin by the sync itself).
+            if !placeholder_info.exists || placeholder_info.is_directory() {
                 continue;
             }
 
@@ -911,8 +935,7 @@ impl Mount {
                 tracing::debug!(target: "drive::commands", path = %path.display(), "Queuing upload task for modified file");
                 let payload = TaskPayload::upload(path.clone());
                 let result = self
-                    .task_queue
-                    .enqueue(payload)
+                    .enqueue_upload(payload)
                     .await
                     .context("Failed to enqueue upload task");
                 if result.is_err() {
@@ -940,12 +963,10 @@ impl Mount {
         );
 
         for (_remote_uri, path) in path_uri_mappings {
-            let payload = TaskPayload::upload(path.clone());
-
-            self.task_queue
-                .enqueue(payload)
-                .await
-                .context("Failed to enqueue upload task")?;
+            // Fylvo: one failing path no longer stops the others.
+            if let Err(e) = self.enqueue_upload(TaskPayload::upload(path.clone())).await {
+                tracing::warn!(target: "drive::commands", path = %path.display(), error = %e, "Failed to enqueue upload task");
+            }
         }
 
         Ok(())
@@ -962,7 +983,7 @@ impl Mount {
     async fn process_fs_delete_events(
         &self,
         path_uri_mappings: HashMap<String, PathBuf>,
-        _sync_path: PathBuf,
+        sync_path: PathBuf,
         _remote_base: String,
     ) -> Result<()> {
         tracing::debug!(
@@ -972,6 +993,56 @@ impl Mount {
             "Processing filesystem delete events"
         );
 
+        // Fylvo: never delete the synced folder itself on the server.
+        let paths: Vec<PathBuf> = path_uri_mappings
+            .into_values()
+            .filter(|path| *path != sync_path)
+            .collect();
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        // Fylvo: a reader cannot delete. Bring the files back right away.
+        if self.is_read_only() {
+            self.refuse_read_only_change(&paths[0]).await;
+            self.command_tx
+                .send(MountCommand::Sync {
+                    local_paths: paths,
+                    mode: SyncMode::PathOnly,
+                    user_initiated: false,
+                })
+                .context("failed to send sync command")?;
+            return Ok(());
+        }
+
+        // Fylvo: many deletions at once wait for the user's answer. Once a deletion is held,
+        // the following ones wait too, so a large deletion cannot pass in small parts.
+        if self.has_server_deletion_held() || self.mass_deletion_count(&paths).is_some() {
+            self.hold_deletion(DeletionSide::Server, paths);
+            return Ok(());
+        }
+
+        self.delete_on_server(paths).await.map(|_| ())
+    }
+
+    /// Delete the given local paths on the server. They go to the server's trash. Returns the
+    /// paths the server did not delete (a re-sync for them is already requested).
+    pub(crate) async fn delete_on_server(&self, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (sync_path, remote_base) = {
+            let config = self.config.read().await;
+            (config.sync_path.clone(), config.remote_path.to_string())
+        };
+        let path_uri_mappings: HashMap<String, PathBuf> = paths
+            .into_iter()
+            .filter_map(|path| {
+                local_path_to_cr_uri(path.clone(), sync_path.clone(), remote_base.clone())
+                    .ok()
+                    .map(|uri| (uri.to_string(), path))
+            })
+            .collect();
         let uris: Vec<String> = path_uri_mappings.keys().cloned().collect();
 
         // cancel related tasks
@@ -1000,7 +1071,8 @@ impl Mount {
             .delete_files(&DeleteFileService {
                 uris: uris.clone(),
                 unlink: None,
-                skip_soft_delete: None,
+                // Fylvo: always into the server's trash, never deleted for good.
+                skip_soft_delete: Some(false),
             })
             .await;
 
@@ -1031,7 +1103,10 @@ impl Mount {
                 .context("Failed to update local inventory after deletions")?;
         }
 
-        Ok(())
+        Ok(path_uri_mappings
+            .into_values()
+            .filter(|path| !successful_paths.contains(path))
+            .collect())
     }
 
     /// Build a mapping from remote URIs to local paths for the given events.

@@ -10,6 +10,19 @@ export interface DriveInfo {
   remote_path: string
   status: DriveStatus;
   capacity?: CapacitySummary;
+  // Fylvo: shared folder the user may only read.
+  read_only: boolean;
+  // Fylvo: mass deletions waiting for the user's answer.
+  held_deletions: HeldDeletion[];
+}
+
+// Fylvo: "server" = deleted on this PC, would be deleted on the server;
+// "local" = deleted on the server, would be deleted on this PC.
+export interface HeldDeletion {
+  side: "server" | "local";
+  count: number;
+  // Fylvo: sent back on confirm, so the answer matches what was shown.
+  version: number;
 }
 
 export type DriveStatus = "active" | "event_push_lost" | "credential_expired";

@@ -234,7 +234,8 @@ mod tests {
         ];
         let matcher = IgnoreMatcher::new(&patterns, sync_root.clone()).unwrap();
 
-        assert_eq!(matcher.len(), 1); // Only *.tmp should be added
+        // Only *.tmp is added, next to the three built-in Office temp patterns.
+        assert_eq!(matcher.len(), 4);
         assert!(matcher.is_match("C:\\Users\\test\\sync\\file.tmp"));
     }
 

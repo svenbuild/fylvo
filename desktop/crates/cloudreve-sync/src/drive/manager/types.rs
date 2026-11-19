@@ -97,6 +97,10 @@ pub struct DriveInfo {
     pub status: DriveInfoStatus,
     /// Capacity summary (None if not available)
     pub capacity: Option<CapacitySummary>,
+    /// Fylvo: the user may only read this drive.
+    pub read_only: bool,
+    /// Fylvo: mass deletions waiting for the user's answer.
+    pub held_deletions: Vec<crate::drive::guard::HeldDeletionInfo>,
 }
 
 /// Drive status for the settings UI

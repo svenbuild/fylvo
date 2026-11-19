@@ -1,6 +1,7 @@
 pub mod callback;
 pub mod commands;
 pub mod event_blocker;
+pub mod guard;
 pub mod ignore;
 pub mod manager;
 pub mod mounts;

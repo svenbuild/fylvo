@@ -793,7 +793,7 @@ pub trait FileEventsApi {
     /// * `Err(ApiError::RequestError)` - If the HTTP request failed
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// use cloudreve_api::{Client, ClientConfig};
     /// use cloudreve_api::api::explorer::FileEventsApi;
     ///

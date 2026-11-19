@@ -300,6 +300,7 @@ pub fn run() {
             commands::get_ignore_patterns,
             commands::set_ignore_patterns,
             commands::get_sync_status,
+            commands::resolve_held_deletion,
             commands::get_status_summary,
             commands::get_drives_info,
             commands::get_file_icon,

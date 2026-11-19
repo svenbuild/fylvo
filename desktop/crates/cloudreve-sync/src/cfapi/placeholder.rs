@@ -605,6 +605,12 @@ impl PlaceholderState {
         }
     }
 
+    /// Fylvo: a state built from flags, for tests of the sync decisions.
+    #[cfg(test)]
+    pub fn from_flags(state: CF_PLACEHOLDER_STATE) -> Self {
+        Self { state }
+    }
+
     // The file or directory whose FileAttributes and ReparseTag examined by the API is a placeholder.
     pub fn is_placeholder(&self) -> bool {
         (self.state & CloudFilters::CF_PLACEHOLDER_STATE_PLACEHOLDER).0 != 0
@@ -1299,6 +1305,19 @@ impl Placeholder {
                     Bound::Unbounded => -1,
                 },
                 CloudFilters::CF_HYDRATE_FLAG_NONE,
+                None,
+            )
+        }
+    }
+
+    /// Fylvo: turn the placeholder back into a normal file. Windows may first fetch missing
+    /// content and fails if it cannot. The handle stays owned by `self` and is closed once,
+    /// when `self` is dropped.
+    pub fn revert(&mut self) -> core::Result<()> {
+        unsafe {
+            CfRevertPlaceholder(
+                self.handle.handle,
+                CloudFilters::CF_REVERT_FLAG_NONE,
                 None,
             )
         }

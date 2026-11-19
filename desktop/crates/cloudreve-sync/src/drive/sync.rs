@@ -5,6 +5,7 @@ use crate::{
         placeholder_file::PlaceholderFile,
     },
     drive::{
+        guard::DeletionSide,
         mounts::Mount,
         placeholder::CrPlaceholder,
         utils::{local_path_to_cr_uri, remote_path_to_local_relative_path},
@@ -423,7 +424,6 @@ impl Mount {
             }
         }
 
-        drop(_sync_guard);
         aggregate_error.into_result()
     }
 
@@ -510,6 +510,7 @@ impl Mount {
             &local_files,
             &inventory_files,
         ).await;
+        let plan = self.hold_mass_local_deletion(plan);
 
         tracing::debug!(
             target: "drive::sync",
@@ -554,9 +555,19 @@ impl Mount {
             (Uuid::parse_str(&config.id)?, config.sync_path.clone())
         };
 
+        // Fylvo: when a step for a path fails (for example the old local copy could not be
+        // moved away), skip the later steps for that path instead of replacing it anyway.
+        let mut failed: HashSet<PathBuf> = HashSet::new();
         for action in actions {
+            if failed.contains(action.path()) {
+                continue;
+            }
+            let errors_before = aggregate_error.entries.len();
             self.process_action(action, &sync_root, &drive_id, aggregate_error)
                 .await;
+            if aggregate_error.entries.len() > errors_before {
+                failed.insert(action.path().clone());
+            }
         }
 
         Ok(())
@@ -618,11 +629,7 @@ impl Mount {
                     "Queueing upload task"
                 );
 
-                if let Err(err) = self
-                    .task_queue
-                    .enqueue(TaskPayload::upload(path.clone()))
-                    .await
-                {
+                if let Err(err) = self.enqueue_upload(TaskPayload::upload(path.clone())).await {
                     tracing::error!(
                         target: "drive::sync",
                         id = %self.id,
@@ -630,7 +637,7 @@ impl Mount {
                         error = ?err,
                         "Failed to enqueue upload task"
                     );
-                    aggregate_error.push(path.clone(), anyhow::Error::from(err));
+                    aggregate_error.push(path.clone(), err);
                 }
             }
             SyncAction::QueueDownload { path, remote:_ } => {
@@ -685,6 +692,10 @@ impl Mount {
                     "Deleting local file/folder and inventory entry"
                 );
 
+                // Fylvo: block the watcher event before it can happen, so the deletion is not
+                // sent back to the server.
+                self.event_blocker
+                    .register_once(&EventKind::Remove(RemoveKind::Any), path.clone());
                 let cr_placeholder =
                     CrPlaceholder::new(path.clone(), sync_root.clone(), drive_id.clone());
                 if let Err(err) = cr_placeholder.delete_placeholder(self.inventory.clone()) {
@@ -695,10 +706,13 @@ impl Mount {
                         error = ?err,
                         "Failed to delete local file/folder and inventory entry"
                     );
+                    // Nothing was removed, so a later deletion by the user must not be hidden.
+                    if path.exists() {
+                        self.event_blocker
+                            .unregister_once(&EventKind::Remove(RemoveKind::Any), path);
+                    }
                     aggregate_error.push(path.clone(), anyhow::Error::from(err));
                 };
-                self.event_blocker
-                    .register_once(&EventKind::Remove(RemoveKind::Any), path.clone());
             }
             SyncAction::CreateRemoteFolderIfExist { path } => {
                 if !path.exists() {
@@ -710,11 +724,7 @@ impl Mount {
                     path = %path.display(),
                     "Creating remote folder"
                 );
-                if let Err(err) = self
-                    .task_queue
-                    .enqueue(TaskPayload::upload(path.clone()))
-                    .await
-                {
+                if let Err(err) = self.enqueue_upload(TaskPayload::upload(path.clone())).await {
                     tracing::error!(
                         target: "drive::sync",
                         id = %self.id,
@@ -722,7 +732,7 @@ impl Mount {
                         error = ?err,
                         "Failed to enqueue upload task"
                     );
-                    aggregate_error.push(path.clone(), anyhow::Error::from(err));
+                    aggregate_error.push(path.clone(), err);
                 }
             }
             SyncAction::RenameLocalWithConflict { original, renamed } => {
@@ -818,6 +828,11 @@ impl Mount {
                 Err(ApiError::ApiError { code, .. })
                     if code == ErrorCode::ParentNotExist as i32 =>
                 {
+                    // Fylvo: the synced folder itself is gone on the server. Do not read
+                    // that as "everything was deleted".
+                    if *parent == sync_root {
+                        anyhow::bail!("the synced folder is missing on the server");
+                    }
                     tracing::debug!(
                         target: "drive::sync",
                         id = %self.id,
@@ -922,6 +937,7 @@ impl Mount {
     ) -> SyncPlan {
         let mut plan = SyncPlan::default();
         let matcher = self.ignore_matcher.read().await;
+        let read_only = self.is_read_only();
 
         for path in paths {
             if matcher.is_match(path) {
@@ -937,260 +953,38 @@ impl Mount {
                 .get(path)
                 .cloned()
                 .unwrap_or_else(LocalFileInfo::missing);
+            // Fylvo: a local deletion waits for the user's answer; do not bring it back yet.
+            if !local_info.exists && self.is_deletion_held(DeletionSide::Server, path) {
+                continue;
+            }
             let remote = remote_files.get(path);
             let inventory = inventory_entries.get(path);
-            self.plan_entry_actions(path, mode, remote, &local_info, inventory, &mut plan);
+            plan_entry_actions(path, mode, remote, &local_info, inventory, read_only, &mut plan);
         }
 
         plan
     }
 
-    fn plan_entry_actions(
-        &self,
-        path: &PathBuf,
-        mode: SyncMode,
-        remote: Option<&FileResponse>,
-        local: &LocalFileInfo,
-        inventory: Option<&FileMetadata>,
-        plan: &mut SyncPlan,
-    ) {
-        match (remote, local.exists) {
-            (Some(remote_entry), true) => self.plan_entry_with_remote_and_local(
-                path,
-                mode,
-                remote_entry,
-                local,
-                inventory,
-                plan,
-            ),
-            (Some(remote_entry), false) => {
-                plan.actions
-                    .push(SyncAction::CreatePlaceholderAndInventory {
-                        path: path.clone(),
-                        remote: remote_entry.clone(),
-                    });
-            }
-            (None, true) => {
-                self.plan_entry_with_local_only(path, mode, local, inventory, plan);
-            }
-            (None, false) => {}
+    /// Fylvo: hold the local deletions of this plan if they are a mass deletion. Returns the
+    /// plan without them in that case.
+    fn hold_mass_local_deletion(&self, plan: SyncPlan) -> SyncPlan {
+        let doomed = doomed_local_paths(&plan);
+        if doomed.is_empty() || self.is_local_deletion_confirmed(&doomed) {
+            return plan;
         }
-    }
-
-    fn plan_entry_with_remote_and_local(
-        &self,
-        path: &PathBuf,
-        mode: SyncMode,
-        remote: &FileResponse,
-        local: &LocalFileInfo,
-        inventory: Option<&FileMetadata>,
-        plan: &mut SyncPlan,
-    ) {
-        let remote_is_dir = remote.file_type == file_type::FOLDER;
-
-        if local.is_directory != remote_is_dir {
-            if local.is_placeholder() && local.partial_on_disk() {
-                plan.actions.push(SyncAction::DeleteLocalAndInventory {
-                    path: path.clone(),
-                    skip_if_not_empty: false,
-                });
-            } else {
-                let conflict_path = generate_conflict_path(path);
-                plan.actions.push(SyncAction::RenameLocalWithConflict {
-                    original: path.clone(),
-                    renamed: conflict_path,
-                });
-            }
-
-            plan.actions
-                .push(SyncAction::CreatePlaceholderAndInventory {
-                    path: path.clone(),
-                    remote: remote.clone(),
-                });
-            return;
-        }
-
-        let remote_etag = remote.primary_entity.as_deref().unwrap_or("");
-        let etag_match = inventory
-            .map(|entry| entry.etag == remote_etag)
-            .unwrap_or(false);
-        let modify_date_match = inventory
-            .and_then(|entry| {
-                remote
-                    .updated_at
-                    .parse::<DateTime<Utc>>()
-                    .ok()
-                    .map(|updated_at| updated_at.timestamp() == entry.updated_at)
-            })
-            .unwrap_or(false);
-
-        if remote_is_dir {
-            if !etag_match || !modify_date_match {
-                plan.actions.push(SyncAction::UpdateInventoryFromRemote {
-                    path: path.clone(),
-                    remote: remote.clone(),
-                    invalidate_all: false,
-                });
-            }
-            self.maybe_enqueue_walk_for_directory(path, mode, local, false, false, plan);
-            return;
-        }
-
-        if !etag_match || !modify_date_match {
-            self.plan_file_actions(path, remote, local, inventory, plan);
-        }
-    }
-
-    fn plan_entry_with_local_only(
-        &self,
-        path: &PathBuf,
-        mode: SyncMode,
-        local: &LocalFileInfo,
-        _inventory: Option<&FileMetadata>,
-        plan: &mut SyncPlan,
-    ) {
-        if !local.exists {
-            return;
-        }
-
-        if local.is_directory {
-            let hydrated = local.is_folder_populated();
-            if !hydrated {
-                plan.actions.push(SyncAction::DeleteLocalAndInventory {
-                    path: path.clone(),
-                    skip_if_not_empty: false,
-                });
-                return;
-            }
-
-            self.maybe_enqueue_walk_for_directory(path, mode, local, true, hydrated, plan);
-            plan.actions.push(SyncAction::DeleteLocalAndInventory {
-                path: path.clone(),
-                skip_if_not_empty: true,
-            });
-            plan.actions
-                .push(SyncAction::CreateRemoteFolderIfExist { path: path.clone() });
-            return;
-        }
-
-        if local.is_placeholder() && local.in_sync() {
-            plan.actions.push(SyncAction::DeleteLocalAndInventory {
-                path: path.clone(),
-                skip_if_not_empty: false,
-            });
-            return;
-        }
-
-        // TODO: search queue if not exist:
-        plan.actions.push(SyncAction::QueueUpload {
-            path: path.clone(),
-            reason: UploadReason::RemoteMissing,
-        });
-    }
-
-    fn plan_file_actions(
-        &self,
-        path: &PathBuf,
-        remote: &FileResponse,
-        local: &LocalFileInfo,
-        inventory: Option<&FileMetadata>,
-        plan: &mut SyncPlan,
-    ) {
-        if !local.is_placeholder() || !local.in_sync() {
-            let conflicting =
-                inventory.is_some_and(|inv| inv.conflict_state == Some(ConflictState::Pending));
-            if !conflicting {
-                plan.actions.push(SyncAction::QueueUpload {
-                    path: path.clone(),
-                    reason: UploadReason::RemoteMismatch,
-                });
-            }
-            return;
-        }
-
-        let pinned = local.pinned();
-        if pinned == PinState::Pinned {
-            plan.actions.push(SyncAction::QueueDownload {
-                path: path.clone(),
-                remote: remote.clone(),
-            });
-        } else {
-            plan.actions.push(SyncAction::UpdateInventoryFromRemote {
-                path: path.clone(),
-                remote: remote.clone(),
-                invalidate_all: !local.partial_on_disk(),
-            });
-        }
-    }
-
-    fn maybe_enqueue_walk_for_directory(
-        &self,
-        path: &PathBuf,
-        parent_mode: SyncMode,
-        local: &LocalFileInfo,
-        force_diff: bool,
-        immediate: bool,
-        plan: &mut SyncPlan,
-    ) {
-        if !local.is_directory {
-            return;
-        }
-
-        let timing = if immediate {
-            WalkTiming::Immediate
-        } else {
-            WalkTiming::Deferred
-        };
-
-        if matches!(
-            parent_mode,
-            SyncMode::FullHierarchy | SyncMode::PathAndFirstLayer
-        ) && (local.is_folder_populated() || !local.is_placeholder())
-        {
-            let mode = next_child_mode(parent_mode);
-            self.insert_walk_request(
-                path.clone(),
-                mode,
-                WalkReason::ModePropagation,
-                timing,
-                plan,
-            );
-            return;
-        }
-
-        if force_diff && parent_mode == SyncMode::PathOnly {
-            self.insert_walk_request(
-                path.clone(),
-                SyncMode::PathOnly,
-                WalkReason::DiffTriggered,
-                timing,
-                plan,
-            );
-        }
-    }
-
-    fn insert_walk_request(
-        &self,
-        path: PathBuf,
-        mode: SyncMode,
-        reason: WalkReason,
-        timing: WalkTiming,
-        plan: &mut SyncPlan,
-    ) {
-        if plan
-            .walk_requests
+        // Paths the user chose to keep stay, without asking again.
+        let (kept, doomed): (Vec<PathBuf>, Vec<PathBuf>) =
+            doomed.into_iter().partition(|p| self.is_kept_locally(p));
+        let plan = without_paths(plan, &kept);
+        // Once a deletion is held, it stays held even if a later pass sees fewer entries.
+        let already_held = doomed
             .iter()
-            .any(|request| request.path == path && request.mode == mode)
-        {
-            return;
+            .any(|p| self.is_deletion_held(DeletionSide::Local, p));
+        if !doomed.is_empty() && (already_held || self.mass_deletion_count(&doomed).is_some()) {
+            self.hold_deletion(DeletionSide::Local, doomed.clone());
+            return without_paths(plan, &doomed);
         }
-
-        plan.walk_requests.push(WalkRequest {
-            path,
-            mode,
-            reason,
-            timing,
-        });
+        plan
     }
 
     async fn process_walk_requests(
@@ -1357,6 +1151,10 @@ impl Mount {
                 Err(ApiError::ApiError { code, .. })
                     if code == ErrorCode::ParentNotExist as i32 =>
                 {
+                    // Fylvo: see fetch_remote_file_infos.
+                    if *directory == sync_root {
+                        anyhow::bail!("the synced folder is missing on the server");
+                    }
                     tracing::debug!(
                         target: "drive::sync",
                         id = %self.id,
@@ -1410,5 +1208,539 @@ impl Mount {
         }
 
         Ok((children, remote_files))
+    }
+}
+
+/// Fylvo: the decisions of a sync pass, kept free of I/O so they can be tested.
+fn plan_entry_actions(
+    path: &PathBuf,
+    mode: SyncMode,
+    remote: Option<&FileResponse>,
+    local: &LocalFileInfo,
+    inventory: Option<&FileMetadata>,
+    read_only: bool,
+    plan: &mut SyncPlan,
+) {
+    match (remote, local.exists) {
+        (Some(remote_entry), true) => plan_entry_with_remote_and_local(
+            path,
+            mode,
+            remote_entry,
+            local,
+            inventory,
+            read_only,
+            plan,
+        ),
+        (Some(remote_entry), false) => {
+            plan.actions
+                .push(SyncAction::CreatePlaceholderAndInventory {
+                    path: path.clone(),
+                    remote: remote_entry.clone(),
+                });
+        }
+        (None, true) => plan_entry_with_local_only(path, mode, local, plan),
+        (None, false) => {}
+    }
+}
+
+fn plan_entry_with_remote_and_local(
+    path: &PathBuf,
+    mode: SyncMode,
+    remote: &FileResponse,
+    local: &LocalFileInfo,
+    inventory: Option<&FileMetadata>,
+    read_only: bool,
+    plan: &mut SyncPlan,
+) {
+    let remote_is_dir = remote.file_type == file_type::FOLDER;
+
+    if local.is_directory != remote_is_dir {
+        // Fylvo: only an unchanged online-only placeholder may simply go; anything else is
+        // kept as a conflict copy.
+        if local.is_placeholder() && local.partial_on_disk() && local.in_sync() {
+            plan.actions.push(SyncAction::DeleteLocalAndInventory {
+                path: path.clone(),
+                skip_if_not_empty: false,
+            });
+        } else {
+            plan.actions.push(SyncAction::RenameLocalWithConflict {
+                original: path.clone(),
+                renamed: generate_conflict_path(path),
+            });
+        }
+
+        plan.actions
+            .push(SyncAction::CreatePlaceholderAndInventory {
+                path: path.clone(),
+                remote: remote.clone(),
+            });
+        return;
+    }
+
+    let remote_etag = remote.primary_entity.as_deref().unwrap_or("");
+    let etag_match = inventory
+        .map(|entry| entry.etag == remote_etag)
+        .unwrap_or(false);
+    let modify_date_match = inventory
+        .and_then(|entry| {
+            remote
+                .updated_at
+                .parse::<DateTime<Utc>>()
+                .ok()
+                .map(|updated_at| updated_at.timestamp() == entry.updated_at)
+        })
+        .unwrap_or(false);
+
+    if remote_is_dir {
+        if !etag_match || !modify_date_match {
+            plan.actions.push(SyncAction::UpdateInventoryFromRemote {
+                path: path.clone(),
+                remote: remote.clone(),
+                invalidate_all: false,
+            });
+        }
+        maybe_enqueue_walk_for_directory(path, mode, local, false, false, plan);
+        return;
+    }
+
+    if !etag_match || !modify_date_match {
+        plan_file_actions(path, remote, local, inventory, read_only, plan);
+    }
+}
+
+fn plan_entry_with_local_only(
+    path: &PathBuf,
+    mode: SyncMode,
+    local: &LocalFileInfo,
+    plan: &mut SyncPlan,
+) {
+    if !local.exists {
+        return;
+    }
+
+    if local.is_directory {
+        // Fylvo: only a placeholder folder that was never opened holds nothing local and can go
+        // as a whole. Before, a normal folder (created here, not uploaded yet) was deleted
+        // with all its files too.
+        if local.is_placeholder() && !local.is_folder_populated() {
+            plan.actions.push(SyncAction::DeleteLocalAndInventory {
+                path: path.clone(),
+                skip_if_not_empty: false,
+            });
+            return;
+        }
+
+        maybe_enqueue_walk_for_directory(path, mode, local, true, true, plan);
+        if local.is_placeholder() {
+            plan.actions.push(SyncAction::DeleteLocalAndInventory {
+                path: path.clone(),
+                skip_if_not_empty: true,
+            });
+        }
+        plan.actions
+            .push(SyncAction::CreateRemoteFolderIfExist { path: path.clone() });
+        return;
+    }
+
+    if local.is_placeholder() && local.in_sync() {
+        plan.actions.push(SyncAction::DeleteLocalAndInventory {
+            path: path.clone(),
+            skip_if_not_empty: false,
+        });
+        return;
+    }
+
+    plan.actions.push(SyncAction::QueueUpload {
+        path: path.clone(),
+        reason: UploadReason::RemoteMissing,
+    });
+}
+
+fn plan_file_actions(
+    path: &PathBuf,
+    remote: &FileResponse,
+    local: &LocalFileInfo,
+    inventory: Option<&FileMetadata>,
+    read_only: bool,
+    plan: &mut SyncPlan,
+) {
+    if !local.is_placeholder() || !local.in_sync() {
+        // Fylvo: in a read-only drive the local change can never be uploaded. Keep it as a
+        // conflict copy and take the server's version, instead of skipping it forever.
+        if read_only {
+            plan.actions.push(SyncAction::RenameLocalWithConflict {
+                original: path.clone(),
+                renamed: generate_conflict_path(path),
+            });
+            plan.actions
+                .push(SyncAction::CreatePlaceholderAndInventory {
+                    path: path.clone(),
+                    remote: remote.clone(),
+                });
+            return;
+        }
+        let conflicting =
+            inventory.is_some_and(|inv| inv.conflict_state == Some(ConflictState::Pending));
+        if !conflicting {
+            plan.actions.push(SyncAction::QueueUpload {
+                path: path.clone(),
+                reason: UploadReason::RemoteMismatch,
+            });
+        }
+        return;
+    }
+
+    let pinned = local.pinned();
+    if pinned == PinState::Pinned {
+        plan.actions.push(SyncAction::QueueDownload {
+            path: path.clone(),
+            remote: remote.clone(),
+        });
+    } else {
+        plan.actions.push(SyncAction::UpdateInventoryFromRemote {
+            path: path.clone(),
+            remote: remote.clone(),
+            invalidate_all: !local.partial_on_disk(),
+        });
+    }
+}
+
+fn maybe_enqueue_walk_for_directory(
+    path: &PathBuf,
+    parent_mode: SyncMode,
+    local: &LocalFileInfo,
+    force_diff: bool,
+    immediate: bool,
+    plan: &mut SyncPlan,
+) {
+    if !local.is_directory {
+        return;
+    }
+
+    let timing = if immediate {
+        WalkTiming::Immediate
+    } else {
+        WalkTiming::Deferred
+    };
+
+    if matches!(
+        parent_mode,
+        SyncMode::FullHierarchy | SyncMode::PathAndFirstLayer
+    ) && (local.is_folder_populated() || !local.is_placeholder())
+    {
+        let mode = next_child_mode(parent_mode);
+        insert_walk_request(path.clone(), mode, WalkReason::ModePropagation, timing, plan);
+        return;
+    }
+
+    if force_diff && parent_mode == SyncMode::PathOnly {
+        insert_walk_request(
+            path.clone(),
+            SyncMode::PathOnly,
+            WalkReason::DiffTriggered,
+            timing,
+            plan,
+        );
+    }
+}
+
+fn insert_walk_request(
+    path: PathBuf,
+    mode: SyncMode,
+    reason: WalkReason,
+    timing: WalkTiming,
+    plan: &mut SyncPlan,
+) {
+    if plan
+        .walk_requests
+        .iter()
+        .any(|request| request.path == path && request.mode == mode)
+    {
+        return;
+    }
+
+    plan.walk_requests.push(WalkRequest {
+        path,
+        mode,
+        reason,
+        timing,
+    });
+}
+
+/// Fylvo: paths this plan deletes on this PC. A deletion that is followed by a new
+/// placeholder at the same path (file became folder or the other way) is a replacement.
+fn doomed_local_paths(plan: &SyncPlan) -> Vec<PathBuf> {
+    plan.actions
+        .iter()
+        .filter_map(|action| match action {
+            SyncAction::DeleteLocalAndInventory { path, .. } => Some(path),
+            _ => None,
+        })
+        .filter(|path| {
+            !plan.actions.iter().any(|action| {
+                matches!(action, SyncAction::CreatePlaceholderAndInventory { path: p, .. } if p == *path)
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+/// Fylvo: the plan without any action or walk for the given paths.
+fn without_paths(plan: SyncPlan, paths: &[PathBuf]) -> SyncPlan {
+    let keep = |path: &PathBuf| !paths.contains(path);
+    SyncPlan {
+        actions: plan
+            .actions
+            .into_iter()
+            .filter(|action| keep(action.path()))
+            .collect(),
+        walk_requests: plan
+            .walk_requests
+            .into_iter()
+            .filter(|walk| keep(&walk.path))
+            .collect(),
+    }
+}
+
+impl SyncAction {
+    fn path(&self) -> &PathBuf {
+        match self {
+            SyncAction::CreatePlaceholderAndInventory { path, .. }
+            | SyncAction::UpdateInventoryFromRemote { path, .. }
+            | SyncAction::QueueUpload { path, .. }
+            | SyncAction::QueueDownload { path, .. }
+            | SyncAction::DeleteLocalAndInventory { path, .. }
+            | SyncAction::CreateRemoteFolderIfExist { path } => path,
+            SyncAction::RenameLocalWithConflict { original, .. } => original,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Fylvo: tests of the sync decisions (no Windows sync root needed).
+    use super::*;
+    use crate::cfapi::placeholder::PlaceholderState;
+    use windows::Win32::Storage::CloudFilters::{
+        CF_PLACEHOLDER_STATE, CF_PLACEHOLDER_STATE_IN_SYNC, CF_PLACEHOLDER_STATE_PARTIALLY_ON_DISK,
+        CF_PLACEHOLDER_STATE_PLACEHOLDER,
+    };
+
+    const UPDATED: &str = "2026-11-19T10:00:00Z";
+
+    fn local(is_directory: bool, state: Option<CF_PLACEHOLDER_STATE>) -> LocalFileInfo {
+        LocalFileInfo {
+            exists: true,
+            is_directory,
+            file_size: Some(10),
+            last_modified: None,
+            placeholder_state: state.map(PlaceholderState::from_flags),
+            pin_state: PinState::Unspecified,
+        }
+    }
+
+    /// A normal file or folder, not a placeholder (created on this PC, not uploaded yet).
+    fn normal(is_directory: bool) -> LocalFileInfo {
+        local(is_directory, None)
+    }
+    /// A synced placeholder whose content is on this PC.
+    fn hydrated_in_sync(is_directory: bool) -> LocalFileInfo {
+        local(
+            is_directory,
+            Some(CF_PLACEHOLDER_STATE_PLACEHOLDER | CF_PLACEHOLDER_STATE_IN_SYNC),
+        )
+    }
+    /// A synced placeholder that is online only (file) or never opened (folder).
+    fn online_only(is_directory: bool) -> LocalFileInfo {
+        local(
+            is_directory,
+            Some(
+                CF_PLACEHOLDER_STATE_PLACEHOLDER
+                    | CF_PLACEHOLDER_STATE_IN_SYNC
+                    | CF_PLACEHOLDER_STATE_PARTIALLY_ON_DISK,
+            ),
+        )
+    }
+    /// A placeholder changed on this PC.
+    fn modified() -> LocalFileInfo {
+        local(false, Some(CF_PLACEHOLDER_STATE_PLACEHOLDER))
+    }
+
+    fn remote(is_folder: bool, etag: &str) -> FileResponse {
+        FileResponse {
+            file_type: if is_folder { file_type::FOLDER } else { file_type::FILE },
+            created_at: UPDATED.to_string(),
+            updated_at: UPDATED.to_string(),
+            primary_entity: Some(etag.to_string()),
+            ..Default::default()
+        }
+    }
+
+    fn inventory(etag: &str) -> FileMetadata {
+        FileMetadata {
+            id: 1,
+            drive_id: Uuid::nil(),
+            is_folder: false,
+            local_path: String::new(),
+            created_at: 0,
+            updated_at: UPDATED.parse::<DateTime<Utc>>().unwrap().timestamp(),
+            etag: etag.to_string(),
+            metadata: HashMap::new(),
+            props: None,
+            permissions: String::new(),
+            shared: false,
+            size: 10,
+            conflict_state: None,
+        }
+    }
+
+    fn plan_one(
+        remote: Option<&FileResponse>,
+        local: &LocalFileInfo,
+        inventory: Option<&FileMetadata>,
+        read_only: bool,
+    ) -> SyncPlan {
+        let mut plan = SyncPlan::default();
+        let path = PathBuf::from(r"C:\S\x");
+        plan_entry_actions(
+            &path,
+            SyncMode::PathOnly,
+            remote,
+            local,
+            inventory,
+            read_only,
+            &mut plan,
+        );
+        plan
+    }
+
+    fn kinds(plan: &SyncPlan) -> Vec<&'static str> {
+        plan.actions
+            .iter()
+            .map(|action| match action {
+                SyncAction::CreatePlaceholderAndInventory { .. } => "create",
+                SyncAction::UpdateInventoryFromRemote { .. } => "update",
+                SyncAction::QueueUpload { .. } => "upload",
+                SyncAction::QueueDownload { .. } => "download",
+                SyncAction::DeleteLocalAndInventory { .. } => "delete",
+                SyncAction::CreateRemoteFolderIfExist { .. } => "create_remote_folder",
+                SyncAction::RenameLocalWithConflict { .. } => "conflict_copy",
+            })
+            .collect()
+    }
+
+    #[test]
+    fn deleted_on_server_synced_file_is_deleted_here() {
+        let plan = plan_one(None, &hydrated_in_sync(false), None, false);
+        assert_eq!(kinds(&plan), ["delete"]);
+    }
+
+    #[test]
+    fn local_only_new_or_changed_file_is_uploaded_never_deleted() {
+        assert_eq!(kinds(&plan_one(None, &normal(false), None, false)), ["upload"]);
+        assert_eq!(kinds(&plan_one(None, &modified(), None, false)), ["upload"]);
+    }
+
+    #[test]
+    fn new_local_folder_is_uploaded_not_deleted() {
+        // Before this fix the folder and all its files were deleted for good.
+        let plan = plan_one(None, &normal(true), None, false);
+        assert_eq!(kinds(&plan), ["create_remote_folder"]);
+        assert_eq!(plan.walk_requests.len(), 1);
+    }
+
+    #[test]
+    fn deleted_on_server_folder() {
+        // Never opened: no local data, removed as a whole.
+        assert_eq!(kinds(&plan_one(None, &online_only(true), None, false)), ["delete"]);
+        // Opened: the content is checked one by one first, the folder goes only when empty.
+        let plan = plan_one(None, &hydrated_in_sync(true), None, false);
+        assert_eq!(kinds(&plan), ["delete", "create_remote_folder"]);
+        assert!(matches!(
+            plan.actions[0],
+            SyncAction::DeleteLocalAndInventory { skip_if_not_empty: true, .. }
+        ));
+    }
+
+    #[test]
+    fn missing_here_but_on_server_comes_back() {
+        // A lost local file is never deleted on the server by a sync pass.
+        let missing = LocalFileInfo::missing();
+        let plan = plan_one(Some(&remote(false, "e1")), &missing, None, false);
+        assert_eq!(kinds(&plan), ["create"]);
+    }
+
+    #[test]
+    fn local_change_is_uploaded_unless_read_only() {
+        let server = remote(false, "e2");
+        let known = inventory("e1");
+        assert_eq!(
+            kinds(&plan_one(Some(&server), &modified(), Some(&known), false)),
+            ["upload"]
+        );
+        // Read-only drive: keep the local change as a copy, take the server's version.
+        assert_eq!(
+            kinds(&plan_one(Some(&server), &modified(), Some(&known), true)),
+            ["conflict_copy", "create"]
+        );
+    }
+
+    #[test]
+    fn server_change_updates_synced_file() {
+        let plan = plan_one(
+            Some(&remote(false, "e2")),
+            &hydrated_in_sync(false),
+            Some(&inventory("e1")),
+            false,
+        );
+        assert_eq!(kinds(&plan), ["update"]);
+    }
+
+    #[test]
+    fn unchanged_file_needs_nothing() {
+        let plan = plan_one(
+            Some(&remote(false, "e1")),
+            &hydrated_in_sync(false),
+            Some(&inventory("e1")),
+            false,
+        );
+        assert!(plan.actions.is_empty());
+    }
+
+    #[test]
+    fn doomed_paths_skip_replacements_and_without_paths_removes_all_steps() {
+        let a = PathBuf::from(r"C:\S\a");
+        let b = PathBuf::from(r"C:\S\b");
+        let mut plan = SyncPlan::default();
+        // a: deleted on the server (folder, with a walk and a re-create step).
+        plan.actions.push(SyncAction::DeleteLocalAndInventory {
+            path: a.clone(),
+            skip_if_not_empty: true,
+        });
+        plan.actions
+            .push(SyncAction::CreateRemoteFolderIfExist { path: a.clone() });
+        insert_walk_request(
+            a.clone(),
+            SyncMode::PathOnly,
+            WalkReason::DiffTriggered,
+            WalkTiming::Immediate,
+            &mut plan,
+        );
+        // b: replaced (file became folder on the server), no deletion.
+        plan.actions.push(SyncAction::DeleteLocalAndInventory {
+            path: b.clone(),
+            skip_if_not_empty: false,
+        });
+        plan.actions.push(SyncAction::CreatePlaceholderAndInventory {
+            path: b.clone(),
+            remote: remote(true, ""),
+        });
+
+        let doomed = doomed_local_paths(&plan);
+        assert_eq!(doomed, vec![a.clone()]);
+
+        let held = without_paths(plan, &doomed);
+        assert!(held.actions.iter().all(|action| action.path() == &b));
+        assert!(held.walk_requests.is_empty());
     }
 }
