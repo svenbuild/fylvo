@@ -493,7 +493,7 @@ var DefaultSettings = map[string]string{
 	"pwa_display":                                "standalone",
 	"pwa_theme_color":                            "#000000",
 	"pwa_background_color":                       "#ffffff",
-	"register_enabled":                           `1`,
+	"register_enabled":                           `0`, // Fylvo: closed, see service/user/fylvo_registration.go
 	"default_group":                              `2`,
 	"fromName":                                   `Fylvo`,
 	"mail_keepalive":                             `30`,

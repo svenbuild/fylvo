@@ -379,9 +379,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 		{
 			// 用户注册 Done
 			user.POST("",
-				middleware.IsFunctionEnabled(func(c *gin.Context) bool {
-					return dep.SettingProvider().RegisterEnabled(c)
-				}),
+				middleware.IsFunctionEnabled(func(c *gin.Context) bool { return usersvc.RegistrationOpen(c) }),
 				middleware.CaptchaRequired(func(c *gin.Context) bool {
 					return dep.SettingProvider().RegCaptchaEnabled(c)
 				}),
