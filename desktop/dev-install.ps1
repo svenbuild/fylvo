@@ -102,6 +102,12 @@ if (-not (Test-Path $BinaryPath)) {
 
 # Copy package files and binary to the dev package directory
 Write-Host "`nCopying package files and binary to $PackageDir..." -ForegroundColor Green
+# Windows registers a package version from one folder only.
+$Existing = Get-AppxPackage Fylvo.Desktop
+if ($Existing -and $Existing.InstallLocation -ne $PackageDir) {
+    Write-Error "Fylvo Desktop is registered from $($Existing.InstallLocation). Remove it first: Get-AppxPackage Fylvo.Desktop | Remove-AppxPackage"
+    exit 1
+}
 Get-Process fylvo-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
 if (Test-Path $PackageDir) {
     Remove-Item $PackageDir -Recurse -Force

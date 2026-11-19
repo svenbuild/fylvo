@@ -136,3 +136,15 @@ func TestConsentRequestCannotSetInternalDenial(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`{"deny":true}`), &service))
 	require.False(t, service.Deny)
 }
+
+func TestFylvoDesktopConsentRequiresPKCE(t *testing.T) {
+	redirect := inventory.OAuthClientFylvoDesktopRedirectURI
+	client := &oauthTestClient{app: &ent.OAuthClient{RedirectUris: []string{redirect}}}
+	kv := &oauthTestCache{}
+	s := GrantService{ClientID: inventory.OAuthClientFylvoDesktopGUID, RedirectURI: redirect, State: "state", Scope: "openid"}
+	response, err := s.Get(oauthTestContext(client, kv))
+	require.ErrorContains(t, err, "PKCE code challenge required")
+	require.Nil(t, response)
+	require.Zero(t, client.grants)
+	require.Zero(t, kv.writes)
+}

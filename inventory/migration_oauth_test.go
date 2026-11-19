@@ -7,6 +7,7 @@ import (
 
 	"github.com/cloudreve/Cloudreve/v4/ent/enttest"
 	"github.com/cloudreve/Cloudreve/v4/ent/oauthclient"
+	"github.com/cloudreve/Cloudreve/v4/ent/schema"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/stretchr/testify/require"
 )
@@ -75,4 +76,24 @@ func TestEnsureFylvoDesktopOAuthClient(t *testing.T) {
 	preserved, err := client.OAuthClient.Get(ctx, fylvo.ID)
 	require.NoError(t, err)
 	require.False(t, preserved.IsEnabled)
+}
+
+func TestEnsureFylvoDesktopOAuthClientKeepsSoftDeletedRow(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "fylvo-deleted.db"))
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	logger := logging.NewConsoleLogger(logging.LevelError)
+
+	require.NoError(t, ensureOAuthClientFylvoDesktop(logger, client, ctx))
+	_, err := client.OAuthClient.Delete().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).Exec(ctx)
+	require.NoError(t, err)
+	visible, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, visible)
+	kept, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).Count(schema.SkipSoftDelete(ctx))
+	require.NoError(t, err)
+	require.Equal(t, 1, kept, "the delete must be a soft delete for this test to mean anything")
+
+	// A soft-deleted row still holds the GUID; starting again must not fail on the unique index.
+	require.NoError(t, ensureOAuthClientFylvoDesktop(logger, client, ctx))
 }

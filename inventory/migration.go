@@ -13,6 +13,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/group"
 	"github.com/cloudreve/Cloudreve/v4/ent/node"
 	"github.com/cloudreve/Cloudreve/v4/ent/oauthclient"
+	"github.com/cloudreve/Cloudreve/v4/ent/schema"
 	"github.com/cloudreve/Cloudreve/v4/ent/setting"
 	"github.com/cloudreve/Cloudreve/v4/ent/storagepolicy"
 	"github.com/cloudreve/Cloudreve/v4/inventory/debug"
@@ -356,12 +357,17 @@ func migrateOAuthClientDesktop(l logging.Logger, client *ent.Client, ctx context
 
 // ensureOAuthClientFylvoDesktop creates the Fylvo Desktop client if it is missing. It runs on
 // every start, because the schema migration only runs when the version changes and existing
-// Fylvo installations keep their version. Administrator changes to the client are kept.
+// Fylvo installations keep their version. Administrator changes to the client are kept, and a
+// soft-deleted row counts as present (its GUID is still taken by the unique index).
 func ensureOAuthClientFylvoDesktop(l logging.Logger, client *ent.Client, ctx context.Context) error {
-	if _, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).First(ctx); err == nil {
-		return nil
-	} else if !ent.IsNotFound(err) {
+	exists := func() (bool, error) {
+		n, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).Count(schema.SkipSoftDelete(ctx))
+		return n > 0, err
+	}
+	if found, err := exists(); err != nil {
 		return fmt.Errorf("failed to query Fylvo Desktop OAuth client: %w", err)
+	} else if found {
+		return nil
 	}
 
 	l.Info("Creating OAuth client for Fylvo Desktop (GUID=%s)...", OAuthClientFylvoDesktopGUID)
@@ -374,6 +380,10 @@ func ensureOAuthClientFylvoDesktop(l logging.Logger, client *ent.Client, ctx con
 		SetProps(&types.OAuthClientProps{Icon: "/static/img/fylvo.svg", RefreshTokenTTL: 7776000}).
 		SetIsEnabled(true).
 		Save(ctx); err != nil {
+		// Another server on the same database may have created it in the meantime.
+		if found, _ := exists(); found {
+			return nil
+		}
 		return fmt.Errorf("failed to create Fylvo Desktop OAuth client: %w", err)
 	}
 

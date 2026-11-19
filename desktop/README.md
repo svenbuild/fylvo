@@ -27,6 +27,10 @@ GUID in `ui/src/utils/constants.ts`, created by the server on start). Its redire
 Store app keeps the built-in Cloudreve client with `/callback/desktop` and `cloudreve://`, so both
 apps can be signed in to the same server at the same time.
 
+Refresh tokens are bound to the client that issued them. Drives added with the Store app keep
+working only as long as the Cloudreve client stays enabled and its grant is not revoked under
+"Connected apps". Move to Fylvo Desktop first, then disable that client in the admin panel.
+
 ## Requirements
 
 - Windows 10 1903 or later

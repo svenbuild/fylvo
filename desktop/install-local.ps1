@@ -47,6 +47,21 @@ function Test-FylvoFolder([string]$Dir) {
     return $Identity.Name -eq $PackageName -and $Identity.Publisher -eq $Publisher
 }
 
+# Runs $Action, stopping the app before each try. Explorer can start the app again or hold a
+# file open for a moment, so it is tried up to 10 times. Returns false if every try failed.
+function Invoke-WithAppStopped([scriptblock]$Action) {
+    for ($Try = 1; $Try -le 10; $Try++) {
+        Get-Process fylvo-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
+        try {
+            & $Action
+            return $true
+        } catch {
+            Start-Sleep -Seconds 1
+        }
+    }
+    return $false
+}
+
 $DevMode = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" -ErrorAction SilentlyContinue
 if ($DevMode.AllowDevelopmentWithoutDevLicense -ne 1) {
     Write-Error "Developer Mode is off. Turn it on in Settings > System > For developers, then run this script again."
@@ -71,15 +86,24 @@ $InstallDir = $InstallDir.TrimEnd('\', '/')
 $NewDir = "$InstallDir.new"
 $OldDir = "$InstallDir.old"
 
-# A backup in .old means a previous run did not finish. Whatever is in the install folder
-# then may be a half installed new version, so the backup is put back first. It is never
-# deleted before a new registration has succeeded.
+# A backup in .old means a previous run did not finish: a finished run renames it away before
+# deleting it. Whatever is in the install folder then may be a half installed new version, so
+# the backup is put back first. It is never deleted before a new registration has succeeded.
 if ((Test-Path -LiteralPath $OldDir) -and (Test-FylvoFolder $OldDir)) {
-    Get-Process fylvo-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
-    if (Test-Path -LiteralPath $InstallDir) {
-        Remove-Item -LiteralPath $InstallDir -Recurse -Force
+    if ((Test-Path -LiteralPath $InstallDir) -and -not (Test-FylvoFolder $InstallDir)) {
+        Write-Error "$OldDir holds the previous version, but $InstallDir is not a Fylvo Desktop install. Check $InstallDir, remove it by hand, then run this script again."
+        exit 1
     }
-    Rename-Item -LiteralPath $OldDir -NewName (Split-Path $InstallDir -Leaf)
+    $Restored = Invoke-WithAppStopped {
+        if (Test-Path -LiteralPath $InstallDir) {
+            Remove-Item -LiteralPath $InstallDir -Recurse -Force
+        }
+        Rename-Item -LiteralPath $OldDir -NewName (Split-Path $InstallDir -Leaf)
+    }
+    if (-not $Restored) {
+        Write-Error "Could not put the previous version back from $OldDir, a file is still in use. Close Explorer windows of the sync folder and try again."
+        exit 1
+    }
     Write-Host "Restored the previous version from $OldDir." -ForegroundColor Yellow
 }
 
@@ -120,18 +144,10 @@ try {
     Remove-Item -LiteralPath $Zip -Force -ErrorAction SilentlyContinue
 }
 
-# 2. Stop the app and move the current version to .old. Explorer can start the app again
-#    or hold a file open for a moment, so the rename is retried.
-$Swapped = $false
-for ($Try = 1; $Try -le 10 -and -not $Swapped; $Try++) {
-    Get-Process fylvo-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
-    try {
-        if (Test-Path -LiteralPath $InstallDir) {
-            Rename-Item -LiteralPath $InstallDir -NewName (Split-Path $OldDir -Leaf)
-        }
-        $Swapped = $true
-    } catch {
-        Start-Sleep -Seconds 1
+# 2. Stop the app and move the current version to .old.
+$Swapped = Invoke-WithAppStopped {
+    if (Test-Path -LiteralPath $InstallDir) {
+        Rename-Item -LiteralPath $InstallDir -NewName (Split-Path $OldDir -Leaf)
     }
 }
 if (-not $Swapped) {
@@ -163,10 +179,17 @@ try {
     throw $InstallError
 }
 
+# 4. Retire the backup: rename it first, so a leftover .old always means an unfinished run.
 if (Test-Path -LiteralPath $OldDir) {
-    Remove-Item -LiteralPath $OldDir -Recurse -Force -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath $OldDir) {
-        Write-Warning "Could not fully remove $OldDir. Delete it by hand before the next update."
+    $TrashDir = "$InstallDir.trash-$(Get-Date -Format yyyyMMddHHmmss)"
+    try {
+        Rename-Item -LiteralPath $OldDir -NewName (Split-Path $TrashDir -Leaf)
+        Remove-Item -LiteralPath $TrashDir -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $TrashDir) {
+            Write-Warning "Could not fully remove $TrashDir. It is not needed any more; delete it by hand."
+        }
+    } catch {
+        Write-Warning "Could not retire $OldDir. Delete it by hand, otherwise the next run puts this older version back before installing."
     }
 }
 
