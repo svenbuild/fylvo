@@ -19,7 +19,8 @@ func TestBuiltinCLIOAuthMigration(t *testing.T) {
 	logger := logging.NewConsoleLogger(logging.LevelError)
 
 	require.NoError(t, migrateOAuthClient(logger, client, ctx))
-	desktop, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientDesktopGUID)).Only(ctx)
+	require.NoError(t, ensureOAuthClientFylvoDesktop(logger, client, ctx))
+	desktop, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).Only(ctx)
 	require.NoError(t, err)
 	cli, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientCLIGUID)).Only(ctx)
 	require.NoError(t, err)
@@ -27,7 +28,7 @@ func TestBuiltinCLIOAuthMigration(t *testing.T) {
 	require.Equal(t, OAuthClientCLISecret, cli.Secret)
 	require.Equal(t, []string{"http://127.0.0.1/callback"}, cli.RedirectUris)
 	require.Equal(t, desktop.Scopes, cli.Scopes)
-	require.Equal(t, desktop.Props, cli.Props)
+	require.Equal(t, desktop.Props.RefreshTokenTTL, cli.Props.RefreshTokenTTL)
 	require.Equal(t, int64(7776000), cli.Props.RefreshTokenTTL)
 	require.True(t, cli.IsEnabled)
 
@@ -50,7 +51,6 @@ func TestEnsureFylvoDesktopOAuthClient(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, client.Close()) })
 	logger := logging.NewConsoleLogger(logging.LevelError)
 
-	// An existing installation already has the Cloudreve desktop client.
 	require.NoError(t, migrateOAuthClient(logger, client, ctx))
 	require.NoError(t, ensureOAuthClientFylvoDesktop(logger, client, ctx))
 
@@ -60,11 +60,6 @@ func TestEnsureFylvoDesktopOAuthClient(t *testing.T) {
 	require.Equal(t, "/static/img/fylvo.svg", fylvo.Props.Icon)
 	require.True(t, fylvo.IsEnabled)
 
-	// The Store app client stays as it is.
-	desktop, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientDesktopGUID)).Only(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"/callback/desktop"}, desktop.RedirectUris)
-	require.Equal(t, desktop.Scopes, fylvo.Scopes)
 
 	// Running again keeps administrator changes and creates no duplicate.
 	_, err = client.OAuthClient.UpdateOne(fylvo).SetIsEnabled(false).Save(ctx)
@@ -96,4 +91,35 @@ func TestEnsureFylvoDesktopOAuthClientKeepsSoftDeletedRow(t *testing.T) {
 
 	// A soft-deleted row still holds the GUID; starting again must not fail on the unique index.
 	require.NoError(t, ensureOAuthClientFylvoDesktop(logger, client, ctx))
+}
+
+func TestRemoveCloudreveDesktopOAuthClient(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "cloudreve-desktop.db"))
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	logger := logging.NewConsoleLogger(logging.LevelError)
+
+	// New installations never get the client.
+	require.NoError(t, migrateOAuthClient(logger, client, ctx))
+	count, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientCloudreveDesktopGUID)).Count(schema.SkipSoftDelete(ctx))
+	require.NoError(t, err)
+	require.Zero(t, count)
+
+	// Existing installations have it from the upstream migration; it is removed on start.
+	_, err = client.OAuthClient.Create().
+		SetGUID(OAuthClientCloudreveDesktopGUID).
+		SetSecret("upstream").
+		SetName("application:oauth.desktop").
+		SetRedirectUris([]string{"/callback/desktop"}).
+		SetScopes([]string{"openid"}).
+		SetIsEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, removeOAuthClientCloudreveDesktop(logger, client, ctx))
+	count, err = client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientCloudreveDesktopGUID)).Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, count)
+
+	// Running again is a no-op.
+	require.NoError(t, removeOAuthClientCloudreveDesktop(logger, client, ctx))
 }

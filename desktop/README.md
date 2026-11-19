@@ -4,8 +4,9 @@ Windows sync client for Fylvo. It is a fork of the official
 [Cloudreve Desktop](https://github.com/cloudreve/desktop) client (MIT License, see `LICENSE`),
 built with Tauri and React, and uses the Windows Cloud Files API (placeholders, files on demand).
 
-Fylvo Desktop can be installed next to the Cloudreve app from the Microsoft Store. The two do not
-share anything:
+Fylvo Desktop is independent of the Cloudreve app from the Microsoft Store and shares nothing
+with it, even if both are installed on the same PC. A Fylvo server does not accept the Cloudreve
+app (see below).
 
 | | Cloudreve (Store) | Fylvo Desktop |
 | --- | --- | --- |
@@ -22,14 +23,11 @@ no telemetry, no crash reports).
 ## Sign-in and the web app
 
 Fylvo Desktop signs in with its own OAuth client on the Fylvo server ("Fylvo Desktop",
-GUID in `ui/src/utils/constants.ts`, created by the server on start). Its redirect page
-`/callback/fylvo-desktop` in the web app hands the result to `fylvo://mount?...`. The Cloudreve
-Store app keeps the built-in Cloudreve client with `/callback/desktop` and `cloudreve://`, so both
-apps can be signed in to the same server at the same time.
+GUID in `ui/src/utils/constants.ts`, created by the server on start, PKCE required). Its redirect
+page `/callback/fylvo-desktop` in the web app hands the result to `fylvo://mount?...`.
 
-Refresh tokens are bound to the client that issued them. Drives added with the Store app keep
-working only as long as the Cloudreve client stays enabled and its grant is not revoked under
-"Connected apps". Move to Fylvo Desktop first, then disable that client in the admin panel.
+The server has no client for the Cloudreve desktop app and removes the one an upstream
+installation created. That app can neither sign in nor refresh its tokens against a Fylvo server.
 
 ## Requirements
 

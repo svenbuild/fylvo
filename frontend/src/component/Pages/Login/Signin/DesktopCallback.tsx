@@ -1,18 +1,14 @@
 import { Box } from "@mui/material";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  DesktopScheme,
-  setDesktopMountSetupDialog,
-  setHeadlessFrameLoading,
-} from "../../../../redux/globalStateSlice.ts";
+import { setDesktopMountSetupDialog, setHeadlessFrameLoading } from "../../../../redux/globalStateSlice.ts";
 import { useAppDispatch } from "../../../../redux/hooks.ts";
 import { openDesktopCallback } from "../../../../redux/thunks/session.ts";
 import { useQuery } from "../../../../util/index.ts";
 
-// Landing page after the OAuth consent of a desktop app. It hands the code back to the app
-// through its deep link scheme.
-const DesktopCallback = ({ scheme }: { scheme: DesktopScheme }) => {
+// Landing page after the OAuth consent of Fylvo Desktop. It hands the code back to the app
+// through its fylvo:// deep link.
+const DesktopCallback = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const query = useQuery();
@@ -24,9 +20,9 @@ const DesktopCallback = ({ scheme }: { scheme: DesktopScheme }) => {
     navigate("/home");
     if (code) {
       if (state && state.startsWith("reauthorize:")) {
-        dispatch(openDesktopCallback(scheme, code, state));
+        dispatch(openDesktopCallback(code, state));
       } else {
-        dispatch(setDesktopMountSetupDialog({ open: true, state: { code, state: state ?? "", scheme } }));
+        dispatch(setDesktopMountSetupDialog({ open: true, state: { code, state: state ?? "" } }));
       }
     }
   }, []);

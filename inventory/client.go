@@ -43,6 +43,9 @@ func InitializeDBClient(l logging.Logger,
 	if err := ensureOAuthClientFylvoDesktop(l, client, ctx); err != nil {
 		return nil, err
 	}
+	if err := removeOAuthClientCloudreveDesktop(l, client, ctx); err != nil {
+		return nil, err
+	}
 
 	//createMockData(client, ctx)
 	return client, nil

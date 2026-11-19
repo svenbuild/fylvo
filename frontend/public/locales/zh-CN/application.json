@@ -63,7 +63,6 @@
     "appRequestsAccess": "{{appName}} 正在请求访问你的账号",
     "consentDescription": "你正在授权 <0>{{appName}}</0> 访问账号 <1>{{userEmail}}</1> 下的信息：",
     "deny": "取消",
-    "desktop": "Cloudreve Desktop (Microsoft Store)",
     "fylvoDesktop": "Fylvo Desktop",
     "scope": {
       "readonly": "只读",

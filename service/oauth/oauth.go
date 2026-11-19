@@ -176,7 +176,11 @@ func (s *ExchangeTokenService) Exchange(c *gin.Context) (*TokenResponse, error) 
 		return nil, serializer.NewError(serializer.CodeCredentialInvalid, "Redirect URI mismatch", nil)
 	}
 
-	// 3. Verify PKCE, rejecting a verifier when the grant omitted its challenge.
+	// 3. Verify PKCE, rejecting a verifier when the grant omitted its challenge and a missing
+	// verifier when it has one.
+	if authCode.CodeChallenge != "" && s.CodeVerifier == "" {
+		return nil, serializer.NewError(serializer.CodeCredentialInvalid, "Invalid code verifier", nil)
+	}
 	if authCode.CodeChallenge != "" || s.CodeVerifier != "" {
 		verifierHash := sha256.Sum256([]byte(s.CodeVerifier))
 		expectedChallenge := base64.RawURLEncoding.EncodeToString(verifierHash[:])

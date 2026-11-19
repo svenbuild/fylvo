@@ -104,6 +104,8 @@ func TestTokenExchangeBindsProvidedRedirectAndRejectsPKCEDowngrade(t *testing.T)
 	verifier := "verifier"
 	hash := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(hash[:])
+	emptyHash := sha256.Sum256(nil)
+	emptyChallenge := base64.RawURLEncoding.EncodeToString(emptyHash[:])
 	for _, test := range []struct {
 		name                string
 		redirect            *string
@@ -116,6 +118,7 @@ func TestTokenExchangeBindsProvidedRedirectAndRejectsPKCEDowngrade(t *testing.T)
 		{"empty provided redirect", &empty, "", "", false},
 		{"PKCE downgrade", &uri, "", verifier, false},
 		{"missing verifier", &uri, challenge, "", false},
+		{"missing verifier for the challenge of an empty string", &uri, emptyChallenge, "", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			client := &oauthTestClient{}

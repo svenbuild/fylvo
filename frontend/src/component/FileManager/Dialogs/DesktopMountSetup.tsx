@@ -45,7 +45,7 @@ const DesktopMountSetup = () => {
       return;
     }
 
-    dispatch(openDesktopCallback(callbackState.scheme, callbackState.code, callbackState.state, displayName, path));
+    dispatch(openDesktopCallback(callbackState.code, callbackState.state, displayName, path));
   }, [callbackState, path, displayName, dispatch]);
 
   return (

@@ -61,12 +61,8 @@ export const router = createBrowserRouter([
         element: <HeadlessFrame />,
         children: [
           {
-            path: "desktop",
-            element: <DesktopCallback scheme="cloudreve" />,
-          },
-          {
             path: "fylvo-desktop",
-            element: <DesktopCallback scheme="fylvo" />,
+            element: <DesktopCallback />,
           },
           {
             path: "ios",

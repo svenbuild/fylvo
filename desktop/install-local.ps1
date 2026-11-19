@@ -37,13 +37,18 @@ $ErrorActionPreference = "Stop"
 $PackageName = "Fylvo.Desktop"
 $Publisher = "CN=Fylvo"
 
-# Returns true if the folder holds a Fylvo Desktop package.
+# Returns true if the folder holds a Fylvo Desktop package. A missing, unreadable or broken
+# manifest counts as "not Fylvo", so such a folder is kept rather than deleted.
 function Test-FylvoFolder([string]$Dir) {
     $Manifest = Join-Path $Dir "AppxManifest.xml"
     if (-not (Test-Path -LiteralPath $Manifest)) {
         return $false
     }
-    $Identity = ([xml](Get-Content -LiteralPath $Manifest -Raw)).Package.Identity
+    try {
+        $Identity = ([xml](Get-Content -LiteralPath $Manifest -Raw)).Package.Identity
+    } catch {
+        return $false
+    }
     return $Identity.Name -eq $PackageName -and $Identity.Publisher -eq $Publisher
 }
 
@@ -51,8 +56,8 @@ function Test-FylvoFolder([string]$Dir) {
 # file open for a moment, so it is tried up to 10 times. Returns false if every try failed.
 function Invoke-WithAppStopped([scriptblock]$Action) {
     for ($Try = 1; $Try -le 10; $Try++) {
-        Get-Process fylvo-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
         try {
+            Get-Process fylvo-desktop -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             & $Action
             return $true
         } catch {
@@ -93,6 +98,10 @@ function Move-Aside([string]$Dir) {
     return $Aside
 }
 
+# Marker file in a moved-aside folder that may be deleted. It is removed last, so a later run
+# can finish a deletion that was cut short.
+$DeleteMarker = ".fylvo-delete"
+
 # Deletes a folder that was moved aside, but only if it is a Fylvo folder. Anything else is
 # kept with a warning, so files that are not ours are never deleted.
 function Remove-Aside([string]$Aside, [bool]$WasFylvo) {
@@ -100,10 +109,26 @@ function Remove-Aside([string]$Aside, [bool]$WasFylvo) {
         Write-Warning "$Aside was moved out of the way and kept because it is not a Fylvo Desktop folder. Check it and delete it by hand."
         return
     }
-    Remove-Item -LiteralPath $Aside -Recurse -Force -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath $Aside) {
-        Write-Warning "Could not fully remove $Aside. It is not needed any more; delete it by hand."
+    $Marker = Join-Path $Aside $DeleteMarker
+    try {
+        if (-not (Test-Path -LiteralPath $Marker)) {
+            New-Item -ItemType File -Path $Marker | Out-Null
+        }
+        Get-ChildItem -LiteralPath $Aside -Force | Where-Object { $_.Name -ne $DeleteMarker } |
+            Remove-Item -Recurse -Force
+        Remove-Item -LiteralPath $Aside -Recurse -Force
+    } catch {
+        Write-Warning "Could not fully remove $Aside yet. The next run tries again."
     }
+}
+
+# Finish deletions that an earlier run started but could not complete.
+$AsidePattern = "$(Split-Path $InstallDir -Leaf).trash-*"
+$AsideParent = Split-Path $InstallDir -Parent
+if (Test-Path -LiteralPath $AsideParent) {
+    Get-ChildItem -LiteralPath $AsideParent -Directory -Filter $AsidePattern |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName $DeleteMarker) } |
+        ForEach-Object { Remove-Aside $_.FullName $true }
 }
 
 # A backup in .old means a previous run did not finish: a finished run moves it aside before

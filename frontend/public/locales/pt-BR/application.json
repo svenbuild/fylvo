@@ -63,7 +63,6 @@
     "appRequestsAccess": "{{appName}} está solicitando acesso à sua conta",
     "consentDescription": "Você está autorizando <0>{{appName}}</0> a acessar informações da conta <1>{{userEmail}}</1>:",
     "deny": "Cancelar",
-    "desktop": "Cloudreve Desktop (Microsoft Store)",
     "fylvoDesktop": "Fylvo Desktop",
     "scope": {
       "readonly": "Somente leitura",

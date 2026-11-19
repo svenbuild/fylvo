@@ -278,10 +278,10 @@ func migrateMasterNode(l logging.Logger, client *ent.Client, ctx context.Context
 }
 
 const (
-	OAuthClientDesktopGUID        = "393a1839-f52e-498e-9972-e77cc2241eee"
-	OAuthClientDesktopSecret      = "8GaQIu3lOSdqYoDHi9cR8IZ4pvuMH8ya"
-	OAuthClientDesktopName        = "application:oauth.desktop"
-	OAuthClientDesktopRedirectURI = "/callback/desktop"
+	// Fylvo: the client of the Cloudreve desktop app (Microsoft Store). Fylvo does not support
+	// that app; the client is removed from existing installations on start.
+	OAuthClientCloudreveDesktopGUID = "393a1839-f52e-498e-9972-e77cc2241eee"
+
 	OAuthClientCLIGUID            = "6326d2af-2fef-4a99-94da-1ee8ef0ca53f"
 	OAuthClientCLISecret          = "yoFiNgbxvSCzK2Nm92T3TNaREh4qBjq4"
 	OAuthClientCLIName            = "Cloudreve CLI"
@@ -291,8 +291,7 @@ const (
 	OAuthClientiOSName            = "application:setting.iOSApp"
 	OAuthClientiOSRedirectURI     = "/callback/ios"
 
-	// Fylvo Desktop has its own client so the web app can send it back to fylvo:// while
-	// the Cloudreve Store app keeps using the client above and cloudreve://.
+	// Fylvo Desktop signs in with its own client; the web app sends it back to fylvo://.
 	OAuthClientFylvoDesktopGUID        = "512cd652-c028-4332-992e-d88a4406e5b2"
 	OAuthClientFylvoDesktopSecret      = "ZO3QjjTTSLiRjaw8ixyryEdJmTnmhtCj"
 	OAuthClientFylvoDesktopName        = "application:oauth.fylvoDesktop"
@@ -300,10 +299,6 @@ const (
 )
 
 func migrateOAuthClient(l logging.Logger, client *ent.Client, ctx context.Context) error {
-	if err := migrateOAuthClientDesktop(l, client, ctx); err != nil {
-		return err
-	}
-
 	if err := migrateOAuthClientiOS(l, client, ctx); err != nil {
 		return err
 	}
@@ -335,24 +330,17 @@ func migrateOAuthClientiOS(l logging.Logger, client *ent.Client, ctx context.Con
 	return nil
 }
 
-func migrateOAuthClientDesktop(l logging.Logger, client *ent.Client, ctx context.Context) error {
-	if _, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientDesktopGUID)).First(ctx); err == nil {
-		l.Info("Default OAuth client (GUID=%s) already exists, skip migrating.", OAuthClientDesktopGUID)
-		return nil
+// removeOAuthClientCloudreveDesktop deletes the client of the Cloudreve desktop app (Microsoft
+// Store) if an installation still has it. Its grants stop working with it: the app can neither
+// sign in nor refresh its tokens any more. Runs on every start, like the Fylvo client ensure.
+func removeOAuthClientCloudreveDesktop(l logging.Logger, client *ent.Client, ctx context.Context) error {
+	n, err := client.OAuthClient.Delete().Where(oauthclient.GUID(OAuthClientCloudreveDesktopGUID)).Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to remove Cloudreve desktop OAuth client: %w", err)
 	}
-
-	if _, err := client.OAuthClient.Create().
-		SetGUID(OAuthClientDesktopGUID).
-		SetSecret(OAuthClientDesktopSecret).
-		SetName(OAuthClientDesktopName).
-		SetRedirectUris([]string{OAuthClientDesktopRedirectURI}).
-		SetScopes([]string{"profile", "email", "openid", "offline_access", "UserInfo.Write", "Workflow.Write", "Files.Write", "Shares.Write"}).
-		SetProps(&types.OAuthClientProps{Icon: "/static/img/cloudreve.svg", RefreshTokenTTL: 7776000}).
-		SetIsEnabled(true).
-		Save(ctx); err != nil {
-		return fmt.Errorf("failed to create default OAuth client: %w", err)
+	if n > 0 {
+		l.Info("Removed the OAuth client of the Cloudreve desktop app (GUID=%s).", OAuthClientCloudreveDesktopGUID)
 	}
-
 	return nil
 }
 
@@ -386,9 +374,12 @@ func ensureOAuthClientFylvoDesktop(l logging.Logger, client *ent.Client, ctx con
 		Save(ctx); err != nil {
 		// Another server on the same database may be creating it right now; give its
 		// transaction a moment to commit.
-		for try := 0; try < 5; try++ {
+		for try := 0; ; try++ {
 			if found, _ := exists(); found {
 				return nil
+			}
+			if try == 5 {
+				break
 			}
 			time.Sleep(200 * time.Millisecond)
 		}
