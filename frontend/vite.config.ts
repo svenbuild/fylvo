@@ -58,6 +58,11 @@ export default defineConfig({
     //   hosts: ["devv5.cloudreve.org"],
     // }),
   ],
+  resolve: {
+    // Fylvo: timeago-react brings its own older timeago.js. With two copies, the languages that
+    // src/util/datetime.ts registers never reach timeago-react and relative times stay English.
+    dedupe: ["timeago.js"],
+  },
   define: {
     __ASSETS_VERSION__: JSON.stringify(process.env.npm_package_version),
     // Fylvo: changes with every build, so browsers drop translations cached from an older build.
