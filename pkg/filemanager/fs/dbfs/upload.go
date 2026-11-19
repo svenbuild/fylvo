@@ -439,6 +439,11 @@ func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID 
 		if err == nil {
 			release()
 			ctx = fs.LockSessionToContext(ctx, ls)
+			// Fylvo: the lock of the upload guards the placeholder until it is removed below.
+			// Make sure it does not run out on the way.
+			if _, err := f.ls.Refresh(time.Now(), time.Minute, session.LockToken); err != nil {
+				f.l.Warning("Failed to refresh the lock of upload %q: %s", sessionID, err)
+			}
 		}
 	}
 

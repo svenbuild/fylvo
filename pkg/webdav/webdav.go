@@ -400,12 +400,13 @@ func handleUnlock(c *gin.Context, user *ent.User, fm manager.FileManager) (retSt
 	}
 
 	// Fylvo: the lock must lie on the requested path or below it, and the user must still
-	// be allowed to change it. The token alone would release a lock wherever it lies.
+	// be allowed to change it (UnlockAt checks that). The token alone would release a lock
+	// wherever it lies.
 	locked, lockedUri, err := fm.SharedAddressTranslation(c, reqPath)
 	if err != nil && !ent.IsNotFound(err) {
 		return purposeStatusCodeFromError(err), err
 	}
-	if locked == nil || !can(locked, dbfs.NavigatorCapabilityRenameFile) {
+	if locked == nil {
 		return http.StatusForbidden, fs.ErrOwnerOnly
 	}
 
@@ -755,8 +756,10 @@ func performCopyMove(
 ) (int, error) {
 	// Fylvo: refuse what the file system will not do before anything at the destination
 	// is removed. Without this, a refused move or copy would still delete the file it was
-	// to replace.
-	if !dbfs.CanMoveOrCopyTo(srcUri, dstFolderUri, isCopy) || srcUri.PathTrimmed() == "" ||
+	// to replace. A copy between the own files and a shared folder (through a shortcut)
+	// is left to the web app: its rights are only checked after the destination is gone.
+	if !dbfs.CanMoveOrCopyTo(srcUri, dstFolderUri, isCopy) || !dbfs.CanMoveOrCopyTo(srcUri, dstFolderUri, false) ||
+		srcUri.PathTrimmed() == "" ||
 		dstFolderUri.EqualOrIsDescendantOf(srcUri, "") {
 		return http.StatusForbidden, fs.ErrNotSupportedAction
 	}

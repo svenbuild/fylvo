@@ -930,7 +930,12 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 			// check capacity for each file
 			sizeTotal := int64(0)
 			for _, file := range targets {
-				sizeTotal += file.SizeUsed()
+				// Fylvo: a copy for another owner takes the current version only (see Copy).
+				if file.OwnerID() == destination.OwnerID() {
+					sizeTotal += file.SizeUsed()
+				} else {
+					sizeTotal += file.Size()
+				}
 				if foreignDestination && file.IsSymbolic() {
 					return fs.ErrOwnerOnly.WithError(fmt.Errorf("a shortcut is not copied into the files of somebody else"))
 				}
