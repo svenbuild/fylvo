@@ -8,6 +8,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/user"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
+	"github.com/cloudreve/Cloudreve/v4/pkg/attempts"
 	"github.com/cloudreve/Cloudreve/v4/pkg/auth"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster/routes"
 	"github.com/cloudreve/Cloudreve/v4/pkg/email"
@@ -125,13 +126,21 @@ func (service *UserLoginService) Login(c *gin.Context) (*ent.User, string, error
 	dep := dependency.FromContext(c)
 	userClient := dep.UserClient()
 
+	// Fylvo: limit wrong passwords per account and client address.
+	attemptKey := attempts.Key(c, attempts.KindLogin, service.UserName)
+	if err := attempts.Default.Check(attemptKey); err != nil {
+		return nil, "", err
+	}
+
 	ctx := context.WithValue(c, inventory.LoadUserGroup{}, true)
 	expectedUser, err := userClient.GetByEmail(ctx, service.UserName)
 
 	// 一系列校验
-	if err != nil {
-		err = serializer.NewError(serializer.CodeInvalidPassword, "Incorrect password or email address", err)
-	} else if checkErr := inventory.CheckPassword(expectedUser, service.Password); checkErr != nil {
+	right := err == nil && inventory.CheckPassword(expectedUser, service.Password) == nil
+	if limitErr := attempts.Default.Done(attemptKey, right); limitErr != nil {
+		return nil, "", limitErr
+	}
+	if !right {
 		err = serializer.NewError(serializer.CodeInvalidPassword, "Incorrect password or email address", err)
 	} else if expectedUser.Status == user.StatusManualBanned || expectedUser.Status == user.StatusSysBanned {
 		err = serializer.NewError(serializer.CodeUserBaned, "This account has been blocked", nil)
@@ -233,7 +242,16 @@ func (service *OtpValidationService) Verify2FA(c *gin.Context) (*ent.User, error
 	}
 
 	if expectedUser.TwoFactorSecret != "" {
-		if !totp.Validate(service.OTP, expectedUser.TwoFactorSecret) {
+		// Fylvo: limit wrong codes per account and client address.
+		attemptKey := attempts.Key(c, attempts.KindTwoFA, fmt.Sprint(uid))
+		if err := attempts.Default.Check(attemptKey); err != nil {
+			return nil, err
+		}
+		right := totp.Validate(service.OTP, expectedUser.TwoFactorSecret)
+		if err := attempts.Default.Done(attemptKey, right); err != nil {
+			return nil, err
+		}
+		if !right {
 			err := serializer.NewError(serializer.Code2FACodeErr, "Incorrect 2FA code", nil)
 			return nil, err
 		}

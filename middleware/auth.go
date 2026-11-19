@@ -3,11 +3,13 @@ package middleware
 import (
 	"crypto/subtle"
 	"net/http"
+	"strconv"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/attempts"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/oss"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
@@ -117,10 +119,26 @@ func WebDAVAuth() gin.HandlerFunc {
 			return
 		}
 
+		// Fylvo: limit wrong passwords per account and client address.
+		attemptKey := attempts.Key(c, attempts.KindWebDAV, username)
+		if err := attempts.Default.Check(attemptKey); err != nil {
+			webDAVTooManyAttempts(c)
+			return
+		}
+
 		dep := dependency.FromContext(c)
 		l := dep.Logger()
 		userClient := dep.UserClient()
 		expectedUser, err := userClient.GetActiveByDavAccount(c, username, password)
+		var accounts []*ent.DavAccount
+		if err == nil {
+			accounts, err = expectedUser.Edges.DavAccountsOrErr()
+		}
+		if limitErr := attempts.Default.Done(attemptKey, err == nil && len(accounts) > 0); limitErr != nil {
+			webDAVTooManyAttempts(c)
+			return
+		}
+
 		if err != nil {
 			if username == "" {
 				if u, err := userClient.GetByEmail(c, username); err == nil {
@@ -136,8 +154,7 @@ func WebDAVAuth() gin.HandlerFunc {
 		}
 
 		// Validate dav account
-		accounts, err := expectedUser.Edges.DavAccountsOrErr()
-		if err != nil || len(accounts) == 0 {
+		if len(accounts) == 0 {
 			l.Debug("WebDAVAuth: failed to get user dav accounts %q with provided credential: %s", username, err)
 			c.Status(http.StatusUnauthorized)
 			c.Abort()
@@ -173,6 +190,14 @@ func WebDAVAuth() gin.HandlerFunc {
 		SetUserCtxByUser(c, expectedUser)
 		c.Next()
 	}
+}
+
+// webDAVTooManyAttempts answers a WebDAV request whose account is blocked by the limit on
+// wrong passwords (Fylvo).
+func webDAVTooManyAttempts(c *gin.Context) {
+	c.Header("Retry-After", strconv.Itoa(int(attempts.Window.Seconds())))
+	c.Status(http.StatusTooManyRequests)
+	c.Abort()
 }
 
 // 对上传会话进行验证

@@ -2,12 +2,14 @@ package share
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/attempts"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster/routes"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
@@ -87,9 +89,13 @@ func (s *ShareInfoService) Get(c *gin.Context) (*explorer.Share, error) {
 	}
 
 	unlocked := true
-	// Share requires password
-	if share.Password != "" && s.Password != share.Password && share.Edges.User.ID != u.ID {
-		unlocked = false
+	// Share requires password (Fylvo: under the limit on wrong guesses)
+	if share.Password != "" && share.Edges.User.ID != u.ID {
+		right, err := attempts.CheckSecret(c, attempts.KindShare, strconv.Itoa(share.ID), s.Password, share.Password)
+		if err != nil {
+			return nil, err
+		}
+		unlocked = right
 	}
 
 	base := dep.SettingProvider().SiteURL(c)
