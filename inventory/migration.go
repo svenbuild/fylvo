@@ -191,6 +191,7 @@ func migrateUserGroup(l logging.Logger, client *ent.Client, ctx context.Context)
 		types.GroupPermissionShare:            true,
 		types.GroupPermissionShareDownload:    true,
 		types.GroupPermissionRedirectedSource: true,
+		types.GroupPermissionWebDAV:           true, // Fylvo: both users mount Fylvo as a drive
 	}, permissions)
 	if _, err := client.Group.Create().
 		SetName("User").
