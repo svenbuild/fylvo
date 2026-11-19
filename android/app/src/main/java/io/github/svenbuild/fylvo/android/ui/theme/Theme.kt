@@ -99,5 +99,5 @@ fun FylvoTheme(content: @Composable () -> Unit) {
             }
         }
     }
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme, typography = FylvoTypography, content = content)
 }
