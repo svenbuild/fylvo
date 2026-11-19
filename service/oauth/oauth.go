@@ -84,6 +84,12 @@ func (s *GrantService) Get(c *gin.Context) (*GrantResponse, error) {
 		return nil, serializer.NewError(serializer.CodeParamErr, "Invalid redirect URI", nil)
 	}
 
+	// Fylvo Desktop always sends PKCE, so a code for it is never issued without a challenge.
+	// Its client secret ships inside the app and protects nothing on its own.
+	if app.GUID == inventory.OAuthClientFylvoDesktopGUID && s.CodeChallenge == "" {
+		return nil, serializer.NewError(serializer.CodeParamErr, "PKCE code challenge required", nil)
+	}
+
 	if s.Deny {
 		return &GrantResponse{Error: "access_denied", State: s.State}, nil
 	}
@@ -170,7 +176,11 @@ func (s *ExchangeTokenService) Exchange(c *gin.Context) (*TokenResponse, error) 
 		return nil, serializer.NewError(serializer.CodeCredentialInvalid, "Redirect URI mismatch", nil)
 	}
 
-	// 3. Verify PKCE, rejecting a verifier when the grant omitted its challenge.
+	// 3. Verify PKCE, rejecting a verifier when the grant omitted its challenge and a missing
+	// verifier when it has one.
+	if authCode.CodeChallenge != "" && s.CodeVerifier == "" {
+		return nil, serializer.NewError(serializer.CodeCredentialInvalid, "Invalid code verifier", nil)
+	}
 	if authCode.CodeChallenge != "" || s.CodeVerifier != "" {
 		verifierHash := sha256.Sum256([]byte(s.CodeVerifier))
 		expectedChallenge := base64.RawURLEncoding.EncodeToString(verifierHash[:])

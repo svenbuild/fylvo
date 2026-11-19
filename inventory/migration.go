@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/cloudreve/Cloudreve/v4/application/constants"
@@ -13,6 +14,8 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/group"
 	"github.com/cloudreve/Cloudreve/v4/ent/node"
 	"github.com/cloudreve/Cloudreve/v4/ent/oauthclient"
+	"github.com/cloudreve/Cloudreve/v4/ent/oauthgrant"
+	"github.com/cloudreve/Cloudreve/v4/ent/schema"
 	"github.com/cloudreve/Cloudreve/v4/ent/setting"
 	"github.com/cloudreve/Cloudreve/v4/ent/storagepolicy"
 	"github.com/cloudreve/Cloudreve/v4/inventory/debug"
@@ -276,29 +279,39 @@ func migrateMasterNode(l logging.Logger, client *ent.Client, ctx context.Context
 }
 
 const (
-	OAuthClientDesktopGUID        = "393a1839-f52e-498e-9972-e77cc2241eee"
-	OAuthClientDesktopSecret      = "8GaQIu3lOSdqYoDHi9cR8IZ4pvuMH8ya"
-	OAuthClientDesktopName        = "application:oauth.desktop"
-	OAuthClientDesktopRedirectURI = "/callback/desktop"
-	OAuthClientCLIGUID            = "6326d2af-2fef-4a99-94da-1ee8ef0ca53f"
-	OAuthClientCLISecret          = "yoFiNgbxvSCzK2Nm92T3TNaREh4qBjq4"
-	OAuthClientCLIName            = "Cloudreve CLI"
-	OAuthClientCLIRedirectURI     = "http://127.0.0.1/callback"
-	OAuthClientiOSGUID            = "220db97a-44a3-44f7-99b6-d767262b4daa"
-	OAuthClientiOSSecret          = "1kxOW4IyVOkPlsKCnTwzfHyP8XrbpfaF"
-	OAuthClientiOSName            = "application:setting.iOSApp"
-	OAuthClientiOSRedirectURI     = "/callback/ios"
+	// Fylvo: clients of the Cloudreve desktop app (Microsoft Store) and the Cloudreve iOS app.
+	// Fylvo does not support these apps; the clients are removed from existing installations
+	// on start (see removeRetiredOAuthClients).
+	OAuthClientCloudreveDesktopGUID = "393a1839-f52e-498e-9972-e77cc2241eee"
+	OAuthClientCloudreveiOSGUID     = "220db97a-44a3-44f7-99b6-d767262b4daa"
+
+	OAuthClientCLIGUID        = "6326d2af-2fef-4a99-94da-1ee8ef0ca53f"
+	OAuthClientCLISecret      = "yoFiNgbxvSCzK2Nm92T3TNaREh4qBjq4"
+	OAuthClientCLIName        = "Cloudreve CLI"
+	OAuthClientCLIRedirectURI = "http://127.0.0.1/callback"
+
+	// Fylvo Desktop signs in with its own client; the web app sends it back to fylvo://.
+	OAuthClientFylvoDesktopGUID        = "512cd652-c028-4332-992e-d88a4406e5b2"
+	OAuthClientFylvoDesktopSecret      = "ZO3QjjTTSLiRjaw8ixyryEdJmTnmhtCj"
+	OAuthClientFylvoDesktopName        = "application:oauth.fylvoDesktop"
+	OAuthClientFylvoDesktopRedirectURI = "/callback/fylvo-desktop"
 )
 
+// RetiredOAuthClientGUIDs are the clients of Cloudreve apps that Fylvo does not support.
+var RetiredOAuthClientGUIDs = []string{OAuthClientCloudreveDesktopGUID, OAuthClientCloudreveiOSGUID}
+
+// IsRetiredOAuthClient reports whether a client ID belongs to a Cloudreve app that Fylvo does
+// not support. Tokens issued to such a client are refused.
+func IsRetiredOAuthClient(clientID string) bool {
+	for _, guid := range RetiredOAuthClientGUIDs {
+		if strings.EqualFold(strings.TrimSpace(clientID), guid) {
+			return true
+		}
+	}
+	return false
+}
+
 func migrateOAuthClient(l logging.Logger, client *ent.Client, ctx context.Context) error {
-	if err := migrateOAuthClientDesktop(l, client, ctx); err != nil {
-		return err
-	}
-
-	if err := migrateOAuthClientiOS(l, client, ctx); err != nil {
-		return err
-	}
-
 	if err := migrateOAuthClientCLI(l, client, ctx); err != nil {
 		return err
 	}
@@ -306,42 +319,94 @@ func migrateOAuthClient(l logging.Logger, client *ent.Client, ctx context.Contex
 	return nil
 }
 
-func migrateOAuthClientiOS(l logging.Logger, client *ent.Client, ctx context.Context) error {
-	if _, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientiOSGUID)).First(ctx); err == nil {
-		l.Info("Default OAuth client (GUID=%s) already exists, skip migrating.", OAuthClientiOSGUID)
-		return nil
+// removeRetiredOAuthClients deletes the clients of Cloudreve apps that Fylvo does not support
+// (RetiredOAuthClientGUIDs) and the users' grants for them, if an installation still has them.
+// Those apps can then neither sign in nor refresh their tokens, and no empty entry stays under
+// "connected apps". Runs on every start, like the Fylvo client ensure, and also cleans up
+// grants a deleted client left behind.
+func removeRetiredOAuthClients(l logging.Logger, client *ent.Client, ctx context.Context) error {
+	// There are only a few OAuth clients; matching in Go catches IDs stored in another case or
+	// with surrounding spaces, whatever the database collation does.
+	all, err := client.OAuthClient.Query().All(schema.SkipSoftDelete(ctx))
+	if err != nil {
+		return fmt.Errorf("failed to list OAuth clients: %w", err)
 	}
-	if _, err := client.OAuthClient.Create().
-		SetGUID(OAuthClientiOSGUID).
-		SetSecret(OAuthClientiOSSecret).
-		SetName(OAuthClientiOSName).
-		SetRedirectUris([]string{OAuthClientiOSRedirectURI}).
-		SetScopes([]string{"profile", "email", "openid", "offline_access", "UserInfo.Write", "UserSecurityInfo.Write", "Workflow.Write", "Files.Write", "Shares.Write", "Finance.Write", "DavAccount.Write"}).
-		SetProps(&types.OAuthClientProps{Icon: "/static/img/cloudreve_ios.svg", RefreshTokenTTL: 7776000}).
-		SetIsEnabled(true).
-		Save(ctx); err != nil {
-		return fmt.Errorf("failed to create default OAuth client: %w", err)
+	for _, old := range all {
+		if IsRetiredOAuthClient(old.GUID) {
+			if err := removeOAuthClient(l, client, ctx, old); err != nil {
+				return err
+			}
+		}
 	}
-
 	return nil
 }
 
-func migrateOAuthClientDesktop(l logging.Logger, client *ent.Client, ctx context.Context) error {
-	if _, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientDesktopGUID)).First(ctx); err == nil {
-		l.Info("Default OAuth client (GUID=%s) already exists, skip migrating.", OAuthClientDesktopGUID)
+func removeOAuthClient(l logging.Logger, client *ent.Client, ctx context.Context, old *ent.OAuthClient) error {
+	guid := old.GUID
+
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	grants, err := tx.OAuthGrant.Delete().Where(oauthgrant.ClientID(old.ID)).Exec(ctx)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("failed to remove grants of OAuth client %s: %w", guid, err)
+	}
+	clients, err := tx.OAuthClient.Delete().Where(oauthclient.ID(old.ID)).Exec(ctx)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("failed to remove OAuth client %s: %w", guid, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to remove OAuth client %s: %w", guid, err)
+	}
+	if grants > 0 || clients > 0 {
+		l.Info("Removed the OAuth client of an unsupported Cloudreve app (GUID=%s) and %d grant(s).", guid, grants)
+	}
+	return nil
+}
+
+// ensureOAuthClientFylvoDesktop creates the Fylvo Desktop client if it is missing. It runs on
+// every start, because the schema migration only runs when the version changes and existing
+// Fylvo installations keep their version. Administrator changes to the client are kept, and a
+// soft-deleted row counts as present (its GUID is still taken by the unique index).
+func ensureOAuthClientFylvoDesktop(l logging.Logger, client *ent.Client, ctx context.Context) error {
+	exists := func() (bool, error) {
+		n, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).Count(schema.SkipSoftDelete(ctx))
+		return n > 0, err
+	}
+	if found, err := exists(); err != nil {
+		return fmt.Errorf("failed to query Fylvo Desktop OAuth client: %w", err)
+	} else if found {
+		if n, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).Count(ctx); err == nil && n == 0 {
+			l.Warning("The Fylvo Desktop OAuth client (GUID=%s) is deleted; Fylvo Desktop cannot sign in.", OAuthClientFylvoDesktopGUID)
+		}
 		return nil
 	}
 
+	l.Info("Creating OAuth client for Fylvo Desktop (GUID=%s)...", OAuthClientFylvoDesktopGUID)
 	if _, err := client.OAuthClient.Create().
-		SetGUID(OAuthClientDesktopGUID).
-		SetSecret(OAuthClientDesktopSecret).
-		SetName(OAuthClientDesktopName).
-		SetRedirectUris([]string{OAuthClientDesktopRedirectURI}).
+		SetGUID(OAuthClientFylvoDesktopGUID).
+		SetSecret(OAuthClientFylvoDesktopSecret).
+		SetName(OAuthClientFylvoDesktopName).
+		SetRedirectUris([]string{OAuthClientFylvoDesktopRedirectURI}).
 		SetScopes([]string{"profile", "email", "openid", "offline_access", "UserInfo.Write", "Workflow.Write", "Files.Write", "Shares.Write"}).
-		SetProps(&types.OAuthClientProps{Icon: "/static/img/cloudreve.svg", RefreshTokenTTL: 7776000}).
+		SetProps(&types.OAuthClientProps{Icon: "/static/img/fylvo.svg", RefreshTokenTTL: 7776000}).
 		SetIsEnabled(true).
 		Save(ctx); err != nil {
-		return fmt.Errorf("failed to create default OAuth client: %w", err)
+		// Another server on the same database may be creating it right now; give its
+		// transaction a moment to commit.
+		for try := 0; ; try++ {
+			if found, _ := exists(); found {
+				return nil
+			}
+			if try == 5 {
+				break
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		return fmt.Errorf("failed to create Fylvo Desktop OAuth client: %w", err)
 	}
 
 	return nil

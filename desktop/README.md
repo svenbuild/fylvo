@@ -4,8 +4,9 @@ Windows sync client for Fylvo. It is a fork of the official
 [Cloudreve Desktop](https://github.com/cloudreve/desktop) client (MIT License, see `LICENSE`),
 built with Tauri and React, and uses the Windows Cloud Files API (placeholders, files on demand).
 
-Fylvo Desktop can be installed next to the Cloudreve app from the Microsoft Store. The two do not
-share anything:
+Fylvo Desktop is independent of the Cloudreve app from the Microsoft Store and shares nothing
+with it, even if both are installed on the same PC. A Fylvo server does not accept the Cloudreve
+app (see below).
 
 | | Cloudreve (Store) | Fylvo Desktop |
 | --- | --- | --- |
@@ -21,10 +22,14 @@ no telemetry, no crash reports).
 
 ## Sign-in and the web app
 
-The app signs in with the server's built-in desktop OAuth client (`/callback/desktop`). The web
-app then opens a deep link to hand the result to the desktop app. Fylvo Desktop marks its OAuth
-`state` with the prefix `fylvo:` (`reauthorize:fylvo:` when signing in again), so the web app can
-open `fylvo://mount?...` for it and keep `cloudreve://mount?...` for the Store app.
+Fylvo Desktop signs in with its own OAuth client on the Fylvo server ("Fylvo Desktop",
+GUID in `ui/src/utils/constants.ts`, created by the server on start, PKCE required). Its redirect
+page `/callback/fylvo-desktop` in the web app hands the result to `fylvo://mount?...`.
+
+The server has no client for the Cloudreve desktop app and removes the one an upstream
+installation created. That app can neither sign in nor refresh its tokens against a Fylvo server.
+Builds of Fylvo Desktop from before this change used that client too: update the app, then use
+"Reauthorize" on drives added with such a build.
 
 ## Requirements
 
@@ -62,7 +67,7 @@ Without a certificate the package is registered in Developer Mode
 
 It unpacks `dist\Fylvo.x64.msix` to `%LOCALAPPDATA%\Programs\FylvoDesktop` and registers it from
 there. Run it again after a new build to update. `dev-install.ps1` registers the same package
-from `package/`; before switching between the two, remove the package (see below).
+from `target/dev-package`; before switching between the two, remove the package (see below).
 
 Remove it again with:
 
@@ -78,11 +83,11 @@ the signing certificate. The certificate must be trusted on the PC.
 
 ```powershell
 cargo tauri dev        # UI with hot reload (no package identity, shell features off)
-.\dev-install.ps1      # build and register the package folder (needs Developer Mode)
+.\dev-install.ps1      # build and register a copy of package/ (needs Developer Mode)
 ```
 
-`dev-install.ps1` writes the version and architecture into `package/AppxManifest.xml`; do not
-commit that change.
+`dev-install.ps1` registers a copy of `package/` in `target/dev-package`; the files in `package/`
+stay unchanged.
 
 ## Project structure
 

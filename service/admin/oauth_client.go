@@ -12,8 +12,7 @@ import (
 
 // System OAuth client GUIDs that cannot be deleted
 var systemOAuthClientGUIDs = []string{
-	inventory.OAuthClientDesktopGUID,
-	inventory.OAuthClientiOSGUID,
+	inventory.OAuthClientFylvoDesktopGUID,
 }
 
 type (
@@ -134,6 +133,9 @@ func (s *UpsertOAuthClientService) Create(c *gin.Context) (*GetOAuthClientRespon
 	if s.Client.ID > 0 {
 		return nil, serializer.NewError(serializer.CodeParamErr, "ID must be 0 for creating new OAuth client", nil)
 	}
+	if inventory.IsRetiredOAuthClient(s.Client.GUID) {
+		return nil, serializer.NewError(serializer.CodeParamErr, "This client ID belongs to an unsupported Cloudreve app", nil)
+	}
 
 	client, err := oauthClient.Create(c, s.Client.toEnt())
 	if err != nil {
@@ -161,6 +163,9 @@ func (s *UpsertOAuthClientService) Update(c *gin.Context) (*GetOAuthClientRespon
 	// System clients cannot change GUID
 	if lo.Contains(systemOAuthClientGUIDs, existing.GUID) {
 		s.Client.GUID = existing.GUID
+	}
+	if inventory.IsRetiredOAuthClient(s.Client.GUID) {
+		return nil, serializer.NewError(serializer.CodeParamErr, "This client ID belongs to an unsupported Cloudreve app", nil)
 	}
 
 	_, err = oauthClient.Update(c, s.Client.toEnt())

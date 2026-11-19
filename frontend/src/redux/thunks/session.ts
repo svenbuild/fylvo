@@ -96,7 +96,8 @@ export function openDesktopCallback(code: string, state: string, displayName?: s
     }
 
     const search = new URLSearchParams(params);
-    window.location.href = `cloudreve://mount?${search.toString()}`;
+    // Fylvo Desktop registers the fylvo:// deep link.
+    window.location.href = `fylvo://mount?${search.toString()}`;
     dispatch(closeDesktopMountSetupDialog());
     enqueueSnackbar({
       message: i18next.t("fileManager.continueInDesktop"),

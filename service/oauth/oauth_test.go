@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
@@ -103,6 +104,8 @@ func TestTokenExchangeBindsProvidedRedirectAndRejectsPKCEDowngrade(t *testing.T)
 	verifier := "verifier"
 	hash := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(hash[:])
+	emptyHash := sha256.Sum256(nil)
+	emptyChallenge := base64.RawURLEncoding.EncodeToString(emptyHash[:])
 	for _, test := range []struct {
 		name                string
 		redirect            *string
@@ -115,6 +118,7 @@ func TestTokenExchangeBindsProvidedRedirectAndRejectsPKCEDowngrade(t *testing.T)
 		{"empty provided redirect", &empty, "", "", false},
 		{"PKCE downgrade", &uri, "", verifier, false},
 		{"missing verifier", &uri, challenge, "", false},
+		{"missing verifier for the challenge of an empty string", &uri, emptyChallenge, "", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			client := &oauthTestClient{}
@@ -135,4 +139,19 @@ func TestConsentRequestCannotSetInternalDenial(t *testing.T) {
 	var service GrantService
 	require.NoError(t, json.Unmarshal([]byte(`{"deny":true}`), &service))
 	require.False(t, service.Deny)
+}
+
+func TestFylvoDesktopConsentRequiresPKCE(t *testing.T) {
+	redirect := inventory.OAuthClientFylvoDesktopRedirectURI
+	client := &oauthTestClient{app: &ent.OAuthClient{GUID: inventory.OAuthClientFylvoDesktopGUID, RedirectUris: []string{redirect}}}
+	kv := &oauthTestCache{}
+	// The check uses the stored GUID, so a differently cased client ID cannot skip it.
+	for _, id := range []string{inventory.OAuthClientFylvoDesktopGUID, strings.ToUpper(inventory.OAuthClientFylvoDesktopGUID)} {
+		s := GrantService{ClientID: id, RedirectURI: redirect, State: "state", Scope: "openid"}
+		response, err := s.Get(oauthTestContext(client, kv))
+		require.ErrorContains(t, err, "PKCE code challenge required")
+		require.Nil(t, response)
+	}
+	require.Zero(t, client.grants)
+	require.Zero(t, kv.writes)
 }

@@ -43,10 +43,6 @@ const initialState: SiteConfigSlice = {
     loaded: ConfigLoadState.NotLoaded,
     config: {},
   },
-  app: {
-    loaded: ConfigLoadState.NotLoaded,
-    config: {},
-  },
   thumb: {
     loaded: ConfigLoadState.NotLoaded,
     config: {},

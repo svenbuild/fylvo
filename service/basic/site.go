@@ -61,8 +61,6 @@ type SiteConfig struct {
 	ThumbExts []string `json:"thumb_exts,omitempty"`
 
 	// App settings
-	AppPromotion        bool `json:"app_promotion,omitempty"`
-	DesktopAppPromotion bool `json:"desktop_app_promotion,omitempty"`
 
 	//EmailActive          bool      `json:"emailActive"`
 	//QQLogin              bool      `json:"QQLogin"`
@@ -130,12 +128,6 @@ func (s *GetSettingService) GetSiteConfig(c *gin.Context) (*SiteConfig, error) {
 		return &SiteConfig{
 			EmojiPreset: emojis,
 		}, nil
-	case "app":
-		appSetting := settings.AppSetting(c)
-		return &SiteConfig{
-			AppPromotion:        appSetting.Promotion,
-			DesktopAppPromotion: appSetting.DesktopPromotion,
-		}, nil
 	case "thumb":
 		// Return supported thumbnail extensions from enabled generators.
 		exts := map[string]bool{}
@@ -188,7 +180,6 @@ func (s *GetSettingService) GetSiteConfig(c *gin.Context) (*SiteConfig, error) {
 	logo := settings.Logo(c)
 	reCaptcha := settings.ReCaptcha(c)
 	capCaptcha := settings.CapCaptcha(c)
-	appSetting := settings.AppSetting(c)
 	customNavItems := settings.CustomNavItems(c)
 	customHTML := settings.CustomHTML(c)
 	return &SiteConfig{
@@ -205,7 +196,6 @@ func (s *GetSettingService) GetSiteConfig(c *gin.Context) (*SiteConfig, error) {
 		CapInstanceURL:  capCaptcha.InstanceURL,
 		CapSiteKey:      capCaptcha.SiteKey,
 		CapAssetServer:  capCaptcha.AssetServer,
-		AppPromotion:    appSetting.Promotion,
 		CustomNavItems:  customNavItems,
 		CustomHTML:      customHTML,
 	}, nil

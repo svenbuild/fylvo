@@ -40,6 +40,13 @@ func InitializeDBClient(l logging.Logger,
 		l.Info("Database schema is up to date.")
 	}
 
+	if err := ensureOAuthClientFylvoDesktop(l, client, ctx); err != nil {
+		return nil, err
+	}
+	if err := removeRetiredOAuthClients(l, client, ctx); err != nil {
+		return nil, err
+	}
+
 	//createMockData(client, ctx)
 	return client, nil
 }

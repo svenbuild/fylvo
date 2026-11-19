@@ -104,7 +104,7 @@ React 19 + TypeScript + MUI + Vite application:
 
 - Requires Windows Cloud Files API (`windows` crate with extensive feature flags in Cargo.toml)
 - COM shell extensions for Explorer integration
-- Deep link protocol: `fylvo://` (the Store app keeps `cloudreve://`)
+- Deep link protocol: `fylvo://`; the Fylvo server does not support the Cloudreve Store app
 - Single instance enforcement via `tauri-plugin-single-instance`
 
 ## Database Migrations

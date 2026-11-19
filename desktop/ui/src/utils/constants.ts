@@ -1,6 +1,6 @@
-export const CLIENT_ID = "393a1839-f52e-498e-9972-e77cc2241eee";
+// Fylvo Desktop's own OAuth client on the Fylvo server (inventory/migration.go). Its redirect
+// page in the web app opens fylvo://.
+export const CLIENT_ID = "512cd652-c028-4332-992e-d88a4406e5b2";
 export const SCOPES = "profile email openid offline_access UserInfo.Write Workflow.Write Files.Write Shares.Write";
-export const CALLBACK_PATH = "/callback/desktop";
-export const CLIENT_SECRET = "8GaQIu3lOSdqYoDHi9cR8IZ4pvuMH8ya";
-// Prefix of the OAuth state. The Fylvo web app opens fylvo:// instead of cloudreve:// when it sees it.
-export const FYLVO_STATE_MARKER = "fylvo:";
+export const CALLBACK_PATH = "/callback/fylvo-desktop";
+export const CLIENT_SECRET = "ZO3QjjTTSLiRjaw8ixyryEdJmTnmhtCj";

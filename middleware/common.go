@@ -3,11 +3,9 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
-	"github.com/cloudreve/Cloudreve/v4/application/constants"
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/pkg/auth/requestinfo"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster"
@@ -73,20 +71,6 @@ func StaticResourceCache(dep dependency.Dep) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Cache-Control", fmt.Sprintf("public, max-age=%d", settings.PublicResourceMaxAge(c)))
 
-	}
-}
-
-// MobileRequestOnly
-func MobileRequestOnly() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		dep := dependency.FromContext(c)
-		if c.GetHeader(constants.CrHeaderPrefix+"ios") == "" {
-			c.Redirect(http.StatusMovedPermanently, dep.SettingProvider().SiteURL(c).String())
-			c.Abort()
-			return
-		}
-
-		c.Next()
 	}
 }
 

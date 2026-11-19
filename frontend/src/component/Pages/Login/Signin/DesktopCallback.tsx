@@ -6,6 +6,8 @@ import { useAppDispatch } from "../../../../redux/hooks.ts";
 import { openDesktopCallback } from "../../../../redux/thunks/session.ts";
 import { useQuery } from "../../../../util/index.ts";
 
+// Landing page after the OAuth consent of Fylvo Desktop. It hands the code back to the app
+// through its fylvo:// deep link.
 const DesktopCallback = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();

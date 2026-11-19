@@ -19,7 +19,7 @@ import {
 } from "../utils/siteValidation";
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { CALLBACK_PATH, CLIENT_ID, FYLVO_STATE_MARKER, SCOPES } from "../utils/constants";
+import { CALLBACK_PATH, CLIENT_ID, SCOPES } from "../utils/constants";
 
 type PageState = "url_input" | "waiting" | "final_setup" | "setting_up" | "success";
 
@@ -193,12 +193,10 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
 
       // Generate PKCE pair
       const { codeVerifier, codeChallenge } = await generatePKCEPair();
-      // Add "reauthorize:" prefix to state when in reauthorize mode.
-      // The "fylvo:" marker tells the Fylvo web app to send the result to
-      // fylvo:// (this app) instead of cloudreve:// (the Store app).
+      // Add "reauthorize:" prefix to state when in reauthorize mode
       const stateValue = isReauthorize
-        ? `reauthorize:${FYLVO_STATE_MARKER}${randomCryptoString(32)}`
-        : `${FYLVO_STATE_MARKER}${randomCryptoString(32)}`;
+        ? `reauthorize:${randomCryptoString(32)}`
+        : randomCryptoString(32);
 
       // Store PKCE session data for use after OAuth redirect
       pkceSessionRef.current = {
