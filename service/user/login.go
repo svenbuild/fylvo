@@ -13,6 +13,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster/routes"
 	"github.com/cloudreve/Cloudreve/v4/pkg/email"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
+	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
 	"github.com/gin-gonic/gin"
@@ -80,7 +81,16 @@ type (
 const userResetPrefix = "user_reset_"
 
 // Reset 发送密码重设邮件
+// Fylvo: the answer is the same whether the account exists, is blocked or the mail fails, so
+// that it does not tell whether an account exists. Failures are only logged.
 func (service *UserResetEmailService) Reset(c *gin.Context) error {
+	if err := service.sendReset(c); err != nil {
+		logging.FromContext(c).Warning("Password reset mail for %q not sent: %s", service.UserName, err)
+	}
+	return nil
+}
+
+func (service *UserResetEmailService) sendReset(c *gin.Context) error {
 	dep := dependency.FromContext(c)
 	userClient := dep.UserClient()
 
@@ -132,7 +142,11 @@ func (service *UserLoginService) Login(c *gin.Context) (*ent.User, string, error
 	// Fylvo: limit wrong passwords per account and client address.
 	right, limitErr := attempts.Guard(c, attempts.KindLogin, service.UserName, func() bool {
 		expectedUser, err = userClient.GetByEmail(ctx, service.UserName)
-		return err == nil && inventory.CheckPassword(expectedUser, service.Password) == nil
+		if err != nil {
+			inventory.CheckPasswordWithoutUser(service.Password)
+			return false
+		}
+		return inventory.CheckPassword(expectedUser, service.Password) == nil
 	})
 
 	// 一系列校验
@@ -149,6 +163,15 @@ func (service *UserLoginService) Login(c *gin.Context) (*ent.User, string, error
 
 	if err != nil {
 		return nil, "", err
+	}
+
+	// Fylvo: replace a password stored in an older, fast format with bcrypt.
+	if inventory.PasswordNeedsUpgrade(expectedUser) {
+		if upgraded, upgradeErr := userClient.UpdatePassword(c, expectedUser, service.Password); upgradeErr == nil {
+			expectedUser.Password = upgraded.Password
+		} else {
+			dep.Logger().Warning("Failed to store the password of user %d with bcrypt: %s", expectedUser.ID, upgradeErr)
+		}
 	}
 
 	if expectedUser.TwoFactorSecret != "" {
@@ -265,16 +288,13 @@ type (
 	}
 )
 
+// Prepare Fylvo: answers the same for every address, so that it does not tell whether an
+// account exists or has a passkey. The sign-in page then asks for the password and offers
+// passkeys when they are switched on.
 func (service *PrepareLoginService) Prepare(c *gin.Context) (*PrepareLoginResponse, error) {
 	dep := dependency.FromContext(c)
-	ctx := context.WithValue(c, inventory.LoadUserPasskey{}, true)
-	expectedUser, err := dep.UserClient().GetByEmail(ctx, service.Email)
-	if err != nil {
-		return nil, serializer.NewError(serializer.CodeNotFound, "User not found", err)
-	}
-
 	return &PrepareLoginResponse{
-		WebAuthnEnabled: len(expectedUser.Edges.Passkey) > 0,
-		PasswordEnabled: expectedUser.Password != "",
+		WebAuthnEnabled: dep.SettingProvider().AuthnEnabled(c),
+		PasswordEnabled: true,
 	}, nil
 }

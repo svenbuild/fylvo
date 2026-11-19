@@ -23,7 +23,6 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/user"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
-	"github.com/cloudreve/Cloudreve/v4/pkg/util"
 	"github.com/go-webauthn/webauthn/webauthn"
 )
 
@@ -617,6 +616,11 @@ func IsAnonymousUser(u *ent.User) bool {
 
 // CheckPassword 根据明文校验密码
 func CheckPassword(u *ent.User, password string) error {
+	// Fylvo: passwords are stored with bcrypt, see fylvo_password.go.
+	if isBcrypt(u.Password) {
+		return checkBcrypt(u.Password, password)
+	}
+
 	// 根据存储密码拆分为 Salt 和 Digest
 	passwordStore := strings.Split(u.Password, ":")
 	if len(passwordStore) != 2 && len(passwordStore) != 3 {
@@ -673,19 +677,7 @@ func withUserEagerLoading(ctx context.Context, q *ent.UserQuery) *ent.UserQuery 
 	return q
 }
 
+// digestPassword Fylvo: bcrypt instead of salted SHA-256, see fylvo_password.go.
 func digestPassword(password string) (string, error) {
-	//生成16位 Salt
-	salt := util.RandStringRunesCrypto(32)
-
-	//计算 Salt 和密码组合的SHA1摘要
-	hash := sha256.New()
-	_, err := hash.Write([]byte(password + salt))
-	bs := hex.EncodeToString(hash.Sum(nil))
-
-	if err != nil {
-		return "", err
-	}
-
-	//存储 Salt 值和摘要， ":"分割
-	return salt + ":" + string(bs), nil
+	return bcryptDigest(password)
 }
