@@ -224,7 +224,7 @@ const ShareDialog = () => {
                       endAdornment: (
                         <IconButton
                           onClick={() => copyToClipboard(finalShareLink)}
-                          aria-label={t("common:copyToClipboard")}
+                          aria-label={t("common:copyToClipboard") + ": " + t("modals.shareLink")}
                           size="small"
                           sx={{
                             mr: -0.5,
@@ -241,30 +241,6 @@ const ShareDialog = () => {
                 />
                 {shareLinkPassword.password && (
                   <>
-                    {!includePassword && (
-                      <FilledTextField
-                        variant={"filled"}
-                        inputProps={{ readonly: true }}
-                        label={t("modals.sharePassword")}
-                        fullWidth
-                        value={finalShareLinkPassword ?? ""}
-                        onFocus={(e) => e.target.select()}
-                        slotProps={{
-                          input: {
-                            endAdornment: (
-                              <IconButton
-                                onClick={() => copyToClipboard(finalShareLinkPassword ?? "")}
-                                aria-label={t("common:copyToClipboard")}
-                                size="small"
-                                sx={{ marginRight: -1 }}
-                              >
-                                <CopyOutlined />
-                              </IconButton>
-                            ),
-                          },
-                        }}
-                      />
-                    )}
                     <Tooltip enterDelay={100} title={t("application:modals.includePasswordInShareLinkDes")}>
                       <SmallFormControlLabel
                         sx={{
@@ -286,6 +262,31 @@ const ShareDialog = () => {
                         label={t("application:modals.includePasswordInShareLink")}
                       />
                     </Tooltip>
+                    {/* Below the checkbox, so the dialog only grows downward and the checkbox stays put. */}
+                    {!includePassword && (
+                      <FilledTextField
+                        variant={"filled"}
+                        inputProps={{ readonly: true }}
+                        label={t("modals.sharePassword")}
+                        fullWidth
+                        value={finalShareLinkPassword ?? ""}
+                        onFocus={(e) => e.target.select()}
+                        slotProps={{
+                          input: {
+                            endAdornment: (
+                              <IconButton
+                                onClick={() => copyToClipboard(finalShareLinkPassword ?? "")}
+                                aria-label={t("common:copyToClipboard") + ": " + t("modals.sharePassword")}
+                                size="small"
+                                sx={{ marginRight: -1 }}
+                              >
+                                <CopyOutlined />
+                              </IconButton>
+                            ),
+                          },
+                        }}
+                      />
+                    )}
                   </>
                 )}
               </Stack>

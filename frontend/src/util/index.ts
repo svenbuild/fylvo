@@ -69,7 +69,11 @@ const copyWithTextarea = (text: string) => {
   // Open dialogs and menus keep the focus inside themselves. The field goes next to the focused
   // element, so it is always inside whichever of them is active.
   const focused = document.activeElement as HTMLElement | null;
-  const host = focused && focused != document.body && focused.parentElement ? focused.parentElement : document.body;
+  // A focused container (for example the dialog itself) takes the field inside; a focused control
+  // cannot hold it, so it goes into the control's parent.
+  const isControl = focused?.matches("input, textarea, select, button, img");
+  const host =
+    !focused || focused == document.body ? document.body : isControl ? focused.parentElement ?? document.body : focused;
   host.appendChild(area);
   area.focus();
   area.select();

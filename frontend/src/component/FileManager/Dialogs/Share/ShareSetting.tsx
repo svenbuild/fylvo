@@ -104,9 +104,18 @@ interface OptionRowProps {
   children: ReactNode;
 }
 
+// A select is no form element a label can reach, so a click on its name opens it by hand.
+const openSelect = (id: string) => () => {
+  const select = document.getElementById(id + "-control");
+  if (select?.getAttribute("role") == "combobox" && select.getAttribute("aria-disabled") != "true") {
+    select.focus();
+    select.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+  }
+};
+
 const OptionRow = ({ id, label, disabled, children }: OptionRowProps) => (
   <Row aria-disabled={disabled}>
-    <Typography variant="body2" component="label" id={id} htmlFor={id + "-control"}>
+    <Typography variant="body2" component="label" id={id} htmlFor={id + "-control"} onClick={openSelect(id)}>
       {label}
     </Typography>
     {children}
@@ -117,6 +126,7 @@ const RowSelect = (props: SelectProps) => (
   <DenseSelect
     variant="outlined"
     size="small"
+    SelectDisplayProps={{ id: props.labelId + "-control" } as object}
     {...props}
     sx={{ width: controlWidth, fontSize: (theme) => theme.typography.body2.fontSize }}
   />
@@ -205,7 +215,13 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
             value={setting.is_private ? setting.password ?? "" : ""}
             // Only letters and digits. Other characters are dropped instead of refusing the whole input,
             // so a pasted password still switches the protection on and the field shows what is used.
-            onChange={(e) => setPassword(e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 32))}
+            // Input with no usable character at all leaves the field as it was, so it never switches
+            // the protection off by surprise.
+            onChange={(e) => {
+              const value = e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 32);
+              if (e.target.value != "" && value == "") return;
+              setPassword(value);
+            }}
             slotProps={{
               htmlInput: { maxLength: 32 },
               input: {

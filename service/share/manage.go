@@ -24,7 +24,7 @@ type (
 		IsPrivate       bool   `json:"is_private"`
 		Password        string `json:"password" binding:"omitempty,max=32,alphanum"`
 		RemainDownloads int    `json:"downloads" binding:"min=0"`
-		Expire          int    `json:"expire" binding:"min=0,max=3153600000"` // Fylvo: at most 100 years, so the duration cannot overflow.
+		Expire          int    `json:"expire" binding:"min=0,max=315360000"` // Fylvo: at most 10 years, also fits a 32-bit int.
 		ShareView       bool   `json:"share_view"`
 		ShowReadMe      bool   `json:"show_readme"`
 		// Fylvo: share the folder with named members instead of creating a link.
