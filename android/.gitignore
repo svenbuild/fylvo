@@ -1,0 +1,12 @@
+.gradle/
+build/
+*/build/
+local.properties
+*.iml
+.cxx/
+.kotlin/
+
+# The root .gitignore ignores every "data/" and "cloudreve" path (server runtime data and
+# the server binary). Inside the Android project these are source folders.
+!data/
+!cloudreve/
