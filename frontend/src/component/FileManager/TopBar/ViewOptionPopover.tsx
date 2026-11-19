@@ -19,7 +19,7 @@ import {
   setLayoutSetting,
   setThumbToggle,
 } from "../../../redux/thunks/filemanager.ts";
-import { hoverSurface, selectedSurface } from "../../../fylvoTheme.ts";
+import { raisedHoverSurface, raisedSelectedSurface } from "../../../fylvoTheme.ts";
 import NavIconTransition from "../../Frame/NavBar/NavIconTransition.tsx";
 import AppsList from "../../Icons/AppsList.tsx";
 import AppsListOutlined from "../../Icons/AppsListOutlined.tsx";
@@ -146,9 +146,9 @@ const ViewOptionPopover = ({ ...rest }: PopoverProps) => {
             textTransform: "none",
             "&.Mui-selected, &.Mui-selected:hover": {
               color: "text.primary",
-              bgcolor: selectedSurface,
+              bgcolor: raisedSelectedSurface,
             },
-            "&:hover": { bgcolor: hoverSurface },
+            "&:hover": { bgcolor: raisedHoverSurface },
             "&.Mui-focusVisible": { outline: "1px solid", outlineColor: "primary.main", outlineOffset: -1 },
             "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
           },

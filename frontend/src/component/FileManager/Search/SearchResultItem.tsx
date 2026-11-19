@@ -1,7 +1,7 @@
 import { ListItem, ListItemAvatar, ListItemButton, ListItemText } from "@mui/material";
 import React from "react";
 import { FileResponse, FileType } from "../../../api/explorer.ts";
-import { selectedSurface } from "../../../fylvoTheme.ts";
+import { raisedSelectedSurface } from "../../../fylvoTheme.ts";
 import { ContextMenuTypes } from "../../../redux/fileManagerSlice.ts";
 import { useAppDispatch } from "../../../redux/hooks.ts";
 import { openFileContextMenu } from "../../../redux/thunks/file.ts";
@@ -30,7 +30,7 @@ const SearchResultItem = ({ file, primary, secondary }: SearchResultItemProps) =
           "@media (pointer: coarse)": { minHeight: 40 },
           "& .highlight-marker, & em": {
             color: theme.palette.text.primary,
-            backgroundColor: selectedSurface(theme),
+            backgroundColor: raisedSelectedSurface(theme),
             boxShadow: "none",
             borderRadius: 3,
             fontStyle: "normal",

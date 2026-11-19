@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect } from "react";
 import { Box, DialogContent, styled, Typography } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { hoverSurface } from "../../fylvoTheme.ts";
+import { raisedHoverSurface } from "../../fylvoTheme.ts";
 import { useAppDispatch, useAppSelector } from "../../redux/hooks.ts";
 import DraggableDialog from "../Dialogs/DraggableDialog.tsx";
 import { setUploadFromClipboardDialog } from "../../redux/globalStateSlice.ts";
@@ -18,7 +18,7 @@ export interface PasteTargetProps extends PasteUploadDialogProps {
 const PasteTargetContainer = styled(Box)(({ theme }) => ({
   borderRadius: theme.shape.borderRadius,
   border: `1px solid ${theme.palette.divider}`,
-  backgroundColor: hoverSurface(theme),
+  backgroundColor: raisedHoverSurface(theme),
   display: "flex",
   justifyContent: "center",
   alignItems: "center",

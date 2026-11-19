@@ -26,12 +26,20 @@ Colors come from the MUI theme (`inventory/fylvo_theme.json` plus `frontend/src/
 | Card, field, quiet fill | `#141416` | `theme.palette.grey[900]` (light: `grey[100]`) |
 | Hover | `#141416` | `hoverSurface(theme)` |
 | Selected | `#1E1E22` | `selectedSurface(theme)` |
+| Hover on a menu, popover or dialog | `#1E1E22` | `raisedHoverSurface(theme)` |
+| Selected on a menu, popover or dialog | `#26262B` | `raisedSelectedSurface(theme)` |
 | Hairline | white 9 % | `theme.palette.divider` |
 | Text | `#F4F4F5` | `text.primary` |
 | Quiet text | `#A9A9B0` | `text.secondary` |
 | Accent | `#7484F4` | `primary.main` |
 
 Menus, popovers and dialogs are already styled globally (raised surface, hairline, one soft shadow).
+Their surface is `#141416` in dark mode, the same as the normal hover. Anything with a hover or
+selected state on them uses the raised helpers, otherwise hover is invisible. List rows, table rows
+and menu items get this from the theme already.
+
+Buttons: the one primary action of a view is `contained` in the accent. Every other action is the
+filled gray `SecondaryButton` (`variant="contained"`). Red outlined buttons are only for deleting.
 
 ## Sizes
 
@@ -55,7 +63,8 @@ Menus, popovers and dialogs are already styled globally (raised surface, hairlin
 
 - Styling only. No behavior changes, no removed features, no renamed translation keys.
 - Keep each change small and local (`sx`, `styled`). No new dependencies.
-- Use the helpers `selectedSurface`, `hoverSurface`, `shellSurface` from `frontend/src/fylvoTheme.ts`.
+- Use the helpers `selectedSurface`, `hoverSurface`, `raisedHoverSurface`, `raisedSelectedSurface`,
+  `shellSurface` from `frontend/src/fylvoTheme.ts`.
 - Keyboard focus must stay visible.
 - Every changed screen is checked with a screenshot in dark and light mode, on desktop
   (1536 x 1024) and on a phone (390 x 844).

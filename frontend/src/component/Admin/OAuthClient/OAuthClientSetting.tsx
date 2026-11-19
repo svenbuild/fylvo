@@ -96,7 +96,7 @@ const OAuthClientSetting = () => {
               }}
             >
               <Add />
-              <Typography variant="h6">{t("oauth.newOAuthClient")}</Typography>
+              <Typography variant="subtitle2">{t("oauth.newOAuthClient")}</Typography>
             </BorderedCardClickable>
           </Grid>
           {!loading && clients.map((c) => <OAuthClientCard key={c.id} client={c} onRefresh={fetchClients} />)}

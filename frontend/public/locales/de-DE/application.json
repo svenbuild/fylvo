@@ -944,6 +944,8 @@
     "connectionInfo": "Verbindungsinformationen",
     "proxyTooltip": "Server leitet alle Datei-Download-Anfragen weiter",
     "readonlyTooltip": "Benutzer kann über dieses Konto nur Dateien lesen",
+    "blockSysFilesUpload": "Hochladen von Systemdateien sperren",
+    "blockSysFilesUploadTooltip": "Wenn aktiv, werden Dateien, die mit <0>.</0> beginnen, nicht hochgeladen.",
     "rootFolderIn": "<0></0> auswählen",
     "createWebDavAccount": "WebDAV-Konto erstellen",
     "editWebDavAccount": "{{name}} bearbeiten",

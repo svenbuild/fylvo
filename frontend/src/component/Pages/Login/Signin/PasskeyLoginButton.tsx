@@ -1,4 +1,3 @@
-import { LoadingButton } from "@mui/lab";
 import { ButtonProps } from "@mui/material";
 import { useSnackbar } from "notistack";
 import { useEffect, useRef, useState } from "react";
@@ -9,6 +8,7 @@ import { useAppDispatch } from "../../../../redux/hooks.ts";
 import { refreshUserSession } from "../../../../redux/thunks/session.ts";
 import { bufferEncode, urlBase64BufferDecode, useQuery } from "../../../../util";
 import { DefaultCloseAction } from "../../../Common/Snackbar/snackbar.tsx";
+import { SecondaryLoadingButton } from "../../../Common/StyledComponents.tsx";
 import Fingerprint from "../../../Icons/Fingerprint.tsx";
 import { LoginResponse } from "../../../../api/user.ts";
 
@@ -109,15 +109,15 @@ export default function PasskeyLoginButton({ autoComplete, onLoginSuccess, ...re
   };
 
   return (
-    <LoadingButton
+    <SecondaryLoadingButton
       onClick={startLogin(false)}
       loading={loading}
-      variant={"outlined"}
+      variant={"contained"}
       startIcon={<Fingerprint />}
       fullWidth
       {...rest}
     >
       {t("login.useFIDO2")}
-    </LoadingButton>
+    </SecondaryLoadingButton>
   );
 }

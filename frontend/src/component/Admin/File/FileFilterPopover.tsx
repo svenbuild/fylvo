@@ -2,7 +2,7 @@ import { Box, Button, Checkbox, PopoverProps, Stack, styled } from "@mui/materia
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AdminFilterPopover } from "../Common/AdminPage.tsx";
-import { DenseFilledTextField, SmallFormControlLabel } from "../../Common/StyledComponents";
+import { DenseFilledTextField, SmallFormControlLabel, SecondaryButton } from "../../Common/StyledComponents";
 import SettingForm from "../../Pages/Setting/SettingForm";
 import SinglePolicySelectionInput from "../Common/SinglePolicySelectionInput";
 
@@ -174,9 +174,9 @@ const FileFilterPopover = ({
         </SettingForm>
 
         <Box display="flex" justifyContent="space-between">
-          <Button variant="outlined" size="small" onClick={handleResetFilters}>
+          <SecondaryButton variant="contained" size="small" onClick={handleResetFilters}>
             {t("user.reset")}
-          </Button>
+          </SecondaryButton>
           <Button variant="contained" size="small" onClick={handleApplyFilters}>
             {t("user.apply")}
           </Button>

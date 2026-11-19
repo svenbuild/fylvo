@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AdminFilterPopover } from "../Common/AdminPage.tsx";
 import { TaskStatus, TaskType } from "../../../api/workflow";
-import { DenseFilledTextField, DenseSelect } from "../../Common/StyledComponents";
+import { DenseFilledTextField, DenseSelect, SecondaryButton } from "../../Common/StyledComponents";
 import { SquareMenuItem } from "../../FileManager/ContextMenu/ContextMenu";
 import SettingForm from "../../Pages/Setting/SettingForm";
 import { getTaskStatusText } from "../../Pages/Tasks/TaskProps";
@@ -190,9 +190,9 @@ const TaskFilterPopover = ({
           </DenseSelect>
         </SettingForm>
         <Box display="flex" justifyContent="space-between">
-          <Button variant="outlined" size="small" onClick={handleResetFilters}>
+          <SecondaryButton variant="contained" size="small" onClick={handleResetFilters}>
             {t("user.reset")}
-          </Button>
+          </SecondaryButton>
           <Button variant="contained" size="small" onClick={handleApplyFilters}>
             {t("user.apply")}
           </Button>

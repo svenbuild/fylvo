@@ -21,7 +21,7 @@ import { DownloadTaskFile, TaskSummary } from "../../../api/workflow.ts";
 import { useAppDispatch } from "../../../redux/hooks.ts";
 import { confirmOperation } from "../../../redux/thunks/dialog.ts";
 import { fileBase, sizeToString } from "../../../util";
-import { StyledCheckbox, StyledTableContainerPaper } from "../../Common/StyledComponents.tsx";
+import { SecondaryButton, StyledCheckbox, StyledTableContainerPaper } from "../../Common/StyledComponents.tsx";
 import FileIcon from "../../FileManager/Explorer/FileIcon.tsx";
 import Dismiss from "../../Icons/Dismiss.tsx";
 import { getProgressColor } from "./TaskCard.tsx";
@@ -142,12 +142,12 @@ const DownloadFileList = ({ taskId, summary, downloading, readonly }: DownloadFi
                 onChange={(e) => setFilterText(e.target.value)}
                 sx={{ flexGrow: 1 }}
               />
-              <Button variant="outlined" onClick={selectAll} disabled={loading || !downloading}>
+              <SecondaryButton variant="contained" onClick={selectAll} disabled={loading || !downloading}>
                 {t("download.selectAll")}
-              </Button>
-              <Button variant="outlined" onClick={reverseSelect} disabled={loading || !downloading}>
+              </SecondaryButton>
+              <SecondaryButton variant="contained" onClick={reverseSelect} disabled={loading || !downloading}>
                 {t("download.reverseSelect")}
-              </Button>
+              </SecondaryButton>
             </Stack>
           )}
           <TableContainer component={StyledTableContainerPaper}>

@@ -2,7 +2,7 @@ import { Box, Button, PopoverProps, Stack } from "@mui/material";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AdminFilterPopover } from "../Common/AdminPage.tsx";
-import { DenseFilledTextField } from "../../Common/StyledComponents";
+import { DenseFilledTextField, SecondaryButton } from "../../Common/StyledComponents";
 import SettingForm from "../../Pages/Setting/SettingForm";
 
 export interface ShareFilterPopoverProps extends PopoverProps {
@@ -88,9 +88,9 @@ const ShareFilterPopover = ({
         </SettingForm>
 
         <Box display="flex" justifyContent="space-between">
-          <Button variant="outlined" size="small" onClick={handleResetFilters}>
+          <SecondaryButton variant="contained" size="small" onClick={handleResetFilters}>
             {t("user.reset")}
-          </Button>
+          </SecondaryButton>
           <Button variant="contained" size="small" onClick={handleApplyFilters}>
             {t("user.apply")}
           </Button>
