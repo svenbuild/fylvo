@@ -183,7 +183,8 @@ const Home = () => {
               </SwitchTransition>
             </StyledPaper>
           </Grid>
-          <Grid item xs={12} md={4} lg={3}>
+          {/* Fylvo: the version card sits under the summary, so it does not stand alone in a row. */}
+          <Grid item xs={12} md={4} lg={3} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <StyledPaper>
               <Typography variant={"subtitle1"} fontWeight={500}>
                 {t("summary.summary")}
@@ -286,8 +287,6 @@ const Home = () => {
                 </CSSTransition>
               </SwitchTransition>
             </StyledPaper>
-          </Grid>
-          <Grid item xs={12} md={5} lg={4}>
             <StyledPaper sx={{ p: 0 }}>
               <Box sx={{ p: 2, display: "flex", alignItems: "center" }}>
                 <Box component={"img"} sx={{ width: 38 }} alt="Fylvo" src={"/static/img/fylvo.svg"} />
