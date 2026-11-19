@@ -63,8 +63,19 @@ if (-not (Test-Path -LiteralPath $Msix)) {
 }
 
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
+if ($InstallDir -eq [IO.Path]::GetPathRoot($InstallDir)) {
+    Write-Error "-InstallDir must not be a drive root."
+    exit 1
+}
+$InstallDir = $InstallDir.TrimEnd('\', '/')
 $NewDir = "$InstallDir.new"
 $OldDir = "$InstallDir.old"
+
+# A previous run stopped between the two renames: put the old version back first.
+if (-not (Test-Path -LiteralPath $InstallDir) -and (Test-Path -LiteralPath $OldDir) -and (Test-FylvoFolder $OldDir)) {
+    Rename-Item -LiteralPath $OldDir -NewName (Split-Path $InstallDir -Leaf)
+    Write-Host "Restored the previous version from $OldDir." -ForegroundColor Yellow
+}
 
 # Never replace a folder that is not a Fylvo Desktop install.
 if ((Test-Path -LiteralPath $InstallDir) -and -not (Test-FylvoFolder $InstallDir)) {
@@ -84,23 +95,27 @@ foreach ($Dir in @($NewDir, $OldDir)) {
 # 1. Unpack into a staging folder and check it. An MSIX is a zip file;
 #    Expand-Archive only accepts the .zip extension.
 $Zip = Join-Path $env:TEMP "fylvo-desktop-install.zip"
-Copy-Item -LiteralPath $Msix -Destination $Zip -Force
-Expand-Archive -LiteralPath $Zip -DestinationPath $NewDir
-Remove-Item -LiteralPath $Zip -Force
+try {
+    Copy-Item -LiteralPath $Msix -Destination $Zip -Force
+    Expand-Archive -LiteralPath $Zip -DestinationPath $NewDir
 
-# Packaging files that only belong in the .msix, a registered folder has none of them.
-foreach ($Name in @("AppxBlockMap.xml", "AppxSignature.p7x", "[Content_Types].xml")) {
-    Remove-Item -LiteralPath (Join-Path $NewDir $Name) -Force -ErrorAction SilentlyContinue
+    # Packaging files that only belong in the .msix, a registered folder has none of them.
+    foreach ($Name in @("AppxBlockMap.xml", "AppxSignature.p7x", "[Content_Types].xml")) {
+        Remove-Item -LiteralPath (Join-Path $NewDir $Name) -Force -ErrorAction SilentlyContinue
+    }
+
+    if (-not (Test-FylvoFolder $NewDir)) {
+        throw "$Msix is not a Fylvo Desktop package."
+    }
+} catch {
+    Remove-Item -LiteralPath $NewDir -Recurse -Force -ErrorAction SilentlyContinue
+    throw
+} finally {
+    Remove-Item -LiteralPath $Zip -Force -ErrorAction SilentlyContinue
 }
 
-if (-not (Test-FylvoFolder $NewDir)) {
-    Remove-Item -LiteralPath $NewDir -Recurse -Force
-    Write-Error "$Msix is not a Fylvo Desktop package."
-    exit 1
-}
-
-# 2. Stop the app and swap the folders. Explorer can start the app again or hold a file
-#    open for a moment, so the rename is retried.
+# 2. Stop the app and move the current version to .old. Explorer can start the app again
+#    or hold a file open for a moment, so the rename is retried.
 $Swapped = $false
 for ($Try = 1; $Try -le 10 -and -not $Swapped; $Try++) {
     Get-Process fylvo-desktop -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -118,23 +133,35 @@ if (-not $Swapped) {
     Write-Error "Could not replace $InstallDir, a file is still in use. Close Explorer windows of the sync folder and try again."
     exit 1
 }
-Rename-Item -LiteralPath $NewDir -NewName (Split-Path $InstallDir -Leaf)
 
-# 3. Register. On failure put the old files back.
-Write-Host "Registering Fylvo Desktop from $InstallDir ..." -ForegroundColor Cyan
+# 3. Move the new version in and register it. On failure put the old version back.
+$Promoted = $false
 try {
+    Rename-Item -LiteralPath $NewDir -NewName (Split-Path $InstallDir -Leaf)
+    $Promoted = $true
+    Write-Host "Registering Fylvo Desktop from $InstallDir ..." -ForegroundColor Cyan
     Add-AppxPackage -Register (Join-Path $InstallDir "AppxManifest.xml") -ForceApplicationShutdown -ForceUpdateFromAnyVersion
 } catch {
-    if (Test-Path -LiteralPath $OldDir) {
-        Remove-Item -LiteralPath $InstallDir -Recurse -Force
-        Rename-Item -LiteralPath $OldDir -NewName (Split-Path $InstallDir -Leaf)
-        Write-Host "Registration failed, the previous version was put back." -ForegroundColor Yellow
+    $InstallError = $_
+    try {
+        if ($Promoted) {
+            Remove-Item -LiteralPath $InstallDir -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $OldDir) {
+            Rename-Item -LiteralPath $OldDir -NewName (Split-Path $InstallDir -Leaf)
+            Write-Host "Installation failed, the previous version was put back." -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Warning "Could not put the previous version back. It is in $OldDir; running this script again restores it."
     }
-    throw
+    throw $InstallError
 }
 
 if (Test-Path -LiteralPath $OldDir) {
     Remove-Item -LiteralPath $OldDir -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $OldDir) {
+        Write-Warning "Could not fully remove $OldDir. Delete it by hand before the next update."
+    }
 }
 
 Write-Host "Done. Start 'Fylvo Desktop' from the Start menu." -ForegroundColor Green

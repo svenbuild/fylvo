@@ -177,8 +177,12 @@ foreach ($TargetArch in $TargetArchs) {
     # Copy binary to temp package directory
     Write-Host "Copying binary..." -ForegroundColor Cyan
     Copy-Item $BinaryPath -Destination $TempPackageDir -Force
-    # Ship the MIT license notice of the original project inside the package
-    Copy-Item (Join-Path $ScriptDir "LICENSE") -Destination (Join-Path $TempPackageDir "LICENSE.txt") -Force
+    # Ship the MIT license notices of the original project and its bundled crates
+    $Licenses = Join-Path $TempPackageDir "Licenses"
+    New-Item -ItemType Directory -Path $Licenses -Force | Out-Null
+    Copy-Item (Join-Path $ScriptDir "LICENSE") -Destination (Join-Path $Licenses "cloudreve-desktop.txt") -Force
+    Copy-Item (Join-Path $ScriptDir "crates\cloudreve-api\LICENSE") -Destination (Join-Path $Licenses "cloudreve-api.txt") -Force
+    Copy-Item (Join-Path $ScriptDir "crates\win32_notif\LICENSE") -Destination (Join-Path $Licenses "win32_notif.txt") -Force
 
     # Update AppxManifest.xml in temp directory
     $TempManifestPath = Join-Path $TempPackageDir "AppxManifest.xml"
