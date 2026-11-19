@@ -27,6 +27,7 @@ import DraggableDialog from "../../../Dialogs/DraggableDialog.tsx";
 import MoreVertical from "../../../Icons/MoreVertical.tsx";
 import { SquareMenuItem } from "../../ContextMenu/ContextMenu.tsx";
 import { ShareExpires, ShareStatistics } from "../../TopBar/ShareInfoPopover.tsx";
+import { ShareMembersBadge } from "./ShareMembers.tsx";
 
 const ManageShares = () => {
   const { t } = useTranslation();
@@ -217,7 +218,13 @@ const ManageShares = () => {
                         <TableCell>
                           <ShareStatistics shareInfo={e} />
                         </TableCell>
-                        <NoWrapTableCell>{t(`fileManager.${e.is_private ? "yes" : "no"}`)}</NoWrapTableCell>
+                        <NoWrapTableCell>
+                          {e.member_only ? (
+                            <ShareMembersBadge share={e} />
+                          ) : (
+                            t(`fileManager.${e.is_private ? "yes" : "no"}`)
+                          )}
+                        </NoWrapTableCell>
                       </TableRow>
                     ))}
                 </TableBody>

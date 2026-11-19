@@ -1,14 +1,13 @@
 import { useMemo } from "react";
 import { FileResponse, FileType, Metadata, NavigatorCapability } from "../../../api/explorer.ts";
 import { GroupPermission } from "../../../api/user.ts";
-import { defaultPath } from "../../../hooks/useNavigation.tsx";
 import { ContextMenuTypes } from "../../../redux/fileManagerSlice.ts";
 import { Viewers, ViewersByID } from "../../../redux/siteConfigSlice.ts";
 import { ExpandedViewerSetting } from "../../../redux/thunks/viewer.ts";
 import SessionManager from "../../../session";
 import { fileExtension } from "../../../util";
 import Boolset from "../../../util/boolset.ts";
-import CrUri, { Filesystem } from "../../../util/uri.ts";
+import { canModifyFile } from "../../../util/permission.ts";
 import { FileManagerIndex } from "../FileManager.tsx";
 
 const supportedArchiveTypes = ["zip", "gz", "xz", "tar", "rar", "7z", "bz2"];
@@ -117,7 +116,7 @@ export const getActionOpt = (
     }
 
     const parentCap = new Boolset(parent.capability);
-    display.showCreateFolder = parentCap.enabled(NavigatorCapability.create_file) && parent.owned;
+    display.showCreateFolder = parentCap.enabled(NavigatorCapability.create_file) && canModifyFile(parent);
     display.showCreateFile = display.showCreateFolder && fmIndex == FileManagerIndex.main;
     display.showUpload = display.showCreateFile;
     if (display.showCreateFile) {
@@ -137,10 +136,9 @@ export const getActionOpt = (
     display.showGoToParent = true;
   }
 
-  const parentUrl = new CrUri(targets?.[0]?.path ?? defaultPath);
   targets.forEach((target) => {
     let readable = true;
-    let updatable = target.owned && parentUrl.fs() != Filesystem.share;
+    let updatable = canModifyFile(target);
 
     if (display.allReadable && !readable) {
       display.allReadable = false;

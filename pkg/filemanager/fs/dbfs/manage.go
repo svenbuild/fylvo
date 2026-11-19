@@ -57,7 +57,13 @@ func (f *DBFS) Create(ctx context.Context, path *fs.URI, fileType types.FileType
 			WithError(fmt.Errorf("object with the same name but different type %v already exist", ancestor.Type()))
 	}
 
-	if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); !ok && ancestor.Owner().ID != f.user.ID {
+	if !f.canWrite(ctx, ancestor) {
+		return nil, fs.ErrOwnerOnly
+	}
+
+	// Fylvo: only the owner decides about metadata and shortcuts. A member with edit right
+	// must not plant a shortcut to another share in the owner's tree.
+	if (len(o.Metadata) > 0 || o.isSymbolicLink) && !f.isOwnerCall(ctx, ancestor) {
 		return nil, fs.ErrOwnerOnly
 	}
 
@@ -162,7 +168,7 @@ func (f *DBFS) Rename(ctx context.Context, path *fs.URI, newName string) (fs.Fil
 	}
 	oldName := target.Name()
 
-	if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); !ok && target.Owner().ID != f.user.ID {
+	if !f.canWrite(ctx, target) {
 		return nil, nil, fs.ErrOwnerOnly
 	}
 
@@ -265,7 +271,7 @@ func (f *DBFS) SoftDelete(ctx context.Context, path ...*fs.URI) error {
 			continue
 		}
 
-		if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); !ok && target.Owner().ID != f.user.ID {
+		if !f.canWrite(ctx, target) {
 			ae.Add(p.String(), fs.ErrOwnerOnly.WithError(fmt.Errorf("only file owner can delete file without trash bin")))
 			continue
 		}
@@ -546,7 +552,7 @@ func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCo
 		return nil, fmt.Errorf("faield to get destination folder: %w", err)
 	}
 
-	if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); !ok && destination.Owner().ID != f.user.ID {
+	if !f.canWrite(ctx, destination) {
 		return nil, fs.ErrOwnerOnly
 	}
 
@@ -570,7 +576,7 @@ func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCo
 		}
 
 		// Check fs capability
-		if !canMoveOrCopyTo(p, dst, isCopy) {
+		if !CanMoveOrCopyTo(p, dst, isCopy) {
 			ae.Add(p.String(), fs.ErrNotSupportedAction.WithError(fmt.Errorf("cannot move or copy file form %s to %s", p.String(), dst.String())))
 			continue
 		}
@@ -582,7 +588,7 @@ func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCo
 			continue
 		}
 
-		if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); !ok && target.Owner().ID != f.user.ID {
+		if !f.canWrite(ctx, target) {
 			ae.Add(p.String(), fs.ErrOwnerOnly)
 			continue
 		}

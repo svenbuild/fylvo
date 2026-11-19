@@ -26,12 +26,17 @@ export function createOrUpdateShareLink(
   return async (dispatch, getState) => {
     const req: ShareCreateService = {
       uri: file.path,
-      is_private: setting.is_private,
-      password: setting.password,
       share_view: setting.share_view,
       show_readme: setting.show_readme,
-      downloads: setting.downloads && setting.downloads_val.value > 0 ? setting.downloads_val.value : undefined,
       expire: setting.expires && setting.expires_val.value > 0 ? setting.expires_val.value : undefined,
+      // Fylvo: a member share has no password and no download limit.
+      ...(setting.member_only
+        ? { member_only: true, members: setting.members ?? [] }
+        : {
+            is_private: setting.is_private,
+            password: setting.password,
+            downloads: setting.downloads && setting.downloads_val.value > 0 ? setting.downloads_val.value : undefined,
+          }),
     };
 
     const res = await dispatch(existed ? sendUpdateShare(req, existed) : sendCreateShare(req));

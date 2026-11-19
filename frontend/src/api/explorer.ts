@@ -90,6 +90,15 @@ export interface Share {
   source_uri?: string;
   password?: string;
   show_readme?: boolean;
+  // Fylvo: member share, only returned to the share owner.
+  member_only?: boolean;
+  members?: ShareMember[];
+}
+
+// Fylvo: a registered user a folder is shared with. user_id is the hashed user ID.
+export interface ShareMember {
+  user_id: string;
+  can_edit?: boolean;
 }
 
 export enum PolicyType {
@@ -308,6 +317,8 @@ export interface ShareCreateService {
   expire?: number;
   share_view?: boolean;
   show_readme?: boolean;
+  member_only?: boolean;
+  members?: ShareMember[];
 }
 
 export interface CreateFileService {

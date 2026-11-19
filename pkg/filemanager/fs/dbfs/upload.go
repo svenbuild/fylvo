@@ -34,8 +34,8 @@ func (f *DBFS) PreValidateUpload(ctx context.Context, dst *fs.URI, files ...fs.P
 	}
 
 	// check ownership
-	if f.user.ID != dstFile.OwnerID() {
-		return fmt.Errorf("failed to evaluate permission: %w", err)
+	if !f.canWrite(ctx, dstFile) {
+		return fs.ErrOwnerOnly
 	}
 
 	total := int64(0)
@@ -107,7 +107,12 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 		return nil, fs.ErrPathNotExist
 	}
 
-	if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); !ok && ancestor.OwnerID() != f.user.ID {
+	if !f.canWrite(ctx, ancestor) {
+		return nil, fs.ErrOwnerOnly
+	}
+
+	// Fylvo: metadata sent along with an upload is the owner's to set, like any other metadata.
+	if len(req.Props.Metadata) > 0 && !f.isOwnerCall(ctx, ancestor) {
 		return nil, fs.ErrOwnerOnly
 	}
 
@@ -285,6 +290,12 @@ func (f *DBFS) CompleteUpload(ctx context.Context, session *fs.UploadSession) (f
 
 	filePrivate := file.(*File)
 
+	// Fylvo: the right to write is checked again when the upload is finished. A member
+	// who lost the edit right in the meantime cannot complete an upload started before.
+	if !f.canWrite(ctx, filePrivate) {
+		return nil, fs.ErrOwnerOnly
+	}
+
 	// Confirm locks on placeholder file
 	if session.LockToken != "" {
 		release, ls, err := f.ConfirmLock(ctx, file, file.Uri(false), session.LockToken)
@@ -409,7 +420,9 @@ func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID 
 		}
 	}
 
-	if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); !ok && filePrivate.OwnerID() != f.user.ID {
+	// Fylvo: the uploader may cancel an upload of their own, the session was matched
+	// against the user above. Without a session the right to write decides.
+	if session == nil && !f.canWrite(ctx, filePrivate) {
 		return nil, nil, fs.ErrOwnerOnly
 	}
 
@@ -449,9 +462,13 @@ func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID 
 		}()
 	}
 
-	if len(filePrivate.Entities()) == 1 {
+	// Fylvo: the file goes with the upload only if the upload created it. A file that was
+	// there before can be empty and then holds nothing but the placeholder as well; it stays.
+	// Without a session only the owner removes the file, as before.
+	createdByUpload := session != nil && session.NewFileCreated
+	if len(filePrivate.Entities()) == 1 && (createdByUpload || (session == nil && f.isOwnerCall(ctx, filePrivate))) {
 		// Only one placeholder entity, just delete this file
-		entities, indexDiff, err := f.Delete(ctx, []*fs.URI{path})
+		entities, indexDiff, err := f.Delete(WithBypassOwnerCheck(ctx), []*fs.URI{path})
 		return entities, indexDiff, err
 	}
 

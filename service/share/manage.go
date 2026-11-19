@@ -27,8 +27,17 @@ type (
 		Expire          int    `json:"expire"`
 		ShareView       bool   `json:"share_view"`
 		ShowReadMe      bool   `json:"show_readme"`
+		// Fylvo: share the folder with named members instead of creating a link.
+		MemberOnly bool `json:"member_only"`
+		// Fylvo: the members. Leaving the field out keeps the members of an existing share.
+		Members []ShareMemberService `json:"members" binding:"omitempty,dive"`
 	}
 	ShareCreateParamCtx struct{}
+
+	ShareMemberService struct {
+		UserID  string `json:"user_id" binding:"required"`
+		CanEdit bool   `json:"can_edit"`
+	}
 
 	BatchDeleteShareService struct {
 		ShareIDs []string `json:"ids" binding:"required"`
@@ -82,7 +91,22 @@ func (service *ShareCreateService) Upsert(c *gin.Context, existed int) (string, 
 		*expires = time.Now().Add(time.Duration(service.Expire) * time.Second)
 	}
 
+	var members []types.ShareMember
+	if service.Members != nil {
+		members = make([]types.ShareMember, 0, len(service.Members))
+		for _, member := range service.Members {
+			uid, err := dep.HashIDEncoder().Decode(member.UserID, hashid.UserID)
+			if err != nil {
+				return "", serializer.NewError(serializer.CodeParamErr, "unknown member", err)
+			}
+
+			members = append(members, types.ShareMember{UserID: uid, CanEdit: member.CanEdit})
+		}
+	}
+
 	share, err := m.CreateOrUpdateShare(c, uri, &manager.CreateShareArgs{
+		MemberOnly:      service.MemberOnly,
+		Members:         members,
 		IsPrivate:       service.IsPrivate,
 		Password:        service.Password,
 		RemainDownloads: service.RemainDownloads,

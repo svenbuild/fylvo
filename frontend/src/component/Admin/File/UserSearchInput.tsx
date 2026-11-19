@@ -1,4 +1,4 @@
-import { Box, createFilterOptions, debounce, useTheme } from "@mui/material";
+import { Autocomplete, Box, createFilterOptions, debounce, FilterOptionsState, useTheme } from "@mui/material";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getSearchUser } from "../../../api/api.ts";
@@ -12,10 +12,17 @@ import {
 } from "../../Common/StyledComponents.tsx";
 import UserAvatar from "../../Common/User/UserAvatar.tsx";
 
+// The styled wrapper loses the generic option type of Autocomplete; restore it.
+const UserAutocomplete = DenseAutocomplete as typeof Autocomplete;
+
 export interface UserSearchInputProps {
   onUserSelected: (user: User) => void;
   label?: string;
   required?: boolean;
+  // Fylvo: user IDs that must not be offered, e.g. the people already added to a share.
+  excludeIds?: string[];
+  // Fylvo: empty the field after a pick, so that the next person can be searched right away.
+  clearOnSelect?: boolean;
 }
 
 const UserSearchInput = (props: UserSearchInputProps) => {
@@ -63,20 +70,30 @@ const UserSearchInput = (props: UserSearchInputProps) => {
   }, [value, inputValue, fetch]);
 
   const filterOptions = useMemo(() => {
-    return createFilterOptions<User>({
-      stringify: (option) => option.nickname + " " + option.email,
+    const filter = createFilterOptions<User>({
+      stringify: (option) => option.nickname + " " + (option.email ?? ""),
     });
-  }, []);
+    return (options: User[], state: FilterOptionsState<User>) =>
+      filter(
+        options.filter((option) => !props.excludeIds?.includes(option.id)),
+        state,
+      );
+  }, [props.excludeIds]);
 
   return (
-    <DenseAutocomplete
+    <UserAutocomplete
       value={value}
       filterOptions={filterOptions}
       options={options}
       loading={loading}
       blurOnSelect
+      inputValue={inputValue}
       onChange={(_event: any, newValue: User | null) => {
-        setValue(newValue);
+        if (props.clearOnSelect) {
+          setInputValue("");
+        } else {
+          setValue(newValue);
+        }
         if (newValue) {
           props.onUserSelected(newValue);
         }
@@ -84,7 +101,7 @@ const UserSearchInput = (props: UserSearchInputProps) => {
       onInputChange={(_event, newInputValue) => {
         setInputValue(newInputValue);
       }}
-      getOptionLabel={(option) => (typeof option === "string" ? option : `${option.nickname} <${option.email}>`)}
+      getOptionLabel={(option) => (option.email ? `${option.nickname} <${option.email}>` : option.nickname)}
       noOptionsText={t("application:modals.noResults")}
       renderOption={(props, option) => {
         return (

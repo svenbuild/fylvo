@@ -338,9 +338,20 @@ type Share struct {
 	IsPrivate bool   `json:"is_private,omitempty"`
 	Password  string `json:"password,omitempty"`
 	ShareView bool   `json:"share_view,omitempty"`
+	// Fylvo: the members of a shared folder
+	Members []ShareMember `json:"members,omitempty"`
+
+	// Fylvo: the share is a shared folder for members, not a link
+	MemberOnly bool `json:"member_only,omitempty"`
 
 	// Only viewable if explicitly unlocked by owner
 	SourceUri string `json:"source_uri,omitempty"`
+}
+
+// ShareMember is a user with access to a shared folder.
+type ShareMember struct {
+	UserID  string `json:"user_id"`
+	CanEdit bool   `json:"can_edit,omitempty"`
 }
 
 func BuildShare(ctx context.Context, s *ent.Share, base *url.URL, hasher hashid.Encoder, requester *ent.User, owner *ent.User,
@@ -360,6 +371,7 @@ func BuildShare(ctx context.Context, s *ent.Share, base *url.URL, hasher hashid.
 		Visited:           s.Views,
 		SourceType:        util.ToPtr(t),
 		PasswordProtected: s.Password != "",
+		MemberOnly:        s.Props.IsMemberOnly(),
 	}
 
 	if unlocked {
@@ -377,6 +389,11 @@ func BuildShare(ctx context.Context, s *ent.Share, base *url.URL, hasher hashid.
 	if requester.ID == owner.ID {
 		res.IsPrivate = s.Password != ""
 		res.ShareView = s.Props != nil && s.Props.ShareView
+		if s.Props.IsMemberOnly() {
+			res.Members = lo.Map(s.Props.Members, func(member types.ShareMember, _ int) ShareMember {
+				return ShareMember{UserID: hashid.EncodeUserID(hasher, member.UserID), CanEdit: member.CanEdit}
+			})
+		}
 	}
 
 	return &res

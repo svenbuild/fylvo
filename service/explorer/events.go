@@ -1,9 +1,12 @@
 package explorer
 
 import (
+	"context"
 	"time"
 
+	"github.com/cloudreve/Cloudreve/v4/application/constants"
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
+	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/pkg/auth/requestinfo"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
@@ -20,6 +23,26 @@ type (
 	}
 	ExplorerEventParamCtx struct{}
 )
+
+// canStillListen reports whether the user may still open the folder behind uri and whether
+// it is still the folder the subscription was made for.
+func canStillListen(c *gin.Context, dep dependency.Dep, user *ent.User, uri *fs.URI, folderID int) bool {
+	// The account as it is now: it can have been deactivated or moved to another group.
+	current, err := dep.UserClient().GetActiveByID(context.WithValue(c, inventory.LoadUserGroup{}, true), user.ID)
+	if err != nil {
+		return false
+	}
+
+	m := manager.NewFileManager(dep, current)
+	defer m.Recycle()
+
+	parent, _, err := m.List(c, uri, &manager.ListArgs{
+		Page:     0,
+		PageSize: 1,
+	})
+
+	return err == nil && parent.ID() == folderID
+}
 
 func (s *ExplorerEventService) HandleExplorerEventsPush(c *gin.Context) error {
 	dep := dependency.FromContext(c)
@@ -67,6 +90,19 @@ func (s *ExplorerEventService) HandleExplorerEventsPush(c *gin.Context) error {
 		return serializer.NewError(serializer.CodeInternalSetting, "Failed to subscribe to events", err)
 	}
 
+	// Fylvo: events of a share are not collected while the client is away. A subscriber that
+	// is only marked offline keeps collecting, and what it collects is handed out by client ID
+	// later, also after the user has lost access to the share. A client that comes back
+	// subscribes anew and syncs from scratch.
+	leave := func() {
+		if uri.FileSystem() == constants.FileSystemShare {
+			eventHub.Remove(c, parent.ID(), requestInfo.ClientID)
+			return
+		}
+
+		eventHub.Unsubscribe(c, parent.ID(), requestInfo.ClientID)
+	}
+
 	// SSE Headers
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -89,11 +125,11 @@ func (s *ExplorerEventService) HandleExplorerEventsPush(c *gin.Context) error {
 		// TODO: close connection after access token expired
 		case <-c.Request.Context().Done():
 			// Server shutdown or request cancelled
-			eventHub.Unsubscribe(c, parent.ID(), requestInfo.ClientID)
+			leave()
 			l.Debug("Request context done, unsubscribed from event hub")
 			return nil
 		case <-c.Writer.CloseNotify():
-			eventHub.Unsubscribe(c, parent.ID(), requestInfo.ClientID)
+			leave()
 			l.Debug("Unsubscribed from event hub")
 			return nil
 		case evt, ok := <-rx:
@@ -107,11 +143,20 @@ func (s *ExplorerEventService) HandleExplorerEventsPush(c *gin.Context) error {
 			c.Writer.Flush()
 			if c.Errors.Last() != nil {
 				l.Error("Error occurred: %+v", c.Errors.Last().Error())
-				eventHub.Unsubscribe(c, parent.ID(), requestInfo.ClientID)
+				leave()
 				l.Debug("Unsubscribed from event hub")
 				return nil
 			}
 		case <-keepAliveTicker.C:
+			// Fylvo: access to a share can end while the stream is open (member removed,
+			// share deleted or expired, folder moved away). Check again with every keep-alive
+			// and stop sending events then.
+			if uri.FileSystem() == constants.FileSystemShare && !canStillListen(c, dep, user, uri, parent.ID()) {
+				leave()
+				l.Debug("Access to the share ended, unsubscribed from event hub")
+				return nil
+			}
+
 			c.SSEvent("keep-alive", nil)
 			c.Writer.Flush()
 		}

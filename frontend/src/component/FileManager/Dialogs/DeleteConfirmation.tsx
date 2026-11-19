@@ -10,6 +10,7 @@ import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { deleteDialogPromisePool } from "../../../redux/thunks/dialog.ts";
 import SessionManager from "../../../session";
 import { formatDuration } from "../../../util/datetime.ts";
+import CrUri, { Filesystem } from "../../../util/uri.ts";
 import { SmallFormControlLabel } from "../../Common/StyledComponents.tsx";
 import DialogAccordion from "../../Dialogs/DialogAccordion.tsx";
 import DraggableDialog, { StyledDialogContentText } from "../../Dialogs/DraggableDialog.tsx";
@@ -40,6 +41,9 @@ const DeleteConfirmation = () => {
     return false;
   }, [targets]);
 
+  // Fylvo: members of a share may only move files to the owner's trash, never delete them permanently.
+  const inShare = !!targets?.length && new CrUri(targets[0].path).fs() == Filesystem.share;
+
   const onClose = useCallback(() => {
     dispatch(
       setFileDeleteModal({
@@ -67,7 +71,7 @@ const DeleteConfirmation = () => {
   }, [promiseId, unlink, skipSoftDelete, singleFilePermanently, multipleFilesPermanently]);
 
   const permission = SessionManager.currentUserGroupPermission();
-  const showSkipSoftDeleteOption = !hasTrashFiles;
+  const showSkipSoftDeleteOption = !hasTrashFiles && !inShare;
   const showUnlinkOption = (skipSoftDelete || hasTrashFiles) && permission.enabled(GroupPermission.advance_delete);
   const showAdvanceOptions = showUnlinkOption || showSkipSoftDeleteOption;
 

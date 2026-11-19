@@ -20,6 +20,9 @@ type (
 		// Buffered events will be kept for when the subscriber reconnects.
 		// Subscribers that remain offline for more than 14 days will be permanently removed.
 		Unsubscribe(ctx context.Context, topic int, id string)
+		// Remove ends a subscription for good. Nothing is collected for a later reconnect,
+		// and what was collected so far is dropped.
+		Remove(ctx context.Context, topic int, id string)
 		// Get subscribers of a topic.
 		GetSubscribers(ctx context.Context, topic int) []Subscriber
 		// Close shuts down the event hub and disconnects all subscribers.
@@ -172,6 +175,28 @@ func (e *eventHub) Unsubscribe(ctx context.Context, topic int, id string) {
 		sub.Stop()
 		// Mark as offline instead of deleting
 		sub.setOffline()
+	}
+}
+
+func (e *eventHub) Remove(ctx context.Context, topic int, id string) {
+	l := logging.FromContext(ctx)
+	l.Info("Removing subscriber for topic %d with id %s", topic, id)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.closed {
+		return
+	}
+
+	subs := e.topics[topic]
+	if sub, ok := subs[id]; ok {
+		sub.close()
+		delete(subs, id)
+	}
+
+	if len(subs) == 0 {
+		delete(e.topics, topic)
 	}
 }
 

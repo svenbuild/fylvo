@@ -56,7 +56,8 @@ type (
 		// UpsertMedata update or insert metadata of given file
 		PatchMedata(ctx context.Context, path []*fs.URI, data ...fs.MetadataPatch) error
 		// CreateViewerSession creates a viewer session for given file
-		CreateViewerSession(ctx context.Context, uri *fs.URI, version string, viewer *types.Viewer) (*ViewerSession, error)
+		CreateViewerSession(ctx context.Context, uri *fs.URI, version string, viewer *types.Viewer,
+			action types.ViewerAction) (*ViewerSession, error)
 		// TraverseFile traverses a file to its root file, return the file with linked root.
 		TraverseFile(ctx context.Context, fileID int) (fs.File, error)
 		// SearchFullText searches full text for given query and offset
@@ -123,6 +124,10 @@ type (
 		Expire          *time.Time
 		ShareView       bool
 		ShowReadMe      bool
+		// Fylvo: create the share for named members instead of as a link.
+		MemberOnly bool
+		// Fylvo: the members of a member-only share. Nil keeps the members of an existing share.
+		Members []types.ShareMember
 	}
 
 	FullTextSearchResults struct {

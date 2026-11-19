@@ -28,6 +28,8 @@ type (
 		ViewerID string
 		Version  string
 		Token    string
+		// Fylvo: what the session was opened for. Only an edit session may write.
+		Action types.ViewerAction
 	}
 	ViewerSessionCacheCtx struct{}
 	ViewerCtx             struct{}
@@ -43,7 +45,8 @@ func init() {
 	gob.Register(ViewerSessionCache{})
 }
 
-func (m *manager) CreateViewerSession(ctx context.Context, uri *fs.URI, version string, viewer *types.Viewer) (*ViewerSession, error) {
+func (m *manager) CreateViewerSession(ctx context.Context, uri *fs.URI, version string, viewer *types.Viewer,
+	action types.ViewerAction) (*ViewerSession, error) {
 	file, err := m.fs.Get(ctx, uri, dbfs.WithFileEntities(), dbfs.WithNotRoot())
 	if err != nil {
 		return nil, err
@@ -69,6 +72,7 @@ func (m *manager) CreateViewerSession(ctx context.Context, uri *fs.URI, version 
 		FileID:   file.ID(),
 		Version:  version,
 		Token:    fmt.Sprintf("%s.%s", sessionID, token),
+		Action:   action,
 	}
 	ttl := m.settings.ViewerSessionTTL(ctx)
 	if err := m.kv.Set(ViewerSessionCachePrefix+sessionID, *sessionCache, ttl); err != nil {

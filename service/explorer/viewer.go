@@ -43,10 +43,37 @@ func prepareFs(c *gin.Context) (*fs.URI, manager.FileManager, *ent.User, *manage
 	return uri, m, user, viewerSession, dep, nil
 }
 
+// sameFileAsSession makes sure the path kept in a session still leads to the file the
+// session was opened for. After a rename another file can sit at that path, and a session
+// must not read or overwrite it.
+func sameFileAsSession(file fs.File, session *manager.ViewerSessionCache) error {
+	if file.ID() != session.FileID {
+		return serializer.NewError(serializer.CodeNotFound, "file not found", nil)
+	}
+
+	return nil
+}
+
+// refuseViewSession answers a write request that came through a session opened for viewing.
+// It reports whether the request was refused.
+func refuseViewSession(c *gin.Context, session *manager.ViewerSessionCache) bool {
+	if session.Action == types.ViewerActionEdit {
+		return false
+	}
+
+	c.Status(http.StatusForbidden)
+	c.Header(wopi.ServerErrorHeader, "read-only access")
+	return true
+}
+
 func (service *WopiService) Unlock(c *gin.Context) error {
-	_, m, _, _, dep, err := prepareFs(c)
+	_, m, _, viewerSession, dep, err := prepareFs(c)
 	if err != nil {
 		return err
+	}
+
+	if refuseViewSession(c, viewerSession) {
+		return nil
 	}
 
 	l := dep.Logger()
@@ -63,17 +90,25 @@ func (service *WopiService) Unlock(c *gin.Context) error {
 }
 
 func (service *WopiService) RefreshLock(c *gin.Context) error {
-	uri, m, _, _, dep, err := prepareFs(c)
+	uri, m, _, viewerSession, dep, err := prepareFs(c)
 	if err != nil {
 		return err
+	}
+
+	if refuseViewSession(c, viewerSession) {
+		return nil
 	}
 
 	l := dep.Logger()
 
 	// Make sure file exists and readable
-	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityLockFile), dbfs.WithNotRoot())
+	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityLockFile, dbfs.NavigatorCapabilityUploadFile), dbfs.WithNotRoot())
 	if err != nil {
 		return fmt.Errorf("failed to get file: %w", err)
+	}
+
+	if err := sameFileAsSession(file, viewerSession); err != nil {
+		return err
 	}
 
 	lockToken := c.GetHeader(wopi.LockTokenHeader)
@@ -105,12 +140,20 @@ func (service *WopiService) Lock(c *gin.Context) error {
 		return err
 	}
 
+	if refuseViewSession(c, viewerSession) {
+		return nil
+	}
+
 	l := dep.Logger()
 
 	// Make sure file exists and readable
-	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityLockFile), dbfs.WithNotRoot())
+	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityLockFile, dbfs.NavigatorCapabilityUploadFile), dbfs.WithNotRoot())
 	if err != nil {
 		return fmt.Errorf("failed to get file: %w", err)
+	}
+
+	if err := sameFileAsSession(file, viewerSession); err != nil {
+		return err
 	}
 
 	lockToken := c.GetHeader(wopi.LockTokenHeader)
@@ -161,10 +204,18 @@ func (service *WopiService) PutContent(c *gin.Context, isPutRelative bool) error
 		return err
 	}
 
+	if refuseViewSession(c, viewerSession) {
+		return nil
+	}
+
 	// Make sure file exists and readable
 	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityUploadFile), dbfs.WithNotRoot())
 	if err != nil {
 		return fmt.Errorf("failed to get file: %w", err)
+	}
+
+	if err := sameFileAsSession(file, viewerSession); err != nil {
+		return err
 	}
 
 	var lockSession fs.LockSession
@@ -298,6 +349,10 @@ func (service *WopiService) GetFile(c *gin.Context) error {
 		return fmt.Errorf("failed to get file: %w", err)
 	}
 
+	if err := sameFileAsSession(file, viewerSession); err != nil {
+		return err
+	}
+
 	versionType := types.EntityTypeVersion
 	find, targetEntity := fs.FindDesiredEntity(file, viewerSession.Version, dep.HashIDEncoder(), &versionType)
 	if !find {
@@ -346,13 +401,23 @@ func (service *WopiService) FileInfo(c *gin.Context) (*WopiFileInfo, error) {
 		return nil, serializer.NewError(serializer.CodeNotFound, "file not found", nil)
 	}
 
+	if err := sameFileAsSession(file, viewerSession); err != nil {
+		return nil, err
+	}
+
 	versionType := types.EntityTypeVersion
 	find, targetEntity := fs.FindDesiredEntity(file, viewerSession.Version, hasher, &versionType)
 	if !find {
 		return nil, serializer.NewError(serializer.CodeNotFound, "version not found", nil)
 	}
 
-	canEdit := file.PrimaryEntityID() == targetEntity.ID() && file.OwnerID() == user.ID && uri.FileSystem() == constants.FileSystemMy
+	// Fylvo: besides the owner in their own files, a member with edit right on a shared
+	// folder may edit. The capabilities of the file say so, they come from the share.
+	mayWrite := file.OwnerID() == user.ID && uri.FileSystem() == constants.FileSystemMy
+	if uri.FileSystem() == constants.FileSystemShare && file.Capabilities() != nil {
+		mayWrite = file.Capabilities().Enabled(int(dbfs.NavigatorCapabilityUploadFile))
+	}
+	canEdit := file.PrimaryEntityID() == targetEntity.ID() && mayWrite && viewerSession.Action == types.ViewerActionEdit
 	cantPutRelative := !canEdit
 	siteUrl := settings.SiteURL(c)
 	info := &WopiFileInfo{
@@ -427,7 +492,7 @@ func (s *CreateViewerSessionService) Create(c *gin.Context) (*ViewerSessionRespo
 		return nil, serializer.NewError(serializer.CodeParamErr, "unknown viewer id", err)
 	}
 
-	viewerSession, err := m.CreateViewerSession(c, uri, s.Version, targetViewer)
+	viewerSession, err := m.CreateViewerSession(c, uri, s.Version, targetViewer, s.PreferredAction)
 	if err != nil {
 		return nil, err
 	}

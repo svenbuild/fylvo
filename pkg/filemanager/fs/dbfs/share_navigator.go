@@ -26,7 +26,10 @@ const (
 	PurchaseTicketHeader = constants.CrHeaderPrefix + "Purchase-Ticket"
 )
 
-var shareNavigatorCapability = &boolset.BooleanSet{}
+var (
+	shareNavigatorCapability       = &boolset.BooleanSet{}
+	shareEditorNavigatorCapability = &boolset.BooleanSet{}
+)
 
 // NewShareNavigator creates a navigator for user's "shared" file system.
 func NewShareNavigator(u *ent.User, fileClient inventory.FileClient, shareClient inventory.ShareClient,
@@ -56,8 +59,10 @@ type (
 		ownerRoot       *File
 		share           *ent.Share
 		owner           *ent.User
-		disableRecycle  bool
-		persist         func()
+		// Fylvo: the current user is a member with edit right on this shared folder.
+		editable       bool
+		disableRecycle bool
+		persist        func()
 	}
 
 	shareNavigatorState struct {
@@ -72,6 +77,12 @@ type (
 func (n *shareNavigator) PersistState(kv cache.Driver, key string) {
 	n.disableRecycle = true
 	n.persist = func() {
+		// Fylvo: never cache access to a member-only share, so that removing a member
+		// or changing a right takes effect with the next request.
+		if n.share == nil || n.share.Props.IsMemberOnly() {
+			return
+		}
+
 		kv.Set(key, shareNavigatorState{
 			ShareRoot:       n.shareRoot,
 			OwnerRoot:       n.ownerRoot,
@@ -85,6 +96,11 @@ func (n *shareNavigator) PersistState(kv cache.Driver, key string) {
 func (n *shareNavigator) RestoreState(s State) error {
 	n.disableRecycle = true
 	if state, ok := s.(shareNavigatorState); ok {
+		// Such a state is never written, see PersistState. This only makes sure of it.
+		if state.Share == nil || state.Share.Props.IsMemberOnly() {
+			return fmt.Errorf("state of a member-only share is not restored")
+		}
+
 		n.shareRoot = state.ShareRoot
 		n.ownerRoot = state.OwnerRoot
 		n.singleFileShare = state.SingleFileShare
@@ -111,6 +127,9 @@ func (n *shareNavigator) Recycle() {
 	}
 }
 
+// Root loads the share and checks that the current user may open it. It is the only way
+// into a share: every file under it is reached by walking down from the returned root.
+// The navigator is only changed once all checks have passed.
 func (n *shareNavigator) Root(ctx context.Context, path *fs.URI) (*File, error) {
 	ctx = context.WithValue(ctx, inventory.LoadShareUser{}, true)
 	ctx = context.WithValue(ctx, inventory.LoadUserGroup{}, true)
@@ -124,7 +143,13 @@ func (n *shareNavigator) Root(ctx context.Context, path *fs.URI) (*File, error) 
 		return nil, ErrShareNotFound.WithError(err)
 	}
 
-	n.owner = share.Edges.User
+	owner := share.Edges.User
+
+	// Fylvo: a member-only share is open to its owner and to the listed members, nobody else.
+	member := share.Props.Member(n.user.ID)
+	if share.Props.IsMemberOnly() && n.user.ID != owner.ID && member == nil {
+		return nil, ErrShareNotFound
+	}
 
 	// Check password
 	if share.Password != "" && share.Password != path.Password() {
@@ -132,31 +157,25 @@ func (n *shareNavigator) Root(ctx context.Context, path *fs.URI) (*File, error) 
 	}
 
 	// Share permission setting should overwrite root folder's permission
-	n.shareRoot = newFile(nil, share.Edges.File)
+	shareRoot := newFile(nil, share.Edges.File)
 
 	// Find the user side root of the file.
-	ownerRoot, err := n.findRoot(ctx, n.shareRoot)
+	ownerRoot, err := n.findRoot(ctx, shareRoot)
 	if err != nil {
 		return nil, err
 	}
 
-	if n.shareRoot.Type() == types.FileTypeFile {
-		n.singleFileShare = true
-		n.shareRoot = n.shareRoot.Parent
+	singleFileShare := shareRoot.Type() == types.FileTypeFile
+	if singleFileShare {
+		shareRoot = shareRoot.Parent
 	}
-
-	n.shareRoot.Path[pathIndexUser] = path.Root()
-	n.shareRoot.OwnerModel = n.owner
-	n.shareRoot.IsUserRoot = true
-	n.shareRoot.disableView = (share.Props == nil || !share.Props.ShareView) && n.user.ID != n.owner.ID
-	n.shareRoot.CapabilitiesBs = n.Capabilities(false).Capability
 
 	// Check if any ancestors is deleted
 	if ownerRoot.Name() != inventory.RootFolderName {
 		return nil, ErrShareNotFound
 	}
 
-	if n.user.ID != n.owner.ID && !n.user.Edges.Group.Permissions.Enabled(int(types.GroupPermissionShareDownload)) {
+	if n.user.ID != owner.ID && !n.user.Edges.Group.Permissions.Enabled(int(types.GroupPermissionShareDownload)) {
 		if inventory.IsAnonymousUser(n.user) {
 			return nil, serializer.NewError(
 				serializer.CodeAnonymouseAccessDenied,
@@ -172,20 +191,31 @@ func (n *shareNavigator) Root(ctx context.Context, path *fs.URI) (*File, error) 
 		)
 	}
 
-	n.ownerRoot = ownerRoot
-	n.ownerRoot.Path[pathIndexRoot] = newMyIDUri(hashid.EncodeUserID(n.hasher, n.owner.ID))
+	n.owner = owner
 	n.share = share
+	n.singleFileShare = singleFileShare
+	// Fylvo: only a whole folder can be opened for editing. With a single shared file the
+	// root is the folder that holds it, and that folder is not shared.
+	n.editable = member != nil && member.CanEdit && !singleFileShare
+
+	shareRoot.Path[pathIndexUser] = path.Root()
+	shareRoot.OwnerModel = owner
+	shareRoot.IsUserRoot = true
+	shareRoot.editable = n.editable
+	shareRoot.disableView = (share.Props == nil || !share.Props.ShareView) && n.user.ID != owner.ID
+	shareRoot.CapabilitiesBs = n.Capabilities(false).Capability
+
+	n.shareRoot = shareRoot
+	n.ownerRoot = ownerRoot
+	n.ownerRoot.Path[pathIndexRoot] = newMyIDUri(hashid.EncodeUserID(n.hasher, owner.ID))
 	return n.shareRoot, nil
 }
 
 func (n *shareNavigator) To(ctx context.Context, path *fs.URI) (*File, error) {
 	if n.shareRoot == nil {
-		root, err := n.Root(ctx, path)
-		if err != nil {
+		if _, err := n.Root(ctx, path); err != nil {
 			return nil, err
 		}
-
-		n.shareRoot = root
 	}
 
 	current, lastAncestor := n.shareRoot, n.shareRoot
@@ -203,6 +233,12 @@ func (n *shareNavigator) To(ctx context.Context, path *fs.URI) (*File, error) {
 		}
 
 		return file, nil
+	}
+
+	// Fylvo: the root of a single file share is the folder that holds the file. Only the
+	// file itself is shared, so nothing deeper may be reached through that folder.
+	if len(elements) > 1 && n.singleFileShare {
+		return nil, fs.ErrPathNotExist
 	}
 
 	var err error
@@ -260,8 +296,13 @@ func (n *shareNavigator) latestSharedSingleFile(ctx context.Context) (*File, err
 }
 
 func (n *shareNavigator) Capabilities(isSearching bool) *fs.NavigatorProps {
+	capability := shareNavigatorCapability
+	if n.editable {
+		capability = shareEditorNavigatorCapability
+	}
+
 	res := &fs.NavigatorProps{
-		Capability:            shareNavigatorCapability,
+		Capability:            capability,
 		OrderDirectionOptions: fullOrderDirectionOption,
 		OrderByOptions:        fullOrderByOption,
 		MaxPageSize:           n.config.MaxPageSize,

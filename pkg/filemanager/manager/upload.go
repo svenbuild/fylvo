@@ -16,6 +16,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/queue"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -471,11 +472,18 @@ func (m *manager) OnUploadFailed(ctx context.Context, session *fs.UploadSession)
 		}
 
 		if session.NewFileCreated {
-			if err := m.Delete(ctx, []*fs.URI{session.Props.Uri}, fs.WithSysSkipSoftDelete(true)); err != nil {
+			// Fylvo: the file is removed for good and without asking who owns it, so make sure
+			// the path still leads to the placeholder of this upload. In a shared folder
+			// somebody else may have put another file there in the meantime.
+			if placeholder, err := m.fs.Get(ctx, session.Props.Uri); err != nil || placeholder.ID() != session.FileID {
+				m.l.Warning("OnUploadFailed hook found no placeholder of the upload at %q, nothing deleted.", session.Props.Uri)
+			} else if err := m.Delete(ctx, []*fs.URI{session.Props.Uri}, fs.WithSysSkipSoftDelete(true)); err != nil {
 				m.l.Warning("OnUploadFailed hook failed to delete file: %s", err)
 			}
 		} else if !session.Importing {
-			if _, err := m.fs.VersionControl(ctx, session.Props.Uri, session.EntityID, true); err != nil {
+			// Fylvo: removing the version of the failed upload is clean-up by the system. The
+			// uploader can be a member of a shared folder, who may not manage versions otherwise.
+			if _, err := m.fs.VersionControl(dbfs.WithBypassOwnerCheck(ctx), session.Props.Uri, session.EntityID, true); err != nil {
 				m.l.Warning("OnUploadFailed hook failed to version control: %s", err)
 			}
 		}

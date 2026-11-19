@@ -35,6 +35,7 @@ import MoreHorizontal from "../../Icons/MoreHorizontal.tsx";
 import LinkEdit from "../../Icons/LinkEdit.tsx";
 import LockClosedOutlined from "../../Icons/LockClosedOutlined.tsx";
 import Open from "../../Icons/Open.tsx";
+import { ShareMembersBadge } from "../../FileManager/Dialogs/Share/ShareMembers.tsx";
 import { SummaryButton } from "../Tasks/TaskCard.tsx";
 
 export interface ShareCardProps {
@@ -102,12 +103,14 @@ const ActionMenu = ({ share, onShareDeleted, onClose, ...rest }: ActionMenuProps
         </ListItemIcon>
         <ListItemText>{t(`fileManager.open`)}</ListItemText>
       </SquareMenuItem>
-      <SquareMenuItem dense onClick={copyLink}>
-        <ListItemIcon>
-          <Clipboard fontSize="small" />
-        </ListItemIcon>
-        <ListItemText>{t(`share.copyLinkToClipboard`)}</ListItemText>
-      </SquareMenuItem>
+      {!share.member_only && (
+        <SquareMenuItem dense onClick={copyLink}>
+          <ListItemIcon>
+            <Clipboard fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t(`share.copyLinkToClipboard`)}</ListItemText>
+        </SquareMenuItem>
+      )}
       {!share.expired && (
         <SquareMenuItem dense onClick={openEdit}>
           <ListItemIcon>
@@ -216,6 +219,7 @@ const ShareCard = ({ share, onShareDeleted, onLoad, loading }: ShareCardProps) =
                 whiteSpace: "nowrap",
               }}
             >
+              {share?.member_only && <ShareMembersBadge share={share} />}
               {share?.created_at ? (
                 <>
                   <TimeBadge variant="caption" datetime={share.created_at} />

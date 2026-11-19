@@ -326,12 +326,41 @@ func (l *manager) CreateOrUpdateShare(ctx context.Context, path *fs.URI, args *C
 		ShowReadMe: args.ShowReadMe,
 	}
 
+	remainDownloads := args.RemainDownloads
+	memberOnly, err := l.memberOnlyShare(file, existed, args)
+	if err != nil {
+		return nil, err
+	}
+
+	if memberOnly {
+		var known []types.ShareMember
+		if existed != nil {
+			known = existed.Props.Members
+		}
+
+		members := args.Members
+		if members == nil {
+			members = known
+		}
+
+		if err := l.validateShareMembers(ctx, members, known); err != nil {
+			return nil, err
+		}
+
+		props.MemberOnly = true
+		props.Members = members
+		// Members need no password. A download limit would end the share while it is in
+		// use, every opened file counts as a download.
+		password = ""
+		remainDownloads = 0
+	}
+
 	share, err := shareClient.Upsert(ctx, &inventory.CreateShareParams{
 		OwnerID:         file.OwnerID(),
 		FileID:          file.ID(),
 		Password:        password,
 		Expires:         args.Expire,
-		RemainDownloads: args.RemainDownloads,
+		RemainDownloads: remainDownloads,
 		Existed:         existed,
 		Props:           props,
 	})

@@ -72,6 +72,12 @@ func (s *ShareInfoService) Get(c *gin.Context) (*explorer.Share, error) {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to get share", err)
 	}
 
+	// Fylvo: a shared folder for members does not exist for anybody else, whether it is
+	// still valid or not.
+	if owner := share.Edges.User; share.Props.IsMemberOnly() && (owner == nil || owner.ID != u.ID) && share.Props.Member(u.ID) == nil {
+		return nil, serializer.NewError(serializer.CodeNotFound, "Share not found", nil)
+	}
+
 	if err := inventory.IsValidShare(share); err != nil {
 		return nil, serializer.NewError(serializer.CodeNotFound, "Share link expired", err)
 	}
@@ -175,8 +181,9 @@ func (s *ListShareService) ListInUserProfile(c *gin.Context, uid int) (*ListShar
 			Order:               inventory.OrderDirection(s.OrderDirection),
 			OrderBy:             s.OrderBy,
 		},
-		UserID:     uid,
-		PublicOnly: publicOnly,
+		UserID:         uid,
+		PublicOnly:     publicOnly,
+		HideMemberOnly: true,
 	}
 
 	ctx := context.WithValue(c, inventory.LoadShareUser{}, true)

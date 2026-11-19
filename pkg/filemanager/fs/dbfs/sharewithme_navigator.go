@@ -20,14 +20,15 @@ import (
 var sharedWithMeNavigatorCapability = &boolset.BooleanSet{}
 
 // NewSharedWithMeNavigator creates a navigator for user's "shared with me" file system.
-func NewSharedWithMeNavigator(u *ent.User, fileClient inventory.FileClient, l logging.Logger,
-	config *setting.DBFS, hasher hashid.Encoder) Navigator {
+func NewSharedWithMeNavigator(u *ent.User, fileClient inventory.FileClient, shareClient inventory.ShareClient,
+	l logging.Logger, config *setting.DBFS, hasher hashid.Encoder) Navigator {
 	n := &sharedWithMeNavigator{
-		user:       u,
-		l:          l,
-		fileClient: fileClient,
-		config:     config,
-		hasher:     hasher,
+		user:        u,
+		l:           l,
+		fileClient:  fileClient,
+		shareClient: shareClient,
+		config:      config,
+		hasher:      hasher,
 	}
 	n.baseNavigator = newBaseNavigator(fileClient, defaultFilter, u, hasher, config)
 	return n
@@ -37,8 +38,10 @@ type sharedWithMeNavigator struct {
 	l          logging.Logger
 	user       *ent.User
 	fileClient inventory.FileClient
-	config     *setting.DBFS
-	hasher     hashid.Encoder
+	// Fylvo: lists the shared folders the user is a member of.
+	shareClient inventory.ShareClient
+	config      *setting.DBFS
+	hasher      hashid.Encoder
 
 	root *File
 	*baseNavigator
@@ -95,6 +98,20 @@ func (t *sharedWithMeNavigator) Children(ctx context.Context, parent *File, args
 	// Adding user uri for each file.
 	for i := 0; i < len(res.Files); i++ {
 		res.Files[i].Path[pathIndexUser] = newSharedWithMeUri(hashid.EncodeFileID(t.hasher, res.Files[i].Model.ID))
+	}
+
+	// Fylvo: folders shared with the user as a member come first, on the first page.
+	if args.Page == nil || (args.Page.Page == 0 && args.Page.PageToken == "") {
+		entries, err := t.memberShareEntries(ctx, args.Search, savedShares(res.Files))
+		if err != nil {
+			return nil, fmt.Errorf("failed to list shared folders: %w", err)
+		}
+
+		if args.StreamCallback != nil {
+			args.StreamCallback(entries)
+		} else {
+			res.Files = append(entries, res.Files...)
+		}
 	}
 
 	return res, nil

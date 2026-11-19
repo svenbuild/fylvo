@@ -225,6 +225,19 @@ type (
 		ShareView bool `json:"share_view,omitempty"`
 		// Whether to automatically show readme file in share view
 		ShowReadMe bool `json:"show_read_me,omitempty"`
+		// Fylvo: the share is open to the listed members only, not to everybody who has the link.
+		// Set when the share is created and never changed afterwards, so that removing the
+		// last member cannot turn a private share into a public link.
+		MemberOnly bool `json:"member_only,omitempty"`
+		// Fylvo: users who may open a member-only share.
+		Members []ShareMember `json:"members,omitempty"`
+	}
+
+	// ShareMember is a user with access to a member-only share.
+	ShareMember struct {
+		UserID int `json:"user_id"`
+		// CanEdit lets the member change the content of the shared folder.
+		CanEdit bool `json:"can_edit,omitempty"`
 	}
 
 	OAuthClientProps struct {

@@ -12,6 +12,8 @@ import {
   Stack,
   styled,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
 import MuiAccordion from "@mui/material/Accordion";
@@ -20,14 +22,17 @@ import MuiAccordionSummary from "@mui/material/AccordionSummary";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { hoverSurface, selectedSurface } from "../../../../fylvoTheme.ts";
-import { FileResponse, FileType } from "../../../../api/explorer.ts";
+import { FileResponse, FileType, ShareMember } from "../../../../api/explorer.ts";
 import { Code } from "../../../Common/Code.tsx";
 import { FilledTextField, SmallFormControlLabel } from "../../../Common/StyledComponents.tsx";
 import BookInformation from "../../../Icons/BookInformation.tsx";
 import ClockArrowDownload from "../../../Icons/ClockArrowDownload.tsx";
 import Eye from "../../../Icons/Eye.tsx";
+import LinkOutlined from "../../../Icons/LinkOutlined.tsx";
+import People from "../../../Icons/People.tsx";
 import TableSettingsOutlined from "../../../Icons/TableSettings.tsx";
 import Timer from "../../../Icons/Timer.tsx";
+import ShareMembers from "./ShareMembers.tsx";
 
 const Accordion = styled(MuiAccordion)(() => ({
   border: 0,
@@ -93,6 +98,9 @@ export interface ShareSetting {
   show_readme?: boolean;
   downloads?: boolean;
   expires?: boolean;
+  // Fylvo: share with named people instead of a link. Fixed once the share exists.
+  member_only?: boolean;
+  members?: ShareMember[];
 
   downloads_val: valueOption;
   expires_val: valueOption;
@@ -158,60 +166,87 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
         padding: 0,
       }}
     >
-      <Accordion expanded={expanded === "is_private"} onChange={handleExpand("is_private")}>
-        <AccordionSummary aria-controls="panel1a-content" id="panel1a-header">
-          <StyledListItemButton>
-            <ListItemIcon>
-              <Eye />
-            </ListItemIcon>
-            <ListItemText primary={t("application:modals.privateShare")} />
-            <ListItemSecondaryAction>
-              <Checkbox disabled={editing} checked={!!setting.is_private} onChange={handleCheck("is_private")} />
-            </ListItemSecondaryAction>
-          </StyledListItemButton>
-        </AccordionSummary>
-        <AccordionDetails sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <Typography variant="body2">{t("application:modals.privateShareDes")}</Typography>
-          {setting.is_private && (
-            <Stack sx={{ mt: 1, width: "100%" }}>
-              {!editing && (
-                <SmallFormControlLabel
-                  control={
-                    <Checkbox
-                      size="small"
-                      checked={setting.use_custom_password}
-                      onChange={() => {
-                        onSettingChange({ ...setting, use_custom_password: !setting.use_custom_password });
-                      }}
-                    />
-                  }
-                  label={t("application:modals.useCustomPassword")}
-                />
-              )}
-              <Collapse in={setting.use_custom_password}>
-                <FormControl variant="standard" fullWidth sx={{ mt: 1 }}>
-                  <FilledTextField
-                    label={t("application:modals.sharePassword")}
-                    disabled={editing}
-                    slotProps={{
-                      htmlInput: {
-                        maxLength: 32,
-                      },
-                    }}
-                    value={setting.password ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value.trim();
-                      if (!/^[a-zA-Z0-9]*$/.test(value) || value.length > 32) return;
-                      onSettingChange({ ...setting, password: value });
-                    }}
-                    required
+      {!editing && file?.type == FileType.folder && (
+        <ToggleButtonGroup
+          value={setting.member_only ? "people" : "link"}
+          exclusive
+          fullWidth
+          size="small"
+          sx={{ mb: 1 }}
+          onChange={(_e, mode) => mode && onSettingChange({ ...setting, member_only: mode == "people" })}
+        >
+          <ToggleButton value="link" sx={{ textTransform: "none" }}>
+            <LinkOutlined fontSize="small" sx={{ mr: 0.5 }} />
+            <Typography variant="caption">{t("application:modals.shareModeLink")}</Typography>
+          </ToggleButton>
+          <ToggleButton value="people" sx={{ textTransform: "none" }}>
+            <People fontSize="small" sx={{ mr: 0.5 }} />
+            <Typography variant="caption">{t("application:modals.shareModePeople")}</Typography>
+          </ToggleButton>
+        </ToggleButtonGroup>
+      )}
+      {setting.member_only && (
+        <ShareMembers
+          members={setting.members ?? []}
+          onChange={(members) => onSettingChange({ ...setting, members })}
+        />
+      )}
+      {!setting.member_only && (
+        <Accordion expanded={expanded === "is_private"} onChange={handleExpand("is_private")}>
+          <AccordionSummary aria-controls="panel1a-content" id="panel1a-header">
+            <StyledListItemButton>
+              <ListItemIcon>
+                <Eye />
+              </ListItemIcon>
+              <ListItemText primary={t("application:modals.privateShare")} />
+              <ListItemSecondaryAction>
+                <Checkbox disabled={editing} checked={!!setting.is_private} onChange={handleCheck("is_private")} />
+              </ListItemSecondaryAction>
+            </StyledListItemButton>
+          </AccordionSummary>
+          <AccordionDetails sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <Typography variant="body2">{t("application:modals.privateShareDes")}</Typography>
+            {setting.is_private && (
+              <Stack sx={{ mt: 1, width: "100%" }}>
+                {!editing && (
+                  <SmallFormControlLabel
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={setting.use_custom_password}
+                        onChange={() => {
+                          onSettingChange({ ...setting, use_custom_password: !setting.use_custom_password });
+                        }}
+                      />
+                    }
+                    label={t("application:modals.useCustomPassword")}
                   />
-                </FormControl>
-              </Collapse>
-            </Stack>
-          )}
-        </AccordionDetails>
-      </Accordion>
+                )}
+                <Collapse in={setting.use_custom_password}>
+                  <FormControl variant="standard" fullWidth sx={{ mt: 1 }}>
+                    <FilledTextField
+                      label={t("application:modals.sharePassword")}
+                      disabled={editing}
+                      slotProps={{
+                        htmlInput: {
+                          maxLength: 32,
+                        },
+                      }}
+                      value={setting.password ?? ""}
+                      onChange={(e) => {
+                        const value = e.target.value.trim();
+                        if (!/^[a-zA-Z0-9]*$/.test(value) || value.length > 32) return;
+                        onSettingChange({ ...setting, password: value });
+                      }}
+                      required
+                    />
+                  </FormControl>
+                </Collapse>
+              </Stack>
+            )}
+          </AccordionDetails>
+        </Accordion>
+      )}
       {file?.type == FileType.folder && (
         <>
           <Accordion expanded={expanded === "share_view"} onChange={handleExpand("share_view")}>
@@ -380,7 +415,9 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
                 }
                 disableClearable
                 options={downloadOptions}
-                renderInput={(params) => <TextField sx={{ width: { xs: 132, sm: 180 } }} {...params} variant={"standard"} />}
+                renderInput={(params) => (
+                  <TextField sx={{ width: { xs: 132, sm: 180 } }} {...params} variant={"standard"} />
+                )}
               />
             </FormControl>
             <Typography>{t("application:modals.expireSuffix")}</Typography>

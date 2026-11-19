@@ -26,6 +26,8 @@ interface PathSelectionVariant {
   indicator: string;
   title: string;
   disableSharedWithMe?: boolean;
+  // Fylvo: show "Shared with me" so a folder shared with the user can be picked; the list itself is no folder.
+  pickInsideSharedWithMe?: boolean;
   disableTrash?: boolean;
 }
 
@@ -79,7 +81,7 @@ export const PathSelectionVariants: Record<string, PathSelectionVariant> = {
   davAccountRoot: {
     indicator: "application:setting.rootFolderIn",
     title: "application:setting.rootFolder",
-    disableSharedWithMe: true,
+    pickInsideSharedWithMe: true,
     disableTrash: true,
   },
 };
@@ -151,7 +153,10 @@ const PathSelection = () => {
     const dst = selectedPath;
     if (dst) {
       const crUri = new CrUri(dst);
-      if (variantProps.disableSharedWithMe && crUri.fs() == Filesystem.shared_with_me) {
+      if (
+        (variantProps.disableSharedWithMe || variantProps.pickInsideSharedWithMe) &&
+        crUri.fs() == Filesystem.shared_with_me
+      ) {
         return true;
       }
       if (variantProps.disableTrash && crUri.fs() == Filesystem.trash) {

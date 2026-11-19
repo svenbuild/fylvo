@@ -47,6 +47,11 @@ func stripPrefix(p string, u *ent.User) (string, *fs.URI, int, error) {
 	prefix := davPrefix
 	if r := strings.TrimPrefix(p, prefix); len(r) < len(p) {
 		r = strings.TrimPrefix(r, fs.Separator)
+		// Fylvo: a path must stay below the folder the account is set up for.
+		if lo.Contains(strings.Split(r, fs.Separator), "..") {
+			return "", nil, http.StatusBadRequest, errPrefixMismatch
+		}
+
 		return r, base.JoinRaw(util.RemoveSlash(r)), http.StatusOK, nil
 	}
 	return "", nil, http.StatusNotFound, errPrefixMismatch
@@ -294,12 +299,13 @@ func handleOptions(c *gin.Context, user *ent.User, fm manager.FileManager) (stat
 		}
 		if target, _, err := fm.SharedAddressTranslation(c, reqPath); err == nil {
 			allow = allow[:1]
-			read, update, del, create := true, true, true, true
-			if target.OwnerID() != user.ID {
-				update = false
-				del = false
-				create = false
+			// Fylvo: what the user may do here follows from the capabilities, the same ones
+			// the requests are checked against. An editor of a shared folder is not its owner.
+			can := func(capability dbfs.NavigatorCapability) bool {
+				return target.Capabilities() != nil && target.Capabilities().Enabled(int(capability))
 			}
+			read, update, del, create := true, can(dbfs.NavigatorCapabilityUploadFile),
+				can(dbfs.NavigatorCapabilitySoftDelete), can(dbfs.NavigatorCapabilityCreateFile)
 			if del {
 				allow = append(allow, "DELETE", "MOVE")
 			}
@@ -312,11 +318,11 @@ func handleOptions(c *gin.Context, user *ent.User, fm manager.FileManager) (stat
 			if update || create {
 				allow = append(allow, "LOCK", "UNLOCK")
 			}
-			if update {
+			if can(dbfs.NavigatorCapabilityUpdateMetadata) {
 				allow = append(allow, "PROPPATCH")
-				if target.Type() == types.FileTypeFile {
-					allow = append(allow, "PUT")
-				}
+			}
+			if update && target.Type() == types.FileTypeFile {
+				allow = append(allow, "PUT")
 			}
 		} else {
 			logging.FromContext(c).Debug("Handle options failed to get target: %s", err)
@@ -415,6 +421,25 @@ func handleLock(c *gin.Context, user *ent.User, fm manager.FileManager) (retStat
 		if token == "" {
 			return http.StatusBadRequest, errInvalidLockToken
 		}
+		// Fylvo: only who may still write here keeps a lock alive. A member who was removed
+		// from a shared folder, or lost the edit right, must not hold on to its files.
+		locked, lockedUri, err := fm.SharedAddressTranslation(c, reqPath)
+		if err != nil && !ent.IsNotFound(err) {
+			return purposeStatusCodeFromError(err), err
+		}
+		if locked == nil || locked.Capabilities() == nil ||
+			!locked.Capabilities().Enabled(int(dbfs.NavigatorCapabilityUploadFile)) {
+			return http.StatusForbidden, fs.ErrOwnerOnly
+		}
+
+		// The token alone would find its lock wherever that lies. It must be a lock on the
+		// path that was just checked, not one from a place the user has no say in any more.
+		release, _, err := fm.ConfirmLock(c, locked, lockedUri, token)
+		if err != nil {
+			return http.StatusPreconditionFailed, err
+		}
+		release()
+
 		ld, err = fm.Refresh(c, duration, token)
 		if err != nil {
 			if errors.Is(err, lock.ErrNoSuchLock) {
@@ -705,6 +730,14 @@ func performCopyMove(
 	srcUri, dstUri, dstFolderUri *fs.URI,
 	isCopy, overwrite, dstExists bool,
 ) (int, error) {
+	// Fylvo: refuse what the file system will not do before anything at the destination
+	// is removed. Without this, a refused move or copy would still delete the file it was
+	// to replace.
+	if !dbfs.CanMoveOrCopyTo(srcUri, dstFolderUri, isCopy) || srcUri.PathTrimmed() == "" ||
+		dstFolderUri.EqualOrIsDescendantOf(srcUri, "") {
+		return http.StatusForbidden, fs.ErrNotSupportedAction
+	}
+
 	if dstExists {
 		if !overwrite {
 			return http.StatusPreconditionFailed, errDestinationExists

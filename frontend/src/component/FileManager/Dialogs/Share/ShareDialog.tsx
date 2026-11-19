@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import { TFunction } from "i18next";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { enqueueSnackbar } from "notistack";
 import { CSSTransition, SwitchTransition } from "react-transition-group";
 import { Share as ShareModel } from "../../../../api/explorer.ts";
 import { closeShareLinkDialog } from "../../../../redux/globalStateSlice.ts";
@@ -10,6 +11,7 @@ import { useAppDispatch, useAppSelector } from "../../../../redux/hooks.ts";
 import { createOrUpdateShareLink } from "../../../../redux/thunks/share.ts";
 import { copyToClipboard, sendLink } from "../../../../util";
 import AutoHeight from "../../../Common/AutoHeight.tsx";
+import { DefaultCloseAction } from "../../../Common/Snackbar/snackbar.tsx";
 import { FilledTextField, SmallFormControlLabel } from "../../../Common/StyledComponents.tsx";
 import DraggableDialog from "../../../Dialogs/DraggableDialog.tsx";
 import CopyOutlined from "../../../Icons/CopyOutlined.tsx";
@@ -34,6 +36,8 @@ const shareToSetting = (share: ShareModel, t: TFunction): ShareSetting => {
     use_custom_password: true,
     share_view: share.share_view,
     show_readme: share.show_readme,
+    member_only: share.member_only,
+    members: share.members ?? [],
     downloads: share.remain_downloads != undefined && share.remain_downloads > 0,
 
     expires_val: expireOptions[2],
@@ -124,13 +128,25 @@ const ShareDialog = () => {
         const shareLink = await dispatch(
           createOrUpdateShareLink(FileManagerIndex.main, target, setting, editTarget?.id),
         );
+        // Fylvo: a member share has no link to hand out, the people see it under "Shared with me".
+        if (setting.member_only) {
+          enqueueSnackbar({
+            message: setting.members?.length
+              ? t("application:modals.sharedWithPeople", { count: setting.members.length })
+              : t("application:modals.sharedWithNobody"),
+            variant: "success",
+            action: DefaultCloseAction,
+          });
+          dispatch(closeShareLinkDialog());
+          return;
+        }
         setShareLink(shareLink);
       } catch (e) {
       } finally {
         setLoading(false);
       }
     },
-    [dispatch, target, shareLink, editTarget, setLoading, setting, setShareLink],
+    [dispatch, t, target, shareLink, editTarget, setLoading, setting, setShareLink],
   );
 
   const finalShareLink = useMemo(() => {
@@ -150,11 +166,16 @@ const ShareDialog = () => {
   return (
     <>
       <DraggableDialog
-        title={t(`application:modals.${editTarget ? "edit" : "create"}ShareLink`)}
+        title={t(
+          setting.member_only
+            ? "application:modals.shareWithPeople"
+            : `application:modals.${editTarget ? "edit" : "create"}ShareLink`,
+        )}
         showActions
         loading={loading}
         showCancel
         hideOk={!!shareLink}
+        disabled={!editTarget && setting.member_only && !setting.members?.length}
         onAccept={onAccept}
         dialogProps={{
           open: open ?? false,

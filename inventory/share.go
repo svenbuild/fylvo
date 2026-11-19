@@ -8,6 +8,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/file"
 	"github.com/cloudreve/Cloudreve/v4/ent/predicate"
@@ -57,6 +58,8 @@ type (
 		List(ctx context.Context, args *ListShareArgs) (*ListShareResult, error)
 		// CountByTimeRange counts the number of shares created in the given time range.
 		CountByTimeRange(ctx context.Context, start, end *time.Time) (int, error)
+		// ListForMember returns the valid member-only shares that list the given user.
+		ListForMember(ctx context.Context, uid int) ([]*ent.Share, error)
 	}
 
 	CreateShareParams struct {
@@ -74,7 +77,9 @@ type (
 		UserID     int
 		FileID     int
 		PublicOnly bool
-		ShareIDs   []int
+		// Fylvo: leave out member-only shares. They are not links and must not show up in a profile.
+		HideMemberOnly bool
+		ShareIDs       []int
 	}
 	ListShareResult struct {
 		*PaginationResults
@@ -224,6 +229,27 @@ func (c *shareClient) Downloaded(ctx context.Context, share *ent.Share) error {
 	return err
 }
 
+// memberOnlyShare matches shares whose props carry the member-only mark. The mark is only
+// ever written as true, so its presence is enough.
+func memberOnlyShare() *sql.Predicate {
+	return sqljson.HasKey(share.FieldProps, sqljson.Path("member_only"))
+}
+
+func (c *shareClient) ListForMember(ctx context.Context, uid int) ([]*ent.Share, error) {
+	ctx = context.WithValue(ctx, LoadShareFile{}, true)
+	ctx = context.WithValue(ctx, LoadShareUser{}, true)
+	shares, err := withShareEagerLoading(ctx, c.client.Share.Query().Where(predicate.Share(func(s *sql.Selector) {
+		s.Where(memberOnlyShare())
+	}))).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query member shares: %w", err)
+	}
+
+	return lo.Filter(shares, func(s *ent.Share, _ int) bool {
+		return s.Props.Member(uid) != nil && IsValidShare(s) == nil
+	}), nil
+}
+
 func IsValidShare(share *ent.Share) error {
 	// Check if share is expired
 	if err := IsShareExpired(share); err != nil {
@@ -355,6 +381,12 @@ func (c *shareClient) listQuery(args *ListShareArgs) *ent.ShareQuery {
 
 	if args.PublicOnly {
 		query.Where(share.PasswordIsNil())
+	}
+
+	if args.HideMemberOnly {
+		query.Where(predicate.Share(func(s *sql.Selector) {
+			s.Where(sql.Not(memberOnlyShare()))
+		}))
 	}
 
 	if args.FileID > 0 {

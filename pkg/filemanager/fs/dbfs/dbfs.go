@@ -231,13 +231,15 @@ func (f *DBFS) Capacity(ctx context.Context, u *ent.User) (*fs.Capacity, error) 
 		res = &fs.Capacity{}
 	)
 
-	requesterGroup, err := u.Edges.GroupOrErr()
+	group, err := u.Edges.GroupOrErr()
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to get user's group", err)
 	}
 
-	res.Used = f.user.Storage
-	res.Total = requesterGroup.MaxStorage
+	// Fylvo: count what the asked user has stored. The requester can be somebody else,
+	// for example a member who uploads into a shared folder of this user.
+	res.Used = u.Storage
+	res.Total = group.MaxStorage
 	return res, nil
 }
 
@@ -451,7 +453,7 @@ func (f *DBFS) Get(ctx context.Context, path *fs.URI, opts ...fs.Option) (fs.Fil
 
 	// Calculate folder summary if requested
 	if o.loadFolderSummary && target != nil && target.Type() == types.FileTypeFolder {
-		if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); !ok && target.OwnerID() != f.user.ID {
+		if !f.canWalk(ctx, navigator, target) {
 			return nil, fs.ErrOwnerOnly
 		}
 
@@ -547,7 +549,7 @@ func (f *DBFS) Walk(ctx context.Context, path *fs.URI, depth int, walk fs.WalkFu
 	}
 
 	// Require Read permission
-	if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); !ok && target.OwnerID() != f.user.ID {
+	if !f.canWalk(ctx, navigator, target) {
 		return fs.ErrOwnerOnly
 	}
 
@@ -736,7 +738,7 @@ func (f *DBFS) getNavigator(ctx context.Context, path *fs.URI, requiredCapabilit
 		case constants.FileSystemTrash:
 			n = NewTrashNavigator(f.user, f.fileClient, f.l, config, f.hasher)
 		case constants.FileSystemSharedWithMe:
-			n = NewSharedWithMeNavigator(f.user, f.fileClient, f.l, config, f.hasher)
+			n = NewSharedWithMeNavigator(f.user, f.fileClient, f.shareClient, f.l, config, f.hasher)
 		default:
 			return nil, fmt.Errorf("unknown file system %q", pathFs)
 		}
@@ -758,6 +760,14 @@ func (f *DBFS) getNavigator(ctx context.Context, path *fs.URI, requiredCapabilit
 
 		f.navigators[navigatorId] = n
 		res = n
+	}
+
+	// Fylvo: what a share allows depends on the share and on the user, so the share is
+	// loaded and checked before its capabilities are.
+	if shared, ok := res.(*shareNavigator); ok && shared.shareRoot == nil {
+		if _, err := shared.Root(ctx, path); err != nil {
+			return nil, err
+		}
 	}
 
 	// Check fs capabilities
@@ -802,7 +812,16 @@ func generateSavePath(policy *ent.StoragePolicy, req *fs.UploadRequest, user *en
 	return path.Join(path.Clean(dirRule), nameRule)
 }
 
-func canMoveOrCopyTo(src, dst *fs.URI, isCopy bool) bool {
+// CanMoveOrCopyTo reports whether files can be moved or copied between the two places at all.
+// It does not check what the user may do there.
+func CanMoveOrCopyTo(src, dst *fs.URI, isCopy bool) bool {
+	// Fylvo: inside one shared folder. Whether the user may edit it is checked by canWrite.
+	// Nothing moves between a share and anything else: the files would end up in the tree
+	// of one user while belonging to another.
+	if src.FileSystem() == constants.FileSystemShare || dst.FileSystem() == constants.FileSystemShare {
+		return src.FileSystem() == dst.FileSystem() && src.ID("") != "" && src.ID("") == dst.ID("")
+	}
+
 	if isCopy {
 		return src.FileSystem() == dst.FileSystem() && src.FileSystem() == constants.FileSystemMy
 	} else {
@@ -832,6 +851,41 @@ func allAncestors(targets []*File) []*ent.File {
 			return item.Model
 		},
 	)
+}
+
+// canWrite reports whether the current user may change target: as its owner, as a member
+// with edit right on the shared folder target was reached through, or in a system call
+// that bypasses the owner check.
+func (f *DBFS) canWrite(ctx context.Context, target *File) bool {
+	if f.isOwnerCall(ctx, target) {
+		return true
+	}
+
+	root := target.UserRoot()
+	return root != nil && root.editable
+}
+
+// isOwnerCall reports whether the call comes from the owner of target or from the system,
+// as opposed to a member of a shared folder.
+func (f *DBFS) isOwnerCall(ctx context.Context, target *File) bool {
+	if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); ok {
+		return true
+	}
+
+	owner := target.Owner()
+	return owner != nil && owner.ID == f.user.ID
+}
+
+// canWalk reports whether the current user may read everything below target in one go.
+// Members of a shared folder may: the share navigator has checked their access, and all
+// of the folder is shared with them.
+func (f *DBFS) canWalk(ctx context.Context, navigator Navigator, target *File) bool {
+	if _, ok := ctx.Value(ByPassOwnerCheckCtxKey{}).(bool); ok || target.OwnerID() == f.user.ID {
+		return true
+	}
+
+	shared, ok := navigator.(*shareNavigator)
+	return ok && shared.share != nil && shared.share.Props.IsMemberOnly()
 }
 
 func WithBypassOwnerCheck(ctx context.Context) context.Context {

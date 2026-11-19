@@ -9,7 +9,7 @@ import { getFileLinkedUri, mergeRefs } from "../../../util";
 
 import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import CrUri, { Filesystem } from "../../../util/uri.ts";
+import { canModifyFile } from "../../../util/permission.ts";
 import { FileBlockProps } from "../Explorer/Explorer.tsx";
 import { FileManagerIndex } from "../FileManager.tsx";
 import { FmIndexContext } from "../FmIndexContext.tsx";
@@ -65,8 +65,7 @@ export const useFileDrag = ({ file, includeSelected, dropUri }: UseFileDragProps
         return false;
       }
 
-      const crUri = new CrUri(file.path);
-      return file.owned && crUri.fs() != Filesystem.share;
+      return canModifyFile(file);
     },
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
