@@ -81,7 +81,7 @@ export enum SettingsPageTab {
 
 const Settings = () => {
   const { t } = useTranslation("dashboard");
-  const [tab, setTab] = useQueryState(PageTabQuery);
+  const [queryTab, setTab] = useQueryState(PageTabQuery);
 
   const tabs: Tab<SettingsPageTab>[] = useMemo(() => {
     const res = [];
@@ -131,6 +131,8 @@ const Settings = () => {
     );
     return res;
   }, [t]);
+  // Old links (for example to removed tabs) fall back to the first tab.
+  const tab = tabs.some((item) => item.value === queryTab) ? queryTab : null;
 
   return (
     <AdminPage>

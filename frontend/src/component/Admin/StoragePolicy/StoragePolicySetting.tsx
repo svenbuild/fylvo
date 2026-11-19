@@ -426,8 +426,10 @@ const StoragePolicySetting = () => {
                 {t("policy.all")}
               </ListItemText>
             </SquareMenuItem>
-            {Object.values(PolicyType).map((type) => (
-              <SquareMenuItem key={type} value={type}>
+            {Object.values(PolicyType)
+              .filter((type) => type != PolicyType.load_balance)
+              .map((type) => (
+                <SquareMenuItem key={type} value={type}>
                 <ListItemText
                   slotProps={{
                     primary: { variant: "body2" },

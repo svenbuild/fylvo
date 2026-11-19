@@ -58,7 +58,7 @@ const FileEncryptionSection = () => {
               </SquareMenuItem>
             </DenseSelect>
             <NoMarginHelperText>
-              {t("settings.masterEncryptionKeyVaultDes")}
+              <Trans ns="dashboard" i18nKey="settings.masterEncryptionKeyVaultDes" components={[<span />]} />
             </NoMarginHelperText>
           </FormControl>
         </SettingForm>

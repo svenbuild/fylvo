@@ -48,7 +48,7 @@ const Devices = () => {
       <Container maxWidth="lg">
         <PageHeader
           secondaryAction={
-            <Grow in={tab == DevicePageTab.Dav}>
+            <Grow in={webDavEnabled}>
               <Button variant={"contained"} startIcon={<Add />} onClick={() => setCreateAccountDialog(true)}>
                 {t("setting.createNewAccount")}
               </Button>
