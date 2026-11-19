@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main, fylvo/ci-build] # TEMP-BRANCH
+    branches: [main]
     paths-ignore: ['**.md']
   workflow_dispatch:
 
