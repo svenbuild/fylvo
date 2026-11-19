@@ -963,13 +963,6 @@
   "vas": {
     "quota": "Limit dyskowy",
     "used": "Użyto - {{size}}",
-    "total": "Razem - {{size}}",
-    "report": "Zgłoś nadużycie",
-    "validDurationDays": "{{num}} dni",
-    "reportTarget": "Cel zgłoszenia",
-    "reportReason": "Powód",
-    "reportReasonOptions": ["Naruszenie praw autorskich", "Szkodliwa treść", "Spam", "Inne"],
-    "reportDescription": "Dodatkowy opis",
-    "reportAbuseSuccess": "Zgłoszenie przesłane."
+    "total": "Razem - {{size}}"
   }
 }

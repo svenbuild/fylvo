@@ -948,13 +948,6 @@
   "vas": {
     "quota": "الحصة",
     "used": "مسخدم - {{size}}",
-    "total": "الإجمالي - {{size}}",
-    "report": "الإبلاغ عن إساءة الاستخدام",
-    "validDurationDays": "{{num}} يوم",
-    "reportTarget": "الذي تريد الإبلاغ عنه",
-    "reportReason": "السبب",
-    "reportReasonOptions": ["انتهاك حقوق الطبع والنشر", "محتوى ضار", "غير المرغوب به", "أخرى"],
-    "reportDescription": "وصف إضافي",
-    "reportAbuseSuccess": "تم رفع التقرير."
+    "total": "الإجمالي - {{size}}"
   }
 }

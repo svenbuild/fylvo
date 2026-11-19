@@ -1011,13 +1011,6 @@
   "vas": {
     "quota": "Quota",
     "used": "Used - {{size}}",
-    "total": "Total - {{size}}",
-    "report": "Report abuse",
-    "validDurationDays": "{{num}} days",
-    "reportTarget": "Report target",
-    "reportReason": "Reason",
-    "reportReasonOptions": ["Copyright infringement", "Harmful content", "Spam", "Other"],
-    "reportDescription": "Additional description",
-    "reportAbuseSuccess": "Report submitted."
+    "total": "Total - {{size}}"
   }
 }

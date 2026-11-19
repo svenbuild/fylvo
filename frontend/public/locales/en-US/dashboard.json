@@ -104,13 +104,6 @@
     "totalFilesAndFolders": "Files and Folders",
     "shareLinks": "Share links",
     "totalBlobs": "Blobs",
-    "publishedAt": "published at <0></0>",
-    "licenseExpireAt": "License expiration date",
-    "permanentLicense": "Permanent license",
-    "offlineLicenseExpireAy": "Offline license expiration date",
-    "licensedDomains": "Licensed domains",
-    "renew": "Refresh offline license",
-    "manageLicense": "Manage license",
     "refreshSuccessfully": "Refreshed successfully.",
     "manualRefresh": "Manually refresh offline license",
     "manualRefreshDes": "Failed to refresh offline license automatically, please try to log in to the <0>License Management Dashboard</0> to get the latest offline license and paste it below."
