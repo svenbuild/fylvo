@@ -481,7 +481,9 @@ func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID 
 	}
 
 	// Remove upload session metadata
-	if err := f.fileClient.RemoveMetadata(ctx, filePrivate.Model, MetadataUploadSessionID, ThumbDisabledKey); err != nil {
+	// Fylvo: the thumbnail setting stays. No new version came, so nothing changed for it, and
+	// a failed upload by a member must not undo a setting of the owner.
+	if err := f.fileClient.RemoveMetadata(ctx, filePrivate.Model, MetadataUploadSessionID); err != nil {
 		return nil, nil, serializer.NewError(serializer.CodeDBError, "Failed to remove upload session metadata", err)
 	}
 

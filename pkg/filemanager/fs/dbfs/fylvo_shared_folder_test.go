@@ -968,3 +968,25 @@ func TestCopyBetweenOwnFilesAndSharedFolder(t *testing.T) {
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"sub"}, names)
 }
+
+func TestCancelledVersionKeepsTheThumbnailSetting(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	owner := e.as(e.owner)
+	require.NoError(t, owner.PatchMetadata(e.ctx, []*fs.URI{e.uri("cloudreve://my/Shared/doc.txt")},
+		fs.MetadataPatch{Key: ThumbDisabledKey, Value: ""}))
+
+	// An editor starts a new version of the file and the upload fails.
+	version := types.EntityTypeVersion
+	session, err := e.as(e.editor).PrepareUpload(e.ctx, &fs.UploadRequest{Props: &fs.UploadProps{
+		Uri: e.shared("/doc.txt"), Size: 1, UploadSessionID: uuid.Must(uuid.NewV4()).String(), ExpireAt: time.Now().Add(time.Hour), EntityType: &version,
+	}})
+	require.NoError(t, err)
+	_, _, err = e.as(e.editor).CancelUploadSession(e.ctx, e.shared("/doc.txt"), session.Props.UploadSessionID, session)
+	require.NoError(t, err)
+
+	// The file keeps its setting: no new version came, so nothing changed for its thumbnails.
+	file, err := owner.Get(e.ctx, e.uri("cloudreve://my/Shared/doc.txt"), WithFileEntities(), WithFilePublicMetadata())
+	require.NoError(t, err)
+	require.Contains(t, file.Metadata(), ThumbDisabledKey)
+	require.Len(t, file.Entities(), 1)
+}
