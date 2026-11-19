@@ -86,44 +86,48 @@ $InstallDir = $InstallDir.TrimEnd('\', '/')
 $NewDir = "$InstallDir.new"
 $OldDir = "$InstallDir.old"
 
-# A backup in .old means a previous run did not finish: a finished run renames it away before
-# deleting it. Whatever is in the install folder then may be a half installed new version, so
-# the backup is put back first. It is never deleted before a new registration has succeeded.
-if ((Test-Path -LiteralPath $OldDir) -and (Test-FylvoFolder $OldDir)) {
-    if ((Test-Path -LiteralPath $InstallDir) -and -not (Test-FylvoFolder $InstallDir)) {
-        Write-Error "$OldDir holds the previous version, but $InstallDir is not a Fylvo Desktop install. Check $InstallDir, remove it by hand, then run this script again."
-        exit 1
-    }
-    $Restored = Invoke-WithAppStopped {
-        if (Test-Path -LiteralPath $InstallDir) {
-            Remove-Item -LiteralPath $InstallDir -Recurse -Force
-        }
-        Rename-Item -LiteralPath $OldDir -NewName (Split-Path $InstallDir -Leaf)
-    }
-    if (-not $Restored) {
-        Write-Error "Could not put the previous version back from $OldDir, a file is still in use. Close Explorer windows of the sync folder and try again."
-        exit 1
-    }
-    Write-Host "Restored the previous version from $OldDir." -ForegroundColor Yellow
+# Moves a folder out of the way to a new <InstallDir>.trash-* name. Nothing is deleted here.
+function Move-Aside([string]$Dir) {
+    $Aside = "$InstallDir.trash-$(Get-Date -Format yyyyMMddHHmmssfff)"
+    Rename-Item -LiteralPath $Dir -NewName (Split-Path $Aside -Leaf)
+    return $Aside
 }
 
-# Never replace a folder that is not a Fylvo Desktop install.
-if ((Test-Path -LiteralPath $InstallDir) -and -not (Test-FylvoFolder $InstallDir)) {
+# Deletes a folder that was moved aside, but only if it is a Fylvo folder. Anything else is
+# kept with a warning, so files that are not ours are never deleted.
+function Remove-Aside([string]$Aside, [bool]$WasFylvo) {
+    if (-not $WasFylvo) {
+        Write-Warning "$Aside was moved out of the way and kept because it is not a Fylvo Desktop folder. Check it and delete it by hand."
+        return
+    }
+    Remove-Item -LiteralPath $Aside -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $Aside) {
+        Write-Warning "Could not fully remove $Aside. It is not needed any more; delete it by hand."
+    }
+}
+
+# A backup in .old means a previous run did not finish: a finished run moves it aside before
+# deleting it. In that case .old stays the backup for this run, and whatever is in the install
+# folder (maybe a half installed new version) is moved aside instead of being backed up.
+$Unfinished = Test-Path -LiteralPath $OldDir
+if ($Unfinished -and -not (Test-FylvoFolder $OldDir)) {
+    Write-Error "$OldDir exists and is not a Fylvo Desktop folder. Remove it by hand first."
+    exit 1
+}
+if (-not $Unfinished -and (Test-Path -LiteralPath $InstallDir) -and -not (Test-FylvoFolder $InstallDir)) {
     Write-Error "$InstallDir exists but is not a Fylvo Desktop install. Choose another -InstallDir."
     exit 1
 }
-foreach ($Dir in @($NewDir, $OldDir)) {
-    if (Test-Path -LiteralPath $Dir) {
-        if (-not (Test-FylvoFolder $Dir)) {
-            Write-Error "$Dir exists and is not a Fylvo Desktop folder. Remove it by hand first."
-            exit 1
-        }
-        Remove-Item -LiteralPath $Dir -Recurse -Force
+if (Test-Path -LiteralPath $NewDir) {
+    if (-not (Test-FylvoFolder $NewDir)) {
+        Write-Error "$NewDir exists and is not a Fylvo Desktop folder. Remove it by hand first."
+        exit 1
     }
+    Remove-Item -LiteralPath $NewDir -Recurse -Force
 }
 
-# 1. Unpack into a staging folder and check it. An MSIX is a zip file;
-#    Expand-Archive only accepts the .zip extension.
+# 1. Unpack into a staging folder and check it. Nothing installed is touched before this works.
+#    An MSIX is a zip file; Expand-Archive only accepts the .zip extension.
 $Zip = Join-Path $env:TEMP "fylvo-desktop-install.zip"
 try {
     Copy-Item -LiteralPath $Msix -Destination $Zip -Force
@@ -144,10 +148,18 @@ try {
     Remove-Item -LiteralPath $Zip -Force -ErrorAction SilentlyContinue
 }
 
-# 2. Stop the app and move the current version to .old.
+# 2. Stop the app and clear the install folder: back it up to .old, or after an unfinished run
+#    move it aside because .old already holds the backup.
+$Aside = $null
+$AsideWasFylvo = $false
 $Swapped = Invoke-WithAppStopped {
     if (Test-Path -LiteralPath $InstallDir) {
-        Rename-Item -LiteralPath $InstallDir -NewName (Split-Path $OldDir -Leaf)
+        if ($Unfinished) {
+            $script:AsideWasFylvo = Test-FylvoFolder $InstallDir
+            $script:Aside = Move-Aside $InstallDir
+        } else {
+            Rename-Item -LiteralPath $InstallDir -NewName (Split-Path $OldDir -Leaf)
+        }
     }
 }
 if (-not $Swapped) {
@@ -155,8 +167,11 @@ if (-not $Swapped) {
     Write-Error "Could not replace $InstallDir, a file is still in use. Close Explorer windows of the sync folder and try again."
     exit 1
 }
+if ($Aside) {
+    Remove-Aside $Aside $AsideWasFylvo
+}
 
-# 3. Move the new version in and register it. On failure put the old version back.
+# 3. Move the new version in and register it. On failure move it aside and put .old back.
 $Promoted = $false
 try {
     Rename-Item -LiteralPath $NewDir -NewName (Split-Path $InstallDir -Leaf)
@@ -165,31 +180,34 @@ try {
     Add-AppxPackage -Register (Join-Path $InstallDir "AppxManifest.xml") -ForceApplicationShutdown -ForceUpdateFromAnyVersion
 } catch {
     $InstallError = $_
-    try {
-        if ($Promoted) {
-            Remove-Item -LiteralPath $InstallDir -Recurse -Force
+    $Failed = $null
+    $RolledBack = Invoke-WithAppStopped {
+        if ($Promoted -and (Test-Path -LiteralPath $InstallDir)) {
+            $script:Failed = Move-Aside $InstallDir
         }
         if (Test-Path -LiteralPath $OldDir) {
             Rename-Item -LiteralPath $OldDir -NewName (Split-Path $InstallDir -Leaf)
-            Write-Host "Installation failed, the previous version was put back." -ForegroundColor Yellow
         }
-    } catch {
-        Write-Warning "Could not put the previous version back, it is still in $OldDir. Run this script again: it puts that version back first and then installs the new one."
+    }
+    if ($RolledBack) {
+        Write-Host "Installation failed, the previous version was put back." -ForegroundColor Yellow
+    } else {
+        Write-Warning "Could not put the previous version back, it is still in $OldDir. Run this script again: it keeps that version as the backup and tries the installation again."
+    }
+    if ($Failed) {
+        Remove-Aside $Failed $true
     }
     throw $InstallError
 }
 
-# 4. Retire the backup: rename it first, so a leftover .old always means an unfinished run.
+# 4. Retire the backup: move it aside first, so a leftover .old always means an unfinished run.
 if (Test-Path -LiteralPath $OldDir) {
-    $TrashDir = "$InstallDir.trash-$(Get-Date -Format yyyyMMddHHmmss)"
-    try {
-        Rename-Item -LiteralPath $OldDir -NewName (Split-Path $TrashDir -Leaf)
-        Remove-Item -LiteralPath $TrashDir -Recurse -Force -ErrorAction SilentlyContinue
-        if (Test-Path -LiteralPath $TrashDir) {
-            Write-Warning "Could not fully remove $TrashDir. It is not needed any more; delete it by hand."
-        }
-    } catch {
-        Write-Warning "Could not retire $OldDir. Delete it by hand, otherwise the next run puts this older version back before installing."
+    $Retired = $null
+    $Moved = Invoke-WithAppStopped { $script:Retired = Move-Aside $OldDir }
+    if ($Moved) {
+        Remove-Aside $Retired $true
+    } else {
+        Write-Warning "Could not retire $OldDir. Delete it by hand, otherwise the next run keeps this older version as its backup."
     }
 }
 

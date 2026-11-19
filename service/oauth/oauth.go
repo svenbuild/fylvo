@@ -86,7 +86,7 @@ func (s *GrantService) Get(c *gin.Context) (*GrantResponse, error) {
 
 	// Fylvo Desktop always sends PKCE, so a code for it is never issued without a challenge.
 	// Its client secret ships inside the app and protects nothing on its own.
-	if s.ClientID == inventory.OAuthClientFylvoDesktopGUID && s.CodeChallenge == "" {
+	if app.GUID == inventory.OAuthClientFylvoDesktopGUID && s.CodeChallenge == "" {
 		return nil, serializer.NewError(serializer.CodeParamErr, "PKCE code challenge required", nil)
 	}
 

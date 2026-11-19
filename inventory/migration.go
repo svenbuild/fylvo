@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/cloudreve/Cloudreve/v4/application/constants"
@@ -367,6 +368,9 @@ func ensureOAuthClientFylvoDesktop(l logging.Logger, client *ent.Client, ctx con
 	if found, err := exists(); err != nil {
 		return fmt.Errorf("failed to query Fylvo Desktop OAuth client: %w", err)
 	} else if found {
+		if n, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).Count(ctx); err == nil && n == 0 {
+			l.Warning("The Fylvo Desktop OAuth client (GUID=%s) is deleted; Fylvo Desktop cannot sign in.", OAuthClientFylvoDesktopGUID)
+		}
 		return nil
 	}
 
@@ -380,9 +384,13 @@ func ensureOAuthClientFylvoDesktop(l logging.Logger, client *ent.Client, ctx con
 		SetProps(&types.OAuthClientProps{Icon: "/static/img/fylvo.svg", RefreshTokenTTL: 7776000}).
 		SetIsEnabled(true).
 		Save(ctx); err != nil {
-		// Another server on the same database may have created it in the meantime.
-		if found, _ := exists(); found {
-			return nil
+		// Another server on the same database may be creating it right now; give its
+		// transaction a moment to commit.
+		for try := 0; try < 5; try++ {
+			if found, _ := exists(); found {
+				return nil
+			}
+			time.Sleep(200 * time.Millisecond)
 		}
 		return fmt.Errorf("failed to create Fylvo Desktop OAuth client: %w", err)
 	}

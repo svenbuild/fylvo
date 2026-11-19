@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
@@ -139,12 +140,15 @@ func TestConsentRequestCannotSetInternalDenial(t *testing.T) {
 
 func TestFylvoDesktopConsentRequiresPKCE(t *testing.T) {
 	redirect := inventory.OAuthClientFylvoDesktopRedirectURI
-	client := &oauthTestClient{app: &ent.OAuthClient{RedirectUris: []string{redirect}}}
+	client := &oauthTestClient{app: &ent.OAuthClient{GUID: inventory.OAuthClientFylvoDesktopGUID, RedirectUris: []string{redirect}}}
 	kv := &oauthTestCache{}
-	s := GrantService{ClientID: inventory.OAuthClientFylvoDesktopGUID, RedirectURI: redirect, State: "state", Scope: "openid"}
-	response, err := s.Get(oauthTestContext(client, kv))
-	require.ErrorContains(t, err, "PKCE code challenge required")
-	require.Nil(t, response)
+	// The check uses the stored GUID, so a differently cased client ID cannot skip it.
+	for _, id := range []string{inventory.OAuthClientFylvoDesktopGUID, strings.ToUpper(inventory.OAuthClientFylvoDesktopGUID)} {
+		s := GrantService{ClientID: id, RedirectURI: redirect, State: "state", Scope: "openid"}
+		response, err := s.Get(oauthTestContext(client, kv))
+		require.ErrorContains(t, err, "PKCE code challenge required")
+		require.Nil(t, response)
+	}
 	require.Zero(t, client.grants)
 	require.Zero(t, kv.writes)
 }
