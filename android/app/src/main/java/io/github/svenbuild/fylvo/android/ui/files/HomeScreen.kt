@@ -24,7 +24,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderShared
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -68,13 +67,9 @@ fun HomeScreen(
     onSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenFile: (FileObject) -> Unit,
-    onOpenMyFiles: () -> Unit,
     onOpenRecent: () -> Unit,
     onOpenCategory: (Category) -> Unit,
-    onOpenOffline: () -> Unit,
-    onOpenTrash: () -> Unit,
     onFileMore: (FileObject) -> Unit,
-    onOpenSharedWithMe: () -> Unit,
 ) {
     // Home has no top app bar, so the Scaffold gives it no top inset: take the
     // status bar height here or the search field draws under the clock.
@@ -126,25 +121,6 @@ fun HomeScreen(
                 CategoryTile(Category.AUDIO, Icons.Default.MusicNote, Modifier.weight(1f)) { onOpenCategory(Category.AUDIO) }
                 CategoryTile(Category.DOCUMENTS, Icons.Default.Description, Modifier.weight(1f)) { onOpenCategory(Category.DOCUMENTS) }
             }
-        }
-
-        SectionHeader("Storage")
-        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            StorageEntry("My files", "Browse all folders", Icons.Default.Folder, onOpenMyFiles)
-            // Fylvo: folders other people shared with this account.
-            StorageEntry("Shared with me", "Folders shared with you", Icons.Default.FolderShared, onOpenSharedWithMe)
-        }
-
-        SectionHeader("Collections")
-        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            CollectionTile(
-                "Offline files",
-                if (state.favorites.isEmpty()) "Nothing saved yet" else "${state.favorites.size} saved",
-                Icons.Default.Star,
-                Modifier.weight(1f),
-                onOpenOffline,
-            )
-            CollectionTile("Trash", "Kept for 7 days", Icons.Default.Delete, Modifier.weight(1f), onOpenTrash)
         }
     }
 }
@@ -287,25 +263,6 @@ private fun RecentCard(file: FileObject, thumbUrl: String?, onClick: () -> Unit,
 }
 
 @Composable
-private fun CollectionTile(title: String, subtitle: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = modifier.height(84.dp),
-    ) {
-        Row(Modifier.padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(16.dp))
-            Column {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-    }
-}
-
-@Composable
 private fun CategoryTile(category: Category, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
@@ -321,20 +278,3 @@ private fun CategoryTile(category: Category, icon: ImageVector, modifier: Modifi
     }
 }
 
-@Composable
-private fun StorageEntry(title: String, subtitle: String, icon: ImageVector, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = FileKind.FOLDER.tint, modifier = Modifier.size(26.dp))
-            Column(Modifier.padding(start = 20.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}

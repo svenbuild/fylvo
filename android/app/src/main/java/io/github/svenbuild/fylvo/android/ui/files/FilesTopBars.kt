@@ -57,14 +57,13 @@ internal fun FolderTopBar(
     showSort: Boolean,
     viewMode: ViewMode,
     sort: io.github.svenbuild.fylvo.android.data.SortOrder,
-    hasFavorites: Boolean,
     onBack: () -> Unit,
     onSearch: () -> Unit,
     onToggleView: () -> Unit,
     onSort: (SortBy) -> Unit,
     onSelect: () -> Unit,
     onRefresh: () -> Unit,
-    onFavorites: () -> Unit,
+    onTrash: () -> Unit,
     onSettings: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -123,14 +122,9 @@ internal fun FolderTopBar(
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("Offline files") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Star, null,
-                                tint = if (hasFavorites) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        onClick = { menuOpen = false; onFavorites() },
+                        text = { Text("Trash") },
+                        leadingIcon = { Icon(Icons.Default.Delete, null) },
+                        onClick = { menuOpen = false; onTrash() },
                     )
                     DropdownMenuItem(
                         text = { Text("Settings") },

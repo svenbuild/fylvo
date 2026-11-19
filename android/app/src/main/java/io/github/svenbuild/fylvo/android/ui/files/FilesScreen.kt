@@ -217,6 +217,27 @@ fun FilesScreen(
         onMore = { sheetTarget = file },
     )
 
+    /** Fylvo: which tab of the bottom bar the screen belongs to. */
+    val currentTab = when {
+        favoritesOpen -> Tab.OFFLINE
+        state.home -> Tab.HOME
+        state.category == Category.SHARED_WITH_ME || CrUri.isShare(state.currentUri) -> Tab.SHARED
+        state.category == null || state.category == Category.TRASH -> Tab.FILES
+        else -> Tab.HOME
+    }
+    val atTabRoot = state.category == Category.SHARED_WITH_ME ||
+        (state.category == null && CrUri.isRoot(state.currentUri) && !CrUri.isShare(state.currentUri))
+
+    fun selectTab(tab: Tab) {
+        favoritesOpen = tab == Tab.OFFLINE
+        when (tab) {
+            Tab.HOME -> viewModel.goHome()
+            Tab.FILES -> viewModel.openMyFiles()
+            Tab.SHARED -> viewModel.openCategory(Category.SHARED_WITH_ME)
+            Tab.OFFLINE -> Unit
+        }
+    }
+
     BackHandler(enabled = state.selecting || inSearch || !state.home) {
         when {
             state.selecting -> viewModel.clearSelection()
@@ -269,18 +290,18 @@ fun FilesScreen(
                         },
                         state.itemCountLabel,
                     ).joinToString(" • ").ifEmpty { null },
-                    showBack = true,
+                    // Fylvo: the top of a tab needs no back arrow, the bottom bar leads there.
+                    showBack = !atTabRoot,
                     showSort = !state.virtual,
                     viewMode = state.effectiveMode,
                     sort = state.view.sort,
-                    hasFavorites = state.favorites.isNotEmpty(),
                     onBack = { viewModel.navigateUp() },
                     onSearch = { openSearch() },
                     onToggleView = { viewModel.toggleViewMode() },
                     onSort = { viewModel.sortBy(it) },
                     onSelect = { state.files.firstOrNull()?.let { viewModel.toggleSelected(it) } },
                     onRefresh = { viewModel.refresh() },
-                    onFavorites = { favoritesOpen = true },
+                    onTrash = { viewModel.openCategory(Category.TRASH) },
                     onSettings = onOpenSettings,
                 )
             } }
@@ -304,6 +325,7 @@ fun FilesScreen(
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = { if (!state.selecting && !inSearch) BottomTabs(currentTab, ::selectTab) },
     ) { padding ->
         // Spin the pull indicator only for a pull the user made; initial and
         // background loads have their own, quieter indicators.
@@ -348,13 +370,9 @@ fun FilesScreen(
                     onSearch = { openSearch() },
                     onOpenSettings = onOpenSettings,
                     onOpenFile = { openFile(it) },
-                    onOpenMyFiles = { viewModel.openMyFiles() },
                     onOpenRecent = { viewModel.openCategory(Category.RECENT) },
                     onOpenCategory = { viewModel.openCategory(it) },
-                    onOpenOffline = { favoritesOpen = true },
-                    onOpenTrash = { viewModel.openCategory(Category.TRASH) },
                     onFileMore = { sheetTarget = it },
-                    onOpenSharedWithMe = { viewModel.openCategory(Category.SHARED_WITH_ME) },
                 )
                 inSearch -> SearchResults(
                     state = state,
@@ -608,6 +626,7 @@ fun FilesScreen(
             onOpen = { entry -> openWithSystem(context, File(entry.localFile)) },
             onRefresh = { entry -> viewModel.refreshFavorite(context, entry) },
             onRemove = { entry -> viewModel.removeFavorite(entry) },
+            bottomBar = { BottomTabs(Tab.OFFLINE, ::selectTab) },
         )
     }
 }

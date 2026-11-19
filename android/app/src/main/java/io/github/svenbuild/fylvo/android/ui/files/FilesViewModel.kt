@@ -301,6 +301,10 @@ class FilesViewModel(
             openCategory(Category.SHARED_WITH_ME)
             return true
         }
+        if (s.category == Category.TRASH) {
+            openMyFiles()
+            return true
+        }
         if (CrUri.isRoot(s.currentUri) || s.virtual) {
             goHome()
             return true

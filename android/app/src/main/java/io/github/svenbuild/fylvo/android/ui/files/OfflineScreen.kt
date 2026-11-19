@@ -62,6 +62,7 @@ fun OfflineScreen(
     onOpen: (FavoriteEntry) -> Unit,
     onRefresh: (FavoriteEntry) -> Unit,
     onRemove: (FavoriteEntry) -> Unit,
+    bottomBar: @Composable () -> Unit,
 ) {
     BackHandler(onBack = onBack)
     Surface(Modifier.fillMaxSize()) {
@@ -79,11 +80,9 @@ fun OfflineScreen(
                             )
                         }
                     },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-                    },
                 )
             },
+            bottomBar = bottomBar,
         ) { padding ->
             if (favorites.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(padding)) {
