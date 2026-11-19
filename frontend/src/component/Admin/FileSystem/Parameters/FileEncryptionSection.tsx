@@ -1,4 +1,4 @@
-import { Collapse, FormControl, FormControlLabel, Link, ListItemText, Switch, Typography } from "@mui/material";
+import { Collapse, FormControl, FormControlLabel, ListItemText, Switch, Typography } from "@mui/material";
 import { useContext } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { isTrueVal } from "../../../../session/utils.ts";
@@ -58,16 +58,7 @@ const FileEncryptionSection = () => {
               </SquareMenuItem>
             </DenseSelect>
             <NoMarginHelperText>
-              <Trans
-                i18nKey="settings.masterEncryptionKeyVaultDes"
-                ns="dashboard"
-                components={[
-                  <Link
-                    href="https://docs.cloudreve.org/usage/file-encryption#rotate-master-encryption-key"
-                    target="_blank"
-                  />,
-                ]}
-              />
+              {t("settings.masterEncryptionKeyVaultDes")}
             </NoMarginHelperText>
           </FormControl>
         </SettingForm>

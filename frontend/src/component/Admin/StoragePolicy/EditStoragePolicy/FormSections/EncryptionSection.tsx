@@ -1,8 +1,7 @@
-import { Box, FormControl, FormControlLabel, IconButton, Switch, Typography } from "@mui/material";
+import { FormControl, FormControlLabel, Switch, Typography } from "@mui/material";
 import { useCallback, useContext } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { StoragePolicy } from "../../../../../api/dashboard";
-import QuestionCircle from "../../../../Icons/QuestionCircle";
 import SettingForm from "../../../../Pages/Setting/SettingForm";
 import { NoMarginHelperText, SettingSection, SettingSectionContent } from "../../../Settings/Settings";
 import { StoragePolicySettingContext } from "../StoragePolicySettingWrapper";
@@ -23,12 +22,7 @@ const EncryptionSection = () => {
 
   return (
     <SettingSection>
-      <Box display="flex" alignItems="center" gap={1}>
-        <Typography variant="h6">{t("policy.fileEncryption")}</Typography>
-        <IconButton onClick={() => window.open("https://docs.cloudreve.org/usage/file-encryption", "_blank")}>
-          <QuestionCircle />
-        </IconButton>
-      </Box>
+      <Typography variant="h6">{t("policy.fileEncryption")}</Typography>
       <SettingSectionContent>
         <SettingForm lgWidth={5}>
           <FormControl fullWidth>

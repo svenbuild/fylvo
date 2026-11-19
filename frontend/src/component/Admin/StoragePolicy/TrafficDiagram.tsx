@@ -85,7 +85,7 @@ const NodeIcon = forwardRef(({ type, size = 40, storageNodeTitle, proxyNodeTitle
   const title = useMemo(() => {
     switch (type) {
       case Node.cloudreve:
-        return "Cloudreve";
+        return "Fylvo";
       case Node.proxy:
         return proxyNodeTitle ?? t("policy.customProxy");
       case Node.storage_node:

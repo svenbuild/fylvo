@@ -11,7 +11,6 @@ import { DenseFilledTextField, NoWrapTypography } from "../../../Common/StyledCo
 import UserAvatar from "../../../Common/User/UserAvatar";
 import FileBadge from "../../../FileManager/FileBadge";
 import SettingForm from "../../../Pages/Setting/SettingForm";
-import SinglePolicySelectionInput from "../../Common/SinglePolicySelectionInput";
 import UserDialog from "../../User/UserDialog/UserDialog";
 import { FileDialogContext } from "./FileDialog";
 import FileDirectLinks from "./FileDirectLinks";

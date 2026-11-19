@@ -1,5 +1,5 @@
 import { Add } from "@mui/icons-material";
-import { Box, Container, Grid2 as Grid, IconButton, Stack, Typography } from "@mui/material";
+import { Box, Container, Grid2 as Grid, Stack, Typography } from "@mui/material";
 import { useQueryState } from "nuqs";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -8,7 +8,6 @@ import { Node } from "../../../api/dashboard";
 import { useAppDispatch } from "../../../redux/hooks";
 import { SecondaryButton } from "../../Common/StyledComponents";
 import ArrowSync from "../../Icons/ArrowSync";
-import QuestionCircle from "../../Icons/QuestionCircle";
 import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader from "../../Pages/PageHeader";
 import { BorderedCardClickable } from "../Common/AdminCard";
@@ -68,14 +67,7 @@ const NodeSetting = () => {
     <AdminPage>
       <NewNodeDialog open={createNewOpen} onClose={() => setCreateNewOpen(false)} />
       <Container maxWidth="xl">
-        <PageHeader
-          title={t("dashboard:nav.nodes")}
-          secondaryAction={
-            <IconButton onClick={() => window.open("https://docs.cloudreve.org/usage/slave-node", "_blank")}>
-              <QuestionCircle />
-            </IconButton>
-          }
-        />
+        <PageHeader title={t("dashboard:nav.nodes")} />
         <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
           <SecondaryButton onClick={fetchNodes} disabled={loading} variant={"contained"} startIcon={<ArrowSync />}>
             {t("node.refresh")}

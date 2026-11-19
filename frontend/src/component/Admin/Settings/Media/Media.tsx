@@ -165,11 +165,7 @@ const Media = () => {
           <SettingSectionContent>
             <SettingForm lgWidth={6}>
               <Alert severity="info" sx={{ mb: 1 }}>
-                <Trans
-                  ns="dashboard"
-                  i18nKey="settings.generatorProxyWarning"
-                  components={[<Link href="https://docs.cloudreve.org/usage/thumbnails" target="_blank" />]}
-                />
+                {t("settings.generatorProxyWarning")}
               </Alert>
               <Generators values={values} setSetting={setSettings} />
             </SettingForm>
@@ -182,11 +178,7 @@ const Media = () => {
           <SettingSectionContent>
             <SettingForm lgWidth={6}>
               <Alert severity="info" sx={{ mb: 1 }}>
-                <Trans
-                  ns="dashboard"
-                  i18nKey="settings.extractMediaMetaDes"
-                  components={[<Link href="https://docs.cloudreve.org/usage/media-meta" target="_blank" />]}
-                />
+                {t("settings.extractMediaMetaDes")}
               </Alert>
               <Extractors values={values} setSetting={setSettings} />
             </SettingForm>
