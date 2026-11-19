@@ -806,3 +806,68 @@ func TestTakenNameAsLongAsNamesMayBe(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, names, 5)
 }
+
+func TestMemberReleasesOnlyLocksItMayChange(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	owner, editor, reader := e.as(e.owner), e.as(e.editor), e.as(e.reader)
+
+	// A shared folder below a folder of the owner that is not shared: Outer/Inner.
+	e.mkdir(owner, "cloudreve://my/Outer/Inner")
+	e.upload(owner, "cloudreve://my/Outer/Inner/doc.txt", 10)
+	inner, err := owner.Get(e.ctx, e.uri("cloudreve://my/Outer/Inner"))
+	require.NoError(t, err)
+	share, err := e.shareClient.Upsert(e.ctx, &inventory.CreateShareParams{
+		OwnerID: e.owner.ID,
+		FileID:  inner.ID(),
+		Props: &types.ShareProps{
+			MemberOnly: true,
+			Members:    []types.ShareMember{{UserID: e.editor.ID, CanEdit: true}, {UserID: e.reader.ID}},
+		},
+	})
+	require.NoError(t, err)
+	innerUri := func(path string) *fs.URI {
+		return e.uri(fs.NewShareUri(hashid.EncodeShareID(e.hasher, share.ID), "") + path)
+	}
+
+	// The owner locks the folder above the shared one, as a WebDAV client does.
+	ownerLock, err := owner.Lock(e.ctx, -1, e.owner, false, fs.LockApp(fs.ApplicationDAV), e.uri("cloudreve://my/Outer"), "")
+	require.NoError(t, err)
+	ownerToken := ownerLock.LastToken()
+
+	// The office editor of a member runs into that lock and learns neither its token nor where it lies.
+	_, err = editor.Lock(e.ctx, time.Minute, e.editor, true, fs.LockApp(fs.ApplicationViewer), innerUri("/doc.txt"), "office-token")
+	var conflicts lock.ConflictError
+	require.ErrorAs(t, err, &conflicts)
+	require.Empty(t, conflicts[0].Token)
+	require.Empty(t, conflicts[0].Path)
+
+	// Even with the token, a member releases no lock that only covers the shared folder from above.
+	doc, err := editor.Get(e.ctx, innerUri("/doc.txt"))
+	require.NoError(t, err)
+	root, err := editor.Get(e.ctx, innerUri(""))
+	require.NoError(t, err)
+	require.Error(t, editor.UnlockAt(e.ctx, doc, doc.Uri(false), ownerToken))
+	require.Error(t, editor.UnlockAt(e.ctx, root, root.Uri(false), ownerToken))
+	_, err = editor.Lock(e.ctx, time.Minute, e.editor, true, fs.LockApp(fs.ApplicationViewer), innerUri("/doc.txt"), "")
+	require.ErrorIs(t, err, lock.ErrLocked, "the lock of the owner is still there")
+
+	// The owner releases it among the own files.
+	myRoot, err := owner.Get(e.ctx, e.uri("cloudreve://my"))
+	require.NoError(t, err)
+	require.NoError(t, owner.UnlockAt(e.ctx, myRoot, myRoot.Uri(false), ownerToken))
+
+	// A lock on a file in the shared folder: an editor releases it, a reader does not.
+	memberLock, err := editor.Lock(e.ctx, time.Minute, e.editor, true, fs.LockApp(fs.ApplicationViewer), innerUri("/doc.txt"), "")
+	require.NoError(t, err)
+	readerDoc, err := reader.Get(e.ctx, innerUri("/doc.txt"))
+	require.NoError(t, err)
+	require.ErrorIs(t, reader.UnlockAt(e.ctx, readerDoc, readerDoc.Uri(false), memberLock.LastToken()), fs.ErrOwnerOnly)
+	require.NoError(t, editor.UnlockAt(e.ctx, doc, doc.Uri(false), memberLock.LastToken()))
+
+	// The token of a lock that lies elsewhere is unknown here, also to the owner.
+	otherLock, err := owner.Lock(e.ctx, time.Minute, e.owner, true, fs.LockApp(fs.ApplicationDAV), e.uri("cloudreve://my/Shared/doc.txt"), "")
+	require.NoError(t, err)
+	ownerDoc, err := owner.Get(e.ctx, e.uri("cloudreve://my/Outer/Inner/doc.txt"))
+	require.NoError(t, err)
+	require.ErrorIs(t, owner.UnlockAt(e.ctx, ownerDoc, ownerDoc.Uri(false), otherLock.LastToken()), lock.ErrNoSuchLock)
+}

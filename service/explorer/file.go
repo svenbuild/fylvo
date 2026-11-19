@@ -606,8 +606,19 @@ func (s *UnlockFileService) Unlock(c *gin.Context) error {
 	m := manager.NewFileManager(dep, user)
 	defer m.Recycle()
 
-	// Unlock file
-	if err := m.Unlock(c, s.Tokens...); err != nil {
+	// Fylvo: only locks among the own files are released here. A lock in a folder somebody
+	// else shared is released through the file it lies on (office editor, WebDAV).
+	myUri, err := fs.NewUriFromString(fs.NewMyUri(""))
+	if err != nil {
+		return serializer.NewError(serializer.CodeParamErr, "failed to unlock file", err)
+	}
+
+	root, err := m.Get(c, myUri)
+	if err != nil {
+		return serializer.NewError(serializer.CodeParamErr, "failed to unlock file", err)
+	}
+
+	if err := m.UnlockAt(c, root, root.Uri(false), s.Tokens...); err != nil {
 		return serializer.NewError(serializer.CodeParamErr, "failed to unlock file", err)
 	}
 

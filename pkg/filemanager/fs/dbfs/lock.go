@@ -102,6 +102,19 @@ func (f *DBFS) Unlock(ctx context.Context, tokens ...string) error {
 	return f.ls.Unlock(time.Now(), tokens...)
 }
 
+// UnlockAt is Unlock bound to a place. Fylvo: the token alone would release its lock
+// wherever that lies, also a lock of the owner above a shared folder. Here only a lock on
+// uri or below it is released, and only by a user who may change it.
+func (f *DBFS) UnlockAt(ctx context.Context, ancestor fs.File, uri *fs.URI, tokens ...string) error {
+	file := ancestor.(*File)
+	if !f.canWrite(ctx, file) {
+		return fs.ErrOwnerOnly
+	}
+
+	ns, root, _ := lockTupleFromUri(file.RootUri().JoinRaw(uri.PathTrimmed()), f.user, f.hasher)
+	return f.ls.UnlockWithin(time.Now(), ns, root, tokens...)
+}
+
 func (f *DBFS) Refresh(ctx context.Context, d time.Duration, token string) (lock.LockDetails, error) {
 	return f.ls.Refresh(time.Now(), d, token)
 }

@@ -28,6 +28,8 @@ var (
 type LockSystem interface {
 	Create(now time.Time, details ...LockDetails) ([]string, error)
 	Unlock(now time.Time, tokens ...string) error
+	// UnlockWithin is Unlock for locks that lie at root or below it in the namespace ns.
+	UnlockWithin(now time.Time, ns, root string, tokens ...string) error
 	Confirm(now time.Time, requests LockInfo) (func(), string, error)
 	Refresh(now time.Time, duration time.Duration, token string) (LockDetails, error)
 }
@@ -233,6 +235,30 @@ func (m *memLS) Unlock(now time.Time, tokens ...string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.collectExpiredNodes(now)
+	return m.unlock(tokens...)
+}
+
+// UnlockWithin releases nothing if one of the tokens belongs to a lock elsewhere. Such a
+// token is answered as unknown, so the answer tells nothing about the lock.
+func (m *memLS) UnlockWithin(now time.Time, ns, root string, tokens ...string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.collectExpiredNodes(now)
+
+	root = util.SlashClean(root)
+	for _, token := range tokens {
+		n := m.byToken[token]
+		if n == nil || n.details.Ns != ns ||
+			(root != "/" && n.details.Root != root && !strings.HasPrefix(n.details.Root, root+"/")) {
+			return ErrNoSuchLock
+		}
+	}
+
+	return m.unlock(tokens...)
+}
+
+// unlock releases the locks of the tokens. The caller holds m.mu.
+func (m *memLS) unlock(tokens ...string) error {
 	conflicts := make([]*ConflictDetail, 0)
 	toBeRemoved := make([]*memLSNode, 0, len(tokens))
 

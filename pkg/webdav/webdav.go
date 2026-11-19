@@ -393,7 +393,23 @@ func handleUnlock(c *gin.Context, user *ent.User, fm manager.FileManager) (retSt
 		return http.StatusBadRequest, errInvalidLockToken
 	}
 	t = t[1 : len(t)-1]
-	err := fm.Unlock(c, t)
+
+	_, reqPath, status, err := stripPrefix(c.Request.URL.Path, user)
+	if err != nil {
+		return status, err
+	}
+
+	// Fylvo: the lock must lie on the requested path or below it, and the user must still
+	// be allowed to change it. The token alone would release a lock wherever it lies.
+	locked, lockedUri, err := fm.SharedAddressTranslation(c, reqPath)
+	if err != nil && !ent.IsNotFound(err) {
+		return purposeStatusCodeFromError(err), err
+	}
+	if locked == nil || !can(locked, dbfs.NavigatorCapabilityRenameFile) {
+		return http.StatusForbidden, fs.ErrOwnerOnly
+	}
+
+	err = fm.UnlockAt(c, locked, lockedUri, t)
 	if err != nil {
 		return purposeStatusCodeFromError(err), err
 	}

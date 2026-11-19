@@ -89,7 +89,7 @@ func (service *WopiService) Unlock(c *gin.Context) error {
 	l := dep.Logger()
 
 	lockToken := c.GetHeader(wopi.LockTokenHeader)
-	if err = m.Unlock(c, lockToken); err != nil {
+	if err = m.UnlockAt(c, file, file.Uri(false), lockToken); err != nil {
 		l.Debug("WOPI unlock, not locked or not match: %w", err)
 		c.Status(http.StatusConflict)
 		c.Header(wopi.LockTokenHeader, "")

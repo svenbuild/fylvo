@@ -123,6 +123,9 @@ type (
 			uri *URI, token string) (LockSession, error)
 		// Unlock unlocks files by given tokens.
 		Unlock(ctx context.Context, tokens ...string) error
+		// UnlockAt unlocks files by given tokens, but only locks that lie on uri or below it,
+		// and only for a user who may change ancestor, the closest existing file of uri.
+		UnlockAt(ctx context.Context, ancestor File, uri *URI, tokens ...string) error
 		// Refresh refreshes a lock.
 		Refresh(ctx context.Context, d time.Duration, token string) (lock.LockDetails, error)
 	}

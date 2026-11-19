@@ -276,6 +276,10 @@ func (l *manager) Unlock(ctx context.Context, tokens ...string) error {
 	return l.fs.Unlock(ctx, tokens...)
 }
 
+func (l *manager) UnlockAt(ctx context.Context, ancestor fs.File, uri *fs.URI, tokens ...string) error {
+	return l.fs.UnlockAt(ctx, ancestor, uri, tokens...)
+}
+
 func (l *manager) Refresh(ctx context.Context, d time.Duration, token string) (lock.LockDetails, error) {
 	return l.fs.Refresh(ctx, d, token)
 }
