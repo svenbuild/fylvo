@@ -44,6 +44,8 @@ func newGinEngine(dep dependency.Dep) *gin.Engine {
 	r := gin.New()
 	r.ContextWithFallback = true
 	r.Use(gin.Recovery())
+	trustProxies(r, dep.Logger(), dep.ConfigProvider().System().ProxyHeader)
+	r.Use(securityHeaders())
 	r.Use(middleware.InitializeHandling(dep))
 	if dep.ConfigProvider().System().Mode == conf.SlaveMode {
 		r.Use(middleware.InitializeHandlingSlave())
