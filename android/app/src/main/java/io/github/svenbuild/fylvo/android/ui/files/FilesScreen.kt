@@ -174,7 +174,7 @@ fun FilesScreen(
 
     fun openSearch() {
         val s = state
-        searchOpenedFrom = if (!s.home && !s.virtual && (!CrUri.isRoot(s.currentUri) || CrUri.isShare(s.currentUri))) s.currentUri else null
+        searchOpenedFrom = if (!s.home && !s.virtual && CrUri.isSearchScope(s.currentUri)) s.currentUri else null
         viewModel.openSearch()
     }
 

@@ -81,6 +81,14 @@ class SessionManager(private val context: Context) {
             it[Keys.userEmail] = email
             it[Keys.userNick] = nick
         }
+        notifyDocumentsRoots()
+    }
+
+    /** Fylvo: the system Files app shows the Fylvo root only while signed in. */
+    private fun notifyDocumentsRoots() {
+        context.contentResolver.notifyChange(
+            android.provider.DocumentsContract.buildRootsUri("${context.packageName}.documents"), null,
+        )
     }
 
     suspend fun saveTokens(accessToken: String, refreshToken: String, accessExpiresAt: Long) {
@@ -95,6 +103,7 @@ class SessionManager(private val context: Context) {
 
     suspend fun clear() {
         context.sessionStore.edit { it.clear() }
+        notifyDocumentsRoots()
     }
 
     /**
@@ -109,5 +118,6 @@ class SessionManager(private val context: Context) {
             it.remove(Keys.accessExpiresAt)
             it.remove(Keys.userNick)
         }
+        notifyDocumentsRoots()
     }
 }

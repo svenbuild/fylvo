@@ -74,6 +74,9 @@ object CrUri {
         else -> shareNames[root] ?: "Shared folder"
     }
 
+    /** A folder search can be limited to: any folder below a root, or a whole shared folder. */
+    fun isSearchScope(uri: String): Boolean = !isRoot(uri) || isShare(uri)
+
     /** Display name of the folder at [uri]: its last segment, or the root's label. */
     fun displayName(uri: String): String = if (isRoot(uri)) rootLabel(uri) else fileName(uri)
 

@@ -41,18 +41,33 @@ class ApiClient(private val session: SessionManager) {
     @Volatile
     private var cachedService: ApiService? = null
 
+    @Volatile
+    private var cachedAuthService: ApiService? = null
+
     suspend fun serverBase(): String = session.serverUrlNow()
 
     suspend fun service(): ApiService {
         val base = session.serverUrlNow().ifEmpty { "http://localhost" } + "/"
         cachedService?.let { if (cachedBaseUrl == base) return it }
-        return buildService(base).also {
+        return buildService(base, followRedirects = true).also {
             cachedService = it
+            cachedAuthService = null
             cachedBaseUrl = base
         }
     }
 
-    private fun buildService(baseUrl: String): ApiService {
+    /**
+     * Fylvo: the same API without redirects, for requests whose body carries a password or a
+     * refresh token (sign-in, 2FA, sign-out). OkHttp keeps the body on 307/308 redirects, and
+     * a redirect could point to another server.
+     */
+    suspend fun authService(): ApiService {
+        val base = session.serverUrlNow().ifEmpty { "http://localhost" } + "/"
+        cachedAuthService?.let { if (cachedBaseUrl == base) return it }
+        return buildService(base, followRedirects = false).also { cachedAuthService = it }
+    }
+
+    private fun buildService(baseUrl: String, followRedirects: Boolean): ApiService {
         // Only our own API host may receive the Cloudreve bearer token. Chunk uploads and
         // downloads for S3-style policies go to presigned object-storage URLs on a
         // different host; S3/Ceph rejects a presigned request that also carries an
@@ -85,6 +100,7 @@ class ApiClient(private val session: SessionManager) {
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .addInterceptor(sessionInterceptor)
+            .followRedirects(followRedirects)
             .build()
 
         return Retrofit.Builder()
@@ -113,12 +129,12 @@ class ApiClient(private val session: SessionManager) {
      * session cannot be renewed; callers then surface the login-required error.
      */
     private suspend fun refresh(baseUrl: String, staleToken: String): String? = refreshMutex.withLock {
+        // Fylvo: never hand out or spend tokens for a server that is no longer the signed-in one.
+        if (!isSignedInOrigin(baseUrl)) return@withLock null
         val current = session.accessTokenNow()
         if (current.isNotEmpty() && current != staleToken) return@withLock current
         val refreshToken = session.refreshTokenNow()
         if (refreshToken.isEmpty()) return@withLock null
-        // Fylvo: the refresh token only goes to the server it belongs to.
-        if (!isSignedInOrigin(baseUrl)) return@withLock null
 
         val resp = runCatching {
             bareService(baseUrl).refreshToken(RefreshTokenRequest(refreshToken))
@@ -143,7 +159,7 @@ class ApiClient(private val session: SessionManager) {
     private fun bareService(baseUrl: String): ApiService =
         Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).build())
+            .client(OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).followRedirects(false).build())
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(ApiService::class.java)

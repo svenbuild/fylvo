@@ -627,7 +627,7 @@ class FilesViewModel(
     /** Opens search; scoped to the current folder when inside one, otherwise everywhere. */
     fun openSearch() {
         val s = _state.value
-        val scope = if (!s.home && !s.virtual && (!CrUri.isRoot(s.currentUri) || CrUri.isShare(s.currentUri))) s.currentUri else null
+        val scope = if (!s.home && !s.virtual && CrUri.isSearchScope(s.currentUri)) s.currentUri else null
         _state.value = s.copy(searchQuery = "", searchScope = scope, searchType = null, searchResults = emptyList(), selected = emptySet())
     }
 

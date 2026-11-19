@@ -54,7 +54,7 @@ class LoginViewModel(
         viewModelScope.launch {
             try {
                 session.saveServerUrl(serverUrl)
-                val resp = api.service().login(PasswordLoginRequest(s.email, s.password))
+                val resp = api.authService().login(PasswordLoginRequest(s.email, s.password))
                 val body = resp.body()
                 if (!resp.isSuccessful || body == null || body.data == null) {
                     throw Exception(body?.msg ?: "Login failed (HTTP ${resp.code()})")
@@ -101,7 +101,7 @@ class LoginViewModel(
         _state.value = s.copy(loading = true, error = null)
         viewModelScope.launch {
             try {
-                val resp = api.service().verify2FA(OtpLoginRequest(otp = s.otp, sessionId = sessionId))
+                val resp = api.authService().verify2FA(OtpLoginRequest(otp = s.otp, sessionId = sessionId))
                 val body = resp.body()
                 if (!resp.isSuccessful || body == null || body.code != 0 || body.data == null) {
                     // A 404 means the ten-minute 2FA session expired: start over.

@@ -45,5 +45,16 @@ cd android
 ./gradlew :app:testDebugUnitTest
 ```
 
-Release signing is not set up yet: `assembleRelease` produces an unsigned
-APK. Never commit a keystore or its passwords.
+Release builds are signed with the Fylvo key when both inputs exist,
+otherwise `assembleRelease` produces an unsigned APK (never the debug key):
+
+- Gradle property `fylvoKeystore` with the path of the keystore, for example
+  in `~/.gradle/gradle.properties` (outside the repo).
+- Environment variable `FYLVO_KEYSTORE_PASSWORD` at build time.
+
+```bash
+FYLVO_KEYSTORE_PASSWORD=... ./gradlew :app:assembleRelease   # app/build/outputs/apk/release/app-release.apk
+```
+
+Never commit a keystore or its password. Losing either means updates no
+longer install over the existing app.

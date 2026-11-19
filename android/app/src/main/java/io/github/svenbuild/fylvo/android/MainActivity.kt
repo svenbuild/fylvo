@@ -1,7 +1,6 @@
 package io.github.svenbuild.fylvo.android
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -22,6 +21,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -87,7 +88,7 @@ private class AppViewModelFactory(private val app: FylvoApp) : ViewModelProvider
                 app.favoritesStore,
                 app.viewSettings,
                 androidx.work.WorkManager.getInstance(app),
-                onSessionExpired = { app.sessionManager.clearSession() },
+                onSessionExpired = { app.endSession(expired = true) },
             ) as T
         else -> throw IllegalArgumentException("Unknown ViewModel ${modelClass.name}")
     }
@@ -102,15 +103,18 @@ fun App() {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
 
-    // Fylvo: after sign-out start the screen afresh, so no listing, recent file or thumbnail
-    // URL of the old account survives in a view model into the next sign-in.
-    val signOut: () -> Unit = {
-        scope.launch {
-            app.signOut()
-            (context as? Activity)?.let { activity ->
-                activity.startActivity(Intent(activity, MainActivity::class.java))
-                activity.finish()
-            }
+    val signOut: () -> Unit = { scope.launch { app.endSession() } }
+
+    // Fylvo: when a session ends (sign-out or expired) start the screen afresh in a new task,
+    // so no listing, recent file or thumbnail URL of the old account survives in a view model.
+    var wasLoggedIn by remember { mutableStateOf(false) }
+    LaunchedEffect(loggedIn) {
+        if (loggedIn == true) wasLoggedIn = true
+        if (loggedIn == false && wasLoggedIn) {
+            context.startActivity(
+                Intent(context, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+            )
         }
     }
 
