@@ -80,6 +80,9 @@ fun OfflineScreen(
                             )
                         }
                     },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    },
                 )
             },
             bottomBar = bottomBar,

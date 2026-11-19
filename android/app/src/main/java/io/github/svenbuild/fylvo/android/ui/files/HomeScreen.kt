@@ -65,10 +65,8 @@ fun HomeScreen(
     state: FilesUiState,
     viewModel: FilesViewModel,
     onSearch: () -> Unit,
-    onOpenSettings: () -> Unit,
     onOpenFile: (FileObject) -> Unit,
     onOpenRecent: () -> Unit,
-    onOpenCategory: (Category) -> Unit,
     onFileMore: (FileObject) -> Unit,
 ) {
     // Home has no top app bar, so the Scaffold gives it no top inset: take the
@@ -80,7 +78,7 @@ fun HomeScreen(
             .statusBarsPadding()
             .padding(bottom = 96.dp),
     ) {
-        SearchField(onSearch, onOpenSettings)
+        SearchField(onSearch)
 
         // Background work the user did not start right now still deserves a line.
         if (state.uploads.isNotEmpty() || state.backgroundSyncs.isNotEmpty()) {
@@ -101,25 +99,17 @@ fun HomeScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
             )
-            else -> LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                items(state.recent, key = { it.id }) { file ->
-                    RecentCard(file, rememberThumbUrl(viewModel, file), { onOpenFile(file) }, { onFileMore(file) })
-                }
-            }
-        }
-
-        SectionHeader("Categories")
-        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CategoryTile(Category.IMAGES, Icons.Default.Image, Modifier.weight(1f)) { onOpenCategory(Category.IMAGES) }
-                CategoryTile(Category.VIDEOS, Icons.Default.Videocam, Modifier.weight(1f)) { onOpenCategory(Category.VIDEOS) }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CategoryTile(Category.AUDIO, Icons.Default.MusicNote, Modifier.weight(1f)) { onOpenCategory(Category.AUDIO) }
-                CategoryTile(Category.DOCUMENTS, Icons.Default.Description, Modifier.weight(1f)) { onOpenCategory(Category.DOCUMENTS) }
+            // Fylvo: a plain list like Google Drive's Home, with the folder each file is in.
+            else -> state.recent.forEach { file ->
+                FileListItem(
+                    file = file,
+                    thumbUrl = rememberThumbUrl(viewModel, file),
+                    selecting = false,
+                    selected = false,
+                    offline = file.path in state.favoritePaths,
+                    actions = FileActions(onOpen = { onOpenFile(file) }, onLongPress = { onFileMore(file) }, onMore = { onFileMore(file) }),
+                    subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} • ${CrUri.parentDisplayName(file.path)}",
+                )
             }
         }
     }
@@ -167,8 +157,7 @@ private fun ActivityRow(title: String, detail: String, fraction: Float?) {
 }
 
 @Composable
-private fun SearchField(onSearch: () -> Unit, onOpenSettings: () -> Unit) {
-    var menuOpen by remember { mutableStateOf(false) }
+private fun SearchField(onSearch: () -> Unit) {
     Surface(
         onClick = onSearch,
         shape = RoundedCornerShape(28.dp),
@@ -179,29 +168,16 @@ private fun SearchField(onSearch: () -> Unit, onOpenSettings: () -> Unit) {
             .height(56.dp),
     ) {
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-            // The menu lives inside this Box so it drops down from the button it belongs to.
-            Box {
-                IconButton(onClick = { menuOpen = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Settings") },
-                        leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                        onClick = { menuOpen = false; onOpenSettings() },
-                    )
-                }
-            }
+            Icon(
+                Icons.Default.Search, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 18.dp, end = 12.dp),
+            )
             Text(
                 "Search files",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
-            )
-            Icon(
-                Icons.Default.Search, contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 16.dp),
             )
         }
     }
@@ -218,62 +194,6 @@ private fun SectionHeader(title: String, action: Pair<String, () -> Unit>? = nul
         Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
         if (action != null) {
             TextButton(onClick = action.second) { Text(action.first) }
-        }
-    }
-}
-
-@Composable
-private fun RecentCard(file: FileObject, thumbUrl: String?, onClick: () -> Unit, onMore: () -> Unit) {
-    Column(Modifier.width(132.dp)) {
-        Box(
-            Modifier
-                .size(132.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(onClick = onClick),
-        ) {
-            FileThumb(file, thumbUrl, size = null, modifier = Modifier.fillMaxSize(), corner = 16.dp, iconSize = 44.dp)
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)),
-            ) {
-                IconButton(onClick = onMore, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "More", modifier = Modifier.size(18.dp))
-                }
-            }
-        }
-        Text(
-            file.name,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp),
-        )
-        Text(
-            CrUri.parentDisplayName(file.path),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 4.dp, end = 4.dp),
-        )
-    }
-}
-
-@Composable
-private fun CategoryTile(category: Category, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = modifier.height(84.dp),
-    ) {
-        Row(Modifier.padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(16.dp))
-            Text(category.label, style = MaterialTheme.typography.titleMedium)
         }
     }
 }

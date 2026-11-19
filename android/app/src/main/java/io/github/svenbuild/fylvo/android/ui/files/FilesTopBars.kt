@@ -64,7 +64,6 @@ internal fun FolderTopBar(
     onSelect: () -> Unit,
     onRefresh: () -> Unit,
     onTrash: () -> Unit,
-    onSettings: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var sortOpen by remember { mutableStateOf(false) }
@@ -125,11 +124,6 @@ internal fun FolderTopBar(
                         text = { Text("Trash") },
                         leadingIcon = { Icon(Icons.Default.Delete, null) },
                         onClick = { menuOpen = false; onTrash() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Settings") },
-                        leadingIcon = { Icon(Icons.Default.Settings, null) },
-                        onClick = { menuOpen = false; onSettings() },
                     )
                 }
                 DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {

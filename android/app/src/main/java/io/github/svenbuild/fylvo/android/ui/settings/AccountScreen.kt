@@ -12,16 +12,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -54,15 +53,19 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * Folder sync, notifications and account. A full screen instead of the old
+ * Fylvo: the Account tab. Who is signed in, storage, offline files, folder sync,
+ * notifications and sign-out. A full screen instead of the old
  * cramped dialog; each section is a group of list rows with a toggle, like
  * the system Settings app.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
+fun AccountScreen(
+    offlineCount: Int,
+    onOpenOffline: () -> Unit,
     onBack: () -> Unit,
     onSignOut: () -> Unit,
+    bottomBar: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as FylvoApp
@@ -107,15 +110,9 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = {
-                    IconButton(onClick = { persistFolders(); onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-            )
+            TopAppBar(title = { Text("Account") })
         },
+        bottomBar = bottomBar,
     ) { padding ->
         Column(
             Modifier
@@ -126,6 +123,39 @@ fun SettingsScreen(
             val capacity by produceState<CapacityResponse?>(initialValue = null) {
                 value = app.fileRepository.capacity()
             }
+            ListItem(
+                headlineContent = { Text(email.ifEmpty { "Signed in" }) },
+                supportingContent = { Text(serverUrl) },
+                leadingContent = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
+            )
+            capacity?.let { cap ->
+                if (cap.total > 0) {
+                    val pct = (cap.used.toDouble() / cap.total * 100).toInt().coerceIn(0, 100)
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text("Storage", style = MaterialTheme.typography.labelLarge)
+                        LinearProgressIndicator(
+                            progress = { pct / 100f },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        )
+                        Text(
+                            "${formatSize(cap.used)} of ${formatSize(cap.total)} used",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
+            ListItem(
+                modifier = Modifier.clickable(onClick = onOpenOffline),
+                headlineContent = { Text("Offline files") },
+                supportingContent = {
+                    Text(if (offlineCount == 0) "Files you keep on this phone" else "$offlineCount on this phone")
+                },
+                leadingContent = { Icon(Icons.Default.OfflinePin, contentDescription = null) },
+            )
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionLabel("Folder sync")
             SwitchRow(
                 title = "Mirror a local folder",
@@ -193,30 +223,6 @@ fun SettingsScreen(
             )
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            SectionLabel("Account")
-            ListItem(
-                headlineContent = { Text(email.ifEmpty { "Signed in" }) },
-                supportingContent = { Text(serverUrl) },
-                leadingContent = { Icon(Icons.Default.Folder, contentDescription = null) },
-            )
-            capacity?.let { cap ->
-                if (cap.total > 0) {
-                    val pct = (cap.used.toDouble() / cap.total * 100).toInt().coerceIn(0, 100)
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Text("Storage", style = MaterialTheme.typography.labelLarge)
-                        LinearProgressIndicator(
-                            progress = { pct / 100f },
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        )
-                        Text(
-                            "${formatSize(cap.used)} of ${formatSize(cap.total)} used",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
-                    }
-                }
-            }
             ListItem(
                 modifier = Modifier.clickable { confirmSignOut = true },
                 headlineContent = { Text("Sign out", color = MaterialTheme.colorScheme.error) },

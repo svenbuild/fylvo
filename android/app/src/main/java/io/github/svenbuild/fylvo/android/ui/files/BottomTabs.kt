@@ -27,11 +27,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderShared
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.OfflinePin
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.OfflinePin
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -52,7 +52,7 @@ enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: Image
     HOME("Home", Icons.Outlined.Home, Icons.Filled.Home),
     FILES("Files", Icons.Outlined.Folder, Icons.Filled.Folder),
     SHARED("Shared", Icons.Outlined.FolderShared, Icons.Filled.FolderShared),
-    OFFLINE("Offline", Icons.Outlined.OfflinePin, Icons.Filled.OfflinePin),
+    ACCOUNT("Account", Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
 }
 
 private val BarShape = RoundedCornerShape(30.dp)

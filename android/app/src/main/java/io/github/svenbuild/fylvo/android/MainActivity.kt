@@ -13,11 +13,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.core.content.ContextCompat
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -29,15 +24,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import io.github.svenbuild.fylvo.android.ui.files.FilesScreen
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
 import io.github.svenbuild.fylvo.android.ui.login.LoginScreen
 import io.github.svenbuild.fylvo.android.ui.login.LoginViewModel
-import io.github.svenbuild.fylvo.android.ui.settings.SettingsScreen
 import io.github.svenbuild.fylvo.android.ui.theme.FylvoTheme
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.work.UploadWorker
@@ -100,7 +91,6 @@ fun App() {
     val app = context.applicationContext as FylvoApp
     val factory = remember { AppViewModelFactory(app) }
     val loggedIn by app.sessionManager.isLoggedIn.collectAsState(initial = null)
-    val nav = rememberNavController()
     val scope = rememberCoroutineScope()
 
     val signOut: () -> Unit = { scope.launch { app.endSession() } }
@@ -135,37 +125,10 @@ fun App() {
         }
         when (loggedIn) {
             null -> Unit // session store still loading; keep frame empty
-            false -> NavHost(navController = nav, startDestination = "login") {
-                composable("login") {
-                    LoginScreen(
-                        viewModel = viewModel(factory = factory),
-                        onLoggedIn = { nav.navigate("files") { popUpTo(0) } },
-                    )
-                }
-            }
+            // Signing in flips loggedIn, which swaps in the files screen by itself.
+            false -> LoginScreen(viewModel = viewModel(factory = factory), onLoggedIn = {})
             true -> {
-                // Activity-scoped so the files view survives a trip to Settings.
-                val filesVm: FilesViewModel = viewModel(factory = factory)
-                NavHost(navController = nav, startDestination = "files") {
-                composable("files") {
-                    FilesScreen(
-                        viewModel = filesVm,
-                        onOpenSettings = { nav.navigate("settings") },
-                    )
-                }
-                composable(
-                    "settings",
-                    enterTransition = { slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(200)) },
-                    exitTransition = { fadeOut(tween(160)) },
-                    popEnterTransition = { fadeIn(tween(200)) },
-                    popExitTransition = { slideOutHorizontally(tween(220)) { it / 3 } + fadeOut(tween(160)) },
-                ) {
-                    SettingsScreen(
-                        onBack = { nav.popBackStack() },
-                        onSignOut = signOut,
-                    )
-                }
-            }
+                FilesScreen(viewModel = viewModel(factory = factory), onSignOut = signOut)
             }
         }
     }

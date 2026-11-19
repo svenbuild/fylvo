@@ -72,6 +72,7 @@ internal fun FileList(
                         selected = file.path in state.selected,
                         downloadProgress = state.downloading[file.path],
                         downloading = file.path in state.downloading,
+                        offline = file.path in state.favoritePaths,
                         actions = actionsFor(file),
                         subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} • ${CrUri.parentDisplayName(file.path)}",
                     )
@@ -88,6 +89,7 @@ internal fun FileList(
                 selected = file.path in state.selected,
                 downloadProgress = state.downloading[file.path],
                 downloading = file.path in state.downloading,
+                offline = file.path in state.favoritePaths,
                 actions = actionsFor(file),
                 subtitle = if (state.inTrash) {
                     "Deleted ${formatDate(file.updatedAt)} • from ${file.restoreUri?.let { CrUri.displayName(it) } ?: "unknown"}"

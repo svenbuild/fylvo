@@ -79,6 +79,7 @@ import androidx.core.content.FileProvider
 import kotlinx.coroutines.launch
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.ViewMode
+import io.github.svenbuild.fylvo.android.ui.settings.AccountScreen
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.Permissions
 import io.github.svenbuild.fylvo.android.work.UploadWorker
@@ -94,7 +95,7 @@ import androidx.compose.runtime.setValue
 @Composable
 fun FilesScreen(
     viewModel: FilesViewModel,
-    onOpenSettings: () -> Unit,
+    onSignOut: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -115,7 +116,9 @@ fun FilesScreen(
     var movePick by remember { mutableStateOf<Pair<List<String>, Boolean>?>(null) }
     /** Folder the search was opened from (scope chip), null when opened at root/home. */
     var searchOpenedFrom by remember { mutableStateOf<String?>(null) }
-    var favoritesOpen by remember { mutableStateOf(false) }
+    /** Fylvo: the Account tab, and the offline files page reached from it. */
+    var accountOpen by remember { mutableStateOf(false) }
+    var offlineOpen by remember { mutableStateOf(false) }
     val searchFocus = remember { FocusRequester() }
 
     val inSearch = state.searchQuery != null
@@ -219,7 +222,7 @@ fun FilesScreen(
 
     /** Fylvo: which tab of the bottom bar the screen belongs to. */
     val currentTab = when {
-        favoritesOpen -> Tab.OFFLINE
+        accountOpen -> Tab.ACCOUNT
         state.home -> Tab.HOME
         state.category == Category.SHARED_WITH_ME || CrUri.isShare(state.currentUri) -> Tab.SHARED
         state.category == null || state.category == Category.TRASH -> Tab.FILES
@@ -229,12 +232,13 @@ fun FilesScreen(
         (state.category == null && CrUri.isRoot(state.currentUri) && !CrUri.isShare(state.currentUri))
 
     fun selectTab(tab: Tab) {
-        favoritesOpen = tab == Tab.OFFLINE
+        accountOpen = tab == Tab.ACCOUNT
+        offlineOpen = false
         when (tab) {
             Tab.HOME -> viewModel.goHome()
             Tab.FILES -> viewModel.openMyFiles()
             Tab.SHARED -> viewModel.openCategory(Category.SHARED_WITH_ME)
-            Tab.OFFLINE -> Unit
+            Tab.ACCOUNT -> Unit
         }
     }
 
@@ -302,7 +306,6 @@ fun FilesScreen(
                     onSelect = { state.files.firstOrNull()?.let { viewModel.toggleSelected(it) } },
                     onRefresh = { viewModel.refresh() },
                     onTrash = { viewModel.openCategory(Category.TRASH) },
-                    onSettings = onOpenSettings,
                 )
             } }
         },
@@ -368,10 +371,8 @@ fun FilesScreen(
                     state = state,
                     viewModel = viewModel,
                     onSearch = { openSearch() },
-                    onOpenSettings = onOpenSettings,
                     onOpenFile = { openFile(it) },
                     onOpenRecent = { viewModel.openCategory(Category.RECENT) },
-                    onOpenCategory = { viewModel.openCategory(it) },
                     onFileMore = { sheetTarget = it },
                 )
                 inSearch -> SearchResults(
@@ -615,18 +616,28 @@ fun FilesScreen(
         )
     }
 
+    if (accountOpen) {
+        AccountScreen(
+            offlineCount = state.favorites.size,
+            onOpenOffline = { offlineOpen = true },
+            onBack = { accountOpen = false },
+            onSignOut = onSignOut,
+            bottomBar = { BottomTabs(Tab.ACCOUNT, ::selectTab) },
+        )
+    }
+
     AnimatedVisibility(
-        visible = favoritesOpen,
+        visible = offlineOpen,
         enter = slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(200)),
         exit = slideOutHorizontally(tween(200)) { it / 3 } + fadeOut(tween(160)),
     ) {
         OfflineScreen(
             favorites = state.favorites,
-            onBack = { favoritesOpen = false },
+            onBack = { offlineOpen = false },
             onOpen = { entry -> openWithSystem(context, File(entry.localFile)) },
             onRefresh = { entry -> viewModel.refreshFavorite(context, entry) },
             onRemove = { entry -> viewModel.removeFavorite(entry) },
-            bottomBar = { BottomTabs(Tab.OFFLINE, ::selectTab) },
+            bottomBar = { BottomTabs(Tab.ACCOUNT, ::selectTab) },
         )
     }
 }

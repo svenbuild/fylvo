@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayCircle
@@ -132,6 +133,8 @@ fun FileListItem(
     actions: FileActions,
     downloading: Boolean = false,
     downloadProgress: Float? = null,
+    /** Fylvo: a copy is kept on this phone ("Keep offline"); shown as a small pin. */
+    offline: Boolean = false,
     subtitle: String = subtitleFor(file.size, file.updatedAt, file.isFolder),
 ) {
     val shape = RoundedCornerShape(12.dp)
@@ -161,14 +164,23 @@ fun FileListItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (subtitle.isNotEmpty()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            if (subtitle.isNotEmpty() || offline) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (offline) {
+                        Icon(
+                            Icons.Default.OfflinePin, contentDescription = "Available offline",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(end = 4.dp).size(14.dp),
+                        )
+                    }
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
         if (selecting) {

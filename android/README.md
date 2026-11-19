@@ -20,7 +20,9 @@ Neither project is affiliated with or endorses Fylvo.
 - Own name, application ID and package `io.github.svenbuild.fylvo.android`, Fylvo
   icon and colors, the Inter font of the web app (SIL Open Font License, see
   [FONT-LICENSE-Inter.txt](FONT-LICENSE-Inter.txt)), a floating bottom bar
-  with Home, Files, Shared and Offline.
+  with Home, Files, Shared and Account (like Google Drive, OneDrive and
+  Dropbox; no photo tab, photos stay in Immich). Offline files sit under
+  Account and carry a pin in the lists.
 - Access and refresh tokens are encrypted with a key held in the Android
   Keystore. Backups and device transfers exclude all app data.
 - No plain `http://`. Release builds only connect over https with the
