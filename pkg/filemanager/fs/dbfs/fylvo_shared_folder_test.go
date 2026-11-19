@@ -506,6 +506,26 @@ func TestCancelledUploadTakesOnlyItsOwnFile(t *testing.T) {
 	require.ElementsMatch(t, []string{"sub", "doc.txt", "empty.txt"}, names)
 }
 
+func TestCancelledUploadLeavesAFileThatTookItsPlace(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	session, err := e.as(e.editor).PrepareUpload(e.ctx, &fs.UploadRequest{Props: &fs.UploadProps{
+		Uri: e.shared("/fresh.txt"), Size: 1, UploadSessionID: uuid.Must(uuid.NewV4()).String(), ExpireAt: time.Now().Add(time.Hour),
+	}})
+	require.NoError(t, err)
+
+	// The lock of the upload runs out, and the owner puts a file of their own at that place.
+	require.NoError(t, e.as(e.owner).Unlock(e.ctx, session.LockToken))
+	_, _, err = e.as(e.owner).Delete(e.ctx, []*fs.URI{e.uri("cloudreve://my/Shared/fresh.txt")})
+	require.NoError(t, err)
+	e.upload(e.as(e.owner), "cloudreve://my/Shared/fresh.txt", 5)
+
+	// Cleaning up the failed upload leaves that file alone.
+	_, _, _ = e.as(e.editor).CancelUploadSession(e.ctx, e.shared("/fresh.txt"), session.Props.UploadSessionID, session)
+	file, err := e.as(e.owner).Get(e.ctx, e.uri("cloudreve://my/Shared/fresh.txt"))
+	require.NoError(t, err)
+	require.EqualValues(t, 5, file.Size())
+}
+
 func TestSingleFileShareShowsOnlyThatFile(t *testing.T) {
 	e := newSharedFolderEnv(t)
 	doc, err := e.as(e.owner).Get(e.ctx, e.uri("cloudreve://my/Shared/doc.txt"))

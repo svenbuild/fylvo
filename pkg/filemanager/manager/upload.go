@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -16,7 +17,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
-	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/lock"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/queue"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -320,19 +321,10 @@ func (m *manager) CancelUploadSession(ctx context.Context, path *fs.URI, session
 		session = &sessionTyped
 	}
 
-	var (
-		staleEntities []fs.Entity
-		indexDiff     *fs.IndexDiff
-		err           error
-	)
-
 	if !m.stateless {
-		staleEntities, indexDiff, err = m.fs.CancelUploadSession(ctx, path, sessionID, session)
-		if err != nil {
+		if err := m.removeUploadPlaceholder(ctx, path, sessionID, session); err != nil {
 			return err
 		}
-
-		m.l.Debug("New stale entities: %v", staleEntities)
 	}
 
 	if session != nil {
@@ -355,6 +347,20 @@ func (m *manager) CancelUploadSession(ctx context.Context, path *fs.URI, session
 		m.kv.Delete(UploadSessionCachePrefix, session.Props.UploadSessionID)
 		releaseUploadSessionLock(session.Props.UploadSessionID)
 	}
+
+	return nil
+}
+
+// removeUploadPlaceholder takes back what an upload session put in place: the file the upload
+// created, or the new version of a file that was there before. Fylvo: the file system checks
+// and removes it in one step under a lock, so nothing that took its place in between goes.
+func (m *manager) removeUploadPlaceholder(ctx context.Context, path *fs.URI, sessionID string, session *fs.UploadSession) error {
+	staleEntities, indexDiff, err := m.fs.CancelUploadSession(ctx, path, sessionID, session)
+	if err != nil {
+		return err
+	}
+
+	m.l.Debug("New stale entities: %v", staleEntities)
 
 	// Delete stale entities
 	if len(staleEntities) > 0 {
@@ -465,26 +471,18 @@ func (m *manager) OnUploadFailed(ctx context.Context, session *fs.UploadSession)
 		defer releaseUploadSessionLock(session.Props.UploadSessionID)
 	}
 	if !m.stateless {
-		if session.LockToken != "" {
-			if err := m.Unlock(ctx, session.LockToken); err != nil {
-				m.l.Warning("OnUploadFailed hook failed to unlock: %s", err)
+		// Fylvo: the same clean-up as when the uploader cancels. It holds the lock of the
+		// upload until the placeholder is gone, and removes it only if it is still there.
+		if session.NewFileCreated || !session.Importing {
+			if err := m.removeUploadPlaceholder(ctx, session.Props.Uri, session.Props.UploadSessionID, session); err != nil {
+				m.l.Warning("OnUploadFailed hook failed to remove the placeholder: %s", err)
 			}
 		}
 
-		if session.NewFileCreated {
-			// Fylvo: the file is removed for good and without asking who owns it, so make sure
-			// the path still leads to the placeholder of this upload. In a shared folder
-			// somebody else may have put another file there in the meantime.
-			if placeholder, err := m.fs.Get(ctx, session.Props.Uri); err != nil || placeholder.ID() != session.FileID {
-				m.l.Warning("OnUploadFailed hook found no placeholder of the upload at %q, nothing deleted.", session.Props.Uri)
-			} else if err := m.Delete(ctx, []*fs.URI{session.Props.Uri}, fs.WithSysSkipSoftDelete(true)); err != nil {
-				m.l.Warning("OnUploadFailed hook failed to delete file: %s", err)
-			}
-		} else if !session.Importing {
-			// Fylvo: removing the version of the failed upload is clean-up by the system. The
-			// uploader can be a member of a shared folder, who may not manage versions otherwise.
-			if _, err := m.fs.VersionControl(dbfs.WithBypassOwnerCheck(ctx), session.Props.Uri, session.EntityID, true); err != nil {
-				m.l.Warning("OnUploadFailed hook failed to version control: %s", err)
+		// Usually released above already; not if nothing was left to remove.
+		if session.LockToken != "" {
+			if err := m.Unlock(ctx, session.LockToken); err != nil && !errors.Is(err, lock.ErrNoSuchLock) {
+				m.l.Warning("OnUploadFailed hook failed to unlock: %s", err)
 			}
 		}
 	} else {

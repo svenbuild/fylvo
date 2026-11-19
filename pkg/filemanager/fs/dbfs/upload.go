@@ -457,6 +457,12 @@ func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID 
 		return nil, nil, err
 	}
 
+	// Fylvo: from here on the lock keeps the path as it is. Before, another file may have
+	// taken the place of the one checked above, if the lock of the upload had run out.
+	if current, err := f.Get(ctx, path, WithNotRoot()); err != nil || current.ID() != filePrivate.ID() {
+		return nil, nil, serializer.NewError(serializer.CodeNotFound, "Upload session not found", err)
+	}
+
 	// Find placeholder entity
 	var entity fs.Entity
 	for _, e := range filePrivate.Entities() {
