@@ -3,11 +3,13 @@ package dbfs
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/cloudreve/Cloudreve/v4/application/constants"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/attempts"
 	"github.com/cloudreve/Cloudreve/v4/pkg/boolset"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
@@ -179,9 +181,15 @@ func (n *shareNavigator) Root(ctx context.Context, path *fs.URI) (*File, error) 
 		return nil, ErrShareNotFound
 	}
 
-	// Check password
-	if share.Password != "" && share.Password != path.Password() {
-		return nil, ErrShareIncorrectPassword
+	// Check password (Fylvo: under the limit on wrong guesses)
+	if share.Password != "" {
+		right, err := attempts.CheckSecret(ctx, attempts.KindShare, strconv.Itoa(share.ID), path.Password(), share.Password)
+		if err != nil {
+			return nil, err
+		}
+		if !right {
+			return nil, ErrShareIncorrectPassword
+		}
 	}
 
 	// Share permission setting should overwrite root folder's permission

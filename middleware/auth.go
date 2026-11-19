@@ -3,11 +3,13 @@ package middleware
 import (
 	"crypto/subtle"
 	"net/http"
+	"strconv"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/attempts"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/oss"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
@@ -120,7 +122,23 @@ func WebDAVAuth() gin.HandlerFunc {
 		dep := dependency.FromContext(c)
 		l := dep.Logger()
 		userClient := dep.UserClient()
-		expectedUser, err := userClient.GetActiveByDavAccount(c, username, password)
+		var expectedUser *ent.User
+		var accounts []*ent.DavAccount
+		var err error
+		// Fylvo: limit wrong passwords per account and client address.
+		if _, limitErr := attempts.Guard(c, attempts.KindWebDAV, username, func() bool {
+			expectedUser, err = userClient.GetActiveByDavAccount(c, username, password)
+			if err == nil {
+				accounts, err = expectedUser.Edges.DavAccountsOrErr()
+			}
+			return err == nil && len(accounts) > 0
+		}); limitErr != nil {
+			c.Header("Retry-After", strconv.Itoa(int(attempts.Window.Seconds())))
+			c.Status(http.StatusTooManyRequests)
+			c.Abort()
+			return
+		}
+
 		if err != nil {
 			if username == "" {
 				if u, err := userClient.GetByEmail(c, username); err == nil {
@@ -136,8 +154,7 @@ func WebDAVAuth() gin.HandlerFunc {
 		}
 
 		// Validate dav account
-		accounts, err := expectedUser.Edges.DavAccountsOrErr()
-		if err != nil || len(accounts) == 0 {
+		if len(accounts) == 0 {
 			l.Debug("WebDAVAuth: failed to get user dav accounts %q with provided credential: %s", username, err)
 			c.Status(http.StatusUnauthorized)
 			c.Abort()

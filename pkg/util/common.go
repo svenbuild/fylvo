@@ -37,24 +37,21 @@ func RandStringRunes(n int) string {
 }
 
 func RandStringRunesCrypto(n int) string {
-	b := make([]rune, n)
-	for i := range b {
-		num, err := cryptoRand.Int(cryptoRand.Reader, big.NewInt(int64(len(RandomVariantAll))))
-		if err != nil {
-			// fallback to math/rand on crypto failure
-			b[i] = RandomVariantAll[rand.Intn(len(RandomVariantAll))]
-		} else {
-			b[i] = RandomVariantAll[num.Int64()]
-		}
-	}
-	return string(b)
+	return RandString(n, RandomVariantAll)
 }
 
-// RandString returns random string in given length and variant
+// RandString returns random string in given length and variant. Fylvo: it uses crypto/rand,
+// because it makes WebDAV and share link passwords.
 func RandString(n int, variant []rune) string {
 	b := make([]rune, n)
 	for i := range b {
-		b[i] = variant[rand.Intn(len(variant))]
+		num, err := cryptoRand.Int(cryptoRand.Reader, big.NewInt(int64(len(variant))))
+		if err != nil {
+			// fallback to math/rand on crypto failure
+			b[i] = variant[rand.Intn(len(variant))]
+		} else {
+			b[i] = variant[num.Int64()]
+		}
 	}
 	return string(b)
 }

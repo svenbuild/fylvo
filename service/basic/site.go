@@ -92,7 +92,7 @@ func (s *GetSettingService) GetSiteConfig(c *gin.Context) (*SiteConfig, error) {
 			RegCaptcha:       settings.RegCaptchaEnabled(c),
 			ForgetCaptcha:    settings.ForgotPasswordCaptchaEnabled(c),
 			Authn:            settings.AuthnEnabled(c),
-			RegisterEnabled:  settings.RegisterEnabled(c),
+			RegisterEnabled:  user.RegistrationOpen(c),
 			PrivacyPolicyUrl: legalDocs.PrivacyPolicy,
 			TosUrl:           legalDocs.TermsOfService,
 		}, nil

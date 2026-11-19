@@ -96,6 +96,7 @@
     "40081": "Operation nicht vollständig erfolgreich.",
     "40082": "Nur der Dateieigentümer kann diese Aktion ausführen.",
     "40080": "Falsche E-Mail oder falsches Passwort.",
+    "40900": "Zu viele Fehlversuche. Bitte in 15 Minuten nochmals versuchen.",
     "50001": "Datenbankoperation fehlgeschlagen. ({{message}})",
     "50002": "Fehler beim Signieren der URL oder Anfrage. ({{message}})",
     "50004": "I/O-Operation fehlgeschlagen. ({{message}})",
