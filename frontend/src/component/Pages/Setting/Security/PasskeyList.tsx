@@ -176,7 +176,7 @@ const PasskeyList = (props: PasskeyProps) => {
       </List>
       <SecondaryLoadingButton
         sx={{ mt: 1 }}
-        variant="outlined"
+        variant="contained"
         loading={loading}
         onClick={addPasskey}
         startIcon={<ShieldAdd />}

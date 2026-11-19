@@ -75,7 +75,7 @@ const AvatarSetting = ({ user }: AvatarSettingProps) => {
           user={user}
           sx={{ width: 44, height: 44, fontSize: 16, borderRadius: 1 }}
         />
-        <SecondaryButton variant="outlined" startIcon={<Edit />} {...bindTrigger(popupState)}>
+        <SecondaryButton variant="contained" startIcon={<Edit />} {...bindTrigger(popupState)}>
           {t("fileManager.edit")}
         </SecondaryButton>
       </Box>

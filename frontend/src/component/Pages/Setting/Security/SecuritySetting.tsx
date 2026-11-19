@@ -263,7 +263,7 @@ const SecuritySetting = ({ setting, setSetting }: ProfileSettingProps) => {
         <Collapse in={!showResetPassword}>
           <SecondaryButton
             onClick={() => setShowResetPassword(true)}
-            variant="outlined"
+            variant="contained"
             startIcon={<Edit />}
           >
             {t("login.resetPassword")}
@@ -340,7 +340,7 @@ const SecuritySetting = ({ setting, setSetting }: ProfileSettingProps) => {
       >
         <SecondaryButton
           onClick={() => (setting.two_fa_enabled ? setDisable2FAOpen(true) : setEnable2FAOpen(true))}
-          variant="outlined"
+          variant="contained"
           startIcon={<Open />}
         >
           {t(`setting.${setting.two_fa_enabled ? "disable" : "enable"}2FA`)}

@@ -17,10 +17,11 @@ import {
   TableCell,
   Tabs,
   TextField,
+  Theme,
   Typography,
 } from "@mui/material";
 
-import { hoverSurface, selectedSurface } from "../../fylvoTheme.ts";
+import { hoverSurface, raisedHoverSurface, raisedSelectedSurface, selectedSurface } from "../../fylvoTheme.ts";
 
 export const DefaultButton = styled(({ variant, ...rest }: ButtonProps) => <Button variant={variant} {...rest} />)(
   ({ variant, theme }) => ({
@@ -185,17 +186,21 @@ export const StyledCheckbox = styled(Checkbox)({
   height: 16,
 });
 
-export const SecondaryButton = styled(Button)(({ theme }) => ({
+// Fylvo: the one style for secondary actions, a filled gray button. On a raised surface (menu,
+// popover, dialog) it goes one step further up, otherwise it has the color of the surface.
+const secondaryButtonStyle = ({ theme }: { theme: Theme }) => ({
   color: theme.palette.text.secondary,
   backgroundColor: hoverSurface(theme),
   "&:hover": { backgroundColor: selectedSurface(theme) },
-}));
+  ".MuiPopover-paper &, .MuiDialog-paper &": {
+    backgroundColor: raisedHoverSurface(theme),
+    "&:hover": { backgroundColor: raisedSelectedSurface(theme) },
+  },
+});
 
-export const SecondaryLoadingButton = styled(LoadingButton)(({ theme }) => ({
-  color: theme.palette.text.secondary,
-  backgroundColor: hoverSurface(theme),
-  "&:hover": { backgroundColor: selectedSurface(theme) },
-}));
+export const SecondaryButton = styled(Button)(secondaryButtonStyle);
+
+export const SecondaryLoadingButton = styled(LoadingButton)(secondaryButtonStyle);
 
 export const NoWrapBox = styled(Box)({
   textOverflow: "ellipsis",
