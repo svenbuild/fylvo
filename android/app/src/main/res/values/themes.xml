@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light variant; values-night/themes.xml overrides this for dark mode so the
+         window (splash, edge-to-edge insets) follows the system like the Compose
+         colour scheme does. The two previously disagreed, which made the login form
+         render light-grey text on a light window in dark mode. -->
+    <style name="Theme.Fylvo" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>

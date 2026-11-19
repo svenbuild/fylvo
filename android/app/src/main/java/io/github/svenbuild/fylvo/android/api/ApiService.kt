@@ -1,0 +1,98 @@
+package io.github.svenbuild.fylvo.android.api
+
+import kotlinx.serialization.json.JsonElement
+import okhttp3.RequestBody
+import okhttp3.ResponseBody
+import retrofit2.Response
+import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.HTTP
+import retrofit2.http.POST
+import retrofit2.http.PUT
+import retrofit2.http.Path
+import retrofit2.http.Query
+import retrofit2.http.Url
+
+interface ApiService {
+
+    // With 2FA enabled the server answers code 203 and `data` holds a 2FA session id
+    // (JSON string) instead of a LoginResponse; finish with [verify2FA].
+    @POST("api/v4/session/token")
+    suspend fun login(@Body request: PasswordLoginRequest): Response<ApiResponse<JsonElement>>
+
+    @POST("api/v4/session/token/2fa")
+    suspend fun verify2FA(@Body request: OtpLoginRequest): Response<ApiResponse<LoginResponse>>
+
+    @POST("api/v4/session/token/refresh")
+    suspend fun refreshToken(@Body request: RefreshTokenRequest): Response<ApiResponse<RefreshTokenResponse>>
+
+    // Retrofit's @DELETE does not accept a @Body; the server reads the refresh token from it.
+    @HTTP(method = "DELETE", path = "api/v4/session/token", hasBody = true)
+    suspend fun signOut(@Body request: RefreshTokenRequest): Response<ApiResponse<Unit>>
+
+    @GET("api/v4/user/capacity")
+    suspend fun capacity(): Response<ApiResponse<CapacityResponse>>
+
+    @GET("api/v4/site/config/login")
+    suspend fun siteConfig(): Response<ApiResponse<SiteConfig>>
+
+    @GET("api/v4/file")
+    suspend fun listFiles(
+        @Query("uri") uri: String,
+        @Query("page_size") pageSize: Int = 50,
+        @Query("next_page_token") nextPageToken: String? = null,
+        @Query("order_by") orderBy: String? = null,
+        @Query("order_direction") orderDirection: String? = null,
+    ): Response<ApiResponse<ListFileResponse>>
+
+    /** One file or folder by exact URI; the envelope carries 40016 when the path does not exist. */
+    @GET("api/v4/file/info")
+    suspend fun fileInfo(@Query("uri") uri: String): Response<ApiResponse<FileObject>>
+
+    @POST("api/v4/file/url")
+    suspend fun fileUrls(@Body request: FileUrlRequest): Response<ApiResponse<FileUrlResponse>>
+
+    @POST("api/v4/file/create")
+    suspend fun createFile(@Body request: CreateFileRequest): Response<ApiResponse<Unit>>
+
+    @POST("api/v4/file/rename")
+    suspend fun renameFile(@Body request: RenameFileRequest): Response<ApiResponse<Unit>>
+
+    @POST("api/v4/file/restore")
+    suspend fun restoreFiles(@Body request: RestoreFileRequest): Response<ApiResponse<Unit>>
+
+    @POST("api/v4/file/move")
+    suspend fun moveFiles(@Body request: MoveFileRequest): Response<ApiResponse<Unit>>
+
+    @HTTP(method = "DELETE", path = "api/v4/file", hasBody = true)
+    suspend fun deleteFiles(@Body request: DeleteFileRequest): Response<ApiResponse<Unit>>
+
+    @PUT("api/v4/file/upload")
+    suspend fun createUploadSession(@Body request: CreateUploadSessionRequest): Response<ApiResponse<UploadSessionResponse>>
+
+    // Chunk targets are fully resolved URLs returned in upload_urls —
+    // same-origin for local policies, presigned for remote policies.
+    @POST
+    suspend fun uploadChunk(@Url url: String, @Body body: RequestBody): Response<ResponseBody>
+
+    @PUT
+    suspend fun uploadChunkPut(@Url url: String, @Body body: RequestBody): Response<ResponseBody>
+
+    @POST
+    suspend fun completeUpload(@Url url: String): Response<ResponseBody>
+
+    @GET
+    suspend fun download(@Url url: String): Response<ResponseBody>
+
+    @GET("api/v4/file/thumb")
+    suspend fun thumb(@Query("uri") uri: String): Response<ApiResponse<ThumbResponse>>
+
+    @GET("api/v4/workflow")
+    suspend fun listTasks(
+        @Query("page_size") pageSize: Int = 20,
+        @Query("category") category: String = "general",
+    ): Response<ApiResponse<TaskListResponse>>
+
+    @PUT("api/v4/share")
+    suspend fun createShare(@Body request: ShareCreateRequest): Response<ApiResponse<String>>
+}
