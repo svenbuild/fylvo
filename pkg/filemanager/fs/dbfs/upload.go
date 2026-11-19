@@ -440,7 +440,6 @@ func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID 
 			release()
 			ctx = fs.LockSessionToContext(ctx, ls)
 			// Fylvo: the lock of the upload guards the placeholder until it is removed below.
-			// Make sure it does not run out on the way.
 			// Make sure it does not run out on the way. If it is gone, the upload has ended.
 			if _, err := f.ls.Refresh(time.Now(), time.Minute, session.LockToken); err != nil {
 				return nil, nil, serializer.NewError(serializer.CodeNotFound, "Upload session not found", err)
