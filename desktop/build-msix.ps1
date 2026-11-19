@@ -177,6 +177,8 @@ foreach ($TargetArch in $TargetArchs) {
     # Copy binary to temp package directory
     Write-Host "Copying binary..." -ForegroundColor Cyan
     Copy-Item $BinaryPath -Destination $TempPackageDir -Force
+    # Ship the MIT license notice of the original project inside the package
+    Copy-Item (Join-Path $ScriptDir "LICENSE") -Destination (Join-Path $TempPackageDir "LICENSE.txt") -Force
 
     # Update AppxManifest.xml in temp directory
     $TempManifestPath = Join-Path $TempPackageDir "AppxManifest.xml"

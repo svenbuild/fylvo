@@ -29,7 +29,7 @@ open `fylvo://mount?...` for it and keep `cloudreve://mount?...` for the Store a
 ## Requirements
 
 - Windows 10 1903 or later
-- Rust (rustup), Node.js 18+ and Yarn 1
+- Rust (rustup), Node.js 20.19+ and Yarn 1
 - Visual Studio Build Tools with the C++ workload, Windows 10/11 SDK (for `makeappx.exe`)
 - Tauri CLI: `cargo install tauri-cli --version "^2" --locked`
 
@@ -61,7 +61,8 @@ Without a certificate the package is registered in Developer Mode
 ```
 
 It unpacks `dist\Fylvo.x64.msix` to `%LOCALAPPDATA%\Programs\FylvoDesktop` and registers it from
-there. Run it again after a new build to update.
+there. Run it again after a new build to update. `dev-install.ps1` registers the same package
+from `package/`; before switching between the two, remove the package (see below).
 
 Remove it again with:
 
