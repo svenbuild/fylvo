@@ -21,10 +21,11 @@ no telemetry, no crash reports).
 
 ## Sign-in and the web app
 
-The app signs in with the server's built-in desktop OAuth client (`/callback/desktop`). The web
-app then opens a deep link to hand the result to the desktop app. Fylvo Desktop marks its OAuth
-`state` with the prefix `fylvo:` (`reauthorize:fylvo:` when signing in again), so the web app can
-open `fylvo://mount?...` for it and keep `cloudreve://mount?...` for the Store app.
+Fylvo Desktop signs in with its own OAuth client on the Fylvo server ("Fylvo Desktop",
+GUID in `ui/src/utils/constants.ts`, created by the server on start). Its redirect page
+`/callback/fylvo-desktop` in the web app hands the result to `fylvo://mount?...`. The Cloudreve
+Store app keeps the built-in Cloudreve client with `/callback/desktop` and `cloudreve://`, so both
+apps can be signed in to the same server at the same time.
 
 ## Requirements
 

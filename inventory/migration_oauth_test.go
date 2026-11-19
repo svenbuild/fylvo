@@ -42,3 +42,37 @@ func TestBuiltinCLIOAuthMigration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 }
+
+func TestEnsureFylvoDesktopOAuthClient(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "fylvo.db"))
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	logger := logging.NewConsoleLogger(logging.LevelError)
+
+	// An existing installation already has the Cloudreve desktop client.
+	require.NoError(t, migrateOAuthClient(logger, client, ctx))
+	require.NoError(t, ensureOAuthClientFylvoDesktop(logger, client, ctx))
+
+	fylvo, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"/callback/fylvo-desktop"}, fylvo.RedirectUris)
+	require.Equal(t, "/static/img/fylvo.svg", fylvo.Props.Icon)
+	require.True(t, fylvo.IsEnabled)
+
+	// The Store app client stays as it is.
+	desktop, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientDesktopGUID)).Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"/callback/desktop"}, desktop.RedirectUris)
+	require.Equal(t, desktop.Scopes, fylvo.Scopes)
+
+	// Running again keeps administrator changes and creates no duplicate.
+	_, err = client.OAuthClient.UpdateOne(fylvo).SetIsEnabled(false).Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, ensureOAuthClientFylvoDesktop(logger, client, ctx))
+	count, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	preserved, err := client.OAuthClient.Get(ctx, fylvo.ID)
+	require.NoError(t, err)
+	require.False(t, preserved.IsEnabled)
+}

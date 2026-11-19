@@ -288,6 +288,13 @@ const (
 	OAuthClientiOSSecret          = "1kxOW4IyVOkPlsKCnTwzfHyP8XrbpfaF"
 	OAuthClientiOSName            = "application:setting.iOSApp"
 	OAuthClientiOSRedirectURI     = "/callback/ios"
+
+	// Fylvo Desktop has its own client so the web app can send it back to fylvo:// while
+	// the Cloudreve Store app keeps using the client above and cloudreve://.
+	OAuthClientFylvoDesktopGUID        = "512cd652-c028-4332-992e-d88a4406e5b2"
+	OAuthClientFylvoDesktopSecret      = "ZO3QjjTTSLiRjaw8ixyryEdJmTnmhtCj"
+	OAuthClientFylvoDesktopName        = "application:oauth.fylvoDesktop"
+	OAuthClientFylvoDesktopRedirectURI = "/callback/fylvo-desktop"
 )
 
 func migrateOAuthClient(l logging.Logger, client *ent.Client, ctx context.Context) error {
@@ -342,6 +349,32 @@ func migrateOAuthClientDesktop(l logging.Logger, client *ent.Client, ctx context
 		SetIsEnabled(true).
 		Save(ctx); err != nil {
 		return fmt.Errorf("failed to create default OAuth client: %w", err)
+	}
+
+	return nil
+}
+
+// ensureOAuthClientFylvoDesktop creates the Fylvo Desktop client if it is missing. It runs on
+// every start, because the schema migration only runs when the version changes and existing
+// Fylvo installations keep their version. Administrator changes to the client are kept.
+func ensureOAuthClientFylvoDesktop(l logging.Logger, client *ent.Client, ctx context.Context) error {
+	if _, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientFylvoDesktopGUID)).First(ctx); err == nil {
+		return nil
+	} else if !ent.IsNotFound(err) {
+		return fmt.Errorf("failed to query Fylvo Desktop OAuth client: %w", err)
+	}
+
+	l.Info("Creating OAuth client for Fylvo Desktop (GUID=%s)...", OAuthClientFylvoDesktopGUID)
+	if _, err := client.OAuthClient.Create().
+		SetGUID(OAuthClientFylvoDesktopGUID).
+		SetSecret(OAuthClientFylvoDesktopSecret).
+		SetName(OAuthClientFylvoDesktopName).
+		SetRedirectUris([]string{OAuthClientFylvoDesktopRedirectURI}).
+		SetScopes([]string{"profile", "email", "openid", "offline_access", "UserInfo.Write", "Workflow.Write", "Files.Write", "Shares.Write"}).
+		SetProps(&types.OAuthClientProps{Icon: "/static/img/fylvo.svg", RefreshTokenTTL: 7776000}).
+		SetIsEnabled(true).
+		Save(ctx); err != nil {
+		return fmt.Errorf("failed to create Fylvo Desktop OAuth client: %w", err)
 	}
 
 	return nil

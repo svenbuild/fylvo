@@ -1,12 +1,18 @@
 import { Box } from "@mui/material";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { setDesktopMountSetupDialog, setHeadlessFrameLoading } from "../../../../redux/globalStateSlice.ts";
+import {
+  DesktopScheme,
+  setDesktopMountSetupDialog,
+  setHeadlessFrameLoading,
+} from "../../../../redux/globalStateSlice.ts";
 import { useAppDispatch } from "../../../../redux/hooks.ts";
 import { openDesktopCallback } from "../../../../redux/thunks/session.ts";
 import { useQuery } from "../../../../util/index.ts";
 
-const DesktopCallback = () => {
+// Landing page after the OAuth consent of a desktop app. It hands the code back to the app
+// through its deep link scheme.
+const DesktopCallback = ({ scheme }: { scheme: DesktopScheme }) => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const query = useQuery();
@@ -18,9 +24,9 @@ const DesktopCallback = () => {
     navigate("/home");
     if (code) {
       if (state && state.startsWith("reauthorize:")) {
-        dispatch(openDesktopCallback(code, state));
+        dispatch(openDesktopCallback(scheme, code, state));
       } else {
-        dispatch(setDesktopMountSetupDialog({ open: true, state: { code, state: state ?? "" } }));
+        dispatch(setDesktopMountSetupDialog({ open: true, state: { code, state: state ?? "", scheme } }));
       }
     }
   }, []);

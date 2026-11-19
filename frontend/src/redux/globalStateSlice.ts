@@ -81,9 +81,14 @@ export interface DialogSelectOption {
   value: any;
 }
 
+// Deep link scheme of the desktop app that started the sign-in:
+// "fylvo" for Fylvo Desktop, "cloudreve" for the Cloudreve Store app.
+export type DesktopScheme = "fylvo" | "cloudreve";
+
 export interface DesktopCallbackState {
   code: string;
   state: string;
+  scheme: DesktopScheme;
 }
 
 export interface GlobalStateSlice {

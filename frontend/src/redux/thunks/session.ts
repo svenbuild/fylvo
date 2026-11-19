@@ -9,6 +9,7 @@ import { refreshTimeZone } from "../../util/datetime.ts";
 import { clearSessionCache } from "../fileManagerSlice.ts";
 import {
   closeDesktopMountSetupDialog,
+  DesktopScheme,
   closeMusicPlayer,
   setDarkMode,
   setDrawerWidth,
@@ -80,7 +81,13 @@ export function signout(): AppThunk<void> {
   };
 }
 
-export function openDesktopCallback(code: string, state: string, displayName?: string, path?: string): AppThunk<void> {
+export function openDesktopCallback(
+  scheme: DesktopScheme,
+  code: string,
+  state: string,
+  displayName?: string,
+  path?: string,
+): AppThunk<void> {
   return async (dispatch, _getState) => {
     // Only add params if they are defined, to avoid undefined values in URLSearchParams
     const params: Record<string, string> = {
@@ -96,7 +103,7 @@ export function openDesktopCallback(code: string, state: string, displayName?: s
     }
 
     const search = new URLSearchParams(params);
-    window.location.href = `cloudreve://mount?${search.toString()}`;
+    window.location.href = `${scheme}://mount?${search.toString()}`;
     dispatch(closeDesktopMountSetupDialog());
     enqueueSnackbar({
       message: i18next.t("fileManager.continueInDesktop"),
