@@ -1,6 +1,6 @@
 import { Box, ButtonBase, styled } from "@mui/material";
 import * as React from "react";
-import { hoverSurface, selectedSurface } from "../../../fylvoTheme.ts";
+import { hoverSurface, raisedHoverSurface, raisedSelectedSurface, selectedSurface } from "../../../fylvoTheme.ts";
 import { NoWrapTypography } from "../../Common/StyledComponents.tsx";
 
 const StyledButtonBase = styled(ButtonBase)<{
@@ -18,6 +18,9 @@ const StyledButtonBase = styled(ButtonBase)<{
     backgroundColor: hoverSurface(theme),
     color: theme.palette.text.primary,
   },
+  // In a dialog (folder picker) the item sits on a raised surface: use the raised steps.
+  ".MuiDialog-paper &&:hover, .MuiDialog-paper &&.Mui-focused": { backgroundColor: raisedHoverSurface(theme) },
+  ...(active && { ".MuiDialog-paper &&": { backgroundColor: `${raisedSelectedSurface(theme)}!important` } }),
   "&.Mui-focusVisible": {
     outline: `1px solid ${theme.palette.primary.main}`,
     outlineOffset: -1,

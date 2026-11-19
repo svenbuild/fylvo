@@ -115,7 +115,7 @@ const fylvoOptions: ThemeOptions = {
       styleOverrides: {
         root: ({ theme }) => ({
           // Menus are raised, so their items use the raised hover and selected steps.
-          "&:hover": { backgroundColor: raisedHoverSurface(theme) },
+          "@media (hover: hover)": { "&:hover": { backgroundColor: raisedHoverSurface(theme) } },
           ...neutralSelected(theme, raisedSelectedSurface(theme)),
           // Same focus mark in every menu: neutral fill and a thin ring inside the item.
           "&.Mui-focusVisible": {
@@ -187,8 +187,9 @@ const fylvoOptions: ThemeOptions = {
       styleOverrides: {
         paper: ({ theme }) => floating(theme),
         option: ({ theme }) => ({
+          "&.Mui-focused": { backgroundColor: raisedHoverSurface(theme) },
           '&[aria-selected="true"], &[aria-selected="true"].Mui-focused': {
-            backgroundColor: selectedSurface(theme),
+            backgroundColor: raisedSelectedSurface(theme),
           },
         }),
       },

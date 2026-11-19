@@ -21,7 +21,7 @@ const editorTheme = (theme: Theme) => {
       "txt-placeholder": text.disabled,
       "accent-primary": primary.main,
       "accent-primary-hover": primary.dark,
-      "accent-primary-active": theme.palette.mode === "dark" ? primary.light : primary.dark,
+      "accent-primary-active": theme.palette.mode === "dark" ? primary.main : primary.dark,
       "accent-primary-disabled": selectedSurface(theme),
       "accent-stateless": primary.main,
       accent_0_5_opacity: alpha(primary.main, 0.05),

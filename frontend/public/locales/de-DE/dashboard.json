@@ -1197,7 +1197,7 @@
     "refreshIntervalDes": "In diesem Abstand fragt Fylvo beim Downloader den Stand der Aufgaben ab. Der tatsächliche Abstand hängt auch von der Warteschlange \"Remote-Download\" und der Auslastung des Downloaders ab.",
     "rpcTokenDes": "Gleicher Wert wie <0>rpc-secret</0> in der Aria2-Konfiguration; leer lassen, wenn nicht gesetzt.",
     "tempPath": "Temporärer Download-Ordner",
-    "tempPathDes": "Ordner auf dem Knoten, den der Downloader als temporären Download-Ordner nutzt. Der Fylvo-Prozess auf dem Knoten braucht darauf Lese-, Schreib- und Ausführrechte, und der Downloader muss ihn ebenfalls erreichen. Leer lassen für den Standardpfad.",
+    "tempPathDes": "Ordner auf dem Knoten, den der Downloader als temporären Download-Ordner nutzt. Der Fylvo-Prozess auf dem Knoten braucht darauf Lese-, Schreib- und Ausführungsrechte, und der Downloader muss ihn ebenfalls erreichen. Leer lassen für den Standardpfad.",
     "testDownloader": "Verbindung zum Downloader testen",
     "waitForSeeding": "Auf Seeding warten",
     "waitForSeedingDes": "Wenn aktiv, hält der Knoten eine fertige Download-Aufgabe im Seeding-Zustand, bis die Seeding-Bedingung in der Downloader-Konfiguration erfüllt ist. Das wirkt erst nach Abschluss der Aufgabe und schränkt die Nutzung der heruntergeladenen Dateien nicht ein.",

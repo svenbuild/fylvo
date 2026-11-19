@@ -8,7 +8,7 @@ import {
   styled,
   Typography,
 } from "@mui/material";
-import { hoverSurface } from "../../../fylvoTheme.ts";
+import { raisedHoverSurface } from "../../../fylvoTheme.ts";
 import { useTranslation } from "react-i18next";
 import { PolicyType } from "../../../api/explorer";
 import DraggableDialog from "../../Dialogs/DraggableDialog";
@@ -22,7 +22,7 @@ export interface SelectProviderProps {
 
 const StyledCard = styled(Card)(({ theme }) => ({
   display: "flex",
-  "&:hover": { backgroundColor: hoverSurface(theme) },
+  "&:hover": { backgroundColor: raisedHoverSurface(theme) },
   "&:focus-within": { borderColor: theme.palette.primary.main },
 }));
 

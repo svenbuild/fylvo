@@ -6,7 +6,8 @@
 // Usage: node scripts/screenshot.mjs --out shot.png [--route home] [--width 1536] [--height 1024]
 //          [--scheme dark|light] [--lang de-DE] [--anon] [--full] [--actions '<json>']
 //
-// Against another instance: set FYLVO_APP and FYLVO_API to its address, FYLVO_USER and
+// Against another instance: set FYLVO_APP and FYLVO_API to its address (FYLVO_INSTANCE_THEME=1
+// keeps that instance's theme on a local address), FYLVO_USER and
 // FYLVO_PASSWORD to an account there.
 //
 // --actions is a JSON list of steps that run after the page has loaded, for example
@@ -53,9 +54,11 @@ try {
   await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: opt("scheme", "dark") }]);
 
   // On a local dev setup (any port), show the theme from the repo even when the local database
-  // holds an older one. On a real instance, show what that instance really serves.
+  // holds an older one. On a real instance, or with FYLVO_INSTANCE_THEME=1 (for example a local
+  // tunnel to a real instance), show what that instance really serves.
   const themes = JSON.stringify(JSON.parse(fs.readFileSync(themeFile, "utf8")));
-  const useRepoTheme = ["127.0.0.1", "localhost"].includes(new URL(APP).hostname);
+  const useRepoTheme =
+    ["127.0.0.1", "localhost"].includes(new URL(APP).hostname) && !process.env.FYLVO_INSTANCE_THEME;
   await page.setRequestInterception(useRepoTheme);
   if (useRepoTheme) page.on("request", async (req) => {
     if (!req.url().includes("/api/v4/site/config/basic")) return req.continue();
