@@ -192,7 +192,7 @@ const secondaryButtonStyle = ({ theme }: { theme: Theme }) => ({
   color: theme.palette.text.secondary,
   backgroundColor: hoverSurface(theme),
   "&:hover": { backgroundColor: selectedSurface(theme) },
-  ".MuiPopover-paper &, .MuiDialog-paper &": {
+  ".MuiPopover-paper &:not(.Mui-disabled), .MuiDialog-paper &:not(.Mui-disabled)": {
     backgroundColor: raisedHoverSurface(theme),
     "&:hover": { backgroundColor: raisedSelectedSurface(theme) },
   },

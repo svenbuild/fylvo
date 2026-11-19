@@ -21,7 +21,7 @@ const floating = (theme: Theme) => ({
   border: hairline(theme),
   boxShadow: isDark(theme) ? "0 12px 32px rgba(0, 0, 0, 0.6)" : "0 12px 32px rgba(0, 0, 0, 0.12)",
   // Rows on a raised surface go one step further up, otherwise hover has the color of the surface.
-  "& .MuiListItemButton-root:hover, & .MuiTableRow-hover:hover": { backgroundColor: raisedHoverSurface(theme) },
+  "& .MuiListItemButton-root:hover, & .MuiTableRow-root.MuiTableRow-hover:hover": { backgroundColor: raisedHoverSurface(theme) },
   "& .MuiListItemButton-root, & .MuiTableRow-root": neutralSelected(theme, raisedSelectedSurface(theme)),
 });
 

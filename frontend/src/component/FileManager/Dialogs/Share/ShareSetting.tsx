@@ -24,7 +24,7 @@ import MuiAccordionDetails from "@mui/material/AccordionDetails";
 import MuiAccordionSummary from "@mui/material/AccordionSummary";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { selectedSurface } from "../../../../fylvoTheme.ts";
+import { raisedSelectedSurface } from "../../../../fylvoTheme.ts";
 import { FileResponse, FileType, ShareMember } from "../../../../api/explorer.ts";
 import { sizeToString } from "../../../../util";
 import { Code } from "../../../Common/Code.tsx";
@@ -71,14 +71,14 @@ const AccordionSummary = styled(MuiAccordionSummary)(({ theme }) => ({
   },
   "&.Mui-expanded": {
     borderRadius: "8px 8px 0 0",
-    backgroundColor: selectedSurface(theme),
+    backgroundColor: raisedSelectedSurface(theme),
     minHeight: "0px!important",
   },
 }));
 
 const AccordionDetails = styled(MuiAccordionDetails)(({ theme }) => ({
   padding: "8px 10px 12px",
-  backgroundColor: selectedSurface(theme),
+  backgroundColor: raisedSelectedSurface(theme),
   borderRadius: "0 0 8px 8px",
   flexWrap: "wrap",
   fontSize: theme.typography.body2.fontSize,

@@ -109,7 +109,7 @@ const SortMethodMenu = ({ onClose, ...rest }: MenuProps) => {
           key={option.order_by + option.order_direction}
           onClick={() => selectOption(option)}
           sx={{
-            bgcolor: option.selected ? raisedSelectedSurface : undefined,
+            ...(option.selected && { "&, &:hover, &.Mui-focusVisible": { bgcolor: raisedSelectedSurface } }),
             "&.Mui-focusVisible": { outline: "1px solid", outlineColor: "primary.main", outlineOffset: -1 },
             "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
           }}
