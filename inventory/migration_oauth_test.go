@@ -217,3 +217,34 @@ func TestRetiredOAuthClientLookupFails(t *testing.T) {
 		require.True(t, ent.IsNotFound(err), guid)
 	}
 }
+
+func TestReplaceCloudreveOAuthClientIcons(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "icons.db"))
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	logger := logging.NewConsoleLogger(logging.LevelError)
+
+	// New installations get the Fylvo icon.
+	require.NoError(t, migrateOAuthClient(logger, client, ctx))
+	cli, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientCLIGUID)).Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, OAuthClientDefaultIcon, cli.Props.Icon)
+
+	// Existing installations still point at the removed Cloudreve icon; an icon chosen by the
+	// administrator stays.
+	_, err = client.OAuthClient.UpdateOne(cli).SetProps(&types.OAuthClientProps{Icon: oauthClientCloudreveIcon, RefreshTokenTTL: 123}).Save(ctx)
+	require.NoError(t, err)
+	custom, err := client.OAuthClient.Create().SetGUID("custom").SetSecret("s").SetName("Custom").
+		SetRedirectUris([]string{}).SetScopes([]string{}).
+		SetProps(&types.OAuthClientProps{Icon: "https://example.com/app.png"}).Save(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, replaceCloudreveOAuthClientIcons(logger, client, ctx))
+	cli, err = client.OAuthClient.Get(ctx, cli.ID)
+	require.NoError(t, err)
+	require.Equal(t, OAuthClientDefaultIcon, cli.Props.Icon)
+	require.Equal(t, int64(123), cli.Props.RefreshTokenTTL)
+	custom, err = client.OAuthClient.Get(ctx, custom.ID)
+	require.NoError(t, err)
+	require.Equal(t, "https://example.com/app.png", custom.Props.Icon)
+}

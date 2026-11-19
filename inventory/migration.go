@@ -296,6 +296,12 @@ const (
 	OAuthClientFylvoDesktopSecret      = "ZO3QjjTTSLiRjaw8ixyryEdJmTnmhtCj"
 	OAuthClientFylvoDesktopName        = "application:oauth.fylvoDesktop"
 	OAuthClientFylvoDesktopRedirectURI = "/callback/fylvo-desktop"
+
+	// OAuthClientDefaultIcon is the icon of the built-in clients. Clients created by upstream
+	// Cloudreve point at oauthClientCloudreveIcon, which Fylvo no longer ships; they are moved to
+	// the Fylvo icon on start (see replaceCloudreveOAuthClientIcons).
+	OAuthClientDefaultIcon   = "/static/img/fylvo.svg"
+	oauthClientCloudreveIcon = "/static/img/cloudreve.svg"
 )
 
 // RetiredOAuthClientGUIDs are the clients of Cloudreve apps that Fylvo does not support.
@@ -338,6 +344,28 @@ func removeRetiredOAuthClients(l logging.Logger, client *ent.Client, ctx context
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// replaceCloudreveOAuthClientIcons points clients that still use the removed Cloudreve icon at
+// the Fylvo icon. Runs on every start, because the schema migration only runs when the version
+// changes. Icons an administrator chose are kept.
+func replaceCloudreveOAuthClientIcons(l logging.Logger, client *ent.Client, ctx context.Context) error {
+	all, err := client.OAuthClient.Query().All(schema.SkipSoftDelete(ctx))
+	if err != nil {
+		return fmt.Errorf("failed to list OAuth clients: %w", err)
+	}
+	for _, c := range all {
+		if c.Props == nil || c.Props.Icon != oauthClientCloudreveIcon {
+			continue
+		}
+		props := *c.Props
+		props.Icon = OAuthClientDefaultIcon
+		if err := client.OAuthClient.UpdateOneID(c.ID).SetProps(&props).Exec(schema.SkipSoftDelete(ctx)); err != nil {
+			return fmt.Errorf("failed to update icon of OAuth client %s: %w", c.GUID, err)
+		}
+		l.Info("Replaced the Cloudreve icon of OAuth client %s with the Fylvo icon.", c.GUID)
 	}
 	return nil
 }
@@ -393,7 +421,7 @@ func ensureOAuthClientFylvoDesktop(l logging.Logger, client *ent.Client, ctx con
 		SetName(OAuthClientFylvoDesktopName).
 		SetRedirectUris([]string{OAuthClientFylvoDesktopRedirectURI}).
 		SetScopes([]string{"profile", "email", "openid", "offline_access", "UserInfo.Write", "Workflow.Write", "Files.Write", "Shares.Write"}).
-		SetProps(&types.OAuthClientProps{Icon: "/static/img/fylvo.svg", RefreshTokenTTL: 7776000}).
+		SetProps(&types.OAuthClientProps{Icon: OAuthClientDefaultIcon, RefreshTokenTTL: 7776000}).
 		SetIsEnabled(true).
 		Save(ctx); err != nil {
 		// Another server on the same database may be creating it right now; give its
@@ -428,7 +456,7 @@ func migrateOAuthClientCLI(l logging.Logger, client *ent.Client, ctx context.Con
 		SetName(OAuthClientCLIName).
 		SetRedirectUris([]string{OAuthClientCLIRedirectURI}).
 		SetScopes([]string{"profile", "email", "openid", "offline_access", "UserInfo.Write", "Workflow.Write", "Files.Write", "Shares.Write"}).
-		SetProps(&types.OAuthClientProps{Icon: "/static/img/cloudreve.svg", RefreshTokenTTL: 7776000}).
+		SetProps(&types.OAuthClientProps{Icon: OAuthClientDefaultIcon, RefreshTokenTTL: 7776000}).
 		SetIsEnabled(true).
 		Save(ctx); err != nil {
 		return fmt.Errorf("failed to create default CLI OAuth client: %w", err)

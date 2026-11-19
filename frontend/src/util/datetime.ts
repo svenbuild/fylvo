@@ -13,6 +13,7 @@ import ko from "timeago.js/esm/lang/ko";
 import pl from "timeago.js/esm/lang/pl";
 import pt_BR from "timeago.js/esm/lang/pt_BR";
 import ru from "timeago.js/esm/lang/ru";
+import zh_TW from "timeago.js/esm/lang/zh_TW";
 import i18next from "../i18n";
 import SessionManager, { UserSettings } from "../session";
 
@@ -21,8 +22,8 @@ dayjs.extend(timezone);
 dayjs.extend(duration);
 
 // Relative times ("vor 5 Minuten") follow the UI language. The keys are the
-// "timeAgoLocaleCode" values of the locale files; English and Chinese are built in.
-const timeAgoLocales = { ar_AR: ar, de_DE: de, es_ES: es, fr_FR: fr, it_IT: it, ja_JP: ja, ko_KR: ko, pl_PL: pl, pt_BR, ru };
+// "timeAgoLocaleCode" values of the locale files; English and Simplified Chinese are built in.
+const timeAgoLocales = { ar_AR: ar, de_DE: de, es_ES: es, fr_FR: fr, it_IT: it, ja_JP: ja, ko_KR: ko, pl_PL: pl, pt_BR, ru, zh_TW };
 Object.entries(timeAgoLocales).forEach(([code, locale]) => register(code, locale));
 
 let userTimezone = "";

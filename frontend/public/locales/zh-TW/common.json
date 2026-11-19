@@ -17,7 +17,7 @@
   "minutes": "m 分 s 秒",
   "hours": "H 小時 m 分",
   "days": "{{d}} 天",
-  "timeAgoLocaleCode": "zh_CN",
+  "timeAgoLocaleCode": "zh_TW",
   "forEditorLocaleCode": "zh-CN",
   "artPlayerLocaleCode": "zh-cn",
   "requestID": "請求 ID: {{id}}",
