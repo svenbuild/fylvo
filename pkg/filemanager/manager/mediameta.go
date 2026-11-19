@@ -179,18 +179,10 @@ func (m *manager) shouldGenerateMediaMeta(ctx context.Context, d driver.Handler,
 	return false
 }
 
-func (m *manager) mediaMetaForNewEntity(ctx context.Context, session *fs.UploadSession, d driver.Handler) {
+func (m *manager) mediaMetaForNewEntity(ctx context.Context, session *fs.UploadSession, d driver.Handler, uri *fs.URI, owner *ent.User) {
 	if session.Props.EntityType == nil || *session.Props.EntityType == types.EntityTypeVersion {
 		if !m.shouldGenerateMediaMeta(ctx, d, session.Props.Uri.Name()) {
 			return
-		}
-
-		// Fylvo: the details are saved as the owner of the file, under the owner's own address.
-		// The uploader can be a member of a shared folder or a visitor of an upload link, and
-		// neither may change metadata.
-		uri, owner := session.Props.Uri, m.user
-		if file, err := m.fs.Get(ctx, session.Props.Uri); err == nil && file.Owner() != nil && file.Owner().ID != m.user.ID {
-			uri, owner = file.Uri(true), file.Owner()
 		}
 
 		mediaMetaTask, err := NewMediaMetaTask(ctx, uri, session.EntityID, owner)

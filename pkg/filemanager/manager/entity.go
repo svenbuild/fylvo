@@ -396,7 +396,7 @@ func (l *manager) ImportPhysical(ctx context.Context, dst *fs.URI, policyId int,
 			return err
 		}
 
-		l.onNewEntityUploaded(ctx, uploadSession, d, l.user.ID)
+		l.onNewEntityUploaded(ctx, uploadSession, d)
 	}
 
 	return nil

@@ -460,7 +460,7 @@ func (m *manager) shouldIndexFullText(ctx context.Context, fileName string, size
 }
 
 // fullTextIndexForNewEntity creates and queues a full text index task for a newly uploaded entity.
-func (m *manager) fullTextIndexForNewEntity(ctx context.Context, session *fs.UploadSession, owner int) {
+func (m *manager) fullTextIndexForNewEntity(ctx context.Context, session *fs.UploadSession, uri *fs.URI, owner *ent.User) {
 	if session.Props.EntityType != nil && *session.Props.EntityType != types.EntityTypeVersion {
 		return
 	}
@@ -469,7 +469,7 @@ func (m *manager) fullTextIndexForNewEntity(ctx context.Context, session *fs.Upl
 		return
 	}
 
-	t, err := NewFullTextIndexTask(ctx, session.Props.Uri, session.EntityID, session.FileID, owner, m.user)
+	t, err := NewFullTextIndexTask(ctx, uri, session.EntityID, session.FileID, owner.ID, owner)
 	if err != nil {
 		m.l.Warning("Failed to create full text index task: %s", err)
 		return

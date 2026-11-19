@@ -394,17 +394,12 @@ func (m *manager) CompleteUpload(ctx context.Context, session *fs.UploadSession)
 		return nil, err
 	}
 
-	var (
-		file    fs.File
-		ownerId int
-	)
+	var file fs.File
 	if m.fs != nil {
 		file, err = m.fs.CompleteUpload(ctx, session)
 		if err != nil {
 			return nil, fmt.Errorf("failed to complete upload: %w", err)
 		}
-
-		ownerId = file.OwnerID()
 	}
 
 	if session.SentinelTaskID > 0 {
@@ -415,7 +410,7 @@ func (m *manager) CompleteUpload(ctx context.Context, session *fs.UploadSession)
 		}
 	}
 
-	m.onNewEntityUploaded(ctx, session, d, ownerId)
+	m.onNewEntityUploaded(ctx, session, d)
 	// Remove upload session
 	_ = m.kv.Delete(UploadSessionCachePrefix, session.Props.UploadSessionID)
 	releaseUploadSessionLock(session.Props.UploadSessionID)
@@ -536,13 +531,26 @@ func (m *manager) updateStateless(ctx context.Context, req *fs.UploadRequest, o 
 	return nil, nil
 }
 
-func (m *manager) onNewEntityUploaded(ctx context.Context, session *fs.UploadSession, d driver.Handler, owner int) {
+func (m *manager) onNewEntityUploaded(ctx context.Context, session *fs.UploadSession, d driver.Handler) {
 	if !m.stateless {
+		uri, owner := m.ownerSide(ctx, session)
 		// Submit media meta task for new entity
-		m.mediaMetaForNewEntity(ctx, session, d)
+		m.mediaMetaForNewEntity(ctx, session, d, uri, owner)
 		// Submit full text index task for new entity
-		m.fullTextIndexForNewEntity(ctx, session, owner)
+		m.fullTextIndexForNewEntity(ctx, session, uri, owner)
 	}
+}
+
+// ownerSide returns the address and the user the tasks for a new upload run with. Fylvo: the
+// owner of the file, under the owner's own address. The uploader can be a member of a shared
+// folder or a visitor of an upload link, and neither may save metadata of the file.
+func (m *manager) ownerSide(ctx context.Context, session *fs.UploadSession) (*fs.URI, *ent.User) {
+	file, err := m.fs.Get(ctx, session.Props.Uri)
+	if err != nil || file.Owner() == nil || file.Owner().ID == m.user.ID {
+		return session.Props.Uri, m.user
+	}
+
+	return file.Uri(true), file.Owner()
 }
 
 // Upload sentinel check task is used for compliant storage policy (COS, S3...), it will delete the marked entity.
