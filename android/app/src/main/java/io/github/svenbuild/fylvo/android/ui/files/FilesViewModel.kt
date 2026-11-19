@@ -308,12 +308,6 @@ class FilesViewModel(
         loadRecent()
     }
 
-    /** Jump straight to a folder by URI (used by the backup card). */
-    fun openFolder(uri: String) {
-        _state.value = _state.value.copy(home = false, currentUri = uri)
-        refresh()
-    }
-
     fun openMyFiles() {
         _state.value = _state.value.copy(home = false, currentUri = CrUri.MY_PREFIX)
         refresh()
@@ -626,7 +620,7 @@ class FilesViewModel(
     /** Opens search; scoped to the current folder when inside one, otherwise everywhere. */
     fun openSearch() {
         val s = _state.value
-        val scope = if (!s.home && !s.virtual && !CrUri.isRoot(s.currentUri)) s.currentUri else null
+        val scope = if (!s.home && !s.virtual && (!CrUri.isRoot(s.currentUri) || CrUri.isShare(s.currentUri))) s.currentUri else null
         _state.value = s.copy(searchQuery = "", searchScope = scope, searchType = null, searchResults = emptyList(), selected = emptySet())
     }
 

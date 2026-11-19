@@ -45,7 +45,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handleShareIntent(intent)
+        val fromHistory = intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+        if (savedInstanceState == null && !fromHistory) handleShareIntent(intent)
         setContent { App() }
     }
 
@@ -100,7 +101,14 @@ fun App() {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
 
-    val signOut: () -> Unit = { scope.launch { app.signOut() } }
+    // Fylvo: after sign-out drop the files view model too, so no listing, recent file or
+    // thumbnail URL of the old account survives into the next sign-in.
+    val signOut: () -> Unit = {
+        scope.launch {
+            app.signOut()
+            (context as? ComponentActivity)?.viewModelStore?.clear()
+        }
+    }
 
     FylvoTheme {
         // Android 13+ needs a runtime grant before sync/upload notifications
@@ -128,8 +136,7 @@ fun App() {
                 }
             }
             true -> {
-                // Activity-scoped so Settings can drive the same files view
-                // (e.g. the backup card's "open folder").
+                // Activity-scoped so the files view survives a trip to Settings.
                 val filesVm: FilesViewModel = viewModel(factory = factory)
                 NavHost(navController = nav, startDestination = "files") {
                 composable("files") {

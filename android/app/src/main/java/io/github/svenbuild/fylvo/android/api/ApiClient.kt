@@ -66,9 +66,7 @@ class ApiClient(private val session: SessionManager) {
             val original = chain.request()
             val sameOrigin = apiOrigin != null && originOf(original.url) == apiOrigin &&
                 runBlocking { session.serverUrlNow() + "/" }.toHttpUrlOrNull()?.let(::originOf) == apiOrigin
-            if (!sameOrigin || original.header(NO_AUTH_HEADER) != null) {
-                return@Interceptor chain.proceed(original.newBuilder().removeHeader(NO_AUTH_HEADER).build())
-            }
+            if (!sameOrigin) return@Interceptor chain.proceed(original)
 
             val token = runBlocking { freshAccessToken(baseUrl) }
             var response = chain.proceed(original.withBearer(token))
@@ -119,6 +117,8 @@ class ApiClient(private val session: SessionManager) {
         if (current.isNotEmpty() && current != staleToken) return@withLock current
         val refreshToken = session.refreshTokenNow()
         if (refreshToken.isEmpty()) return@withLock null
+        // Fylvo: the refresh token only goes to the server it belongs to.
+        if (!isSignedInOrigin(baseUrl)) return@withLock null
 
         val resp = runCatching {
             bareService(baseUrl).refreshToken(RefreshTokenRequest(refreshToken))
@@ -128,8 +128,15 @@ class ApiClient(private val session: SessionManager) {
             return@withLock null
         }
         val tokens = body.data
+        // Signed out or signed in again while the request ran: drop the result.
+        if (session.refreshTokenNow() != refreshToken) return@withLock null
         session.saveTokens(tokens.accessToken, tokens.refreshToken, parseExpiresAt(tokens.accessExpires))
         tokens.accessToken
+    }
+
+    private suspend fun isSignedInOrigin(baseUrl: String): Boolean {
+        val wanted = baseUrl.toHttpUrlOrNull()?.let(::originOf) ?: return false
+        return (session.serverUrlNow() + "/").toHttpUrlOrNull()?.let(::originOf) == wanted
     }
 
     /** Retrofit without the session interceptor, for the refresh call itself. */
@@ -157,8 +164,6 @@ class ApiClient(private val session: SessionManager) {
         /** "https://host:port" with the scheme's default port filled in. */
         fun originOf(url: HttpUrl): String = "${url.scheme}://${url.host.lowercase()}:${url.port}"
 
-        /** Set on a request to skip the bearer token (stripped before sending). */
-        const val NO_AUTH_HEADER = "X-Fylvo-No-Auth"
         private const val REFRESH_MARGIN_MS = 60_000L
         private val LOGIN_REQUIRED = Regex(""""code"\s*:\s*401\b""")
 

@@ -213,8 +213,11 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
          */
         fun isForeignContentUri(context: Context, uri: Uri): Boolean {
             if (uri.scheme != android.content.ContentResolver.SCHEME_CONTENT) return false
-            val authority = uri.authority ?: return false
-            return !authority.startsWith(context.packageName)
+            // A "0@" user prefix in the authority is dropped when Android resolves the provider.
+            val authority = uri.authority?.substringAfterLast('@') ?: return false
+            if (authority.startsWith(context.packageName)) return false
+            val owner = context.packageManager.resolveContentProvider(authority, 0)?.packageName
+            return owner != context.packageName
         }
 
         /** Display name of a picked document, as the picker shows it. */

@@ -17,13 +17,30 @@ android {
         versionName = "0.1.0"
     }
 
+    // Fylvo release key. It stays outside the repo: the keystore path comes from the Gradle
+    // property fylvoKeystore (in ~/.gradle/gradle.properties), the password from the environment
+    // variable FYLVO_KEYSTORE_PASSWORD at build time. Without both, release builds stay unsigned.
+    val keystorePath = providers.gradleProperty("fylvoKeystore").orNull
+    val keystorePassword = System.getenv("FYLVO_KEYSTORE_PASSWORD")
+    val canSign = keystorePath != null && !keystorePassword.isNullOrEmpty()
+    if (canSign) {
+        signingConfigs {
+            create("fylvo") {
+                storeFile = file(keystorePath!!)
+                storePassword = keystorePassword
+                keyAlias = "fylvo"
+                keyPassword = keystorePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Fylvo: no release signing yet. A release build comes out unsigned until the owner
-            // decides on his own key; never fall back to the debug key.
+            // Never the debug key: signed with the Fylvo key or not at all.
+            if (canSign) signingConfig = signingConfigs.getByName("fylvo")
         }
     }
 

@@ -11,6 +11,7 @@ import android.provider.DocumentsContract.Document
 import android.provider.DocumentsContract.Root
 import android.provider.DocumentsProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import io.github.svenbuild.fylvo.android.FylvoApp
 import io.github.svenbuild.fylvo.android.R
@@ -41,6 +42,9 @@ class FylvoDocumentsProvider : DocumentsProvider() {
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
         val cursor = MatrixCursor(projection ?: DEFAULT_ROOT_COLUMNS)
+        // Fylvo: no root while nobody is signed in.
+        val app = context?.applicationContext as? io.github.svenbuild.fylvo.android.FylvoApp ?: return cursor
+        if (!runBlocking { app.sessionManager.isLoggedIn.first() }) return cursor
         cursor.newRow().apply {
             add(Root.COLUMN_ROOT_ID, ROOT_ID)
             add(Root.COLUMN_DOCUMENT_ID, ROOT_ID)

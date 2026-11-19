@@ -56,5 +56,6 @@ class UploadNamingTest {
         assertTrue(UploadWorker.isForeignContentUri(context, Uri.parse("content://com.android.providers.downloads.documents/document/1")))
         assertFalse(UploadWorker.isForeignContentUri(context, Uri.parse("file:///data/data/$own/files/datastore/session.preferences_pb")))
         assertFalse(UploadWorker.isForeignContentUri(context, Uri.parse("content://$own.fileprovider/offline/a")))
+        assertFalse(UploadWorker.isForeignContentUri(context, Uri.parse("content://0@$own.fileprovider/offline/a")))
     }
 }

@@ -1,6 +1,9 @@
 package io.github.svenbuild.fylvo.android
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -24,6 +27,7 @@ class FylvoApp : Application() {
     lateinit var favoritesStore: FavoritesStore
         private set
     lateinit var taskNotifySettings: TaskNotifySettings
+        private set
     lateinit var syncFolderSettings: SyncFolderSettings
         private set
     lateinit var viewSettings: ViewSettings
@@ -56,10 +60,16 @@ class FylvoApp : Application() {
         syncFolderSettings.clear()
         taskNotifySettings.clear()
         contentResolver.persistedUriPermissions.forEach {
-            runCatching {
-                contentResolver.releasePersistableUriPermission(it.uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
+            val flags = (if (it.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+                (if (it.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
+            runCatching { contentResolver.releasePersistableUriPermission(it.uri, flags) }
         }
+        // Grants other apps got to our documents (system Files app) end with the session.
+        revokeUriPermission(
+            Uri.parse("content://$packageName.documents/"),
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+        )
+        contentResolver.notifyChange(DocumentsContract.buildRootsUri("$packageName.documents"), null)
         withContext(Dispatchers.IO) {
             filesDir.resolve("offline").deleteRecursively()
             cacheDir.listFiles()?.forEach { it.deleteRecursively() }

@@ -174,7 +174,7 @@ fun FilesScreen(
 
     fun openSearch() {
         val s = state
-        searchOpenedFrom = if (!s.home && !s.virtual && !CrUri.isRoot(s.currentUri)) s.currentUri else null
+        searchOpenedFrom = if (!s.home && !s.virtual && (!CrUri.isRoot(s.currentUri) || CrUri.isShare(s.currentUri))) s.currentUri else null
         viewModel.openSearch()
     }
 
@@ -516,7 +516,8 @@ fun FilesScreen(
         FolderPicker(
             title = if (copy) "Copy to" else "Move to",
             confirmLabel = if (copy) "Copy to" else "Move to",
-            startUri = state.currentUri,
+            // The picked files' own folder: inside a share the picker then stays in that share.
+            startUri = CrUri.parent(paths.first()),
             excluded = if (copy) emptySet() else paths.toSet(),
             loadFolders = { viewModel.listFolders(it) },
             onCreateFolder = { parent, name -> viewModel.mkdirIn(parent, name) },
