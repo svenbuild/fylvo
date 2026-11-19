@@ -663,9 +663,15 @@ func (f *fileClient) Copy(ctx context.Context, args *CopyParameter) (map[int][]*
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get entities of file: %w", err)
 		}
-		ids := lo.FilterMap(fileEntities, func(entity *ent.Entity, index int) (int, bool) {
+		source := files[index]
+		ids := lo.FilterMap(fileEntities, func(entity *ent.Entity, _ int) (int, bool) {
 			// Skip entities that are still uploading
 			if entity.UploadSessionID != nil {
+				return 0, false
+			}
+			// Fylvo: a copy for another owner takes the current version only. Older versions
+			// and thumbnails stay with the owner, who alone manages them.
+			if dstMap[source.FileChildren][0].OwnerID != source.OwnerID && entity.ID != source.PrimaryEntity {
 				return 0, false
 			}
 			sizeDiff += entity.Size

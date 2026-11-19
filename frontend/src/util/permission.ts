@@ -36,19 +36,20 @@ export function isUploadOnly(folder?: FileResponse): boolean {
 export function canCopyMoveTo(files: FileResponse[], dst: string, isCopy: boolean): boolean {
   const dstUri = new CrUri(dst);
   const srcUri = new CrUri(files[0].path);
-  // Fylvo: inside a member share with edit right, copy and move stay within the same share.
+  // Fylvo: a copy goes between the own files and shared folders the user may edit. A move stays
+  // inside one share. Whether the destination may be changed is checked by the server.
+  if (isCopy) {
+    const ownOrShared = (uri: CrUri) => uri.fs() == Filesystem.my || uri.fs() == Filesystem.share;
+    return ownOrShared(srcUri) && ownOrShared(dstUri) && files.every(canModifyFile);
+  }
   if (srcUri.fs() == Filesystem.share) {
     return dstUri.fs() == Filesystem.share && dstUri.id() == srcUri.id() && files.every(canModifyFile);
   }
-  if (isCopy) {
-    return srcUri.fs() == dstUri.fs() && srcUri.fs() == Filesystem.my;
-  } else {
-    switch (srcUri.fs()) {
-      case Filesystem.my:
-        return dstUri.fs() == Filesystem.my || dstUri.fs() == Filesystem.trash;
-      case Filesystem.trash:
-        return dstUri.fs() == Filesystem.my;
-    }
+  switch (srcUri.fs()) {
+    case Filesystem.my:
+      return dstUri.fs() == Filesystem.my || dstUri.fs() == Filesystem.trash;
+    case Filesystem.trash:
+      return dstUri.fs() == Filesystem.my;
   }
 
   return false;

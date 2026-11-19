@@ -356,10 +356,6 @@ func TestEditorIsHeldToTheSharedFolder(t *testing.T) {
 			_, err := f.MoveOrCopy(e.ctx, []*fs.URI{e.shared("/doc.txt")}, e.uri("cloudreve://my/own"), false)
 			return err
 		}},
-		"copy out of the folder": {notSupported, func(f fs.FileSystem) error {
-			_, err := f.MoveOrCopy(e.ctx, []*fs.URI{e.shared("/doc.txt")}, e.uri("cloudreve://my/own"), true)
-			return err
-		}},
 		"move into the folder": {notSupported, func(f fs.FileSystem) error {
 			_, err := f.MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/own/mine.txt")}, e.shared("/sub"), false)
 			return err
@@ -890,4 +886,85 @@ func TestMemberReleasesOnlyLocksItMayChange(t *testing.T) {
 	ownerDoc, err := owner.Get(e.ctx, e.uri("cloudreve://my/Outer/Inner/doc.txt"))
 	require.NoError(t, err)
 	require.ErrorIs(t, owner.UnlockAt(e.ctx, ownerDoc, ownerDoc.Uri(false), otherLock.LastToken()), lock.ErrNoSuchLock)
+}
+
+func TestCopyBetweenOwnFilesAndSharedFolder(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	editor := e.as(e.editor)
+	e.upload(editor, "cloudreve://my/own/mine.txt", 5)
+	e.upload(editor, "cloudreve://my/own/dir/inner.txt", 3)
+	require.NoError(t, editor.PatchMetadata(e.ctx, []*fs.URI{e.uri("cloudreve://my/own/mine.txt")},
+		fs.MetadataPatch{Key: "customize:icon_color", Value: "#fff"},
+		fs.MetadataPatch{Key: MetadataSharedRedirect, Value: fs.NewShareUri(e.shareID, "")}))
+	storage := func(u *ent.User) int64 { return e.reload(u).Storage }
+	ownerBefore, editorBefore := storage(e.owner), storage(e.editor)
+
+	// Into the shared folder: the copy belongs to the owner and counts for the owner.
+	_, err := editor.MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/own/mine.txt"), e.uri("cloudreve://my/own/dir")}, e.shared("/sub"), true)
+	require.NoError(t, err)
+	copied, err := e.as(e.owner).Get(e.ctx, e.uri("cloudreve://my/Shared/sub/mine.txt"), WithFilePublicMetadata())
+	require.NoError(t, err)
+	require.Equal(t, e.owner.ID, copied.OwnerID())
+	require.Equal(t, "#fff", copied.Metadata()["customize:icon_color"])
+	require.NotContains(t, copied.Metadata(), MetadataSharedRedirect, "no shortcut target is planted in the tree of the owner")
+	inner, err := e.as(e.owner).Get(e.ctx, e.uri("cloudreve://my/Shared/sub/dir/inner.txt"))
+	require.NoError(t, err)
+	require.Equal(t, e.owner.ID, inner.OwnerID())
+	require.Equal(t, ownerBefore+8, storage(e.owner))
+	require.Equal(t, editorBefore, storage(e.editor))
+
+	// Out of the shared folder: the copy belongs to the editor and counts for the editor. It
+	// takes the current version only, older versions stay with the owner.
+	_, err = e.client.User.UpdateOne(e.owner).SetSettings(&types.UserSetting{VersionRetention: true}).Save(e.ctx)
+	require.NoError(t, err)
+	version := types.EntityTypeVersion
+	editor = e.as(e.editor)
+	session, err := editor.PrepareUpload(e.ctx, &fs.UploadRequest{Props: &fs.UploadProps{
+		Uri: e.shared("/doc.txt"), Size: 10, UploadSessionID: uuid.Must(uuid.NewV4()).String(), ExpireAt: time.Now().Add(time.Hour), EntityType: &version,
+	}})
+	require.NoError(t, err)
+	_, err = editor.CompleteUpload(e.ctx, session)
+	require.NoError(t, err)
+	ownerBefore = storage(e.owner)
+	versions, err := e.as(e.owner).Get(e.ctx, e.uri("cloudreve://my/Shared/doc.txt"), WithFileEntities())
+	require.NoError(t, err)
+	require.Len(t, versions.Entities(), 2, "the owner keeps versions")
+	_, err = editor.MoveOrCopy(e.ctx, []*fs.URI{e.shared("/doc.txt")}, e.uri("cloudreve://my/own"), true)
+	require.NoError(t, err)
+	out, err := editor.Get(e.ctx, e.uri("cloudreve://my/own/doc.txt"), WithFileEntities())
+	require.NoError(t, err)
+	require.Equal(t, e.editor.ID, out.OwnerID())
+	require.Len(t, out.Entities(), 1)
+	require.Equal(t, editorBefore+10, storage(e.editor))
+
+	// The copies stay when the original goes, and the original when a copy goes.
+	_, _, err = e.as(e.owner).Delete(e.ctx, []*fs.URI{e.uri("cloudreve://my/Shared/doc.txt")})
+	require.NoError(t, err)
+	_, err = editor.Get(e.ctx, e.uri("cloudreve://my/own/doc.txt"), WithFileEntities())
+	require.NoError(t, err)
+	require.Equal(t, editorBefore+10, storage(e.editor))
+
+	// A folder with a shortcut in it is not copied into the tree of somebody else.
+	_, err = editor.Create(e.ctx, e.uri("cloudreve://my/own/links/shortcut"), types.FileTypeFolder, WithSymbolicLink(),
+		fs.WithMetadata(map[string]string{MetadataSharedRedirect: fs.NewShareUri(e.shareID, "")}))
+	require.NoError(t, err)
+	_, err = editor.MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/own/links")}, e.shared(""), true)
+	require.ErrorContains(t, err, ownerOnly)
+
+	// A reader copies neither in nor out, a visitor of an upload link neither.
+	e.upload(e.as(e.reader), "cloudreve://my/mine.txt", 1)
+	_, err = e.as(e.reader).MoveOrCopy(e.ctx, []*fs.URI{e.shared("/sub/mine.txt")}, e.uri("cloudreve://my"), true)
+	require.ErrorContains(t, err, ownerOnly)
+	_, err = e.as(e.reader).MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/mine.txt")}, e.shared(""), true)
+	require.ErrorContains(t, err, ownerOnly)
+	_, at := e.uploadLink(&types.ShareProps{AllowUpload: true})
+	e.upload(e.as(e.outsider), "cloudreve://my/mine.txt", 1)
+	_, err = e.as(e.outsider).MoveOrCopy(e.ctx, []*fs.URI{at("/sub/mine.txt")}, e.uri("cloudreve://my"), true)
+	require.ErrorContains(t, err, ownerOnly)
+	_, err = e.as(e.outsider).MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/mine.txt")}, at(""), true)
+	require.ErrorContains(t, err, ownerOnly)
+
+	names, err := e.names(e.as(e.owner), e.uri("cloudreve://my/Shared"))
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"sub"}, names)
 }

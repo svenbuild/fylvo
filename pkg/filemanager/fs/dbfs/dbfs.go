@@ -818,23 +818,26 @@ func generateSavePath(policy *ent.StoragePolicy, req *fs.UploadRequest, user *en
 // CanMoveOrCopyTo reports whether files can be moved or copied between the two places at all.
 // It does not check what the user may do there.
 func CanMoveOrCopyTo(src, dst *fs.URI, isCopy bool) bool {
-	// Fylvo: inside one shared folder. Whether the user may edit it is checked by canWrite.
-	// Nothing moves between a share and anything else: the files would end up in the tree
-	// of one user while belonging to another.
+	// Fylvo: a copy goes between the own files and shared folders and belongs to the owner of
+	// the place it goes to. Whether the user may edit both places is checked by canWrite.
+	if isCopy {
+		ownOrShared := func(u *fs.URI) bool {
+			return u.FileSystem() == constants.FileSystemMy || u.FileSystem() == constants.FileSystemShare
+		}
+		return ownOrShared(src) && ownOrShared(dst)
+	}
+
+	// Fylvo: a move stays inside one shared folder. Moved files would end up in the tree of
+	// one user while belonging to another.
 	if src.FileSystem() == constants.FileSystemShare || dst.FileSystem() == constants.FileSystemShare {
 		return src.FileSystem() == dst.FileSystem() && src.ID("") != "" && src.ID("") == dst.ID("")
 	}
 
-	if isCopy {
-		return src.FileSystem() == dst.FileSystem() && src.FileSystem() == constants.FileSystemMy
-	} else {
-		switch src.FileSystem() {
-		case constants.FileSystemMy:
-			return dst.FileSystem() == constants.FileSystemMy || dst.FileSystem() == constants.FileSystemTrash
-		case constants.FileSystemTrash:
-			return dst.FileSystem() == constants.FileSystemMy
-
-		}
+	switch src.FileSystem() {
+	case constants.FileSystemMy:
+		return dst.FileSystem() == constants.FileSystemMy || dst.FileSystem() == constants.FileSystemTrash
+	case constants.FileSystemTrash:
+		return dst.FileSystem() == constants.FileSystemMy
 	}
 
 	return false

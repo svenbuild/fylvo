@@ -35,7 +35,7 @@ export const PathSelectionVariants: Record<string, PathSelectionVariant> = {
   copy: {
     indicator: "fileManager.copyToDst",
     title: "application:fileManager.copyTo",
-    disableSharedWithMe: true,
+    pickInsideSharedWithMe: true,
     disableTrash: true,
   },
   move: {

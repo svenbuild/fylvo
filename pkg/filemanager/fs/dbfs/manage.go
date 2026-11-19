@@ -897,6 +897,15 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 		return item.Model
 	})
 
+	// Fylvo: only the owner decides about shortcuts and system metadata in their tree, as in
+	// Create. A copy into the tree of somebody else takes none of them along.
+	excludedMetadata := []string{FullTextIndexKey}
+	foreignDestination := !f.isOwnerCall(ctx, destination)
+	if foreignDestination {
+		excludedMetadata = append(excludedMetadata, MetadataUploadSessionID, MetadataSharedRedirect,
+			MetadataSharedOwner, MetadataRestoreUri, MetadataExpectedCollectTime)
+	}
+
 	// newTargetsMap is the map of between new target files in first layer, and its src file ID.
 	newTargetsMap := make(map[int]*ent.File)
 	storageDiff := make(inventory.StorageDiff)
@@ -922,6 +931,9 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 			sizeTotal := int64(0)
 			for _, file := range targets {
 				sizeTotal += file.SizeUsed()
+				if foreignDestination && file.IsSymbolic() {
+					return fs.ErrOwnerOnly.WithError(fmt.Errorf("a shortcut is not copied into the files of somebody else"))
+				}
 			}
 
 			if err := f.validateUserCapacityRaw(ctx, sizeTotal, capacity); err != nil {
@@ -933,7 +945,7 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 				Files: lo.Map(targets, func(item *File, index int) *ent.File {
 					return item.Model
 				}),
-				ExcludedMetadataKeys: []string{FullTextIndexKey},
+				ExcludedMetadataKeys: excludedMetadata,
 				DstMap:               initialDstMap,
 			})
 			if err != nil {
