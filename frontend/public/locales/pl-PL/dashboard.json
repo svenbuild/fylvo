@@ -96,18 +96,13 @@
     "setAsSecondary": "Dodaj do drugorzędnych adresów URL",
     "setAsSecondaryDes": "Dodaj {{current}} do drugorzędnych adresów URL. Cloudreve automatycznie wybierze, czy go użyć, na podstawie adresu URL faktycznie odwiedzanego przez użytkownika.",
     "siteURLDescription": "To ustawienie jest bardzo ważne, upewnij się, że pasuje do rzeczywistego adresu URL Twojej witryny. Możesz zmienić to ustawienie w Ustawienia - Podstawowe.",
-    "ignore": "Ignoruj",
-    "changeIt": "Zmień to",
     "trend": "Trend",
     "summary": "Podsumowanie",
     "totalUsers": "Użytkownicy",
     "totalFilesAndFolders": "Pliki i foldery",
     "shareLinks": "Linki udostępniania",
     "totalBlobs": "Bloby",
-    "offlineLicenseDes": "Cloudreve automatycznie zaktualizuje licencję offline przed jej wygaśnięciem, jeśli serwer jest podłączony do sieci.",
-    "refreshSuccessfully": "Odświeżono pomyślnie.",
-    "manualRefresh": "Ręcznie odśwież licencję offline",
-    "manualRefreshDes": "Nie udało się automatycznie odświeżyć licencji offline. Spróbuj zalogować się do <0>Panelu Zarządzania Licencjami</0>, aby pobrać najnowszą licencję offline i wkleić ją poniżej."
+    "offlineLicenseDes": "Cloudreve automatycznie zaktualizuje licencję offline przed jej wygaśnięciem, jeśli serwer jest podłączony do sieci."
   },
   "queue": {
     "queueName_io_intense": "Intensywne operacje we/wy",

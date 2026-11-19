@@ -96,8 +96,6 @@
     "setAsSecondary": "Ajouter aux URLs secondaires",
     "setAsSecondaryDes": "Ajouter {{current}} aux URLs secondaires, Cloudreve sélectionnera automatiquement s'il faut l'utiliser en fonction de l'URL réellement accédée par l'utilisateur.",
     "siteURLDescription": "Ce paramètre est très important, assurez-vous qu'il correspond à l'URL réelle de votre site. Vous pouvez modifier ce paramètre dans Paramètres - Basique.",
-    "ignore": "Ignorer",
-    "changeIt": "Le changer",
     "trend": "Tendance",
     "summary": "Résumé",
     "totalUsers": "Utilisateurs",
@@ -105,9 +103,6 @@
     "shareLinks": "Liens de partage",
     "totalBlobs": "Blobs",
     "offlineLicenseDes": "Cloudreve mettra automatiquement à jour la licence hors ligne avant son expiration si votre serveur est connecté au réseau.",
-    "refreshSuccessfully": "Actualisé avec succès.",
-    "manualRefresh": "Actualiser manuellement la licence hors ligne",
-    "manualRefreshDes": "Échec de l'actualisation automatique de la licence hors ligne, veuillez essayer de vous connecter au <0>Tableau de bord de gestion des licences</0> pour obtenir la dernière licence hors ligne et la coller ci-dessous.",
     "announcement": "Annonce"
   },
   "queue": {

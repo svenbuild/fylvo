@@ -96,18 +96,13 @@
     "setAsSecondary": "予備サイトURLに追加",
     "setAsSecondaryDes": "{{current}}を予備サイトURLに追加します。Cloudreveはユーザーが実際にアクセスしたURLに基づいて自動的に使用するか決定します。",
     "siteURLDescription": "この設定は非常に重要です。サイトの実際のアドレスと一致していることを確認してください。「パラメーター設定 - サイト情報」でこの設定を変更できます。",
-    "ignore": "無視",
-    "changeIt": "変更",
     "trend": "傾向",
     "summary": "合計",
     "totalUsers": "登録ユーザー",
     "totalFilesAndFolders": "ファイルとフォルダ",
     "shareLinks": "共有リンク",
     "totalBlobs": "ファイルBlob",
-    "offlineLicenseDes": "ネットワークに接続されている場合、Cloudreveは期限前にオフラインライセンスを自動的に更新します",
-    "refreshSuccessfully": "更新が成功しました",
-    "manualRefresh": "オフラインライセンスを手動で更新",
-    "manualRefreshDes": "オフラインライセンスの自動更新に失敗しました。<0>ライセンス管理パネル</0> にログインして最新のオフラインライセンスを取得し、下記に貼り付けてください。"
+    "offlineLicenseDes": "ネットワークに接続されている場合、Cloudreveは期限前にオフラインライセンスを自動的に更新します"
   },
   "queue": {
     "queueName_io_intense": "IO集約型",

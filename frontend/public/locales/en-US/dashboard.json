@@ -96,17 +96,12 @@
     "setAsSecondary": "Add to secondary URLs",
     "setAsSecondaryDes": "Add {{current}} to secondary URLs, Fylvo will automatically select whether to use it based on the URL actually accessed by the user.",
     "siteURLDescription": "This setting is very important, make sure it matches the actual URL of your site. You can change this setting in Settings - Basic.",
-    "ignore": "Ignore",
-    "changeIt": "Change it",
     "trend": "Trend",
     "summary": "Summary",
     "totalUsers": "Users",
     "totalFilesAndFolders": "Files and Folders",
     "shareLinks": "Share links",
-    "totalBlobs": "Blobs",
-    "refreshSuccessfully": "Refreshed successfully.",
-    "manualRefresh": "Manually refresh offline license",
-    "manualRefreshDes": "Failed to refresh offline license automatically, please try to log in to the <0>License Management Dashboard</0> to get the latest offline license and paste it below."
+    "totalBlobs": "Blobs"
   },
   "queue": {
     "queueName_io_intense": "IO Intensive",

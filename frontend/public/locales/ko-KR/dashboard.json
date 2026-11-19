@@ -96,8 +96,6 @@
     "setAsSecondary": "보조 사이트 URL에 추가",
     "setAsSecondaryDes": "{{current}}를 보조 사이트 URL에 추가합니다. Cloudreve는 사용자가 실제로 접근하는 URL에 따라 자동으로 사용 여부를 선택합니다.",
     "siteURLDescription": "이 설정은 매우 중요합니다. 사이트의 실제 주소와 일치하는지 확인해 주세요. 매개변수 설정 - 사이트 정보에서 이 설정을 변경할 수 있습니다.",
-    "ignore": "무시",
-    "changeIt": "변경",
     "trend": "추세",
     "summary": "총계",
     "totalUsers": "등록 사용자",
@@ -105,9 +103,6 @@
     "shareLinks": "공유 링크",
     "totalBlobs": "파일 Blob",
     "offlineLicenseDes": "네트워크에 연결된 상태에서 Cloudreve는 만료 전에 자동으로 오프라인 라이선스를 업데이트합니다.",
-    "refreshSuccessfully": "새로고침 성공",
-    "manualRefresh": "수동으로 오프라인 라이선스 새로고침",
-    "manualRefreshDes": "자동 오프라인 라이선스 새로고침에 실패했습니다. <0>라이선스 관리 패널</0>에 로그인하여 최신 오프라인 라이선스를 가져와서 아래에 붙여넣어 주세요.",
     "announcement": "공지사항"
   },
   "queue": {

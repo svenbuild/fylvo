@@ -96,18 +96,13 @@
     "setAsSecondary": "添加到备选站点 URL",
     "setAsSecondaryDes": "将 {{current}} 添加到备选站点 URL，Cloudreve 会根据用户实际访问的 URL 自动选择是否使用。",
     "siteURLDescription": "此设置非常重要，请确保其与你站点的实际地址一致。你可以在 参数设置 - 站点信息 中更改此设置。",
-    "ignore": "忽略",
-    "changeIt": "更改",
     "trend": "趋势",
     "summary": "总计",
     "totalUsers": "注册用户",
     "totalFilesAndFolders": "文件与目录",
     "shareLinks": "分享链接",
     "totalBlobs": "文件 Blob",
-    "offlineLicenseDes": "在连接网络的情况下，Cloudreve 会在过期前自动更新离线授权",
-    "refreshSuccessfully": "刷新成功",
-    "manualRefresh": "手动刷新离线授权",
-    "manualRefreshDes": "自动刷新离线授权失败，请尝试登录 <0>授权管理面板</0> 获取最新的离线授权，将其粘贴在下方。"
+    "offlineLicenseDes": "在连接网络的情况下，Cloudreve 会在过期前自动更新离线授权"
   },
   "queue": {
     "queueName_io_intense": "IO 密集型",

@@ -96,8 +96,6 @@
     "setAsSecondary": "Adicionar às URLs secundárias",
     "setAsSecondaryDes": "Adicionar {{current}} às URLs secundárias, o Cloudreve selecionará automaticamente se deve usá-la com base na URL realmente acessada pelo usuário.",
     "siteURLDescription": "Esta configuração é muito importante, certifique-se de que corresponda à URL real do seu site. Você pode alterar esta configuração em Configurações - Básico.",
-    "ignore": "Ignorar",
-    "changeIt": "Alterar",
     "trend": "Tendência",
     "summary": "Resumo",
     "totalUsers": "Usuários",
@@ -105,9 +103,6 @@
     "shareLinks": "Links de compartilhamento",
     "totalBlobs": "Blobs",
     "offlineLicenseDes": "O Cloudreve atualizará automaticamente a licença offline antes de expirar se seu servidor estiver conectado à rede.",
-    "refreshSuccessfully": "Atualizado com sucesso.",
-    "manualRefresh": "Atualizar licença offline manualmente",
-    "manualRefreshDes": "Falha ao atualizar a licença offline automaticamente, tente fazer login no <0>Dashboard de Gerenciamento de Licença</0> para obter a licença offline mais recente e cole-a abaixo.",
     "announcement": "Anúncio"
   },
   "queue": {
