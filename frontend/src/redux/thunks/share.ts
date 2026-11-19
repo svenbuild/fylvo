@@ -17,6 +17,9 @@ import {
 import { AppThunk } from "../store.ts";
 import { longRunningTaskWithSnackbar } from "./file.ts";
 
+// Fylvo: only a whole number above zero is a value; anything else means "no limit".
+const positive = (value: number) => (Number.isInteger(value) && value > 0 ? value : undefined);
+
 export function createOrUpdateShareLink(
   index: number,
   file: FileResponse,
@@ -28,14 +31,14 @@ export function createOrUpdateShareLink(
       uri: file.path,
       share_view: setting.share_view,
       show_readme: setting.show_readme,
-      expire: setting.expires && setting.expires_val.value > 0 ? setting.expires_val.value : undefined,
+      expire: setting.expires ? positive(setting.expires_val) : undefined,
       // Fylvo: a member share has no password and no download limit.
       ...(setting.member_only
         ? { member_only: true, members: setting.members ?? [] }
         : {
             is_private: setting.is_private,
-            password: setting.password,
-            downloads: setting.downloads && setting.downloads_val.value > 0 ? setting.downloads_val.value : undefined,
+            password: setting.is_private ? setting.password : undefined,
+            downloads: setting.downloads ? positive(setting.downloads_val) : undefined,
           }),
       // Fylvo: uploads exist only for links of folders. allow_upload is always sent so an edit can turn it off.
       ...(!setting.member_only &&
@@ -43,7 +46,7 @@ export function createOrUpdateShareLink(
           allow_upload: !!setting.allow_upload,
           ...(setting.allow_upload && {
             hide_content: !!setting.hide_content,
-            upload_limit: setting.upload_limit ? setting.upload_limit_val.value : undefined,
+            upload_limit: setting.upload_limit ? positive(setting.upload_limit_val) : undefined,
           }),
         }),
     };

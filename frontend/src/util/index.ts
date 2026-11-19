@@ -56,18 +56,51 @@ export function setRef<T>(val: T, ...refs: MutableRefList<T>): void {
   });
 }
 
-export const copyToClipboard = (text: string) => {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text);
-    enqueueSnackbar(i18next.t("setting.copied"), {
-      action: DefaultCloseAction,
-    });
-  } else {
-    enqueueSnackbar(i18next.t("setting.pleaseManuallyCopy"), {
-      variant: "warning",
-      action: DefaultCloseAction,
-    });
+// Fylvo: browsers offer navigator.clipboard only on secure pages (https or localhost). On a plain
+// http address the classic way is left: select the text in a hidden field and run the copy command.
+const copyWithTextarea = (text: string) => {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.top = "0";
+  area.style.left = "0";
+  area.style.opacity = "0";
+  // An open dialog keeps the focus inside itself, so the field must live in the topmost dialog.
+  const dialogs = document.querySelectorAll(".MuiDialog-root [role='dialog']");
+  const host = dialogs.length ? dialogs[dialogs.length - 1] : document.body;
+  const focused = document.activeElement as HTMLElement | null;
+  host.appendChild(area);
+  area.focus();
+  area.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch (e) {
+    copied = false;
   }
+  host.removeChild(area);
+  focused?.focus();
+  return copied;
+};
+
+export const copyToClipboard = async (text: string) => {
+  let copied = false;
+  if (navigator.clipboard && window.isSecureContext) {
+    copied = await navigator.clipboard.writeText(text).then(
+      () => true,
+      () => false,
+    );
+  }
+  if (!copied) {
+    copied = copyWithTextarea(text);
+  }
+  // The same message is shown only once, also when the button is pressed several times.
+  enqueueSnackbar(i18next.t(copied ? "setting.copied" : "setting.pleaseManuallyCopy"), {
+    variant: copied ? "default" : "warning",
+    preventDuplicate: true,
+    action: DefaultCloseAction,
+  });
 };
 
 export const sendLink = (name: string, url: string) => {

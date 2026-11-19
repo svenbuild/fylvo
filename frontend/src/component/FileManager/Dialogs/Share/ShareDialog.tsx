@@ -1,16 +1,13 @@
 import { Box, Checkbox, Collapse, DialogContent, IconButton, Stack, Tooltip, useTheme } from "@mui/material";
 import dayjs from "dayjs";
-import { TFunction } from "i18next";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { enqueueSnackbar } from "notistack";
-import { CSSTransition, SwitchTransition } from "react-transition-group";
 import { Share as ShareModel } from "../../../../api/explorer.ts";
 import { closeShareLinkDialog } from "../../../../redux/globalStateSlice.ts";
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks.ts";
 import { createOrUpdateShareLink } from "../../../../redux/thunks/share.ts";
 import { copyToClipboard, sendLink } from "../../../../util";
-import AutoHeight from "../../../Common/AutoHeight.tsx";
 import { DefaultCloseAction } from "../../../Common/Snackbar/snackbar.tsx";
 import { FilledTextField, SmallFormControlLabel } from "../../../Common/StyledComponents.tsx";
 import DraggableDialog from "../../../Dialogs/DraggableDialog.tsx";
@@ -21,7 +18,6 @@ import ShareSettingContent, {
   downloadOptions,
   expireOptions,
   ShareSetting,
-  uploadLimitOption,
   uploadLimitOptions,
 } from "./ShareSetting.tsx";
 
@@ -36,11 +32,11 @@ interface ShareLinkPassword {
   password?: string;
 }
 
-const shareToSetting = (share: ShareModel, t: TFunction): ShareSetting => {
+const shareToSetting = (share: ShareModel): ShareSetting => {
   const res: ShareSetting = {
+    ...initialSetting,
     is_private: share.is_private,
     password: share.password,
-    use_custom_password: true,
     share_view: share.share_view,
     show_readme: share.show_readme,
     member_only: share.member_only,
@@ -49,31 +45,20 @@ const shareToSetting = (share: ShareModel, t: TFunction): ShareSetting => {
     allow_upload: share.allow_upload,
     hide_content: share.hide_content,
     upload_limit: !!share.upload_limit,
-
-    expires_val: expireOptions[2],
-    downloads_val: downloadOptions[0],
-    upload_limit_val: share.upload_limit ? uploadLimitOption(share.upload_limit) : uploadLimitOptions[1],
   };
 
   if (res.downloads) {
-    res.downloads_val = {
-      value: share.remain_downloads ?? 0,
-      label: (share.remain_downloads ?? 0).toString(),
-    };
+    res.downloads_val = share.remain_downloads ?? 0;
+  }
+  if (share.upload_limit) {
+    res.upload_limit_val = share.upload_limit;
   }
 
   if (share.expires != undefined) {
-    const expires = dayjs(share.expires);
-    const isExpired = expires.isBefore(dayjs());
-    if (!isExpired) {
-      res.expires = true;
-      const secondsTtl = dayjs(share.expires).diff(dayjs(), "second");
-      res.expires_val = {
-        value: secondsTtl,
-        label: Math.round(secondsTtl / 60) + " " + t("application:modals.minutes"),
-      };
-    } else {
-      res.expires = false;
+    const secondsTtl = dayjs(share.expires).diff(dayjs(), "second");
+    res.expires = secondsTtl > 0;
+    if (res.expires) {
+      res.expires_val = secondsTtl;
     }
   }
 
@@ -103,10 +88,11 @@ const ShareDialog = () => {
   const target = useAppSelector((state) => state.globalState.shareLinkDialogFile);
   const editTarget = useAppSelector((state) => state.globalState.shareLinkDialogShare);
 
-  useEffect(() => {
+  // A layout effect, so the dialog never shows the settings of the last share for a frame.
+  useLayoutEffect(() => {
     if (open) {
       if (editTarget) {
-        setSetting(shareToSetting(editTarget, t));
+        setSetting(shareToSetting(editTarget));
       } else {
         setSetting(initialSetting);
       }
@@ -193,6 +179,12 @@ const ShareDialog = () => {
           onClose: onClose,
           fullWidth: true,
           maxWidth: "xs",
+          // Fylvo: hang the dialog from a fixed top edge. It grows only downward (people added,
+          // link created), so its title never moves.
+          sx: {
+            "& .MuiDialog-container": { alignItems: "flex-start" },
+            "& .MuiDialog-paper": { mt: { xs: "12px", sm: "12vh" } },
+          },
         }}
         cancelText={shareLink ? t("common:close") : undefined}
         secondaryAction={
@@ -208,105 +200,95 @@ const ShareDialog = () => {
             : undefined
         }
       >
-        <DialogContent sx={{ pb: shareLink ? "12px" : 0 }}>
-          <AutoHeight>
-            <SwitchTransition>
-              <CSSTransition
-                addEndListener={(node, done) => node.addEventListener("transitionend", done, false)}
-                classNames="fade"
-                key={`${shareLink}`}
-              >
-                <Box>
-                  {!shareLink && (
-                    <ShareSettingContent
-                      editing={!!editTarget}
-                      onSettingChange={setSetting}
-                      setting={setting}
-                      file={target}
-                    />
-                  )}
-                  {shareLink && (
-                    <Stack spacing={1}>
+        <DialogContent sx={{ pb: "12px" }}>
+          <Box>
+            {!shareLink && (
+              <ShareSettingContent
+                editing={!!editTarget}
+                onSettingChange={setSetting}
+                setting={setting}
+                file={target}
+              />
+            )}
+            {shareLink && (
+              <Stack spacing={1}>
+                <FilledTextField
+                  variant={"filled"}
+                  inputProps={{ readonly: true }}
+                  label={t("modals.shareLink")}
+                  fullWidth
+                  value={finalShareLink ?? ""}
+                  onFocus={(e) => e.target.select()}
+                  slotProps={{
+                    input: {
+                      endAdornment: (
+                        <IconButton
+                          onClick={() => copyToClipboard(finalShareLink)}
+                          size="small"
+                          sx={{
+                            mr: -0.5,
+                            bgcolor: "primary.main",
+                            color: "primary.contrastText",
+                            "&:hover": { bgcolor: "primary.dark" },
+                          }}
+                        >
+                          <CopyOutlined fontSize="small" />
+                        </IconButton>
+                      ),
+                    },
+                  }}
+                />
+                {shareLinkPassword.password && (
+                  <>
+                    <Collapse in={!includePassword}>
                       <FilledTextField
                         variant={"filled"}
                         inputProps={{ readonly: true }}
-                        label={t("modals.shareLink")}
+                        label={t("modals.sharePassword")}
                         fullWidth
-                        value={finalShareLink ?? ""}
+                        value={finalShareLinkPassword ?? ""}
                         onFocus={(e) => e.target.select()}
                         slotProps={{
                           input: {
                             endAdornment: (
                               <IconButton
-                                onClick={() => copyToClipboard(finalShareLink)}
+                                onClick={() => copyToClipboard(finalShareLinkPassword ?? "")}
                                 size="small"
-                                sx={{
-                                  mr: -0.5,
-                                  bgcolor: "primary.main",
-                                  color: "primary.contrastText",
-                                  "&:hover": { bgcolor: "primary.dark" },
-                                }}
+                                sx={{ marginRight: -1 }}
                               >
-                                <CopyOutlined fontSize="small" />
+                                <CopyOutlined />
                               </IconButton>
                             ),
                           },
                         }}
                       />
-                      {shareLinkPassword.password && (
-                        <>
-                          <Collapse in={!includePassword}>
-                            <FilledTextField
-                              variant={"filled"}
-                              inputProps={{ readonly: true }}
-                              label={t("modals.sharePassword")}
-                              fullWidth
-                              value={finalShareLinkPassword ?? ""}
-                              onFocus={(e) => e.target.select()}
-                              slotProps={{
-                                input: {
-                                  endAdornment: (
-                                    <IconButton
-                                      onClick={() => copyToClipboard(finalShareLinkPassword ?? "")}
-                                      size="small"
-                                      sx={{ marginRight: -1 }}
-                                    >
-                                      <CopyOutlined />
-                                    </IconButton>
-                                  ),
-                                },
-                              }}
-                            />
-                          </Collapse>
-                          <Tooltip enterDelay={100} title={t("application:modals.includePasswordInShareLinkDes")}>
-                            <SmallFormControlLabel
-                              sx={{
-                                mt: "0!important",
-                              }}
-                              control={
-                                <Checkbox
-                                  disableRipple
-                                  sx={{
-                                    pl: 0,
-                                  }}
-                                  size="small"
-                                  checked={includePassword}
-                                  onChange={() => {
-                                    setIncludePassword(!includePassword);
-                                  }}
-                                />
-                              }
-                              label={t("application:modals.includePasswordInShareLink")}
-                            />
-                          </Tooltip>
-                        </>
-                      )}
-                    </Stack>
-                  )}
-                </Box>
-              </CSSTransition>
-            </SwitchTransition>
-          </AutoHeight>
+                    </Collapse>
+                    <Tooltip enterDelay={100} title={t("application:modals.includePasswordInShareLinkDes")}>
+                      <SmallFormControlLabel
+                        sx={{
+                          mt: "0!important",
+                        }}
+                        control={
+                          <Checkbox
+                            disableRipple
+                            sx={{
+                              pl: 0,
+                            }}
+                            size="small"
+                            checked={includePassword}
+                            onChange={() => {
+                              setIncludePassword(!includePassword);
+                            }}
+                          />
+                        }
+                        label={t("application:modals.includePasswordInShareLink")}
+                      />
+                    </Tooltip>
+                  </>
+                )}
+              </Stack>
+            )}
+          </Box>
         </DialogContent>
       </DraggableDialog>
     </>
