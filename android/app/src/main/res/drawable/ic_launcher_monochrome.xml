@@ -1,18 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Single-colour layer for themed icons (Android 13+): the launcher tints it
-     from the wallpaper palette. Ring plus cloud, echoing the colour icon. -->
+<!-- Generated from design/logo/paths.json (Fylvo mark). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- outer ring -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:fillType="evenOdd"
-        android:pathData="M54,25 a29,29 0 1,0 0.01,0 Z M54,30.5 a23.5,23.5 0 1,1 -0.01,0 Z" />
-    <!-- cloud -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M40,66 h28 a7,7 0 0,0 0,-14 a9.5,9.5 0 0,0 -17.5,-3.5 a7.5,7.5 0 0,0 -10.5,7 a5.5,5.5 0 0,0 0,10.5 Z" />
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <!-- The mark spans about 872 units; scaled into the 66 dp safe zone of the 108 dp adaptive icon. -->
+    <group android:pivotX="511" android:pivotY="501" android:scaleX="0.66" android:scaleY="0.66" android:translateX="1" android:translateY="11">
+        <path android:fillColor="#FFFFFF" android:fillType="evenOdd" android:pathData="M 488 223.065 C 392.163 237.541, 316.004 301.639, 288.473 390.993 C 284.773 403, 287.140 401.432, 268 404.552 C 150.006 423.785, 74.655 536.289, 108.659 642.458 C 134.658 723.631, 209.123 782.913, 291.500 788.018 C 318.814 789.711, 744.657 789.225, 756.883 787.488 C 874.288 770.800, 947.188 644.904, 907.913 526.663 C 883.054 451.821, 821.108 402.445, 741.100 393.700 L 729.701 392.454 727.806 382.977 C 712.727 307.549, 644.289 240.975, 565.500 225.088 C 542.519 220.454, 510.774 219.626, 488 223.065 M 503 350.475 C 437.767 361.518, 382.549 421.356, 368.817 495.883 L 366.585 508 338.542 508.001 C 297.715 508.002, 284.223 509.686, 266.743 516.963 C 199.307 545.037, 192.441 638.944, 255.500 670.748 C 274.572 680.367, 279.925 680.999, 342 680.961 L 392.500 680.931 418.596 649.715 C 432.948 632.547, 460.814 599.375, 480.520 576 C 538.861 506.796, 626 402.075, 626 401.166 C 626 399.557, 603.456 378.319, 595.464 372.398 C 569.554 353.206, 535.110 345.039, 503 350.475 M 706.969 495.651 C 705.577 497.218, 702.611 500.750, 700.377 503.500 C 695.441 509.579, 656.185 558.169, 631.302 589 C 621.314 601.375, 607.137 618.925, 599.797 628 C 568.735 666.405, 558 679.883, 558 680.475 C 558 682.166, 728.400 680.383, 736 678.612 C 779.306 668.519, 807.998 630.918, 808.082 584.148 C 808.160 540.668, 780.949 508.412, 734.277 496.662 C 717.436 492.422, 710.079 492.150, 706.969 495.651" />
+    </group>
 </vector>

@@ -1,8 +1,8 @@
 # Keep kotlinx.serialization generated serializers
--keepclassmembers class org.cloudreve.android.api.** {
+-keepclassmembers class io.github.svenbuild.fylvo.android.api.** {
     *** Companion;
 }
--keepclasseswithmembers class org.cloudreve.android.api.** {
+-keepclasseswithmembers class io.github.svenbuild.fylvo.android.api.** {
     kotlinx.serialization.KSerializer serializer*(...);
 }
 -keepattributes *Annotation*, InnerClasses

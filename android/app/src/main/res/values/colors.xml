@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- Fylvo app icon tile, as in design/logo/fylvo-icon.svg. -->
+    <color name="ic_launcher_background">#111A2B</color>
     <!-- Matches LightColors.background in ui/theme/Theme.kt. -->
-    <color name="window_background">#FAFBFD</color>
+    <color name="window_background">#FAFAFA</color>
 </resources>

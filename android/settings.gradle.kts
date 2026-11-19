@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "cloudreve-android"
+rootProject.name = "fylvo-android"
 include(":app")

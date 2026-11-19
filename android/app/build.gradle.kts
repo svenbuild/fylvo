@@ -6,29 +6,15 @@ plugins {
 }
 
 android {
-    namespace = "org.cloudreve.android"
+    namespace = "io.github.svenbuild.fylvo.android"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.tdvorak.cloudreve"
+        applicationId = "io.github.svenbuild.fylvo.android"
         minSdk = 28
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.3.2"
-    }
-
-    signingConfigs {
-        // Optional real release key via env (CI secrets). Falls back to the
-        // debug cert so GitHub-release APKs are sideload-installable.
-        create("releaseEnv") {
-            val store = System.getenv("ANDROID_KEYSTORE_FILE")
-            if (store != null) {
-                storeFile = file(store)
-                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
-            }
-        }
+        versionCode = 1
+        versionName = "0.1.0"
     }
 
     buildTypes {
@@ -36,11 +22,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig =
-                if (System.getenv("ANDROID_KEYSTORE_FILE") != null)
-                    signingConfigs.getByName("releaseEnv")
-                else
-                    signingConfigs.getByName("debug")
+            // Fylvo: no release signing yet. A release build comes out unsigned until the owner
+            // decides on his own key; never fall back to the debug key.
         }
     }
 
@@ -93,7 +76,6 @@ dependencies {
 
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
@@ -108,8 +90,4 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("org.robolectric:robolectric:4.14.1")
 
-    // Play in-app updates — no-op on sideloaded/non-Play installs
-    implementation("com.google.android.play:app-update-ktx:2.1.0")
-    // ActivityResult API (update flow launcher) needs fragment >= 1.3.0
-    implementation("androidx.fragment:fragment-ktx:1.8.5")
 }
