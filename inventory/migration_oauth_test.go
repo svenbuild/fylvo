@@ -169,6 +169,29 @@ func TestIsRetiredOAuthClient(t *testing.T) {
 	require.False(t, IsRetiredOAuthClient(OAuthClientFylvoDesktopGUID))
 	require.False(t, IsRetiredOAuthClient(OAuthClientCLIGUID))
 	require.False(t, IsRetiredOAuthClient(""))
+	require.True(t, IsRetiredOAuthClient(" "+OAuthClientCloudreveDesktopGUID+" "))
+}
+
+func TestRemoveRetiredOAuthClientInOtherCase(t *testing.T) {
+	ctx := context.Background()
+	client := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "retired-case.db"))
+	t.Cleanup(func() { require.NoError(t, client.Close()) })
+	logger := logging.NewConsoleLogger(logging.LevelError)
+
+	upper := strings.ToUpper(OAuthClientCloudreveiOSGUID)
+	_, err := client.OAuthClient.Create().
+		SetGUID(upper).
+		SetSecret("by-hand").
+		SetName("by-hand").
+		SetRedirectUris([]string{"/callback/by-hand"}).
+		SetScopes([]string{"openid"}).
+		SetIsEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, removeRetiredOAuthClients(logger, client, ctx))
+	count, err := client.OAuthClient.Query().Where(oauthclient.GUID(upper)).Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, count)
 }
 
 func TestRetiredOAuthClientLookupFails(t *testing.T) {

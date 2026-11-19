@@ -304,7 +304,7 @@ var RetiredOAuthClientGUIDs = []string{OAuthClientCloudreveDesktopGUID, OAuthCli
 // not support. Tokens issued to such a client are refused.
 func IsRetiredOAuthClient(clientID string) bool {
 	for _, guid := range RetiredOAuthClientGUIDs {
-		if strings.EqualFold(clientID, guid) {
+		if strings.EqualFold(strings.TrimSpace(clientID), guid) {
 			return true
 		}
 	}
@@ -325,21 +325,24 @@ func migrateOAuthClient(l logging.Logger, client *ent.Client, ctx context.Contex
 // "connected apps". Runs on every start, like the Fylvo client ensure, and also cleans up
 // grants a deleted client left behind.
 func removeRetiredOAuthClients(l logging.Logger, client *ent.Client, ctx context.Context) error {
-	for _, guid := range RetiredOAuthClientGUIDs {
-		if err := removeOAuthClient(l, client, ctx, guid); err != nil {
-			return err
+	// There are only a few OAuth clients; matching in Go catches IDs stored in another case or
+	// with surrounding spaces, whatever the database collation does.
+	all, err := client.OAuthClient.Query().All(schema.SkipSoftDelete(ctx))
+	if err != nil {
+		return fmt.Errorf("failed to list OAuth clients: %w", err)
+	}
+	for _, old := range all {
+		if IsRetiredOAuthClient(old.GUID) {
+			if err := removeOAuthClient(l, client, ctx, old); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func removeOAuthClient(l logging.Logger, client *ent.Client, ctx context.Context, guid string) error {
-	old, err := client.OAuthClient.Query().Where(oauthclient.GUID(guid)).First(schema.SkipSoftDelete(ctx))
-	if ent.IsNotFound(err) {
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("failed to query OAuth client %s: %w", guid, err)
-	}
+func removeOAuthClient(l logging.Logger, client *ent.Client, ctx context.Context, old *ent.OAuthClient) error {
+	guid := old.GUID
 
 	tx, err := client.Tx(ctx)
 	if err != nil {

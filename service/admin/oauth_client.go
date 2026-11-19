@@ -164,6 +164,9 @@ func (s *UpsertOAuthClientService) Update(c *gin.Context) (*GetOAuthClientRespon
 	if lo.Contains(systemOAuthClientGUIDs, existing.GUID) {
 		s.Client.GUID = existing.GUID
 	}
+	if inventory.IsRetiredOAuthClient(s.Client.GUID) {
+		return nil, serializer.NewError(serializer.CodeParamErr, "This client ID belongs to an unsupported Cloudreve app", nil)
+	}
 
 	_, err = oauthClient.Update(c, s.Client.toEnt())
 	if err != nil {
