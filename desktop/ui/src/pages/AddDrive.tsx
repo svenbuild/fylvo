@@ -6,7 +6,7 @@ import confetti from "canvas-confetti";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
-import defaultLogo from "../assets/cloudreve.svg";
+import defaultLogo from "../assets/fylvo.svg";
 import { FilledTextField } from "../common/StyledComponent";
 import { useIsWindows10 } from "../hooks/useIsWindows10";
 import { fetchSiteIcon, isValidUrl } from "../utils/manifest";
@@ -19,7 +19,7 @@ import {
 } from "../utils/siteValidation";
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { CALLBACK_PATH, CLIENT_ID, SCOPES } from "../utils/constants";
+import { CALLBACK_PATH, CLIENT_ID, FYLVO_STATE_MARKER, SCOPES } from "../utils/constants";
 
 type PageState = "url_input" | "waiting" | "final_setup" | "setting_up" | "success";
 
@@ -48,7 +48,7 @@ interface AddDriveProps {
 
 function parseDeeplinkUrl(url: string): OAuthCallbackData | null {
   try {
-    // Handle custom protocol: cloudreve://callback/desktop?code=xxx&state=xxx
+    // Handle custom protocol: fylvo://mount?code=xxx&state=xxx
     const urlObj = new URL(url);
     const code = urlObj.searchParams.get("code");
     const state = urlObj.searchParams.get("state");
@@ -193,10 +193,12 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
 
       // Generate PKCE pair
       const { codeVerifier, codeChallenge } = await generatePKCEPair();
-      // Add "reauthorize:" prefix to state when in reauthorize mode
+      // Add "reauthorize:" prefix to state when in reauthorize mode.
+      // The "fylvo:" marker tells the Fylvo web app to send the result to
+      // fylvo:// (this app) instead of cloudreve:// (the Store app).
       const stateValue = isReauthorize
-        ? `reauthorize:${randomCryptoString(32)}`
-        : randomCryptoString(32);
+        ? `reauthorize:${FYLVO_STATE_MARKER}${randomCryptoString(32)}`
+        : `${FYLVO_STATE_MARKER}${randomCryptoString(32)}`;
 
       // Store PKCE session data for use after OAuth redirect
       pkceSessionRef.current = {
@@ -391,7 +393,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
           {pageState !== "setting_up" && pageState !== "success" && <Box
             component="img"
             src={logo}
-            alt="Cloudreve"
+            alt="Fylvo"
             sx={{
               width: 120,
               height: "auto",

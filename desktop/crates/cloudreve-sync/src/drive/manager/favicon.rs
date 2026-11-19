@@ -39,7 +39,7 @@ enum IconType {
 /// Get the icons directory path
 fn get_icons_dir() -> Result<PathBuf> {
     let home_dir = dirs::home_dir().context("Failed to get user home directory")?;
-    let icons_dir = home_dir.join(".cloudreve").join("icos");
+    let icons_dir = home_dir.join(crate::DATA_DIR).join("icos");
 
     // Ensure icons directory exists
     if !icons_dir.exists() {
@@ -121,7 +121,7 @@ async fn download_icon(client: &reqwest::Client, url: &str) -> Result<bytes::Byt
 fn get_fallback_icon(icon_type: IconType) -> Result<Vec<u8>> {
     let app_root = get_app_root();
     let fallback_path = match icon_type {
-        IconType::Small => format!("{}\\cloudreve.ico", app_root.image_path_general()),
+        IconType::Small => format!("{}\\fylvo.ico", app_root.image_path_general()),
         IconType::Large => format!("{}\\StoreLogo.scale-400.png", app_root.image_path_general()),
     };
 

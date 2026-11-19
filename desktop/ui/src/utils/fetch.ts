@@ -6,14 +6,14 @@ let userAgentCache: string | null = null;
 
 /**
  * Get the user agent string for HTTP requests.
- * Format: "cloudreve-desktop/{version}"
+ * Format: "fylvo-desktop/{version}"
  */
 async function getUserAgent(): Promise<string> {
   if (userAgentCache) {
     return userAgentCache;
   }
   const version = await getVersion();
-  userAgentCache = `cloudreve-desktop/${version}`;
+  userAgentCache = `fylvo-desktop/${version}`;
   return userAgentCache;
 }
 

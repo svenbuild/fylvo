@@ -13,7 +13,7 @@ use windows::{
 
 // UUID for our custom state handler - matches the C++ implementation
 pub const CLSID_CUSTOM_STATE_HANDLER: GUID =
-    GUID::from_u128(0xf0c9de6c_6c76_44d7_a58e_579cdf7af263);
+    GUID::from_u128(0x3a26ed18_5fa7_44e4_b90d_e8a16311dcf6);
 
 #[implement(IStorageProviderItemPropertySource)]
 pub struct CustomStateHandler {

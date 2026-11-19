@@ -1,9 +1,9 @@
 {
   "addDrive": {
     "title": "ドライブを追加",
-    "description": "Cloudreve サイトの URL を入力して接続します",
+    "description": "Fylvo サイトの URL を入力して接続します",
     "siteUrl": "サイト URL",
-    "siteUrlPlaceholder": "https://your-cloudreve-site.com",
+    "siteUrlPlaceholder": "https://cloud.example.com",
     "connect": "接続",
     "waitingTitle": "サインインして続行",
     "waitingDescription": "ブラウザでサインインを完了してドライブに接続してください。",

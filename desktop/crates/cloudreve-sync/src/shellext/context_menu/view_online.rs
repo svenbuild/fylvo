@@ -46,7 +46,7 @@ impl IExplorerCommand_Impl for ViewOnlineCommandHandler_Impl {
 
     fn GetCanonicalName(&self) -> Result<GUID> {
         tracing::trace!(target: "shellext::context_menu:view_online", "GetCanonicalName called");
-        Ok(GUID::from_u128(0xe9206944_a659_434b_967b_27e15d2fef20))
+        Ok(GUID::from_u128(0x75253df9_8849_41a1_9c1c_b9fcf77176cf))
     }
 
     fn GetState(&self, items: Option<&IShellItemArray>, _oktobeslow: BOOL) -> Result<u32> {

@@ -19,7 +19,7 @@ use windows::ApplicationModel;
 use windows::core::*;
 
 // UUID for our context menu handler - matches the C++ implementation
-pub const CLSID_EXPLORER_COMMAND: GUID = GUID::from_u128(0x165cd069_d9c8_42b4_8e37_b6971afa4494);
+pub const CLSID_EXPLORER_COMMAND: GUID = GUID::from_u128(0x06cff32f_efcf_4dc0_a648_02de0b23d637);
 
 pub fn get_images_path() -> Result<String> {
     Ok(format!(

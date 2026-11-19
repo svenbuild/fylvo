@@ -340,7 +340,7 @@ fn show_main_window_at_position(app: &AppHandle, position: Position) {
         "main_popup",
         WebviewUrl::App(get_url_with_lang("index.html/#/popup").into()),
     )
-    .title("Cloudreve")
+    .title("Fylvo Desktop")
     .inner_size(370.0, 530.0)
     .resizable(false)
     .visible(false)
@@ -438,6 +438,7 @@ fn show_drive_window_internal(app: &AppHandle, title: &str, url_path: &str) {
         state: None,
         radius: None,
         color: None,
+        interactive: false,
     };
 
     let builder = WebviewWindowBuilder::new(app, "add-drive", WebviewUrl::App(url_path.into()))
@@ -519,7 +520,7 @@ pub fn show_settings_window_impl(app: &AppHandle) {
 }
 
 /// The TaskId defined in AppxManifest.xml for the startup task
-const STARTUP_TASK_ID: &str = "cloudreve";
+const STARTUP_TASK_ID: &str = "fylvo";
 
 /// Get whether auto-start is enabled using Windows StartupTask API
 #[tauri::command]

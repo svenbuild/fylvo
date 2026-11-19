@@ -3,7 +3,6 @@
 cloudreve-api/target/
 **/*.rs.bk
 *.pdb
-Cargo.lock
 
 # IDE
 .vscode/
@@ -15,6 +14,7 @@ Cargo.lock
 
 # Local configuration
 .cloudreve/
+.fylvo/
 *.local
 
 # Build artifacts

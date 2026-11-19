@@ -17,7 +17,11 @@ pub use events::{Event, EventBroadcaster};
 pub use logging::{LogConfig, LogGuard};
 
 /// User agent string for HTTP requests
-pub const USER_AGENT: &str = concat!("cloudreve-desktop/", env!("CARGO_PKG_VERSION"));
+pub const USER_AGENT: &str = concat!("fylvo-desktop/", env!("CARGO_PKG_VERSION"));
+
+/// Folder in the user profile for config, database, logs and icons.
+/// Not ".cloudreve", so Fylvo Desktop and the Store app keep separate state.
+pub const DATA_DIR: &str = ".fylvo";
 
 #[macro_use]
 extern crate rust_i18n;

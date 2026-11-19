@@ -27,12 +27,12 @@ impl CrExplorerCommandHandler {
 
 impl IExplorerCommand_Impl for CrExplorerCommandHandler_Impl {
     fn GetTitle(&self, _items: Option<&IShellItemArray>) -> Result<PWSTR> {
-        let hstring = HSTRING::from("Cloudreve");
+        let hstring = HSTRING::from("Fylvo");
         unsafe { SHStrDupW(&hstring) }
     }
 
     fn GetIcon(&self, _items: Option<&IShellItemArray>) -> Result<PWSTR> {
-        let icon_path = format!("{}\\cloudreve.ico", self.app_root.image_path_general());
+        let icon_path = format!("{}\\fylvo.ico", self.app_root.image_path_general());
         let hstring = HSTRING::from(icon_path);
         unsafe { SHStrDupW(&hstring) }
     }

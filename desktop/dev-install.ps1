@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Build and register the Cloudreve Desktop app for development testing.
+    Build and register the Fylvo Desktop app for development testing.
 
 .DESCRIPTION
     This script builds the Tauri application, copies the binary to the package directory,
@@ -78,7 +78,7 @@ if (-not $SkipBuild) {
 
     Push-Location $ScriptDir
     try {
-        cargo tauri build
+        cargo tauri build --no-bundle
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Build failed with exit code $LASTEXITCODE"
             exit $LASTEXITCODE
@@ -91,7 +91,7 @@ if (-not $SkipBuild) {
 }
 
 # Determine binary path
-$BinaryPath = Join-Path $ScriptDir "target\release\cloudreve-desktop.exe"
+$BinaryPath = Join-Path $ScriptDir "target\release\fylvo-desktop.exe"
 if (-not (Test-Path $BinaryPath)) {
     Write-Error "Binary not found at: $BinaryPath"
     exit 1

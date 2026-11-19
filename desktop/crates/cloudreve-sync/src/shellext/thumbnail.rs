@@ -10,7 +10,7 @@ use windows::{
     core::*,
 };
 
-pub const CLSID_THUMBNAIL_PROVIDER: GUID = GUID::from_u128(0x3d781652_78c5_4038_87a4_ec5940ab560a);
+pub const CLSID_THUMBNAIL_PROVIDER: GUID = GUID::from_u128(0x328647e6_b043_4b66_a028_d6a9fd7806e3);
 
 #[implement(IThumbnailProvider, IInitializeWithItem)]
 pub struct ThumbnailProvider {

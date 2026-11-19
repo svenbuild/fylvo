@@ -28,7 +28,7 @@ impl Default for LogConfig {
     fn default() -> Self {
         let log_dir = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".cloudreve")
+            .join(crate::DATA_DIR)
             .join("logs");
 
         Self {

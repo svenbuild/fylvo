@@ -23,7 +23,7 @@ pub struct InventoryDb {
 }
 
 impl InventoryDb {
-    /// Create or open the inventory database at the default location (~/.cloudreve/meta.db)
+    /// Create or open the inventory database at the default location (~/.fylvo/meta.db)
     pub fn new() -> Result<Self> {
         let db_path = Self::get_db_path()?;
         Self::with_path(db_path)
@@ -61,7 +61,7 @@ impl InventoryDb {
 
     fn get_db_path() -> Result<PathBuf> {
         let home = home_dir().ok_or_else(|| anyhow!("Unable to determine home directory"))?;
-        Ok(home.join(".cloudreve").join("meta.db"))
+        Ok(home.join(crate::DATA_DIR).join("meta.db"))
     }
 
     pub(crate) fn connection(
