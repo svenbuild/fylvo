@@ -8,6 +8,9 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/enttest"
 	"github.com/cloudreve/Cloudreve/v4/ent/oauthclient"
 	"github.com/cloudreve/Cloudreve/v4/ent/schema"
+	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/boolset"
+	"github.com/cloudreve/Cloudreve/v4/pkg/conf"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/stretchr/testify/require"
 )
@@ -105,8 +108,9 @@ func TestRemoveCloudreveDesktopOAuthClient(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, count)
 
-	// Existing installations have it from the upstream migration; it is removed on start.
-	_, err = client.OAuthClient.Create().
+	// Existing installations have it from the upstream migration, and users who connected the
+	// Store app have a grant for it. Both are removed on start.
+	old, err := client.OAuthClient.Create().
 		SetGUID(OAuthClientCloudreveDesktopGUID).
 		SetSecret("upstream").
 		SetName("application:oauth.desktop").
@@ -115,10 +119,30 @@ func TestRemoveCloudreveDesktopOAuthClient(t *testing.T) {
 		SetIsEnabled(true).
 		Save(ctx)
 	require.NoError(t, err)
+	group, err := client.Group.Create().SetName("Users").SetPermissions(&boolset.BooleanSet{}).Save(ctx)
+	require.NoError(t, err)
+	u, err := client.User.Create().SetEmail("a@fylvo.test").SetNick("a").SetGroup(group).SetSettings(&types.UserSetting{}).Save(ctx)
+	require.NoError(t, err)
+	_, err = client.OAuthGrant.Create().SetUserID(u.ID).SetClientID(old.ID).SetScopes([]string{"openid"}).Save(ctx)
+	require.NoError(t, err)
+
 	require.NoError(t, removeOAuthClientCloudreveDesktop(logger, client, ctx))
 	count, err = client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientCloudreveDesktopGUID)).Count(ctx)
 	require.NoError(t, err)
 	require.Zero(t, count)
+	grants, err := NewOAuthClientClient(client, conf.SQLiteDB).GetGrantsByUserID(ctx, u.ID)
+	require.NoError(t, err)
+	require.Empty(t, grants, "no empty entry may stay under connected apps")
+
+	// A grant left behind by an earlier version (client already deleted) is cleaned up too.
+	u2, err := client.User.Create().SetEmail("b@fylvo.test").SetNick("b").SetGroup(group).SetSettings(&types.UserSetting{}).Save(ctx)
+	require.NoError(t, err)
+	_, err = client.OAuthGrant.Create().SetUserID(u2.ID).SetClientID(old.ID).SetScopes([]string{"openid"}).Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, removeOAuthClientCloudreveDesktop(logger, client, ctx))
+	grants, err = NewOAuthClientClient(client, conf.SQLiteDB).GetGrantsByUserID(ctx, u2.ID)
+	require.NoError(t, err)
+	require.Empty(t, grants)
 
 	// Running again is a no-op.
 	require.NoError(t, removeOAuthClientCloudreveDesktop(logger, client, ctx))

@@ -38,8 +38,13 @@ $PackageName = "Fylvo.Desktop"
 $Publisher = "CN=Fylvo"
 
 # Returns true if the folder holds a Fylvo Desktop package. A missing, unreadable or broken
-# manifest counts as "not Fylvo", so such a folder is kept rather than deleted.
+# manifest counts as "not Fylvo", so such a folder is kept rather than deleted. So does a
+# junction or symbolic link: deleting through it would delete the files it points to.
 function Test-FylvoFolder([string]$Dir) {
+    $Item = Get-Item -LiteralPath $Dir -Force -ErrorAction SilentlyContinue
+    if (-not $Item -or ($Item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        return $false
+    }
     $Manifest = Join-Path $Dir "AppxManifest.xml"
     if (-not (Test-Path -LiteralPath $Manifest)) {
         return $false
@@ -112,7 +117,7 @@ function Remove-Aside([string]$Aside, [bool]$WasFylvo) {
     $Marker = Join-Path $Aside $DeleteMarker
     try {
         if (-not (Test-Path -LiteralPath $Marker)) {
-            New-Item -ItemType File -Path $Marker | Out-Null
+            New-Item -ItemType File -Path (Split-Path $Marker -Parent) -Name $DeleteMarker | Out-Null
         }
         Get-ChildItem -LiteralPath $Aside -Force | Where-Object { $_.Name -ne $DeleteMarker } |
             Remove-Item -Recurse -Force
@@ -127,12 +132,28 @@ $AsidePattern = "$(Split-Path $InstallDir -Leaf).trash-*"
 $AsideParent = Split-Path $InstallDir -Parent
 if (Test-Path -LiteralPath $AsideParent) {
     Get-ChildItem -LiteralPath $AsideParent -Directory -Filter $AsidePattern |
+        Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName $DeleteMarker) } |
         ForEach-Object { Remove-Aside $_.FullName $true }
 }
 
-# A backup in .old means a previous run did not finish: a finished run moves it aside before
-# deleting it. In that case .old stays the backup for this run, and whatever is in the install
+# Marker file written into .old once the new version is registered. A .old with it is only a
+# backup that could not be removed, not the last working version.
+$RetiredMarker = ".fylvo-retired"
+
+# Finish retiring a backup whose removal failed after a successful registration.
+if ((Test-Path -LiteralPath (Join-Path $OldDir $RetiredMarker)) -and (Test-FylvoFolder $OldDir)) {
+    $Retired = $null
+    if (Invoke-WithAppStopped { $script:Retired = Move-Aside $OldDir }) {
+        Remove-Aside $Retired $true
+    } else {
+        Write-Error "Could not remove the old backup $OldDir, a file is still in use. Close Explorer windows of the sync folder and try again."
+        exit 1
+    }
+}
+
+# A backup in .old means a previous run did not finish: a finished run marks it and moves it
+# aside. In that case .old stays the backup for this run, and whatever is in the install
 # folder (maybe a half installed new version) is moved aside instead of being backed up.
 $Unfinished = Test-Path -LiteralPath $OldDir
 if ($Unfinished -and -not (Test-FylvoFolder $OldDir)) {
@@ -225,14 +246,20 @@ try {
     throw $InstallError
 }
 
-# 4. Retire the backup: move it aside first, so a leftover .old always means an unfinished run.
+# 4. Retire the backup: mark it as no longer needed, then move it aside. A leftover .old
+#    without the mark always means an unfinished run.
 if (Test-Path -LiteralPath $OldDir) {
+    New-Item -ItemType File -Path $OldDir -Name $RetiredMarker -Force -ErrorAction SilentlyContinue | Out-Null
     $Retired = $null
     $Moved = Invoke-WithAppStopped { $script:Retired = Move-Aside $OldDir }
     if ($Moved) {
         Remove-Aside $Retired $true
     } else {
-        Write-Warning "Could not retire $OldDir. Delete it by hand, otherwise the next run keeps this older version as its backup."
+        if (Test-Path -LiteralPath (Join-Path $OldDir $RetiredMarker)) {
+            Write-Warning "Could not remove the old backup $OldDir yet. The next run removes it."
+        } else {
+            Write-Warning "Could not retire $OldDir. Delete it by hand, otherwise the next run keeps this older version as its backup."
+        }
     }
 }
 

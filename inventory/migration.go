@@ -14,6 +14,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/group"
 	"github.com/cloudreve/Cloudreve/v4/ent/node"
 	"github.com/cloudreve/Cloudreve/v4/ent/oauthclient"
+	"github.com/cloudreve/Cloudreve/v4/ent/oauthgrant"
 	"github.com/cloudreve/Cloudreve/v4/ent/schema"
 	"github.com/cloudreve/Cloudreve/v4/ent/setting"
 	"github.com/cloudreve/Cloudreve/v4/ent/storagepolicy"
@@ -331,15 +332,37 @@ func migrateOAuthClientiOS(l logging.Logger, client *ent.Client, ctx context.Con
 }
 
 // removeOAuthClientCloudreveDesktop deletes the client of the Cloudreve desktop app (Microsoft
-// Store) if an installation still has it. Its grants stop working with it: the app can neither
-// sign in nor refresh its tokens any more. Runs on every start, like the Fylvo client ensure.
+// Store) and the users' grants for it, if an installation still has them. The app can then
+// neither sign in nor refresh its tokens, and no empty entry stays under "connected apps".
+// Runs on every start, like the Fylvo client ensure, and also cleans up grants a deleted
+// client left behind.
 func removeOAuthClientCloudreveDesktop(l logging.Logger, client *ent.Client, ctx context.Context) error {
-	n, err := client.OAuthClient.Delete().Where(oauthclient.GUID(OAuthClientCloudreveDesktopGUID)).Exec(ctx)
+	old, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientCloudreveDesktopGUID)).First(schema.SkipSoftDelete(ctx))
+	if ent.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("failed to query Cloudreve desktop OAuth client: %w", err)
+	}
+
+	tx, err := client.Tx(ctx)
 	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	grants, err := tx.OAuthGrant.Delete().Where(oauthgrant.ClientID(old.ID)).Exec(ctx)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("failed to remove grants of the Cloudreve desktop OAuth client: %w", err)
+	}
+	clients, err := tx.OAuthClient.Delete().Where(oauthclient.ID(old.ID)).Exec(ctx)
+	if err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("failed to remove Cloudreve desktop OAuth client: %w", err)
 	}
-	if n > 0 {
-		l.Info("Removed the OAuth client of the Cloudreve desktop app (GUID=%s).", OAuthClientCloudreveDesktopGUID)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to remove Cloudreve desktop OAuth client: %w", err)
+	}
+	if grants > 0 || clients > 0 {
+		l.Info("Removed the OAuth client of the Cloudreve desktop app (GUID=%s) and %d grant(s).", OAuthClientCloudreveDesktopGUID, grants)
 	}
 	return nil
 }
