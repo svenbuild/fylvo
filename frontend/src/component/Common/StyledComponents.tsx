@@ -227,10 +227,14 @@ export const StyledTab = styled(Tab)(({ theme }) => ({
   minHeight: 36,
   minWidth: 0,
   transition: theme.transitions.create(["background-color", "color"]),
+  // Fylvo: the hover highlight is a layer of its own. It must lie behind icon and label,
+  // the highlight colors are not see-through.
+  zIndex: 0,
   "&::after": {
     content: "''",
     borderRadius: 8,
     position: "absolute",
+    zIndex: -1,
     top: 4,
     bottom: 4,
     left: -8,
