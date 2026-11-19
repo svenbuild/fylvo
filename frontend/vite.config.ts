@@ -60,6 +60,8 @@ export default defineConfig({
   ],
   define: {
     __ASSETS_VERSION__: JSON.stringify(process.env.npm_package_version),
+    // Fylvo: changes with every build, so browsers drop translations cached from an older build.
+    __FYLVO_BUILD__: JSON.stringify(String(Date.now())),
   },
   build: {
     outDir: "build", // keep same as v3 with minimal changes

@@ -28,6 +28,7 @@ i18n
       backendOptions: [
         {
           expirationTime: 7 * 24 * 60 * 60 * 1000, // 7 days
+          defaultVersion: __FYLVO_BUILD__,
           loadPath: "/locales/{{lng}}/{{ns}}.json",
         },
       ],

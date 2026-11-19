@@ -346,7 +346,7 @@ func (s *settingProvider) FileViewers(ctx context.Context) []types.ViewerGroup {
 		return []types.ViewerGroup{}
 	}
 
-	return viewers
+	return withOfficeViewers(viewers)
 }
 
 func (s *settingProvider) AppSetting(ctx context.Context) *AppSetting {

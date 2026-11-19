@@ -52,9 +52,21 @@ const Wopi = () => {
       return "";
     }
 
-    return viewerState.src
-      .replace("lng", i18n.resolvedLanguage?.toLowerCase() ?? "")
-      .replace("darkmode", theme.palette.mode === "dark" ? "2" : "1");
+    // Fylvo: fill in the placeholders in the query only. Replacing them anywhere in the address
+    // could change the host the access token is posted to.
+    const placeholders = new Map([
+      ["lng", i18n.resolvedLanguage?.toLowerCase() ?? ""],
+      ["darkmode", theme.palette.mode === "dark" ? "2" : "1"],
+    ]);
+    const url = new URL(viewerState.src, window.location.href);
+    for (const [key, value] of [...url.searchParams]) {
+      const replacement = placeholders.get(value);
+      if (replacement !== undefined) {
+        url.searchParams.set(key, replacement);
+      }
+    }
+
+    return url.toString();
   }, [viewerState?.src, theme]);
 
   const handlePostMessage = (e: MessageEvent) => {

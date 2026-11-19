@@ -6,9 +6,13 @@
 // Usage: node scripts/screenshot.mjs --out shot.png [--route home] [--width 1536] [--height 1024]
 //          [--scheme dark|light] [--lang de-DE] [--anon] [--full] [--actions '<json>']
 //
+// Against another instance: set FYLVO_APP and FYLVO_API to its address, FYLVO_USER and
+// FYLVO_PASSWORD to an account there.
+//
 // --actions is a JSON list of steps that run after the page has loaded, for example
 //   '[{"rightClick":"::-p-text(Design.png)"},{"wait":400},{"click":"::-p-text(Teilen)"}]'
-// Steps: click, rightClick, doubleClick, hover (selector), type (text), press (key), wait (ms).
+// Steps: click, rightClick, doubleClick, hover (selector), type (text), press (key),
+//        combo (keys held together, e.g. ["Control","s"]), wait (ms).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +27,10 @@ const flag = (name) => args.includes("--" + name);
 
 const APP = process.env.FYLVO_APP || "http://127.0.0.1:5173";
 const API = process.env.FYLVO_API || "http://127.0.0.1:5212";
-const USER = { email: "test@fylvo.local", password: "fylvo-local-test-1" };
+const USER = {
+  email: process.env.FYLVO_USER || "test@fylvo.local",
+  password: process.env.FYLVO_PASSWORD || "fylvo-local-test-1",
+};
 const CHROME = process.env.CHROME || "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const themeFile = path.join(here, "..", "..", "inventory", "fylvo_theme.json");
@@ -68,13 +75,16 @@ try {
     ).json();
     const uid = login.data.user.id;
     const state = { current: uid, sessions: { [uid]: { ...login.data, settings: {} } }, anonymousSettings: {} };
+    // Embedded pages from other servers (the office editor) must not receive the login.
     await page.evaluateOnNewDocument(
-      (value, language) => {
+      (value, language, appOrigin) => {
+        if (location.origin !== appOrigin) return;
         localStorage.setItem("cloudreve_session", value);
         localStorage.setItem("i18nextLng", language);
       },
       JSON.stringify(state),
       lang,
+      new URL(APP).origin,
     );
   } else {
     await page.evaluateOnNewDocument((language) => localStorage.setItem("i18nextLng", language), lang);
@@ -90,6 +100,10 @@ try {
     else if (step.hover) await (await page.waitForSelector(step.hover, { timeout: 8000 })).hover();
     else if (step.type) await page.keyboard.type(step.type);
     else if (step.press) await page.keyboard.press(step.press);
+    else if (step.combo) {
+      for (const key of step.combo) await page.keyboard.down(key);
+      for (const key of [...step.combo].reverse()) await page.keyboard.up(key);
+    }
     await new Promise((r) => setTimeout(r, step.wait ?? 500));
   }
 

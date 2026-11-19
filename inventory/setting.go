@@ -235,24 +235,8 @@ var (
 					DisplayName: "fileManager.epubViewer",
 					Exts:        []string{"epub"},
 				},
-				{
-					ID:          "googledocs",
-					Type:        types.ViewerTypeCustom,
-					DisplayName: "fileManager.googledocs",
-					Icon:        "/static/img/viewers/gdrive.png",
-					Url:         "https://docs.google.com/gview?url={$src}&embedded=true",
-					Exts:        []string{"jpeg", "png", "gif", "tiff", "bmp", "webm", "mpeg4", "3gpp", "mov", "avi", "mpegps", "wmv", "flv", "txt", "css", "html", "php", "c", "cpp", "h", "hpp", "js", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf", "pages", "ai", "psd", "tiff", "dxf", "svg", "eps", "ps", "ttf", "xps"},
-					MaxSize:     26214400,
-				},
-				{
-					ID:          "m365online",
-					Type:        types.ViewerTypeCustom,
-					DisplayName: "fileManager.m365viewer",
-					Icon:        "/static/img/viewers/m365.svg",
-					Url:         "https://view.officeapps.live.com/op/view.aspx?src={$src}",
-					Exts:        []string{"doc", "docx", "docm", "dotm", "dotx", "xlsx", "xlsb", "xls", "xlsm", "pptx", "ppsx", "ppt", "pps", "pptm", "potm", "ppam", "potx", "ppsm"},
-					MaxSize:     10485760,
-				},
+				// Fylvo: no Google Docs or Microsoft 365 viewers by default. They hand a download
+				// link of the file to an outside company. Office files open in Collabora instead.
 				{
 					ID:          "pdf",
 					Type:        types.ViewerTypeBuiltin,

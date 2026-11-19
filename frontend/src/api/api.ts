@@ -295,6 +295,9 @@ export function getFileThumb(path: string, contextHint?: string): ThunkResponse<
         {
           ...defaultOpts,
           bypassSnackbar: (_e) => true,
+          // Fylvo: a preview image is a background nicety. If the file is open in the office
+          // editor it fails quietly, without the "file in use" dialog covering the editor.
+          skipLockConflict: true,
         },
       ),
     );
