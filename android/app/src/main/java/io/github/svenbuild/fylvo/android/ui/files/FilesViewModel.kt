@@ -127,7 +127,6 @@ data class FilesUiState(
     val effectiveMode: ViewMode get() = if (category?.gallery == true) view.galleryMode else view.mode
     val folderName: String
         get() {
-            if (CrUri.isShare(currentUri) && CrUri.isRoot(currentUri)) parent?.name?.let { return it }
             return category?.label ?: CrUri.displayName(currentUri)
         }
 }
@@ -204,6 +203,7 @@ class FilesViewModel(
                 val res = list(uri)
                 // The user may have moved on while this was in flight.
                 if (_state.value.currentUri != uri) return@launch
+                rememberShareNames(uri, res)
                 val files = sortFiles(res.files)
                 listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, res.parent)
                 _state.value = _state.value.copy(
@@ -255,6 +255,12 @@ class FilesViewModel(
         }
     }
 
+    /** Fylvo: shared folders are shown by their name, also in paths and the folder picker. */
+    private fun rememberShareNames(uri: String, res: io.github.svenbuild.fylvo.android.api.ListFileResponse) {
+        res.files.forEach { f -> f.sharedRedirect?.let { CrUri.nameShare(it, f.name) } }
+        if (CrUri.isShare(uri) && CrUri.isRoot(uri)) res.parent?.let { CrUri.nameShare(uri, it.name) }
+    }
+
     private suspend fun list(uri: String, token: String? = null) =
         if (Category.fromUri(uri) != null) {
             // Categories read like a timeline, as in the Files app.
@@ -280,6 +286,7 @@ class FilesViewModel(
     fun navigateTo(file: FileObject) {
         if (!file.isFolder) return
         // Fylvo: a "Shared with me" entry opens the share it points to.
+        file.sharedRedirect?.let { CrUri.nameShare(it, file.name) }
         val target = file.sharedRedirect ?: file.path
         _state.value = _state.value.copy(currentUri = target, home = false)
         refresh()
@@ -755,7 +762,8 @@ class FilesViewModel(
                     val inShare = CrUri.isShare(paths[0])
                     _state.value = _state.value.copy(
                         snackbar = UiMessage(
-                            text = if (n == 1) "${CrUri.fileName(paths[0])} moved to trash" else "$n items moved to trash",
+                            text = (if (n == 1) "${CrUri.fileName(paths[0])} moved" else "$n items moved") +
+                                if (inShare) " to the owner's trash" else " to trash",
                             actionLabel = if (inShare) null else "Undo",
                             action = if (inShare) null else ({ undoDelete(paths) }),
                         ),

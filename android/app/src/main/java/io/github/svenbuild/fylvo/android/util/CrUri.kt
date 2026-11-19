@@ -57,12 +57,21 @@ object CrUri {
 
     const val ROOT_LABEL = "My files"
 
-    /** Label of a file system root. A share root is named by its folder, which the caller knows. */
-    fun rootLabel(uri: String): String = when (root(uri)) {
+    /** Fylvo: names of shared folders by share root, learned from "Shared with me" listings. */
+    private val shareNames = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun nameShare(uri: String, name: String) {
+        if (isShare(uri) && name.isNotEmpty()) shareNames[root(uri)] = name
+    }
+
+    fun forgetShareNames() = shareNames.clear()
+
+    /** Label of a file system root; a shared folder shows its own name. */
+    fun rootLabel(uri: String): String = when (val root = root(uri)) {
         MY_PREFIX -> ROOT_LABEL
         SHARED_WITH_ME -> "Shared with me"
         "cloudreve://trash" -> "Trash"
-        else -> "Shared folder"
+        else -> shareNames[root] ?: "Shared folder"
     }
 
     /** Display name of the folder at [uri]: its last segment, or the root's label. */

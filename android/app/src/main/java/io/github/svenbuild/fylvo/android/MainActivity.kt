@@ -1,6 +1,7 @@
 package io.github.svenbuild.fylvo.android
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -101,12 +102,15 @@ fun App() {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
 
-    // Fylvo: after sign-out drop the files view model too, so no listing, recent file or
-    // thumbnail URL of the old account survives into the next sign-in.
+    // Fylvo: after sign-out start the screen afresh, so no listing, recent file or thumbnail
+    // URL of the old account survives in a view model into the next sign-in.
     val signOut: () -> Unit = {
         scope.launch {
             app.signOut()
-            (context as? ComponentActivity)?.viewModelStore?.clear()
+            (context as? Activity)?.let { activity ->
+                activity.startActivity(Intent(activity, MainActivity::class.java))
+                activity.finish()
+            }
         }
     }
 

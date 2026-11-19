@@ -56,6 +56,7 @@ class FylvoApp : Application() {
         WorkManager.getInstance(this).cancelAllWork()
         WorkManager.getInstance(this).pruneWork()
         sessionManager.clear()
+        io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames()
         favoritesStore.clear()
         syncFolderSettings.clear()
         taskNotifySettings.clear()
