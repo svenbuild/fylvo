@@ -51,9 +51,27 @@ const variantAvatarSize = {
   preview: 12,
 };
 
+// The mark of a shared file: the owner's avatar for files shared with me, a share glyph for my own.
+export const isShareMarked = (file?: FileResponse) => !!(file?.metadata?.[Metadata.share_redirect] || file?.shared);
+
+export const ShareMarker = ({ file, size }: { file: FileResponse; size: number }) => {
+  const { t } = useTranslation();
+  if (file.metadata?.[Metadata.share_redirect]) {
+    return (
+      <UserAvatar overwriteTextSize sx={{ width: size, height: size }} uid={file.metadata[Metadata.share_owner]} />
+    );
+  }
+  return (
+    <Tooltip title={t("application:fileManager.sharedWithOthers")}>
+      <Avatar sx={{ width: size, height: size, bgcolor: (theme) => theme.palette.background.default }}>
+        <ShareAndroid sx={{ fontSize: `${size}px!important` }} color={"action"} />
+      </Avatar>
+    </Tooltip>
+  );
+};
+
 const FileIcon = memo(
   forwardRef(({ file, loading, variant = "default", iconProps, notLoaded, sx, ...rest }: FileIconProps, ref) => {
-    const { t } = useTranslation();
     const iconColor = useMemo(() => {
       if (file && file.metadata && file.metadata[Metadata.icon_color]) {
         return file.metadata[Metadata.icon_color];
@@ -75,32 +93,10 @@ const FileIcon = memo(
         />
       );
     }, [file, iconColor, iconProps, notLoaded]);
-    const badgeContent = useMemo(() => {
-      const avatarSize = variantAvatarSize[variant];
-      if (file?.metadata?.[Metadata.share_redirect]) {
-        return (
-          <UserAvatar
-            overwriteTextSize
-            sx={{ width: avatarSize, height: avatarSize }}
-            uid={file.metadata[Metadata.share_owner]}
-          />
-        );
-      } else if (file?.shared) {
-        return (
-          <Tooltip title={t("application:fileManager.sharedWithOthers")}>
-            <Avatar
-              sx={{
-                width: avatarSize,
-                height: avatarSize,
-                bgcolor: (theme) => theme.palette.background.default,
-              }}
-            >
-              <ShareAndroid sx={{ fontSize: `${avatarSize - 0}px!important` }} color={"action"} />
-            </Avatar>
-          </Tooltip>
-        );
-      }
-    }, [file, variant]);
+    const badgeContent = useMemo(
+      () => (isShareMarked(file) ? <ShareMarker file={file!} size={variantAvatarSize[variant]} /> : undefined),
+      [file, variant],
+    );
     return (
       <Box ref={ref} sx={{ px: 2, py: 1.5, ...sx }} {...rest}>
         {!loading &&

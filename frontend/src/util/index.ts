@@ -56,18 +56,56 @@ export function setRef<T>(val: T, ...refs: MutableRefList<T>): void {
   });
 }
 
-export const copyToClipboard = (text: string) => {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text);
-    enqueueSnackbar(i18next.t("setting.copied"), {
-      action: DefaultCloseAction,
-    });
-  } else {
-    enqueueSnackbar(i18next.t("setting.pleaseManuallyCopy"), {
-      variant: "warning",
-      action: DefaultCloseAction,
-    });
+// Fylvo: browsers offer navigator.clipboard only on secure pages (https or localhost). On a plain
+// http address the classic way is left: select the text in a hidden field and run the copy command.
+const copyWithTextarea = (text: string) => {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.top = "0";
+  area.style.left = "0";
+  area.style.opacity = "0";
+  // Open dialogs and menus keep the focus inside themselves. The field goes next to the focused
+  // element, so it is always inside whichever of them is active.
+  const focused = document.activeElement as HTMLElement | null;
+  // A focused container (for example the dialog itself) takes the field inside; a focused control
+  // cannot hold it, so it goes into the control's parent.
+  const isControl = focused?.matches("input, textarea, select, button, img, a");
+  const host =
+    !focused || focused == document.body ? document.body : isControl ? focused.parentElement ?? document.body : focused;
+  host.appendChild(area);
+  area.focus();
+  area.select();
+  area.setSelectionRange(0, text.length);
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch (e) {
+    copied = false;
   }
+  host.removeChild(area);
+  focused?.focus();
+  return copied;
+};
+
+export const copyToClipboard = async (text: string) => {
+  let copied = false;
+  if (navigator.clipboard && window.isSecureContext) {
+    copied = await navigator.clipboard.writeText(text).then(
+      () => true,
+      () => false,
+    );
+  }
+  if (!copied) {
+    copied = copyWithTextarea(text);
+  }
+  // The same message is shown only once, also when the button is pressed several times.
+  enqueueSnackbar(i18next.t(copied ? "setting.copied" : "setting.pleaseManuallyCopy"), {
+    variant: copied ? "default" : "warning",
+    preventDuplicate: true,
+    action: DefaultCloseAction,
+  });
 };
 
 export const sendLink = (name: string, url: string) => {

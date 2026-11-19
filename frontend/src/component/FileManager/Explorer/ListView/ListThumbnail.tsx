@@ -7,7 +7,7 @@ import { fileIconClicked, loadFileThumb } from "../../../../redux/thunks/file.ts
 import CheckmarkCircle from "../../../Icons/CheckmarkCircle.tsx";
 import CheckUnchecked from "../../../Icons/CheckUnchecked.tsx";
 import { FmIndexContext } from "../../FmIndexContext.tsx";
-import FileIcon from "../FileIcon.tsx";
+import FileIcon, { isShareMarked, ShareMarker } from "../FileIcon.tsx";
 import { FmFile } from "../GridView/GridView.tsx";
 
 const ThumbSquareSize = 24;
@@ -173,21 +173,27 @@ const ListThumbnail = memo(({ file, isSelected, noThumb, showLock }: ListThumbna
       </TransitionGroup>
       {thumbSrc && (
         <FileTypeBadge>
-          <FileIcon
-            file={file}
-            variant={"small"}
-            sx={{ p: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-            iconProps={{
-              sx: {
-                fontSize: 12,
-                height: 12,
-                width: 12,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              },
-            }}
-          />
+          {/* Fylvo: the corner is too small for the type glyph plus its share mark, so a shared
+              file shows only the share mark here. */}
+          {isShareMarked(file) ? (
+            <ShareMarker file={file} size={12} />
+          ) : (
+            <FileIcon
+              file={file}
+              variant={"small"}
+              sx={{ p: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+              iconProps={{
+                sx: {
+                  fontSize: 12,
+                  height: 12,
+                  width: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                },
+              }}
+            />
+          )}
         </FileTypeBadge>
       )}
       {showSelectOverlay && (
