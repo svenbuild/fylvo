@@ -1,4 +1,4 @@
-import { Box, Checkbox, Collapse, DialogContent, IconButton, Stack, Tooltip, useTheme } from "@mui/material";
+import { Box, Checkbox, DialogContent, IconButton, Stack, Tooltip, useTheme } from "@mui/material";
 import dayjs from "dayjs";
 import React, { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -183,7 +183,7 @@ const ShareDialog = () => {
           // link created), so its title never moves.
           sx: {
             "& .MuiDialog-container": { alignItems: "flex-start" },
-            "& .MuiDialog-paper": { mt: { xs: "12px", sm: "12vh" } },
+            "& .MuiDialog-paper": { mt: { xs: "12px", sm: "12vh" }, maxHeight: { sm: "calc(100% - 12vh - 32px)" } },
           },
         }}
         cancelText={shareLink ? t("common:close") : undefined}
@@ -224,6 +224,7 @@ const ShareDialog = () => {
                       endAdornment: (
                         <IconButton
                           onClick={() => copyToClipboard(finalShareLink)}
+                          aria-label={t("common:copyToClipboard")}
                           size="small"
                           sx={{
                             mr: -0.5,
@@ -240,7 +241,7 @@ const ShareDialog = () => {
                 />
                 {shareLinkPassword.password && (
                   <>
-                    <Collapse in={!includePassword}>
+                    {!includePassword && (
                       <FilledTextField
                         variant={"filled"}
                         inputProps={{ readonly: true }}
@@ -253,6 +254,7 @@ const ShareDialog = () => {
                             endAdornment: (
                               <IconButton
                                 onClick={() => copyToClipboard(finalShareLinkPassword ?? "")}
+                                aria-label={t("common:copyToClipboard")}
                                 size="small"
                                 sx={{ marginRight: -1 }}
                               >
@@ -262,7 +264,7 @@ const ShareDialog = () => {
                           },
                         }}
                       />
-                    </Collapse>
+                    )}
                     <Tooltip enterDelay={100} title={t("application:modals.includePasswordInShareLinkDes")}>
                       <SmallFormControlLabel
                         sx={{

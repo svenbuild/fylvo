@@ -11,6 +11,7 @@ func TestShareCreateServiceRefusesNegativeValues(t *testing.T) {
 	cases := map[string]ShareCreateService{
 		"downloads":    {Uri: "cloudreve://my/a", RemainDownloads: -1},
 		"expire":       {Uri: "cloudreve://my/a", Expire: -60},
+		"huge expire":  {Uri: "cloudreve://my/a", Expire: 1 << 40},
 		"upload limit": {Uri: "cloudreve://my/a", UploadLimit: -1},
 	}
 	for name, service := range cases {

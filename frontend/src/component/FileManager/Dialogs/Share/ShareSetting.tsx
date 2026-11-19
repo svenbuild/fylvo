@@ -3,6 +3,7 @@ import {
   IconButton,
   InputAdornment,
   MenuItem,
+  SelectProps,
   styled,
   Switch,
   TextField,
@@ -80,7 +81,7 @@ const SectionLabel = ({ children }: { children: ReactNode }) => (
 );
 
 // Every option is one row: the name on the left, one control on the right. Rows never change height.
-const Row = styled("label")(({ theme }) => ({
+const Row = styled("div")(({ theme }) => ({
   display: "flex",
   alignItems: "center",
   gap: 12,
@@ -91,17 +92,38 @@ const Row = styled("label")(({ theme }) => ({
   "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 44 },
   "&[aria-disabled=true] > .MuiTypography-root": { color: theme.palette.text.disabled },
   // A disabled field must look quieter than an active one, not brighter.
-  "& .Mui-disabled .MuiOutlinedInput-notchedOutline": { borderColor: theme.palette.divider },
+  "& .MuiOutlinedInput-root.Mui-disabled .MuiOutlinedInput-notchedOutline": { borderColor: theme.palette.divider },
 }));
 
-const OptionRow = ({ label, disabled, children }: { label: string; disabled?: boolean; children: ReactNode }) => (
+interface OptionRowProps {
+  // The name gets this id. The control has the id "<id>-control" or uses the id as its labelId, so a
+  // click on the name reaches the control and screen readers read the name with it.
+  id: string;
+  label: string;
+  disabled?: boolean;
+  children: ReactNode;
+}
+
+const OptionRow = ({ id, label, disabled, children }: OptionRowProps) => (
   <Row aria-disabled={disabled}>
-    <Typography variant="body2">{label}</Typography>
+    <Typography variant="body2" component="label" id={id} htmlFor={id + "-control"}>
+      {label}
+    </Typography>
     {children}
   </Row>
 );
 
+const RowSelect = (props: SelectProps) => (
+  <DenseSelect
+    variant="outlined"
+    size="small"
+    {...props}
+    sx={{ width: controlWidth, fontSize: (theme) => theme.typography.body2.fontSize }}
+  />
+);
+
 interface ValueSelectProps {
+  labelId: string;
   // 0 is "off".
   value: number;
   options: number[];
@@ -111,15 +133,8 @@ interface ValueSelectProps {
   disabled?: boolean;
 }
 
-const ValueSelect = ({ value, options, offLabel, format, onChange, disabled }: ValueSelectProps) => (
-  <DenseSelect
-    variant="outlined"
-    size="small"
-    value={value}
-    disabled={disabled}
-    onChange={(e) => onChange(e.target.value as number)}
-    sx={{ width: controlWidth, fontSize: (theme) => theme.typography.body2.fontSize }}
-  >
+const ValueSelect = ({ labelId, value, options, offLabel, format, onChange, disabled }: ValueSelectProps) => (
+  <RowSelect labelId={labelId} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value as number)}>
     <MenuItem dense value={0}>
       {offLabel}
     </MenuItem>
@@ -128,7 +143,7 @@ const ValueSelect = ({ value, options, offLabel, format, onChange, disabled }: V
         {format(option)}
       </MenuItem>
     ))}
-  </DenseSelect>
+  </RowSelect>
 );
 
 const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareSettingProps) => {
@@ -139,14 +154,16 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
   const change = (patch: Partial<ShareSetting>) => onSettingChange({ ...setting, ...patch });
 
   const formatExpiry = (seconds: number) => {
+    if (!expireOptions.includes(seconds)) {
+      // The rest of an existing share's time: show when it ends.
+      const end = new Date(Date.now() + seconds * 1000);
+      return t("application:modals.expiresUntil", {
+        date: end.toLocaleString(i18n.language, { dateStyle: "short", timeStyle: "short" }),
+      });
+    }
     if (seconds % (24 * 3600) == 0) return t("application:modals.durationDays", { count: seconds / (24 * 3600) });
     if (seconds % 3600 == 0) return t("application:modals.durationHours", { count: seconds / 3600 });
-    if (seconds % 60 == 0) return t("application:modals.durationMinutes", { count: seconds / 60 });
-    // The rest of an existing share's time: show when it ends.
-    const end = new Date(Date.now() + seconds * 1000);
-    return t("application:modals.expiresUntil", {
-      date: end.toLocaleString(i18n.language, { dateStyle: "short", timeStyle: "short" }),
-    });
+    return t("application:modals.durationMinutes", { count: seconds / 60 });
   };
 
   const setPassword = (password: string) => change({ password, is_private: password != "" });
@@ -179,17 +196,16 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
       {/* A file has only this one group, so it needs no heading. */}
       {isFolder && <SectionLabel>{t("application:modals.sectionAccess")}</SectionLabel>}
       {isLink && (
-        <OptionRow label={t("application:modals.passwordOption")} disabled={editing}>
+        <OptionRow id="share-password" label={t("application:modals.passwordOption")} disabled={editing}>
           <TextField
+            id="share-password-control"
             size="small"
             disabled={editing}
             placeholder={t("application:modals.noPassword")}
             value={setting.is_private ? setting.password ?? "" : ""}
-            onChange={(e) => {
-              const value = e.target.value.trim();
-              if (!/^[a-zA-Z0-9]*$/.test(value) || value.length > 32) return;
-              setPassword(value);
-            }}
+            // Only letters and digits. Other characters are dropped instead of refusing the whole input,
+            // so a pasted password still switches the protection on and the field shows what is used.
+            onChange={(e) => setPassword(e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 32))}
             slotProps={{
               htmlInput: { maxLength: 32 },
               input: {
@@ -208,8 +224,9 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
           />
         </OptionRow>
       )}
-      <OptionRow label={t("application:modals.expiresOption")}>
+      <OptionRow id="share-expires" label={t("application:modals.expiresOption")}>
         <ValueSelect
+          labelId="share-expires"
           value={setting.expires ? setting.expires_val : 0}
           options={withCurrent(expireOptions, setting.expires_val)}
           offLabel={t("application:modals.unlimited")}
@@ -218,8 +235,9 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
         />
       </OptionRow>
       {file?.type == FileType.file && (
-        <OptionRow label={t("application:modals.downloadsOption")}>
+        <OptionRow id="share-downloads" label={t("application:modals.downloadsOption")}>
           <ValueSelect
+            labelId="share-downloads"
             value={setting.downloads ? setting.downloads_val : 0}
             options={withCurrent(downloadOptions, setting.downloads_val)}
             offLabel={t("application:modals.unlimited")}
@@ -232,15 +250,13 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
       {isFolder && isLink && (
         <>
           <SectionLabel>{t("application:modals.sectionUploads")}</SectionLabel>
-          <OptionRow label={t("application:modals.allowUploadOption")}>
-            <DenseSelect
-              variant="outlined"
-              size="small"
+          <OptionRow id="share-upload" label={t("application:modals.allowUploadOption")}>
+            <RowSelect
+              labelId="share-upload"
               value={!setting.allow_upload ? "off" : setting.hide_content ? "upload_only" : "view_upload"}
               onChange={(e) =>
                 change({ allow_upload: e.target.value != "off", hide_content: e.target.value == "upload_only" })
               }
-              sx={{ width: controlWidth, fontSize: (theme) => theme.typography.body2.fontSize }}
             >
               <MenuItem dense value="off">
                 {t("application:modals.uploadsOff")}
@@ -251,10 +267,15 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
               <MenuItem dense value="upload_only">
                 {t("application:modals.uploadOnly")}
               </MenuItem>
-            </DenseSelect>
+            </RowSelect>
           </OptionRow>
-          <OptionRow label={t("application:modals.uploadLimitOption")} disabled={!setting.allow_upload}>
+          <OptionRow
+            id="share-upload-limit"
+            label={t("application:modals.uploadLimitOption")}
+            disabled={!setting.allow_upload}
+          >
             <ValueSelect
+              labelId="share-upload-limit"
               value={setting.upload_limit ? setting.upload_limit_val : 0}
               options={withCurrent(uploadLimitOptions, setting.upload_limit_val)}
               offLabel={t("application:modals.unlimited")}
@@ -271,15 +292,17 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
       {isFolder && (
         <>
           <SectionLabel>{t("application:modals.sectionView")}</SectionLabel>
-          <OptionRow label={t("application:modals.shareViewOption")}>
+          <OptionRow id="share-view" label={t("application:modals.shareViewOption")}>
             <Switch
+              id="share-view-control"
               size="small"
               checked={!!setting.share_view}
               onChange={() => change({ share_view: !setting.share_view })}
             />
           </OptionRow>
-          <OptionRow label={t("application:modals.showReadmeOption")}>
+          <OptionRow id="share-readme" label={t("application:modals.showReadmeOption")}>
             <Switch
+              id="share-readme-control"
               size="small"
               checked={!!setting.show_readme}
               onChange={() => change({ show_readme: !setting.show_readme })}

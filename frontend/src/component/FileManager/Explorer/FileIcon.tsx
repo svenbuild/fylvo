@@ -94,7 +94,7 @@ const FileIcon = memo(
       );
     }, [file, iconColor, iconProps, notLoaded]);
     const badgeContent = useMemo(
-      () => (!isShareMarked(file) ? undefined : <ShareMarker file={file!} size={variantAvatarSize[variant]} />),
+      () => (isShareMarked(file) ? <ShareMarker file={file!} size={variantAvatarSize[variant]} /> : undefined),
       [file, variant],
     );
     return (

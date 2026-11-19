@@ -66,10 +66,10 @@ const copyWithTextarea = (text: string) => {
   area.style.top = "0";
   area.style.left = "0";
   area.style.opacity = "0";
-  // An open dialog keeps the focus inside itself, so the field must live in the topmost dialog.
-  const dialogs = document.querySelectorAll(".MuiDialog-root [role='dialog']");
-  const host = dialogs.length ? dialogs[dialogs.length - 1] : document.body;
+  // Open dialogs and menus keep the focus inside themselves. The field goes next to the focused
+  // element, so it is always inside whichever of them is active.
   const focused = document.activeElement as HTMLElement | null;
+  const host = focused && focused != document.body && focused.parentElement ? focused.parentElement : document.body;
   host.appendChild(area);
   area.focus();
   area.select();
