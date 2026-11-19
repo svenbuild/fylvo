@@ -26,7 +26,11 @@ import (
 // Thumbnail returns the thumbnail entity of the file.
 func (m *manager) Thumbnail(ctx context.Context, uri *fs.URI) (entitysource.EntitySource, error) {
 	// retrieve file info
-	file, err := m.fs.Get(ctx, uri, dbfs.WithFileEntities(), dbfs.WithFilePublicMetadata())
+	// Fylvo: a preview shows what is in the file. A visitor of a link that hides its folder
+	// gets none, also not one that exists already. The Info capability is the one every
+	// place has where previews are shown (the trash has no download).
+	file, err := m.fs.Get(ctx, uri, dbfs.WithFileEntities(), dbfs.WithFilePublicMetadata(),
+		dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityInfo))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file: %w", err)
 	}

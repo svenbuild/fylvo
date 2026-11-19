@@ -93,6 +93,12 @@ export interface Share {
   // Fylvo: member share, only returned to the share owner.
   member_only?: boolean;
   members?: ShareMember[];
+  // Fylvo: link of a folder that accepts uploads; hide_content makes it a drop box ("upload only").
+  allow_upload?: boolean;
+  hide_content?: boolean;
+  // Fylvo: owner only, in bytes. upload_limit 0 or missing means no limit.
+  upload_limit?: number;
+  uploaded?: number;
 }
 
 // Fylvo: a registered user a folder is shared with. user_id is the hashed user ID.
@@ -319,6 +325,9 @@ export interface ShareCreateService {
   show_readme?: boolean;
   member_only?: boolean;
   members?: ShareMember[];
+  allow_upload?: boolean;
+  hide_content?: boolean;
+  upload_limit?: number;
 }
 
 export interface CreateFileService {

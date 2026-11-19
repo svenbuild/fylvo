@@ -67,13 +67,23 @@ func refuseViewSession(c *gin.Context, session *manager.ViewerSessionCache) bool
 }
 
 func (service *WopiService) Unlock(c *gin.Context) error {
-	_, m, _, viewerSession, dep, err := prepareFs(c)
+	uri, m, _, viewerSession, dep, err := prepareFs(c)
 	if err != nil {
 		return err
 	}
 
 	if refuseViewSession(c, viewerSession) {
 		return nil
+	}
+
+	// Fylvo: releasing a lock needs the same rights on the file of the session as taking one.
+	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityLockFile, dbfs.NavigatorCapabilityRenameFile), dbfs.WithNotRoot())
+	if err != nil {
+		return fmt.Errorf("failed to get file: %w", err)
+	}
+
+	if err := sameFileAsSession(file, viewerSession); err != nil {
+		return err
 	}
 
 	l := dep.Logger()
@@ -102,7 +112,7 @@ func (service *WopiService) RefreshLock(c *gin.Context) error {
 	l := dep.Logger()
 
 	// Make sure file exists and readable
-	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityLockFile, dbfs.NavigatorCapabilityUploadFile), dbfs.WithNotRoot())
+	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityLockFile, dbfs.NavigatorCapabilityRenameFile), dbfs.WithNotRoot())
 	if err != nil {
 		return fmt.Errorf("failed to get file: %w", err)
 	}
@@ -147,7 +157,7 @@ func (service *WopiService) Lock(c *gin.Context) error {
 	l := dep.Logger()
 
 	// Make sure file exists and readable
-	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityLockFile, dbfs.NavigatorCapabilityUploadFile), dbfs.WithNotRoot())
+	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityLockFile, dbfs.NavigatorCapabilityRenameFile), dbfs.WithNotRoot())
 	if err != nil {
 		return fmt.Errorf("failed to get file: %w", err)
 	}
@@ -209,7 +219,7 @@ func (service *WopiService) PutContent(c *gin.Context, isPutRelative bool) error
 	}
 
 	// Make sure file exists and readable
-	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityUploadFile), dbfs.WithNotRoot())
+	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityUploadFile, dbfs.NavigatorCapabilityRenameFile), dbfs.WithNotRoot())
 	if err != nil {
 		return fmt.Errorf("failed to get file: %w", err)
 	}
@@ -412,10 +422,11 @@ func (service *WopiService) FileInfo(c *gin.Context) (*WopiFileInfo, error) {
 	}
 
 	// Fylvo: besides the owner in their own files, a member with edit right on a shared
-	// folder may edit. The capabilities of the file say so, they come from the share.
+	// folder may edit. The capabilities of the file say so, they come from the share: rename
+	// stands for changing what is there, a visitor of an upload link only adds.
 	mayWrite := file.OwnerID() == user.ID && uri.FileSystem() == constants.FileSystemMy
 	if uri.FileSystem() == constants.FileSystemShare && file.Capabilities() != nil {
-		mayWrite = file.Capabilities().Enabled(int(dbfs.NavigatorCapabilityUploadFile))
+		mayWrite = file.Capabilities().Enabled(int(dbfs.NavigatorCapabilityRenameFile))
 	}
 	canEdit := file.PrimaryEntityID() == targetEntity.ID() && mayWrite && viewerSession.Action == types.ViewerActionEdit
 	cantPutRelative := !canEdit

@@ -47,7 +47,9 @@ func init() {
 
 func (m *manager) CreateViewerSession(ctx context.Context, uri *fs.URI, version string, viewer *types.Viewer,
 	action types.ViewerAction) (*ViewerSession, error) {
-	file, err := m.fs.Get(ctx, uri, dbfs.WithFileEntities(), dbfs.WithNotRoot())
+	// Fylvo: a viewer reads the file, so opening one needs the right to download.
+	file, err := m.fs.Get(ctx, uri, dbfs.WithFileEntities(), dbfs.WithNotRoot(),
+		dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityDownloadFile))
 	if err != nil {
 		return nil, err
 	}

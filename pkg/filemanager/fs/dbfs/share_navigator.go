@@ -29,6 +29,8 @@ const (
 var (
 	shareNavigatorCapability       = &boolset.BooleanSet{}
 	shareEditorNavigatorCapability = &boolset.BooleanSet{}
+	shareUploadNavigatorCapability = &boolset.BooleanSet{}
+	shareDropNavigatorCapability   = &boolset.BooleanSet{}
 )
 
 // NewShareNavigator creates a navigator for user's "shared" file system.
@@ -60,7 +62,14 @@ type (
 		share           *ent.Share
 		owner           *ent.User
 		// Fylvo: the current user is a member with edit right on this shared folder.
-		editable       bool
+		editable bool
+		// Fylvo: the current user may add files to this shared folder: an editor, or a visitor
+		// of a link that takes uploads.
+		addable bool
+		// Fylvo: the current user is a visitor of a link that does not show the folder.
+		hideContent bool
+		// Fylvo: the navigator was filled from the cache and not checked against the share yet.
+		restored       bool
 		disableRecycle bool
 		persist        func()
 	}
@@ -77,9 +86,10 @@ type (
 func (n *shareNavigator) PersistState(kv cache.Driver, key string) {
 	n.disableRecycle = true
 	n.persist = func() {
-		// Fylvo: never cache access to a member-only share, so that removing a member
-		// or changing a right takes effect with the next request.
-		if n.share == nil || n.share.Props.IsMemberOnly() {
+		// Fylvo: never cache access to a member-only share or to a link that takes uploads,
+		// so that removing a member or changing a right takes effect with the next request.
+		// The cached state would not carry the rights either.
+		if n.share == nil || n.share.Props.IsMemberOnly() || n.share.Props.AllowsUpload() {
 			return
 		}
 
@@ -97,8 +107,8 @@ func (n *shareNavigator) RestoreState(s State) error {
 	n.disableRecycle = true
 	if state, ok := s.(shareNavigatorState); ok {
 		// Such a state is never written, see PersistState. This only makes sure of it.
-		if state.Share == nil || state.Share.Props.IsMemberOnly() {
-			return fmt.Errorf("state of a member-only share is not restored")
+		if state.Share == nil || state.Share.Props.IsMemberOnly() || state.Share.Props.AllowsUpload() {
+			return fmt.Errorf("state of a share with rights of its own is not restored")
 		}
 
 		n.shareRoot = state.ShareRoot
@@ -106,6 +116,7 @@ func (n *shareNavigator) RestoreState(s State) error {
 		n.singleFileShare = state.SingleFileShare
 		n.share = state.Share
 		n.owner = state.Owner
+		n.restored = true
 		return nil
 	}
 
@@ -125,6 +136,23 @@ func (n *shareNavigator) Recycle() {
 			n.shareRoot.Recycle()
 		}
 	}
+}
+
+// forgetIfChanged drops what was restored from the cache if the share was changed or
+// deleted since, or has run out. The cache keeps a share for minutes; without this check a link that the
+// owner has just closed, protected or set to hide its folder would stay open that long.
+func (n *shareNavigator) forgetIfChanged(ctx context.Context) {
+	if !n.restored {
+		return
+	}
+	n.restored = false
+
+	current, err := n.shareClient.GetByID(ctx, n.share.ID)
+	if err == nil && current.UpdatedAt.Equal(n.share.UpdatedAt) && inventory.IsShareExpired(current) == nil {
+		return
+	}
+
+	n.shareRoot, n.ownerRoot, n.share, n.owner, n.singleFileShare = nil, nil, nil, nil, false
 }
 
 // Root loads the share and checks that the current user may open it. It is the only way
@@ -197,11 +225,17 @@ func (n *shareNavigator) Root(ctx context.Context, path *fs.URI) (*File, error) 
 	// Fylvo: only a whole folder can be opened for editing. With a single shared file the
 	// root is the folder that holds it, and that folder is not shared.
 	n.editable = member != nil && member.CanEdit && !singleFileShare
+	// Fylvo: a link that takes uploads lets its visitors add to the folder, and if it hides
+	// the folder, they see nothing of it. The owner is no visitor.
+	visitor := n.user.ID != owner.ID && !singleFileShare
+	n.addable = n.editable || (visitor && share.Props.AllowsUpload())
+	n.hideContent = visitor && share.Props.HidesContent()
 
 	shareRoot.Path[pathIndexUser] = path.Root()
 	shareRoot.OwnerModel = owner
 	shareRoot.IsUserRoot = true
 	shareRoot.editable = n.editable
+	shareRoot.addable = n.addable
 	shareRoot.disableView = (share.Props == nil || !share.Props.ShareView) && n.user.ID != owner.ID
 	shareRoot.CapabilitiesBs = n.Capabilities(false).Capability
 
@@ -276,6 +310,16 @@ func (n *shareNavigator) Children(ctx context.Context, parent *File, args *ListA
 		}, nil
 	}
 
+	// Fylvo: a drop box shows its visitors nothing, whether they list or search. A file is
+	// no folder to list, as everywhere, and the answer would carry its details.
+	if n.hideContent {
+		if parent != nil && parent.Type() != types.FileTypeFolder {
+			return nil, fs.ErrPathNotExist
+		}
+
+		return &ListResult{Pagination: &inventory.PaginationResults{}}, nil
+	}
+
 	return n.baseNavigator.children(ctx, parent, args)
 }
 
@@ -297,8 +341,13 @@ func (n *shareNavigator) latestSharedSingleFile(ctx context.Context) (*File, err
 
 func (n *shareNavigator) Capabilities(isSearching bool) *fs.NavigatorProps {
 	capability := shareNavigatorCapability
-	if n.editable {
+	switch {
+	case n.editable:
 		capability = shareEditorNavigatorCapability
+	case n.hideContent:
+		capability = shareDropNavigatorCapability
+	case n.addable:
+		capability = shareUploadNavigatorCapability
 	}
 
 	res := &fs.NavigatorProps{

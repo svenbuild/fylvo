@@ -34,7 +34,7 @@ func (f *DBFS) PreValidateUpload(ctx context.Context, dst *fs.URI, files ...fs.P
 	}
 
 	// check ownership
-	if !f.canWrite(ctx, dstFile) {
+	if !f.canAdd(ctx, dstFile) {
 		return fs.ErrOwnerOnly
 	}
 
@@ -97,6 +97,21 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 		fileExisted = true
 	}
 
+	// Fylvo: who may only add files never replaces one. If the name is taken, the upload
+	// goes next to it under a free name. (The answer names the address used, so a visitor
+	// can tell from it that the name was taken. That is accepted.)
+	if fileExisted && !f.canWrite(ctx, ancestor) && f.canAdd(ctx, ancestor) {
+		free, err := f.freeName(ctx, navigator, req.Props.Uri)
+		if err != nil {
+			return nil, err
+		}
+
+		req.Props.Uri = free
+		req.Props.EntityType = nil
+		req.Props.PreviousVersion = ""
+		return f.PrepareUpload(ctx, req, opts...)
+	}
+
 	// If file already exist, and update operation is suspended or existing file is not a file
 	if fileExisted && (req.Props.EntityType == nil || ancestor.Type() != types.FileTypeFile) {
 		return nil, fs.ErrFileExisted
@@ -107,7 +122,9 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 		return nil, fs.ErrPathNotExist
 	}
 
-	if !f.canWrite(ctx, ancestor) {
+	// A new file needs the right to add. A new version of a file needs the right to change
+	// it; who has only the right to add was sent to a free name above.
+	if !f.canAdd(ctx, ancestor) {
 		return nil, fs.ErrOwnerOnly
 	}
 
@@ -164,6 +181,11 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 		return nil, fmt.Errorf("failed to get user capacity: %s", err)
 	}
 	if err := f.validateUserCapacityRaw(ctx, req.Props.Size, capacity); err != nil {
+		return nil, err
+	}
+
+	// Fylvo: an upload that comes in over a share link counts against the limit of that link.
+	if err := f.reserveLinkUpload(ctx, navigator, ancestor, req.Props.Size); err != nil {
 		return nil, err
 	}
 
@@ -292,7 +314,7 @@ func (f *DBFS) CompleteUpload(ctx context.Context, session *fs.UploadSession) (f
 
 	// Fylvo: the right to write is checked again when the upload is finished. A member
 	// who lost the edit right in the meantime cannot complete an upload started before.
-	if !f.canWrite(ctx, filePrivate) {
+	if !f.canAdd(ctx, filePrivate) {
 		return nil, fs.ErrOwnerOnly
 	}
 

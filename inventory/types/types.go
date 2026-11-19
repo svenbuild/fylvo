@@ -231,6 +231,14 @@ type (
 		MemberOnly bool `json:"member_only,omitempty"`
 		// Fylvo: users who may open a member-only share.
 		Members []ShareMember `json:"members,omitempty"`
+		// Fylvo: visitors of the link may add files and folders to the shared folder.
+		AllowUpload bool `json:"allow_upload,omitempty"`
+		// Fylvo: visitors add files but do not see what the folder holds (a drop box).
+		HideContent bool `json:"hide_content,omitempty"`
+		// Fylvo: the most that may be uploaded over the link in total, in bytes. 0 is no limit.
+		UploadLimit int64 `json:"upload_limit,omitempty"`
+		// Fylvo: bytes of the uploads started over the link so far.
+		Uploaded int64 `json:"uploaded,omitempty"`
 	}
 
 	// ShareMember is a user with access to a member-only share.

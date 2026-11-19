@@ -153,6 +153,32 @@ func init() {
 		NavigatorCapabilityEnterFolder:    true,
 		NavigatorCapabilityModifyProps:    true,
 	}, shareEditorNavigatorCapability)
+	// Fylvo: a visitor of a link that takes uploads. New files and folders, nothing that
+	// changes what is there. Delete is listed for the clean-up of the visitor's own failed
+	// or cancelled upload only, see above.
+	boolset.Sets(map[NavigatorCapability]bool{
+		NavigatorCapabilityCreateFile:     true,
+		NavigatorCapabilityUploadFile:     true,
+		NavigatorCapabilityDownloadFile:   true,
+		NavigatorCapabilityListChildren:   true,
+		NavigatorCapabilityGenerateThumb:  true,
+		NavigatorCapabilityDeleteFile:     true,
+		NavigatorCapabilityLockFile:       true,
+		NavigatorCapabilityInfo:           true,
+		NavigatorCapabilityVersionControl: true,
+		NavigatorCapabilityEnterFolder:    true,
+		NavigatorCapabilityModifyProps:    true,
+	}, shareUploadNavigatorCapability)
+	// Fylvo: the same visitor on a link that hides the folder (a drop box): nothing that
+	// reads a file or tells anything about one.
+	boolset.Sets(map[NavigatorCapability]bool{
+		NavigatorCapabilityCreateFile:   true,
+		NavigatorCapabilityUploadFile:   true,
+		NavigatorCapabilityListChildren: true,
+		NavigatorCapabilityDeleteFile:   true,
+		NavigatorCapabilityLockFile:     true,
+		NavigatorCapabilityEnterFolder:  true,
+	}, shareDropNavigatorCapability)
 	boolset.Sets(map[NavigatorCapability]bool{
 		NavigatorCapabilityListChildren: true,
 		NavigatorCapabilityDeleteFile:   true,

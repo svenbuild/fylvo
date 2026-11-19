@@ -10,6 +10,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/pkg/auth/requestinfo"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -36,12 +37,20 @@ func canStillListen(c *gin.Context, dep dependency.Dep, user *ent.User, uri *fs.
 	m := manager.NewFileManager(dep, current)
 	defer m.Recycle()
 
-	parent, _, err := m.List(c, uri, &manager.ListArgs{
+	parent, listRes, err := m.List(c, uri, &manager.ListArgs{
 		Page:     0,
 		PageSize: 1,
 	})
 
-	return err == nil && parent.ID() == folderID
+	return err == nil && parent.ID() == folderID && tellsFileNames(listRes)
+}
+
+// tellsFileNames reports whether the user may learn the names of the files in the listed
+// folder. Events carry them. A visitor of a link that hides its folder (it grants no
+// download) may not.
+func tellsFileNames(listRes *fs.ListFileResult) bool {
+	return listRes != nil && listRes.Props != nil &&
+		listRes.Props.Capability.Enabled(int(dbfs.NavigatorCapabilityDownloadFile))
 }
 
 func (s *ExplorerEventService) HandleExplorerEventsPush(c *gin.Context) error {
@@ -70,6 +79,10 @@ func (s *ExplorerEventService) HandleExplorerEventsPush(c *gin.Context) error {
 	// while the subscriber is only authorized to observe the shared file itself.
 	// Subscribing to that folder topic would leak events about unshared siblings.
 	if listRes != nil && listRes.SingleFileView {
+		return serializer.NewError(serializer.CodeNoPermissionErr, "Event subscriptions are not supported on this view", nil)
+	}
+
+	if uri.FileSystem() == constants.FileSystemShare && !tellsFileNames(listRes) {
 		return serializer.NewError(serializer.CodeNoPermissionErr, "Event subscriptions are not supported on this view", nil)
 	}
 

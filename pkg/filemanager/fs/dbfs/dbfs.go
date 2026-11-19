@@ -764,9 +764,12 @@ func (f *DBFS) getNavigator(ctx context.Context, path *fs.URI, requiredCapabilit
 
 	// Fylvo: what a share allows depends on the share and on the user, so the share is
 	// loaded and checked before its capabilities are.
-	if shared, ok := res.(*shareNavigator); ok && shared.shareRoot == nil {
-		if _, err := shared.Root(ctx, path); err != nil {
-			return nil, err
+	if shared, ok := res.(*shareNavigator); ok {
+		shared.forgetIfChanged(ctx)
+		if shared.shareRoot == nil {
+			if _, err := shared.Root(ctx, path); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -863,6 +866,17 @@ func (f *DBFS) canWrite(ctx context.Context, target *File) bool {
 
 	root := target.UserRoot()
 	return root != nil && root.editable
+}
+
+// canAdd reports whether the current user may put new files and folders below target:
+// everybody who may change it, and the visitors of a share link that takes uploads.
+func (f *DBFS) canAdd(ctx context.Context, target *File) bool {
+	if f.canWrite(ctx, target) {
+		return true
+	}
+
+	root := target.UserRoot()
+	return root != nil && root.addable
 }
 
 // isOwnerCall reports whether the call comes from the owner of target or from the system,

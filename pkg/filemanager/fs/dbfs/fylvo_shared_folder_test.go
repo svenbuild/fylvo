@@ -2,7 +2,9 @@ package dbfs
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -581,4 +583,226 @@ func TestMemberSharesStayOutOfProfiles(t *testing.T) {
 		require.Len(t, res.Shares, 1)
 		require.Equal(t, link.ID, res.Shares[0].ID)
 	}
+}
+
+// uploadLink creates a link to the shared folder of the owner with the given props and
+// returns the address visitors use.
+func (e *sharedFolderEnv) uploadLink(props *types.ShareProps) (*ent.Share, func(path string) *fs.URI) {
+	shared, err := e.as(e.owner).Get(e.ctx, e.uri("cloudreve://my/Shared"))
+	require.NoError(e.t, err)
+	link, err := e.shareClient.Upsert(e.ctx, &inventory.CreateShareParams{OwnerID: e.owner.ID, FileID: shared.ID(), Props: props})
+	require.NoError(e.t, err)
+	base := fs.NewShareUri(hashid.EncodeShareID(e.hasher, link.ID), "")
+	return link, func(path string) *fs.URI { return e.uri(base + path) }
+}
+
+func (e *sharedFolderEnv) visitors() []*ent.User {
+	anonymous, err := e.userClient.AnonymousUser(e.ctx)
+	require.NoError(e.t, err)
+	return []*ent.User{e.outsider, anonymous}
+}
+
+func TestPlainLinkTakesNoUploads(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	_, at := e.uploadLink(nil)
+
+	for _, visitor := range e.visitors() {
+		require.ErrorContains(t, e.tryUpload(e.as(visitor), at("/new.txt"), 1, nil), notSupported, visitor.Nick)
+		_, err := e.as(visitor).Create(e.ctx, at("/new"), types.FileTypeFolder)
+		require.ErrorContains(t, err, notSupported, visitor.Nick)
+	}
+}
+
+func TestUploadLinkLetsVisitorsAddButNotChange(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	link, at := e.uploadLink(&types.ShareProps{AllowUpload: true})
+
+	for i, visitor := range e.visitors() {
+		folder := fmt.Sprintf("/from visitor %d", i)
+		_, err := e.as(visitor).Create(e.ctx, at(folder), types.FileTypeFolder)
+		require.NoError(t, err, visitor.Nick)
+		require.NoError(t, e.tryUpload(e.as(visitor), at(folder+"/photo.jpg"), 100, nil), visitor.Nick)
+
+		// A name that is taken: the upload goes next to the file, whether the visitor asks
+		// for a new file or for a new version of the one that is there.
+		require.NoError(t, e.tryUpload(e.as(visitor), at("/doc.txt"), 7, nil), visitor.Nick)
+		version := types.EntityTypeVersion
+		session, err := e.as(visitor).PrepareUpload(e.ctx, &fs.UploadRequest{Props: &fs.UploadProps{
+			Uri: at("/doc.txt"), Size: 7, UploadSessionID: uuid.Must(uuid.NewV4()).String(),
+			ExpireAt: time.Now().Add(time.Hour), EntityType: &version,
+		}})
+		require.NoError(t, err, visitor.Nick)
+		require.NotEqual(t, "doc.txt", session.Props.Uri.Name(), visitor.Nick)
+		_, err = e.as(visitor).CompleteUpload(e.ctx, session)
+		require.NoError(t, err, visitor.Nick)
+
+		refused := map[string]refusal{
+			"rename": {notSupported, func(f fs.FileSystem) error {
+				_, _, err := f.Rename(e.ctx, at("/doc.txt"), "other.txt")
+				return err
+			}},
+			"delete": {notSupported, func(f fs.FileSystem) error {
+				return f.SoftDelete(e.ctx, at("/doc.txt"))
+			}},
+			"delete for good": {ownerOnly, func(f fs.FileSystem) error {
+				_, _, err := f.Delete(e.ctx, []*fs.URI{at("/doc.txt")})
+				return err
+			}},
+			"move": {ownerOnly, func(f fs.FileSystem) error {
+				_, err := f.MoveOrCopy(e.ctx, []*fs.URI{at("/doc.txt")}, at("/sub"), false)
+				return err
+			}},
+			"copy": {ownerOnly, func(f fs.FileSystem) error {
+				_, err := f.MoveOrCopy(e.ctx, []*fs.URI{at("/doc.txt")}, at("/sub"), true)
+				return err
+			}},
+			"lock": {ownerOnly, func(f fs.FileSystem) error {
+				_, err := f.Lock(e.ctx, time.Minute, visitor, true, lock.Application{Type: "viewer"}, at("/doc.txt"), "token")
+				return err
+			}},
+			"upload with metadata": {ownerOnly, func(f fs.FileSystem) error {
+				return e.tryUpload(f, at("/tagged.txt"), 1, map[string]string{"customize:icon_color": "#fff"})
+			}},
+		}
+		for name, attempt := range refused {
+			require.ErrorContains(t, attempt.try(e.as(visitor)), attempt.reason, visitor.Nick+": "+name)
+		}
+
+		// A path cannot climb out of the folder: this lands in a new folder inside it.
+		require.NoError(t, e.tryUpload(e.as(visitor), at("/../Private/planted.txt"), 1, nil), visitor.Nick)
+	}
+
+	// The file of the owner is as it was, the uploads lie next to it and belong to the owner.
+	doc, err := e.as(e.owner).Get(e.ctx, e.uri("cloudreve://my/Shared/doc.txt"))
+	require.NoError(t, err)
+	require.Equal(t, int64(10), doc.Size())
+	names, err := e.names(e.as(e.owner), e.uri("cloudreve://my/Shared"))
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"sub", "doc.txt", "doc (1).txt", "doc (2).txt", "doc (3).txt", "doc (4).txt",
+		"from visitor 0", "from visitor 1", "Private"}, names)
+	added, err := e.as(e.owner).Get(e.ctx, e.uri("cloudreve://my/Shared/doc (1).txt"))
+	require.NoError(t, err)
+	require.Equal(t, e.owner.ID, added.OwnerID())
+	names, err = e.names(e.as(e.owner), e.uri("cloudreve://my/Private"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"secret.txt"}, names)
+
+	// What came in is counted on the link and charged to the owner.
+	stored, err := e.client.Share.Get(e.ctx, link.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(2*(100+7+7+1)), stored.Props.Uploaded)
+	require.Equal(t, int64(10+10+2*(100+7+7+1)), e.reload(e.owner).Storage)
+	require.Zero(t, e.reload(e.outsider).Storage)
+}
+
+func TestDropBoxTakesUploadsAndShowsNothing(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	_, at := e.uploadLink(&types.ShareProps{AllowUpload: true, HideContent: true})
+
+	for _, visitor := range e.visitors() {
+		require.NoError(t, e.tryUpload(e.as(visitor), at("/doc.txt"), 3, nil), visitor.Nick)
+
+		for _, folder := range []string{"", "/sub"} {
+			names, err := e.names(e.as(visitor), at(folder))
+			require.NoError(t, err, visitor.Nick)
+			require.Empty(t, names, visitor.Nick)
+		}
+
+		f := e.as(visitor)
+		for name, capability := range map[string]NavigatorCapability{
+			"download": NavigatorCapabilityDownloadFile, "details": NavigatorCapabilityInfo, "preview": NavigatorCapabilityGenerateThumb,
+		} {
+			_, err := f.Get(e.ctx, at("/doc.txt"), WithRequiredCapabilities(capability))
+			require.ErrorContains(t, err, notSupported, visitor.Nick+": "+name)
+		}
+		require.Error(t, f.Walk(e.ctx, at(""), 5, func(fs.File, int) error { return nil }), visitor.Nick)
+	}
+
+	// The owner still sees everything through the same link.
+	names, err := e.names(e.as(e.owner), at(""))
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"sub", "doc.txt", "doc (1).txt", "doc (2).txt"}, names)
+}
+
+func TestUploadLinkStopsAtItsLimit(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	link, at := e.uploadLink(&types.ShareProps{AllowUpload: true, UploadLimit: 150})
+
+	require.NoError(t, e.tryUpload(e.as(e.outsider), at("/first.bin"), 100, nil))
+	require.ErrorContains(t, e.tryUpload(e.as(e.outsider), at("/second.bin"), 100, nil), "upload limit of this link")
+	require.NoError(t, e.tryUpload(e.as(e.outsider), at("/third.bin"), 50, nil))
+
+	stored, err := e.client.Share.Get(e.ctx, link.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(150), stored.Props.Uploaded)
+	// The owner and the members of the folder are not held to the limit of a link.
+	require.NoError(t, e.tryUpload(e.as(e.owner), e.uri("cloudreve://my/Shared/own.bin"), 100, nil))
+	require.NoError(t, e.tryUpload(e.as(e.editor), e.shared("/member.bin"), 100, nil))
+}
+
+func TestDropBoxAnswersNothingAboutAFile(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	_, at := e.uploadLink(&types.ShareProps{AllowUpload: true, HideContent: true})
+
+	for _, visitor := range e.visitors() {
+		// Listing the address of a file would answer with the file as the listed place.
+		_, _, err := e.as(visitor).List(e.ctx, at("/doc.txt"), fs.WithPageSize(10))
+		require.Error(t, err, visitor.Nick)
+		_, _, err = e.as(visitor).List(e.ctx, at("/no such file.txt"), fs.WithPageSize(10))
+		require.Error(t, err, visitor.Nick)
+	}
+}
+
+func TestLinkSetToHideItsFolderHidesItAtOnce(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	link, at := e.uploadLink(nil)
+
+	// The visitor's client sends a hint, so the server keeps the opened share for some minutes.
+	hinted := context.WithValue(e.ctx, ContextHintCtxKey{}, uuid.Must(uuid.NewV4()))
+	open := func() ([]string, error) {
+		f := e.as(e.outsider)
+		defer f.Recycle()
+		_, res, err := f.List(hinted, at(""), fs.WithPageSize(100))
+		if err != nil {
+			return nil, err
+		}
+		names := make([]string, 0, len(res.Files))
+		for _, file := range res.Files {
+			names = append(names, file.Name())
+		}
+		return names, nil
+	}
+
+	for i := 0; i < 2; i++ {
+		names, err := open()
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"sub", "doc.txt"}, names)
+	}
+
+	_, err := e.client.Share.UpdateOne(link).SetProps(&types.ShareProps{AllowUpload: true, HideContent: true}).Save(e.ctx)
+	require.NoError(t, err)
+	names, err := open()
+	require.NoError(t, err)
+	require.Empty(t, names)
+	f := e.as(e.outsider)
+	_, err = f.Get(hinted, at("/doc.txt"), WithRequiredCapabilities(NavigatorCapabilityDownloadFile))
+	require.ErrorContains(t, err, notSupported)
+
+	// And a deleted link is gone at once, too.
+	require.NoError(t, e.shareClient.Delete(e.ctx, link.ID))
+	_, err = open()
+	require.ErrorContains(t, err, noShare)
+}
+
+func TestTakenNameAsLongAsNamesMayBe(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	_, at := e.uploadLink(&types.ShareProps{AllowUpload: true})
+	long := "/" + strings.Repeat("a", 251) + ".txt"
+
+	require.NoError(t, e.tryUpload(e.as(e.owner), e.uri("cloudreve://my/Shared"+long), 1, nil))
+	require.NoError(t, e.tryUpload(e.as(e.outsider), at(long), 1, nil))
+	require.NoError(t, e.tryUpload(e.as(e.outsider), at(long), 1, nil))
+	names, err := e.names(e.as(e.owner), e.uri("cloudreve://my/Shared"))
+	require.NoError(t, err)
+	require.Len(t, names, 5)
 }

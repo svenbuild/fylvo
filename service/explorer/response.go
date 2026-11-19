@@ -343,6 +343,12 @@ type Share struct {
 
 	// Fylvo: the share is a shared folder for members, not a link
 	MemberOnly bool `json:"member_only,omitempty"`
+	// Fylvo: visitors of the link may add files; with HideContent they do not see the folder
+	AllowUpload bool `json:"allow_upload,omitempty"`
+	HideContent bool `json:"hide_content,omitempty"`
+	// Fylvo: upload limit of the link and what came in so far, in bytes. Only viewable by owner
+	UploadLimit int64 `json:"upload_limit,omitempty"`
+	Uploaded    int64 `json:"uploaded,omitempty"`
 
 	// Only viewable if explicitly unlocked by owner
 	SourceUri string `json:"source_uri,omitempty"`
@@ -372,6 +378,8 @@ func BuildShare(ctx context.Context, s *ent.Share, base *url.URL, hasher hashid.
 		SourceType:        util.ToPtr(t),
 		PasswordProtected: s.Password != "",
 		MemberOnly:        s.Props.IsMemberOnly(),
+		AllowUpload:       s.Props.AllowsUpload(),
+		HideContent:       s.Props.HidesContent(),
 	}
 
 	if unlocked {
@@ -389,6 +397,10 @@ func BuildShare(ctx context.Context, s *ent.Share, base *url.URL, hasher hashid.
 	if requester.ID == owner.ID {
 		res.IsPrivate = s.Password != ""
 		res.ShareView = s.Props != nil && s.Props.ShareView
+		if s.Props.AllowsUpload() {
+			res.UploadLimit = s.Props.UploadLimit
+			res.Uploaded = s.Props.Uploaded
+		}
 		if s.Props.IsMemberOnly() {
 			res.Members = lo.Map(s.Props.Members, func(member types.ShareMember, _ int) ShareMember {
 				return ShareMember{UserID: hashid.EncodeUserID(hasher, member.UserID), CanEdit: member.CanEdit}

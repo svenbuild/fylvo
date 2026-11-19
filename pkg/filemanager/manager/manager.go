@@ -128,6 +128,11 @@ type (
 		MemberOnly bool
 		// Fylvo: the members of a member-only share. Nil keeps the members of an existing share.
 		Members []types.ShareMember
+		// Fylvo: visitors of the link may add files; with HideContent they do not see the folder.
+		AllowUpload bool
+		HideContent bool
+		// Fylvo: the most visitors may upload over the link in total, in bytes. 0 is no limit.
+		UploadLimit int64
 	}
 
 	FullTextSearchResults struct {

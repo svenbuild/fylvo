@@ -12,6 +12,7 @@ import {
 import { useAppDispatch, useAppSelector } from "../../redux/hooks.ts";
 import { refreshFileList, updateUserCapacity } from "../../redux/thunks/filemanager.ts";
 import SessionManager, { UserSettings } from "../../session";
+import { isUploadOnly } from "../../util/permission.ts";
 import useActionDisplayOpt from "../FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { FileManagerIndex } from "../FileManager/FileManager.tsx";
 import UploadManager, { SelectType } from "./core";
@@ -48,6 +49,17 @@ const Uploader = () => {
 
   const displayOpt = useActionDisplayOpt([], ContextMenuTypes.empty, parent, FileManagerIndex.main);
   const exclidrawOpen = useAppSelector((state) => state.globalState.excalidrawViewer?.open);
+
+  // Fylvo: uploads into an "upload only" link never show up in the list, so confirm them with a snackbar.
+  const uploadOnly = useRef(false);
+  const uploadersRef = useRef<Base[]>([]);
+  const confirmed = useRef(new WeakSet<Base>());
+  useEffect(() => {
+    uploadOnly.current = isUploadOnly(parent);
+  }, [parent]);
+  useEffect(() => {
+    uploadersRef.current = uploaders;
+  }, [uploaders]);
 
   useEffect(() => {
     if (!parent || exclidrawOpen) {
@@ -108,6 +120,11 @@ const Uploader = () => {
       },
       onProactiveFileAdded: taskAdded(),
       onPoolEmpty: () => {
+        const done = uploadersRef.current.filter((u) => u.status === Status.finished && !confirmed.current.has(u));
+        done.forEach((u) => confirmed.current.add(u));
+        if (uploadOnly.current && done.length > 0) {
+          enqueueSnackbar(t("application:share.dropBoxUploaded", { count: done.length }), { variant: "success" });
+        }
         setTimeout(() => {
           dispatch(refreshFileList(0));
           dispatch(updateUserCapacity(0));

@@ -55,7 +55,9 @@ type (
 		disableView bool
 		// Fylvo: set on the root of a shared folder the current user may edit.
 		editable bool
-		mu       *sync.Mutex
+		// Fylvo: set on the root of a shared folder the current user may add files to.
+		addable bool
+		mu      *sync.Mutex
 	}
 )
 
@@ -379,6 +381,7 @@ func (f *File) Recycle() {
 	f.FileFolderSummary = nil
 	f.disableView = false
 	f.editable = false
+	f.addable = false
 	f.mu = nil
 
 	filePool.Put(f)

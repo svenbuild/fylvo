@@ -43,8 +43,21 @@ func (f *DBFS) Create(ctx context.Context, path *fs.URI, fileType types.FileType
 	}
 
 	if ancestor.Uri(false).IsSame(path, hashid.EncodeUserID(f.hasher, f.user.ID)) {
+		// Fylvo: who may only add (a visitor of a link that takes uploads) gets a new file next
+		// to one that is there, and simply continues in a folder that is there. A name that
+		// is taken is no error for them.
+		addOnly := !f.canWrite(ctx, ancestor) && f.canAdd(ctx, ancestor)
+		if addOnly && fileType == types.FileTypeFile {
+			free, err := f.freeName(ctx, navigator, path)
+			if err != nil {
+				return nil, err
+			}
+
+			return f.Create(ctx, free, fileType, opts...)
+		}
+
 		if ancestor.Type() == fileType {
-			if o.errOnConflict {
+			if o.errOnConflict && !addOnly {
 				return ancestor, fs.ErrFileExisted
 			}
 
@@ -57,7 +70,7 @@ func (f *DBFS) Create(ctx context.Context, path *fs.URI, fileType types.FileType
 			WithError(fmt.Errorf("object with the same name but different type %v already exist", ancestor.Type()))
 	}
 
-	if !f.canWrite(ctx, ancestor) {
+	if !f.canAdd(ctx, ancestor) {
 		return nil, fs.ErrOwnerOnly
 	}
 

@@ -36,6 +36,7 @@ import LinkEdit from "../../Icons/LinkEdit.tsx";
 import LockClosedOutlined from "../../Icons/LockClosedOutlined.tsx";
 import Open from "../../Icons/Open.tsx";
 import { ShareMembersBadge } from "../../FileManager/Dialogs/Share/ShareMembers.tsx";
+import ShareUploadBadge from "../../FileManager/Dialogs/Share/ShareUploadBadge.tsx";
 import { SummaryButton } from "../Tasks/TaskCard.tsx";
 
 export interface ShareCardProps {
@@ -220,6 +221,7 @@ const ShareCard = ({ share, onShareDeleted, onLoad, loading }: ShareCardProps) =
               }}
             >
               {share?.member_only && <ShareMembersBadge share={share} />}
+              {share?.allow_upload && <ShareUploadBadge share={share} />}
               {share?.created_at ? (
                 <>
                   <TimeBadge variant="caption" datetime={share.created_at} />

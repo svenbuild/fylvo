@@ -4,11 +4,14 @@ import {
   Collapse,
   createFilterOptions,
   FormControl,
+  FormControlLabel,
   List,
   ListItemButton,
   ListItemIcon,
   ListItemSecondaryAction,
   ListItemText,
+  Radio,
+  RadioGroup,
   Stack,
   styled,
   TextField,
@@ -23,6 +26,7 @@ import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { hoverSurface, selectedSurface } from "../../../../fylvoTheme.ts";
 import { FileResponse, FileType, ShareMember } from "../../../../api/explorer.ts";
+import { sizeToString } from "../../../../util";
 import { Code } from "../../../Common/Code.tsx";
 import { FilledTextField, SmallFormControlLabel } from "../../../Common/StyledComponents.tsx";
 import BookInformation from "../../../Icons/BookInformation.tsx";
@@ -32,6 +36,7 @@ import LinkOutlined from "../../../Icons/LinkOutlined.tsx";
 import People from "../../../Icons/People.tsx";
 import TableSettingsOutlined from "../../../Icons/TableSettings.tsx";
 import Timer from "../../../Icons/Timer.tsx";
+import Upload from "../../../Icons/Upload.tsx";
 import ShareMembers from "./ShareMembers.tsx";
 
 const Accordion = styled(MuiAccordion)(() => ({
@@ -101,9 +106,14 @@ export interface ShareSetting {
   // Fylvo: share with named people instead of a link. Fixed once the share exists.
   member_only?: boolean;
   members?: ShareMember[];
+  // Fylvo: visitors of a folder link may upload; hide_content makes it "upload only".
+  allow_upload?: boolean;
+  hide_content?: boolean;
+  upload_limit?: boolean;
 
   downloads_val: valueOption;
   expires_val: valueOption;
+  upload_limit_val: valueOption;
 }
 
 export interface ShareSettingProps {
@@ -138,6 +148,12 @@ export const downloadOptions: valueOption[] = [
   { value: 100, label: "100" },
 ];
 
+const GB = 1024 * 1024 * 1024;
+
+export const uploadLimitOption = (bytes: number): valueOption => ({ value: bytes, label: sizeToString(bytes) });
+
+export const uploadLimitOptions: valueOption[] = [1, 5, 20, 100].map((n) => uploadLimitOption(n * GB));
+
 const isNumeric = (num: any) =>
   (typeof num === "number" || (typeof num === "string" && num.trim() !== "")) && !isNaN(num as number);
 
@@ -152,13 +168,14 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
     setExpanded(isExpanded ? panel : undefined);
   };
 
-  const handleCheck = (prop: "is_private" | "share_view" | "show_readme" | "expires" | "downloads") => () => {
-    if (!setting[prop]) {
-      handleExpand(prop)(null, true);
-    }
+  const handleCheck =
+    (prop: "is_private" | "share_view" | "show_readme" | "expires" | "downloads" | "allow_upload") => () => {
+      if (!setting[prop]) {
+        handleExpand(prop)(null, true);
+      }
 
-    onSettingChange({ ...setting, [prop]: !setting[prop] });
-  };
+      onSettingChange({ ...setting, [prop]: !setting[prop] });
+    };
 
   return (
     <List
@@ -280,6 +297,92 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
             </AccordionDetails>
           </Accordion>
         </>
+      )}
+      {file?.type == FileType.folder && !setting.member_only && (
+        <Accordion expanded={expanded === "allow_upload"} onChange={handleExpand("allow_upload")}>
+          <AccordionSummary aria-controls="panel1a-content" id="panel1a-header">
+            <StyledListItemButton>
+              <ListItemIcon>
+                <Upload />
+              </ListItemIcon>
+              <ListItemText primary={t("application:modals.allowUpload")} />
+              <ListItemSecondaryAction>
+                <Checkbox checked={!!setting.allow_upload} onChange={handleCheck("allow_upload")} />
+              </ListItemSecondaryAction>
+            </StyledListItemButton>
+          </AccordionSummary>
+          <AccordionDetails>
+            {!setting.allow_upload && t("application:modals.allowUploadDes")}
+            {setting.allow_upload && (
+              <Stack spacing={1}>
+                <RadioGroup
+                  value={setting.hide_content ? "upload_only" : "view_upload"}
+                  onChange={(_e, mode) => onSettingChange({ ...setting, hide_content: mode == "upload_only" })}
+                >
+                  {["view_upload", "upload_only"].map((mode) => (
+                    <FormControlLabel
+                      key={mode}
+                      value={mode}
+                      control={<Radio size="small" sx={{ py: 0.5 }} />}
+                      sx={{ alignItems: "flex-start", "& .MuiRadio-root": { mt: -0.25 } }}
+                      label={
+                        <>
+                          <Typography variant="body2" color="text.primary">
+                            {t(`application:modals.${mode == "view_upload" ? "viewAndUpload" : "uploadOnly"}`)}
+                          </Typography>
+                          <Typography variant="caption">
+                            {t(`application:modals.${mode == "view_upload" ? "viewAndUploadDes" : "uploadOnlyDes"}`)}
+                          </Typography>
+                        </>
+                      }
+                    />
+                  ))}
+                </RadioGroup>
+                <Stack direction="row" sx={{ alignItems: "center", flexWrap: "wrap" }}>
+                  <SmallFormControlLabel
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={!!setting.upload_limit}
+                        onChange={() => onSettingChange({ ...setting, upload_limit: !setting.upload_limit })}
+                      />
+                    }
+                    label={t("application:modals.uploadLimit")}
+                  />
+                  <Autocomplete
+                    value={setting.upload_limit_val}
+                    disabled={!setting.upload_limit}
+                    filterOptions={(options, params) => {
+                      const filtered = filter(options, params);
+                      const { inputValue } = params;
+                      const bytes = Math.round(parseFloat(inputValue) * GB);
+                      if (isNumeric(inputValue) && bytes > 0 && !filtered.find((v) => v.value == bytes)) {
+                        filtered.push(uploadLimitOption(bytes));
+                      }
+                      return filtered;
+                    }}
+                    onChange={(_event, newValue) => {
+                      // A typed value is a number of GB. Anything else ("500 MB") is not guessed at.
+                      const typed = typeof newValue === "string" && isNumeric(newValue) ? parseFloat(newValue) * GB : 0;
+                      const bytes = typeof newValue === "string" ? Math.round(typed) : newValue?.value ?? 0;
+                      if (bytes > 0) {
+                        onSettingChange({ ...setting, upload_limit_val: uploadLimitOption(bytes) });
+                      }
+                    }}
+                    freeSolo
+                    autoSelect
+                    getOptionLabel={(option: string | valueOption) =>
+                      typeof option === "string" ? option : option.label
+                    }
+                    disableClearable
+                    options={uploadLimitOptions}
+                    renderInput={(params) => <TextField sx={{ width: 110 }} {...params} variant={"standard"} />}
+                  />
+                </Stack>
+              </Stack>
+            )}
+          </AccordionDetails>
+        </Accordion>
       )}
       <Accordion expanded={expanded === "expires"} onChange={handleExpand("expires")}>
         <AccordionSummary aria-controls="panel1a-content" id="panel1a-header">

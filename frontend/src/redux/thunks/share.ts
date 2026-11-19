@@ -1,7 +1,7 @@
 import i18next from "i18next";
 import { closeSnackbar, enqueueSnackbar, SnackbarKey } from "notistack";
 import { getFileInfo, getFileList, getShareInfo, sendCreateShare, sendUpdateShare } from "../../api/api.ts";
-import { FileResponse, Share, ShareCreateService } from "../../api/explorer.ts";
+import { FileResponse, FileType, Share, ShareCreateService } from "../../api/explorer.ts";
 import { DefaultCloseAction, OpenReadMeAction } from "../../component/Common/Snackbar/snackbar.tsx";
 import { ShareSetting } from "../../component/FileManager/Dialogs/Share/ShareSetting.tsx";
 import { getPaginationState } from "../../component/FileManager/Pagination/PaginationFooter.tsx";
@@ -37,6 +37,15 @@ export function createOrUpdateShareLink(
             password: setting.password,
             downloads: setting.downloads && setting.downloads_val.value > 0 ? setting.downloads_val.value : undefined,
           }),
+      // Fylvo: uploads exist only for links of folders. allow_upload is always sent so an edit can turn it off.
+      ...(!setting.member_only &&
+        file.type == FileType.folder && {
+          allow_upload: !!setting.allow_upload,
+          ...(setting.allow_upload && {
+            hide_content: !!setting.hide_content,
+            upload_limit: setting.upload_limit ? setting.upload_limit_val.value : undefined,
+          }),
+        }),
     };
 
     const res = await dispatch(existed ? sendUpdateShare(req, existed) : sendCreateShare(req));

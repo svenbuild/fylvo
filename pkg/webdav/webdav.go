@@ -57,6 +57,12 @@ func stripPrefix(p string, u *ent.User) (string, *fs.URI, int, error) {
 	return "", nil, http.StatusNotFound, errPrefixMismatch
 }
 
+// can reports whether the place a file was reached through lets the user do something
+// with it. Rename stands for changing what is there, upload alone only adds.
+func can(file fs.File, capability dbfs.NavigatorCapability) bool {
+	return file.Capabilities() != nil && file.Capabilities().Enabled(int(capability))
+}
+
 func ServeHTTP(c *gin.Context) {
 	dep := dependency.FromContext(c)
 	u := inventory.UserFromContext(c)
@@ -301,11 +307,8 @@ func handleOptions(c *gin.Context, user *ent.User, fm manager.FileManager) (stat
 			allow = allow[:1]
 			// Fylvo: what the user may do here follows from the capabilities, the same ones
 			// the requests are checked against. An editor of a shared folder is not its owner.
-			can := func(capability dbfs.NavigatorCapability) bool {
-				return target.Capabilities() != nil && target.Capabilities().Enabled(int(capability))
-			}
-			read, update, del, create := true, can(dbfs.NavigatorCapabilityUploadFile),
-				can(dbfs.NavigatorCapabilitySoftDelete), can(dbfs.NavigatorCapabilityCreateFile)
+			read, update, del := can(target, dbfs.NavigatorCapabilityDownloadFile), can(target, dbfs.NavigatorCapabilityRenameFile),
+				can(target, dbfs.NavigatorCapabilitySoftDelete)
 			if del {
 				allow = append(allow, "DELETE", "MOVE")
 			}
@@ -315,10 +318,10 @@ func handleOptions(c *gin.Context, user *ent.User, fm manager.FileManager) (stat
 					allow = append(allow, "GET", "HEAD", "POST")
 				}
 			}
-			if update || create {
+			if update {
 				allow = append(allow, "LOCK", "UNLOCK")
 			}
-			if can(dbfs.NavigatorCapabilityUpdateMetadata) {
+			if can(target, dbfs.NavigatorCapabilityUpdateMetadata) {
 				allow = append(allow, "PROPPATCH")
 			}
 			if update && target.Type() == types.FileTypeFile {
@@ -346,6 +349,11 @@ func handleGetHeadPost(c *gin.Context, user *ent.User, fm manager.FileManager) (
 	target, _, err := fm.SharedAddressTranslation(c, reqPath)
 	if err != nil {
 		return purposeStatusCodeFromError(err), err
+	}
+
+	// Fylvo: the path can lead into a share that does not let its visitors read.
+	if !can(target, dbfs.NavigatorCapabilityDownloadFile) {
+		return http.StatusForbidden, fs.ErrNotSupportedAction
 	}
 
 	if target.Type() != types.FileTypeFile {
@@ -427,8 +435,7 @@ func handleLock(c *gin.Context, user *ent.User, fm manager.FileManager) (retStat
 		if err != nil && !ent.IsNotFound(err) {
 			return purposeStatusCodeFromError(err), err
 		}
-		if locked == nil || locked.Capabilities() == nil ||
-			!locked.Capabilities().Enabled(int(dbfs.NavigatorCapabilityUploadFile)) {
+		if locked == nil || !can(locked, dbfs.NavigatorCapabilityRenameFile) {
 			return http.StatusForbidden, fs.ErrOwnerOnly
 		}
 

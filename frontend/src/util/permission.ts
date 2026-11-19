@@ -2,14 +2,34 @@ import { FileResponse, NavigatorCapability } from "../api/explorer.ts";
 import Boolset from "./boolset.ts";
 import CrUri, { Filesystem } from "./uri.ts";
 
-// Fylvo: the one place that decides whether the current user may change a file or create files
-// inside a folder. Outside shares ownership decides. Inside a share the capability set sent by the
-// backend decides: only members with the edit right get the write bits, link shares and readers never.
-export function canModifyFile(file: FileResponse): boolean {
+// Fylvo: the two places that decide what the current user may do with files. Outside shares ownership
+// decides. Inside a share the capability set sent by the backend decides:
+// - upload_file: add new files and folders (editors of member shares and visitors of upload links).
+// - rename_file: change existing files (only editors of member shares). Upload visitors never get it.
+function shareCapability(file: FileResponse, capability: number): boolean | undefined {
   if (new CrUri(file.path).fs() == Filesystem.share) {
-    return new Boolset(file.capability).enabled(NavigatorCapability.upload_file);
+    return new Boolset(file.capability).enabled(capability);
   }
-  return !!file.owned;
+  return undefined;
+}
+
+// canAddTo: may create folders and upload files and folders into this folder.
+export function canAddTo(folder: FileResponse): boolean {
+  return shareCapability(folder, NavigatorCapability.upload_file) ?? !!folder.owned;
+}
+
+// canModifyFile: may rename, delete, move, copy, or edit the content of this file.
+export function canModifyFile(file: FileResponse): boolean {
+  return shareCapability(file, NavigatorCapability.rename_file) ?? !!file.owned;
+}
+
+// isUploadOnly: folder of an "upload only" link. Visitors may add files but never see or download its content.
+export function isUploadOnly(folder?: FileResponse): boolean {
+  return (
+    !!folder &&
+    shareCapability(folder, NavigatorCapability.upload_file) === true &&
+    !new Boolset(folder.capability).enabled(NavigatorCapability.download_file)
+  );
 }
 
 // canCopyMoveTo checks if the files can be copied or moved to the destination.

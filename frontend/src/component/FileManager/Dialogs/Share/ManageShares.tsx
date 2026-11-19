@@ -28,6 +28,7 @@ import MoreVertical from "../../../Icons/MoreVertical.tsx";
 import { SquareMenuItem } from "../../ContextMenu/ContextMenu.tsx";
 import { ShareExpires, ShareStatistics } from "../../TopBar/ShareInfoPopover.tsx";
 import { ShareMembersBadge } from "./ShareMembers.tsx";
+import ShareUploadBadge from "./ShareUploadBadge.tsx";
 
 const ManageShares = () => {
   const { t } = useTranslation();
@@ -217,6 +218,11 @@ const ManageShares = () => {
                         </TableCell>
                         <TableCell>
                           <ShareStatistics shareInfo={e} />
+                          {e.allow_upload && (
+                            <Box>
+                              <ShareUploadBadge share={e} />
+                            </Box>
+                          )}
                         </TableCell>
                         <NoWrapTableCell>
                           {e.member_only ? (

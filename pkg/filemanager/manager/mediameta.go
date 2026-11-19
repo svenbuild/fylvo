@@ -185,7 +185,15 @@ func (m *manager) mediaMetaForNewEntity(ctx context.Context, session *fs.UploadS
 			return
 		}
 
-		mediaMetaTask, err := NewMediaMetaTask(ctx, session.Props.Uri, session.EntityID, m.user)
+		// Fylvo: the details are saved as the owner of the file, under the owner's own address.
+		// The uploader can be a member of a shared folder or a visitor of an upload link, and
+		// neither may change metadata.
+		uri, owner := session.Props.Uri, m.user
+		if file, err := m.fs.Get(ctx, session.Props.Uri); err == nil && file.Owner() != nil && file.Owner().ID != m.user.ID {
+			uri, owner = file.Uri(true), file.Owner()
+		}
+
+		mediaMetaTask, err := NewMediaMetaTask(ctx, uri, session.EntityID, owner)
 		if err != nil {
 			m.l.Warning("Failed to create media meta task: %s", err)
 			return

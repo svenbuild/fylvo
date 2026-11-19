@@ -7,7 +7,7 @@ import { ExpandedViewerSetting } from "../../../redux/thunks/viewer.ts";
 import SessionManager from "../../../session";
 import { fileExtension } from "../../../util";
 import Boolset from "../../../util/boolset.ts";
-import { canModifyFile } from "../../../util/permission.ts";
+import { canAddTo, canModifyFile } from "../../../util/permission.ts";
 import { FileManagerIndex } from "../FileManager.tsx";
 
 const supportedArchiveTypes = ["zip", "gz", "xz", "tar", "rar", "7z", "bz2"];
@@ -116,9 +116,12 @@ export const getActionOpt = (
     }
 
     const parentCap = new Boolset(parent.capability);
-    display.showCreateFolder = parentCap.enabled(NavigatorCapability.create_file) && canModifyFile(parent);
-    display.showCreateFile = display.showCreateFolder && fmIndex == FileManagerIndex.main;
-    display.showUpload = display.showCreateFile;
+    display.showCreateFolder = parentCap.enabled(NavigatorCapability.create_file) && canAddTo(parent);
+    display.showUpload = display.showCreateFolder && fmIndex == FileManagerIndex.main;
+    // Fylvo: a new empty file or template is only useful if it can be edited afterwards,
+    // so visitors of an upload link get folders and uploads only. The same holds for remote downloads.
+    display.showCreateFile = display.showUpload && canModifyFile(parent);
+    display.showRemoteDownload = display.showRemoteDownload && canModifyFile(parent);
     if (display.showCreateFile) {
       const allViewers = Object.entries(ViewersByID);
       for (let i = 0; i < allViewers.length; i++) {

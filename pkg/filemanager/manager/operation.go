@@ -353,6 +353,19 @@ func (l *manager) CreateOrUpdateShare(ctx context.Context, path *fs.URI, args *C
 		// use, every opened file counts as a download.
 		password = ""
 		remainDownloads = 0
+	} else if args.AllowUpload {
+		// Fylvo: a link whose visitors may add files to the folder.
+		if file.Type() != types.FileTypeFolder {
+			return nil, serializer.NewError(serializer.CodeParamErr, "only a link to a folder can take uploads", nil)
+		}
+
+		if args.UploadLimit < 0 {
+			return nil, serializer.NewError(serializer.CodeParamErr, "invalid upload limit", nil)
+		}
+
+		props.AllowUpload = true
+		props.HideContent = args.HideContent
+		props.UploadLimit = args.UploadLimit
 	}
 
 	share, err := shareClient.Upsert(ctx, &inventory.CreateShareParams{

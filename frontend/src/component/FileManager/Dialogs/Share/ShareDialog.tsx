@@ -17,11 +17,18 @@ import DraggableDialog from "../../../Dialogs/DraggableDialog.tsx";
 import CopyOutlined from "../../../Icons/CopyOutlined.tsx";
 import Share from "../../../Icons/Share.tsx";
 import { FileManagerIndex } from "../../FileManager.tsx";
-import ShareSettingContent, { downloadOptions, expireOptions, ShareSetting } from "./ShareSetting.tsx";
+import ShareSettingContent, {
+  downloadOptions,
+  expireOptions,
+  ShareSetting,
+  uploadLimitOption,
+  uploadLimitOptions,
+} from "./ShareSetting.tsx";
 
 const initialSetting: ShareSetting = {
   expires_val: expireOptions[2],
   downloads_val: downloadOptions[0],
+  upload_limit_val: uploadLimitOptions[1],
 };
 
 interface ShareLinkPassword {
@@ -39,9 +46,13 @@ const shareToSetting = (share: ShareModel, t: TFunction): ShareSetting => {
     member_only: share.member_only,
     members: share.members ?? [],
     downloads: share.remain_downloads != undefined && share.remain_downloads > 0,
+    allow_upload: share.allow_upload,
+    hide_content: share.hide_content,
+    upload_limit: !!share.upload_limit,
 
     expires_val: expireOptions[2],
     downloads_val: downloadOptions[0],
+    upload_limit_val: share.upload_limit ? uploadLimitOption(share.upload_limit) : uploadLimitOptions[1],
   };
 
   if (res.downloads) {

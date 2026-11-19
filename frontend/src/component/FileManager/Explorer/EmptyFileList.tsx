@@ -2,6 +2,7 @@ import {
   Alert,
   AlertTitle,
   Box,
+  Button,
   ListItemIcon,
   ListItemText,
   MenuList,
@@ -14,9 +15,14 @@ import { hoverSurface, selectedSurface } from "../../../fylvoTheme.ts";
 import React, { memo, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { NavigatorCapability } from "../../../api/explorer.ts";
-import { useAppSelector } from "../../../redux/hooks.ts";
+import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { isMacbook } from "../../../redux/thunks/file.ts";
+import { uploadClicked } from "../../../redux/thunks/filemanager.ts";
 import Boolset from "../../../util/boolset.ts";
+import { isUploadOnly } from "../../../util/permission.ts";
+import { SelectType } from "../../Uploader/core";
+import Upload from "../../Icons/Upload.tsx";
+import { FileManagerIndex } from "../FileManager.tsx";
 import { Filesystem } from "../../../util/uri.ts";
 import Nothing from "../../Common/Nothing.tsx";
 import { KeyIndicator } from "../../Frame/NavBar/SearchBar.tsx";
@@ -177,6 +183,11 @@ const EmptyFileList = memo(
     const recursion_limit_reached = useAppSelector((state) => state.fileManager[fmIndex].list?.recursion_limit_reached);
     const capability = useAppSelector((state) => state.fileManager[fmIndex].list?.props.capability);
 
+    const parent = useAppSelector((state) => state.fileManager[fmIndex].list?.parent);
+    const dispatch = useAppDispatch();
+    // Fylvo: the list of an "upload only" link is always empty for visitors, explain why.
+    const uploadOnly = fmIndex == FileManagerIndex.main && !search_params && isUploadOnly(parent);
+
     const canCreate = useMemo(() => {
       const bs = new Boolset(capability);
       return bs.enabled(NavigatorCapability.create_file);
@@ -202,7 +213,20 @@ const EmptyFileList = memo(
             {recursion_limit_reached && <SearchLimitReached />}
           </>
         )}
-        {currentFs != Filesystem.shared_with_me && (
+        {uploadOnly && (
+          <Stack spacing={1.5} sx={{ alignItems: "center", maxWidth: 400 }}>
+            <Nothing size={0.36} top={0} primary={t("share.dropBoxTitle")} secondary={t("share.dropBoxDes")} />
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<Upload />}
+              onClick={() => dispatch(uploadClicked(fmIndex, SelectType.File))}
+            >
+              {t("fileManager.uploadFiles")}
+            </Button>
+          </Stack>
+        )}
+        {currentFs != Filesystem.shared_with_me && !uploadOnly && (
           <>
             <Box
               sx={{

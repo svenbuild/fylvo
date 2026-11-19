@@ -31,6 +31,11 @@ type (
 		MemberOnly bool `json:"member_only"`
 		// Fylvo: the members. Leaving the field out keeps the members of an existing share.
 		Members []ShareMemberService `json:"members" binding:"omitempty,dive"`
+		// Fylvo: visitors of the link may add files; with HideContent they do not see the folder.
+		AllowUpload bool `json:"allow_upload"`
+		HideContent bool `json:"hide_content"`
+		// Fylvo: the most visitors may upload over the link in total, in bytes. 0 is no limit.
+		UploadLimit int64 `json:"upload_limit" binding:"min=0"`
 	}
 	ShareCreateParamCtx struct{}
 
@@ -107,6 +112,9 @@ func (service *ShareCreateService) Upsert(c *gin.Context, existed int) (string, 
 	share, err := m.CreateOrUpdateShare(c, uri, &manager.CreateShareArgs{
 		MemberOnly:      service.MemberOnly,
 		Members:         members,
+		AllowUpload:     service.AllowUpload,
+		HideContent:     service.HideContent,
+		UploadLimit:     service.UploadLimit,
 		IsPrivate:       service.IsPrivate,
 		Password:        service.Password,
 		RemainDownloads: service.RemainDownloads,

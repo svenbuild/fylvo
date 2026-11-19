@@ -3,6 +3,8 @@ package inventory
 import (
 	"context"
 	"fmt"
+	"math"
+	"sync"
 	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
@@ -29,6 +31,8 @@ var (
 	ErrShareLinkExpired  = fmt.Errorf("share link expired")
 	ErrOwnerInactive     = fmt.Errorf("owner is inactive")
 	ErrSourceFileInvalid = fmt.Errorf("source file is deleted")
+	// Fylvo: no more room under the upload limit of a share link.
+	ErrUploadLimitReached = fmt.Errorf("upload limit of the share link reached")
 )
 
 type (
@@ -58,6 +62,9 @@ type (
 		List(ctx context.Context, args *ListShareArgs) (*ListShareResult, error)
 		// CountByTimeRange counts the number of shares created in the given time range.
 		CountByTimeRange(ctx context.Context, start, end *time.Time) (int, error)
+		// ReserveUpload counts an upload of the given size against the share link it comes
+		// in through, and refuses it if the upload limit of the link would be exceeded.
+		ReserveUpload(ctx context.Context, shareID int, size int64) error
 		// ListForMember returns the valid member-only shares that list the given user.
 		ListForMember(ctx context.Context, uid int) ([]*ent.Share, error)
 	}
@@ -119,6 +126,14 @@ func (c *shareClient) CountByTimeRange(ctx context.Context, start, end *time.Tim
 
 func (c *shareClient) Upsert(ctx context.Context, params *CreateShareParams) (*ent.Share, error) {
 	if params.Existed != nil {
+		sharePropsMu.Lock()
+		defer sharePropsMu.Unlock()
+
+		// Fylvo: what came in over the link stays counted, as it is counted right now.
+		if current, err := c.client.Share.Get(ctx, params.Existed.ID); err == nil && current.Props != nil && params.Props != nil {
+			params.Props.Uploaded = current.Props.Uploaded
+		}
+
 		createQuery := c.client.Share.
 			UpdateOne(params.Existed)
 		if params.RemainDownloads > 0 {
@@ -248,6 +263,34 @@ func (c *shareClient) ListForMember(ctx context.Context, uid int) ([]*ent.Share,
 	return lo.Filter(shares, func(s *ent.Share, _ int) bool {
 		return s.Props.Member(uid) != nil && IsValidShare(s) == nil
 	}), nil
+}
+
+// sharePropsMu makes changes to the props of a share one at a time. Counting an upload
+// reads and rewrites all of them; without the lock it could write back settings the owner
+// has just changed, for example switch uploads on again.
+var sharePropsMu sync.Mutex
+
+func (c *shareClient) ReserveUpload(ctx context.Context, shareID int, size int64) error {
+	sharePropsMu.Lock()
+	defer sharePropsMu.Unlock()
+
+	s, err := c.client.Share.Get(ctx, shareID)
+	if err != nil {
+		return fmt.Errorf("failed to query share %d: %w", shareID, err)
+	}
+
+	if s.Props == nil {
+		return nil
+	}
+
+	// Written so that no sum can overflow, whatever size a client declares.
+	props := *s.Props
+	if size < 0 || (props.UploadLimit > 0 && size > props.UploadLimit-props.Uploaded) {
+		return ErrUploadLimitReached
+	}
+
+	props.Uploaded += min(size, math.MaxInt64-props.Uploaded)
+	return c.client.Share.UpdateOneID(shareID).SetProps(&props).Exec(ctx)
 }
 
 func IsValidShare(share *ent.Share) error {
