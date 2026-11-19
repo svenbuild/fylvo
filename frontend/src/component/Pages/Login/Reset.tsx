@@ -65,9 +65,9 @@ const Reset = () => {
 
   return (
     <Box>
-      <PageTitle title={t("login.repeatPassword")} />
+      <PageTitle title={t("login.resetPassword")} />
       <Box sx={{ overflow: "hidden" }}>
-        <Typography variant={"h6"}>{t("login.repeatPassword")}</Typography>
+        <Typography variant={"h6"}>{t("login.resetPassword")}</Typography>
         <Box component={"form"} sx={{ mt: 1 }} ref={formRef}>
           <Box>
             <FormControl variant="standard" margin="normal" required fullWidth>

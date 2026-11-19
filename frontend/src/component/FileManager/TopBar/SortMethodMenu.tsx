@@ -3,7 +3,7 @@ import { useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { changeSortOption } from "../../../redux/thunks/filemanager.ts";
-import { selectedSurface } from "../../../fylvoTheme.ts";
+import { raisedSelectedSurface } from "../../../fylvoTheme.ts";
 import Checkmark from "../../Icons/Checkmark.tsx";
 
 import { FmIndexContext } from "../FmIndexContext.tsx";
@@ -109,7 +109,7 @@ const SortMethodMenu = ({ onClose, ...rest }: MenuProps) => {
           key={option.order_by + option.order_direction}
           onClick={() => selectOption(option)}
           sx={{
-            bgcolor: option.selected ? selectedSurface : undefined,
+            bgcolor: option.selected ? raisedSelectedSurface : undefined,
             "&.Mui-focusVisible": { outline: "1px solid", outlineColor: "primary.main", outlineOffset: -1 },
             "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
           }}

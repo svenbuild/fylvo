@@ -18,7 +18,6 @@ import { LoadingButton } from "@mui/lab";
 import { useCallback } from "react";
 import Draggable from "react-draggable";
 import { useTranslation } from "react-i18next";
-import { hoverSurface, selectedSurface } from "../../fylvoTheme.ts";
 import Dismiss from "../Icons/Dismiss.tsx";
 
 function PaperComponent(props: PaperProps) {
@@ -54,12 +53,6 @@ const CompactDialog = styled(Dialog)(({ theme }) => ({
   "& .MuiDialogContent-root .MuiFilledInput-root.Mui-focused": {
     outline: `1px solid ${theme.palette.primary.main}`,
     outlineOffset: -1,
-  },
-  "& .MuiDialogContent-root .MuiListItemButton-root:hover, & .MuiDialogContent-root .MuiTableRow-hover:hover": {
-    backgroundColor: theme.palette.mode === "dark" ? selectedSurface(theme) : hoverSurface(theme),
-  },
-  "& .MuiDialogContent-root .MuiListItemButton-root.Mui-selected, & .MuiDialogContent-root .MuiTableRow-root.Mui-selected": {
-    backgroundColor: selectedSurface(theme),
   },
   "& .MuiButtonBase-root.Mui-focusVisible": {
     outline: `1px solid ${theme.palette.primary.main}`,

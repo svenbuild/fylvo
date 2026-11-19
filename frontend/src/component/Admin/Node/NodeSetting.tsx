@@ -94,7 +94,7 @@ const NodeSetting = () => {
               }}
             >
               <Add />
-              <Typography variant="h6">{t("node.addNewNode")}</Typography>
+              <Typography variant="subtitle2">{t("node.addNewNode")}</Typography>
             </BorderedCardClickable>
           </Grid>
           {!loading && nodes.map((n) => <NodeCard key={n.id} node={n} onRefresh={fetchNodes} />)}

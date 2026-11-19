@@ -7,7 +7,6 @@ import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { hoverSurface } from "../../../fylvoTheme.ts";
 import { FileType } from "../../../api/explorer.ts";
 import { navigateToPath } from "../../../redux/thunks/filemanager.ts";
 import { sizeToString } from "../../../util";
@@ -362,7 +361,6 @@ export default function UploadTask({
                 px: "10px",
                 py: 0,
                 gap: "8px",
-                "&:hover": { bgcolor: hoverSurface },
                 "& .MuiIconButton-root": { p: "4px" },
                 "@media (max-width: 599.95px), (pointer: coarse)": {
                   minHeight: 43,

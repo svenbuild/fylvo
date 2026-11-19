@@ -20,6 +20,9 @@ const floating = (theme: Theme) => ({
   backgroundImage: "none",
   border: hairline(theme),
   boxShadow: isDark(theme) ? "0 12px 32px rgba(0, 0, 0, 0.6)" : "0 12px 32px rgba(0, 0, 0, 0.12)",
+  // Rows on a raised surface go one step further up, otherwise hover has the color of the surface.
+  "& .MuiListItemButton-root:hover, & .MuiTableRow-hover:hover": { backgroundColor: raisedHoverSurface(theme) },
+  "& .MuiListItemButton-root, & .MuiTableRow-root": neutralSelected(theme, raisedSelectedSurface(theme)),
 });
 
 const fylvoOptions: ThemeOptions = {
@@ -111,12 +114,14 @@ const fylvoOptions: ThemeOptions = {
     MuiMenuItem: {
       styleOverrides: {
         root: ({ theme }) => ({
-          ...neutralSelected(theme),
+          // Menus are raised, so their items use the raised hover and selected steps.
+          "&:hover": { backgroundColor: raisedHoverSurface(theme) },
+          ...neutralSelected(theme, raisedSelectedSurface(theme)),
           // Same focus mark in every menu: neutral fill and a thin ring inside the item.
           "&.Mui-focusVisible": {
             outline: `1px solid ${theme.palette.primary.main}`,
             outlineOffset: -1,
-            backgroundColor: selectedSurface(theme),
+            backgroundColor: raisedHoverSurface(theme),
           },
           borderRadius: "6px",
           margin: "0px 4px",
@@ -207,6 +212,8 @@ const fylvoOptions: ThemeOptions = {
         root: ({ theme }) => ({
           borderRadius: RADIUS,
           "& .MuiOutlinedInput-notchedOutline": { borderColor: theme.palette.divider },
+          // A disabled field must not stand out more than an active one.
+          "&.Mui-disabled .MuiOutlinedInput-notchedOutline": { borderColor: theme.palette.divider },
           [TOUCH]: { minHeight: 40 },
         }),
         // 32 px high on desktop.
@@ -319,15 +326,20 @@ const fylvoOptions: ThemeOptions = {
 };
 
 // Selected rows and items use a neutral tint, the accent color stays rare.
-const neutralSelected = (theme: Theme) => ({
+const neutralSelected = (theme: Theme, color = selectedSurface(theme)) => ({
   "&.Mui-selected, &.Mui-selected:hover, &.Mui-selected.Mui-focusVisible": {
-    backgroundColor: selectedSurface(theme),
+    backgroundColor: color,
   },
 });
 export const selectedSurface = (theme: Theme) =>
   isDark(theme) ? "#1e1e22" : alpha(theme.palette.common.black, 0.07);
 export const hoverSurface = (theme: Theme) =>
   isDark(theme) ? "#141416" : alpha(theme.palette.common.black, 0.04);
+
+// Hover and selected on a raised surface (menu, popover, dialog). In dark mode the normal hover
+// has the color of the raised surface itself, so these go one step further up.
+export const raisedHoverSurface = (theme: Theme) => (isDark(theme) ? "#1e1e22" : hoverSurface(theme));
+export const raisedSelectedSurface = (theme: Theme) => (isDark(theme) ? "#26262b" : selectedSurface(theme));
 
 // The frame around the page (sidebar and top bar).
 export const shellSurface = (theme: Theme) => (isDark(theme) ? "#000000" : theme.palette.grey[100]);

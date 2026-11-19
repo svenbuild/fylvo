@@ -7,3 +7,11 @@
 .FIE_root {
   border-radius: 0 !important;
 }
+/* Fylvo: the tool carousel fades its arrows into a fixed white. Fade into the editor frame color
+   instead (set as --fylvo-editor-frame on the wrapper). The class names are the library's own. */
+.FIE_root .sc-1nr0bka-3 {
+  background: linear-gradient(90deg, var(--fylvo-editor-frame) 50%, transparent) !important;
+}
+.FIE_root .sc-1nr0bka-4 {
+  background: linear-gradient(270deg, var(--fylvo-editor-frame) 50%, transparent) !important;
+}

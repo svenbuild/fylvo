@@ -223,7 +223,8 @@ const AvatarCropperDialog = ({ open, onClose, onAvatarUpdated, file }: AvatarCro
         maxWidth: "xs",
       }}
     >
-      <DialogContent>
+      {/* Fylvo: the crop frame's focus mark uses the accent instead of the library's own blue. */}
+      <DialogContent sx={{ "--rc-focus-color": (theme) => theme.palette.primary.main }}>
         {src && (
           <ReactCrop
             circularCrop

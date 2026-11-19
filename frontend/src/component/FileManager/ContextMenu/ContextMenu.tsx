@@ -1,7 +1,6 @@
 import { Box, Divider, ListItemIcon, ListItemText, Menu, MenuItem, styled, Typography, useTheme } from "@mui/material";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { hoverSurface, selectedSurface } from "../../../fylvoTheme.ts";
 import { closeContextMenu } from "../../../redux/fileManagerSlice.ts";
 import { CreateNewDialogType } from "../../../redux/globalStateSlice.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
@@ -72,11 +71,6 @@ export const SquareMenuItem = styled(MenuItem)<{ hoverColor?: string }>(({ theme
   },
   "& .MuiListItemText-root": { margin: 0 },
   "& .MuiTypography-caption": { color: theme.palette.text.secondary },
-  "&:hover": {
-    backgroundColor: theme.palette.mode === "dark" ? selectedSurface(theme) : hoverSurface(theme),
-  },
-  "&.Mui-selected, &.Mui-selected:hover, &.Mui-focusVisible": { backgroundColor: selectedSurface(theme) },
-  "&.Mui-focusVisible": { outline: `1px solid ${theme.palette.primary.main}`, outlineOffset: -1 },
   "&:hover .MuiListItemIcon-root": { color: hoverColor ?? theme.palette.text.primary },
   "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
 }));

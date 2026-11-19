@@ -12,7 +12,8 @@
 // --actions is a JSON list of steps that run after the page has loaded, for example
 //   '[{"rightClick":"::-p-text(Design.png)"},{"wait":400},{"click":"::-p-text(Teilen)"}]'
 // Steps: click, rightClick, doubleClick, hover (selector), type (text), press (key),
-//        combo (keys held together, e.g. ["Control","s"]), wait (ms).
+//        combo (keys held together, e.g. ["Control","s"]), wait (ms),
+//        upload (selector that opens a file chooser) together with file (local path).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -51,10 +52,10 @@ try {
   await page.setExtraHTTPHeaders({ "Accept-Language": lang });
   await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: opt("scheme", "dark") }]);
 
-  // On the dev setup, show the theme from the repo even when the local database holds an older one.
-  // With FYLVO_APP set (a real instance), show what that instance really serves.
+  // On a local dev setup (any port), show the theme from the repo even when the local database
+  // holds an older one. On a real instance, show what that instance really serves.
   const themes = JSON.stringify(JSON.parse(fs.readFileSync(themeFile, "utf8")));
-  const useRepoTheme = !process.env.FYLVO_APP;
+  const useRepoTheme = ["127.0.0.1", "localhost"].includes(new URL(APP).hostname);
   await page.setRequestInterception(useRepoTheme);
   if (useRepoTheme) page.on("request", async (req) => {
     if (!req.url().includes("/api/v4/site/config/basic")) return req.continue();
@@ -98,6 +99,13 @@ try {
     else if (step.rightClick) await (await page.waitForSelector(step.rightClick, { timeout: 8000 })).click({ button: "right" });
     else if (step.doubleClick) await (await page.waitForSelector(step.doubleClick, { timeout: 8000 })).click({ count: 2 });
     else if (step.hover) await (await page.waitForSelector(step.hover, { timeout: 8000 })).hover();
+    else if (step.upload) {
+      const [chooser] = await Promise.all([
+        page.waitForFileChooser({ timeout: 8000 }),
+        (await page.waitForSelector(step.upload, { timeout: 8000 })).click(),
+      ]);
+      await chooser.accept([step.file]);
+    }
     else if (step.type) await page.keyboard.type(step.type);
     else if (step.press) await page.keyboard.press(step.press);
     else if (step.combo) {

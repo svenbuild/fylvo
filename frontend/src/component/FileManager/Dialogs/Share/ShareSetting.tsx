@@ -24,7 +24,7 @@ import MuiAccordionDetails from "@mui/material/AccordionDetails";
 import MuiAccordionSummary from "@mui/material/AccordionSummary";
 import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { hoverSurface, selectedSurface } from "../../../../fylvoTheme.ts";
+import { selectedSurface } from "../../../../fylvoTheme.ts";
 import { FileResponse, FileType, ShareMember } from "../../../../api/explorer.ts";
 import { sizeToString } from "../../../../util";
 import { Code } from "../../../Common/Code.tsx";
@@ -85,15 +85,14 @@ const AccordionDetails = styled(MuiAccordionDetails)(({ theme }) => ({
   color: theme.palette.text.secondary,
 }));
 
-const StyledListItemButton = styled(ListItemButton)(({ theme }) => ({
+const StyledListItemButton = styled(ListItemButton)({
   minHeight: 32,
   padding: "3px 40px 3px 8px",
-  "&:hover": { backgroundColor: hoverSurface(theme) },
   "& .MuiListItemIcon-root": { minWidth: 26 },
   "& .MuiListItemText-root": { margin: 0 },
   "& .MuiListItemSecondaryAction-root": { right: 4 },
   "& .MuiCheckbox-root": { padding: 4 },
-}));
+});
 
 export interface ShareSetting {
   is_private?: boolean;
