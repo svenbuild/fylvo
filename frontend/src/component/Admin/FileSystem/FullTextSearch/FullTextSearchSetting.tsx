@@ -1,17 +1,5 @@
 import { BuildOutlined } from "@mui/icons-material";
-import {
-  Box,
-  CircularProgress,
-  Collapse,
-  FormControl,
-  FormControlLabel,
-  IconButton,
-  Stack,
-  Switch,
-  Tooltip,
-  Typography,
-  useTheme,
-} from "@mui/material";
+import { Box, CircularProgress, Collapse, FormControl, FormControlLabel, Stack, Switch, Tooltip, Typography, useTheme } from "@mui/material";
 import { useSnackbar } from "notistack";
 import { lazy, Suspense, useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -22,7 +10,6 @@ import { isTrueVal } from "../../../../session/utils.ts";
 import SizeInput from "../../../Common/SizeInput.tsx";
 import { DefaultCloseAction } from "../../../Common/Snackbar/snackbar.tsx";
 import { DenseFilledTextField, SecondaryButton } from "../../../Common/StyledComponents.tsx";
-import QuestionCircle from "../../../Icons/QuestionCircle.tsx";
 import SettingForm from "../../../Pages/Setting/SettingForm.tsx";
 import { NoMarginHelperText, SettingSection, SettingSectionContent } from "../../Settings/Settings.tsx";
 import { SettingContext } from "../../Settings/SettingWrapper.tsx";
@@ -45,13 +32,6 @@ const FullTextSearchSetting = () => {
         <SettingSection>
           <Typography variant="h6" gutterBottom>
             {t("settings.ftsTitle")}
-            <IconButton
-              onClick={() => {
-                window.open("https://docs.cloudreve.org/usage/search/fts", "_blank");
-              }}
-            >
-              <QuestionCircle />
-            </IconButton>
           </Typography>
           <SettingSectionContent>
             <SettingForm lgWidth={5}>

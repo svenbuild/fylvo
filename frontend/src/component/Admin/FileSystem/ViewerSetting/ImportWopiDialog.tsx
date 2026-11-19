@@ -1,4 +1,4 @@
-import { DialogContent, Link } from "@mui/material";
+import { DialogContent } from "@mui/material";
 import { useCallback, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { getWopiDiscovery } from "../../../../api/api.ts";
@@ -60,7 +60,7 @@ const ImportWopiDialog = ({ open, onClose, onImported }: ImportWopiDialogProps) 
             <Trans
               ns="dashboard"
               i18nKey="settings.wopiDes"
-              components={[<Code />, <Link href="https://docs.cloudreve.org/usage/wopi" target="_blank" />]}
+              components={[<Code />]}
             />
           </NoMarginHelperText>
         </SettingForm>

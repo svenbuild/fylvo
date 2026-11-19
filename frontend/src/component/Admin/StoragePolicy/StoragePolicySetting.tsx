@@ -61,7 +61,6 @@ export interface PolicyProps {
   credentialDes?: React.ReactNode;
   corsExposedHeaders?: string[];
   endpointNotEnforcePrefix?: boolean;
-  pro?: boolean;
   regionCode?: string;
   regionCodeDes?: React.ReactNode;
 }
@@ -78,7 +77,6 @@ export const PolicyPropsMap: Record<PolicyType, PolicyProps> = {
     name: "policy.load_balance",
     img: "/static/img/lb.svg",
     wizardSize: "sm",
-    pro: true,
   },
   [PolicyType.remote]: {
     name: "policy.remote",
@@ -428,17 +426,19 @@ const StoragePolicySetting = () => {
                 {t("policy.all")}
               </ListItemText>
             </SquareMenuItem>
-            {Object.values(PolicyType).map((type) => (
-              <SquareMenuItem key={type} value={type}>
-                <ListItemText
-                  slotProps={{
-                    primary: { variant: "body2" },
-                  }}
-                >
-                  {t(PolicyPropsMap[type].name)}
-                </ListItemText>
-              </SquareMenuItem>
-            ))}
+            {Object.values(PolicyType)
+              .filter((type) => type != PolicyType.load_balance)
+              .map((type) => (
+                <SquareMenuItem key={type} value={type}>
+                  <ListItemText
+                    slotProps={{
+                      primary: { variant: "body2" },
+                    }}
+                  >
+                    {t(PolicyPropsMap[type].name)}
+                  </ListItemText>
+                </SquareMenuItem>
+              ))}
           </DenseSelect>
         </Stack>
         <Grid container spacing={2}>

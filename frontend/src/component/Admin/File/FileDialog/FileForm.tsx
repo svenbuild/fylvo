@@ -11,7 +11,6 @@ import { DenseFilledTextField, NoWrapTypography } from "../../../Common/StyledCo
 import UserAvatar from "../../../Common/User/UserAvatar";
 import FileBadge from "../../../FileManager/FileBadge";
 import SettingForm from "../../../Pages/Setting/SettingForm";
-import SinglePolicySelectionInput from "../../Common/SinglePolicySelectionInput";
 import UserDialog from "../../User/UserDialog/UserDialog";
 import { FileDialogContext } from "./FileDialog";
 import FileDirectLinks from "./FileDirectLinks";
@@ -140,9 +139,6 @@ const FileForm = () => {
               </>
             )}
             {fileParentLoading && <Skeleton variant="text" width={100} height={40} />}
-          </SettingForm>
-          <SettingForm title={t("file.primaryStoragePolicy")} noContainer lgWidth={3} pro>
-            <SinglePolicySelectionInput simplified value={values.storage_policy_files ?? 0} onChange={() => {}} />
           </SettingForm>
           <SettingForm title={t("file.metadata")} noContainer lgWidth={6}>
             <FileMetadata />

@@ -8,26 +8,22 @@ import ResponsiveTabs, { Tab } from "../../Common/ResponsiveTabs.tsx";
 import Bot from "../../Icons/Bot.tsx";
 import Color from "../../Icons/Color.tsx";
 import CubeSync from "../../Icons/CubeSync.tsx";
-import Currency from "../../Icons/Currency.tsx";
 import FilmstripImage from "../../Icons/FilmstripImage.tsx";
 import Globe from "../../Icons/Globe.tsx";
 import MailOutlined from "../../Icons/MailOutlined.tsx";
 import PersonPasskey from "../../Icons/PersonPasskey.tsx";
-import SendLogging from "../../Icons/SendLogging.tsx";
 import Server from "../../Icons/Server.tsx";
 import AdminPage from "../Common/AdminPage.tsx";
 import PageHeader, { PageTabQuery } from "../../Pages/PageHeader.tsx";
 import Appearance from "./Appearance/Appearance.tsx";
 import Captcha from "./Captcha/Captcha.tsx";
 import Email from "./Email/Email.tsx";
-import Events from "./Event/Events.tsx";
 import Media from "./Media/Media.tsx";
 import Queue from "./Queue/Queue.tsx";
 import ServerSetting from "./Server/ServerSetting.tsx";
 import SettingsWrapper from "./SettingWrapper.tsx";
 import SiteInformation from "./SiteInformation/SiteInformation.tsx";
 import UserSession from "./UserSession/UserSession.tsx";
-import VAS from "./VAS/VAS.tsx";
 
 export const StyledInputAdornment = styled(InputAdornment)(({ theme }) => ({
   fontSize: theme.typography.body2.fontSize,
@@ -77,17 +73,15 @@ export enum SettingsPageTab {
   Captcha = "captcha",
   FileSystem = "fileSystem",
   MediaProcessing = "mediaProcessing",
-  VAS = "vas",
   Email = "email",
   Queue = "queue",
   Appearance = "appearance",
-  Events = "events",
   Server = "server",
 }
 
 const Settings = () => {
   const { t } = useTranslation("dashboard");
-  const [tab, setTab] = useQueryState(PageTabQuery);
+  const [queryTab, setTab] = useQueryState(PageTabQuery);
 
   const tabs: Tab<SettingsPageTab>[] = useMemo(() => {
     const res = [];
@@ -114,11 +108,6 @@ const Settings = () => {
           icon: <FilmstripImage />,
         },
         {
-          label: t("vas.vas"),
-          value: SettingsPageTab.VAS,
-          icon: <Currency />,
-        },
-        {
           label: t("nav.email"),
           value: SettingsPageTab.Email,
           icon: <MailOutlined />,
@@ -134,11 +123,6 @@ const Settings = () => {
           icon: <Color />,
         },
         {
-          label: t("nav.events"),
-          value: SettingsPageTab.Events,
-          icon: <SendLogging />,
-        },
-        {
           label: t("nav.server"),
           value: SettingsPageTab.Server,
           icon: <Server />,
@@ -147,6 +131,8 @@ const Settings = () => {
     );
     return res;
   }, [t]);
+  // Old links (for example to removed tabs) fall back to the first tab.
+  const tab = tabs.some((item) => item.value === queryTab) ? queryTab : null;
 
   return (
     <AdminPage>
@@ -178,8 +164,6 @@ const Settings = () => {
                     "site_logo_light",
                     "tos_url",
                     "privacy_policy_url",
-                    "show_app_promotion",
-                    "show_desktop_app_promotion",
                   ]}
                 >
                   <SiteInformation />
@@ -281,11 +265,6 @@ const Settings = () => {
                   <Media />
                 </SettingsWrapper>
               )}
-              {tab === SettingsPageTab.VAS && (
-                <SettingsWrapper settings={[]}>
-                  <VAS />
-                </SettingsWrapper>
-              )}
               {tab === SettingsPageTab.Email && (
                 <SettingsWrapper
                   settings={[
@@ -322,11 +301,6 @@ const Settings = () => {
                   ]}
                 >
                   <Appearance />
-                </SettingsWrapper>
-              )}
-              {tab === SettingsPageTab.Events && (
-                <SettingsWrapper settings={[]}>
-                  <Events />
                 </SettingsWrapper>
               )}
               {tab === SettingsPageTab.Server && (

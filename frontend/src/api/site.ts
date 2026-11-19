@@ -42,8 +42,6 @@ export interface SiteConfig {
     [ext: string]: string;
   };
   max_batch_size?: number;
-  app_promotion?: boolean;
-  desktop_app_promotion?: boolean;
   thumbnail_width?: number;
   thumbnail_height?: number;
   custom_props?: CustomProps[];
