@@ -15,4 +15,7 @@ const (
 	// CodeUploadTargetGone an upload that names the version it replaces ("previous") found no
 	// file at its address: the file was deleted or moved away
 	CodeUploadTargetGone = 40904
+	// CodeNameCaseTaken the folder holds a file or folder whose name differs from the given
+	// one only in upper and lower case; Windows cannot hold both
+	CodeNameCaseTaken = 40905
 )
