@@ -24,9 +24,12 @@ func TestPasswordChangeSettings(t *testing.T) {
 	require.False(t, free.Settings.FylvoMustChangePassword, "the loaded settings are not changed in place")
 
 	// The admin's explicit choice wins.
-	require.Nil(t, (&UpsertUserService{Password: "neu", MustChangePassword: &no}).passwordChangeSettings(free))
+	require.False(t, (&UpsertUserService{Password: "neu", MustChangePassword: &no}).passwordChangeSettings(free).FylvoMustChangePassword)
 	require.False(t, (&UpsertUserService{MustChangePassword: &no}).passwordChangeSettings(held).FylvoMustChangePassword)
 	require.True(t, (&UpsertUserService{MustChangePassword: &yes}).passwordChangeSettings(free).FylvoMustChangePassword)
+
+	// A new password always writes the flag, even when it is already on.
+	require.True(t, (&UpsertUserService{Password: "neu"}).passwordChangeSettings(held).FylvoMustChangePassword)
 
 	// Nothing to change: settings stay untouched.
 	require.Nil(t, (&UpsertUserService{}).passwordChangeSettings(free))

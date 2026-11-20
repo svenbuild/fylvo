@@ -23,15 +23,10 @@ func (s *UpsertUserService) passwordChangeSettings(existing *ent.User) *types.Us
 	if s.MustChangePassword != nil {
 		want = *s.MustChangePassword
 	}
-	if want == inventory.MustChangePassword(existing) {
+	// With a new password the flag is always written in the same statement, so that a change
+	// the person finishes at the same moment cannot leave the admin's password without it.
+	if want == inventory.MustChangePassword(existing) && s.Password == "" {
 		return nil
 	}
-
-	settings := &types.UserSetting{}
-	if existing.Settings != nil {
-		copied := *existing.Settings
-		settings = &copied
-	}
-	settings.FylvoMustChangePassword = want
-	return settings
+	return inventory.WithMustChangePassword(existing.Settings, want)
 }

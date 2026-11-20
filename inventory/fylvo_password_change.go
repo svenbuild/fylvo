@@ -32,27 +32,34 @@ func PasswordFingerprint(u *ent.User) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// WithMustChangePassword returns a copy of settings (which may be nil) with the flag set to on.
+func WithMustChangePassword(settings *types.UserSetting, on bool) *types.UserSetting {
+	copied := types.UserSetting{}
+	if settings != nil {
+		copied = *settings
+	}
+	copied.FylvoMustChangePassword = on
+	return &copied
+}
+
 // SetOwnPassword stores a password the person chose and clears the password-change flag, in one
 // write and only while the stored password is still the one in u. A second call with the same u
-// therefore fails, as does a call after the admin set another password.
+// therefore fails, as does a call after the admin set another password. The settings are only
+// written when the flag was set.
 func (c *userClient) SetOwnPassword(ctx context.Context, u *ent.User, newPassword string) error {
 	digest, err := digestPassword(newPassword)
 	if err != nil {
 		return err
 	}
 
-	settings := &types.UserSetting{}
-	if u.Settings != nil {
-		copied := *u.Settings
-		settings = &copied
-	}
-	settings.FylvoMustChangePassword = false
-
-	updated, err := c.client.User.Update().
+	q := c.client.User.Update().
 		Where(user.ID(u.ID), user.Password(u.Password)).
-		SetPassword(digest).
-		SetSettings(settings).
-		Save(ctx)
+		SetPassword(digest)
+	if MustChangePassword(u) {
+		q.SetSettings(WithMustChangePassword(u.Settings, false))
+	}
+
+	updated, err := q.Save(ctx)
 	if err != nil {
 		return err
 	}

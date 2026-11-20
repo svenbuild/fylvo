@@ -23,6 +23,8 @@ export interface UserDialogContextProps {
   values: User;
   setUser: (f: (p: User) => User) => void;
   formRef?: React.RefObject<HTMLFormElement>;
+  // Fylvo: the account as loaded, to tell what the admin changed
+  loaded?: User;
 }
 
 const defaultUser: User = {
@@ -100,8 +102,12 @@ const UserDialog = ({ open, onClose, userID, onUpdated }: UserDialogProps) => {
       args.password = args.user.password;
     }
 
-    // Fylvo: the server only stores it when it changes.
-    args.must_change_password = !!args.user.settings?.fylvo_must_change_password;
+    // Fylvo: send the switch only when the admin changed it or set a password, so that a form
+    // opened before the person set their password does not switch the hold on again.
+    const mustChange = !!args.user.settings?.fylvo_must_change_password;
+    if (args.password || mustChange !== !!values.settings?.fylvo_must_change_password) {
+      args.must_change_password = mustChange;
+    }
 
     setSubmitting(true);
     dispatch(upsertUser(args))
@@ -121,6 +127,7 @@ const UserDialog = ({ open, onClose, userID, onUpdated }: UserDialogProps) => {
         values: modifiedValues,
         setUser: setModifiedValues,
         formRef,
+        loaded: values,
       }}
     >
       <DraggableDialog

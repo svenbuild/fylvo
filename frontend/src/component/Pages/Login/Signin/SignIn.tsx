@@ -295,7 +295,7 @@ const EmailLogin = ({ oauthConsent }: SignInProps) => {
         // The ticket expired: sign in again.
         if (e instanceof AppError && e.code === Code.PasswordChangeExpired) {
           setPwd("");
-          setPhase(EmailLoginPhase.CollectPassword);
+          setPhase(EmailLoginPhase.CollectEmail);
         }
       } finally {
         setLoading(false);
@@ -433,7 +433,8 @@ const EmailLogin = ({ oauthConsent }: SignInProps) => {
           title: t("login.setNewPassword"),
           nextButtonText: t("login.saveAndSignIn"),
           showBackButton: true,
-          previous: EmailLoginPhase.CollectPassword,
+          // Back to the start: the person may have come with a passkey, without an e-mail.
+          previous: EmailLoginPhase.CollectEmail,
         };
         break;
       case EmailLoginPhase.Consent:

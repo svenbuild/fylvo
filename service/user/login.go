@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
@@ -62,12 +63,15 @@ func (service *UserResetService) Reset(c *gin.Context) (*User, error) {
 		return nil, serializer.NewError(serializer.CodeSamePassword, "The new password must differ from the current one", nil)
 	}
 
-	if err := kv.Delete(fmt.Sprintf("user_reset_%d", uid)); err != nil {
-		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to delete reset session", err)
+	if err := userClient.SetOwnPassword(c, u, service.Password); err != nil {
+		if errors.Is(err, inventory.ErrPasswordChangedMeanwhile) {
+			return nil, serializer.NewError(serializer.CodeTempLinkExpired, "Link is expired", nil)
+		}
+		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to update password", err)
 	}
 
-	if err := userClient.SetOwnPassword(c, u, service.Password); err != nil {
-		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to update password", err)
+	if err := kv.Delete(fmt.Sprintf("user_reset_%d", uid)); err != nil {
+		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to delete reset session", err)
 	}
 	u, err = userClient.GetActiveByID(c, uid)
 	if err != nil {

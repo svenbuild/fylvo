@@ -35,7 +35,7 @@ const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loa
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { t } = useTranslation("dashboard");
-  const { formRef, values, setUser } = useContext(UserDialogContext);
+  const { formRef, values, setUser, loaded } = useContext(UserDialogContext);
 
   const removeAvatar = useCallback(() => {
     setUser((prev) => ({ ...prev, avatar: undefined }));
@@ -72,14 +72,18 @@ const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loa
   const onPasswordChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const password = e.target.value ? e.target.value : undefined;
-      // Fylvo: a password from the admin has to be replaced at the next sign-in.
+      // Fylvo: a password from the admin has to be replaced at the next sign-in. Without a new
+      // password, the switch goes back to the value the account had.
       setUser((prev) => ({
         ...prev,
         password,
-        settings: password ? { ...prev.settings, fylvo_must_change_password: true } : prev.settings,
+        settings: {
+          ...prev.settings,
+          fylvo_must_change_password: password ? true : !!loaded?.settings?.fylvo_must_change_password,
+        },
       }));
     },
-    [setUser],
+    [setUser, loaded],
   );
 
   const onMustChangePasswordChange = useCallback(

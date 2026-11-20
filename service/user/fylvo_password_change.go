@@ -30,6 +30,10 @@ const (
 	PasswordChangeRequiredMsg = "Bitte zuerst im Browser anmelden und ein neues Passwort setzen."
 )
 
+// errPasswordChangeExpired answers for unknown, expired and outdated tickets alike.
+var errPasswordChangeExpired = serializer.NewError(serializer.CodePasswordChangeExpired,
+	"Session expired, please sign in again", nil)
+
 // loginTicket binds a ticket to the account and to its password at the moment it was checked.
 func loginTicket(u *ent.User) string {
 	return fmt.Sprintf("%d:%s", u.ID, inventory.PasswordFingerprint(u))
@@ -98,7 +102,7 @@ func (s *PasswordChangeService) Finish(c *gin.Context) (*ent.User, error) {
 		return nil, err
 	}
 	if !valid {
-		return nil, serializer.NewError(serializer.CodePasswordChangeExpired, "Session expired, please sign in again", nil)
+		return nil, errPasswordChangeExpired
 	}
 
 	if inventory.CheckPassword(u, s.Password) == nil {
@@ -107,7 +111,7 @@ func (s *PasswordChangeService) Finish(c *gin.Context) (*ent.User, error) {
 
 	if err := dep.UserClient().SetOwnPassword(c, u, s.Password); err != nil {
 		if errors.Is(err, inventory.ErrPasswordChangedMeanwhile) {
-			return nil, serializer.NewError(serializer.CodePasswordChangeExpired, "Session expired, please sign in again", nil)
+			return nil, errPasswordChangeExpired
 		}
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to update password", err)
 	}
