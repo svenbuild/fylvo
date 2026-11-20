@@ -32,8 +32,9 @@ var (
 	// tokenValue matches values made only of the characters of tokens, ids and signatures.
 	tokenValue = regexp.MustCompile(`^[A-Za-z0-9._~+=:-]+$`)
 	// userInfo matches the user and password in an address like scheme://user:password@host,
-	// also cloudreve://<share id>:<password>@share. Group 1 keeps the scheme.
-	userInfo = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/@\s]*@`)
+	// also cloudreve://<share id>:<password>@share, up to the last "@" before the host ends, as
+	// Go parses it. Group 1 keeps the scheme.
+	userInfo = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/?#\s]*@`)
 	// secretPaths match paths with a secret segment; group 1 is kept before it.
 	secretPaths = []*regexp.Regexp{
 		// Share link with its password: /s/<id>/<password>
