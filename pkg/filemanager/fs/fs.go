@@ -332,8 +332,10 @@ type (
 		Metadata           map[string]string
 		ArchiveCompression bool
 		ProgressFunc
-		MaxArchiveSize  int64
-		DryRun          CreateArchiveDryRunFunc
+		MaxArchiveSize int64
+		DryRun         CreateArchiveDryRunFunc
+		// Fylvo: the archive goes to the person downloading it, see WithArchiveDownload.
+		ArchiveDownload bool
 		Policy          *ent.StoragePolicy
 		Node            StatelessUploadManager
 		StatelessUserID int
@@ -599,6 +601,14 @@ func WithArchiveCompression(b bool) Option {
 func WithMaxArchiveSize(s int64) Option {
 	return OptionFunc(func(o *FsOption) {
 		o.MaxArchiveSize = s
+	})
+}
+
+// WithArchiveDownload marks an archive that is streamed to the person who asked for it (Fylvo):
+// a guest of a link downloading a ZIP is logged once it is complete.
+func WithArchiveDownload() Option {
+	return OptionFunc(func(o *FsOption) {
+		o.ArchiveDownload = true
 	})
 }
 

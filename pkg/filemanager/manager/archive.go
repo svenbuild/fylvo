@@ -173,9 +173,12 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 	defer zipWriter.Close()
 
 	var compressed int64
+	included := make([]fs.File, 0, len(files))
 	for _, file := range files {
+		included = append(included, file)
 		if file.Type() == types.FileTypeFile {
 			if err := m.compressFileToArchive(ctx, "/", file, zipWriter, o.ArchiveCompression, o.DryRun); err != nil {
+				included = included[:len(included)-1]
 				failed++
 				m.l.Warning("Failed to compress file %s: %s, skipping it...", file.Uri(false), err)
 			}
@@ -217,10 +220,10 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 		}
 	}
 
-	// Fylvo: a guest of a link downloaded a ZIP, see the share navigator. Logged once it is
-	// made, not when it was too big.
-	if o.DryRun == nil {
-		for _, file := range files {
+	// Fylvo: a guest of a link downloaded a ZIP, see the share navigator. Logged once the ZIP
+	// is complete, for what is in it.
+	if o.ArchiveDownload && o.DryRun == nil && zipWriter.Close() == nil {
+		for _, file := range included {
 			if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
 				m.l.Warning("Failed to execute navigator hooks: %s", err)
 			}

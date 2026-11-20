@@ -139,9 +139,10 @@ func (c *activityClient) List(ctx context.Context, args *ListActivityArgs) (*Lis
 }
 
 func (c *activityClient) DeleteBefore(ctx context.Context, t time.Time, limit int) (int, error) {
+	// By date: the index on created_at finds the oldest at once, also when none are due.
 	ids, err := c.client.Activity.Query().
 		Where(activity.CreatedAtLT(t)).
-		Order(activity.ByID()).
+		Order(activity.ByCreatedAt()).
 		Limit(limit).
 		IDs(ctx)
 	if err != nil || len(ids) == 0 {

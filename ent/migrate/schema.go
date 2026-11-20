@@ -31,29 +31,29 @@ var (
 		PrimaryKey: []*schema.Column{ActivitiesColumns[0]},
 		Indexes: []*schema.Index{
 			{
-				Name:    "activity_file_id_created_at",
+				Name:    "activity_file_id",
 				Unique:  false,
-				Columns: []*schema.Column{ActivitiesColumns[5], ActivitiesColumns[1]},
+				Columns: []*schema.Column{ActivitiesColumns[5]},
 			},
 			{
-				Name:    "activity_parent_id_created_at",
+				Name:    "activity_parent_id",
 				Unique:  false,
-				Columns: []*schema.Column{ActivitiesColumns[6], ActivitiesColumns[1]},
+				Columns: []*schema.Column{ActivitiesColumns[6]},
 			},
 			{
-				Name:    "activity_from_parent_id_created_at",
+				Name:    "activity_from_parent_id",
 				Unique:  false,
-				Columns: []*schema.Column{ActivitiesColumns[7], ActivitiesColumns[1]},
+				Columns: []*schema.Column{ActivitiesColumns[7]},
 			},
 			{
-				Name:    "activity_user_id_created_at",
+				Name:    "activity_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{ActivitiesColumns[3], ActivitiesColumns[1]},
+				Columns: []*schema.Column{ActivitiesColumns[3]},
 			},
 			{
-				Name:    "activity_owner_id_created_at",
+				Name:    "activity_owner_id",
 				Unique:  false,
-				Columns: []*schema.Column{ActivitiesColumns[4], ActivitiesColumns[1]},
+				Columns: []*schema.Column{ActivitiesColumns[4]},
 			},
 			{
 				Name:    "activity_created_at",

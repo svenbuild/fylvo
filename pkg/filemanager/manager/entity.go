@@ -211,6 +211,7 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 	var earliestExpireAt *time.Time
 	res := make([]EntityUrl, len(args))
 	ae := serializer.NewAggregateError()
+	handedOut := make([]fs.File, 0, len(args))
 	for i, arg := range args {
 		file, err := m.fs.Get(
 			ctx, arg.URI,
@@ -250,12 +251,10 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 		if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeBeforeDownload, file); err != nil {
 			m.l.Warning("Failed to execute navigator hooks: %s", err)
 		}
-		// Fylvo: a guest's download is logged once its link is there, see below.
+		// Fylvo: a guest's download is logged once its link is there, see the end.
 		downloadLinkHook := func() {
 			if o.IsDownload {
-				if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
-					m.l.Warning("Failed to execute navigator hooks: %s", err)
-				}
+				handedOut = append(handedOut, file)
 			}
 		}
 
@@ -319,7 +318,17 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 		}
 	}
 
-	return res, earliestExpireAt, ae.Aggregate()
+	// Fylvo: only when all links are there; a failed batch may be refused as a whole.
+	err := ae.Aggregate()
+	if err == nil {
+		for _, file := range handedOut {
+			if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
+				m.l.Warning("Failed to execute navigator hooks: %s", err)
+			}
+		}
+	}
+
+	return res, earliestExpireAt, err
 }
 
 func (m *manager) GetEntitySource(ctx context.Context, entityID int, opts ...fs.Option) (entitysource.EntitySource, error) {

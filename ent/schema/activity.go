@@ -41,11 +41,13 @@ func (Activity) Fields() []ent.Field {
 // Indexes of the Activity.
 func (Activity) Indexes() []ent.Index {
 	return []ent.Index{
-		index.Fields("file_id", "created_at"),
-		index.Fields("parent_id", "created_at"),
-		index.Fields("from_parent_id", "created_at"),
-		index.Fields("user_id", "created_at"),
-		index.Fields("owner_id", "created_at"),
+		// One column each: SQLite keeps the row ID in every index, so the lists (newest ID
+		// first) read them backwards and stop after one page.
+		index.Fields("file_id"),
+		index.Fields("parent_id"),
+		index.Fields("from_parent_id"),
+		index.Fields("user_id"),
+		index.Fields("owner_id"),
 		index.Fields("created_at"),
 	}
 }

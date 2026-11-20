@@ -8,6 +8,7 @@ package activity
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -123,7 +124,8 @@ func Record(ctx context.Context, e Entry) {
 	r := &row{Entry: e, at: time.Now(), via: via}
 	if info := requestinfo.RequestInfoFromContext(ctx); info != nil && via != ViaSystem && !e.NoAddress {
 		r.ip = info.IP
-		r.userAgent = truncate(info.UserAgent, 256)
+		// A copy: a slice would keep the whole header in memory while the entry waits.
+		r.userAgent = strings.Clone(truncate(info.UserAgent, 256))
 	}
 
 	inventory.AfterCommit(ctx, func() { current().push(r) })

@@ -77,7 +77,7 @@ func (service *ArchiveService) DownloadArchived(c *gin.Context) error {
 	c.Header("Content-Disposition", "attachment;")
 	c.Header("Content-Type", "application/zip")
 
-	if _, err := fm.CreateArchive(c, archiveSession.Uris, c.Writer); err != nil {
+	if _, err := fm.CreateArchive(c, archiveSession.Uris, c.Writer, fs.WithArchiveDownload()); err != nil {
 		return serializer.NewError(serializer.CodeIOFailed, "Failed to create archive", err)
 	}
 
