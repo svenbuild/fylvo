@@ -130,8 +130,8 @@ func Logging() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Start timer
 		start := time.Now()
-		// A "?" in the decoded path (sent as %3F) must not look like the start of the query.
-		path := strings.ReplaceAll(c.Request.URL.Path, "?", "%3F")
+		// Escaped, so a "?" or "#" in a file name does not look like the start of the query.
+		path := c.Request.URL.EscapedPath()
 		raw := c.Request.URL.RawQuery
 
 		// Process request
@@ -152,7 +152,7 @@ func Logging() gin.HandlerFunc {
 func Recovery() gin.HandlerFunc {
 	return gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, err any) {
 		logging.FromContext(c).Error("Panic recovered in %s %s: %v\n%s",
-			c.Request.Method, c.Request.URL.Path, err, debug.Stack())
+			c.Request.Method, logging.RedactURL(c.Request.URL.EscapedPath()), err, debug.Stack())
 		c.AbortWithStatus(http.StatusInternalServerError)
 	})
 }

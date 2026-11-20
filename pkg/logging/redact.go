@@ -41,8 +41,8 @@ var (
 		// Upload callback with its key: /api/v4/callback/<policy>/<session>/<key>
 		regexp.MustCompile(`^((?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*)?/api/v4/callback/[^/]+/[^/]+/)[^/]+`),
 	}
-	// urlInText finds addresses in a text; it stops before trailing punctuation.
-	urlInText = regexp.MustCompile(`(?i)https?://[^\s"'<>]*[^\s"'<>.,;:)]`)
+	// urlInText finds addresses in a text; it stops before trailing punctuation and quotes.
+	urlInText = regexp.MustCompile(`(?i)https?://[^\s"<>]*[^\s"'<>.,;:)]`)
 )
 
 // RedactURL returns a URL or a path with query for a log line, with secrets replaced by
@@ -70,8 +70,10 @@ func RedactURL(raw string) string {
 	return path
 }
 
-// RedactText applies RedactURL to every http(s) address in a text, for example an error message.
+// RedactText masks user and password of addresses of any scheme (like cloudreve://<share
+// id>:<password>@share) and applies RedactURL to every http(s) address in a text.
 func RedactText(text string) string {
+	text = userInfo.ReplaceAllString(text, "${1}"+Redacted+"@")
 	return urlInText.ReplaceAllStringFunc(text, RedactURL)
 }
 

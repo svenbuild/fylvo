@@ -38,7 +38,7 @@ func TestLoggingHidesSecrets(t *testing.T) {
 	engine.GET("/s/:id/:password", func(c *gin.Context) { c.Status(http.StatusFound) })
 	engine.GET("/session/reset", func(c *gin.Context) { c.Status(http.StatusOK) })
 	engine.GET("/api/v4/file/content/:id/:speed/:name", func(c *gin.Context) { c.Status(http.StatusOK) })
-	engine.GET("/panic", func(c *gin.Context) { panic("boom") })
+	engine.GET("/s/:id/:password/panic", func(c *gin.Context) { panic("boom") })
 
 	for _, target := range []string{
 		"/api/v4/file/wopi/Xy?access_token=wopitoken-0b7d1c2e.Xy9AbCdEf",
@@ -46,14 +46,15 @@ func TestLoggingHidesSecrets(t *testing.T) {
 		"/session/reset?id=lV&secret=resetsecret99&sign=AbCd1234%3A1767225600",
 		// A "?" in the file name must not shift the start of the query.
 		"/api/v4/file/content/Xy/0/a%3Fb.pdf?sign=shortsig",
-		"/panic?access_token=panictoken",
+		"/api/v4/file/content/Xy/0/a%23b.pdf?sign=shortsig",
+		"/s/Ab/panicpw/panic?access_token=panictoken",
 	} {
 		engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
 	}
 
 	out := buf.String()
 	for _, s := range []string{"wopitoken-0b7d1c2e.Xy9AbCdEf", "sigsecret77", "sharepw55", "resetsecret99",
-		"AbCd1234", "shortsig", "panictoken"} {
+		"AbCd1234", "shortsig", "panictoken", "panicpw"} {
 		assert.NotContains(t, out, s)
 	}
 	// The lines stay useful: method, status, path and the parameter names.
@@ -63,7 +64,8 @@ func TestLoggingHidesSecrets(t *testing.T) {
 		`"/s/Ab/***"`,
 		`"/session/reset?id=lV&secret=***&sign=***"`,
 		`"/api/v4/file/content/Xy/0/a%3Fb.pdf?sign=***"`,
-		`Panic recovered in GET /panic: boom`,
+		`"/api/v4/file/content/Xy/0/a%23b.pdf?sign=***"`,
+		`Panic recovered in GET /s/Ab/***/panic: boom`,
 	} {
 		assert.Contains(t, out, s)
 	}

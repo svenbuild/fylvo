@@ -57,6 +57,12 @@ func TestRedactText(t *testing.T) {
 	assert.Equal(t, `Get "https://s3.example/b/o?X-Amz-Signature=***&n=1": dial tcp: timeout`, RedactText(in))
 	// Upper case scheme, and punctuation after the address stays.
 	assert.Equal(t, "see HTTPS://h/s/a/***, then", RedactText("see HTTPS://h/s/a/pw, then"))
+	// Share URI and other schemes with a password.
+	assert.Equal(t, `Failed to compress file cloudreve://***@share/x.pdf, ftp://***@h/f`,
+		RedactText(`Failed to compress file cloudreve://Ab:hunter2@share/x.pdf, ftp://u:pw@h/f`))
+	// An apostrophe inside the address, and a quoted address.
+	assert.Equal(t, `"https://h/o'neil?sign=***" 'https://h/x?sign=***'`,
+		RedactText(`"https://h/o'neil?sign=abc" 'https://h/x?sign=abc'`))
 }
 
 // TestConsoleLoggerRedacts checks that every line of the console logger goes through RedactText.
