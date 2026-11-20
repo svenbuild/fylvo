@@ -205,6 +205,25 @@ impl DeletionGuardState {
         is_under(path, &self.kept_local)
     }
 
+    /// Whether a held deletion or a path the user chose to keep lies at, under or above `path`
+    /// (any upper/lower case spelling).
+    fn touches(&self, path: &Path) -> bool {
+        let fold = |p: &Path| crate::drive::case::ntfs_fold(&p.to_string_lossy());
+        let target = fold(path);
+        let related = |p: &PathBuf| {
+            let other = fold(p);
+            other == target
+                || other.starts_with(&format!("{target}\\"))
+                || target.starts_with(&format!("{other}\\"))
+        };
+        [&self.server, &self.local]
+            .into_iter()
+            .flatten()
+            .flat_map(|held| held.paths.iter())
+            .chain(self.kept_local.iter())
+            .any(related)
+    }
+
     fn is_confirmed(&mut self, paths: &[PathBuf], now: Instant) -> bool {
         self.confirmed_local
             .retain(|(_, at)| now.duration_since(*at) < CONFIRMATION_VALID_FOR);
@@ -521,6 +540,12 @@ impl Mount {
         self.deletion_guard.lock().unwrap().is_held(side, path)
     }
 
+    /// Fylvo: whether a held deletion or a kept path lies at, under or above `path`. A case
+    /// rename of `path` waits then, so the hold keeps matching its paths.
+    pub(crate) fn guard_touches(&self, path: &Path) -> bool {
+        self.deletion_guard.lock().unwrap().touches(path)
+    }
+
     /// Whether the user chose to keep `path` here although it was deleted on the server.
     pub(crate) fn is_kept_locally(&self, path: &Path) -> bool {
         self.deletion_guard.lock().unwrap().is_kept(path)
@@ -768,6 +793,21 @@ mod tests {
         // Nothing sent or garbage: unknown.
         assert_eq!(is_read_only_capability(None), None);
         assert_eq!(is_read_only_capability(Some("%%%")), None);
+    }
+
+    #[test]
+    fn touches_finds_holds_and_kept_paths_in_any_case() {
+        let mut state = DeletionGuardState::default();
+        assert!(!state.touches(Path::new(r"C:\S\Photos")));
+        state.add(DeletionSide::Server, vec![PathBuf::from(r"C:\S\Photos\a.jpg")]);
+        state.keep(&[PathBuf::from(r"C:\S\Docs")]);
+        // A held child, the folder itself spelled otherwise, a path inside a kept folder.
+        assert!(state.touches(Path::new(r"C:\S\photos")));
+        assert!(state.touches(Path::new(r"C:\S\PHOTOS\a.jpg")));
+        assert!(state.touches(Path::new(r"C:\S\docs\x.txt")));
+        // Siblings with a common start are not related.
+        assert!(!state.touches(Path::new(r"C:\S\Photos2")));
+        assert!(!state.touches(Path::new(r"C:\S\Doc")));
     }
 
     #[test]

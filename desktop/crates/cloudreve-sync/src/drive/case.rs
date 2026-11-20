@@ -296,7 +296,13 @@ impl Mount {
         if self.inventory.has_rows_at_or_under(from_str)?
             && self.inventory.has_rows_at_or_under(to_str)?
         {
+            self.report_case_clash(&[to.to_path_buf()], "caseHeldMessage");
             anyhow::bail!("inventory rows exist under both spellings");
+        }
+        // A held mass deletion or a kept path under it is keyed by the old spelling: rename
+        // only after the user answered.
+        if self.guard_touches(from) {
+            anyhow::bail!("a held deletion waits for the user's answer, renamed later");
         }
         let info = LocalFileInfo::from_path(from)?;
 
@@ -333,54 +339,69 @@ impl Mount {
             });
             return Ok(());
         }
-        // A file that is not in sync now (changed here, or the rename cleared the flag): an
-        // online-only file has no local bytes and is marked in sync again; any other file is
-        // uploaded, which keeps a change made at any moment (an unchanged one only gives the
-        // server a new version with the same content).
-        let now = LocalFileInfo::from_path(to)?;
-        if !now.in_sync() {
-            if now.is_placeholder() && now.partial_on_disk() && info.in_sync() {
-                crate::drive::commands::mark_path_in_sync(to).await?;
-            } else {
-                self.enqueue_upload(TaskPayload::upload(to.to_path_buf()))
-                    .await?;
+        // A file with local bytes that is not in sync now (changed here, or the rename cleared
+        // the flag) is uploaded: that keeps a change made at any moment, an unchanged file only
+        // gives the server a new version with the same content. Nothing is ever marked in
+        // sync here. The rename itself worked: problems from here on are only logged.
+        let now = LocalFileInfo::from_path(to).unwrap_or_else(|_| LocalFileInfo::missing());
+        let upload_queued = tasks
+            .iter()
+            .any(|(kind, path)| *kind == TaskKind::Upload && same_on_ntfs(path, from));
+        let online_only = now.is_placeholder() && now.partial_on_disk();
+        if now.exists && !now.in_sync() && !online_only && !upload_queued && !self.is_read_only()
+        {
+            if let Err(err) = self.enqueue_upload(TaskPayload::upload(to.to_path_buf())).await {
+                tracing::warn!(target: "drive::case", id = %self.id, path = %to.display(), error = ?err, "Upload after the case rename could not be queued");
             }
         }
         Ok(())
     }
 
-    /// Stop the pending and running tasks at or under `path`. Returns their kind and path.
+    /// Stop the pending and running tasks at or under `path`. Returns the kind and path of
+    /// every task that was stopped (the queue's own match may catch a few more than `path`).
     async fn stop_tasks_under(&self, path: &Path) -> Vec<(TaskKind, PathBuf)> {
-        let tasks: Vec<(TaskKind, PathBuf)> = self
+        let before = self.task_queue.list_active_tasks().unwrap_or_default();
+        if before.is_empty() || self.task_queue.cancel_by_path(path.to_path_buf()).await.is_err() {
+            return Vec::new();
+        }
+        let still_active: HashSet<String> = self
             .task_queue
             .list_active_tasks()
             .unwrap_or_default()
             .into_iter()
-            .filter_map(|task| {
-                let task_path = PathBuf::from(&task.local_path);
-                task_path.starts_with(path).then_some((
-                    TaskKind::from_str(&task.task_type)?,
-                    task_path,
-                ))
-            })
+            .map(|task| task.id)
             .collect();
-        if !tasks.is_empty() {
-            let _ = self.task_queue.cancel_by_path(path.to_path_buf()).await;
-        }
-        tasks
+        before
+            .into_iter()
+            .filter(|task| !still_active.contains(&task.id))
+            .filter_map(|task| {
+                Some((TaskKind::from_str(&task.task_type)?, PathBuf::from(task.local_path)))
+            })
+            .collect()
     }
 
-    /// Queue stopped tasks again, with the prefix `old` of their paths replaced by `new`.
+    /// Queue stopped tasks again. Paths at or under `old` (any case spelling) get `new` in
+    /// place of `old`; the others are queued unchanged. Downloads of renamed paths are not
+    /// queued again: the sync after the rename decides, so a download never runs over a file
+    /// changed meanwhile. Ignored paths are left out.
     async fn queue_tasks_again(&self, tasks: &[(TaskKind, PathBuf)], old: &Path, new: &Path) {
+        let depth = old.components().count();
         for (kind, path) in tasks {
-            let Ok(relative) = path.strip_prefix(old) else {
+            let head: PathBuf = path.components().take(depth).collect();
+            let renamed = same_on_ntfs(&head, old) && old != new;
+            if renamed && *kind == TaskKind::Download {
                 continue;
-            };
-            let path = if relative.as_os_str().is_empty() {
-                new.to_path_buf()
+            }
+            let path = if same_on_ntfs(&head, old) {
+                let mut rebased = new.to_path_buf();
+                rebased.extend(path.components().skip(depth));
+                rebased
             } else {
-                new.join(relative)
+                path.clone()
             };
+            if self.ignore_matcher.read().await.is_match(&path) {
+                continue;
+            }
             let result = match kind {
                 TaskKind::Upload => self.enqueue_upload(TaskPayload::upload(path.clone())).await,
                 TaskKind::Download => self
