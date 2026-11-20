@@ -73,7 +73,7 @@ class LoginViewModel(
                         _state.value = _state.value.copy(loading = false, twoFactorSessionId = sessionId, otp = "")
                     }
                     0 -> completeLogin(api.json.decodeFromJsonElement(LoginResponse.serializer(), body.data))
-                    else -> throw body.msg.ifBlank { null }?.let(::Exception) ?: LoginError(UiText.Res(R.string.login_failed))
+                    else -> throw LoginError(serverError(body.code, body.msg))
                 }
             } catch (e: Exception) {
                 _state.value = _state.value.copy(loading = false, error = describe(e))
@@ -144,6 +144,18 @@ class LoginViewModel(
     }
 
     companion object {
+        /** serializer.CodeInvalidPassword: wrong email address or password. */
+        const val CODE_INVALID_PASSWORD = 40080
+        /** serializer.CodeTooManyAttempts (Fylvo): the server locks account and address for 15 minutes. */
+        const val CODE_TOO_MANY_ATTEMPTS = 40900
+
+        /** Known sign-in refusals in the app's own words (and language); others as the server says. */
+        fun serverError(code: Int, msg: String): UiText = when (code) {
+            CODE_INVALID_PASSWORD -> UiText.Res(R.string.login_wrong_password)
+            CODE_TOO_MANY_ATTEMPTS -> UiText.Res(R.string.login_too_many_attempts)
+            else -> msg.ifBlank { null }?.let { UiText.Raw(it) } ?: UiText.Res(R.string.login_failed)
+        }
+
         /** serializer.CodeNotFullySuccess: password accepted, 2FA code still required. */
         private const val CODE_NOT_FULLY_SUCCESS = 203
         /** serializer.CodeNotFound: here, the 2FA session expired. */
