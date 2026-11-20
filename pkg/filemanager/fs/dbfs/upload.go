@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"math"
 	"path"
+	"sync"
 	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/lock"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -98,10 +100,20 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 		fileExisted = true
 	}
 
+	// Fylvo: a conditional update that must replace a file fails if there is none.
+	if err := checkPreviousRequired(req.Props, fileExisted); err != nil {
+		return nil, err
+	}
+
 	// Fylvo: who may only add files never replaces one. If the name is taken, the upload
 	// goes next to it under a free name. (The answer names the address used, so a visitor
 	// can tell from it that the name was taken. That is accepted.)
 	if fileExisted && !f.canWrite(ctx, ancestor) && f.canAdd(ctx, ancestor) {
+		// Fylvo: a conditional update asked to replace this very file, not for a copy of it.
+		if req.Props.PreviousRequired {
+			return nil, fs.ErrOwnerOnly
+		}
+
 		free, err := f.freeName(ctx, navigator, req.Props.Uri)
 		if err != nil {
 			return nil, err
@@ -140,6 +152,14 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 	ls, err := f.acquireByPath(ctx, time.Until(req.Props.ExpireAt), f.user, false, fs.LockApp(fs.ApplicationUpload), lr)
 	defer func() { _ = f.Release(ctx, ls) }()
 	ctx = fs.LockSessionToContext(ctx, ls)
+	// Fylvo: a conditional update is checked against the file as it is under the lock.
+	if fileExisted && req.Props.PreviousVersion != "" {
+		current, recheckErr := f.recheckUploadTarget(ctx, navigator, req.Props, ancestor, err)
+		if recheckErr != nil {
+			return nil, recheckErr
+		}
+		ancestor, err = current, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -326,13 +346,17 @@ func (f *DBFS) CompleteUpload(ctx context.Context, session *fs.UploadSession) (f
 	}
 
 	// Confirm locks on placeholder file
+	// Fylvo: the confirmed lock is held until the new version is committed, so nobody can
+	// release it or take it over while this upload becomes the current version.
+	releaseHold := func() {}
 	if session.LockToken != "" {
 		release, ls, err := f.ConfirmLock(ctx, file, file.Uri(false), session.LockToken)
 		if err != nil {
 			return nil, fs.ErrLockExpired.WithError(err)
 		}
 
-		release()
+		releaseHold = sync.OnceFunc(release)
+		defer releaseHold()
 		ctx = fs.LockSessionToContext(ctx, ls)
 	}
 
@@ -406,8 +430,10 @@ func (f *DBFS) CompleteUpload(ctx context.Context, session *fs.UploadSession) (f
 	}
 
 	// Unlock file
+	releaseHold()
 	if session.LockToken != "" {
-		if err := f.ls.Unlock(time.Now(), session.LockToken); err != nil {
+		// Fylvo: a lock that ran out during the commit is gone already; the upload is done.
+		if err := f.ls.Unlock(time.Now(), session.LockToken); err != nil && !errors.Is(err, lock.ErrNoSuchLock) {
 			return nil, serializer.NewError(serializer.CodeLockConflict, "Failed to unlock file", err)
 		}
 	}

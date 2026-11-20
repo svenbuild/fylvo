@@ -31,6 +31,8 @@ type (
 		EntityType          string            `json:"entity_type" binding:"eq=|eq=live_photo|eq=version"`
 		EncryptionSupported []types.Cipher    `json:"encryption_supported"`
 		Previous            string            `json:"previous" form:"previous"`
+		// Fylvo: fail with 40904 instead of creating the file when there is none to replace.
+		PreviousRequired bool `json:"previous_required" form:"previous_required"`
 	}
 )
 
@@ -71,6 +73,7 @@ func (service *CreateUploadSessionService) Create(c context.Context) (*UploadSes
 			Size: service.Size,
 
 			PreviousVersion:        service.Previous,
+			PreviousRequired:       service.PreviousRequired,
 			MimeType:               service.MimeType,
 			Metadata:               service.Metadata,
 			EntityType:             entityType,

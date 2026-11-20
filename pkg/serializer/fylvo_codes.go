@@ -12,4 +12,7 @@ const (
 	CodeSamePassword = 40902
 	// CodePasswordChangeExpired the ticket of the password change is unknown or expired
 	CodePasswordChangeExpired = 40903
+	// CodeUploadTargetGone an upload that names the version it replaces ("previous") found no
+	// file at its address: the file was deleted or moved away
+	CodeUploadTargetGone = 40904
 )

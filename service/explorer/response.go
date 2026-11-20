@@ -163,6 +163,8 @@ type UploadSessionResponse struct {
 	MimeType        string                 `json:"mime_type,omitempty"`
 	UploadPolicy    string                 `json:"upload_policy,omitempty"`
 	EncryptMetadata *types.EncryptMetadata `json:"encrypt_metadata,omitempty"`
+	// Fylvo: the hashed id of the entity this upload creates; see fs.UploadCredential.
+	EntityID string `json:"entity_id,omitempty"`
 }
 
 func BuildUploadSessionResponse(session *fs.UploadCredential, hasher hashid.Encoder) *UploadSessionResponse {
@@ -180,6 +182,7 @@ func BuildUploadSessionResponse(session *fs.UploadCredential, hasher hashid.Enco
 		MimeType:        session.MimeType,
 		UploadPolicy:    session.UploadPolicy,
 		EncryptMetadata: session.EncryptMetadata,
+		EntityID:        session.EntityID,
 	}
 
 	if session.EncryptMetadata != nil {
