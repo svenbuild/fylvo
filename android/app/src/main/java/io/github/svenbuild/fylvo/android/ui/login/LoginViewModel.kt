@@ -61,19 +61,20 @@ class LoginViewModel(
                 session.saveServerUrl(serverUrl)
                 val resp = api.authService().login(PasswordLoginRequest(s.email, s.password))
                 val body = resp.body()
-                if (!resp.isSuccessful || body == null || body.data == null) {
-                    throw body?.msg?.ifBlank { null }?.let(::Exception) ?: LoginError(UiText.Res(R.string.login_failed_http, resp.code()))
-                }
+                loginRefusal(resp.isSuccessful, resp.code(), body?.code, body?.msg, body?.data != null)
+                    ?.let { throw LoginError(it) }
+                // loginRefusal returned null: the body and its data are there.
+                val data = checkNotNull(body?.data)
                 when (body.code) {
                     // Password accepted; the server wants a TOTP code before issuing tokens.
                     // `data` is the 2FA session id, valid for ten minutes.
                     CODE_NOT_FULLY_SUCCESS -> {
-                        val sessionId = (body.data as? JsonPrimitive)?.content
+                        val sessionId = (data as? JsonPrimitive)?.content
                             ?: throw LoginError(UiText.Res(R.string.two_factor_without_session))
                         _state.value = _state.value.copy(loading = false, twoFactorSessionId = sessionId, otp = "")
                     }
-                    0 -> completeLogin(api.json.decodeFromJsonElement(LoginResponse.serializer(), body.data))
-                    else -> throw LoginError(serverError(body.code, body.msg))
+                    0 -> completeLogin(api.json.decodeFromJsonElement(LoginResponse.serializer(), data))
+                    else -> throw LoginError(UiText.Res(R.string.login_failed))
                 }
             } catch (e: Exception) {
                 _state.value = _state.value.copy(loading = false, error = describe(e))
@@ -120,8 +121,8 @@ class LoginViewModel(
                         twoFactorSessionId = if (expired) null else sessionId,
                         otp = "",
                         error = if (expired) UiText.Res(R.string.sign_in_timed_out)
-                        else body?.msg?.ifBlank { null }?.let { UiText.Raw(it) }
-                            ?: UiText.Res(R.string.incorrect_code_http, resp.code()),
+                        else if (body != null && body.code != 0) serverError(body.code, body.msg)
+                        else UiText.Res(R.string.incorrect_code_http, resp.code()),
                     )
                     return@launch
                 }
@@ -149,15 +150,31 @@ class LoginViewModel(
         /** serializer.CodeTooManyAttempts (Fylvo): the server locks account and address for 15 minutes. */
         const val CODE_TOO_MANY_ATTEMPTS = 40900
 
+        /** serializer.Code2FACodeErr: wrong two-step code. */
+        const val CODE_WRONG_2FA_CODE = 40022
+
+        /**
+         * The error to show for an answer of the password sign-in, or null when it goes on
+         * (signed in, or the 2FA step). Refusals such as a wrong password or the lock come
+         * as HTTP 200 with a code and no data, so the code is checked before the data.
+         */
+        fun loginRefusal(httpOk: Boolean, httpCode: Int, code: Int?, msg: String?, hasData: Boolean): UiText? = when {
+            !httpOk || code == null -> UiText.Res(R.string.login_failed_http, httpCode)
+            code != 0 && code != CODE_NOT_FULLY_SUCCESS -> serverError(code, msg.orEmpty())
+            !hasData -> UiText.Res(R.string.login_failed)
+            else -> null
+        }
+
         /** Known sign-in refusals in the app's own words (and language); others as the server says. */
         fun serverError(code: Int, msg: String): UiText = when (code) {
             CODE_INVALID_PASSWORD -> UiText.Res(R.string.login_wrong_password)
             CODE_TOO_MANY_ATTEMPTS -> UiText.Res(R.string.login_too_many_attempts)
+            CODE_WRONG_2FA_CODE -> UiText.Res(R.string.login_wrong_code)
             else -> msg.ifBlank { null }?.let { UiText.Raw(it) } ?: UiText.Res(R.string.login_failed)
         }
 
         /** serializer.CodeNotFullySuccess: password accepted, 2FA code still required. */
-        private const val CODE_NOT_FULLY_SUCCESS = 203
+        const val CODE_NOT_FULLY_SUCCESS = 203
         /** serializer.CodeNotFound: here, the 2FA session expired. */
         private const val CODE_NOT_FOUND = 404
 

@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
@@ -117,12 +118,15 @@ fun App() {
         val notifPermission = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { }
+        // Ask once per app start, not again when a language change recreates the screen.
+        var askedNotifications by rememberSaveable { mutableStateOf(false) }
         LaunchedEffect(loggedIn) {
-            if (loggedIn == true && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            if (loggedIn == true && !askedNotifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 ContextCompat.checkSelfPermission(
                     context, Manifest.permission.POST_NOTIFICATIONS
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
+                askedNotifications = true
                 notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }

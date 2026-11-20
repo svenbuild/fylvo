@@ -296,6 +296,7 @@
     <string name="login_failed">Login failed</string>
     <string name="login_wrong_password">Wrong email address or password.</string>
     <string name="login_too_many_attempts">Too many wrong attempts. Sign-in for this account is locked for 15 minutes.</string>
+    <string name="login_wrong_code">Wrong code. Check your authenticator app and try again.</string>
     <string name="login_failed_http">Login failed (HTTP %d)</string>
     <string name="two_factor_without_session">Server requested 2FA without a session id</string>
     <string name="https_only">Fylvo only connects over https. Use the https:// address of your server.</string>
