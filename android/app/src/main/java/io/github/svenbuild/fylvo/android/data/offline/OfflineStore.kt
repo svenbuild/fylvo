@@ -78,18 +78,31 @@ class OfflineStore(private val base: File, val accountKey: String) {
     /** A new file for one download into root [id]. */
     fun downloadTmpOf(id: String): File = File(tmpOf(id), "dl-" + UUID.randomUUID())
 
-    fun clearTmp(id: String) {
-        tmpOf(id).deleteRecursively()
+    /**
+     * Cleans root [id]'s part of offline-tmp, except parked copies (see [moveTmpOf]) of [entries]
+     * whose file is not in place: those are the only copy and wait for [recoverMoves].
+     */
+    fun clearTmp(id: String, entries: List<OfflineEntry> = emptyList()) {
+        val keep = entries.filter { it.localSize >= 0 && !fileOf(id, it.path).isFile }
+            .mapTo(HashSet()) { moveTmpOf(id, it.path) }
+        tmpOf(id).walkBottomUp().forEach { f ->
+            if (f == tmpOf(id) || f in keep) return@forEach
+            if (f.isFile || f.list()?.isEmpty() == true) f.delete()
+        }
+        if (tmpOf(id).list()?.isEmpty() == true) tmpOf(id).delete()
     }
 
     /**
-     * A move stopped after parking a copy: when an entry's copy is missing and its parked copy is
-     * there, it goes back to its place. Returns the paths put back.
+     * A move stopped after parking a copy: when an entry's file is not in place and its parked
+     * copy is there, it goes back. An empty folder at that path (made for a move target before
+     * the stop) is no copy and gives way. Returns the paths put back.
      */
     fun recoverMoves(id: String, entries: List<OfflineEntry>): List<String> = entries.filter { entry ->
         val src = fileOf(id, entry.path)
         val parked = moveTmpOf(id, entry.path)
-        if (entry.localSize < 0 || src.exists() || !parked.isFile) return@filter false
+        if (entry.localSize < 0 || !parked.isFile) return@filter false
+        if (src.isDirectory && src.list()?.isEmpty() == true) src.delete()
+        if (src.exists()) return@filter false
         src.parentFile?.mkdirs()
         parked.renameTo(src)
     }.map { it.path }

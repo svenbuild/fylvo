@@ -213,4 +213,34 @@ class OfflineStoreTest {
         store.clearTmp(r.id)
         assertFalse(mine.exists())
     }
+
+    @Test fun anEmptyFolderMadeForAMoveTargetGivesWayToTheParkedCopy() {
+        val store = OfflineStore(tmp.root, "acc")
+        val r = root()
+        val entry = OfflineEntry("1", "a", "e1", 1, 1)
+        // Stopped after `a` was parked and folder `a/` was made for `a/photo.jpg`.
+        store.moveTmpOf(r.id, "a").apply { parentFile!!.mkdirs(); writeText("x") }
+        store.fileOf(r.id, "a").mkdirs()
+        assertEquals(listOf("a"), store.recoverMoves(r.id, listOf(entry)))
+        assertEquals("x", store.fileOf(r.id, "a").readText())
+    }
+
+    @Test fun aParkedCopyIsNeverCleanedWhileItsFileIsNotInPlace() {
+        val store = OfflineStore(tmp.root, "acc")
+        val r = root()
+        val entry = OfflineEntry("1", "a", "e1", 1, 1)
+        val parked = store.moveTmpOf(r.id, "a").apply { parentFile!!.mkdirs(); writeText("x") }
+        // A folder with something in it stands at `a`: the copy cannot go back yet.
+        store.fileOf(r.id, "a/other").apply { parentFile!!.mkdirs(); writeText("y") }
+        assertEquals(emptyList<String>(), store.recoverMoves(r.id, listOf(entry)))
+        val partial = store.downloadTmpOf(r.id).apply { writeText("part") }
+        store.clearTmp(r.id, listOf(entry))
+        assertTrue(parked.isFile)
+        assertFalse(partial.exists())
+        // Once the file is in place again, the parked copy is a leftover.
+        store.fileOf(r.id, "a").deleteRecursively()
+        store.fileOf(r.id, "a").writeText("z")
+        store.clearTmp(r.id, listOf(entry))
+        assertFalse(parked.exists())
+    }
 }

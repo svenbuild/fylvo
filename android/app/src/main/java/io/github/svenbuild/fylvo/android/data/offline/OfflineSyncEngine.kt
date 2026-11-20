@@ -97,8 +97,11 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
         // server now uses differently). Anything needed is fetched again below.
         if (remote.complete) {
             manager.writing(id) {
-                store.clearTmp(id)
-                store.removeUnindexed(id, writer.current.entries.mapTo(HashSet()) { it.path })
+                val entries = writer.current.entries
+                store.removeUnindexed(id, entries.mapTo(HashSet()) { it.path })
+                // A parked copy whose path is free now goes back before anything in tmp is cleaned.
+                store.recoverMoves(id, entries)
+                store.clearTmp(id, entries)
             } ?: return
         }
 
@@ -135,10 +138,8 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
         // Moves after deletions: a moved file may go where a deleted one was (a file `a` replaced
         // by a folder `a/` holding a moved file). A move that does not work becomes a download.
         val downloads = actions.filterIsInstance<SyncAction.Download>().map { it.file }.toMutableList()
-        actions.filterIsInstance<SyncAction.Move>().forEach { move ->
-            val moved = manager.writing(id) { moveCopy(store, writer, id, move) } ?: return
-            if (!moved && downloads.none { it.path == move.file.path }) downloads += move.file
-        }
+        val failedMoves = manager.writing(id) { moveCopies(store, writer, id, actions.filterIsInstance<SyncAction.Move>()) } ?: return
+        failedMoves.forEach { move -> if (downloads.none { it.path == move.file.path }) downloads += move.file }
 
         val failures = AtomicInteger(0)
         val gate = Semaphore(PARALLEL_DOWNLOADS)
@@ -153,6 +154,19 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
             }.awaitAll()
         }
         if (failures.get() > 0) failed = true
+        // A move that failed but whose file arrived at its new place by download: the old copy
+        // and its entry are outdated now.
+        if (failedMoves.isNotEmpty()) manager.writing(id) {
+            failedMoves.forEach { move ->
+                val arrived = writer.entry(move.file.path)?.let { it.id == move.file.id && it.localSize >= 0 } == true
+                val old = writer.entry(move.from)
+                if (arrived && old != null && old.id == move.file.id) {
+                    store.fileOf(id, move.from).delete()
+                    writer.remove(move.from)
+                    pruneEmptyDirs(store.dirOf(id), store.fileOf(id, move.from).parentFile)
+                }
+            }
+        }
 
         manager.writing(id) {
             if (remote.complete) writer.setFolders(remote.folders.sorted())
@@ -164,48 +178,6 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
             else -> OfflineState.Synced
         }
         finish(writer, id, state)
-    }
-
-    /**
-     * Moves the copy of [move] through offline-tmp, so the old file never blocks its new place
-     * (a file `a` that moved to `a/photo.jpg`). Runs under the write lock; false when it failed.
-     */
-    private fun moveCopy(store: OfflineStore, writer: IndexWriter, id: String, move: SyncAction.Move): Boolean {
-        val old = writer.entry(move.from) ?: return false
-        val src = store.fileOf(id, move.from)
-        val dst = store.fileOf(id, move.file.path)
-        // Named after the old path, so a run stopped right here can put it back (recoverMoves).
-        val tmp = store.moveTmpOf(id, move.from)
-        tmp.parentFile?.mkdirs()
-        tmp.delete()
-        if (!src.renameTo(tmp)) return false
-        writer.remove(move.from)
-        pruneEmptyDirs(store.dirOf(id), src.parentFile)
-        val created = missingDirs(store.dirOf(id), dst.parentFile)
-        dst.parentFile?.mkdirs()
-        if (!dst.exists() && tmp.renameTo(dst)) {
-            writer.put(old.copy(id = move.file.id, path = move.file.path))
-            return true
-        }
-        // Something is in the way: the folders made for the move go (one may stand where the old
-        // copy was), the old copy goes back, and the file is fetched at its new place instead.
-        created.asReversed().forEach { if (it.list()?.isEmpty() == true) it.delete() }
-        src.parentFile?.mkdirs()
-        // If even that fails the copy stays in offline-tmp; the next run puts it back.
-        tmp.renameTo(src)
-        writer.put(old)
-        return false
-    }
-
-    /** Folders from [rootDir] down to [dir] that do not exist yet, outermost first. */
-    private fun missingDirs(rootDir: File, dir: File?): List<File> {
-        val out = ArrayList<File>()
-        var current = dir
-        while (current != null && current != rootDir && current.path.startsWith(rootDir.path) && !current.exists()) {
-            out += current
-            current = current.parentFile
-        }
-        return out.asReversed()
     }
 
     /** The server's view of [root]; throws [RootGone] when the server clearly has nothing there. */
@@ -316,15 +288,6 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
         // Checked again under the lock right before each removal (the parent may go meanwhile).
         indexes.filter { inner -> synced.any { outer -> isCoveredBy(inner, outer) } }
             .forEach { manager.removeIfCovered(store, it.root.id) }
-    }
-
-    /** Removes empty folders from [dir] up to (not including) [rootDir]. */
-    private fun pruneEmptyDirs(rootDir: File, dir: File?) {
-        var current = dir
-        while (current != null && current != rootDir && current.path.startsWith(rootDir.path)) {
-            if (current.list()?.isEmpty() != true || !current.delete()) return
-            current = current.parentFile
-        }
     }
 
     private companion object {

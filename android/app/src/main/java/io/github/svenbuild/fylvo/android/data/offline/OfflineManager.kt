@@ -80,7 +80,10 @@ class OfflineManager(
         context.offlineSettingsStore.edit { it[mobileDataKey] = on }
         if (_roots.value.isNotEmpty()) {
             OfflineSyncWorker.apply(context, on)
-            // A sync still waiting for its network gets the new setting too.
+            // A busy run left alone covers the request (see replaceWaiting).
+            syncRequested.set(true)
+            // A sync still waiting for its network gets the new setting too; with mobile data off,
+            // also one that is busy (it may be downloading over mobile data right now).
             withContext(Dispatchers.IO) { OfflineSyncWorker.replaceWaiting(context, on) }
         }
     }
@@ -207,6 +210,8 @@ class OfflineManager(
             removed += id
             store.load(id)?.root?.legacyFile?.let(::deleteLegacyCopy)
             store.delete(id)
+            // Partial downloads and parked copies of this root.
+            store.tmpOf(id).deleteRecursively()
         }
         reload(store)
         if (_roots.value.isEmpty()) OfflineSyncWorker.cancel(context)

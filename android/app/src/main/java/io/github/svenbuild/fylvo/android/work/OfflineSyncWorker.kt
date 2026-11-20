@@ -72,14 +72,19 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
         }
 
         /**
-         * A one-time run still waiting (enqueued, or blocked behind a busy one) is replaced by one
-         * with the new network setting; a busy run is left alone. Blocking.
+         * The network setting changed: one-time runs still waiting (enqueued, or blocked behind a
+         * busy one) are cancelled; with [mobileData] off a busy one too (it may be downloading over
+         * mobile data; the engine goes on where it stopped). Then one new run is queued with the new
+         * setting. APPEND_OR_REPLACE drops the cancelled runs from the chain, so the new run does not
+         * wait for a busy one that was left alone; if it starts while that one holds the engine lock
+         * it ends at once, and the busy run covers the work through the sync request flag. Blocking.
          */
         fun replaceWaiting(context: Context, mobileData: Boolean) {
             val wm = WorkManager.getInstance(context)
-            val waiting = wm.getWorkInfosForUniqueWork(WORK_ONCE).get().filter { it.state in WAITING }
-            if (waiting.isEmpty()) return
-            waiting.forEach { wm.cancelWorkById(it.id).result.get() }
+            val infos = wm.getWorkInfosForUniqueWork(WORK_ONCE).get()
+            val stop = infos.filter { it.state in WAITING || (!mobileData && it.state == WorkInfo.State.RUNNING) }
+            if (stop.isEmpty()) return
+            stop.forEach { wm.cancelWorkById(it.id).result.get() }
             wm.enqueueUniqueWork(
                 WORK_ONCE,
                 ExistingWorkPolicy.APPEND_OR_REPLACE,
