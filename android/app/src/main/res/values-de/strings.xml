@@ -191,8 +191,8 @@
         <item quantity="other">%d ausgewählt</item>
     </plurals>
     <plurals name="actions_for_selected">
-        <item quantity="one">Aktionen für %d ausgewähltes</item>
-        <item quantity="other">Aktionen für %d ausgewählte</item>
+        <item quantity="one">Aktionen für %d ausgewähltes Element</item>
+        <item quantity="other">Aktionen für %d ausgewählte Elemente</item>
     </plurals>
     <string name="selection_hint">Lange drücken zum Auswählen. Finger ziehen wählt mehrere.</string>
 
