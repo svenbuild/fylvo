@@ -248,3 +248,13 @@ data class TaskItem(
 data class TaskListResponse(
     val tasks: List<TaskItem> = emptyList(),
 )
+
+/** Fylvo: an Android release the server offers for in-app updates (data/AppUpdater). */
+@Serializable
+data class AndroidRelease(
+    @SerialName("version_code") val versionCode: Int = 0,
+    @SerialName("version_name") val versionName: String = "",
+    /** Lowercase hex SHA-256 of the APK. */
+    val sha256: String = "",
+    val size: Long = 0,
+)

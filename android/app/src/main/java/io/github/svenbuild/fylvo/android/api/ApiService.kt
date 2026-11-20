@@ -11,6 +11,7 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 import retrofit2.http.Url
 
 interface ApiService {
@@ -95,4 +96,16 @@ interface ApiService {
 
     @PUT("api/v4/share")
     suspend fun createShare(@Body request: ShareCreateRequest): Response<ApiResponse<String>>
+
+    /** Fylvo: the newest Android release on the server; envelope code 404 when none is published. */
+    @GET("api/v4/fylvo/android/latest")
+    suspend fun androidLatest(): Response<ApiResponse<AndroidRelease>>
+
+    /**
+     * Fylvo: the APK of the release with this SHA-256 (lowercase hex), streamed instead of
+     * buffered. 404 or a JSON envelope means the release changed meanwhile.
+     */
+    @Streaming
+    @GET("api/v4/fylvo/android/apk/{sha256}")
+    suspend fun androidApk(@Path("sha256") sha256: String): Response<ResponseBody>
 }

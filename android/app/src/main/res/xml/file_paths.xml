@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Fylvo: only the two folders the app hands to other apps (downloaded and offline copies).
+<!-- Fylvo: only the folders the app hands to other apps (downloaded and offline copies, and
+     the downloaded app update for the system installer).
      Never the whole filesDir: it holds the session store. -->
 <paths>
     <cache-path name="downloads" path="downloads/" />
     <files-path name="offline" path="offline/" />
+    <cache-path name="updates" path="updates/" />
 </paths>

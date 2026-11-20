@@ -120,6 +120,10 @@ fun App() {
         ) { }
         // Ask once per app start, not again when a language change recreates the screen.
         var askedNotifications by rememberSaveable { mutableStateOf(false) }
+        // Fylvo: look for an app update once per app start, quietly.
+        LaunchedEffect(loggedIn) {
+            if (loggedIn == true) app.appUpdater.checkOnStart()
+        }
         LaunchedEffect(loggedIn) {
             if (loggedIn == true && !askedNotifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 ContextCompat.checkSelfPermission(

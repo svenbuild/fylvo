@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,7 +51,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import kotlinx.coroutines.launch
 import io.github.svenbuild.fylvo.android.FylvoApp
+import io.github.svenbuild.fylvo.android.BuildConfig
 import io.github.svenbuild.fylvo.android.R
+import io.github.svenbuild.fylvo.android.data.AppUpdater
 import io.github.svenbuild.fylvo.android.api.CapacityResponse
 import io.github.svenbuild.fylvo.android.ui.files.formatSize
 import io.github.svenbuild.fylvo.android.util.AppLanguage
@@ -251,6 +255,7 @@ fun AccountScreen(
                 supportingContent = { Text(stringResource(appLanguage.label)) },
                 leadingContent = { Icon(Icons.Default.Language, contentDescription = null) },
             )
+            UpdateRows(app.appUpdater)
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             ListItem(
@@ -308,6 +313,55 @@ fun AccountScreen(
             },
         )
     }
+}
+
+/**
+ * Fylvo: the installed version (tap to check for updates) and, when the server offers a newer
+ * release, a row to download and install it.
+ */
+@Composable
+private fun UpdateRows(updater: AppUpdater) {
+    val state by updater.state.collectAsState()
+    val status = when (state) {
+        AppUpdater.State.Checking -> stringResource(R.string.update_checking)
+        AppUpdater.State.UpToDate -> stringResource(R.string.update_up_to_date)
+        AppUpdater.State.CheckFailed -> stringResource(R.string.update_check_failed)
+        else -> null
+    }
+    ListItem(
+        modifier = Modifier.clickable { updater.checkNow() },
+        headlineContent = { Text(stringResource(R.string.app_version)) },
+        supportingContent = { Text(listOfNotNull(BuildConfig.VERSION_NAME, status).joinToString(" · ")) },
+        leadingContent = { Icon(Icons.Outlined.Info, contentDescription = null) },
+        trailingContent = {
+            if (state == AppUpdater.State.Idle) {
+                TextButton(onClick = { updater.checkNow() }) { Text(stringResource(R.string.update_check)) }
+            }
+        },
+    )
+    val release = when (val s = state) {
+        is AppUpdater.State.Available -> s.release
+        is AppUpdater.State.Downloading -> s.release
+        else -> return
+    }
+    val downloading = state as? AppUpdater.State.Downloading
+    val error = (state as? AppUpdater.State.Available)?.error
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.update_to, release.versionName)) },
+        supportingContent = {
+            when {
+                downloading != null -> Text(stringResource(R.string.update_downloading, downloading.percent))
+                error != null -> Text(stringResource(error), color = MaterialTheme.colorScheme.error)
+                else -> Text(formatSize(release.size))
+            }
+        },
+        leadingContent = { Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        trailingContent = {
+            FilledTonalButton(onClick = { updater.downloadAndInstall() }, enabled = downloading == null) {
+                Text(stringResource(R.string.update_install))
+            }
+        },
+    )
 }
 
 /** Name of the language in the settings row and the choice dialog. */

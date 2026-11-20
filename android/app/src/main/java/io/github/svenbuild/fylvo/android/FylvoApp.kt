@@ -9,6 +9,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import io.github.svenbuild.fylvo.android.api.RefreshTokenRequest
 import io.github.svenbuild.fylvo.android.api.ApiClient
+import io.github.svenbuild.fylvo.android.data.AppUpdater
 import io.github.svenbuild.fylvo.android.data.FavoritesStore
 import io.github.svenbuild.fylvo.android.data.FileRepository
 import io.github.svenbuild.fylvo.android.data.SessionManager
@@ -34,6 +35,8 @@ class FylvoApp : Application() {
         private set
     lateinit var viewSettings: ViewSettings
         private set
+    lateinit var appUpdater: AppUpdater
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -45,11 +48,12 @@ class FylvoApp : Application() {
         taskNotifySettings = TaskNotifySettings(this)
         syncFolderSettings = SyncFolderSettings(this)
         viewSettings = ViewSettings(this)
+        appUpdater = AppUpdater(this, apiClient)
     }
 
     /**
      * Fylvo: ends the session and removes what the account left on the device: background
-     * jobs, offline copies, cached downloads, upload staging, folder-sync and notification
+     * jobs, offline copies, cached downloads and app updates, upload staging, folder-sync and notification
      * settings, URI grants. On sign-out the refresh token is revoked on the server; when the
      * server already ended the session ([expired]) the server address and email stay for the
      * login form. The session store is cleared last: that switches the app to the login
@@ -68,6 +72,7 @@ class FylvoApp : Application() {
                 WorkManager.getInstance(this@FylvoApp).pruneWork()
             }
             io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames()
+            appUpdater.reset()
             favoritesStore.clear()
             syncFolderSettings.clear()
             taskNotifySettings.clear()
@@ -83,6 +88,7 @@ class FylvoApp : Application() {
             )
             withContext(Dispatchers.IO) {
                 filesDir.resolve("offline").deleteRecursively()
+                // Also removes cacheDir/updates, the downloaded app update.
                 cacheDir.listFiles()?.forEach { it.deleteRecursively() }
             }
             if (expired) sessionManager.clearSession() else sessionManager.clear()

@@ -276,6 +276,19 @@
     <string name="language_device">Device language</string>
     <string name="language_english" translatable="false">English</string>
     <string name="language_german" translatable="false">Deutsch</string>
+    <string name="app_version">App version</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_checking">Checking…</string>
+    <string name="update_up_to_date">Up to date</string>
+    <string name="update_check_failed">Could not check for updates</string>
+    <string name="update_to">Update to %s</string>
+    <string name="update_install">Install</string>
+    <string name="update_downloading">Downloading… %d %%</string>
+    <string name="update_download_failed">Download failed</string>
+    <string name="update_checksum_failed">Checksum does not match, please try again</string>
+    <string name="update_changed">The update changed on the server, please try again</string>
+    <string name="update_invalid">Update is not valid</string>
+    <string name="update_allow_install">Allow Fylvo to install apps, then tap Install again</string>
     <string name="sign_out">Sign out</string>
     <string name="sign_out_title">Sign out?</string>
     <string name="sign_out_text">You will need to sign in again to sync your files.</string>

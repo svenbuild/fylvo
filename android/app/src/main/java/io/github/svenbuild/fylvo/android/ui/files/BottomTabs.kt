@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
@@ -41,7 +42,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
+import io.github.svenbuild.fylvo.android.FylvoApp
+import io.github.svenbuild.fylvo.android.data.AppUpdater
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +75,10 @@ private val PillInset = 5.dp
 @Composable
 fun BottomTabs(selected: Tab, onSelect: (Tab) -> Unit) {
     val colors = MaterialTheme.colorScheme
+    // Fylvo: a small dot on Account while an app update waits.
+    val updater = (LocalContext.current.applicationContext as FylvoApp).appUpdater
+    val updateState by updater.state.collectAsState()
+    val updateWaiting = updateState is AppUpdater.State.Available || updateState is AppUpdater.State.Downloading
     Box(
         Modifier
             .fillMaxWidth()
@@ -101,7 +110,10 @@ fun BottomTabs(selected: Tab, onSelect: (Tab) -> Unit) {
                 )
                 Row(Modifier.fillMaxSize()) {
                     Tab.entries.forEach { tab ->
-                        TabItem(tab, tab == selected, Modifier.weight(1f).fillMaxHeight()) { onSelect(tab) }
+                        TabItem(
+                            tab, tab == selected, Modifier.weight(1f).fillMaxHeight(),
+                            dot = tab == Tab.ACCOUNT && updateWaiting,
+                        ) { onSelect(tab) }
                     }
                 }
             }
@@ -110,7 +122,7 @@ fun BottomTabs(selected: Tab, onSelect: (Tab) -> Unit) {
 }
 
 @Composable
-private fun TabItem(tab: Tab, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun TabItem(tab: Tab, active: Boolean, modifier: Modifier, dot: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val iconTint by animateColorAsState(if (active) colors.primary else colors.onSurfaceVariant, label = "tabIcon")
     val labelColor by animateColorAsState(if (active) colors.onSurface else colors.onSurfaceVariant, label = "tabLabel")
@@ -127,12 +139,23 @@ private fun TabItem(tab: Tab, active: Boolean, modifier: Modifier, onClick: () -
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
     ) {
-        Icon(
-            if (active) tab.selectedIcon else tab.icon,
-            contentDescription = null,
-            tint = iconTint,
-            modifier = Modifier.size(22.dp),
-        )
+        Box {
+            Icon(
+                if (active) tab.selectedIcon else tab.icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(22.dp),
+            )
+            if (dot) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 3.dp, y = (-2).dp)
+                        .size(8.dp)
+                        .background(colors.primary, CircleShape),
+                )
+            }
+        }
         Text(stringResource(tab.label), style = MaterialTheme.typography.labelSmall, color = labelColor)
     }
 }
