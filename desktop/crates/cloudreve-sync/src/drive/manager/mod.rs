@@ -657,7 +657,9 @@ impl DriveManager {
                 capacity,
                 read_only: mount.is_read_only(),
                 held_deletions: mount.held_deletions(),
-                drive_letter: config.drive_letter,
+                drive_letter: config
+                    .drive_letter
+                    .filter(|l| crate::drive::drive_letter::is_usable(*l)),
                 drive_letter_state: mount.drive_letter_state(),
             });
         }

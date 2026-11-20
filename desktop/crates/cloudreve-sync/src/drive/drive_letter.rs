@@ -564,14 +564,27 @@ mod win {
         let Some(letter_key) = open_key(&base, Some(REG_OPTION_VOLATILE)) else {
             return;
         };
+        // A name or icon another program changed meanwhile stays.
+        let old_label = read_value(&base, Some(LABEL_MARKER));
+        let label_is_ours = read_value(&label_path, None)
+            .is_none_or(|v| Some(v.as_str()) == old_label.as_deref());
+        let icon_is_ours = read_value(&icon_path, None).is_none_or(|v| is_our_icon(&v));
         write_value(&letter_key, Some(MARKER), &folder.to_string_lossy());
-        write_value(&letter_key, Some(LABEL_MARKER), name);
-        if let Some(key) = open_key(&label_path, Some(REG_OPTION_VOLATILE)) {
-            write_value(&key, None, name);
+        if label_is_ours {
+            write_value(&letter_key, Some(LABEL_MARKER), name);
+            if let Some(key) = open_key(&label_path, Some(REG_OPTION_VOLATILE)) {
+                write_value(&key, None, name);
+            }
         }
-        if let Some(key) = open_key(&icon_path, Some(REG_OPTION_VOLATILE)) {
-            write_value(&key, None, &icon);
+        if icon_is_ours {
+            if let Some(key) = open_key(&icon_path, Some(REG_OPTION_VOLATILE)) {
+                write_value(&key, None, &icon);
+            }
         }
+    }
+
+    fn is_our_icon(value: &str) -> bool {
+        value.to_lowercase().ends_with("fylvo-desktop.exe,0")
     }
 
     /// Remove the name and icon if Fylvo set them for `folder`.
@@ -582,9 +595,7 @@ mod win {
         }
         let base = drive_key(letter);
         let label = read_value(&base, Some(LABEL_MARKER));
-        delete_key_if(&format!(r"{base}\DefaultIcon"), |v| {
-            v.to_lowercase().ends_with("fylvo-desktop.exe,0")
-        });
+        delete_key_if(&format!(r"{base}\DefaultIcon"), is_our_icon);
         delete_key_if(&format!(r"{base}\DefaultLabel"), |v| Some(v) == label.as_deref());
         if let Some(key) = open_key(&base, Some(REG_OPTION_VOLATILE)) {
             for value in [MARKER, LABEL_MARKER] {
@@ -595,11 +606,13 @@ mod win {
         delete_key_if_empty(&base);
     }
 
-    /// Delete the key if its default value passes `check` and it holds nothing else.
+    /// Delete the key's default value if it passes `check`, then the key if nothing is left.
     fn delete_key_if(path: &str, check: impl Fn(&str) -> bool) {
-        if read_value(path, None).is_some_and(|v| check(&v)) && counts(path) == Some((0, 1)) {
-            let path = wide(path);
-            let _ = unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr())) };
+        if read_value(path, None).is_some_and(|v| check(&v)) {
+            if let Some(key) = open_key(path, Some(REG_OPTION_VOLATILE)) {
+                let _ = unsafe { RegDeleteKeyValueW(key.0, PCWSTR::null(), PCWSTR::null()) };
+            }
+            delete_key_if_empty(path);
         }
     }
 
