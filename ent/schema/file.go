@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"context"
 	"time"
 
 	"entgo.io/ent"
@@ -9,7 +8,6 @@ import (
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
-	"github.com/cloudreve/Cloudreve/v4/ent/hook"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 )
 
@@ -80,22 +78,5 @@ func (File) Indexes() []ent.Index {
 		index.Fields("file_children", "type", "updated_at"),
 		index.Fields("file_children", "type", "created_at"),
 		index.Fields("file_children", "type", "size"),
-	}
-}
-
-func (f File) Hooks() []ent.Hook {
-	return []ent.Hook{
-		hook.On(func(next ent.Mutator) ent.Mutator {
-			return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-				if s, ok := m.(interface{ SetUpdatedAt(time.Time) }); ok {
-					_, set := m.Field("updated_at")
-					if !set {
-						s.SetUpdatedAt(time.Now())
-					}
-				}
-				v, err := next.Mutate(ctx, m)
-				return v, err
-			})
-		}, ent.OpUpdate|ent.OpUpdateOne),
 	}
 }

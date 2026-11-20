@@ -414,10 +414,12 @@ func (f *fileClient) GetByHashID(ctx context.Context, hashID string) (*ent.File,
 
 func (f *fileClient) SoftDelete(ctx context.Context, file *ent.File) error {
 	newName := uuid.Must(uuid.NewV4())
-	// Rename file to random UUID and make it stale
+	// Rename file to random UUID and make it stale. Fylvo: in the trash the date tells when the
+	// file was deleted; its own date is kept in its metadata until it is restored.
 	_, err := f.client.File.UpdateOne(file).
 		SetName(newName.String()).
 		ClearParent().
+		SetUpdatedAt(time.Now()).
 		Save(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to soft delete file %d: %w", file.ID, err)
@@ -629,7 +631,9 @@ func (f *fileClient) Copy(ctx context.Context, args *CopyParameter) (map[int][]*
 			SetSize(file.Size).
 			SetType(file.Type).
 			SetParent(dstMap[file.FileChildren][0]).
-			SetIsSymbolic(file.IsSymbolic)
+			SetIsSymbolic(file.IsSymbolic).
+			// Fylvo: a copy has the same content, so it keeps the date of its source.
+			SetUpdatedAt(file.UpdatedAt)
 		if file.StoragePolicyFiles > 0 {
 			stm.SetStoragePolicyFiles(file.StoragePolicyFiles)
 		}
@@ -793,13 +797,15 @@ func (f *fileClient) UpgradePlaceholder(ctx context.Context, file *ent.File, mod
 	}
 
 	if entityType == types.EntityTypeVersion {
+		// Fylvo: new content is the one thing that changes the date of a file.
+		changedAt := time.Now()
+		if modifiedAt != nil {
+			changedAt = *modifiedAt
+		}
 		stm := f.client.File.UpdateOne(file).
 			SetSize(placeholder.Size).
-			SetPrimaryEntity(placeholder.ID)
-
-		if modifiedAt != nil {
-			stm.SetUpdatedAt(*modifiedAt)
-		}
+			SetPrimaryEntity(placeholder.ID).
+			SetUpdatedAt(changedAt)
 
 		if err := stm.Exec(ctx); err != nil {
 			return fmt.Errorf("failed to upgrade file primary entity: %v", err)
@@ -809,7 +815,8 @@ func (f *fileClient) UpgradePlaceholder(ctx context.Context, file *ent.File, mod
 }
 
 func (f *fileClient) SetPrimaryEntity(ctx context.Context, file *ent.File, entity *ent.Entity) error {
-	return f.client.File.UpdateOne(file).SetPrimaryEntity(entity.ID).SetSize(entity.Size).Exec(ctx)
+	// Fylvo: another version is new content too.
+	return f.client.File.UpdateOne(file).SetPrimaryEntity(entity.ID).SetSize(entity.Size).SetUpdatedAt(time.Now()).Exec(ctx)
 }
 
 func (f *fileClient) CreateFile(ctx context.Context, root *ent.File, args *CreateFileParameters) (*ent.File, *ent.Entity, StorageDiff, error) {

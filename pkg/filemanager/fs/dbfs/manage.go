@@ -319,6 +319,12 @@ func (f *DBFS) SoftDelete(ctx context.Context, path ...*fs.URI) error {
 	}
 
 	for _, target := range targets {
+		modifiedAt, err := keptModifiedAt(ctx, fc, target.Model)
+		if err != nil {
+			_ = inventory.Rollback(tx)
+			return serializer.NewError(serializer.CodeDBError, "failed to read file date", err)
+		}
+
 		// Perform soft-delete
 		if err := fc.SoftDelete(ctx, target.Model); err != nil {
 			_ = inventory.Rollback(tx)
@@ -331,6 +337,7 @@ func (f *DBFS) SoftDelete(ctx context.Context, path ...*fs.URI) error {
 			MetadataExpectedCollectTime: strconv.FormatInt(
 				time.Now().Add(time.Duration(target.Owner().Edges.Group.Settings.TrashRetention)*time.Second).Unix(),
 				10),
+			MetadataRestoreModifiedAt: modifiedAt,
 		}, nil); err != nil {
 			_ = inventory.Rollback(tx)
 			return serializer.NewError(serializer.CodeDBError, "failed to update metadata", err)
@@ -906,7 +913,7 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 	foreignDestination := !f.isOwnerCall(ctx, destination)
 	if foreignDestination {
 		excludedMetadata = append(excludedMetadata, MetadataSharedRedirect,
-			MetadataSharedOwner, MetadataRestoreUri, MetadataExpectedCollectTime)
+			MetadataSharedOwner, MetadataRestoreUri, MetadataExpectedCollectTime, MetadataRestoreModifiedAt)
 	}
 
 	// newTargetsMap is the map of between new target files in first layer, and its src file ID.
@@ -1036,8 +1043,12 @@ func (f *DBFS) moveFiles(ctx context.Context, targets []*File, destination *File
 			return storageDiff, nil, serializer.NewError(serializer.CodeDBError, "Failed to rename file from trash bin to its original name", err)
 		}
 
+		if err := restoreModifiedAt(ctx, fc, file); err != nil {
+			return storageDiff, nil, serializer.NewError(serializer.CodeDBError, "Failed to restore the date of the file", err)
+		}
+
 		// Remove trash bin metadata
-		if err := fc.RemoveMetadata(ctx, file.Model, MetadataRestoreUri, MetadataExpectedCollectTime); err != nil {
+		if err := fc.RemoveMetadata(ctx, file.Model, MetadataRestoreUri, MetadataExpectedCollectTime, MetadataRestoreModifiedAt); err != nil {
 			return storageDiff, nil, serializer.NewError(serializer.CodeDBError, "Failed to remove trash related metadata", err)
 		}
 	}
