@@ -22,7 +22,11 @@ interface ApiService {
     suspend fun login(@Body request: PasswordLoginRequest): Response<ApiResponse<JsonElement>>
 
     @POST("api/v4/session/token/2fa")
-    suspend fun verify2FA(@Body request: OtpLoginRequest): Response<ApiResponse<LoginResponse>>
+    suspend fun verify2FA(@Body request: OtpLoginRequest): Response<ApiResponse<JsonElement>>
+
+    /** Fylvo: the new password for an account that must change it at sign-in. */
+    @POST("api/v4/session/token/password")
+    suspend fun setNewPassword(@Body request: NewPasswordRequest): Response<ApiResponse<JsonElement>>
 
     @POST("api/v4/session/token/refresh")
     suspend fun refreshToken(@Body request: RefreshTokenRequest): Response<ApiResponse<RefreshTokenResponse>>

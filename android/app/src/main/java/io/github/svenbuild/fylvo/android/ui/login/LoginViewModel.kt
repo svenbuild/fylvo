@@ -5,10 +5,12 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.ApiClient
 import io.github.svenbuild.fylvo.android.api.LoginResponse
+import io.github.svenbuild.fylvo.android.api.NewPasswordRequest
 import io.github.svenbuild.fylvo.android.api.OtpLoginRequest
 import io.github.svenbuild.fylvo.android.api.PasswordLoginRequest
 import io.github.svenbuild.fylvo.android.data.SessionManager
@@ -28,7 +30,25 @@ data class LoginUiState(
     /** Non-null once the server has accepted the password and is waiting for a TOTP code. */
     val twoFactorSessionId: String? = null,
     val otp: String = "",
-)
+    /**
+     * Fylvo: non-null when the password was right but the account must set a new one first.
+     * The ticket lives only here (no log, no saved state) and is valid for ten minutes.
+     */
+    val passwordChangeTicket: String? = null,
+    val newPassword: String = "",
+    val newPasswordRepeat: String = "",
+) {
+    /** No passwords or tickets in logs or crash reports. */
+    override fun toString() = "LoginUiState(step=${step()}, loading=$loading, loggedIn=$loggedIn)"
+
+    fun step(): LoginStep = when {
+        passwordChangeTicket != null -> LoginStep.NewPassword
+        twoFactorSessionId != null -> LoginStep.TwoFactor
+        else -> LoginStep.Password
+    }
+}
+
+enum class LoginStep { Password, TwoFactor, NewPassword }
 
 class LoginViewModel(
     private val session: SessionManager,
@@ -42,6 +62,14 @@ class LoginViewModel(
     fun onEmailChange(v: String) = _state.value.let { _state.value = it.copy(email = v, error = null) }
     fun onPasswordChange(v: String) = _state.value.let { _state.value = it.copy(password = v, error = null) }
     fun onOtpChange(v: String) = _state.value.let { _state.value = it.copy(otp = v.filter(Char::isDigit).take(6), error = null) }
+
+    fun onNewPasswordChange(v: String) = _state.value.let { _state.value = it.copy(newPassword = v, error = null) }
+    fun onNewPasswordRepeatChange(v: String) = _state.value.let { _state.value = it.copy(newPasswordRepeat = v, error = null) }
+
+    /** Fylvo: leave the password change and sign in again (the ticket is dropped). */
+    fun cancelPasswordChange() = _state.value.let {
+        _state.value = it.copy(passwordChangeTicket = null, newPassword = "", newPasswordRepeat = "", password = "", error = null)
+    }
 
     /** Abandon the pending 2FA challenge and return to the password form. */
     fun cancelTwoFactor() = _state.value.let { _state.value = it.copy(twoFactorSessionId = null, otp = "", error = null) }
@@ -73,6 +101,7 @@ class LoginViewModel(
                             ?: throw LoginError(UiText.Res(R.string.two_factor_without_session))
                         _state.value = _state.value.copy(loading = false, twoFactorSessionId = sessionId, otp = "")
                     }
+                    CODE_PASSWORD_CHANGE_REQUIRED -> startPasswordChange(data)
                     0 -> completeLogin(api.json.decodeFromJsonElement(LoginResponse.serializer(), data))
                     else -> throw LoginError(UiText.Res(R.string.login_failed))
                 }
@@ -113,6 +142,10 @@ class LoginViewModel(
             try {
                 val resp = api.authService().verify2FA(OtpLoginRequest(otp = s.otp, sessionId = sessionId))
                 val body = resp.body()
+                if (resp.isSuccessful && body?.code == CODE_PASSWORD_CHANGE_REQUIRED && body.data != null) {
+                    startPasswordChange(body.data)
+                    return@launch
+                }
                 if (!resp.isSuccessful || body == null || body.code != 0 || body.data == null) {
                     // A 404 means the ten-minute 2FA session expired: start over.
                     val expired = body?.code == CODE_NOT_FOUND
@@ -126,9 +159,47 @@ class LoginViewModel(
                     )
                     return@launch
                 }
-                completeLogin(body.data)
+                completeLogin(api.json.decodeFromJsonElement(LoginResponse.serializer(), body.data))
             } catch (e: Exception) {
                 _state.value = _state.value.copy(loading = false, otp = "", error = describe(e))
+            }
+        }
+    }
+
+    /** The password was right, but the account must set a new one: show that step. */
+    private fun startPasswordChange(data: JsonElement) {
+        val ticket = (data as? JsonPrimitive)?.takeIf { it.isString }?.content?.ifBlank { null }
+            ?: throw LoginError(UiText.Res(R.string.login_failed))
+        _state.value = _state.value.copy(
+            loading = false, twoFactorSessionId = null, otp = "",
+            passwordChangeTicket = ticket, newPassword = "", newPasswordRepeat = "", error = null,
+        )
+    }
+
+    /** Fylvo: store the new password with the ticket; on success the person is signed in. */
+    fun setNewPassword() {
+        val s = _state.value
+        val ticket = s.passwordChangeTicket ?: return
+        newPasswordProblem(s.newPassword, s.newPasswordRepeat)?.let {
+            _state.value = s.copy(error = it)
+            return
+        }
+        _state.value = s.copy(loading = true, error = null)
+        viewModelScope.launch {
+            try {
+                val resp = api.authService().setNewPassword(NewPasswordRequest(sessionId = ticket, password = s.newPassword))
+                val body = resp.body()
+                when (val outcome = passwordChangeOutcome(resp.isSuccessful, resp.code(), body?.code, body?.msg, body?.data != null)) {
+                    PasswordChangeOutcome.Done ->
+                        completeLogin(api.json.decodeFromJsonElement(LoginResponse.serializer(), checkNotNull(body?.data)))
+                    PasswordChangeOutcome.Expired -> _state.value = _state.value.copy(
+                        loading = false, passwordChangeTicket = null, newPassword = "", newPasswordRepeat = "",
+                        password = "", error = UiText.Res(R.string.sign_in_timed_out),
+                    )
+                    is PasswordChangeOutcome.Retry -> _state.value = _state.value.copy(loading = false, error = outcome.error)
+                }
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(loading = false, error = describe(e))
             }
         }
     }
@@ -141,7 +212,10 @@ class LoginViewModel(
             email = login.user.email,
             nick = login.user.nickname,
         )
-        _state.value = _state.value.copy(loading = false, loggedIn = true, twoFactorSessionId = null, otp = "")
+        _state.value = _state.value.copy(
+            loading = false, loggedIn = true, twoFactorSessionId = null, otp = "",
+            passwordChangeTicket = null, password = "", newPassword = "", newPasswordRepeat = "",
+        )
     }
 
     companion object {
@@ -160,7 +234,7 @@ class LoginViewModel(
          */
         fun loginRefusal(httpOk: Boolean, httpCode: Int, code: Int?, msg: String?, hasData: Boolean): UiText? = when {
             !httpOk || code == null -> UiText.Res(R.string.login_failed_http, httpCode)
-            code != 0 && code != CODE_NOT_FULLY_SUCCESS -> serverError(code, msg.orEmpty())
+            code != 0 && code != CODE_NOT_FULLY_SUCCESS && code != CODE_PASSWORD_CHANGE_REQUIRED -> serverError(code, msg.orEmpty())
             !hasData -> UiText.Res(R.string.login_failed)
             else -> null
         }
@@ -173,10 +247,51 @@ class LoginViewModel(
             else -> msg.ifBlank { null }?.let { UiText.Raw(it) } ?: UiText.Res(R.string.login_failed)
         }
 
+        /** serializer.CodePasswordChangeRequired (Fylvo): data is the ticket for the new password. */
+        const val CODE_PASSWORD_CHANGE_REQUIRED = 40901
+        /** serializer.CodeSamePassword (Fylvo): the new password equals the current one. */
+        const val CODE_SAME_PASSWORD = 40902
+        /** serializer.CodePasswordChangeExpired (Fylvo): the ticket is unknown or expired. */
+        const val CODE_PASSWORD_CHANGE_EXPIRED = 40903
+        /** serializer.CodeParamErr: here, the new password is too short or too long. */
+        const val CODE_PARAM_ERR = 40001
+
+        /** The server takes 6 to 128 characters. */
+        const val MIN_PASSWORD_LENGTH = 6
+        const val MAX_PASSWORD_LENGTH = 128
+
+        /** A problem with the typed new password, checked before it is sent; null when fine. */
+        fun newPasswordProblem(password: String, repeat: String): UiText? = when {
+            password.length !in MIN_PASSWORD_LENGTH..MAX_PASSWORD_LENGTH -> UiText.Res(R.string.new_password_length)
+            password != repeat -> UiText.Res(R.string.new_password_mismatch)
+            else -> null
+        }
+
+        /** What the answer to the new password means. */
+        fun passwordChangeOutcome(httpOk: Boolean, httpCode: Int, code: Int?, msg: String?, hasData: Boolean): PasswordChangeOutcome = when {
+            !httpOk || code == null -> PasswordChangeOutcome.Retry(UiText.Res(R.string.login_failed_http, httpCode))
+            code == 0 && hasData -> PasswordChangeOutcome.Done
+            code == 0 -> PasswordChangeOutcome.Retry(UiText.Res(R.string.login_failed))
+            code == CODE_PASSWORD_CHANGE_EXPIRED -> PasswordChangeOutcome.Expired
+            code == CODE_SAME_PASSWORD -> PasswordChangeOutcome.Retry(UiText.Res(R.string.new_password_same))
+            code == CODE_PARAM_ERR -> PasswordChangeOutcome.Retry(UiText.Res(R.string.new_password_length))
+            else -> PasswordChangeOutcome.Retry(serverError(code, msg.orEmpty()))
+        }
+
         /** serializer.CodeNotFullySuccess: password accepted, 2FA code still required. */
         const val CODE_NOT_FULLY_SUCCESS = 203
         /** serializer.CodeNotFound: here, the 2FA session expired. */
         private const val CODE_NOT_FOUND = 404
 
     }
+}
+
+/** Fylvo: the answer to a new password at sign-in. */
+sealed interface PasswordChangeOutcome {
+    /** Stored; the answer holds the tokens like a normal sign-in. */
+    data object Done : PasswordChangeOutcome
+    /** The ticket is gone: back to the sign-in. */
+    data object Expired : PasswordChangeOutcome
+    /** Show the error, the ticket stays valid for another try. */
+    data class Retry(val error: UiText) : PasswordChangeOutcome
 }

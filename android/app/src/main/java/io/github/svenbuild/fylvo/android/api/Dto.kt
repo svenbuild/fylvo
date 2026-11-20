@@ -50,6 +50,13 @@ data class OtpLoginRequest(
     @SerialName("session_id") val sessionId: String,
 )
 
+/** Fylvo: the new password with the ticket of a sign-in that needs a password change. */
+@Serializable
+data class NewPasswordRequest(
+    @SerialName("session_id") val sessionId: String,
+    val password: String,
+)
+
 @Serializable
 data class RefreshTokenRequest(
     @SerialName("refresh_token") val refreshToken: String,

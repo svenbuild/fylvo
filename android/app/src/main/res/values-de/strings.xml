@@ -307,6 +307,14 @@
     <string name="login_wrong_password">E-Mail-Adresse oder Passwort falsch.</string>
     <string name="login_too_many_attempts">Zu viele falsche Versuche. Die Anmeldung für dieses Konto ist für 15 Minuten gesperrt.</string>
     <string name="login_wrong_code">Falscher Code. Prüfe die Authenticator-App und versuche es noch einmal.</string>
+    <string name="new_password_title">Neues Passwort festlegen</string>
+    <string name="new_password_hint">Dein Konto braucht ein neues Passwort, bevor es weitergeht.</string>
+    <string name="new_password">Neues Passwort</string>
+    <string name="new_password_repeat">Wiederholen</string>
+    <string name="new_password_save">Speichern und anmelden</string>
+    <string name="new_password_length">Verwende 6 bis 128 Zeichen.</string>
+    <string name="new_password_mismatch">Die beiden Passwörter stimmen nicht überein.</string>
+    <string name="new_password_same">Wähle ein anderes Passwort als dein bisheriges.</string>
     <string name="login_failed_http">Anmeldung fehlgeschlagen (HTTP %d)</string>
     <string name="two_factor_without_session">Der Server verlangt 2FA, aber ohne Sitzungs-ID</string>
     <string name="https_only">Fylvo verbindet sich nur über https. Nutze die https://-Adresse deines Servers.</string>

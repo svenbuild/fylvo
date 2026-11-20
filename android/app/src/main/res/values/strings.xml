@@ -310,6 +310,14 @@
     <string name="login_wrong_password">Wrong email address or password.</string>
     <string name="login_too_many_attempts">Too many wrong attempts. Sign-in for this account is locked for 15 minutes.</string>
     <string name="login_wrong_code">Wrong code. Check your authenticator app and try again.</string>
+    <string name="new_password_title">Set a new password</string>
+    <string name="new_password_hint">Your account needs a new password before you can continue.</string>
+    <string name="new_password">New password</string>
+    <string name="new_password_repeat">Repeat</string>
+    <string name="new_password_save">Save and sign in</string>
+    <string name="new_password_length">Use 6 to 128 characters.</string>
+    <string name="new_password_mismatch">The two passwords do not match.</string>
+    <string name="new_password_same">Choose a password other than your current one.</string>
     <string name="login_failed_http">Login failed (HTTP %d)</string>
     <string name="two_factor_without_session">Server requested 2FA without a session id</string>
     <string name="https_only">Fylvo only connects over https. Use the https:// address of your server.</string>
