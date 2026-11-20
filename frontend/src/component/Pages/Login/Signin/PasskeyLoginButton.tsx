@@ -11,13 +11,21 @@ import { DefaultCloseAction } from "../../../Common/Snackbar/snackbar.tsx";
 import { SecondaryLoadingButton } from "../../../Common/StyledComponents.tsx";
 import Fingerprint from "../../../Icons/Fingerprint.tsx";
 import { LoginResponse } from "../../../../api/user.ts";
+import { AppError, Code } from "../../../../api/request.ts";
 
 export interface PasskeyLoginButtonProps extends ButtonProps {
   autoComplete?: boolean;
   onLoginSuccess?: (response: LoginResponse) => void;
+  // Fylvo: the account has to set a new password first
+  onPasswordChangeRequired?: (ticket: string) => void;
 }
 
-export default function PasskeyLoginButton({ autoComplete, onLoginSuccess, ...rest }: PasskeyLoginButtonProps) {
+export default function PasskeyLoginButton({
+  autoComplete,
+  onLoginSuccess,
+  onPasswordChangeRequired,
+  ...rest
+}: PasskeyLoginButtonProps) {
   const { t } = useTranslation();
   const { enqueueSnackbar } = useSnackbar();
   const dispatch = useAppDispatch();
@@ -101,7 +109,11 @@ export default function PasskeyLoginButton({ autoComplete, onLoginSuccess, ...re
         }
       }
     } catch (e) {
-      console.log(e);
+      if (e instanceof AppError && e.code === Code.PasswordChangeRequired && onPasswordChangeRequired) {
+        onPasswordChangeRequired(e.response.data);
+      } else {
+        console.log(e);
+      }
     } finally {
       !conditional && setLoading(false);
       dispatch(setHeadlessFrameLoading(false));

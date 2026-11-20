@@ -36,6 +36,8 @@ const (
 	KindTwoFA  = "2fa"
 	KindWebDAV = "webdav"
 	KindShare  = "share"
+	// KindPasswordChange counts unknown or expired tickets of the forced password change.
+	KindPasswordChange = "password-change"
 
 	// maxKeys caps the memory use. Above it, wrong guesses for new subjects are counted per
 	// address alone, so that filling the map does not switch the limit off. Above twice as many

@@ -47,9 +47,16 @@ interface PhaseCollectEmailProps {
   setEmail: (email: string) => void;
   control?: Control;
   onOAuthPasskeyLogin?: (response: LoginResponse) => void;
+  onPasswordChangeRequired?: (ticket: string) => void;
 }
 
-const PhaseCollectEmail = ({ email, setEmail, control, onOAuthPasskeyLogin }: PhaseCollectEmailProps) => {
+const PhaseCollectEmail = ({
+  email,
+  setEmail,
+  control,
+  onOAuthPasskeyLogin,
+  onPasswordChangeRequired,
+}: PhaseCollectEmailProps) => {
   const { t } = useTranslation();
   const query = useQuery();
   const { register_enabled, authn } = useAppSelector((state) => state.siteConfig.login.config);
@@ -97,7 +104,15 @@ const PhaseCollectEmail = ({ email, setEmail, control, onOAuthPasskeyLogin }: Ph
       {showFooter && (
         <>
           <Divider sx={{ my: 2 }} />
-          <Stack spacing={1}>{authn && <PasskeyLoginButton autoComplete onLoginSuccess={onOAuthPasskeyLogin} />}</Stack>
+          <Stack spacing={1}>
+            {authn && (
+              <PasskeyLoginButton
+                autoComplete
+                onLoginSuccess={onOAuthPasskeyLogin}
+                onPasswordChangeRequired={onPasswordChangeRequired}
+              />
+            )}
+          </Stack>
           <LegalLinks />
         </>
       )}

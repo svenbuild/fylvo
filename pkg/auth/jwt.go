@@ -32,6 +32,9 @@ type TokenAuth interface {
 	Refresh(ctx context.Context, refreshToken string) (*Token, error)
 	// Claims parses the given token string and returns the claims.
 	Claims(ctx context.Context, tokenStr string) (*Claims, error)
+	// UserStateValid Fylvo: reports whether the access token of this request still matches the
+	// password of u, see fylvo_state.go.
+	UserStateValid(c *gin.Context, u *ent.User) bool
 }
 
 type IssueTokenArgs struct {
@@ -231,6 +234,7 @@ func (t *tokenAuth) VerifyAndRetrieveUser(c *gin.Context) (bool, error) {
 	}
 
 	util.WithValue(c, inventory.UserIDCtx{}, uid)
+	util.WithValue(c, accessStateHashCtx{}, claims.StateHash)
 
 	if claims.ClientID != "" {
 		util.WithValue(c, ScopeContextKey{}, claims.Scopes)
@@ -241,6 +245,11 @@ func (t *tokenAuth) VerifyAndRetrieveUser(c *gin.Context) (bool, error) {
 func (t *tokenAuth) Issue(ctx context.Context, args *IssueTokenArgs) (*Token, error) {
 	u := args.User
 	rootTokenID := args.RootTokenID
+	// Fylvo: no tokens while the account has to set a new password first.
+	if inventory.MustChangePassword(u) {
+		return nil, ErrPasswordChangeRequired
+	}
+	userHash := t.hashUserState(ctx, u)
 
 	uidEncoded := hashid.EncodeUserID(t.idEncoder, u.ID)
 	tokenSettings := t.s.TokenAuth(ctx)
@@ -262,14 +271,14 @@ func (t *tokenAuth) Issue(ctx context.Context, args *IssueTokenArgs) (*Token, er
 			NotBefore: jwt.NewNumericDate(issueDate),
 			ExpiresAt: jwt.NewNumericDate(accessTokenExpired),
 		},
-		ClientID: args.ClientID,
-		Scopes:   args.Scopes,
+		ClientID:  args.ClientID,
+		Scopes:    args.Scopes,
+		StateHash: userHash[:], // Fylvo: ends the token when the password changes
 	}).SignedString(t.secret)
 	if err != nil {
 		return nil, fmt.Errorf("faield to sign access token: %w", err)
 	}
 
-	userHash := t.hashUserState(ctx, u)
 	refreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
 		TokenType:   TokenTypeRefresh,
 		RootTokenID: rootTokenID,

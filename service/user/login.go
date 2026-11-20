@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
@@ -51,18 +52,31 @@ func (service *UserResetService) Reset(c *gin.Context) (*User, error) {
 		return nil, serializer.NewError(serializer.CodeTempLinkExpired, "Link is expired", nil)
 	}
 
-	if err := kv.Delete(fmt.Sprintf("user_reset_%d", uid)); err != nil {
-		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to delete reset session", err)
-	}
-
 	u, err := userClient.GetActiveByID(c, uid)
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeUserNotFound, "User not found", err)
 	}
 
-	u, err = userClient.UpdatePassword(c, u, service.Password)
-	if err != nil {
+	// Fylvo: a password the person chose clears the forced password change, but only if it
+	// differs from the one the admin gave. The link stays valid for another try.
+	if inventory.MustChangePassword(u) && inventory.CheckPassword(u, service.Password) == nil {
+		return nil, serializer.NewError(serializer.CodeSamePassword, "The new password must differ from the current one", nil)
+	}
+
+	if err := userClient.SetOwnPassword(c, u, service.Password); err != nil {
+		if errors.Is(err, inventory.ErrPasswordChangedMeanwhile) {
+			return nil, serializer.NewError(serializer.CodeTempLinkExpired, "Link is expired", nil)
+		}
 		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to update password", err)
+	}
+
+	// Fylvo: the password is already stored, so a failed delete is only logged.
+	if err := kv.Delete(fmt.Sprintf("user_reset_%d", uid)); err != nil {
+		dep.Logger().Warning("Failed to delete reset session of user %d: %s", uid, err)
+	}
+	u, err = userClient.GetActiveByID(c, uid)
+	if err != nil {
+		return nil, serializer.NewError(serializer.CodeUserNotFound, "User not found", err)
 	}
 
 	userRes := BuildUser(u, dep.HashIDEncoder())
@@ -190,7 +204,8 @@ func (service *UserLoginService) Login(c *gin.Context) (*ent.User, string, error
 
 	if expectedUser.TwoFactorSecret != "" {
 		twoFaSessionID := uuid.Must(uuid.NewV4())
-		dep.KV().Set(fmt.Sprintf("user_2fa_%s", twoFaSessionID), expectedUser.ID, 600)
+		// Fylvo: the ticket is bound to the password just checked, see fylvo_password_change.go.
+		dep.KV().Set(fmt.Sprintf("user_2fa_%s", twoFaSessionID), loginTicket(expectedUser), 600)
 		return expectedUser, twoFaSessionID.String(), nil
 	}
 
@@ -270,12 +285,12 @@ func (service *OtpValidationService) Verify2FA(c *gin.Context) (*ent.User, error
 		return nil, serializer.NewError(serializer.CodeNotFound, "Session not found", nil)
 	}
 
-	uid := sessionRaw.(int)
-	ctx := context.WithValue(c, inventory.LoadUserGroup{}, true)
-	expectedUser, err := dep.UserClient().GetByID(ctx, uid)
-	if err != nil {
-		return nil, serializer.NewError(serializer.CodeNotFound, "User not found", err)
+	// Fylvo: the account must still be active and have the password that was checked.
+	expectedUser := userFromTicket(c, sessionRaw)
+	if expectedUser == nil {
+		return nil, serializer.NewError(serializer.CodeNotFound, "Session not found", nil)
 	}
+	uid := expectedUser.ID
 
 	if expectedUser.TwoFactorSecret != "" {
 		// Fylvo: limit wrong codes per account and client address.

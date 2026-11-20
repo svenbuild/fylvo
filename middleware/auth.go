@@ -69,6 +69,14 @@ func CurrentUser() gin.HandlerFunc {
 			return
 		}
 
+		// Fylvo: a token of an account that has to set a new password, or one issued for an
+		// older password, counts as signed out.
+		if err := dropHeldOrStaleUser(c); err != nil {
+			c.JSON(200, serializer.Err(c, err))
+			c.Abort()
+			return
+		}
+
 		c.Next()
 	}
 }
@@ -156,6 +164,14 @@ func WebDAVAuth() gin.HandlerFunc {
 		// Validate dav account
 		if len(accounts) == 0 {
 			l.Debug("WebDAVAuth: failed to get user dav accounts %q with provided credential: %s", username, err)
+			c.Status(http.StatusUnauthorized)
+			c.Abort()
+			return
+		}
+
+		// Fylvo: no WebDAV until the person has set a new password.
+		if inventory.MustChangePassword(expectedUser) {
+			l.Debug("WebDAVAuth: user %q has to change the password first.", expectedUser.Email)
 			c.Status(http.StatusUnauthorized)
 			c.Abort()
 			return

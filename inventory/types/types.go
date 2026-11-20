@@ -17,6 +17,9 @@ type (
 		DisableViewSync     bool                     `json:"disable_view_sync,omitempty"`
 		FsViewMap           map[string]ExplorerView  `json:"fs_view_map,omitempty"`
 		ShareLinksInProfile ShareLinksInProfileLevel `json:"share_links_in_profile,omitempty"`
+		// FylvoMustChangePassword: the person has to set a new password at the next sign-in
+		// (see inventory/fylvo_password_change.go). Only the admin and the change itself write it.
+		FylvoMustChangePassword bool `json:"fylvo_must_change_password,omitempty"`
 	}
 
 	ShareLinksInProfileLevel string

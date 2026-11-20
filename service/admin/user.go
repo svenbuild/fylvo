@@ -141,6 +141,8 @@ type (
 		User     *ent.User `json:"user" binding:"required"`
 		Password string    `json:"password" binding:"omitempty,min=6,max=128"`
 		TwoFA    string    `json:"two_fa"`
+		// MustChangePassword Fylvo: see fylvo_password_change.go.
+		MustChangePassword *bool `json:"must_change_password"`
 	}
 	UpsertUserParamCtx struct{}
 )
@@ -184,7 +186,7 @@ func (s *UpsertUserService) Update(c *gin.Context) (*GetUserResponse, error) {
 
 	}
 
-	newUser, err := userClient.Upsert(ctx, s.User, s.Password, s.TwoFA)
+	newUser, err := userClient.Upsert(ctx, s.User, s.Password, s.TwoFA, s.passwordChangeSettings(existing))
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to update user", err)
 	}
@@ -209,7 +211,7 @@ func (s *UpsertUserService) Create(c *gin.Context) (*GetUserResponse, error) {
 		return nil, serializer.NewError(serializer.CodeParamErr, "ID must be 0", nil)
 	}
 
-	user, err := userClient.Upsert(c, s.User, s.Password, s.TwoFA)
+	user, err := userClient.Upsert(c, s.User, s.Password, s.TwoFA, s.passwordChangeSettings(nil))
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to create user", err)
 	}

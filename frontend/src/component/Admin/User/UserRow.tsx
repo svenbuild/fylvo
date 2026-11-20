@@ -138,6 +138,9 @@ const UserRow = ({ user, loading, deleting, selected, onDelete, onDetails, onSel
             {user?.status == UserStatus.manual_banned && (
               <SquareChip size="small" color="error" label={t("user.status_manual_banned")} />
             )}
+            {user?.settings?.fylvo_must_change_password && (
+              <SquareChip size="small" label={t("user.mustChangePasswordChip")} />
+            )}
             {user?.two_fa_enabled && (
               <Tooltip title={t("user.2FAEnabled")}>
                 <Box sx={{ display: "flex", alignItems: "center" }}>
