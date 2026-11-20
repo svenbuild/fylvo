@@ -70,8 +70,9 @@ func (service *UserResetService) Reset(c *gin.Context) (*User, error) {
 		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to update password", err)
 	}
 
+	// Fylvo: the password is already stored, so a failed delete is only logged.
 	if err := kv.Delete(fmt.Sprintf("user_reset_%d", uid)); err != nil {
-		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to delete reset session", err)
+		dep.Logger().Warning("Failed to delete reset session of user %d: %s", uid, err)
 	}
 	u, err = userClient.GetActiveByID(c, uid)
 	if err != nil {

@@ -72,16 +72,18 @@ const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loa
   const onPasswordChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const password = e.target.value ? e.target.value : undefined;
-      // Fylvo: a password from the admin has to be replaced at the next sign-in. Without a new
-      // password, the switch goes back to the value the account had.
-      setUser((prev) => ({
-        ...prev,
-        password,
-        settings: {
-          ...prev.settings,
-          fylvo_must_change_password: password ? true : !!loaded?.settings?.fylvo_must_change_password,
-        },
-      }));
+      // Fylvo: a password from the admin has to be replaced at the next sign-in. The switch turns
+      // on when a password is first typed (the admin can still turn it off), and goes back to the
+      // value the account had when the field is emptied.
+      setUser((prev) => {
+        let mustChange = prev.settings?.fylvo_must_change_password;
+        if (!password) {
+          mustChange = !!loaded?.settings?.fylvo_must_change_password;
+        } else if (!prev.password) {
+          mustChange = true;
+        }
+        return { ...prev, password, settings: { ...prev.settings, fylvo_must_change_password: mustChange } };
+      });
     },
     [setUser, loaded],
   );
