@@ -7,6 +7,10 @@ import CrUri, { Filesystem } from "./uri.ts";
 // - upload_file: add new files and folders (editors of member shares and visitors of upload links).
 // - rename_file: change existing files (only editors of member shares). Upload visitors never get it.
 function shareCapability(file: FileResponse, capability: number): boolean | undefined {
+  // Some lists (the empty trash) come with a parent that has no path. That is never a share.
+  if (!file.path) {
+    return undefined;
+  }
   if (new CrUri(file.path).fs() == Filesystem.share) {
     return new Boolset(file.capability).enabled(capability);
   }
