@@ -196,11 +196,18 @@ func (m *manager) generateThumb(ctx context.Context, uri *fs.URI, ext string, es
 		entityType := types.EntityTypeThumbnail
 		// Fylvo: each generation stores under its own name (UniqueThumbPath), so a failed one (two
 		// at once for the same file) can never clean up the file of the one that succeeded.
+		savePath, ok := util.UniqueThumbPath(path.Clean(util.ReplaceMagicVar(m.settings.ThumbEntitySuffix(ctx), fs.Separator, true, true, time.Now(), m.user.ID, uri.Name(), uri.Path(), es.Entity().Source())))
+		if !ok {
+			if err := disableThumb(ctx, m, uri); err != nil {
+				m.l.Warning("Failed to disable thumb: %v", err)
+			}
+			return nil, fmt.Errorf("thumbnail file name too long")
+		}
 		req := &fs.UploadRequest{
 			Props: &fs.UploadProps{
 				Uri:        uri,
 				Size:       fileInfo.Size(),
-				SavePath:   util.UniqueThumbPath(path.Clean(util.ReplaceMagicVar(m.settings.ThumbEntitySuffix(ctx), fs.Separator, true, true, time.Now(), m.user.ID, uri.Name(), uri.Path(), es.Entity().Source()))),
+				SavePath:   savePath,
 				MimeType:   m.dep.MimeDetector(ctx).TypeByName("thumb.jpg"),
 				EntityType: &entityType,
 			},

@@ -67,7 +67,8 @@ func thumbnailOriginals(p string) []string {
 			original := strings.TrimSuffix(p, suffix)
 			candidates := []string{original}
 			dir, name := path.Split(original)
-			if thumbPrefix.MatchString(name) {
+			// Only previews get the prefix, side files ("._thumb_sidecar") never.
+			if suffix == "._thumb" && len(name) > 9 && thumbPrefix.MatchString(name) {
 				candidates = append(candidates, dir+name[9:])
 			}
 			return candidates
@@ -77,4 +78,4 @@ func thumbnailOriginals(p string) []string {
 }
 
 // thumbPrefix is the random prefix util.UniqueThumbPath puts in front of a preview's name.
-var thumbPrefix = regexp.MustCompile(`^[0-9A-Za-z]{8}_.`)
+var thumbPrefix = regexp.MustCompile(`^[0-9A-Za-z]{8}_`)
