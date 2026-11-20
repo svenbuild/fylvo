@@ -12,7 +12,7 @@
 use crate::{
     cfapi::placeholder::LocalFileInfo,
     drive::{commands::MountCommand, mounts::Mount, sync::SyncMode, utils::move_no_replace},
-    tasks::TaskPayload,
+    tasks::{TaskKind, TaskPayload},
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -253,7 +253,21 @@ impl Mount {
 
         let mut errors = Vec::new();
         let mut failed: HashSet<PathBuf> = HashSet::new();
-        for (from, to) in &plan.renames {
+        let matcher = self.ignore_matcher.read().await;
+        let renames: Vec<(PathBuf, PathBuf)> = plan
+            .renames
+            .into_iter()
+            .filter(|(from, to)| {
+                // An ignored spelling is not synced at all: no rename, nothing planned.
+                let ignored = matcher.is_match(from) || matcher.is_match(to);
+                if ignored {
+                    failed.insert(to.clone());
+                }
+                !ignored
+            })
+            .collect();
+        drop(matcher);
+        for (from, to) in &renames {
             if let Err(err) = self.rename_local_case(from, to).await {
                 tracing::warn!(target: "drive::case", id = %self.id, from = %from.display(), to = %to.display(), error = ?err, "Case rename failed, retried on the next sync");
                 failed.insert(to.clone());
@@ -278,49 +292,107 @@ impl Mount {
     async fn rename_local_case(&self, from: &Path, to: &Path) -> Result<()> {
         let from_str = from.to_str().context("path is not UTF-8")?;
         let to_str = to.to_str().context("path is not UTF-8")?;
+        // Inventory rows under both spellings: unclear which is right, leave it.
+        if self.inventory.has_rows_at_or_under(from_str)?
+            && self.inventory.has_rows_at_or_under(to_str)?
+        {
+            anyhow::bail!("inventory rows exist under both spellings");
+        }
         let info = LocalFileInfo::from_path(from)?;
-        let was_in_sync = info.is_placeholder() && info.in_sync();
+
+        // Tasks under the old spelling would reach the server under the old name: stop them
+        // before the rename and queue them again under the name that is on disk afterwards.
+        let tasks = self.stop_tasks_under(from).await;
 
         self.own_renames.register(from, to);
         if let Err(err) = move_no_replace(from, to) {
             self.own_renames.matches(from, to, true);
+            self.queue_tasks_again(&tasks, from, from).await;
             return Err(err);
         }
-        // The inventory refuses when rows under the new spelling exist already: then the disk
-        // gets its old name back and nothing has changed.
         if let Err(err) = self.inventory.rename_path(from_str, to_str) {
             self.own_renames.register(to, from);
             if let Err(undo) = move_no_replace(to, from) {
                 self.own_renames.matches(to, from, true);
                 tracing::error!(target: "drive::case", id = %self.id, path = %to.display(), error = ?undo, "Could not undo the case rename");
+                self.queue_tasks_again(&tasks, from, to).await;
+            } else {
+                self.queue_tasks_again(&tasks, from, from).await;
             }
-            return Err(err.context("inventory rows under the new name exist"));
+            return Err(err.context("inventory rename refused"));
         }
+        self.queue_tasks_again(&tasks, from, to).await;
 
-        // Tasks under the old spelling would reach the server under the old name.
-        let cancelled = self
-            .task_queue
-            .cancel_by_path(from.to_path_buf())
-            .await
-            .unwrap_or(0);
-        if was_in_sync && !LocalFileInfo::from_path(to)?.in_sync() {
-            crate::drive::commands::mark_path_in_sync(to).await?;
+        if info.is_directory {
+            // Changes inside that the server reported meanwhile were skipped while the
+            // spellings differed (see `case_mismatched_ancestor`): compare the folder again.
+            let _ = self.command_tx.send(MountCommand::Sync {
+                local_paths: vec![to.to_path_buf()],
+                mode: SyncMode::FullHierarchy,
+                user_initiated: false,
+            });
+            return Ok(());
         }
-        // A local change waiting for upload: the plan sees no server change, so queue it here.
-        if !was_in_sync && !info.is_directory {
-            self.enqueue_upload(TaskPayload::upload(to.to_path_buf()))
-                .await?;
-        }
-        if cancelled > 0 {
-            self.command_tx
-                .send(MountCommand::Sync {
-                    local_paths: vec![to.to_path_buf()],
-                    mode: SyncMode::FullHierarchy,
-                    user_initiated: false,
-                })
-                .context("failed to send sync command")?;
+        // A file that is not in sync now (changed here, or the rename cleared the flag): an
+        // online-only file has no local bytes and is marked in sync again; any other file is
+        // uploaded, which keeps a change made at any moment (an unchanged one only gives the
+        // server a new version with the same content).
+        let now = LocalFileInfo::from_path(to)?;
+        if !now.in_sync() {
+            if now.is_placeholder() && now.partial_on_disk() && info.in_sync() {
+                crate::drive::commands::mark_path_in_sync(to).await?;
+            } else {
+                self.enqueue_upload(TaskPayload::upload(to.to_path_buf()))
+                    .await?;
+            }
         }
         Ok(())
+    }
+
+    /// Stop the pending and running tasks at or under `path`. Returns their kind and path.
+    async fn stop_tasks_under(&self, path: &Path) -> Vec<(TaskKind, PathBuf)> {
+        let tasks: Vec<(TaskKind, PathBuf)> = self
+            .task_queue
+            .list_active_tasks()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|task| {
+                let task_path = PathBuf::from(&task.local_path);
+                task_path.starts_with(path).then_some((
+                    TaskKind::from_str(&task.task_type)?,
+                    task_path,
+                ))
+            })
+            .collect();
+        if !tasks.is_empty() {
+            let _ = self.task_queue.cancel_by_path(path.to_path_buf()).await;
+        }
+        tasks
+    }
+
+    /// Queue stopped tasks again, with the prefix `old` of their paths replaced by `new`.
+    async fn queue_tasks_again(&self, tasks: &[(TaskKind, PathBuf)], old: &Path, new: &Path) {
+        for (kind, path) in tasks {
+            let Ok(relative) = path.strip_prefix(old) else {
+                continue;
+            };
+            let path = if relative.as_os_str().is_empty() {
+                new.to_path_buf()
+            } else {
+                new.join(relative)
+            };
+            let result = match kind {
+                TaskKind::Upload => self.enqueue_upload(TaskPayload::upload(path.clone())).await,
+                TaskKind::Download => self
+                    .task_queue
+                    .enqueue(TaskPayload::download(path.clone()))
+                    .await
+                    .map(|_| ()),
+            };
+            if let Err(err) = result {
+                tracing::warn!(target: "drive::case", id = %self.id, path = %path.display(), error = ?err, "Could not queue a stopped task again");
+            }
+        }
     }
 
     /// Tell the user once per run about names that cannot be synced as they are.

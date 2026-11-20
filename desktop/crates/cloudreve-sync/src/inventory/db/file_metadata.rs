@@ -184,6 +184,28 @@ impl InventoryDb {
         Ok(total)
     }
 
+    /// Fylvo: whether any entry is stored at `path` or under it, spelled exactly like that.
+    pub fn has_rows_at_or_under(&self, path: &str) -> Result<bool> {
+        #[derive(QueryableByName)]
+        struct CountRow {
+            #[diesel(sql_type = diesel::sql_types::BigInt)]
+            n: i64,
+        }
+
+        let mut conn = self.connection()?;
+        let prefix = descendant_prefix(path);
+        let row: CountRow = diesel::sql_query(
+            "SELECT COUNT(*) AS n FROM file_metadata WHERE local_path = ? \
+             OR substr(local_path, 1, length(?)) = ?",
+        )
+        .bind::<Text, _>(path)
+        .bind::<Text, _>(&prefix)
+        .bind::<Text, _>(&prefix)
+        .get_result(&mut conn)
+        .context("Failed to count inventory metadata under path")?;
+        Ok(row.n > 0)
+    }
+
     /// Clear all entries from the database
     pub fn clear(&self) -> Result<()> {
         let mut conn = self.connection()?;
@@ -475,8 +497,13 @@ mod tests {
         assert!(db.query_by_path(r"C:\S\fotos\b\c.jpg").unwrap().is_some());
         assert!(db.query_by_path(r"C:\S\Fotos\a.jpg").unwrap().is_none());
 
+        assert!(db.has_rows_at_or_under(r"C:\S\fotos").unwrap());
+        assert!(!db.has_rows_at_or_under(r"C:\S\Fotos").unwrap());
+
         // Rows under the new spelling exist already: refused as a whole, nothing moved.
         add(&db, drive, r"C:\S\Fotos\a.jpg");
+        assert!(db.has_rows_at_or_under(r"C:\S\Fotos").unwrap());
+        assert!(!db.has_rows_at_or_under(r"C:\S\Foto").unwrap());
         assert!(db.rename_path(r"C:\S\fotos", r"C:\S\Fotos").is_err());
         assert!(db.query_by_path(r"C:\S\fotos\b\c.jpg").unwrap().is_some());
     }
