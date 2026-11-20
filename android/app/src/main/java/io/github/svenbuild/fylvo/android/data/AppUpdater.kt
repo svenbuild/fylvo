@@ -54,6 +54,8 @@ class AppUpdater(private val context: Context, private val api: ApiClient) {
 
     private var job: Job? = null
     private var checkedThisStart = false
+    /** The system installer was opened and the person has not come back yet. */
+    private var installerOpened = false
 
     private val updatesDir get() = File(context.cacheDir, "updates")
 
@@ -133,6 +135,15 @@ class AppUpdater(private val context: Context, private val api: ApiClient) {
      */
     fun onResume() {
         val s = _state.value as? State.Available ?: return
+        // Back from the installer, but the old version still runs: cancelled, or blocked (e.g. by
+        // Play Protect). Say so once; the update stays offered, nothing starts by itself.
+        if (installerOpened) {
+            installerOpened = false
+            if (installedVersionCode < s.release.versionCode && s.error == null) {
+                _state.value = s.copy(error = R.string.update_not_installed)
+            }
+            return
+        }
         if (s.error == R.string.update_allow_install && context.packageManager.canRequestPackageInstalls()) {
             _state.value = s.copy(error = null)
             downloadAndInstall()
@@ -245,6 +256,7 @@ class AppUpdater(private val context: Context, private val api: ApiClient) {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         return try {
             context.startActivity(intent)
+            installerOpened = true
             null
         } catch (_: ActivityNotFoundException) {
             R.string.update_download_failed

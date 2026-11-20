@@ -68,3 +68,23 @@ FYLVO_KEYSTORE_PASSWORD=... ./gradlew :app:assembleRelease   # app/build/outputs
 
 Never commit a keystore or its password. Losing either means updates no
 longer install over the existing app.
+
+## Installing and updating on a phone
+
+The app is not in the Play Store, so the first version is installed by hand from
+the APK file:
+
+- Android asks once whether the browser (or file manager) may install apps:
+  allow it.
+- Google Play Protect may show "App blocked to protect your device ... Play
+  Protect hasn't seen an app from this developer before". The small link
+  **Install anyway** continues; the big **OK** button cancels the install.
+- After that, new versions arrive inside the app (Account, "Update to ...").
+  Android asks once whether Fylvo may install apps, then "Do you want to update
+  this app?". Play Protect can show its warning again for a new version; the
+  same "Install anyway" applies. If the install is cancelled or blocked, the app
+  says so and keeps offering the update.
+
+Publishing a new version for the in-app update: build a signed release with a
+higher `versionCode`, then run `scripts/publish-android.sh path/to/app-release.apk`
+(see the script for the one-time setup on the NAS).

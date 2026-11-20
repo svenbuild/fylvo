@@ -244,6 +244,18 @@ class FileRepository(private val api: ApiClient) {
         return response.unwrap().takeUnless { it.isFolder }
     }
 
+    /** Names of everything directly in the folder [folderUri], over all pages of the listing. */
+    suspend fun namesIn(folderUri: String): Set<String> {
+        val out = HashSet<String>()
+        var token: String? = null
+        do {
+            val page = list(folderUri, pageToken = token, pageSize = 500)
+            page.files.forEach { out += it.name }
+            token = page.pagination.nextToken
+        } while (!token.isNullOrEmpty())
+        return out
+    }
+
     /**
      * Every file under [rootUri], recursively, as `canonical uri -> size`. The `type=file`
      * search walks the whole subtree server-side, so this is one request per 500
@@ -309,7 +321,9 @@ class FileRepository(private val api: ApiClient) {
         val svc = api.service()
         var sent = 0L
         localFile.inputStream().buffered().use { input ->
-            val buffer = ByteArray(chunkSize.coerceAtMost(64L * 1024 * 1024).toInt())
+            // Never larger than the file: several uploads run at once, a 2 MB photo needs no
+            // buffer of the server's full chunk size.
+            val buffer = ByteArray(chunkSize.coerceAtMost(64L * 1024 * 1024).coerceAtMost(localFile.length().coerceAtLeast(1)).toInt())
             for (index in 0 until totalChunks) {
                 val read = input.readFully(buffer)
                 if (index == 0 && read == 0 && localFile.length() > 0) break

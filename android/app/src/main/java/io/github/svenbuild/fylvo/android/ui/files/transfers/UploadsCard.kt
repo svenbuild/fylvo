@@ -54,7 +54,7 @@ private fun UploadRow(u: UploadStatus, onCancel: (UUID) -> Unit) {
     }
     val detail = when {
         queued -> ""
-        u.size > 0 -> stringResource(R.string.upload_progress, u.name, formatSize(u.sent), formatSize(u.size))
+        u.size > 0 && u.permille == 0 -> stringResource(R.string.upload_progress, u.name, formatSize(u.sent), formatSize(u.size))
         else -> u.name
     }
     Row(

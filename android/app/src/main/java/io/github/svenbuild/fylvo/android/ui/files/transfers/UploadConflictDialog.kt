@@ -25,7 +25,8 @@ data class PendingUpload(
 ) {
     val conflicts: List<String> get() = names.filter { it in existing }
 
-    fun replace() = Resolution(uris, names, overwrite = true)
+    /** Only the files the dialog listed replace a file; any other name never does. */
+    fun replace() = Resolution(uris, names, overwrite = true, overwriteOnly = conflicts.toSet())
 
     fun keepBoth(): Resolution {
         val taken = existing.toMutableSet()
@@ -38,7 +39,7 @@ data class PendingUpload(
         return Resolution(keep.map { uris[it] }, keep.map { names[it] }, overwrite = false)
     }
 
-    data class Resolution(val uris: List<Uri>, val names: List<String>, val overwrite: Boolean)
+    data class Resolution(val uris: List<Uri>, val names: List<String>, val overwrite: Boolean, val overwriteOnly: Set<String>? = null)
 }
 
 /**

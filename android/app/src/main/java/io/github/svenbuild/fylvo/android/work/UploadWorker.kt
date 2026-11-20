@@ -24,6 +24,11 @@ import androidx.work.workDataOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import io.github.svenbuild.fylvo.android.FylvoApp
@@ -34,9 +39,10 @@ import io.github.svenbuild.fylvo.android.util.localized
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * UploadWorker copies SAF/content URIs into cache, one at a time, then streams them through
+ * UploadWorker copies SAF/content URIs into cache, a few at a time, then streams them through
  * the Cloudreve upload-session flow. The list of files is an [UploadBatch] on disk. WorkManager survives process death for
  * large transfers. Progress goes two ways: a determinate foreground
  * notification with a cancel action, and [WorkInfo.progress] for the in-app
@@ -65,64 +71,118 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val parentUri = batch.parentUri
         val total = batch.items.size
 
+        // Copies of this job left in the cache by a stop during the copy.
+        File(applicationContext.cacheDir, "upload_staging").listFiles { f -> f.name.startsWith("$id-") }?.forEach { it.delete() }
+
         createChannel()
         var lastError: String? = null
+        // The batch is changed by several uploads at once: every change goes through [update].
+        val lock = Any()
+        fun update(i: Int, change: (UploadItem) -> UploadItem) = synchronized(lock) {
+            batch = batch.with(i, change)
+            queue.save(batch)
+        }
         try {
-            while (true) {
-                val i = batch.next()
-                if (i < 0) break
-                val item = batch.items[i]
-
-                // A session left by a run that was stopped half way: cancel it on the server, so
-                // its 0 B placeholder and lock go away before the file is sent again. If that does
-                // not work now, keep the id and try again later instead of hitting the lock.
-                val interrupted = item.sessionId != null
-                if (interrupted) {
-                    // False only for network or server trouble: wait for them to pass.
+            // Sessions left by a run that was stopped half way: cancel them on the server first,
+            // so their 0 B placeholders and locks go away before the files are sent again. If that
+            // does not work now (only network or server trouble say so), wait and try later.
+            batch.items.forEachIndexed { i, item ->
+                if (item.state == UploadItem.State.Pending && item.sessionId != null) {
                     if (!cancelSession(app, item)) return Result.retry()
-                    batch = batch.with(i) { it.copy(sessionId = null, targetUri = null) }.also(queue::save)
+                    // Remembered in the list, so a later run still knows it if this one stops.
+                    update(i) { it.copy(sessionId = null, targetUri = null, interrupted = true) }
                 }
+            }
 
-                report(item.name, i, total, sent = 0, size = 0, parentUri = parentUri, force = true)
-                val outcome = uploadOne(app, batch, i, interrupted) { sessionId, targetUri ->
-                    batch = batch.with(i) { it.copy(sessionId = sessionId, targetUri = targetUri) }.also(queue::save)
+            val pending = batch.items.indices.filter { batch.items[it].state == UploadItem.State.Pending }
+            val cursor = AtomicInteger(0)
+            // Per file in flight: how far it is, in thousandths. Read and written under [lock], so
+            // every report is one consistent picture.
+            val inFlight = HashMap<Int, Int>()
+            fun reportAll(name: String, i: Int, sent: Long, size: Long, force: Boolean = false) = synchronized(lock) {
+                if (i in inFlight) inFlight[i] = if (size > 0) (sent * 1000 / size).toInt().coerceIn(0, 1000) else 0
+                val done = batch.uploaded + batch.failed
+                report(name, done, total, inFlight.values.sum(), inFlight.size, parentUri, force)
+            }
+            // A network or server problem in one upload: the others finish the file they are on
+            // (cancelling them could leave a session the list does not know), then the run stops.
+            val stop = java.util.concurrent.atomic.AtomicReference<Outcome.TryLater?>(null)
+
+            val lanes = parallelUploads()
+            val memory = Semaphore(lanes)
+            val bigFiles = Mutex() // one big file collects its permits at a time: no deadlock
+            suspend fun <T> withMemory(permits: Int, block: suspend () -> T): T {
+                if (permits == 1) memory.acquire() else bigFiles.withLock { repeat(permits) { memory.acquire() } }
+                try {
+                    return block()
+                } finally {
+                    repeat(permits) { memory.release() }
                 }
-                when (outcome) {
-                    is Outcome.Done -> {
-                        batch = batch.with(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null) }
-                        queue.save(batch)
-                    }
-                    is Outcome.Failed -> {
-                        cancelSession(app, batch.items[i])
-                        batch = batch.with(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null) }
-                        queue.save(batch)
-                        lastError = outcome.message
-                    }
-                    is Outcome.TryLater -> {
-                        // No network or the server is away: keep the list and the session id,
-                        // WorkManager runs the batch again when the network is back. A missing
-                        // network never ends the batch; server trouble does after a few runs.
-                        if (outcome.network) return Result.retry()
-                        // Count only server trouble, not the runs a lost network or a stop caused.
-                        if (batch.serverRetries < MAX_ATTEMPTS) {
-                            queue.save(batch.copy(serverRetries = batch.serverRetries + 1))
-                            return Result.retry()
+            }
+            coroutineScope {
+                    repeat(lanes) {
+                        launch {
+                            while (stop.get() == null) {
+                                val i = pending.getOrNull(cursor.getAndIncrement()) ?: break
+                                val item = synchronized(lock) { batch.items[i] }
+                                // A big file needs a buffer of a whole chunk (up to 64 MB): it runs
+                                // alone, so several of them never fill the memory at once.
+                                val size = sizeOf(item)
+                                val permits = if (size == 0L || size > BIG_FILE_BYTES) lanes else 1
+                                withMemory(permits) {
+                                    // Another upload may have stopped the run while this one waited.
+                                    if (stop.get() != null) return@withMemory
+                                    synchronized(lock) { inFlight[i] = 0 }
+                                    reportAll(item.name, i, 0, 0, force = true)
+                                    val outcome = uploadOne(app, item, parentUri, item.overwrite ?: batch.overwrite, item.interrupted, onSession = { sessionId, targetUri ->
+                                        update(i) { it.copy(sessionId = sessionId, targetUri = targetUri) }
+                                    }) { sent, size -> reportAll(item.name, i, sent, size) }
+                                    when (outcome) {
+                                        is Outcome.Done -> synchronized(lock) {
+                                            inFlight.remove(i)
+                                            update(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null, interrupted = false) }
+                                        }
+                                        is Outcome.Failed -> {
+                                            cancelSession(app, synchronized(lock) { batch.items[i] })
+                                            synchronized(lock) {
+                                                inFlight.remove(i)
+                                                update(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null, interrupted = false) }
+                                                lastError = outcome.message
+                                            }
+                                        }
+                                        // Its session stays in the list and is cancelled at the start
+                                        // of the next run.
+                                        is Outcome.TryLater -> {
+                                            stop.compareAndSet(null, outcome)
+                                            synchronized(lock) { inFlight.remove(i) }
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        cancelSession(app, batch.items[i])
-                        batch = failRest(queue, batch)
-                        lastError = outcome.message
-                        break
                     }
                 }
+            stop.get()?.let { outcome ->
+                // No network or the server is away: keep the list and the session ids,
+                // WorkManager runs the batch again when the network is back. A missing
+                // network never ends the batch; server trouble does after a few runs.
+                if (outcome.network) return Result.retry()
+                // Count only server trouble, not the runs a lost network or a stop caused.
+                if (batch.serverRetries < MAX_ATTEMPTS) {
+                    synchronized(lock) { batch = batch.copy(serverRetries = batch.serverRetries + 1).also(queue::save) }
+                    return Result.retry()
+                }
+                batch.items.filter { it.state == UploadItem.State.Pending && it.sessionId != null }.forEach { cancelSession(app, it) }
+                batch = failRest(queue, batch)
+                lastError = outcome.message
             }
         } catch (e: CancellationException) {
             // Stopped: by the person (cancel), or by the system, which runs the job again later.
             withContext(NonCancellable) {
-                val index = batch.next()
-                val current = index.takeIf { it >= 0 }?.let { batch.items[it] }
-                if (current?.sessionId != null && cancelSession(app, current)) {
-                    batch = batch.with(index) { it.copy(sessionId = null, targetUri = null) }
-                    queue.save(batch)
+                batch.items.forEachIndexed { i, item ->
+                    if (item.state == UploadItem.State.Pending && item.sessionId != null && cancelSession(app, item)) {
+                        update(i) { it.copy(sessionId = null, targetUri = null, interrupted = true) }
+                    }
                 }
                 if (isCancelledByPerson()) finish(queue, batch)
             }
@@ -167,6 +227,23 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         return foregroundInfo("", 0, 0, 0, 0)
     }
 
+    /** Size of the picked file, or 0 when the provider does not say. */
+    private fun sizeOf(item: UploadItem): Long = runCatching {
+        applicationContext.contentResolver.query(Uri.parse(item.uri), arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use {
+            if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else 0L
+        } ?: 0L
+    }.getOrDefault(0L)
+
+    /**
+     * How many files go up at once. More than one fills the pauses between the small requests
+     * of each file (session, parts, finish) on a good line; on mobile data two keep a slow line
+     * from being split too thin.
+     */
+    private fun parallelUploads(): Int {
+        val cm = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        return if (cm.isActiveNetworkMetered) PARALLEL_METERED else PARALLEL_UNMETERED
+    }
+
     private sealed interface Outcome {
         data object Done : Outcome
         /** This file cannot be uploaded (the server said no, or the file can no longer be read). */
@@ -176,12 +253,17 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     }
 
     private suspend fun uploadOne(
-        app: FylvoApp, batch: UploadBatch, i: Int, interrupted: Boolean, onSession: (String, String) -> Unit,
+        app: FylvoApp,
+        item: UploadItem,
+        parentUri: String,
+        overwrite: Boolean,
+        interrupted: Boolean,
+        onSession: (String, String) -> Unit,
+        onProgress: (sent: Long, size: Long) -> Unit,
     ): Outcome {
-        val item = batch.items[i]
         val uri = Uri.parse(item.uri)
         val tmp = try {
-            stageToCache(uri)
+            withContext(Dispatchers.IO) { stageToCache(uri) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -192,9 +274,9 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         return try {
             val mime = applicationContext.contentResolver.getType(uri)
             app.fileRepository.uploadFile(
-                tmp, batch.parentUri, remoteName = item.name, overwrite = batch.overwrite, mimeType = mime,
-                onSession = onSession,
-            ) { sent, size -> report(item.name, i, batch.items.size, sent, size, batch.parentUri) }
+                tmp, parentUri, remoteName = item.name, overwrite = overwrite, mimeType = mime,
+                onSession = onSession, onProgress = onProgress,
+            )
             Outcome.Done
         } catch (e: CancellationException) {
             throw e
@@ -205,8 +287,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             Log.w(LOG_TAG, "Upload refused: code ${e.code}")
             // The answer to the last part of an earlier attempt got lost, but the server had the
             // whole file: counts as done only when the file there has exactly this size.
-            if (interrupted && !batch.overwrite && e.code == CODE_OBJECT_EXISTS &&
-                app.fileRepository.sizeOf(CrUri.join(batch.parentUri, item.name)) == tmp.length()
+            if (interrupted && !overwrite && e.code == CODE_OBJECT_EXISTS &&
+                app.fileRepository.sizeOf(CrUri.join(parentUri, item.name)) == tmp.length()
             ) return Outcome.Done
             if (e.isTransient) Outcome.TryLater(describe(e, item.name), network = false) else Outcome.Failed(describe(e, item.name))
         } catch (e: Exception) {
@@ -243,22 +325,21 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
      * Called from OkHttp's write loop, hence the non-suspending Async variants.
      */
     private fun report(
-        name: String, index: Int, total: Int, sent: Long, size: Long, parentUri: String, force: Boolean = false,
+        name: String, done: Int, total: Int, permille: Int, inFlight: Int, parentUri: String, force: Boolean = false,
     ) {
         setProgressAsync(
             workDataOf(
                 KEY_PARENT_URI to parentUri,
                 KEY_PROGRESS_NAME to name,
-                KEY_PROGRESS_INDEX to index,
+                KEY_PROGRESS_INDEX to done,
                 KEY_PROGRESS_TOTAL to total,
-                KEY_PROGRESS_SENT to sent,
-                KEY_PROGRESS_SIZE to size,
+                KEY_PROGRESS_PERMILLE to permille,
             )
         )
         val now = System.currentTimeMillis()
         if (force || now - lastNotified >= NOTIFY_INTERVAL_MS) {
             lastNotified = now
-            setForegroundAsync(foregroundInfo(name, index, total, sent, size))
+            setForegroundAsync(foregroundInfo(name, done, total, done * 1000L + permille, total * 1000L))
         }
     }
 
@@ -289,14 +370,14 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     private fun stageToCache(uri: Uri): File {
         if (!isForeignContentUri(applicationContext, uri)) throw IllegalArgumentException("Unsupported file source")
         val dir = File(applicationContext.cacheDir, "upload_staging").apply { mkdirs() }
-        val tmp = File(dir, "$id-${staged++}")
+        val tmp = File(dir, "$id-${staged.getAndIncrement()}")
         applicationContext.contentResolver.openInputStream(uri)!!.use { input ->
             FileOutputStream(tmp).use { out -> input.copyTo(out, 256 * 1024) }
         }
         return tmp
     }
 
-    private var staged = 0
+    private val staged = AtomicInteger(0)
 
     private fun foregroundInfo(name: String, index: Int, total: Int, sent: Long, size: Long): ForegroundInfo {
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
@@ -336,6 +417,11 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         private const val LEGACY_KEY_NAMES = "names"
         private const val LEGACY_KEY_OVERWRITE = "overwrite"
         private const val MAX_ATTEMPTS = 8
+        /** Files at once on Wi-Fi or another unmetered line, and on mobile data. */
+        private const val PARALLEL_UNMETERED = 3
+        private const val PARALLEL_METERED = 2
+        /** Files larger than this upload alone (their buffer is a whole chunk). */
+        private const val BIG_FILE_BYTES = 16L * 1024 * 1024
         private const val LOG_TAG = "FylvoUpload"
         const val KEY_PARENT_URI = "parent_uri"
         const val KEY_UPLOADED = "uploaded"
@@ -346,6 +432,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         const val KEY_PROGRESS_TOTAL = "total"
         const val KEY_PROGRESS_SENT = "sent"
         const val KEY_PROGRESS_SIZE = "size"
+        /** Sum of the files in flight, each in thousandths (0 to 1000). */
+        const val KEY_PROGRESS_PERMILLE = "permille"
         private const val CHANNEL_ID = "uploads"
         private const val NOTIF_ID_BASE = 0x10000
         private const val NOTIFY_INTERVAL_MS = 500L
@@ -358,7 +446,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
          * ([UploadQueue]), the job only carries its id: any number of files fits. The read
          * permission of each picked file is kept beyond the app's lifetime where Android allows
          * it, so the upload can go on after the app was closed or killed. Each batch is its own
-         * job and sends one file at a time; two batches can run side by side.
+         * job and sends up to three files at a time (two on mobile data).
          */
         fun enqueue(
             context: Context,
@@ -366,9 +454,16 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             parentUri: String,
             names: List<String>? = null,
             overwrite: Boolean = false,
+            overwriteOnly: Set<String>? = null,
         ) {
             if (uris.isEmpty()) return
-            val fileNames = names ?: uris.map { displayName(context, it) }
+            // Shared files (no folder listing here): two with the same name would race for one
+            // address, so they get unique names. Picked files come already renamed by the screen,
+            // which also knows the names in the folder.
+            val fileNames = names ?: uris.map { displayName(context, it) }.let { list ->
+                val taken = mutableSetOf<String>()
+                list.map { n -> uniqueName(n, taken).also { taken += it } }
+            }
             // Keep the read permissions while Android's cap allows it with room to spare (it drops
             // the oldest ones beyond, e.g. the folder-sync folder). Only picker documents can be
             // kept; without it a file can still be read until the app is closed.
@@ -377,7 +472,11 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             }
             val account = kotlinx.coroutines.runBlocking { currentAccount(context.applicationContext as FylvoApp) }
-            val batch = queue(context).create(uris.map { it.toString() }, fileNames, parentUri, overwrite, account = account)
+            var batch = queue(context).create(uris.map { it.toString() }, fileNames, parentUri, overwrite, account = account)
+            if (overwrite && overwriteOnly != null) {
+                batch = batch.copy(items = batch.items.map { it.copy(overwrite = it.name in overwriteOnly) })
+                queue(context).save(batch)
+            }
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
                 .addTag(TAG)
                 .addTag(BATCH_TAG_PREFIX + batch.id)
@@ -404,11 +503,14 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             val wm = WorkManager.getInstance(context)
             val info = runCatching { wm.getWorkInfoById(workId).get() }.getOrNull()
             wm.cancelWorkById(workId).result.get()
-            if (info == null || info.state == WorkInfo.State.RUNNING) return // the worker cleans up itself
+            if (info == null) return
+            // A running worker cleans up itself; if it ended just before the cancel arrived, nobody
+            // would, so look again after it had time to finish.
+            if (info.state == WorkInfo.State.RUNNING) kotlinx.coroutines.delay(10_000)
             // A job queued by 1.0.0 keeps its batch under the job's own id.
             val batchId = info.tags.firstOrNull { it.startsWith(BATCH_TAG_PREFIX) }?.removePrefix(BATCH_TAG_PREFIX) ?: workId.toString()
             val queue = queue(context)
-            val batch = queue.load(batchId) ?: return
+            val batch = queue.load(batchId) ?: return // already cleaned up by the worker
             val app = context.applicationContext as FylvoApp
             batch.items.forEach { item ->
                 val sessionId = item.sessionId
@@ -417,6 +519,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             }
             queue.delete(batchId)
             releaseUnused(context, queue, batch.items.map { it.uri })
+            File(context.cacheDir, "upload_staging").listFiles { f -> f.name.startsWith("$workId-") }?.forEach { it.delete() }
         }
 
         /**
@@ -429,9 +532,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             parentUri: String,
             names: List<String>? = null,
             overwrite: Boolean = false,
+            overwriteOnly: Set<String>? = null,
         ) {
             try {
-                enqueue(context, uris, parentUri, names, overwrite)
+                enqueue(context, uris, parentUri, names, overwrite, overwriteOnly)
             } catch (e: Exception) {
                 Log.w(LOG_TAG, "Could not queue an upload: ${e.javaClass.simpleName}")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -493,6 +597,22 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             return uri.lastPathSegment?.substringAfterLast('/') ?: "upload.bin"
         }
 
+        /**
+         * Names of one selection: the first file of a name keeps it (a conflict with the folder is
+         * then asked about), further files with the same name get a name that is free both in the
+         * selection and in the folder ([existing]), so no rename can hit a file in the folder.
+         */
+        fun uniqueWithinSelection(names: List<String>, existing: Set<String>): List<String> {
+            val seen = mutableSetOf<String>()
+            val taken = existing.toMutableSet()
+            return names.map { n ->
+                val name = if (n in seen) uniqueName(n, taken + seen) else n
+                seen += name
+                taken += name
+                name
+            }
+        }
+
         /** "report.pdf" -> "report (1).pdf", counting up until the name is free. */
         fun uniqueName(name: String, taken: Set<String>): String {
             if (name !in taken) return name
@@ -521,14 +641,16 @@ data class UploadStatus(
     val error: String?,
     /** Stopped for lack of network (or server) and waiting to go on by itself. */
     val waitingForNetwork: Boolean = false,
+    /** Sum of the files in flight, each in thousandths. */
+    val permille: Int = 0,
 ) {
     val active: Boolean get() = !state.isFinished
-    /** Whole-batch fraction, or null while the current file's size is unknown. */
+    /** Whole-batch fraction: finished files plus the parts of the files in flight. */
     val fraction: Float?
         get() {
             if (total <= 0) return null
-            val current = if (size > 0) sent.toFloat() / size else return if (index > 0) index.toFloat() / total else null
-            return ((index + current) / total).coerceIn(0f, 1f)
+            if (index == 0 && permille == 0) return null
+            return ((index + permille / 1000f) / total).coerceIn(0f, 1f)
         }
 
     companion object {
@@ -550,6 +672,7 @@ data class UploadStatus(
                 failed = o.getInt(UploadWorker.KEY_FAILED, 0),
                 error = o.getString(UploadWorker.KEY_ERROR),
                 waitingForNetwork = info.state == WorkInfo.State.ENQUEUED && info.runAttemptCount > 0,
+                permille = p.getInt(UploadWorker.KEY_PROGRESS_PERMILLE, 0),
             )
         }
     }
