@@ -324,6 +324,8 @@ pub fn run() {
             commands::set_ignore_patterns,
             commands::get_sync_status,
             commands::resolve_held_deletion,
+            commands::set_drive_letter,
+            commands::get_free_drive_letters,
             commands::get_status_summary,
             commands::get_drives_info,
             commands::get_file_icon,

@@ -91,6 +91,12 @@
     "save": "Speichern",
     "cancel": "Abbrechen",
     "readOnlyHint": "Nur zum Lesen mit Ihnen geteilt. Änderungen auf diesem PC werden nicht hochgeladen.",
+    "driveLetter": {
+      "title": "Als Laufwerksbuchstabe anzeigen",
+      "off": "Zeigt diesen Ordner im Explorer zusätzlich als eigenes Laufwerk, zum Beispiel F:.",
+      "active": "Erscheint im Explorer zusätzlich als {{letter}}:.",
+      "conflict": "{{letter}}: wird von einem anderen Laufwerk verwendet. Bitte wählen Sie einen anderen Buchstaben."
+    },
     "heldDeletion": {
       "message": {
         "server": "{{count}} Einträge wurden auf diesem PC gelöscht. Auf dem Server bleiben sie, bis Sie entscheiden.",

@@ -14,6 +14,9 @@ export interface DriveInfo {
   read_only: boolean;
   // Fylvo: mass deletions waiting for the user's answer.
   held_deletions: HeldDeletion[];
+  // Fylvo: the drive letter the folder also shows as (null = off), and whether it works.
+  drive_letter: string | null;
+  drive_letter_state: "off" | "active" | "conflict";
 }
 
 // Fylvo: "server" = deleted on this PC, would be deleted on the server;

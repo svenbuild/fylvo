@@ -18,6 +18,8 @@ const drives = [
     capacity: { total: 500 * 1024 ** 3, used: 182 * 1024 ** 3, label: "182 GB / 500 GB" },
     read_only: false,
     held_deletions: [{ side: "server", count: 214, version: 7 }],
+    drive_letter: "F",
+    drive_letter_state: "active",
   },
   {
     id: "drive-2",
@@ -30,6 +32,8 @@ const drives = [
     status: "active",
     read_only: true,
     held_deletions: [],
+    drive_letter: null,
+    drive_letter_state: "off",
   },
 ];
 
@@ -90,6 +94,8 @@ const answers: Record<string, unknown> = {
   get_auto_start_enabled: true,
   get_ignore_patterns: ["*.tmp", "~$*"],
   is_dir_empty: true,
+  get_free_drive_letters: ["G", "H", "K", "M"],
+  set_drive_letter: "active",
   "plugin:app|version": "0.1.0",
   "plugin:app|name": "Fylvo Desktop",
   "plugin:app|tauri_version": "2.0.0",

@@ -149,6 +149,7 @@ pub async fn add_drive(
         user_id: config.user_id,
         sync_root_id: None,
         ignore_patterns: Vec::new(),
+        drive_letter: None,
         extra: Default::default(),
     };
 
@@ -193,6 +194,33 @@ pub async fn remove_drive(
         .map_err(|e| e.to_string())?;
 
     Ok(result)
+}
+
+/// Fylvo: switch a drive's letter on (with `letter`, or the first free one) or off.
+#[tauri::command]
+pub async fn set_drive_letter(
+    state: State<'_, AppStateHandle>,
+    drive_id: String,
+    enabled: bool,
+    letter: Option<char>,
+) -> CommandResult<cloudreve_sync::drive::drive_letter::LetterState> {
+    let app_state = state
+        .get()
+        .ok_or_else(|| "App not yet initialized".to_string())?;
+    app_state
+        .drive_manager
+        .set_drive_letter(&drive_id, enabled, letter)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Fylvo: letters free for a drive letter.
+#[tauri::command]
+pub async fn get_free_drive_letters(state: State<'_, AppStateHandle>) -> CommandResult<Vec<char>> {
+    let app_state = state
+        .get()
+        .ok_or_else(|| "App not yet initialized".to_string())?;
+    Ok(app_state.drive_manager.free_drive_letters().await)
 }
 
 /// Get ignore patterns for a drive

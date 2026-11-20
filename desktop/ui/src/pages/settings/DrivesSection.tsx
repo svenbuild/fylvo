@@ -33,6 +33,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { DriveInfo, HeldDeletion } from "./types";
 import {  SecondaryButton, SecondaryErrorButton } from "../../common/StyledComponent";
 import { ask, message } from '@tauri-apps/plugin-dialog';
+import DriveLetterRow from "./DriveLetterRow";
 
 interface DriveInfoResponse {
   id: string;
@@ -52,6 +53,8 @@ interface DriveInfoResponse {
   };
   read_only: boolean;
   held_deletions: HeldDeletion[];
+  drive_letter: string | null;
+  drive_letter_state: DriveInfo["drive_letter_state"];
 }
 
 export default function DrivesSection() {
@@ -434,6 +437,8 @@ export default function DrivesSection() {
                     )}
                   </Box>
                 </Box>
+
+                <DriveLetterRow drive={drive} onChanged={fetchDrives} />
 
                 {/* Fylvo: held mass deletions */}
                 {drive.held_deletions?.map((held) => (

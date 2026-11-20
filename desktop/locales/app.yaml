@@ -623,3 +623,15 @@ reauthorizeWindowTitle:
   ru: "Повторно авторизовать диск"
   pl: "Ponownie autoryzuj dysk"
   it: "Autorizza di nuovo l'unità"
+driveLetterTakenTitle:
+  en-US: "Drive letter in use"
+  de: "Laufwerksbuchstabe belegt"
+driveLetterTakenMessage:
+  en-US: "%{letter}: is used by another drive, so \"%{drive}\" does not show there. Choose another letter in the Fylvo settings."
+  de: "%{letter}: wird von einem anderen Laufwerk verwendet, darum erscheint \"%{drive}\" dort nicht. Wählen Sie in den Fylvo-Einstellungen einen anderen Buchstaben."
+driveLetterNotFree:
+  en-US: "%{letter}: is not free."
+  de: "%{letter}: ist nicht frei."
+driveLetterNoneFree:
+  en-US: "No drive letter is free."
+  de: "Kein Laufwerksbuchstabe ist frei."
