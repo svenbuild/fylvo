@@ -177,8 +177,9 @@ fun FilesScreen(
         if (result == SnackbarResult.ActionPerformed) msg.action?.invoke()
     }
 
-    // Infinite scroll: load the next page when the end comes into view.
-    LaunchedEffect(listState, gridState, state.effectiveMode) {
+    // Infinite scroll: load the next page when the end comes into view. Fylvo: checked again when a
+    // refresh ends, since no page is loaded while it runs.
+    LaunchedEffect(listState, gridState, state.effectiveMode, state.revalidating) {
         val lastVisible = if (state.effectiveMode == ViewMode.GRID) {
             snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
         } else {
