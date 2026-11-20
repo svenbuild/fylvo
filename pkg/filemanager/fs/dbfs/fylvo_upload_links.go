@@ -66,8 +66,8 @@ func (f *DBFS) nameTaken(ctx context.Context, closest *File, target *fs.URI) (bo
 
 	// Inside a transaction its client is used: SQLite has a single connection.
 	fc, _ := inventory.InheritTx(ctx, f.fileClient)
-	twin, err := fc.CaseTwin(ctx, closest.ID(), target.Name())
-	return twin != "", err
+	twins, err := fc.CaseTwins(ctx, closest.ID(), target.Name())
+	return len(twins) > 0, err
 }
 
 // reserveLinkUpload counts an upload against the share link it comes in through. Only

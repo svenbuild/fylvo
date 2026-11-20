@@ -685,7 +685,8 @@ func handleCopyMove(c *gin.Context, user *ent.User, fm manager.FileManager) (sta
 		return http.StatusForbidden, errDestinationEqualsSource
 	}
 
-	if err := refuseCaseTwin(c, fm, srcUri, dstUri, dstFolderUri, hashid.EncodeUserID(hasher, user.ID)); err != nil {
+	if err := refuseCaseTwin(c, fm, srcUri, dstUri, dstFolderUri, c.Request.Method == "COPY", dstExists,
+		hashid.EncodeUserID(hasher, user.ID)); err != nil {
 		return purposeStatusCodeFromError(err), err
 	}
 

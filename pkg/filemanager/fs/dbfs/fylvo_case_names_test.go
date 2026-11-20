@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudreve/Cloudreve/v4/ent/file"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -184,6 +185,20 @@ func TestExistingTwinsStayUsable(t *testing.T) {
 	// A new version of a twin works.
 	version := types.EntityTypeVersion
 	require.NoError(t, e.tryUploadVersion(owner, e.uri("cloudreve://my/Shared/Doc.txt"), 3, &version))
+
+	// The admin may change a twin, but not give a name another spelling of one in its folder.
+	twin, err := e.client.File.Query().Where(file.Name("doc.txt")).Only(e.ctx)
+	require.NoError(t, err)
+	_, err = e.fileClient.Update(e.ctx, twin)
+	require.NoError(t, err)
+	other, err := e.client.File.Query().Where(file.Name("other.txt")).Only(e.ctx)
+	require.NoError(t, err)
+	other.Name = "OTHER.txt"
+	_, err = e.fileClient.Update(e.ctx, other)
+	require.NoError(t, err)
+	other.Name = "DOC.TXT"
+	_, err = e.fileClient.Update(e.ctx, other)
+	requireCode(t, err, serializer.CodeNameCaseTaken)
 
 	// A twin can be renamed to a free name, not to another spelling of its twin.
 	requireCode(t, e.rename(owner, "cloudreve://my/Shared/Doc.txt", "DOC.txt"), serializer.CodeNameCaseTaken)

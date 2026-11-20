@@ -153,9 +153,9 @@ type FileClient interface {
 	TxOperator
 	// GetByHashID returns a file by its hashID.
 	GetByHashID(ctx context.Context, hashID string) (*ent.File, error)
-	// CaseTwin returns the name of an entry of the folder parent that differs from name only in
-	// upper and lower case, or "" (Fylvo, see fylvo_case_names.go).
-	CaseTwin(ctx context.Context, parent int, name string) (string, error)
+	// CaseTwins returns the names of the entries of the folder parent that differ from name
+	// only in upper and lower case (Fylvo, see fylvo_case_names.go).
+	CaseTwins(ctx context.Context, parent int, name string) ([]string, error)
 	// GetParentFile returns the parent folder of a given file
 	GetParentFile(ctx context.Context, root *ent.File, eagerLoading bool) (*ent.File, error)
 	// Search file by name from a given root. eagerLoading indicates whether to load edges determined by ctx.

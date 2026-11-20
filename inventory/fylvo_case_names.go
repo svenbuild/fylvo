@@ -66,9 +66,9 @@ func caseTwinPattern(name string) string {
 	return b.String()
 }
 
-// CaseTwin returns the name of an entry of the folder parent that differs from name only in
-// upper and lower case, or "" if there is none.
-func (f *fileClient) CaseTwin(ctx context.Context, parent int, name string) (string, error) {
+// CaseTwins returns the names of the entries of the folder parent that differ from name only
+// in upper and lower case.
+func (f *fileClient) CaseTwins(ctx context.Context, parent int, name string) ([]string, error) {
 	candidates, err := f.client.File.Query().
 		Where(file.FileChildren(parent), file.NameNEQ(name), func(s *sql.Selector) {
 			s.Where(sql.P(func(b *sql.Builder) {
@@ -78,16 +78,11 @@ func (f *fileClient) CaseTwin(ctx context.Context, parent int, name string) (str
 		Select(file.FieldName).
 		Strings(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to look for names in other case: %w", err)
+		return nil, fmt.Errorf("failed to look for names in other case: %w", err)
 	}
 
 	folded := FoldName(name)
-	for _, candidate := range candidates {
-		if FoldName(candidate) == folded {
-			return candidate, nil
-		}
-	}
-	return "", nil
+	return lo.Filter(candidates, func(candidate string, _ int) bool { return FoldName(candidate) == folded }), nil
 }
 
 // ensureNoCaseTwins checks the files with the given ids as they are now, after a write: none
@@ -106,11 +101,11 @@ func (f *fileClient) ensureNoCaseTwins(ctx context.Context, ids ...int) error {
 			if w.FileChildren == 0 {
 				continue // a root folder or an entry in the trash
 			}
-			twin, err := f.CaseTwin(ctx, w.FileChildren, w.Name)
+			twins, err := f.CaseTwins(ctx, w.FileChildren, w.Name)
 			if err != nil {
 				return err
 			}
-			if twin != "" {
+			if len(twins) > 0 {
 				return ErrNameCaseTaken
 			}
 		}

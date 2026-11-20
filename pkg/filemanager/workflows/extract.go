@@ -432,6 +432,7 @@ func (m *ExtractArchiveTask) masterExtractArchive(ctx context.Context, dep depen
 			// that cannot be created is.
 			m.l.Warning("File %q in archive file has a name that is there in other case, skipping...", rawPath)
 			atomic.AddInt64(&m.progress[ProgressTypeExtractCount].Current, 1)
+			atomic.AddInt64(&m.progress[ProgressTypeExtractSize].Current, f.Size())
 			m.state.ProcessedCursor = f.NameInArchive
 			return nil
 		}
