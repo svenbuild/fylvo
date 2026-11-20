@@ -303,6 +303,12 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					controllers.UserLogin2FAValidation,
 					controllers.UserIssueToken,
 				)
+				// Fylvo: set a new password with the ticket of a held sign-in
+				token.POST("password",
+					controllers.FromJSON[usersvc.PasswordChangeService](usersvc.PasswordChangeParameterCtx{}),
+					controllers.UserFinishPasswordChange,
+					controllers.UserIssueToken,
+				)
 				token.POST("refresh",
 					middleware.RequiredScopes(types.ScopeOfflineAccess),
 					controllers.FromJSON[usersvc.RefreshTokenService](usersvc.RefreshTokenParameterCtx{}),

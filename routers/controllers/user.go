@@ -109,6 +109,18 @@ func UserLogin2FAValidation(c *gin.Context) {
 
 // UserIssueToken generates new token pair for user
 func UserIssueToken(c *gin.Context) {
+	// Fylvo: an account that has to set a new password gets a ticket instead of tokens.
+	if u := inventory.UserFromContext(c); inventory.MustChangePassword(u) {
+		res, err := user.StartPasswordChange(c, u)
+		if err != nil {
+			c.JSON(200, serializer.Err(c, err))
+			c.Abort()
+			return
+		}
+		c.JSON(200, res)
+		return
+	}
+
 	resp, err := user.IssueToken(c)
 	if err != nil {
 		c.JSON(200, serializer.Err(c, err))

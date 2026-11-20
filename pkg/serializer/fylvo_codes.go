@@ -5,4 +5,9 @@ package serializer
 const (
 	// CodeTooManyAttempts too many wrong passwords or codes, try again later
 	CodeTooManyAttempts = 40900
+	// CodePasswordChangeRequired the password was right, but the account has to set a new
+	// password first; data holds the ticket for POST /session/token/password
+	CodePasswordChangeRequired = 40901
+	// CodeSamePassword the new password is the same as the current one
+	CodeSamePassword = 40902
 )

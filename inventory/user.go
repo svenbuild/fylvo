@@ -89,6 +89,9 @@ type (
 		UpdatePassword(ctx context.Context, u *ent.User, newPassword string) (*ent.User, error)
 		// UpgradePassword Fylvo: stores a password checked against an old hash with bcrypt.
 		UpgradePassword(ctx context.Context, u *ent.User, password string) (string, error)
+		// SetOwnPassword Fylvo: stores a password the person chose and clears the
+		// password-change flag, see fylvo_password_change.go.
+		SetOwnPassword(ctx context.Context, u *ent.User, newPassword string) error
 		// UpdateTwoFASecret updates user two factor secret.
 		UpdateTwoFASecret(ctx context.Context, u *ent.User, secret string) (*ent.User, error)
 		// ListPasskeys list user's passkeys.
@@ -104,7 +107,9 @@ type (
 		// ListUsers list users with pagination.
 		ListUsers(ctx context.Context, args *ListUserParameters) (*ListUserResult, error)
 		// Upsert upserts a user.
-		Upsert(ctx context.Context, u *ent.User, password, twoFa string) (*ent.User, error)
+		// Fylvo: settings, when not nil, are stored in the same write (the admin sets the
+		// password-change flag there).
+		Upsert(ctx context.Context, u *ent.User, password, twoFa string, settings *types.UserSetting) (*ent.User, error)
 		// Delete deletes a user.
 		Delete(ctx context.Context, uid int) error
 		// CalculateStorage calculate user's storage from scratch and update user's storage.
@@ -551,8 +556,11 @@ func (c *userClient) ListUsers(ctx context.Context, args *ListUserParameters) (*
 	}, nil
 }
 
-func (c *userClient) Upsert(ctx context.Context, u *ent.User, password, twoFa string) (*ent.User, error) {
+func (c *userClient) Upsert(ctx context.Context, u *ent.User, password, twoFa string, settings *types.UserSetting) (*ent.User, error) {
 	if u.ID == 0 {
+		if settings == nil {
+			settings = &types.UserSetting{}
+		}
 		q := c.client.User.Create().
 			SetEmail(u.Email).
 			SetNick(u.Nick).
@@ -560,7 +568,7 @@ func (c *userClient) Upsert(ctx context.Context, u *ent.User, password, twoFa st
 			SetStatus(u.Status).
 			SetGroupID(u.GroupUsers).
 			SetPassword(u.Password).
-			SetSettings(&types.UserSetting{})
+			SetSettings(settings)
 
 		if password != "" {
 			pwdDigest, err := digestPassword(password)
@@ -590,6 +598,10 @@ func (c *userClient) Upsert(ctx context.Context, u *ent.User, password, twoFa st
 
 	if twoFa != "" {
 		q.ClearTwoFactorSecret()
+	}
+
+	if settings != nil {
+		q.SetSettings(settings)
 	}
 
 	return q.Save(ctx)
