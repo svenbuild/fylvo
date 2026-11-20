@@ -13,8 +13,11 @@ import io.github.svenbuild.fylvo.android.api.PasswordLoginRequest
 import io.github.svenbuild.fylvo.android.data.SessionManager
 import io.github.svenbuild.fylvo.android.data.normalizeServerUrl
 
+/** Fylvo's own server. Prefilled so nobody has to type it, but it can still be changed. */
+const val DEFAULT_SERVER_URL = "https://cloud.example.com"
+
 data class LoginUiState(
-    val serverUrl: String = "",
+    val serverUrl: String = DEFAULT_SERVER_URL,
     val email: String = "",
     val password: String = "",
     val loading: Boolean = false,
