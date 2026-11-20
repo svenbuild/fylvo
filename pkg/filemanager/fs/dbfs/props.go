@@ -3,7 +3,6 @@ package dbfs
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
@@ -101,7 +100,6 @@ func (f *DBFS) PatchMetadata(ctx context.Context, path []*fs.URI, metas ...fs.Me
 	metadataMap := make(map[string]string)
 	privateMap := make(map[string]bool)
 	deleted := make([]string, 0)
-	updateModifiedAt := false
 	for _, meta := range metas {
 		if meta.Remove {
 			deleted = append(deleted, meta.Key)
@@ -110,9 +108,6 @@ func (f *DBFS) PatchMetadata(ctx context.Context, path []*fs.URI, metas ...fs.Me
 		metadataMap[meta.Key] = meta.Value
 		if meta.Private {
 			privateMap[meta.Key] = meta.Private
-		}
-		if meta.UpdateModifiedAt {
-			updateModifiedAt = true
 		}
 	}
 
@@ -131,13 +126,6 @@ func (f *DBFS) PatchMetadata(ctx context.Context, path []*fs.URI, metas ...fs.Me
 			if err := fc.RemoveMetadata(ctx, target.Model, deleted...); err != nil {
 				_ = inventory.Rollback(tx)
 				return fmt.Errorf("failed to remove metadata: %w", err)
-			}
-		}
-
-		if updateModifiedAt {
-			if err := fc.UpdateModifiedAt(ctx, target.Model, time.Now()); err != nil {
-				_ = inventory.Rollback(tx)
-				return fmt.Errorf("failed to update file modified at: %w", err)
 			}
 		}
 	}

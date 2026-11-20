@@ -1054,8 +1054,7 @@ func (c *FileClient) QueryDirectLinks(f *File) *DirectLinkQuery {
 
 // Hooks returns the client hooks.
 func (c *FileClient) Hooks() []Hook {
-	hooks := c.hooks.File
-	return append(hooks[:len(hooks):len(hooks)], file.Hooks[:]...)
+	return c.hooks.File
 }
 
 // Interceptors returns the client interceptors.

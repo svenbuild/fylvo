@@ -276,9 +276,7 @@ func (fc *FileCreate) Mutation() *FileMutation {
 
 // Save creates the File in the database.
 func (fc *FileCreate) Save(ctx context.Context) (*File, error) {
-	if err := fc.defaults(); err != nil {
-		return nil, err
-	}
+	fc.defaults()
 	return withHooks(ctx, fc.sqlSave, fc.mutation, fc.hooks)
 }
 
@@ -305,18 +303,12 @@ func (fc *FileCreate) ExecX(ctx context.Context) {
 }
 
 // defaults sets the default values of the builder before save.
-func (fc *FileCreate) defaults() error {
+func (fc *FileCreate) defaults() {
 	if _, ok := fc.mutation.CreatedAt(); !ok {
-		if file.DefaultCreatedAt == nil {
-			return fmt.Errorf("ent: uninitialized file.DefaultCreatedAt (forgotten import ent/runtime?)")
-		}
 		v := file.DefaultCreatedAt()
 		fc.mutation.SetCreatedAt(v)
 	}
 	if _, ok := fc.mutation.UpdatedAt(); !ok {
-		if file.DefaultUpdatedAt == nil {
-			return fmt.Errorf("ent: uninitialized file.DefaultUpdatedAt (forgotten import ent/runtime?)")
-		}
 		v := file.DefaultUpdatedAt()
 		fc.mutation.SetUpdatedAt(v)
 	}
@@ -328,7 +320,6 @@ func (fc *FileCreate) defaults() error {
 		v := file.DefaultIsSymbolic
 		fc.mutation.SetIsSymbolic(v)
 	}
-	return nil
 }
 
 // check runs all checks and user-defined validators on the builder.
