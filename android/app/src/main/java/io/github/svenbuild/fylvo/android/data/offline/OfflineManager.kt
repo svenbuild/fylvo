@@ -129,11 +129,11 @@ class OfflineManager(
         }
     }
 
-    /** Leftovers: tmp files of a stopped run, copies of a root whose "Remove" was interrupted. */
+    /** Leftovers of roots that no longer exist: their tmp files, copies of an interrupted "Remove". */
     suspend fun cleanUp(store: OfflineStore) {
         writeLock.withLock {
-            store.tmpDir.deleteRecursively()
-            store.tmpDir.mkdirs()
+            // offline-tmp of existing roots stays until their next complete listing (see the engine).
+            store.orphanTmp().forEach { it.deleteRecursively() }
             store.orphanDirs().forEach { it.deleteRecursively() }
         }
     }
@@ -240,7 +240,8 @@ class OfflineManager(
 
     suspend fun syncNow() {
         syncRequested.set(true)
-        OfflineSyncWorker.syncNow(context, mobileData.first())
+        val mobile = mobileData.first()
+        withContext(Dispatchers.IO) { OfflineSyncWorker.syncNow(context, mobile) }
     }
 
     /** A copy made before 1.2, directly in filesDir/offline; nothing else is ever deleted here. */

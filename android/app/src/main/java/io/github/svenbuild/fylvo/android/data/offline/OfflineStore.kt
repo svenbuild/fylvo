@@ -69,6 +69,37 @@ class OfflineStore(private val base: File, val accountKey: String) {
         return deleted
     }
 
+    /** Root [id]'s part of offline-tmp. Cleaned only after a complete listing of the root ([clearTmp]). */
+    fun tmpOf(id: String): File = File(tmpDir, id)
+
+    /** Where a move parks the copy of [relativePath]; named after the old path so it can be put back. */
+    fun moveTmpOf(id: String, relativePath: String): File = File(tmpOf(id), "move/" + sha256(relativePath))
+
+    /** A new file for one download into root [id]. */
+    fun downloadTmpOf(id: String): File = File(tmpOf(id), "dl-" + UUID.randomUUID())
+
+    fun clearTmp(id: String) {
+        tmpOf(id).deleteRecursively()
+    }
+
+    /**
+     * A move stopped after parking a copy: when an entry's copy is missing and its parked copy is
+     * there, it goes back to its place. Returns the paths put back.
+     */
+    fun recoverMoves(id: String, entries: List<OfflineEntry>): List<String> = entries.filter { entry ->
+        val src = fileOf(id, entry.path)
+        val parked = moveTmpOf(id, entry.path)
+        if (entry.localSize < 0 || src.exists() || !parked.isFile) return@filter false
+        src.parentFile?.mkdirs()
+        parked.renameTo(src)
+    }.map { it.path }
+
+    /** Parts of offline-tmp that belong to no root of this account (or older loose files). */
+    fun orphanTmp(): List<File> {
+        val ids = indexDir.listFiles { f -> f.name.endsWith(".json") }.orEmpty().mapTo(HashSet()) { it.name.removeSuffix(".json") }
+        return tmpDir.listFiles().orEmpty().filter { !(it.isDirectory && it.name in ids) }
+    }
+
     /** Folders of copies with no index (an interrupted "Remove"): nothing points to them any more. */
     fun orphanDirs(): List<File> {
         val ids = indexDir.listFiles { f -> f.name.endsWith(".json") }.orEmpty().mapTo(HashSet()) { it.name.removeSuffix(".json") }
@@ -86,6 +117,10 @@ class OfflineStore(private val base: File, val accountKey: String) {
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
         fun newId(): String = UUID.randomUUID().toString()
+
+        private fun sha256(text: String): String =
+            java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray())
+                .joinToString("") { "%02x".format(it) }.take(40)
 
         private fun isValidId(id: String) = runCatching { UUID.fromString(id).toString() == id }.getOrDefault(false)
 

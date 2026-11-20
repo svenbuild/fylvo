@@ -183,4 +183,34 @@ class OfflineStoreTest {
         // The path `a` is free again, e.g. for a file the server put there.
         assertFalse(store.fileOf(r.id, "a").exists())
     }
+
+    @Test fun aMoveStoppedHalfWayIsPutBack() {
+        val store = OfflineStore(tmp.root, "acc")
+        val r = root()
+        store.save(OfflineIndex(r))
+        val entry = OfflineEntry("1", "a", "e1", 1, 1)
+        // The copy of `a` was parked for a move to `a/photo.jpg`, then the app stopped.
+        store.moveTmpOf(r.id, "a").apply { parentFile!!.mkdirs(); writeText("x") }
+        assertEquals(store.moveTmpOf(r.id, "a"), store.moveTmpOf(r.id, "a"))
+        assertEquals(listOf("a"), store.recoverMoves(r.id, listOf(entry)))
+        assertEquals("x", store.fileOf(r.id, "a").readText())
+        assertFalse(store.moveTmpOf(r.id, "a").exists())
+        // A copy still in place is never replaced by a parked one.
+        store.moveTmpOf(r.id, "a").writeText("old")
+        assertEquals(emptyList<String>(), store.recoverMoves(r.id, listOf(entry)))
+        assertEquals("x", store.fileOf(r.id, "a").readText())
+    }
+
+    @Test fun tmpOfExistingRootsStaysUntilClearedByItsRun() {
+        val store = OfflineStore(tmp.root, "acc")
+        val r = root()
+        store.save(OfflineIndex(r))
+        val mine = store.downloadTmpOf(r.id).apply { parentFile!!.mkdirs(); writeText("x") }
+        val removedRoot = store.downloadTmpOf(OfflineStore.newId()).apply { parentFile!!.mkdirs(); writeText("x") }
+        val loose = File(store.tmpDir, "old-format").apply { writeText("x") }
+        assertEquals(setOf(removedRoot.parentFile, loose), store.orphanTmp().toSet())
+        assertTrue(mine.exists())
+        store.clearTmp(r.id)
+        assertFalse(mine.exists())
+    }
 }

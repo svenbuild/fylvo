@@ -3,6 +3,7 @@ package io.github.svenbuild.fylvo.android
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -101,6 +102,11 @@ class FylvoApp : Application() {
             // Grants other apps got to our documents (system Files app) end with the session.
             revokeUriPermission(
                 Uri.parse("content://$packageName.documents/"),
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+            // Also the grants to opened files (offline copies stay after an expired session).
+            revokeUriPermission(
+                "content://$packageName.fileprovider/".toUri(),
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
             )
             withContext(Dispatchers.IO) {

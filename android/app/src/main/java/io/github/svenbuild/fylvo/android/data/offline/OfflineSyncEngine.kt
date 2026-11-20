@@ -14,7 +14,6 @@ import io.github.svenbuild.fylvo.android.data.FileRepository
 import io.github.svenbuild.fylvo.android.util.CrUri
 import java.io.File
 import java.io.IOException
-import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -78,6 +77,8 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
 
     private suspend fun syncRoot(store: OfflineStore, writer: IndexWriter, root: OfflineRoot) {
         val id = root.id
+        // A move stopped half way (copy parked in offline-tmp): it goes back first. Nothing is deleted here.
+        manager.writing(id) { store.recoverMoves(id, writer.current.entries) } ?: return
         val remote = try {
             listing(root)
         } catch (e: CancellationException) {
@@ -91,10 +92,15 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
             return
         }
 
-        // Files without an index entry (a run stopped after writing one) are read-only copies
-        // nobody points to; they could block a path the server now uses differently. Anything
-        // needed is fetched again below.
-        manager.writing(id) { store.removeUnindexed(id, writer.current.entries.mapTo(HashSet()) { it.path }) } ?: return
+        // Only after a complete listing: leftovers of a stopped run in offline-tmp, and files
+        // without an index entry (read-only copies nobody points to, which could block a path the
+        // server now uses differently). Anything needed is fetched again below.
+        if (remote.complete) {
+            manager.writing(id) {
+                store.clearTmp(id)
+                store.removeUnindexed(id, writer.current.entries.mapTo(HashSet()) { it.path })
+            } ?: return
+        }
 
         val actions = planSync(remote, writer.current.entries) { rel ->
             store.fileOf(id, rel).takeIf { it.isFile }?.let { LocalStat(it.length(), it.lastModified()) }
@@ -168,21 +174,38 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
         val old = writer.entry(move.from) ?: return false
         val src = store.fileOf(id, move.from)
         val dst = store.fileOf(id, move.file.path)
-        val tmp = File(store.tmpDir, "$id-move-${UUID.randomUUID()}")
-        store.tmpDir.mkdirs()
+        // Named after the old path, so a run stopped right here can put it back (recoverMoves).
+        val tmp = store.moveTmpOf(id, move.from)
+        tmp.parentFile?.mkdirs()
+        tmp.delete()
         if (!src.renameTo(tmp)) return false
         writer.remove(move.from)
         pruneEmptyDirs(store.dirOf(id), src.parentFile)
+        val created = missingDirs(store.dirOf(id), dst.parentFile)
         dst.parentFile?.mkdirs()
         if (!dst.exists() && tmp.renameTo(dst)) {
             writer.put(old.copy(id = move.file.id, path = move.file.path))
             return true
         }
-        // Something is in the way: the old copy goes back (so a failed download never loses it)
-        // and the file is fetched at its new place instead.
+        // Something is in the way: the folders made for the move go (one may stand where the old
+        // copy was), the old copy goes back, and the file is fetched at its new place instead.
+        created.asReversed().forEach { if (it.list()?.isEmpty() == true) it.delete() }
         src.parentFile?.mkdirs()
-        if (tmp.renameTo(src)) writer.put(old) else tmp.delete()
+        // If even that fails the copy stays in offline-tmp; the next run puts it back.
+        tmp.renameTo(src)
+        writer.put(old)
         return false
+    }
+
+    /** Folders from [rootDir] down to [dir] that do not exist yet, outermost first. */
+    private fun missingDirs(rootDir: File, dir: File?): List<File> {
+        val out = ArrayList<File>()
+        var current = dir
+        while (current != null && current != rootDir && current.path.startsWith(rootDir.path) && !current.exists()) {
+            out += current
+            current = current.parentFile
+        }
+        return out.asReversed()
     }
 
     /** The server's view of [root]; throws [RootGone] when the server clearly has nothing there. */
@@ -218,11 +241,11 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
             storageFull.set(true)
             return false
         }
-        val tmp = File(store.tmpDir, "$id-${UUID.randomUUID()}")
+        val tmp = store.downloadTmpOf(id)
         return try {
+            tmp.parentFile?.mkdirs()
             if (file.size == 0L) {
                 // An empty file may have no version to ask for: nothing to fetch.
-                tmp.parentFile?.mkdirs()
                 tmp.createNewFile()
             } else {
                 // The exact version of the listing, not whatever is current by now.

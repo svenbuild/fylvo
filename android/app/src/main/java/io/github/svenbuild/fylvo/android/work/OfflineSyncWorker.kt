@@ -58,28 +58,36 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
         }
 
         /**
-         * One run soon. APPEND_OR_REPLACE: a request while a run is busy is queued after it, never
-         * dropped (and a busy run also takes it through the sync request flag).
+         * One run soon. A run already waiting (enqueued, or blocked behind a busy one) covers it;
+         * while one is busy, one more is queued after it (never dropped). Blocking.
          */
         fun syncNow(context: Context, mobileData: Boolean) {
-            WorkManager.getInstance(context).enqueueUniqueWork(
+            val wm = WorkManager.getInstance(context)
+            if (wm.getWorkInfosForUniqueWork(WORK_ONCE).get().any { it.state in WAITING }) return
+            wm.enqueueUniqueWork(
                 WORK_ONCE,
                 ExistingWorkPolicy.APPEND_OR_REPLACE,
                 OneTimeWorkRequestBuilder<OfflineSyncWorker>().setConstraints(constraints(mobileData)).build(),
             )
         }
 
-        /** A one-time run still waiting (not running) is replaced by one with the new network setting. Blocking. */
+        /**
+         * A one-time run still waiting (enqueued, or blocked behind a busy one) is replaced by one
+         * with the new network setting; a busy run is left alone. Blocking.
+         */
         fun replaceWaiting(context: Context, mobileData: Boolean) {
             val wm = WorkManager.getInstance(context)
-            val waiting = wm.getWorkInfosForUniqueWork(WORK_ONCE).get().any { it.state == WorkInfo.State.ENQUEUED }
-            if (!waiting) return
+            val waiting = wm.getWorkInfosForUniqueWork(WORK_ONCE).get().filter { it.state in WAITING }
+            if (waiting.isEmpty()) return
+            waiting.forEach { wm.cancelWorkById(it.id).result.get() }
             wm.enqueueUniqueWork(
                 WORK_ONCE,
-                ExistingWorkPolicy.REPLACE,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
                 OneTimeWorkRequestBuilder<OfflineSyncWorker>().setConstraints(constraints(mobileData)).build(),
             )
         }
+
+        private val WAITING = setOf(WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED)
 
         fun cancel(context: Context) {
             val wm = WorkManager.getInstance(context)
