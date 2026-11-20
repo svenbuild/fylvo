@@ -18,6 +18,7 @@ import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.FileRepository
 import io.github.svenbuild.fylvo.android.util.CrUri
+import io.github.svenbuild.fylvo.android.util.localized
 import java.io.File
 import java.io.FileNotFoundException
 import java.security.MessageDigest
@@ -72,7 +73,7 @@ class FylvoDocumentsProvider : DocumentsProvider() {
         if (documentId == ROOT_ID) {
             cursor.newRow().apply {
                 add(Document.COLUMN_DOCUMENT_ID, ROOT_ID)
-                add(Document.COLUMN_DISPLAY_NAME, "My files")
+                add(Document.COLUMN_DISPLAY_NAME, context!!.localized().getString(R.string.my_files))
                 add(Document.COLUMN_MIME_TYPE, Document.MIME_TYPE_DIR)
                 add(Document.COLUMN_FLAGS, 0)
             }

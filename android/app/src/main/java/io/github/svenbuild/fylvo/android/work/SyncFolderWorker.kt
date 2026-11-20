@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.work
 
+import io.github.svenbuild.fylvo.android.R
+import io.github.svenbuild.fylvo.android.util.localized
+
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -145,10 +148,11 @@ class SyncFolderWorker(context: Context, params: WorkerParameters) :
     }
 
     private fun progressInfo(text: String, done: Int): ForegroundInfo {
+        val texts = applicationContext.localized()
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("Fylvo folder sync")
-            .setContentText(if (done == 0) text else "$text ($done uploaded)")
+            .setContentTitle(texts.getString(R.string.folder_sync_notification_title))
+            .setContentText(if (done == 0) text else texts.getString(R.string.folder_sync_uploaded, text, done))
             .setOngoing(true)
             .build()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -162,7 +166,7 @@ class SyncFolderWorker(context: Context, params: WorkerParameters) :
         val manager =
             applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Folder sync", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, applicationContext.localized().getString(R.string.folder_sync), NotificationManager.IMPORTANCE_LOW)
         )
     }
 

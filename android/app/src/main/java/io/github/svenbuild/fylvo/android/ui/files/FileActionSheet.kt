@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -91,7 +94,7 @@ fun FileActionSheet(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    subtitleFor(file.size, file.updatedAt, file.isFolder).ifEmpty { if (file.isFolder) "Folder" else "" },
+                    subtitleFor(file.size, file.updatedAt, file.isFolder).ifEmpty { if (file.isFolder) stringResource(R.string.folder) else "" },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -100,31 +103,31 @@ fun FileActionSheet(
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
         if (inTrash) {
-            SheetAction(Icons.Default.RestoreFromTrash, "Restore", onRestore)
-            SheetAction(Icons.Default.DeleteForever, "Delete forever", onDeleteForever, tint = MaterialTheme.colorScheme.error)
+            SheetAction(Icons.Default.RestoreFromTrash, stringResource(R.string.restore), onRestore)
+            SheetAction(Icons.Default.DeleteForever, stringResource(R.string.delete_forever), onDeleteForever, tint = MaterialTheme.colorScheme.error)
             Spacer(Modifier.height(24.dp))
             return@ModalBottomSheet
         }
 
-        SheetAction(Icons.AutoMirrored.Filled.OpenInNew, if (file.isFolder) "Open folder" else "Open", onOpen)
-        onShowInFolder?.let { SheetAction(Icons.Default.FolderOpen, "Show in folder", it) }
-        if (canShare) SheetAction(Icons.Default.Link, "Share link", onShare)
-        SheetAction(Icons.Default.Download, if (file.isFolder) "Download as ZIP" else "Download", onDownload)
+        SheetAction(Icons.AutoMirrored.Filled.OpenInNew, stringResource(if (file.isFolder) R.string.open_folder else R.string.open), onOpen)
+        onShowInFolder?.let { SheetAction(Icons.Default.FolderOpen, stringResource(R.string.show_in_folder), it) }
+        if (canShare) SheetAction(Icons.Default.Link, stringResource(R.string.share_link), onShare)
+        SheetAction(Icons.Default.Download, stringResource(if (file.isFolder) R.string.download_as_zip else R.string.download), onDownload)
         if (!file.isFolder) {
             SheetAction(
                 if (isFavorite) Icons.Default.OfflinePin else Icons.Outlined.OfflinePin,
-                if (isFavorite) "Remove offline copy" else "Keep offline",
+                stringResource(if (isFavorite) R.string.remove_offline_copy else R.string.keep_offline),
                 onToggleFavorite,
             )
         }
-        SheetAction(Icons.Default.Checklist, "Select", onSelect)
+        SheetAction(Icons.Default.Checklist, stringResource(R.string.select), onSelect)
         if (canModify) {
-            SheetAction(Icons.AutoMirrored.Filled.DriveFileMove, "Move to", onMove)
-            SheetAction(Icons.Default.FileCopy, "Copy to", onCopy)
-            SheetAction(Icons.Default.DriveFileRenameOutline, "Rename", onRename)
+            SheetAction(Icons.AutoMirrored.Filled.DriveFileMove, stringResource(R.string.move_to), onMove)
+            SheetAction(Icons.Default.FileCopy, stringResource(R.string.copy_to), onCopy)
+            SheetAction(Icons.Default.DriveFileRenameOutline, stringResource(R.string.rename), onRename)
         }
-        SheetAction(Icons.Outlined.Info, "Details", onDetails)
-        if (canModify) SheetAction(Icons.Default.Delete, "Delete", onDelete, tint = MaterialTheme.colorScheme.error)
+        SheetAction(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
+        if (canModify) SheetAction(Icons.Default.Delete, stringResource(R.string.delete), onDelete, tint = MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(24.dp))
     }
 }

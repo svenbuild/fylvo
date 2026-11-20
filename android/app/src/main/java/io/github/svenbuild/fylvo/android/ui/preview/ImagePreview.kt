@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.preview
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -105,10 +108,10 @@ fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit,
                         alpha = 1f - (kotlin.math.abs(dragY) / (dismissThresholdPx * 3f)).coerceIn(0f, 0.6f)
                     },
                 loading = { LoadingOverlay(null) },
-                error = { FullWidthError("Couldn't load image") },
+                error = { FullWidthError(stringResource(R.string.image_load_failed)) },
             )
         } else if (fullFailed) {
-            FullWidthError("Couldn't load image")
+            FullWidthError(stringResource(R.string.image_load_failed))
         } else {
             LoadingOverlay(null)
         }

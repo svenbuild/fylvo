@@ -18,7 +18,9 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.CancellationException
 import io.github.svenbuild.fylvo.android.FylvoApp
+import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.data.ApiException
+import io.github.svenbuild.fylvo.android.util.localized
 import java.io.File
 import java.io.FileOutputStream
 
@@ -105,10 +107,13 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     }
 
     /** Server error codes read like log lines; say what happened to this file instead. */
-    private fun describe(e: Exception, name: String): String = when {
-        e is ApiException && e.code == CODE_OBJECT_EXISTS -> "$name already exists in this folder"
-        e is ApiException && e.code == CODE_QUOTA_EXCEEDED -> "Not enough storage for $name"
-        else -> e.message ?: "Could not upload $name"
+    private fun describe(e: Exception, name: String): String {
+        val texts = applicationContext.localized()
+        return when {
+            e is ApiException && e.code == CODE_OBJECT_EXISTS -> texts.getString(R.string.file_exists_in_folder, name)
+            e is ApiException && e.code == CODE_QUOTA_EXCEEDED -> texts.getString(R.string.not_enough_storage, name)
+            else -> e.message ?: texts.getString(R.string.could_not_upload, name)
+        }
     }
 
     private fun resolveDisplayName(uri: Uri): String {
@@ -140,7 +145,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     private fun foregroundInfo(name: String, index: Int, total: Int, sent: Long, size: Long): ForegroundInfo {
         val cancel = WorkManager.getInstance(applicationContext).createCancelPendingIntent(id)
         val percent = if (size > 0) (sent * 100 / size).toInt() else 0
-        val title = if (total > 1) "Uploading ${index + 1} of $total" else "Uploading"
+        val texts = applicationContext.localized()
+        val title = if (total > 1) texts.getString(R.string.uploading_n_of, index + 1, total) else texts.getString(R.string.uploading)
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
             .setContentTitle(title)
@@ -148,7 +154,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             .setProgress(100, percent, size <= 0)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancel)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, texts.getString(R.string.cancel), cancel)
             .build()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ForegroundInfo(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
@@ -159,7 +165,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
     private fun createChannel() {
         notifications.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Uploads", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, applicationContext.localized().getString(R.string.channel_uploads), NotificationManager.IMPORTANCE_LOW)
         )
     }
 

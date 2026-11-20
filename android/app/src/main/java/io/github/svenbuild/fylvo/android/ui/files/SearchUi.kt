@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,7 +70,7 @@ fun SearchTopBar(
                 decorationBox = { inner ->
                     Box {
                         if (text.isEmpty()) {
-                            Text("Search files", style = style, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.search_files), style = style, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         inner()
                     }
@@ -76,13 +79,13 @@ fun SearchTopBar(
         },
         navigationIcon = {
             IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.close_search))
             }
         },
         actions = {
             if (text.isNotEmpty()) {
                 IconButton(onClick = { onTextChange("") }) {
-                    Icon(Icons.Default.Close, contentDescription = "Clear")
+                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.clear))
                 }
             }
         },
@@ -118,7 +121,7 @@ fun SearchResults(
                 FilterChip(
                     selected = state.searchScope == null,
                     onClick = { viewModel.setSearchScope(null) },
-                    label = { Text("Everywhere") },
+                    label = { Text(stringResource(R.string.everywhere)) },
                 )
                 Box(Modifier.size(8.dp))
             }
@@ -126,19 +129,19 @@ fun SearchResults(
                 FilterChip(
                     selected = state.searchType == c,
                     onClick = { viewModel.setSearchType(if (state.searchType == c) null else c) },
-                    label = { Text(c.label) },
+                    label = { Text(stringResource(c.label)) },
                 )
             }
         }
 
         val query = state.searchQuery.orEmpty().trim()
         when {
-            query.isEmpty() -> Hint(Icons.Outlined.Search, "Type to search by file name")
+            query.isEmpty() -> Hint(Icons.Outlined.Search, stringResource(R.string.search_hint))
             state.searchLoading && state.searchResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
             state.searchError != null -> Hint(Icons.Outlined.SearchOff, state.searchError)
-            state.searchResults.isEmpty() -> Hint(Icons.Outlined.SearchOff, "No files match \"$query\"")
+            state.searchResults.isEmpty() -> Hint(Icons.Outlined.SearchOff, stringResource(R.string.no_files_match, query))
             else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                 items(state.searchResults, key = { it.id + it.path }) { file ->
                     FileListItem(

@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.preview
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -64,7 +67,7 @@ fun MediaPreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit)
     Box(Modifier.fillMaxSize()) {
         val failure = playerError ?: url?.exceptionOrNull()?.message
         when {
-            failure != null -> FullWidthError("Couldn't load the preview ($failure)")
+            failure != null -> FullWidthError(stringResource(R.string.preview_load_failed, failure))
             url == null -> LoadingOverlay(null)
             else -> AndroidView(
                 factory = { ctx ->

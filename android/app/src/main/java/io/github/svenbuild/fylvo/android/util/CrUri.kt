@@ -1,5 +1,7 @@
 package io.github.svenbuild.fylvo.android.util
 
+import android.content.Context
+import io.github.svenbuild.fylvo.android.R
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -55,7 +57,26 @@ object CrUri {
         return if (rel.isEmpty()) root else root + "/" + URLDecoder.decode(rel, "UTF-8")
     }
 
-    const val ROOT_LABEL = "My files"
+    /** Names of the file system roots in the app language; English until [useLabelsFrom] runs. */
+    data class Labels(
+        val myFiles: String = "My files",
+        val sharedWithMe: String = "Shared with me",
+        val trash: String = "Trash",
+        val sharedFolder: String = "Shared folder",
+    )
+
+    @Volatile
+    var labels = Labels()
+        private set
+
+    fun useLabelsFrom(context: Context) {
+        labels = Labels(
+            myFiles = context.getString(R.string.my_files),
+            sharedWithMe = context.getString(R.string.shared_with_me),
+            trash = context.getString(R.string.trash),
+            sharedFolder = context.getString(R.string.shared_folder),
+        )
+    }
 
     /** Fylvo: names of shared folders by share root, learned from "Shared with me" listings. */
     private val shareNames = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -68,10 +89,10 @@ object CrUri {
 
     /** Label of a file system root; a shared folder shows its own name. */
     fun rootLabel(uri: String): String = when (val root = root(uri)) {
-        MY_PREFIX -> ROOT_LABEL
-        SHARED_WITH_ME -> "Shared with me"
-        "cloudreve://trash" -> "Trash"
-        else -> shareNames[root] ?: "Shared folder"
+        MY_PREFIX -> labels.myFiles
+        SHARED_WITH_ME -> labels.sharedWithMe
+        "cloudreve://trash" -> labels.trash
+        else -> shareNames[root] ?: labels.sharedFolder
     }
 
     /** A folder search can be limited to: any folder below a root, or a whole shared folder. */

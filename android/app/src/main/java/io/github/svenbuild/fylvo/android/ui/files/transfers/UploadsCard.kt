@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.files.transfers
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,13 +47,13 @@ fun UploadsCard(uploads: List<UploadStatus>, onCancel: (UUID) -> Unit) {
 private fun UploadRow(u: UploadStatus, onCancel: (UUID) -> Unit) {
     val queued = u.total == 0
     val headline = when {
-        queued -> "Waiting to upload…"
-        u.total > 1 -> "Uploading ${u.index + 1} of ${u.total}"
-        else -> "Uploading"
+        queued -> stringResource(R.string.waiting_to_upload)
+        u.total > 1 -> stringResource(R.string.uploading_n_of, u.index + 1, u.total)
+        else -> stringResource(R.string.uploading)
     }
     val detail = when {
         queued -> ""
-        u.size > 0 -> "${u.name} • ${formatSize(u.sent)} of ${formatSize(u.size)}"
+        u.size > 0 -> stringResource(R.string.upload_progress, u.name, formatSize(u.sent), formatSize(u.size))
         else -> u.name
     }
     Row(
@@ -97,7 +100,7 @@ private fun UploadRow(u: UploadStatus, onCancel: (UUID) -> Unit) {
             }
         }
         IconButton(onClick = { onCancel(u.id) }) {
-            Icon(Icons.Default.Close, contentDescription = "Cancel upload")
+            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cancel_upload))
         }
     }
 }

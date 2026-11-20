@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
@@ -23,8 +24,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -39,13 +42,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import kotlinx.coroutines.launch
 import io.github.svenbuild.fylvo.android.FylvoApp
+import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.CapacityResponse
 import io.github.svenbuild.fylvo.android.ui.files.formatSize
+import io.github.svenbuild.fylvo.android.util.AppLanguage
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.data.SyncFolderSettings
 import io.github.svenbuild.fylvo.android.work.SyncFolderWorker
@@ -112,10 +119,13 @@ fun AccountScreen(
     BackHandler { persistFolders(); onBack() }
 
     var confirmSignOut by remember { mutableStateOf(false) }
+    var chooseLanguage by remember { mutableStateOf(false) }
+    // A change usually restarts the screen; kept as state for when the shown language stays the same.
+    var appLanguage by remember { mutableStateOf(AppLanguage.current()) }
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Account") })
+            TopAppBar(title = { Text(stringResource(R.string.tab_account)) })
         },
         bottomBar = bottomBar,
     ) { padding ->
@@ -129,7 +139,7 @@ fun AccountScreen(
                 value = app.fileRepository.capacity()
             }
             ListItem(
-                headlineContent = { Text(email.ifEmpty { "Signed in" }) },
+                headlineContent = { Text(email.ifEmpty { stringResource(R.string.signed_in) }) },
                 supportingContent = { Text(serverUrl) },
                 leadingContent = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
             )
@@ -137,13 +147,13 @@ fun AccountScreen(
                 if (cap.total > 0) {
                     val pct = (cap.used.toDouble() / cap.total * 100).toInt().coerceIn(0, 100)
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Text("Storage", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.storage), style = MaterialTheme.typography.labelLarge)
                         LinearProgressIndicator(
                             progress = { pct / 100f },
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         )
                         Text(
-                            "${formatSize(cap.used)} of ${formatSize(cap.total)} used",
+                            stringResource(R.string.storage_used, formatSize(cap.used), formatSize(cap.total)),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp),
@@ -153,19 +163,22 @@ fun AccountScreen(
             }
             ListItem(
                 modifier = Modifier.clickable(onClick = onOpenOffline),
-                headlineContent = { Text("Offline files") },
+                headlineContent = { Text(stringResource(R.string.offline_files)) },
                 supportingContent = {
-                    Text(if (offlineCount == 0) "Files you keep on this phone" else "$offlineCount on this phone")
+                    Text(
+                        if (offlineCount == 0) stringResource(R.string.offline_files_hint)
+                        else stringResource(R.string.offline_count, offlineCount)
+                    )
                 },
                 leadingContent = { Icon(Icons.Default.OfflinePin, contentDescription = null) },
             )
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            SectionLabel("Folder sync")
+            SectionLabel(stringResource(R.string.folder_sync))
             SwitchRow(
-                title = "Mirror a local folder",
-                subtitle = syncSnap?.treeUri?.let { "Local: " + it.toUri().lastPathSegment.orEmpty() }
-                    ?: "Pick a device folder to keep uploaded",
+                title = stringResource(R.string.mirror_local_folder),
+                subtitle = syncSnap?.treeUri?.let { stringResource(R.string.local_folder, it.toUri().lastPathSegment.orEmpty()) }
+                    ?: stringResource(R.string.pick_device_folder),
                 checked = syncSnap?.enabled == true && syncSnap?.treeUri != null,
                 onCheckedChange = { want ->
                     if (want) treeLauncher.launch(null)
@@ -178,7 +191,7 @@ fun AccountScreen(
             // Fylvo: the details only matter once a folder is mirrored.
             if (syncSnap?.enabled == true && syncSnap?.treeUri != null) {
                 SwitchRow(
-                    title = "Wi-Fi only",
+                    title = stringResource(R.string.wifi_only),
                     checked = syncSnap?.wifiOnly ?: true,
                     onCheckedChange = { wifiOnly ->
                         scope.launch {
@@ -187,10 +200,10 @@ fun AccountScreen(
                         }
                     },
                 )
-                FolderField("Folder in My files", syncFolder) { syncFolder = it }
+                FolderField(stringResource(R.string.folder_in_my_files), syncFolder) { syncFolder = it }
                 syncSnap?.lastSyncAt?.takeIf { it > 0 }?.let {
                     Text(
-                        "Last folder sync ${formatDateTime(it)}",
+                        stringResource(R.string.last_folder_sync, formatDateTime(it)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -204,16 +217,16 @@ fun AccountScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     Icon(Icons.Default.Sync, contentDescription = null)
-                    Text("  Sync now")
+                    Text("  " + stringResource(R.string.sync_now))
                 }
 
             }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            SectionLabel("Notifications")
+            SectionLabel(stringResource(R.string.notifications))
             SwitchRow(
-                title = "Notify on finished tasks",
-                subtitle = "When a job on the server finishes",
+                title = stringResource(R.string.notify_finished_tasks),
+                subtitle = stringResource(R.string.notify_finished_tasks_hint),
                 checked = notifyEnabled,
                 onCheckedChange = { want ->
                     when {
@@ -233,8 +246,16 @@ fun AccountScreen(
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             ListItem(
+                modifier = Modifier.clickable { chooseLanguage = true },
+                headlineContent = { Text(stringResource(R.string.language)) },
+                supportingContent = { Text(stringResource(appLanguage.label)) },
+                leadingContent = { Icon(Icons.Default.Language, contentDescription = null) },
+            )
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            ListItem(
                 modifier = Modifier.clickable { confirmSignOut = true },
-                headlineContent = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
+                headlineContent = { Text(stringResource(R.string.sign_out), color = MaterialTheme.colorScheme.error) },
                 leadingContent = {
                     Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                 },
@@ -245,19 +266,57 @@ fun AccountScreen(
     if (confirmSignOut) {
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
-            title = { Text("Sign out?") },
-            text = { Text("You will need to sign in again to sync your files.") },
+            title = { Text(stringResource(R.string.sign_out_title)) },
+            text = { Text(stringResource(R.string.sign_out_text)) },
             confirmButton = {
                 TextButton(onClick = { confirmSignOut = false; onSignOut() }) {
-                    Text("Sign out", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.sign_out), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmSignOut = false }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
+    if (chooseLanguage) {
+        AlertDialog(
+            onDismissRequest = { chooseLanguage = false },
+            title = { Text(stringResource(R.string.language)) },
+            text = {
+                Column {
+                    AppLanguage.entries.forEach { language ->
+                        ListItem(
+                            modifier = Modifier.clickable {
+                                chooseLanguage = false
+                                // Restarts the screen in the new language when it changes.
+                                if (language != appLanguage) {
+                                    appLanguage = language
+                                    language.apply()
+                                }
+                            },
+                            headlineContent = { Text(stringResource(language.label)) },
+                            leadingContent = { RadioButton(selected = language == appLanguage, onClick = null) },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { chooseLanguage = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
 }
+
+/** Name of the language in the settings row and the choice dialog. */
+private val AppLanguage.label: Int
+    get() = when (this) {
+        AppLanguage.DEVICE -> R.string.language_device
+        AppLanguage.ENGLISH -> R.string.language_english
+        AppLanguage.GERMAN -> R.string.language_german
+    }
 
 @Composable
 private fun SectionLabel(text: String) {

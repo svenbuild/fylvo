@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,15 +48,17 @@ fun DetailsSheet(file: FileObject, thumbUrl: String?, onDismiss: () -> Unit) {
 
         SelectionContainer {
             Column {
-                if (!file.isFolder) DetailRow("Size", "${formatSize(file.size)} (${"%,d".format(file.size)} bytes)")
-                DetailRow("Location", CrUri.displayPath(CrUri.parent(file.path)))
-                DetailRow("Modified", longDate(file.updatedAt))
-                DetailRow("Created", longDate(file.createdAt))
+                if (!file.isFolder) {
+                    DetailRow(stringResource(R.string.size), stringResource(R.string.size_with_bytes, formatSize(file.size), "%,d".format(file.size)))
+                }
+                DetailRow(stringResource(R.string.location), CrUri.displayPath(CrUri.parent(file.path)))
+                DetailRow(stringResource(R.string.modified), longDate(file.updatedAt))
+                DetailRow(stringResource(R.string.created), longDate(file.createdAt))
                 val w = file.metadata?.get("exif:x")
                 val h = file.metadata?.get("exif:y")
-                if (w != null && h != null) DetailRow("Dimensions", "$w × $h")
-                file.metadata?.get("stream:duration")?.let { DetailRow("Duration", it) }
-                if (file.shared == true) DetailRow("Sharing", "Shared via link")
+                if (w != null && h != null) DetailRow(stringResource(R.string.dimensions), "$w × $h")
+                file.metadata?.get("stream:duration")?.let { DetailRow(stringResource(R.string.duration), it) }
+                if (file.shared == true) DetailRow(stringResource(R.string.sharing), stringResource(R.string.shared_via_link))
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -77,26 +82,28 @@ private fun DetailRow(label: String, value: String) {
     }
 }
 
+/** "JPG image", or just "Image" without an extension; PDFs are always "PDF document". */
+@Composable
 private fun kindLabel(file: FileObject): String {
-    if (file.isFolder) return "Folder"
+    if (file.isFolder) return stringResource(R.string.folder)
     val ext = file.name.substringAfterLast('.', "").uppercase()
-    val kind = when (FileKind.of(file)) {
-        FileKind.IMAGE -> "image"
-        FileKind.VIDEO -> "video"
-        FileKind.AUDIO -> "audio"
-        FileKind.PDF -> "PDF document"
-        FileKind.DOCUMENT -> "document"
-        FileKind.SPREADSHEET -> "spreadsheet"
-        FileKind.PRESENTATION -> "presentation"
-        FileKind.ARCHIVE -> "archive"
-        FileKind.CODE -> "source file"
-        FileKind.APK -> "Android package"
-        else -> "file"
+    val (plain, withExt) = when (FileKind.of(file)) {
+        FileKind.IMAGE -> R.string.kind_image to R.string.kind_image_ext
+        FileKind.VIDEO -> R.string.kind_video to R.string.kind_video_ext
+        FileKind.AUDIO -> R.string.kind_audio to R.string.kind_audio_ext
+        FileKind.PDF -> R.string.kind_pdf to null
+        FileKind.DOCUMENT -> R.string.kind_document to R.string.kind_document_ext
+        FileKind.SPREADSHEET -> R.string.kind_spreadsheet to R.string.kind_spreadsheet_ext
+        FileKind.PRESENTATION -> R.string.kind_presentation to R.string.kind_presentation_ext
+        FileKind.ARCHIVE -> R.string.kind_archive to R.string.kind_archive_ext
+        FileKind.CODE -> R.string.kind_code to R.string.kind_code_ext
+        FileKind.APK -> R.string.kind_apk to R.string.kind_apk_ext
+        else -> R.string.kind_file to R.string.kind_file_ext
     }
-    return if (ext.isEmpty() || kind == "PDF document") kind.replaceFirstChar { it.uppercase() } else "$ext $kind"
+    return if (ext.isEmpty() || withExt == null) stringResource(plain) else stringResource(withExt, ext)
 }
 
 private fun longDate(iso: String): String = runCatching {
     OffsetDateTime.parse(iso).atZoneSameInstant(java.time.ZoneId.systemDefault())
         .format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT))
-}.getOrDefault(iso.ifEmpty { "—" })
+}.getOrDefault(iso.ifEmpty { "–" })

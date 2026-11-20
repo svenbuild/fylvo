@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
+import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.ApiException
 import io.github.svenbuild.fylvo.android.data.FavoriteEntry
@@ -31,6 +33,7 @@ import io.github.svenbuild.fylvo.android.data.ViewPrefs
 import io.github.svenbuild.fylvo.android.data.ViewSettings
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.Permissions
+import io.github.svenbuild.fylvo.android.util.UiText
 import io.github.svenbuild.fylvo.android.work.BackgroundSync
 import io.github.svenbuild.fylvo.android.work.UploadStatus
 import io.github.svenbuild.fylvo.android.work.UploadWorker
@@ -39,15 +42,15 @@ import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
 
 /** Files-app style categories, each a server-side search over the whole drive. */
-enum class Category(val uri: String, val label: String, val filter: String? = null) {
-    RECENT("${CrUri.MY_PREFIX}?type=file", "Recent", "type=file"),
-    IMAGES("${CrUri.MY_PREFIX}?category=image", "Images", "category=image"),
-    VIDEOS("${CrUri.MY_PREFIX}?category=video", "Videos", "category=video"),
-    AUDIO("${CrUri.MY_PREFIX}?category=audio", "Audio", "category=audio"),
-    DOCUMENTS("${CrUri.MY_PREFIX}?category=document", "Documents", "category=document"),
-    TRASH("cloudreve://trash", "Trash"),
+enum class Category(val uri: String, @StringRes val label: Int, val filter: String? = null) {
+    RECENT("${CrUri.MY_PREFIX}?type=file", R.string.category_recent, "type=file"),
+    IMAGES("${CrUri.MY_PREFIX}?category=image", R.string.category_images, "category=image"),
+    VIDEOS("${CrUri.MY_PREFIX}?category=video", R.string.category_videos, "category=video"),
+    AUDIO("${CrUri.MY_PREFIX}?category=audio", R.string.category_audio, "category=audio"),
+    DOCUMENTS("${CrUri.MY_PREFIX}?category=document", R.string.category_documents, "category=document"),
+    TRASH("cloudreve://trash", R.string.trash),
     /** Fylvo: folders other people shared with this account. */
-    SHARED_WITH_ME(CrUri.SHARED_WITH_ME, "Shared with me");
+    SHARED_WITH_ME(CrUri.SHARED_WITH_ME, R.string.shared_with_me);
 
     val gallery: Boolean get() = this == IMAGES || this == VIDEOS
 
@@ -60,7 +63,7 @@ enum class Category(val uri: String, val label: String, val filter: String? = nu
 internal const val THUMB_TTL_MS = 50L * 60 * 1000
 
 /** One-off message for the snackbar, optionally with an action such as Undo. */
-data class UiMessage(val text: String, val actionLabel: String? = null, val action: (() -> Unit)? = null)
+data class UiMessage(val text: UiText, val actionLabel: UiText? = null, val action: (() -> Unit)? = null)
 
 data class FilesUiState(
     /** Landing page with Recent and Categories; false while browsing a folder or category. */
@@ -110,25 +113,8 @@ data class FilesUiState(
     val inTrash: Boolean get() = category == Category.TRASH
     /** Fylvo: may upload and create folders here (share capability or ownership). */
     val canAddHere: Boolean get() = !home && category == null && Permissions.canAddTo(parent)
-
-    /**
-     * "24 items" for the top bar; "50+ items" while more pages remain, since
-     * the cursor-paginated API gives no total. Null while nothing is loaded.
-     */
-    val itemCountLabel: String?
-        get() {
-            if (loading && files.isEmpty()) return null
-            val n = files.size
-            if (n == 0 && nextToken == null) return null
-            val more = if (nextToken != null) "+" else ""
-            return "${"%,d".format(n)}$more item${if (n == 1 && more.isEmpty()) "" else "s"}"
-        }
     /** Effective display mode: galleries keep their own preference. */
     val effectiveMode: ViewMode get() = if (category?.gallery == true) view.galleryMode else view.mode
-    val folderName: String
-        get() {
-            return category?.label ?: CrUri.displayName(currentUri)
-        }
 }
 
 class FilesViewModel(
@@ -368,12 +354,13 @@ class FilesViewModel(
 
     private fun announceUpload(u: UploadStatus) {
         val message = when {
-            u.state == WorkInfo.State.CANCELLED -> "Upload cancelled"
-            u.failed == 0 -> "Uploaded ${u.uploaded} file${if (u.uploaded == 1) "" else "s"}"
-            u.uploaded == 0 -> "Upload failed" + (u.error?.let { ": $it" } ?: "")
-            else -> "Uploaded ${u.uploaded}, ${u.failed} failed"
+            u.state == WorkInfo.State.CANCELLED -> UiText.Res(R.string.upload_cancelled)
+            u.failed == 0 -> UiText.Plural(R.plurals.uploaded_files, u.uploaded, u.uploaded)
+            u.uploaded == 0 -> u.error?.let { UiText.Res(R.string.upload_failed_reason, it) }
+                ?: UiText.Res(R.string.upload_failed)
+            else -> UiText.Res(R.string.uploaded_some_failed, u.uploaded, u.failed)
         }
-        _state.value = _state.value.copy(snackbar = (message).toMessage())
+        _state.value = _state.value.copy(snackbar = UiMessage(message))
         if (u.uploaded > 0) {
             if (_state.value.home) loadRecent() else if (u.parentUri == _state.value.currentUri) refresh()
         }
@@ -409,7 +396,7 @@ class FilesViewModel(
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
             } catch (e: Exception) {
-                _state.value = _state.value.copy(snackbar = (e.message ?: "Download failed").toMessage())
+                _state.value = _state.value.copy(snackbar = e.message.orFallback(R.string.download_failed))
             } finally {
                 downloadJobs.remove(file.path)
                 clearDownloading(file.path)
@@ -450,11 +437,11 @@ class FilesViewModel(
         val job = viewModelScope.launch {
             try {
                 val savedName = withContext(Dispatchers.IO) { saveToDeviceIo(context, file) }
-                _state.value = _state.value.copy(snackbar = UiMessage("Saved $savedName"))
+                _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.saved_file, savedName)))
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
             } catch (e: Exception) {
-                _state.value = _state.value.copy(snackbar = (e.message ?: "Download failed").toMessage())
+                _state.value = _state.value.copy(snackbar = e.message.orFallback(R.string.download_failed))
             } finally {
                 downloadJobs.remove(key)
                 clearDownloading(file.path)
@@ -606,11 +593,11 @@ class FilesViewModel(
                 .onSuccess {
                     listingCache.remove(dst)
                     val n = paths.size
-                    val what = "$n item${if (n == 1) "" else "s"}"
                     val where = CrUri.displayName(dst)
+                    val text = if (copy) R.plurals.copied_items else R.plurals.moved_items
                     _state.value = _state.value.copy(
                         selected = emptySet(),
-                        snackbar = (if (copy) "Copied $what to $where" else "Moved $what to $where").toMessage(),
+                        snackbar = UiMessage(UiText.Plural(text, n, n, where)),
                     )
                     refresh()
                 }
@@ -766,9 +753,13 @@ class FilesViewModel(
                     val inShare = CrUri.isShare(paths[0])
                     _state.value = _state.value.copy(
                         snackbar = UiMessage(
-                            text = (if (n == 1) "${CrUri.fileName(paths[0])} moved" else "$n items moved") +
-                                if (inShare) " to the owner's trash" else " to trash",
-                            actionLabel = if (inShare) null else "Undo",
+                            text = when {
+                                n == 1 && inShare -> UiText.Res(R.string.moved_to_owner_trash_one, CrUri.fileName(paths[0]))
+                                n == 1 -> UiText.Res(R.string.moved_to_trash_one, CrUri.fileName(paths[0]))
+                                inShare -> UiText.Res(R.string.moved_to_owner_trash_many, n)
+                                else -> UiText.Res(R.string.moved_to_trash_many, n)
+                            },
+                            actionLabel = if (inShare) null else UiText.Res(R.string.undo),
                             action = if (inShare) null else ({ undoDelete(paths) }),
                         ),
                     )
@@ -796,12 +787,17 @@ class FilesViewModel(
                     token = page.pagination.nextToken
                     pages++
                 } while (trashed.size < wanted.size && !token.isNullOrEmpty() && pages < UNDO_MAX_PAGES)
-                if (trashed.isEmpty()) error("Couldn't find the items in the trash")
+                if (trashed.isEmpty()) return@runCatching false
                 repo.restore(trashed)
+                true
             }
-                .onSuccess {
+                .onSuccess { found ->
+                    if (!found) {
+                        _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.trash_items_not_found)))
+                        return@onSuccess
+                    }
                     listingCache.clear()
-                    _state.value = _state.value.copy(snackbar = UiMessage("Restored"))
+                    _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.restored)))
                     refresh()
                 }
                 .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
@@ -837,7 +833,7 @@ class FilesViewModel(
                     )
                 )
             }
-                .onSuccess { _state.value = _state.value.copy(snackbar = UiMessage("${file.name} available offline")) }
+                .onSuccess { _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.available_offline_message, file.name))) }
                 .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
             clearDownloading(file.path)
         }
@@ -879,7 +875,7 @@ class FilesViewModel(
                     listingCache.clear()
                     _state.value = _state.value.copy(
                         selected = emptySet(),
-                        snackbar = ("Restored ${paths.size} item${if (paths.size == 1) "" else "s"}").toMessage(),
+                        snackbar = UiMessage(UiText.Plural(R.plurals.restored_items, paths.size, paths.size)),
                     )
                     refresh()
                 }
@@ -895,7 +891,7 @@ class FilesViewModel(
                 .onSuccess {
                     _state.value = _state.value.copy(
                         selected = emptySet(),
-                        snackbar = ("Deleted ${paths.size} item${if (paths.size == 1) "" else "s"} permanently").toMessage(),
+                        snackbar = UiMessage(UiText.Plural(R.plurals.deleted_items_permanently, paths.size, paths.size)),
                     )
                     refresh()
                 }
@@ -933,7 +929,11 @@ class FilesViewModel(
         _state.value = _state.value.copy(snackbar = null)
     }
 
-    private fun String?.toMessage(): UiMessage? = this?.let { UiMessage(it) }
+    /** Error texts from the server or the network come as they are. */
+    private fun String?.toMessage(): UiMessage? = this?.let { UiMessage(UiText.Raw(it)) }
+
+    private fun String?.orFallback(@StringRes fallback: Int): UiMessage =
+        UiMessage(this?.let { UiText.Raw(it) } ?: UiText.Res(fallback))
 
     /**
      * Folders always stay on top like the Files app. The server's name order is

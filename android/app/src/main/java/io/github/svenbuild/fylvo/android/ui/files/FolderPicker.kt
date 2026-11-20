@@ -1,5 +1,9 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.annotation.StringRes
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,7 +57,8 @@ import io.github.svenbuild.fylvo.android.util.CrUri
 @Composable
 fun FolderPicker(
     title: String,
-    confirmLabel: String,
+    /** Button text with the target folder name as %s, e.g. "Move to %s". */
+    @StringRes confirmLabel: Int,
     startUri: String,
     excluded: Set<String>,
     loadFolders: suspend (String) -> List<FileObject>,
@@ -98,16 +103,16 @@ fun FolderPicker(
                         },
                         navigationIcon = {
                             if (atRoot) {
-                                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = "Cancel") }
+                                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cancel)) }
                             } else {
                                 IconButton(onClick = { current = CrUri.parent(current) }) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Up")
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.up))
                                 }
                             }
                         },
                         actions = {
                             IconButton(onClick = { mkdirOpen = true }) {
-                                Icon(Icons.Default.CreateNewFolder, contentDescription = "New folder")
+                                Icon(Icons.Default.CreateNewFolder, contentDescription = stringResource(R.string.new_folder))
                             }
                         },
                     )
@@ -120,7 +125,7 @@ fun FolderPicker(
                         horizontalArrangement = Arrangement.End,
                     ) {
                         Button(onClick = { onPick(current) }, enabled = !isExcluded(current, excluded)) {
-                            Text("$confirmLabel ${CrUri.displayName(current)}")
+                            Text(stringResource(confirmLabel, CrUri.displayName(current)))
                         }
                     }
                 },
@@ -141,7 +146,7 @@ fun FolderPicker(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(48.dp),
                                 )
                                 Text(
-                                    "No subfolders", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    stringResource(R.string.no_subfolders), color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = 8.dp),
                                 )
                             }
@@ -158,7 +163,7 @@ fun FolderPicker(
                                             else MaterialTheme.colorScheme.onSurface,
                                         )
                                     },
-                                    supportingContent = if (disabled) ({ Text("Being moved") }) else null,
+                                    supportingContent = if (disabled) ({ Text(stringResource(R.string.being_moved)) }) else null,
                                     leadingContent = {
                                         Icon(
                                             Icons.Default.Folder, contentDescription = null,
@@ -175,9 +180,9 @@ fun FolderPicker(
 
     if (mkdirOpen) {
         NameDialog(
-            title = "New folder",
-            label = "Folder name",
-            confirm = "Create",
+            title = stringResource(R.string.new_folder),
+            label = stringResource(R.string.folder_name),
+            confirm = stringResource(R.string.create),
             onConfirm = { name ->
                 mkdirOpen = false
                 onCreateFolder(current, name)

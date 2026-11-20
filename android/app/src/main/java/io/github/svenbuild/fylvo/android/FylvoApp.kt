@@ -15,6 +15,8 @@ import io.github.svenbuild.fylvo.android.data.SessionManager
 import io.github.svenbuild.fylvo.android.data.TaskNotifySettings
 import io.github.svenbuild.fylvo.android.data.SyncFolderSettings
 import io.github.svenbuild.fylvo.android.data.ViewSettings
+import io.github.svenbuild.fylvo.android.util.CrUri
+import io.github.svenbuild.fylvo.android.util.localized
 
 class FylvoApp : Application() {
 
@@ -35,6 +37,7 @@ class FylvoApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        CrUri.useLabelsFrom(localized())
         sessionManager = SessionManager(this)
         apiClient = ApiClient(sessionManager)
         fileRepository = FileRepository(apiClient)

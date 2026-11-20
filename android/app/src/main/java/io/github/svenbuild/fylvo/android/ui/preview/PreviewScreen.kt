@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.preview
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -126,7 +129,7 @@ fun PreviewScreen(
                         Text(
                             buildString {
                                 append(subtitleFor(current.size, current.updatedAt, false))
-                                if (files.size > 1) append("  •  ${pager.currentPage + 1} of ${files.size}")
+                                if (files.size > 1) append("  •  " + stringResource(R.string.position_of, pager.currentPage + 1, files.size))
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = if (dark) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -134,28 +137,28 @@ fun PreviewScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back)) }
                 },
                 actions = {
                     if (canShare(current)) {
-                        IconButton(onClick = { onShare(current) }) { Icon(Icons.Default.Link, contentDescription = "Copy share link") }
+                        IconButton(onClick = { onShare(current) }) { Icon(Icons.Default.Link, contentDescription = stringResource(R.string.copy_share_link)) }
                     }
                     Box {
-                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
+                        IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more)) }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("Open with another app") },
+                                text = { Text(stringResource(R.string.open_with_another_app)) },
                                 leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
                                 onClick = { menuOpen = false; onOpenWith(current) },
                             )
                             DropdownMenuItem(
-                                text = { Text("Download") },
+                                text = { Text(stringResource(R.string.download)) },
                                 leadingIcon = { Icon(Icons.Default.Download, null) },
                                 onClick = { menuOpen = false; onDownload(current) },
                             )
                             if (canDelete(current)) {
                                 DropdownMenuItem(
-                                    text = { Text("Delete") },
+                                    text = { Text(stringResource(R.string.delete)) },
                                     leadingIcon = { Icon(Icons.Default.Delete, null) },
                                     onClick = { menuOpen = false; onDelete(current) },
                                 )
@@ -203,8 +206,8 @@ private fun NoPreview(file: FileObject, onOpenWith: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
             Icon(kind.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(72.dp))
-            Text("No preview for this file type", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
-            Button(onClick = onOpenWith, modifier = Modifier.padding(top = 16.dp)) { Text("Open with another app") }
+            Text(stringResource(R.string.no_preview), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
+            Button(onClick = onOpenWith, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.open_with_another_app)) }
         }
     }
 }
@@ -227,7 +230,7 @@ internal fun rememberLocalCopy(file: FileObject, viewModel: FilesViewModel): Tri
     LaunchedEffect(file.id) {
         runCatching { viewModel.localCopy(context, file) { progress = it } }
             .onSuccess { local = it }
-            .onFailure { error = it.message ?: "Download failed" }
+            .onFailure { error = it.message ?: context.getString(R.string.download_failed) }
     }
     return Triple(local, progress, error)
 }

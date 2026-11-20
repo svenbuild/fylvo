@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.login
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.util.asString
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -96,7 +99,7 @@ fun LoginScreen(viewModel: LoginViewModel, onLoggedIn: () -> Unit) {
                     .size(112.dp)
                     .clip(RoundedCornerShape(50)),
             )
-            Text("Fylvo", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp))
+            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp))
 
             AnimatedContent(
                 targetState = state.twoFactorSessionId != null,
@@ -126,7 +129,7 @@ private fun PasswordStep(state: LoginUiState, viewModel: LoginViewModel) {
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            "Sign in to your server",
+            stringResource(R.string.sign_in_to_server),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp, bottom = 28.dp),
@@ -136,7 +139,7 @@ private fun PasswordStep(state: LoginUiState, viewModel: LoginViewModel) {
             SoftField(
                 value = state.serverUrl,
                 onValueChange = viewModel::onServerUrlChange,
-                label = "Server",
+                label = stringResource(R.string.server),
                 placeholder = "drive.example.com",
                 icon = Icons.Outlined.Cloud,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
@@ -144,14 +147,14 @@ private fun PasswordStep(state: LoginUiState, viewModel: LoginViewModel) {
             SoftField(
                 value = state.email,
                 onValueChange = viewModel::onEmailChange,
-                label = "Email",
+                label = stringResource(R.string.email),
                 icon = Icons.Outlined.Email,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
             )
             SoftField(
                 value = state.password,
                 onValueChange = viewModel::onPasswordChange,
-                label = "Password",
+                label = stringResource(R.string.password),
                 icon = Icons.Outlined.Lock,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focus.clearFocus(); viewModel.login() }),
@@ -160,17 +163,17 @@ private fun PasswordStep(state: LoginUiState, viewModel: LoginViewModel) {
                     IconButton(onClick = { showPassword = !showPassword }) {
                         Icon(
                             if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (showPassword) "Hide password" else "Show password",
+                            contentDescription = stringResource(if (showPassword) R.string.hide_password else R.string.show_password),
                         )
                     }
                 },
             )
         }
 
-        ErrorNote(state.error)
+        ErrorNote(state.error?.asString())
 
         Spacer(Modifier.height(20.dp))
-        PrimaryButton(text = "Sign in", loading = state.loading, onClick = { focus.clearFocus(); viewModel.login() })
+        PrimaryButton(text = stringResource(R.string.sign_in), loading = state.loading, onClick = { focus.clearFocus(); viewModel.login() })
     }
 }
 
@@ -181,12 +184,12 @@ private fun TwoFactorStep(state: LoginUiState, viewModel: LoginViewModel) {
 
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            "Two-step verification",
+            stringResource(R.string.two_step_verification),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(top = 4.dp),
         )
         Text(
-            "Enter the 6-digit code from your authenticator app",
+            stringResource(R.string.enter_code),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -197,7 +200,7 @@ private fun TwoFactorStep(state: LoginUiState, viewModel: LoginViewModel) {
             SoftField(
                 value = state.otp,
                 onValueChange = viewModel::onOtpChange,
-                label = "Verification code",
+                label = stringResource(R.string.verification_code),
                 icon = Icons.Outlined.Pin,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { viewModel.verify2FA() }),
@@ -205,12 +208,12 @@ private fun TwoFactorStep(state: LoginUiState, viewModel: LoginViewModel) {
             )
         }
 
-        ErrorNote(state.error)
+        ErrorNote(state.error?.asString())
 
         Spacer(Modifier.height(20.dp))
-        PrimaryButton(text = "Verify", loading = state.loading, enabled = state.otp.length == 6, onClick = viewModel::verify2FA)
+        PrimaryButton(text = stringResource(R.string.verify), loading = state.loading, enabled = state.otp.length == 6, onClick = viewModel::verify2FA)
         Spacer(Modifier.height(4.dp))
-        TextButton(onClick = viewModel::cancelTwoFactor, enabled = !state.loading) { Text("Use a different account") }
+        TextButton(onClick = viewModel::cancelTwoFactor, enabled = !state.loading) { Text(stringResource(R.string.use_different_account)) }
     }
 }
 

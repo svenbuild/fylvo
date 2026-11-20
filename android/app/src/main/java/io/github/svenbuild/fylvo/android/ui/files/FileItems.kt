@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -173,7 +176,7 @@ fun FileListItem(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (offline) {
                         Icon(
-                            Icons.Default.OfflinePin, contentDescription = "Available offline",
+                            Icons.Default.OfflinePin, contentDescription = stringResource(R.string.available_offline),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(end = 4.dp).size(14.dp),
                         )
@@ -191,7 +194,7 @@ fun FileListItem(
         if (selecting) {
             SelectionMark(selected, file.name, Modifier.padding(12.dp))
         } else {
-            FileMenuButton(actions, label = "More options for ${file.name}")
+            FileMenuButton(actions, label = stringResource(R.string.more_options_for, file.name))
         }
     }
 }
@@ -228,7 +231,7 @@ fun FileGridItem(
             if (FileKind.of(file) == FileKind.VIDEO) {
                 Icon(
                     Icons.Default.PlayCircle,
-                    contentDescription = "Video",
+                    contentDescription = stringResource(R.string.video),
                     tint = Color.White.copy(alpha = 0.9f),
                     modifier = Modifier
                         .align(if (gallery) Alignment.Center else Alignment.BottomStart)
@@ -247,7 +250,7 @@ fun FileGridItem(
                         .clip(RoundedCornerShape(50))
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)),
                 ) {
-                    FileMenuButton(actions, compact = true, label = "More options for ${file.name}")
+                    FileMenuButton(actions, compact = true, label = stringResource(R.string.more_options_for, file.name))
                 }
             }
         }
@@ -277,14 +280,14 @@ private fun SelectionMark(selected: Boolean, fileName: String, modifier: Modifie
     if (selected) {
         Icon(
             Icons.Default.CheckCircle,
-            contentDescription = "Selected $fileName",
+            contentDescription = stringResource(R.string.selected_file, fileName),
             tint = MaterialTheme.colorScheme.primary,
             modifier = modifier.size(24.dp),
         )
     } else {
         Icon(
             Icons.Outlined.CheckBoxOutlineBlank,
-            contentDescription = "Not selected $fileName",
+            contentDescription = stringResource(R.string.not_selected_file, fileName),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = modifier.size(24.dp),
         )
@@ -292,7 +295,7 @@ private fun SelectionMark(selected: Boolean, fileName: String, modifier: Modifie
 }
 
 @Composable
-private fun FileMenuButton(actions: FileActions, compact: Boolean = false, label: String = "More") {
+private fun FileMenuButton(actions: FileActions, compact: Boolean = false, label: String = stringResource(R.string.more)) {
     val onMore = actions.onMore ?: return
     IconButton(onClick = onMore, modifier = if (compact) Modifier.size(36.dp) else Modifier) {
         Icon(
