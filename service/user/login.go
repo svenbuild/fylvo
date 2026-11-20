@@ -81,16 +81,24 @@ type (
 const userResetPrefix = "user_reset_"
 
 // Reset 发送密码重设邮件
-// Fylvo: the answer is the same whether the account exists, is blocked or the mail fails, so
-// that it does not tell whether an account exists. Failures are only logged.
+// Fylvo: the mail is prepared and sent in the background, and the answer is the same whether
+// the account exists, is blocked or the mail fails, so that neither the answer nor its timing
+// tells whether an account exists. Failures are only logged.
 func (service *UserResetEmailService) Reset(c *gin.Context) error {
-	if err := service.sendReset(c); err != nil {
-		logging.FromContext(c).Warning("Password reset mail for %q not sent: %s", service.UserName, err)
-	}
+	ctx := context.WithoutCancel(c.Request.Context())
+	go func() {
+		if err := service.sendReset(ctx); err != nil {
+			logging.FromContext(ctx).Warning("Password reset mail for %q not sent: %s", service.UserName, err)
+		}
+	}()
 	return nil
 }
 
-func (service *UserResetEmailService) sendReset(c *gin.Context) error {
+// resetMailPause is how long Fylvo waits before it sends another reset mail to the same
+// account, so that strangers cannot flood an inbox or use up the mail quota.
+const resetMailPause = 300
+
+func (service *UserResetEmailService) sendReset(c context.Context) error {
 	dep := dependency.FromContext(c)
 	userClient := dep.UserClient()
 
@@ -98,6 +106,12 @@ func (service *UserResetEmailService) sendReset(c *gin.Context) error {
 	if err != nil {
 		return serializer.NewError(serializer.CodeUserNotFound, "User not found", err)
 	}
+
+	pauseKey := fmt.Sprintf("user_reset_sent_%d", u.ID)
+	if _, sentRecently := dep.KV().Get(pauseKey); sentRecently {
+		return fmt.Errorf("a reset mail was sent less than %d seconds ago", resetMailPause)
+	}
+	_ = dep.KV().Set(pauseKey, true, resetMailPause)
 
 	if u.Status == user.StatusManualBanned || u.Status == user.StatusSysBanned {
 		return serializer.NewError(serializer.CodeUserBaned, "This user is banned", nil)
