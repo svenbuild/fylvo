@@ -102,7 +102,12 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                         // No network or the server is away: keep the list and the session id,
                         // WorkManager runs the batch again when the network is back. A missing
                         // network never ends the batch; server trouble does after a few runs.
-                        if (outcome.network || runAttemptCount < MAX_ATTEMPTS) return Result.retry()
+                        if (outcome.network) return Result.retry()
+                        // Count only server trouble, not the runs a lost network or a stop caused.
+                        if (batch.serverRetries < MAX_ATTEMPTS) {
+                            queue.save(batch.copy(serverRetries = batch.serverRetries + 1))
+                            return Result.retry()
+                        }
                         cancelSession(app, batch.items[i])
                         batch = failRest(queue, batch)
                         lastError = outcome.message
@@ -400,7 +405,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             val info = runCatching { wm.getWorkInfoById(workId).get() }.getOrNull()
             wm.cancelWorkById(workId).result.get()
             if (info == null || info.state == WorkInfo.State.RUNNING) return // the worker cleans up itself
-            val batchId = info.tags.firstOrNull { it.startsWith(BATCH_TAG_PREFIX) }?.removePrefix(BATCH_TAG_PREFIX) ?: return
+            // A job queued by 1.0.0 keeps its batch under the job's own id.
+            val batchId = info.tags.firstOrNull { it.startsWith(BATCH_TAG_PREFIX) }?.removePrefix(BATCH_TAG_PREFIX) ?: workId.toString()
             val queue = queue(context)
             val batch = queue.load(batchId) ?: return
             val app = context.applicationContext as FylvoApp

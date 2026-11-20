@@ -361,10 +361,15 @@ class FileRepository(private val api: ApiClient) {
         val resp = api.service().deleteUploadSession(
             io.github.svenbuild.fylvo.android.api.DeleteUploadSessionRequest(id = sessionId, uri = targetUri)
         )
-        resp.body()?.close()
         // A clear answer of the server (done, or "no such session / placeholder") leaves nothing
-        // to wait for; only server trouble does.
-        resp.code() !in 500..599
+        // to wait for; only server trouble does. Fylvo answers errors as HTTP 200 with a code.
+        val code = resp.body()?.use { body ->
+            runCatching {
+                (api.json.parseToJsonElement(body.string()) as? kotlinx.serialization.json.JsonObject)
+                    ?.get("code")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() }
+            }.getOrNull()
+        } ?: 0
+        resp.code() !in 500..599 && code != 401 && code < 50000
     } catch (e: java.io.IOException) {
         false // no network: try again later
     }
