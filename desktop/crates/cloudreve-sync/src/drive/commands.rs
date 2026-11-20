@@ -5,7 +5,6 @@ use crate::{
         utility::WriteAt,
     },
     drive::{
-        guard::DeletionSide,
         mounts::Mount,
         placeholder::CrPlaceholder,
         sync::{GroupedFsEvents, SyncMode},
@@ -1018,8 +1017,7 @@ impl Mount {
         // Fylvo: many deletions at once (or within a short time) wait for the user's answer.
         // Once a deletion is held, the following ones wait too, so a large deletion cannot
         // pass in small parts.
-        if self.server_deletion_needs_hold(&paths).await {
-            self.hold_deletion(DeletionSide::Server, paths);
+        if self.hold_server_deletion_if_needed(&paths).await {
             return Ok(());
         }
 

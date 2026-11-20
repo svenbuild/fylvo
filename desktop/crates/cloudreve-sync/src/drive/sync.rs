@@ -987,8 +987,7 @@ impl Mount {
         let plan = without_paths(plan, &kept);
         // Many deletions at once (or within a short time) wait for the user's answer. Once a
         // deletion is held, the following ones wait too.
-        if !doomed.is_empty() && self.local_deletion_needs_hold(&doomed) {
-            self.hold_deletion(DeletionSide::Local, doomed.clone());
+        if !doomed.is_empty() && self.hold_local_deletion_if_needed(&doomed) {
             return without_paths(plan, &doomed);
         }
         plan

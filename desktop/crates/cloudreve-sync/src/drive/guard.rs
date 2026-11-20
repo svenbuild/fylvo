@@ -119,27 +119,32 @@ impl DeletionGuardState {
             .collect()
     }
 
-    /// Whether deleting `paths` (`affected` entries of a drive with `total`) on this side waits
-    /// for the user: when a deletion of that side is held already, or when it makes a mass
-    /// deletion together with the recent ones. If not, the paths count as recent from now on.
-    fn needs_hold(
+    /// Whether deleting `paths` on this side waits for the user. `fresh` are the paths not
+    /// counted yet, with `affected` entries of a drive with `total`. A deletion waits when one
+    /// of that side is held already, or when it makes a mass deletion together with the recent
+    /// ones; it then joins the hold right away, so a deletion decided meanwhile sees it. A
+    /// deletion that passes counts as recent from now on.
+    fn decide(
         &mut self,
         side: DeletionSide,
-        paths: Vec<PathBuf>,
+        paths: &[PathBuf],
+        fresh: Vec<PathBuf>,
         affected: i64,
         total: i64,
         now: Instant,
-    ) -> bool {
-        if self.slot(side).is_some() {
-            return true;
+    ) -> Decision {
+        // Everything was counted with a folder whose deletion passed (a walk into it).
+        if fresh.is_empty() {
+            return Decision::Pass;
         }
+        let held = self.slot(side).is_some();
         let recent = self.recent(side, now);
         let sum = recent.iter().map(|(_, _, n)| n).sum::<i64>() + affected;
-        if is_mass_deletion(sum, total) {
-            return true;
+        if !held && !is_mass_deletion(sum, total) {
+            recent.push((now, fresh, affected));
+            return Decision::Pass;
         }
-        recent.push((now, paths, affected));
-        false
+        Decision::Hold(self.add(side, paths.to_vec()))
     }
 
     /// Entries at or under `paths` that the inventory does not know.
@@ -267,6 +272,14 @@ pub struct HeldDeletionInfo {
 
 static NEXT_VERSION: AtomicU64 = AtomicU64::new(1);
 
+/// Whether a deletion passes or waits for the user.
+#[derive(Debug)]
+enum Decision {
+    Pass,
+    /// Held. When the hold changed: whether it just started, and all held paths.
+    Hold(Option<(bool, Vec<PathBuf>)>),
+}
+
 pub fn is_under(path: &Path, roots: &[PathBuf]) -> bool {
     roots.iter().any(|root| path.starts_with(root))
 }
@@ -309,10 +322,10 @@ pub fn is_read_only_capability(capability: Option<&str>) -> Option<bool> {
 }
 
 impl Mount {
-    /// Whether deleting `paths` on the server needs the user's confirmation. Folders are
-    /// counted on the server too, since the inventory does not know folders this PC never
-    /// opened.
-    pub(crate) async fn server_deletion_needs_hold(&self, paths: &[PathBuf]) -> bool {
+    /// Hold the deletion of `paths` on the server if it needs the user's confirmation; returns
+    /// whether it is held. Folders are counted on the server too, since the inventory does not
+    /// know folders this PC never opened.
+    pub(crate) async fn hold_server_deletion_if_needed(&self, paths: &[PathBuf]) -> bool {
         let now = Instant::now();
         let fresh = self
             .deletion_guard
@@ -322,17 +335,21 @@ impl Mount {
         let uncounted = self.count_folders_on_server(&fresh).await;
         let (affected, total) = self.count_deletion(&fresh);
         let affected = affected + uncounted.iter().map(|(_, n)| n).sum::<i64>();
-        // Decided under one lock, so a hold started meanwhile is seen.
-        let mut state = self.deletion_guard.lock().unwrap();
-        let hold = state.needs_hold(DeletionSide::Server, fresh, affected, total, now);
-        if hold {
-            state.uncounted.extend(uncounted);
-        }
-        hold
+        // Decided and held under one lock, so a hold started meanwhile is seen.
+        let decision = {
+            let mut state = self.deletion_guard.lock().unwrap();
+            let decision = state.decide(DeletionSide::Server, paths, fresh, affected, total, now);
+            if matches!(decision, Decision::Hold(_)) {
+                state.uncounted.extend(uncounted);
+            }
+            decision
+        };
+        self.publish(DeletionSide::Server, decision)
     }
 
-    /// Whether deleting `paths` on this PC needs the user's confirmation.
-    pub(crate) fn local_deletion_needs_hold(&self, paths: &[PathBuf]) -> bool {
+    /// Hold the deletion of `paths` on this PC if it needs the user's confirmation; returns
+    /// whether it is held.
+    pub(crate) fn hold_local_deletion_if_needed(&self, paths: &[PathBuf]) -> bool {
         let now = Instant::now();
         let fresh = self
             .deletion_guard
@@ -340,10 +357,12 @@ impl Mount {
             .unwrap()
             .fresh_paths(DeletionSide::Local, paths, now);
         let (affected, total) = self.count_deletion(&fresh);
-        self.deletion_guard
+        let decision = self
+            .deletion_guard
             .lock()
             .unwrap()
-            .needs_hold(DeletionSide::Local, fresh, affected, total, now)
+            .decide(DeletionSide::Local, paths, fresh, affected, total, now);
+        self.publish(DeletionSide::Local, decision)
     }
 
     /// Entries at or under `paths`, and all entries of the drive. Without numbers from the
@@ -370,11 +389,16 @@ impl Mount {
             .iter()
             .filter_map(|path| {
                 let text = path.to_str()?;
+                // Without an answer from the database, ask the server.
                 match self.inventory.query_by_path(text) {
-                    Ok(Some(meta)) if meta.is_folder => {}
-                    _ => return None,
+                    Ok(Some(meta)) if !meta.is_folder => return None,
+                    Ok(None) => return None,
+                    _ => {}
                 }
-                let known = self.inventory.count_under_paths(&self.id, &[text]).ok()?;
+                let known = self
+                    .inventory
+                    .count_under_paths(&self.id, &[text])
+                    .unwrap_or(1);
                 Some((path, known))
             })
             .collect();
@@ -470,10 +494,14 @@ impl Mount {
         .to_string())
     }
 
-    /// Hold a deletion until the user decides. Adds to an already held deletion of that side.
-    pub(crate) fn hold_deletion(&self, side: DeletionSide, paths: Vec<PathBuf>) {
-        let Some((started, merged)) = self.deletion_guard.lock().unwrap().add(side, paths) else {
-            return;
+    /// Count a changed hold and show it (one notification when a hold starts). Returns whether
+    /// the deletion is held.
+    fn publish(&self, side: DeletionSide, decision: Decision) -> bool {
+        let Decision::Hold(changed) = decision else {
+            return false;
+        };
+        let Some((started, merged)) = changed else {
+            return true;
         };
         // Count outside the lock.
         let count = self.count_deletion(&merged).0;
@@ -482,10 +510,10 @@ impl Mount {
             .unwrap()
             .set_count(side, &merged, count);
         tracing::warn!(target: "drive::guard", id = %self.id, side = ?side, count, "Mass deletion held");
-        // One notification when a hold starts.
         if started {
             toast::send_mass_deletion_toast(&self.id, side, count);
         }
+        true
     }
 
     /// Whether a deletion of `path` on this side is held.
@@ -809,21 +837,24 @@ mod tests {
         let mut state = DeletionGuardState::default();
         let now = Instant::now();
         let part = |i: u64| paths(&[&format!(r"C:\S\folder{i}")]);
+        let held = |state: &mut DeletionGuardState, side, i: u64, at: Instant| {
+            let p = part(i);
+            matches!(state.decide(side, &p, p.clone(), 5, 10_000, at), Decision::Hold(_))
+        };
         // 60 entries in 12 folders of 5, in a drive of 10000: each part alone is small.
         for i in 0..9 {
-            let at = now + Duration::from_secs(i);
-            assert!(!state.needs_hold(DeletionSide::Local, part(i), 5, 10_000, at));
+            assert!(!held(&mut state, DeletionSide::Local, i, now + Duration::from_secs(i)));
         }
-        // The tenth part reaches 50 within the window and is held.
+        // The tenth part reaches 50 within the window and is held, right away.
         let at = now + Duration::from_secs(9);
-        assert!(state.needs_hold(DeletionSide::Local, part(9), 5, 10_000, at));
-        // A held part does not count as passed, the next one is held too.
-        assert!(state.needs_hold(DeletionSide::Local, part(10), 5, 10_000, at));
-        // The other side counts on its own.
-        assert!(!state.needs_hold(DeletionSide::Server, part(11), 5, 10_000, at));
-        // After the window, small deletions pass again.
+        assert!(held(&mut state, DeletionSide::Local, 9, at));
+        assert!(state.is_held(DeletionSide::Local, Path::new(r"C:\S\folder9")));
+        // While it is held, the next one is held too.
+        assert!(held(&mut state, DeletionSide::Local, 10, at));
+        // The other side counts on its own; after the window, small deletions pass again.
+        assert!(!held(&mut state, DeletionSide::Server, 11, at));
         let later = now + RECENT_WINDOW + Duration::from_secs(10);
-        assert!(!state.needs_hold(DeletionSide::Local, part(12), 5, 10_000, later));
+        assert!(!held(&mut state, DeletionSide::Server, 12, later));
     }
 
     #[test]
@@ -831,8 +862,22 @@ mod tests {
         let mut state = DeletionGuardState::default();
         let now = Instant::now();
         state.add(DeletionSide::Server, paths(&[r"C:\S\a"]));
-        assert!(state.needs_hold(DeletionSide::Server, paths(&[r"C:\S\b"]), 1, 10_000, now));
-        assert!(!state.needs_hold(DeletionSide::Local, paths(&[r"C:\S\b"]), 1, 10_000, now));
+        let b = paths(&[r"C:\S\b"]);
+        // The new path joins the hold (a changed hold, not a new one).
+        assert!(matches!(
+            state.decide(DeletionSide::Server, &b, b.clone(), 1, 10_000, now),
+            Decision::Hold(Some((false, _)))
+        ));
+        assert!(matches!(
+            state.decide(DeletionSide::Local, &b, b.clone(), 1, 10_000, now),
+            Decision::Pass
+        ));
+        // A path counted with a folder whose deletion passed is not added to the hold.
+        let child = paths(&[r"C:\S\b\x.txt"]);
+        assert!(matches!(
+            state.decide(DeletionSide::Server, &child, Vec::new(), 0, 10_000, now),
+            Decision::Pass
+        ));
     }
 
     #[test]
@@ -840,7 +885,11 @@ mod tests {
         let mut state = DeletionGuardState::default();
         let now = Instant::now();
         // Folder A with 30 entries passed (drive of 10000).
-        assert!(!state.needs_hold(DeletionSide::Local, paths(&[r"C:\S\A"]), 31, 10_000, now));
+        let a = paths(&[r"C:\S\A"]);
+        assert!(matches!(
+            state.decide(DeletionSide::Local, &a, a.clone(), 31, 10_000, now),
+            Decision::Pass
+        ));
         // The walk into A finds its children: already counted.
         let children = paths(&[r"C:\S\A\1.txt", r"C:\S\A\B"]);
         assert!(state.fresh_paths(DeletionSide::Local, &children, now).is_empty());
