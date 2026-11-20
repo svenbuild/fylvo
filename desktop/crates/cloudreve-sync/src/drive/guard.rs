@@ -205,14 +205,13 @@ impl DeletionGuardState {
         is_under_any_case(path, &self.kept_local)
     }
 
-    /// Whether a held deletion or a path the user chose to keep lies at, under or above `path`
-    /// (any upper/lower case spelling).
+    /// Whether a held deletion lies at, under or above `path` (any upper/lower case spelling).
+    /// Kept paths need no check: they match in any spelling.
     fn touches(&self, path: &Path) -> bool {
         [&self.server, &self.local]
             .into_iter()
             .flatten()
             .flat_map(|held| held.paths.iter())
-            .chain(self.kept_local.iter())
             .any(|other| {
                 is_under_any_case(path, std::slice::from_ref(other))
                     || is_under_any_case(other, &[path.to_path_buf()])
@@ -545,8 +544,8 @@ impl Mount {
         self.deletion_guard.lock().unwrap().is_held(side, path)
     }
 
-    /// Fylvo: whether a held deletion or a kept path lies at, under or above `path`. A case
-    /// rename of `path` waits then, so the hold keeps matching its paths.
+    /// Fylvo: whether a held deletion lies at, under or above `path`. A case rename of `path`
+    /// waits then, so the confirmed deletion still reaches its paths.
     pub(crate) fn guard_touches(&self, path: &Path) -> bool {
         self.deletion_guard.lock().unwrap().touches(path)
     }
@@ -809,7 +808,6 @@ mod tests {
         // A held child, the folder itself spelled otherwise, a path inside a kept folder.
         assert!(state.touches(Path::new(r"C:\S\photos")));
         assert!(state.touches(Path::new(r"C:\S\PHOTOS\a.jpg")));
-        assert!(state.touches(Path::new(r"C:\S\docs\x.txt")));
         // Siblings with a common start are not related.
         assert!(!state.touches(Path::new(r"C:\S\Photos2")));
         assert!(!state.touches(Path::new(r"C:\S\Doc")));

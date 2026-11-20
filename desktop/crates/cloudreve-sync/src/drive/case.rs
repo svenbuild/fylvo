@@ -15,7 +15,7 @@ use crate::{
         commands::MountCommand, guard::is_under_any_case, mounts::Mount, sync::SyncMode,
         utils::move_no_replace,
     },
-    inventory::{TaskRecord, TaskStatus},
+    inventory::{ConflictState, TaskRecord, TaskStatus},
     tasks::{TaskKind, TaskPayload},
 };
 use anyhow::{Context, Result};
@@ -95,6 +95,29 @@ pub(crate) fn case_mismatched_ancestor(
     }
     None
 }
+
+/// Whether `path` or a folder above it (up to `sync_root`) exists on disk spelled differently.
+/// A transfer under such a path would reach the server under a name it does not have (the
+/// app renames to the server's spelling and queues the transfer again under it).
+pub fn spelled_differently_on_disk(path: &Path, sync_root: &Path) -> bool {
+    case_mismatched_ancestor(path, sync_root, LocalFileInfo::on_disk_path).is_some()
+}
+
+/// A case rename that has to wait (a transfer runs, a deletion waits for the user's answer).
+/// It is tried again a little later.
+#[derive(Debug)]
+struct RetryLater(&'static str);
+
+impl std::fmt::Display for RetryLater {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for RetryLater {}
+
+/// How long a waiting case rename waits before it is tried again.
+const RETRY_DELAY: Duration = Duration::from_secs(60);
 
 /// What a sync pass does about names that are one file here.
 #[derive(Debug, Default, PartialEq)]
@@ -314,7 +337,19 @@ impl Mount {
         drop(matcher);
         for (from, to) in &renames {
             if let Err(err) = self.rename_local_case(from, to).await {
-                tracing::warn!(target: "drive::case", id = %self.id, from = %from.display(), to = %to.display(), error = ?err, "Case rename failed, retried on the next sync");
+                if err.is::<RetryLater>() {
+                    let command_tx = self.command_tx.clone();
+                    let to = to.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(RETRY_DELAY).await;
+                        let _ = command_tx.send(MountCommand::Sync {
+                            local_paths: vec![to],
+                            mode: SyncMode::PathOnly,
+                            user_initiated: false,
+                        });
+                    });
+                }
+                tracing::warn!(target: "drive::case", id = %self.id, from = %from.display(), to = %to.display(), error = ?err, "Case rename not done now, tried again later");
                 failed.insert(to.clone());
                 errors.push((from.clone(), err));
             } else {
@@ -347,7 +382,7 @@ impl Mount {
         // A held mass deletion or a kept path under it is keyed by the old spelling: rename
         // only after the user answered.
         if self.guard_touches(from) {
-            anyhow::bail!("a held deletion waits for the user's answer, renamed later");
+            return Err(RetryLater("a held deletion waits for the user's answer").into());
         }
         let info = LocalFileInfo::from_path(from)?;
 
@@ -430,7 +465,7 @@ impl Mount {
             .iter()
             .any(|task| under(task) && task.status == TaskStatus::Running)
         {
-            anyhow::bail!("a task under this name is running, renamed later");
+            return Err(RetryLater("a transfer under this name is running").into());
         }
         if !active.iter().any(under) {
             return Ok(Vec::new());
@@ -443,14 +478,23 @@ impl Mount {
             .collect();
         // The queue's match may catch other tasks too (its pattern treats `_` as a wildcard):
         // pending ones are queued again unchanged; running ones were not stopped and go on.
-        Ok(active
-            .into_iter()
+        let stopped: Vec<(TaskKind, PathBuf)> = active
+            .iter()
             .filter(|task| cancelled.contains(&task.id))
             .filter(|task| under(task) || task.status == TaskStatus::Pending)
             .filter_map(|task| {
-                Some((TaskKind::from_str(&task.task_type)?, PathBuf::from(task.local_path)))
+                Some((TaskKind::from_str(&task.task_type)?, PathBuf::from(&task.local_path)))
             })
-            .collect())
+            .collect();
+        // A task under the name the queue did not catch (spelled otherwise): wait.
+        if active
+            .iter()
+            .any(|task| under(task) && !cancelled.contains(&task.id))
+        {
+            self.queue_tasks_again(&stopped, path, path).await;
+            return Err(RetryLater("a transfer under this name could not be stopped").into());
+        }
+        Ok(stopped)
     }
 
     /// Queue stopped tasks again. Paths at or under `old` (any case spelling) get `new` in
@@ -476,7 +520,18 @@ impl Mount {
                 continue;
             }
             let result = match kind {
-                TaskKind::Upload => self.enqueue_upload(TaskPayload::upload(path.clone())).await,
+                TaskKind::Upload => {
+                    // The user's "overwrite the server's version" lives on in the inventory.
+                    let force = path.to_str().is_some_and(|p| {
+                        self.inventory.query_by_path(p).ok().flatten().is_some_and(|row| {
+                            row.conflict_state == Some(ConflictState::Override)
+                        })
+                    });
+                    self.enqueue_upload(
+                        TaskPayload::upload(path.clone()).with_force_override(force),
+                    )
+                    .await
+                }
                 TaskKind::Download => self
                     .task_queue
                     .enqueue(TaskPayload::download(path.clone()))
@@ -617,6 +672,19 @@ mod tests {
             );
         }
         assert_eq!(LocalFileInfo::on_disk_path(&dir.path().join("missing.txt")), None);
+    }
+
+    #[test]
+    fn transfers_see_other_spellings_on_the_real_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir(root.join("Photos")).unwrap();
+        std::fs::write(root.join("Photos").join("a.txt"), b"x").unwrap();
+        assert!(!spelled_differently_on_disk(&root.join(r"Photos\a.txt"), root));
+        assert!(spelled_differently_on_disk(&root.join(r"photos\a.txt"), root));
+        assert!(spelled_differently_on_disk(&root.join(r"Photos\A.TXT"), root));
+        // Not on disk at all: nothing to compare.
+        assert!(!spelled_differently_on_disk(&root.join(r"Photos\new.txt"), root));
     }
 
     #[test]

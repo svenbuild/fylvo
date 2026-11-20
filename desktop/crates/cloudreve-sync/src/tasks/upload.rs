@@ -108,6 +108,20 @@ impl<'a> UploadTask<'a> {
             );
             return Ok(());
         }
+        // Fylvo: renamed meanwhile to another upper/lower case spelling; the upload is queued
+        // again under the new spelling (see `drive/case.rs`).
+        if crate::drive::case::spelled_differently_on_disk(
+            &self.task.payload.local_path,
+            &self.sync_path,
+        ) {
+            info!(
+                target: "tasks::upload",
+                task_id = %self.task.task_id,
+                local_path = %self.task.payload.local_path_display(),
+                "Spelled differently on disk, skipping upload"
+            );
+            return Ok(());
+        }
 
         if placeholder_file.local_file_info.in_sync()
             && !placeholder_file.local_file_info.is_directory()
