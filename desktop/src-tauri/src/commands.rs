@@ -216,11 +216,18 @@ pub async fn set_drive_letter(
 
 /// Fylvo: letters free for a drive letter.
 #[tauri::command]
-pub async fn get_free_drive_letters(state: State<'_, AppStateHandle>) -> CommandResult<Vec<char>> {
+pub async fn get_free_drive_letters(
+    state: State<'_, AppStateHandle>,
+    drive_id: String,
+) -> CommandResult<Vec<char>> {
     let app_state = state
         .get()
         .ok_or_else(|| "App not yet initialized".to_string())?;
-    Ok(app_state.drive_manager.free_drive_letters().await)
+    app_state
+        .drive_manager
+        .free_drive_letters(&drive_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Get ignore patterns for a drive

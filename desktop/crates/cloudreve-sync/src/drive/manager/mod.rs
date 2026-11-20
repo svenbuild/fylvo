@@ -443,15 +443,13 @@ impl DriveManager {
         Ok(state)
     }
 
-    /// Fylvo: letters free for a drive letter; letters of our own drives count as free.
-    pub async fn free_drive_letters(&self) -> Vec<char> {
-        let mut own = Vec::new();
-        for mount in self.drives.read().await.values() {
-            if let Some(letter) = mount.config.read().await.drive_letter {
-                own.push(letter);
-            }
-        }
-        crate::drive::drive_letter::free_letters_now(&own)
+    /// Fylvo: letters the drive may use for its drive letter.
+    pub async fn free_drive_letters(&self, id: &str) -> Result<Vec<char>> {
+        let mount = self
+            .get_drive(id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Drive not found: {}", id))?;
+        Ok(mount.free_drive_letters().await)
     }
 
     /// Enable/disable a drive

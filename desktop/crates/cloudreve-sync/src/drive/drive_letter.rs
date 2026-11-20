@@ -69,7 +69,13 @@ pub fn classify(targets: &[String], folder: &Path) -> LetterOwner {
 }
 
 fn same_folder(target: &str, folder: &Path) -> bool {
-    let normalize = |s: &str| s.trim_start_matches(r"\??\").trim_end_matches('\\').to_lowercase();
+    let normalize = |s: &str| {
+        s.replace('/', "\\")
+            .trim_start_matches(r"\??\")
+            .trim_start_matches(r"\\?\")
+            .trim_end_matches('\\')
+            .to_lowercase()
+    };
     normalize(target) == normalize(&folder.to_string_lossy())
 }
 
@@ -109,16 +115,18 @@ pub enum LetterState {
     Conflict,
 }
 
-/// A registry value written by Fylvo for a drive icon ends like this.
-const ICON_SUFFIX: &str = "fylvo-desktop.exe,0";
-
-pub fn is_our_icon(value: &str) -> bool {
-    value.to_lowercase().ends_with(ICON_SUFFIX)
-}
+/// Name and icon written by Fylvo carry this value (the sync folder), so Fylvo only ever removes
+/// its own.
+const MARKER: &str = "FylvoSyncFolder";
 
 impl Mount {
     /// Bring the drive letter in line with the setting. Safe to call again at any time.
     pub async fn apply_drive_letter(&self) -> LetterState {
+        let _guard = self.drive_letter_lock.lock().await;
+        self.apply_locked().await
+    }
+
+    async fn apply_locked(&self) -> LetterState {
         let (wish, folder, name) = {
             let config = self.config.read().await;
             (config.drive_letter, config.sync_path.clone(), config.name.clone())
@@ -126,33 +134,43 @@ impl Mount {
         let Some(letter) = wish else {
             return self.set_letter_state(LetterState::Off);
         };
+        if self.drive_letter_closed.load(Ordering::SeqCst) {
+            return self.drive_letter_state();
+        }
         // A letter Windows cannot tell about counts as used by someone else.
-        let owner = win::targets(letter)
-            .map(|t| classify(&t, &folder))
+        let targets = win::targets(letter);
+        let owner = targets
+            .as_ref()
+            .map(|t| classify(t, &folder))
             .unwrap_or(LetterOwner::Other);
-        let state = match next_step(owner, win::claimed_elsewhere(letter)) {
+        let claimed = win::claimed_elsewhere(letter);
+        let state = match next_step(owner, claimed) {
             Step::Keep => {
-                win::brand(letter, &name);
+                win::brand(letter, &name, &folder);
                 LetterState::Active
             }
             Step::Define => match win::define(letter, &folder) {
-                Ok(()) if matches!(win::targets(letter), Ok(t) if classify(&t, &folder) == LetterOwner::Ours) => {
+                Ok(()) if owner_now(letter, &folder) == LetterOwner::Ours => {
                     tracing::info!(target: "drive::letter", id = %self.id, %letter, "Drive letter set");
-                    win::brand(letter, &name);
+                    win::brand(letter, &name, &folder);
                     win::notify(letter, true);
                     LetterState::Active
                 }
                 result => {
                     tracing::warn!(target: "drive::letter", id = %self.id, %letter, ?result, "Drive letter could not be set");
+                    // Whatever of ours got defined must not stay behind.
+                    log_failure(remove_ours(letter, &folder));
                     LetterState::Conflict
                 }
             },
-            Step::StepAside => {
-                tracing::info!(target: "drive::letter", id = %self.id, %letter, "Letter claimed by a volume, stepping aside");
-                remove_ours(letter, &folder);
+            Step::StepAside | Step::Conflict => {
+                // Also an older definition of ours below someone else's goes, so it cannot
+                // come back when the other one is removed.
+                if claimed || owner == LetterOwner::Other {
+                    log_failure(remove_ours(letter, &folder));
+                }
                 LetterState::Conflict
             }
-            Step::Conflict => LetterState::Conflict,
         };
         if state == LetterState::Conflict
             && !self.drive_letter_notified.swap(true, Ordering::SeqCst)
@@ -168,23 +186,28 @@ impl Mount {
         self.set_letter_state(state)
     }
 
-    /// Remove the drive letter if it is ours (switch off, drive removed, app quits).
-    pub async fn release_drive_letter(&self) {
+    /// Remove the drive letter if it is ours. Fails if Windows did not remove it.
+    async fn release_locked(&self) -> Result<()> {
         let (wish, folder) = {
             let config = self.config.read().await;
             (config.drive_letter, config.sync_path.clone())
         };
         if let Some(letter) = wish {
-            remove_ours(letter, &folder);
+            remove_ours(letter, &folder)?;
         }
         self.set_letter_state(LetterState::Off);
+        Ok(())
     }
 
     /// Switch the drive letter on (with `letter`, or the first free one) or off.
     pub async fn set_drive_letter(&self, enabled: bool, letter: Option<char>) -> Result<LetterState> {
+        let _guard = self.drive_letter_lock.lock().await;
+        if self.drive_letter_closed.load(Ordering::SeqCst) {
+            anyhow::bail!("the drive is shutting down");
+        }
         let letter = if enabled {
             let current = self.config.read().await.drive_letter;
-            let taken = win::taken_letters() & !current.map(letter_bit).unwrap_or(0);
+            let taken = self.taken_for_this_drive().await;
             match letter {
                 Some(l) if !is_usable(l) || taken & letter_bit(l) != 0 => {
                     anyhow::bail!("{}", t!("driveLetterNotFree", "letter" => l))
@@ -198,10 +221,39 @@ impl Mount {
         } else {
             None
         };
-        self.release_drive_letter().await;
+        // The old letter must be gone before the setting changes, else it would stay behind.
+        self.release_locked().await?;
         self.config.write().await.drive_letter = letter;
         self.drive_letter_notified.store(false, Ordering::SeqCst);
-        Ok(self.apply_drive_letter().await)
+        Ok(self.apply_locked().await)
+    }
+
+    /// Letters this drive may use (its own active letter counts as free).
+    pub async fn free_drive_letters(&self) -> Vec<char> {
+        free_letters(self.taken_for_this_drive().await)
+    }
+
+    async fn taken_for_this_drive(&self) -> u32 {
+        let (current, folder) = {
+            let config = self.config.read().await;
+            (config.drive_letter, config.sync_path.clone())
+        };
+        let own = current
+            .filter(|l| owner_now(*l, &folder) == LetterOwner::Ours && !win::claimed_elsewhere(*l))
+            .map(letter_bit)
+            .unwrap_or(0);
+        win::taken_letters() & !own
+    }
+
+    /// At app exit or drive removal: stop the check, then remove the letter.
+    pub(crate) async fn close_drive_letter(&self) {
+        if let Some(handle) = self.drive_letter_handle.lock().await.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+        let _guard = self.drive_letter_lock.lock().await;
+        self.drive_letter_closed.store(true, Ordering::SeqCst);
+        log_failure(self.release_locked().await);
     }
 
     pub fn drive_letter_state(&self) -> LetterState {
@@ -229,44 +281,50 @@ impl Mount {
     }
 }
 
-/// Remove the alias of `folder` at `letter` and its name and icon; anything else at that letter
-/// stays untouched.
-fn remove_ours(letter: char, folder: &Path) {
-    let Ok(targets) = win::targets(letter) else {
-        return;
-    };
-    if classify(&targets, folder) != LetterOwner::Ours {
-        return;
-    }
-    // The exact text Windows holds, so only our definition is removed.
-    if let Err(e) = win::remove_exact(letter, &targets[0]) {
-        tracing::warn!(target: "drive::letter", %letter, error = %e, "Failed to remove drive letter");
-        return;
-    }
-    win::unbrand(letter);
-    win::notify(letter, false);
-    tracing::info!(target: "drive::letter", %letter, "Drive letter removed");
+fn owner_now(letter: char, folder: &Path) -> LetterOwner {
+    win::targets(letter)
+        .map(|t| classify(&t, folder))
+        .unwrap_or(LetterOwner::Other)
 }
 
-/// Letters in use for the settings' letter picker: all used ones minus `own`.
-pub fn free_letters_now(own: &[char]) -> Vec<char> {
-    let own_bits = own.iter().fold(0, |bits, l| bits | letter_bit(*l));
-    free_letters(win::taken_letters() & !own_bits)
+fn log_failure(result: Result<()>) {
+    if let Err(e) = result {
+        tracing::warn!(target: "drive::letter", error = %e, "Failed to remove drive letter");
+    }
+}
+
+/// Remove every definition of `folder` at `letter` (with the exact text Windows holds) and the
+/// name and icon Fylvo gave it; anything else at that letter stays untouched.
+fn remove_ours(letter: char, folder: &Path) -> Result<()> {
+    let targets = win::targets(letter)?;
+    let ours: Vec<&String> = targets.iter().filter(|t| same_folder(t, folder)).collect();
+    for target in &ours {
+        win::remove_exact(letter, target)?;
+    }
+    win::unbrand(letter, folder);
+    if !ours.is_empty() {
+        win::notify(letter, false);
+        tracing::info!(target: "drive::letter", %letter, "Drive letter removed");
+    }
+    Ok(())
 }
 
 mod win {
-    use super::{is_our_icon, letter_bit};
+    use super::{MARKER, letter_bit, same_folder};
     use anyhow::{Context, Result};
     use std::path::Path;
     use widestring::U16CString;
-    use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_INSUFFICIENT_BUFFER, WIN32_ERROR};
+    use windows::Win32::Foundation::{
+        ERROR_FILE_NOT_FOUND, ERROR_INSUFFICIENT_BUFFER, ERROR_MORE_DATA, WIN32_ERROR,
+    };
     use windows::Win32::Storage::FileSystem::{
         DDD_EXACT_MATCH_ON_REMOVE, DDD_RAW_TARGET_PATH, DDD_REMOVE_DEFINITION,
         DEFINE_DOS_DEVICE_FLAGS, DefineDosDeviceW, FindFirstVolumeW, FindNextVolumeW,
         FindVolumeClose, GetLogicalDrives, GetVolumePathNamesForVolumeNameW, QueryDosDeviceW,
     };
     use windows::Win32::System::Registry::{
-        HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_OPTION_NON_VOLATILE, REG_SZ,
+        HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_OPEN_CREATE_OPTIONS,
+        REG_OPTION_NON_VOLATILE, REG_OPTION_VOLATILE, REG_SZ,
         RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegGetValueW, RegOpenKeyExW,
         RegSetValueExW,
     };
@@ -339,11 +397,18 @@ mod win {
             return 0;
         };
         loop {
-            let mut paths = [0u16; 1024];
+            let mut paths = vec![0u16; 1024];
             let mut len = 0u32;
-            let ok = unsafe {
+            let mut ok = unsafe {
                 GetVolumePathNamesForVolumeNameW(PCWSTR(name.as_ptr()), Some(&mut paths), &mut len)
             };
+            // A volume with many mount points needs a bigger buffer.
+            if matches!(&ok, Err(e) if e.code() == ERROR_MORE_DATA.to_hresult()) {
+                paths = vec![0u16; len as usize];
+                ok = unsafe {
+                    GetVolumePathNamesForVolumeNameW(PCWSTR(name.as_ptr()), Some(&mut paths), &mut len)
+                };
+            }
             if ok.is_ok() {
                 for path in paths.split(|c| *c == 0).filter(|s| s.len() >= 2) {
                     let path = String::from_utf16_lossy(path);
@@ -366,7 +431,7 @@ mod win {
     /// Network drives remembered for this user, also when not connected.
     fn network_letters() -> u32 {
         ('D'..='Z')
-            .filter(|l| open_key(&format!(r"Network\{l}"), false).is_some())
+            .filter(|l| open_key(&format!(r"Network\{l}"), None).is_some())
             .fold(0, |bits, l| bits | letter_bit(l))
     }
 
@@ -383,8 +448,10 @@ mod win {
 
     // --- Name and icon in Explorer ---
 
+    const DRIVES_KEY: &str = r"Software\Classes\Applications\Explorer.exe\Drives";
+
     fn drive_key(letter: char) -> String {
-        format!(r"Software\Classes\Applications\Explorer.exe\Drives\{letter}")
+        format!(r"{DRIVES_KEY}\{letter}")
     }
 
     struct Key(HKEY);
@@ -394,38 +461,41 @@ mod win {
         }
     }
 
-    fn open_key(path: &str, create: bool) -> Option<Key> {
+    /// Open a key for reading, or create it. A volatile key vanishes at sign-out, like the
+    /// drive letter itself.
+    fn open_key(path: &str, create: Option<REG_OPEN_CREATE_OPTIONS>) -> Option<Key> {
         let path = wide(path);
         let mut key = HKEY::default();
         let result: WIN32_ERROR = unsafe {
-            if create {
-                RegCreateKeyExW(
+            match create {
+                Some(options) => RegCreateKeyExW(
                     HKEY_CURRENT_USER,
                     PCWSTR(path.as_ptr()),
                     0,
                     PCWSTR::null(),
-                    REG_OPTION_NON_VOLATILE,
+                    options,
                     KEY_READ | KEY_WRITE,
                     None,
                     &mut key,
                     None,
-                )
-            } else {
-                RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), 0, KEY_READ, &mut key)
+                ),
+                None => RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), 0, KEY_READ, &mut key),
             }
         };
         result.is_ok().then_some(Key(key))
     }
 
-    fn read_default(path: &str) -> Option<String> {
+    fn read_value(path: &str, value: Option<&str>) -> Option<String> {
         let path = wide(path);
+        let value = value.map(wide);
+        let value_ptr = value.as_ref().map_or(PCWSTR::null(), |v| PCWSTR(v.as_ptr()));
         let mut buf = vec![0u16; 1024];
         let mut size = (buf.len() * 2) as u32;
         let result = unsafe {
             RegGetValueW(
                 HKEY_CURRENT_USER,
                 PCWSTR(path.as_ptr()),
-                PCWSTR::null(),
+                value_ptr,
                 RRF_RT_REG_SZ,
                 None,
                 Some(buf.as_mut_ptr() as *mut _),
@@ -435,48 +505,67 @@ mod win {
         if result.is_err() {
             return None;
         }
-        let len = (size as usize / 2).saturating_sub(1);
-        Some(String::from_utf16_lossy(&buf[..len.min(buf.len())]))
+        let len = (size as usize / 2).saturating_sub(1).min(buf.len());
+        Some(String::from_utf16_lossy(&buf[..len]))
     }
 
-    fn write_default(path: &str, value: &str) {
-        let Some(key) = open_key(path, true) else {
-            return;
-        };
-        let data: Vec<u8> = wide(value)
+    fn write_value(key: &Key, value: Option<&str>, data: &str) {
+        let value = value.map(wide);
+        let value_ptr = value.as_ref().map_or(PCWSTR::null(), |v| PCWSTR(v.as_ptr()));
+        let bytes: Vec<u8> = wide(data)
             .as_slice_with_nul()
             .iter()
             .flat_map(|c| c.to_le_bytes())
             .collect();
-        let _ = unsafe { RegSetValueExW(key.0, PCWSTR::null(), 0, REG_SZ, Some(&data)) };
+        let _ = unsafe { RegSetValueExW(key.0, value_ptr, 0, REG_SZ, Some(&bytes)) };
     }
 
-    /// Give the letter the drive's name and the Fylvo icon, unless someone else set them.
-    pub fn brand(letter: char, name: &str) {
+    /// Whether the name and icon at `letter` were written by Fylvo for `folder`.
+    fn branded_for(letter: char, folder: &Path) -> Option<bool> {
+        read_value(&drive_key(letter), Some(MARKER)).map(|m| same_folder(&m, folder))
+    }
+
+    /// Give the letter the drive's name and the Fylvo icon, unless someone else gave it a look.
+    pub fn brand(letter: char, name: &str, folder: &Path) {
+        let base = drive_key(letter);
+        match branded_for(letter, folder) {
+            Some(true) => {}
+            // Another Fylvo drive's, or someone else's look: leave it alone.
+            Some(false) => return,
+            None if open_key(&base, None).is_some() => return,
+            None => {}
+        }
         let Ok(exe) = std::env::current_exe() else {
             return;
         };
         let icon = format!("{},0", exe.display());
-        let base = drive_key(letter);
-        let icon_path = format!(r"{base}\DefaultIcon");
         let label_path = format!(r"{base}\DefaultLabel");
-        match read_default(&icon_path) {
-            // Someone else's icon: leave this letter's look alone.
-            Some(current) if !is_our_icon(&current) => return,
-            Some(current) if current == icon && read_default(&label_path).as_deref() == Some(name) => {
-                return;
-            }
-            _ => {}
+        let icon_path = format!(r"{base}\DefaultIcon");
+        if read_value(&label_path, None).as_deref() == Some(name)
+            && read_value(&icon_path, None).as_deref() == Some(icon.as_str())
+        {
+            return;
         }
-        write_default(&icon_path, &icon);
-        write_default(&label_path, name);
+        // The parent stays a normal key; Fylvo's keys below it are volatile.
+        if open_key(DRIVES_KEY, Some(REG_OPTION_NON_VOLATILE)).is_none() {
+            return;
+        }
+        let Some(letter_key) = open_key(&base, Some(REG_OPTION_VOLATILE)) else {
+            return;
+        };
+        write_value(&letter_key, Some(MARKER), &folder.to_string_lossy());
+        if let Some(key) = open_key(&label_path, Some(REG_OPTION_VOLATILE)) {
+            write_value(&key, None, name);
+        }
+        if let Some(key) = open_key(&icon_path, Some(REG_OPTION_VOLATILE)) {
+            write_value(&key, None, &icon);
+        }
     }
 
-    /// Remove the name and icon if Fylvo set them.
-    pub fn unbrand(letter: char) {
-        let base = drive_key(letter);
-        if read_default(&format!(r"{base}\DefaultIcon")).is_some_and(|v| is_our_icon(&v)) {
-            let path = wide(&base);
+    /// Remove the name and icon if Fylvo set them for `folder`.
+    pub fn unbrand(letter: char, folder: &Path) {
+        if branded_for(letter, folder) == Some(true) {
+            let path = wide(&drive_key(letter));
             let _ = unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr())) };
         }
     }
@@ -562,8 +651,10 @@ mod tests {
     }
 
     #[test]
-    fn only_our_icon_counts_as_ours() {
-        assert!(is_our_icon(r"C:\Program Files\WindowsApps\Fylvo.Desktop_1.0.0.0_x64__abc\fylvo-desktop.exe,0"));
-        assert!(!is_our_icon(r"C:\Windows\System32\shell32.dll,8"));
+    fn folder_spellings_match() {
+        let folder = PathBuf::from(r"C:\Users\Alex\Fylvo");
+        assert!(same_folder(r"\\?\C:\Users\Alex\Fylvo", &folder));
+        assert!(same_folder("C:/Users/Alex/Fylvo/", &folder));
+        assert!(!same_folder(r"C:\Users\Alex\Fylvo2", &folder));
     }
 }

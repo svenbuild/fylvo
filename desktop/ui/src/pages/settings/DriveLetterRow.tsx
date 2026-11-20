@@ -20,7 +20,7 @@ export default function DriveLetterRow({ drive, onChanged }: DriveLetterRowProps
 
   const loadFreeLetters = async () => {
     try {
-      setFreeLetters(await invoke<string[]>("get_free_drive_letters"));
+      setFreeLetters(await invoke<string[]>("get_free_drive_letters", { driveId: drive.id }));
     } catch (error) {
       console.error("Failed to list free drive letters:", error);
     }
