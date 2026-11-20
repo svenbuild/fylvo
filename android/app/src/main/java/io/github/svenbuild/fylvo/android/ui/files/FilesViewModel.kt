@@ -309,7 +309,8 @@ class FilesViewModel(
         val s = _state.value
         val token = s.nextToken ?: return
         val uri = s.currentUri
-        if (s.loadingMore) return
+        // Fylvo: while a refresh runs, the token belongs to the cached listing it will replace.
+        if (s.loadingMore || s.revalidating) return
         val generation = refreshGeneration
         _state.value = s.copy(loadingMore = true)
         viewModelScope.launch {
@@ -687,8 +688,7 @@ class FilesViewModel(
         var n = 1
         // Fylvo: the name is taken at once (createNewFile is atomic), so two saves of files with the
         // same name running at the same time never write into the same file.
-        // A name whose ".part" is taken is skipped too: that file is the download's temporary file.
-        while (File(dir, dest.name + ".part").exists() || !dest.createNewFile()) {
+        while (!dest.createNewFile()) {
             dest = File(dir, "${file.name} ($n)${if (archive) ".zip" else ""}")
             n++
         }

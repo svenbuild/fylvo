@@ -139,7 +139,9 @@ class FileRepository(private val api: ApiClient) {
         val body = resp.body() ?: throw ApiException(-1, "Empty download")
         val total = body.contentLength()
         dest.parentFile?.mkdirs()
-        val part = File(dest.path + ".part")
+        // Fylvo: a fresh, uniquely named temporary file (created atomically), so it can never be
+        // a file someone saved, nor the temporary file of another download running at the same time.
+        val part = File.createTempFile("fylvo-", ".part", dest.parentFile)
         try {
             body.byteStream().use { input ->
                 java.io.FileOutputStream(part).use { out ->
