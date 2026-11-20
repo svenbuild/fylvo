@@ -162,6 +162,8 @@ pub struct Mount {
     pub(crate) drive_letter_notified: AtomicBool,
     pub(crate) drive_letter_handle: Mutex<Option<JoinHandle<()>>>,
     pub(crate) drive_letter_closed: AtomicBool,
+    /// Fylvo: names that differ only in case, already reported in this run (see `case.rs`).
+    pub(crate) case_clash_notified: std::sync::Mutex<std::collections::HashSet<PathBuf>>,
 }
 
 impl Mount {
@@ -279,6 +281,7 @@ impl Mount {
             drive_letter_notified: AtomicBool::new(false),
             drive_letter_handle: Mutex::new(None),
             drive_letter_closed: AtomicBool::new(false),
+            case_clash_notified: Default::default(),
         }
     }
 

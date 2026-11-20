@@ -5,6 +5,7 @@ use crate::{
         placeholder_file::PlaceholderFile,
     },
     drive::{
+        case::ntfs_fold,
         guard::DeletionSide,
         mounts::Mount,
         placeholder::CrPlaceholder,
@@ -489,6 +490,14 @@ impl Mount {
         );
         tracing::trace!("{:?}", remote_files);
 
+        // Fylvo: names that are one file on NTFS (only upper/lower case differs) become one
+        // path here, renamed locally to the server's spelling where that is safe.
+        let (paths, case_errors) = self.resolve_case(paths, &remote_files).await;
+        for (path, err) in case_errors {
+            aggregate_error.push(path, err);
+        }
+        let paths = paths.as_slice();
+
         let local_files = self.fetch_local_file_infos(paths).await?;
         tracing::debug!(
             target: "drive::sync",
@@ -757,6 +766,18 @@ impl Mount {
                         "Failed to rename local file"
                     );
                     aggregate_error.push(original.clone(), anyhow::Error::from(err));
+                    return;
+                }
+                // Fylvo: this rename is the app's own and is not sent to the server (see
+                // `callback.rs`). The copy is a new file there: upload it.
+                if let Err(err) = self.enqueue_upload(TaskPayload::upload(renamed.clone())).await {
+                    tracing::warn!(
+                        target: "drive::sync",
+                        id = %self.id,
+                        path = %renamed.display(),
+                        error = ?err,
+                        "Failed to enqueue upload of the conflict copy"
+                    );
                 }
             }
         }
@@ -794,13 +815,13 @@ impl Mount {
             (config.remote_path.clone(), config.sync_path.clone())
         };
 
-        let mut target_remote_paths: HashMap<String, PathBuf> = HashMap::with_capacity(paths.len());
-        for path in paths {
-            let remote_uri =
-                local_path_to_cr_uri(path.clone(), sync_root.clone(), remote_base.clone())
-                    .with_context(|| format!("failed to map {} to remote uri", path.display()))?;
-            target_remote_paths.insert(remote_uri.to_string(), path.clone());
-        }
+        // Fylvo: server names are matched the way NTFS compares them, so a name that differs
+        // only in case is found too. Keyed by the server's own spelling.
+        let wanted: HashSet<String> = paths
+            .iter()
+            .filter_map(|path| path.file_name())
+            .map(|name| ntfs_fold(&name.to_string_lossy()))
+            .collect();
 
         let parent_remote_uri =
             local_path_to_cr_uri(parent.clone(), sync_root.clone(), remote_base.clone())
@@ -811,10 +832,9 @@ impl Mount {
 
         let mut remote_entries: HashMap<PathBuf, FileResponse> =
             HashMap::with_capacity(paths.len());
-        let mut remaining: HashSet<String> = target_remote_paths.keys().cloned().collect();
         let mut previous_response = None;
 
-        while !remaining.is_empty() {
+        loop {
             let response = match self
                 .cr_client
                 .list_files_all(
@@ -838,6 +858,11 @@ impl Mount {
                     if !self.sync_root_exists().await? {
                         anyhow::bail!("the synced folder is missing on the server");
                     }
+                    // Nor if the folder exists on the server spelled in another case (its local
+                    // rename is still pending).
+                    if self.server_has_case_variant(parent).await? {
+                        anyhow::bail!("the folder exists on the server in another case");
+                    }
                     tracing::debug!(
                         target: "drive::sync",
                         id = %self.id,
@@ -851,17 +876,14 @@ impl Mount {
                 }
             };
 
+            // The whole folder is read: a second spelling of a name may come on a later page.
             for file in &response.res.files {
-                if let Some(local_path) = target_remote_paths.get(&file.path) {
-                    if remote_entries.contains_key(local_path) {
-                        continue;
-                    }
-                    remote_entries.insert(local_path.clone(), file.clone());
-                    remaining.remove(&file.path);
+                if wanted.contains(&ntfs_fold(&file.name)) {
+                    remote_entries.insert(parent.join(&file.name), file.clone());
                 }
             }
 
-            let has_more = response.more && !remaining.is_empty();
+            let has_more = response.more;
             previous_response = Some(response);
 
             if !has_more {
@@ -869,21 +891,45 @@ impl Mount {
             }
         }
 
-        if !remaining.is_empty() {
-            for missing in remaining {
-                if let Some(local_path) = target_remote_paths.get(&missing) {
-                    tracing::warn!(
-                        target: "drive::sync",
-                        id = %self.id,
-                        path = %local_path.display(),
-                        remote_path = %missing,
-                        "Remote entry missing during sync"
-                    );
-                }
-            }
-        }
-
         Ok(remote_entries)
+    }
+
+    /// Fylvo: whether the server has the local folder `path` under another upper/lower case
+    /// spelling of its name.
+    async fn server_has_case_variant(&self, path: &PathBuf) -> Result<bool> {
+        let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+            return Ok(false);
+        };
+        let (remote_base, sync_root) = {
+            let config = self.config.read().await;
+            (config.remote_path.clone(), config.sync_path.clone())
+        };
+        let parent_uri =
+            local_path_to_cr_uri(parent.to_path_buf(), sync_root, remote_base)?.to_string();
+        let name = ntfs_fold(&name.to_string_lossy());
+        let mut previous_response = None;
+        loop {
+            let response = match self
+                .cr_client
+                .list_files_all(previous_response.as_ref(), &parent_uri, REMOTE_PAGE_SIZE)
+                .await
+            {
+                Ok(response) => response,
+                Err(ApiError::ApiError { code, .. })
+                    if code == ErrorCode::ParentNotExist as i32 =>
+                {
+                    return Ok(false);
+                }
+                Err(err) => return Err(err.into()),
+            };
+            if response.res.files.iter().any(|file| ntfs_fold(&file.name) == name) {
+                return Ok(true);
+            }
+            if !response.more {
+                return Ok(false);
+            }
+            previous_response = Some(response);
+        }
     }
 
     async fn fetch_inventory_entries(

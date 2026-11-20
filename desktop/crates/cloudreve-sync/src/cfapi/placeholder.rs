@@ -1,11 +1,15 @@
 use anyhow::{Result};
 use std::{
+    ffi::OsString,
     fmt::Debug,
     fs::File,
     mem::{self, MaybeUninit},
     ops::{Bound, Range, RangeBounds},
-    os::windows::io::{AsRawHandle, FromRawHandle, IntoRawHandle, RawHandle},
-    path::Path,
+    os::windows::{
+        ffi::OsStringExt,
+        io::{AsRawHandle, FromRawHandle, IntoRawHandle, RawHandle},
+    },
+    path::{Path, PathBuf},
     ptr,
     time::{Duration, SystemTime},
 };
@@ -662,9 +666,9 @@ impl LocalFileInfo {
         }
     }
 
-    pub fn from_path(path: &Path) -> Result<Self> {
+    fn find(path: &Path) -> Option<WIN32_FIND_DATAW> {
         let mut find_data = unsafe { std::mem::zeroed::<WIN32_FIND_DATAW>() };
-        let u16_path = U16CString::from_os_str(path).unwrap();
+        let u16_path = U16CString::from_os_str(path).ok()?;
         let handle = match unsafe {
             FindFirstFileExW(
                 PCWSTR::from_raw(u16_path.as_ptr()),
@@ -678,12 +682,34 @@ impl LocalFileInfo {
             Ok(handle) => handle,
             Err(err) => {
                 tracing::debug!(target: "cfapi::placeholder", "error getting file info from path {}: {:?}", path.display(), err);
-                return Ok(Self::missing());
+                return None;
             }
         };
 
         // Close the handle after use
         unsafe { let _ = FindClose(handle); };
+        Some(find_data)
+    }
+
+    /// Fylvo: the path as it is spelled on disk, if a file or folder exists there under any
+    /// upper/lower case spelling of the name. A match on the 8.3 short name does not count.
+    pub fn on_disk_path(path: &Path) -> Option<PathBuf> {
+        let find_data = Self::find(path)?;
+        let len = find_data
+            .cFileName
+            .iter()
+            .position(|c| *c == 0)
+            .unwrap_or(find_data.cFileName.len());
+        let name = OsString::from_wide(&find_data.cFileName[..len]);
+        let requested = path.file_name()?;
+        crate::drive::case::same_on_ntfs(Path::new(&name), Path::new(requested))
+            .then(|| path.with_file_name(name))
+    }
+
+    pub fn from_path(path: &Path) -> Result<Self> {
+        let Some(find_data) = Self::find(path) else {
+            return Ok(Self::missing());
+        };
 
         let pin_state = if find_data.dwFileAttributes & FILE_ATTRIBUTE_PINNED.0 != 0 {
             PinState::Pinned

@@ -40,6 +40,11 @@ impl CallbackHandler {
     }
 }
 
+/// Fylvo: whether the file system operation behind a callback came from this app.
+fn is_own_process(request: &Request) -> bool {
+    request.process().id() == std::process::id()
+}
+
 impl SyncFilter for CallbackHandler {
     fn fetch_data(
         &self,
@@ -78,7 +83,13 @@ impl SyncFilter for CallbackHandler {
     fn rename(&self, request: Request, ticket: ticket::Rename, info: info::Rename) -> CResult<()> {
         let src = request.path();
         let dest = info.target_path();
-        tracing::debug!(target: "drive::mounts", id = %self.id, source_path = %src.display(), target_path = %dest.display(), "Rename");
+        tracing::debug!(target: "drive::mounts", id = %self.id, source_path = %src.display(), target_path = %dest.display(), pid = request.process().id(), "Rename");
+        // Fylvo: renames made by the app itself (a case rename to the server's spelling, a
+        // conflict copy) are no user changes and must not reach the server.
+        if is_own_process(&request) {
+            let _ = ticket.pass();
+            return Ok(());
+        }
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         let command = MountCommand::Rename {
             source: src.to_path_buf(),
@@ -215,7 +226,11 @@ impl SyncFilter for CallbackHandler {
 
     fn renamed(&self, request: Request, info: info::Renamed) {
         let dest = request.path();
-        tracing::debug!(target: "drive::mounts", id = %self.id, dest_path = %dest.display(), "Renamed");
+        tracing::debug!(target: "drive::mounts", id = %self.id, dest_path = %dest.display(), pid = request.process().id(), "Renamed");
+        // Fylvo: the app's own renames update the inventory themselves, see `rename`.
+        if is_own_process(&request) {
+            return;
+        }
         let command: MountCommand = MountCommand::Renamed {
             source: info.source_path(),
             destination: dest,

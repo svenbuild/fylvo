@@ -198,6 +198,31 @@ impl ConflictAction {
     }
 }
 
+/// Mark a placeholder as in sync with the server (after a rename).
+pub(crate) async fn mark_path_in_sync(path: &Path) -> Result<()> {
+    tracing::trace!(target: "drive::commands", path = %path.display(), "Marking file as in-sync: OPEN");
+    match OpenOptions::new()
+        .write_access()
+        .exclusive()
+        .open_with_retry(path)
+        .await
+    {
+        Ok(mut handle) => {
+            tracing::trace!(target: "drive::commands", path = %path.display(), "Marking file as in-sync");
+            if let Err(e) = handle.mark_in_sync(true, None) {
+                tracing::error!(target: "drive::commands", error = %e, "Failed to mark as in-sync");
+                return Err(e.into());
+            }
+            tracing::trace!(target: "drive::commands", path = %path.display(), "Marked file as in-sync: complete");
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!(target: "drive::commands", error = %e, "Failed to open file after retries");
+            Err(e.into())
+        }
+    }
+}
+
 impl Mount {
     pub async fn fetch_data(
         &self,
@@ -377,6 +402,18 @@ impl Mount {
         }
         drop(matcher);
 
+        // Fylvo: server names that are one file here (only case differs): create one of them,
+        // the same one the sync keeps later (see `case.rs`).
+        let by_path: HashMap<PathBuf, FileResponse> = placehodlers
+            .iter()
+            .map(|file| (path.join(&file.name), file.clone()))
+            .collect();
+        let hidden = crate::drive::case::plan_case(&[], &by_path, |_| None, |_| None).hidden;
+        if !hidden.is_empty() {
+            placehodlers.retain(|file| !hidden.contains(&path.join(&file.name)));
+            self.report_case_clash(&hidden, &[]);
+        }
+
         Ok(GetPlacehodlerResult {
             files: placehodlers,
             local_path: path.clone(),
@@ -446,30 +483,7 @@ impl Mount {
 
         // Cancel ongoing/pending tasks
         match self.task_queue.cancel_by_path(source.clone()).await {
-            Ok(0) => {
-                // Mark file as in-sync
-                tracing::trace!(target: "drive::commands", path = %destination.display(), "Marking file as in-sync: OPEN");
-                match OpenOptions::new()
-                    .write_access()
-                    .exclusive()
-                    .open_with_retry(&destination)
-                    .await
-                {
-                    Ok(mut handle) => {
-                        tracing::trace!(target: "drive::commands", path = %destination.display(), "Marking file as in-sync");
-                        if let Err(e) = handle.mark_in_sync(true, None) {
-                            tracing::error!(target: "drive::commands", error = %e, "Failed to mark as in-sync");
-                            return Err(e.into());
-                        }
-                        tracing::trace!(target: "drive::commands", path = %destination.display(), "Marked file as in-sync: complete");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        tracing::error!(target: "drive::commands", error = %e, "Failed to open file after retries");
-                        Err(e.into())
-                    }
-                }
-            }
+            Ok(0) => mark_path_in_sync(&destination).await,
             Ok(count) => {
                 tracing::info!(target: "drive::commands", path = %source.display(), count = count, "Cancelled tasks");
                 // We have tasks canceled, we need to trigger sync on the moved file

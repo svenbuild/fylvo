@@ -464,6 +464,24 @@ mod tests {
     }
 
     #[test]
+    fn case_only_rename_moves_descendants_and_refuses_existing_rows() {
+        let (_dir, db) = db();
+        let drive = Uuid::new_v4();
+        for path in [r"C:\S\Fotos", r"C:\S\Fotos\a.jpg", r"C:\S\Fotos\b\c.jpg"] {
+            add(&db, drive, path);
+        }
+
+        db.rename_path(r"C:\S\Fotos", r"C:\S\fotos").unwrap();
+        assert!(db.query_by_path(r"C:\S\fotos\b\c.jpg").unwrap().is_some());
+        assert!(db.query_by_path(r"C:\S\Fotos\a.jpg").unwrap().is_none());
+
+        // Rows under the new spelling exist already: refused as a whole, nothing moved.
+        add(&db, drive, r"C:\S\Fotos\a.jpg");
+        assert!(db.rename_path(r"C:\S\fotos", r"C:\S\Fotos").is_err());
+        assert!(db.query_by_path(r"C:\S\fotos\b\c.jpg").unwrap().is_some());
+    }
+
+    #[test]
     fn batch_delete_and_rename_use_literal_windows_prefixes() {
         let (_dir, db) = db();
         let drive = Uuid::new_v4();
