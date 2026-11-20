@@ -340,7 +340,13 @@ private fun Modifier.dragSelect(
                 val target = when {
                     pull < 0f -> edgeFile(top = true)
                     pull > 0f -> edgeFile(top = false)
-                    else -> fileAt(Offset(finger.x.coerceIn(0f, size.width - 1f), finger.y))
+                    else -> {
+                        // Beside the grid's tiles (side padding or past the edge) the nearest column counts.
+                        val files = visibleItems().filter { it.width != Float.MAX_VALUE }
+                        val minX = files.minOfOrNull { it.left } ?: 0f
+                        val maxX = files.maxOfOrNull { it.left + it.width - 1f } ?: (size.width - 1f)
+                        fileAt(Offset(finger.x.coerceIn(minX, maxOf(minX, maxX)), finger.y))
+                    }
                 }
                 // Over a gap or a header the last file stays the end of the range.
                 if (target != null) current = target
@@ -358,6 +364,8 @@ private fun Modifier.dragSelect(
             val autoScroll = launch {
                 val step = AutoScrollStep.toPx()
                 while (isActive) {
+                    // Cleared from outside (back, a tab) or the anchor is gone: no more scrolling.
+                    if (stopped || viewModel.state.value.selected.isEmpty()) break
                     val delta = edgePull() * step
                     if (delta != 0f && scroll.scrollBy(delta) != 0f) update()
                     delay(16)

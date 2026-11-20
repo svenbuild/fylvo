@@ -275,6 +275,8 @@ class FilesViewModel(
                     )
                     return@launch
                 }
+                // Fylvo: the offline lookup may have taken a while; the user may be elsewhere now.
+                if (_state.value.currentUri != uri) return@launch
                 // Keep showing the cached files if we had them; only surface the error otherwise.
                 _state.value = _state.value.copy(
                     loading = false,
@@ -519,8 +521,7 @@ class FilesViewModel(
                 if (local != null) onReady(local)
                 else _state.value = _state.value.copy(snackbar = failure(e, fallback = R.string.download_failed))
             } finally {
-                downloadJobs.remove(file.path)
-                clearDownloading(file.path)
+                releaseSingle(file.path, file.path, coroutineContext[Job])
             }
         }
         downloadJobs[file.path] = job
@@ -572,11 +573,20 @@ class FilesViewModel(
             } catch (e: Exception) {
                 _state.value = _state.value.copy(snackbar = failure(e, fallback = R.string.download_failed))
             } finally {
-                downloadJobs.remove(key)
-                clearDownloading(file.path)
+                releaseSingle(key, file.path, coroutineContext[Job])
             }
         }
         downloadJobs[key] = job
+    }
+
+    /**
+     * Fylvo: end of a single open or save job [me]. A replaced (cancelled) job must not drop the
+     * entry or the progress mark of the job that took over the same file.
+     */
+    private fun releaseSingle(key: String, path: String, me: Job?) {
+        if (downloadJobs[key] === me) downloadJobs.remove(key)
+        val busy = downloadJobs[path] != null || downloadJobs["save:$path"] != null || path in batchPaths
+        if (!busy) clearDownloading(path)
     }
 
     /**

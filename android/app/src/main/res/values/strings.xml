@@ -195,6 +195,7 @@
         <item quantity="one">Actions for %d selected item</item>
         <item quantity="other">Actions for %d selected items</item>
     </plurals>
+    <string name="selection_menu">Actions</string>
     <string name="selection_hint">Long press to select. Drag your finger to select several.</string>
 
     <!-- Folder picker -->

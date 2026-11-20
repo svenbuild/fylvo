@@ -90,6 +90,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -257,6 +258,7 @@ internal fun SelectionMenu(
     if (open) shownItems = items
     var box by remember { mutableStateOf<Rect?>(null) }
     val closeLabel = stringResource(R.string.close)
+    val menuTitle = stringResource(R.string.selection_menu)
     Box(
         Modifier
             .fillMaxSize()
@@ -295,7 +297,8 @@ internal fun SelectionMenu(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 shadowElevation = 8.dp,
-                modifier = Modifier.width(256.dp),
+                // TalkBack announces the opened card as its own pane.
+                modifier = Modifier.width(256.dp).semantics { paneTitle = menuTitle },
             ) {
                 // Scrolls when it does not fit (landscape, large text).
                 Column(
