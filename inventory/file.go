@@ -1053,7 +1053,11 @@ func (f *fileClient) SetParent(ctx context.Context, files []*ent.File, parent *e
 	}
 
 	// Fylvo: checked after all of them moved, so that two of them cannot be twins of each other.
-	return f.ensureNoCaseTwins(ctx, lo.Map(files, func(file *ent.File, index int) int { return file.ID })...)
+	// What stays in its folder brings no new name there.
+	moved := lo.FilterMap(files, func(file *ent.File, index int) (int, bool) {
+		return file.ID, file.FileChildren != parent.ID
+	})
+	return f.ensureNoCaseTwins(ctx, moved...)
 }
 
 func (f *fileClient) GetParentFile(ctx context.Context, root *ent.File, eagerLoading bool) (*ent.File, error) {

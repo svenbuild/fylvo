@@ -4,7 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/file"
+	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -196,9 +198,23 @@ func TestExistingTwinsStayUsable(t *testing.T) {
 	other.Name = "OTHER.txt"
 	_, err = e.fileClient.Update(e.ctx, other)
 	require.NoError(t, err)
+	// In a transaction, as the admin service does: the refused name is rolled back.
+	fc, tx, ctx, err := inventory.WithTx(e.ctx, e.fileClient)
+	require.NoError(t, err)
 	other.Name = "DOC.TXT"
-	_, err = e.fileClient.Update(e.ctx, other)
+	_, err = fc.Update(ctx, other)
 	requireCode(t, err, serializer.CodeNameCaseTaken)
+	require.NoError(t, inventory.Rollback(tx))
+	_, err = owner.Get(e.ctx, e.uri("cloudreve://my/Shared/OTHER.txt"))
+	require.NoError(t, err)
+
+	// A move within its own folder (WebDAV moves first, then renames) brings no new name there,
+	// also for a twin.
+	legacy, err := e.client.File.Query().Where(file.Name("Doc.txt")).Only(e.ctx)
+	require.NoError(t, err)
+	parent, err := e.client.File.Get(e.ctx, legacy.FileChildren)
+	require.NoError(t, err)
+	require.NoError(t, e.fileClient.SetParent(e.ctx, []*ent.File{legacy}, parent))
 
 	// A twin can be renamed to a free name, not to another spelling of its twin.
 	requireCode(t, e.rename(owner, "cloudreve://my/Shared/Doc.txt", "DOC.txt"), serializer.CodeNameCaseTaken)
