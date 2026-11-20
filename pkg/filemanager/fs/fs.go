@@ -333,6 +333,8 @@ type (
 		Node            StatelessUploadManager
 		StatelessUserID int
 		NoCache         bool
+		// Fylvo: date to give a new folder instead of now (see WithModifiedAt).
+		ModifiedAt *time.Time
 	}
 
 	// Option 发送请求的额外设置

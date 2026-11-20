@@ -119,6 +119,7 @@ func (f *DBFS) Create(ctx context.Context, path *fs.URI, fileType types.FileType
 					args.Metadata = o.Metadata
 				}
 				args.IsSymbolic = o.isSymbolicLink
+				args.ModifiedAt = o.ModifiedAt
 			}
 
 			// Create folder if it is not the last element or the target is a folder
