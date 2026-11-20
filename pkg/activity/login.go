@@ -2,6 +2,7 @@ package activity
 
 import (
 	"context"
+	"crypto/sha256"
 	"strconv"
 	"sync"
 	"time"
@@ -69,7 +70,9 @@ func FailureWanted(ctx context.Context, typ Type, method, subject string) bool {
 	if info := requestinfo.RequestInfoFromContext(ctx); info != nil {
 		ip = info.IP
 	}
-	return failures.allow(strconv.Itoa(int(typ)) + "|" + method + "|" + subject + "|" + ip)
+	// A fixed size per key, however long the name a client sends.
+	sum := sha256.Sum256([]byte(strconv.Itoa(int(typ)) + "|" + method + "|" + subject + "|" + ip))
+	return failures.allow(string(sum[:]))
 }
 
 // RecordAccount logs an entry about the account uid done by the account itself.

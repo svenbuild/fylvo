@@ -411,7 +411,7 @@ func (n *shareNavigator) ExecuteHook(ctx context.Context, hookType fs.HookType, 
 				FileID:   file.ID(),
 				ParentID: file.Model.FileChildren,
 				ShareID:  n.share.ID,
-				Content:  types.ActivityContent{Name: file.Name()},
+				Content:  types.ActivityContent{Name: file.Name(), IsFolder: file.Type() == types.FileTypeFolder},
 			}
 			if !inventory.IsAnonymousUser(n.user) {
 				e.UserID = n.user.ID

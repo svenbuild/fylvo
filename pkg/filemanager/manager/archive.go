@@ -169,15 +169,6 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 		files = append(files, file)
 	}
 
-	// Fylvo: a guest of a link downloading a ZIP, see the share navigator.
-	if o.DryRun == nil {
-		for _, file := range files {
-			if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
-				m.l.Warning("Failed to execute navigator hooks: %s", err)
-			}
-		}
-	}
-
 	zipWriter := zip.NewWriter(writer)
 	defer zipWriter.Close()
 
@@ -222,6 +213,16 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 			}); err != nil {
 				m.l.Warning("Failed to walk folder %s: %s, skipping it...", file.Uri(false), err)
 				failed++
+			}
+		}
+	}
+
+	// Fylvo: a guest of a link downloaded a ZIP, see the share navigator. Logged once it is
+	// made, not when it was too big.
+	if o.DryRun == nil {
+		for _, file := range files {
+			if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
+				m.l.Warning("Failed to execute navigator hooks: %s", err)
 			}
 		}
 	}

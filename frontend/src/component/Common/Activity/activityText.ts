@@ -32,6 +32,10 @@ export const actorName = (t: TFunction, entry: ActivityEntry) => {
   return t("activity.someone", { ns: "application" });
 };
 
+// Apps are named by a text key, for example "application:oauth.fylvoDesktop".
+const appTarget = (entry: ActivityEntry) =>
+  entry.type === ActivityType.app_revoked || (entry.type === ActivityType.login && entry.content?.method === "app");
+
 const folderName = (t: TFunction, name?: string) => name || t("activity.myFiles", { ns: "application" });
 
 // activityText is the sentence for an entry.
@@ -53,8 +57,7 @@ export const activityText = (t: TFunction, entry: ActivityEntry) => {
     to: folderName(t, c.to_folder),
     kind: c.target ? t(`activity.share_${c.target}`, { ns: "application", defaultValue: c.target }) : "",
     method: c.method ? t(`activity.method_${c.method}`, { ns: "application", defaultValue: c.method }) : "",
-    // Apps are named by a text key, for example "application:oauth.fylvoDesktop".
-    target: c.target ? t(c.target, { defaultValue: c.target }) : "",
+    target: appTarget(entry) ? t(c.target ?? "", { defaultValue: c.target }) : (c.target ?? ""),
     defaultValue: t("activity.unknown", { ns: "application" }),
   });
 };

@@ -234,7 +234,11 @@ func (s *server) Close() {
 
 	// Fylvo: write the rest of the activity log, then close the database last (it used to be
 	// closed first, while requests and tasks could still run).
-	s.activity.CloseWithin(ctx)
+	// A limit of its own: the grace period may be used up by now, and the writer needs
+	// moments only.
+	activityCtx, cancelActivity := context.WithTimeout(context.Background(), 5*time.Second)
+	s.activity.CloseWithin(activityCtx)
+	cancelActivity()
 	if s.dbClient != nil {
 		s.logger.Info("Shutting down database connection...")
 		if err := s.dbClient.Close(); err != nil {
