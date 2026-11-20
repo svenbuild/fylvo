@@ -146,7 +146,7 @@ fun FilesScreen(
             }
             if (pending.conflicts.isEmpty()) {
                 // The transfer card above the files shows the batch as soon as it is queued.
-                withContext(Dispatchers.IO) { UploadWorker.enqueue(context, uris, parentUri, pending.names) }
+                withContext(Dispatchers.IO) { UploadWorker.enqueueSafely(context, uris, parentUri, pending.names) }
             } else {
                 pendingUpload = pending
             }
@@ -447,7 +447,7 @@ fun FilesScreen(
             pending = pending,
             onResolve = { r ->
                 pendingUpload = null
-                scope.launch(Dispatchers.IO) { UploadWorker.enqueue(context, r.uris, pending.parentUri, r.names, r.overwrite) }
+                scope.launch(Dispatchers.IO) { UploadWorker.enqueueSafely(context, r.uris, pending.parentUri, r.names, r.overwrite) }
             },
             onDismiss = { pendingUpload = null },
         )

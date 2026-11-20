@@ -123,7 +123,10 @@ class LoginViewModel(
         e is java.net.UnknownHostException -> UiText.Res(R.string.server_not_found)
         e is java.net.ConnectException -> UiText.Res(R.string.server_unreachable)
         e is java.net.SocketTimeoutException -> UiText.Res(R.string.server_timeout)
-        else -> e.message?.let { UiText.Raw(it) } ?: UiText.Res(R.string.login_failed)
+        else -> {
+            android.util.Log.w("FylvoLogin", "Sign-in failed: ${e.javaClass.simpleName}")
+            UiText.Res(R.string.login_failed)
+        }
     }
 
     /** A sign-in failure of our own wording (server messages travel as plain exceptions). */
@@ -224,6 +227,10 @@ class LoginViewModel(
         /** serializer.CodeTooManyAttempts (Fylvo): the server locks account and address for 15 minutes. */
         const val CODE_TOO_MANY_ATTEMPTS = 40900
 
+        /** serializer.CodeUserBaned / CodeUserNotActivated. */
+        const val CODE_USER_BLOCKED = 40017
+        const val CODE_USER_NOT_ACTIVATED = 40018
+
         /** serializer.Code2FACodeErr: wrong two-step code. */
         const val CODE_WRONG_2FA_CODE = 40022
 
@@ -244,7 +251,10 @@ class LoginViewModel(
             CODE_INVALID_PASSWORD -> UiText.Res(R.string.login_wrong_password)
             CODE_TOO_MANY_ATTEMPTS -> UiText.Res(R.string.login_too_many_attempts)
             CODE_WRONG_2FA_CODE -> UiText.Res(R.string.login_wrong_code)
-            else -> msg.ifBlank { null }?.let { UiText.Raw(it) } ?: UiText.Res(R.string.login_failed)
+            CODE_USER_BLOCKED -> UiText.Res(R.string.login_account_blocked)
+            CODE_USER_NOT_ACTIVATED -> UiText.Res(R.string.login_account_inactive)
+            // Other codes: the app's own words, the server text only in the log.
+            else -> UiText.Res(R.string.login_failed_code, code)
         }
 
         /** serializer.CodePasswordChangeRequired (Fylvo): data is the ticket for the new password. */

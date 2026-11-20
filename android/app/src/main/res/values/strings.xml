@@ -338,6 +338,10 @@
     <string name="new_password_length">Use 6 to 128 characters.</string>
     <string name="new_password_mismatch">The two passwords do not match.</string>
     <string name="new_password_same">Choose a password other than your current one.</string>
+    <string name="login_account_blocked">This account is blocked.</string>
+    <string name="login_account_inactive">This account is not activated yet.</string>
+    <string name="login_failed_code">Sign-in failed (error %d)</string>
+    <string name="upload_could_not_start">The upload could not be started. Is the phone storage full?</string>
     <string name="login_failed_http">Login failed (HTTP %d)</string>
     <string name="two_factor_without_session">Server requested 2FA without a session id</string>
     <string name="https_only">Fylvo only connects over https. Use the https:// address of your server.</string>

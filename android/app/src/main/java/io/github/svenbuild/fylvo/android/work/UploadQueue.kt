@@ -82,6 +82,10 @@ class UploadQueue(private val dir: File) {
         if (isValidId(id)) File(dir, "$id.json").delete()
     }
 
+    /** Ids of all stored batches. */
+    fun ids(): List<String> =
+        dir.listFiles { f -> f.name.endsWith(".json") }.orEmpty().map { it.name.removeSuffix(".json") }.filter(::isValidId)
+
     /** Batches whose file is older than [maxAgeMillis], for clean-up of ones no job runs for. */
     fun idsOlderThan(maxAgeMillis: Long, now: Long = System.currentTimeMillis()): List<String> =
         dir.listFiles { f -> f.name.endsWith(".json") }.orEmpty()

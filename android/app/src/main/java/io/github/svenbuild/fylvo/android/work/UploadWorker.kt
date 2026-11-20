@@ -12,7 +12,6 @@ import androidx.core.app.NotificationCompat
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
-import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.Data
 import androidx.work.ForegroundInfo
@@ -23,6 +22,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import io.github.svenbuild.fylvo.android.FylvoApp
@@ -50,8 +50,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     override suspend fun doWork(): Result {
         val app = applicationContext as FylvoApp
         val queue = queue(applicationContext)
-        val batchId = inputData.getString(KEY_BATCH_ID) ?: return Result.failure()
-        var batch = queue.load(batchId) ?: return Result.failure()
+        var batch = inputData.getString(KEY_BATCH_ID)?.let(queue::load)
+            ?: legacyBatch(queue)
+            // Nothing to do (the list is gone); success, so no other upload is affected.
+            ?: return Result.success(workDataOf(KEY_UPLOADED to 0, KEY_FAILED to 0))
         val parentUri = batch.parentUri
         val total = batch.items.size
 
@@ -64,27 +66,32 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 val item = batch.items[i]
 
                 // A session left by a run that was stopped half way: cancel it on the server, so
-                // its 0 B placeholder and lock go away before the file is sent again.
-                item.sessionId?.let { sessionId ->
-                    app.fileRepository.deleteUploadSession(sessionId, item.targetUri ?: CrUri.join(parentUri, item.name))
+                // its 0 B placeholder and lock go away before the file is sent again. If that does
+                // not work now, keep the id and try again later instead of hitting the lock.
+                val interrupted = item.sessionId != null
+                if (interrupted) {
+                    if (!cancelSession(app, item)) {
+                        if (runAttemptCount < MAX_ATTEMPTS) return Result.retry()
+                        lastError = applicationContext.localized().getString(R.string.upload_waits_for_network)
+                        batch = failRest(queue, batch)
+                        break
+                    }
                     batch = batch.with(i) { it.copy(sessionId = null, targetUri = null) }.also(queue::save)
                 }
 
                 report(item.name, i, total, sent = 0, size = 0, parentUri = parentUri, force = true)
-                val outcome = uploadOne(app, batch, i) { sessionId, targetUri ->
+                val outcome = uploadOne(app, batch, i, interrupted) { sessionId, targetUri ->
                     batch = batch.with(i) { it.copy(sessionId = sessionId, targetUri = targetUri) }.also(queue::save)
                 }
                 when (outcome) {
                     is Outcome.Done -> {
                         batch = batch.with(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null) }
                         queue.save(batch)
-                        releaseRead(item.uri)
                     }
                     is Outcome.Failed -> {
                         cancelSession(app, batch.items[i])
                         batch = batch.with(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null) }
                         queue.save(batch)
-                        releaseRead(item.uri)
                         lastError = outcome.message
                     }
                     is Outcome.TryLater -> {
@@ -92,10 +99,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                         // WorkManager runs the batch again when the network is back.
                         if (runAttemptCount < MAX_ATTEMPTS) return Result.retry()
                         cancelSession(app, batch.items[i])
-                        batch = batch.copy(items = batch.items.map {
-                            if (it.state == UploadItem.State.Pending) it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null) else it
-                        })
-                        queue.save(batch)
+                        batch = failRest(queue, batch)
                         lastError = outcome.message
                         break
                     }
@@ -104,9 +108,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         } catch (e: CancellationException) {
             // Stopped: by the person (cancel), or by the system, which runs the job again later.
             withContext(NonCancellable) {
-                val current = batch.next().takeIf { it >= 0 }?.let { batch.items[it] }
+                val index = batch.next()
+                val current = index.takeIf { it >= 0 }?.let { batch.items[it] }
                 if (current?.sessionId != null && cancelSession(app, current)) {
-                    batch = batch.with(batch.next()) { it.copy(sessionId = null, targetUri = null) }
+                    batch = batch.with(index) { it.copy(sessionId = null, targetUri = null) }
                     queue.save(batch)
                 }
                 if (isCancelledByPerson()) finish(queue, batch)
@@ -123,7 +128,23 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             KEY_FAILED to batch.failed,
             KEY_ERROR to lastError,
         )
-        return if (batch.failed == 0) Result.success(output) else Result.failure(output)
+        // Always success: the counts tell what happened. A failed job would also fail every job
+        // that waits for it in WorkManager.
+        return Result.success(output)
+    }
+
+    private fun failRest(queue: UploadQueue, batch: UploadBatch): UploadBatch =
+        batch.copy(items = batch.items.map {
+            if (it.state == UploadItem.State.Pending) it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null) else it
+        }).also(queue::save)
+
+    /** An upload queued by 1.0.0 (the file list in the job input): turn it into a batch. */
+    private fun legacyBatch(queue: UploadQueue): UploadBatch? {
+        val uris = inputData.getStringArray(LEGACY_KEY_URIS)?.filterNotNull() ?: return null
+        val parent = inputData.getString(KEY_PARENT_URI) ?: return null
+        val names = inputData.getStringArray(LEGACY_KEY_NAMES)?.filterNotNull()?.takeIf { it.size == uris.size }
+            ?: uris.map { resolveDisplayName(Uri.parse(it)) }
+        return queue.create(uris, names, parent, inputData.getBoolean(LEGACY_KEY_OVERWRITE, false))
     }
 
     private sealed interface Outcome {
@@ -135,7 +156,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     }
 
     private suspend fun uploadOne(
-        app: FylvoApp, batch: UploadBatch, i: Int, onSession: (String, String) -> Unit,
+        app: FylvoApp, batch: UploadBatch, i: Int, interrupted: Boolean, onSession: (String, String) -> Unit,
     ): Outcome {
         val item = batch.items[i]
         val uri = Uri.parse(item.uri)
@@ -162,6 +183,9 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             Outcome.TryLater(applicationContext.localized().getString(R.string.upload_waits_for_network))
         } catch (e: ApiException) {
             Log.w(LOG_TAG, "Upload refused: code ${e.code}")
+            // The answer to the last part of an earlier attempt got lost, but the server had the
+            // whole file: the name was free when the upload was queued, so it is this file.
+            if (interrupted && !batch.overwrite && e.code == CODE_OBJECT_EXISTS) return Outcome.Done
             if (e.isTransient) Outcome.TryLater(describe(e, item.name)) else Outcome.Failed(describe(e, item.name))
         } catch (e: Exception) {
             Log.w(LOG_TAG, "Upload failed: ${e.javaClass.simpleName}")
@@ -177,19 +201,16 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         return app.fileRepository.deleteUploadSession(sessionId, item.targetUri ?: return true)
     }
 
-    private fun isCancelledByPerson(): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && stopReason == WorkInfo.STOP_REASON_CANCELLED_BY_APP
-
-    /** The batch is over: forget its list and give the read permissions back. */
-    private fun finish(queue: UploadQueue, batch: UploadBatch) {
-        batch.items.forEach { releaseRead(it.uri) }
-        queue.delete(batch.id)
+    /** Cancelled by the person (or sign-out), as opposed to a stop by the system. Any Android version. */
+    private suspend fun isCancelledByPerson(): Boolean = withContext(Dispatchers.IO) {
+        runCatching { WorkManager.getInstance(applicationContext).getWorkInfoById(id).get()?.state == WorkInfo.State.CANCELLED }
+            .getOrDefault(false)
     }
 
-    private fun releaseRead(uri: String) {
-        runCatching {
-            applicationContext.contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
+    /** The batch is over: forget its list and give back read permissions no other upload needs. */
+    private fun finish(queue: UploadQueue, batch: UploadBatch) {
+        queue.delete(batch.id)
+        releaseUnused(applicationContext, queue, batch.items.map { it.uri })
     }
 
     /**
@@ -284,7 +305,11 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         /** Id of the [UploadBatch] with the files; the list itself is not in the job's input. */
         const val KEY_BATCH_ID = "batch_id"
         const val PARENT_TAG_PREFIX = "upload-parent:"
-        private const val UNIQUE_WORK = "uploads"
+        private const val BATCH_TAG_PREFIX = "upload-batch:"
+        // Input of jobs queued by 1.0.0.
+        private const val LEGACY_KEY_URIS = "uris"
+        private const val LEGACY_KEY_NAMES = "names"
+        private const val LEGACY_KEY_OVERWRITE = "overwrite"
         private const val MAX_ATTEMPTS = 8
         private const val LOG_TAG = "FylvoUpload"
         const val KEY_PARENT_URI = "parent_uri"
@@ -319,16 +344,19 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         ) {
             if (uris.isEmpty()) return
             val fileNames = names ?: uris.map { displayName(context, it) }
-            uris.forEach { uri ->
-                // Only documents from the system picker can be kept; shared files keep the
-                // permission they came with. Android caps kept permissions (128 to 512 per app).
-                runCatching {
-                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            // Keep the read permissions while Android's cap allows it with room to spare (it drops
+            // the oldest ones beyond, e.g. the folder-sync folder). Only picker documents can be
+            // kept; without it a file can still be read until the app is closed.
+            val kept = context.contentResolver.persistedUriPermissions.size
+            if (kept + uris.size <= grantBudget()) {
+                uris.forEach { uri ->
+                    runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                 }
             }
             val batch = queue(context).create(uris.map { it.toString() }, fileNames, parentUri, overwrite)
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
                 .addTag(TAG)
+                .addTag(BATCH_TAG_PREFIX + batch.id)
                 // The target folder as a tag: a waiting job has no progress data to read it from.
                 .addTag(PARENT_TAG_PREFIX + parentUri)
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
@@ -336,21 +364,60 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .setInputData(workDataOf(KEY_BATCH_ID to batch.id, KEY_PARENT_URI to parentUri))
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(UNIQUE_WORK, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+            // Each batch is its own job: cancelling or failing one never touches another.
+            WorkManager.getInstance(context).enqueue(request)
+        }
+
+        /**
+         * [enqueue] for screens: never throws. If the upload cannot be queued (for example the
+         * phone's storage is full), the person gets a short message instead of a crash.
+         */
+        fun enqueueSafely(
+            context: Context,
+            uris: List<Uri>,
+            parentUri: String,
+            names: List<String>? = null,
+            overwrite: Boolean = false,
+        ) {
+            try {
+                enqueue(context, uris, parentUri, names, overwrite)
+            } catch (e: Exception) {
+                Log.w(LOG_TAG, "Could not queue an upload: ${e.javaClass.simpleName}")
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(context, context.localized().getString(R.string.upload_could_not_start), android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
+        /** Below Android 11 the cap is 128 kept permissions, from Android 11 on 512. */
+        private fun grantBudget() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) 400 else 100
+
+        /** Gives back the read permission of [uris] unless a waiting upload still lists them. */
+        fun releaseUnused(context: Context, queue: UploadQueue, uris: List<String>) {
+            val stillNeeded = queue.ids().flatMap { id -> queue.load(id)?.items?.map { it.uri }.orEmpty() }.toSet()
+            uris.filter { it !in stillNeeded }.forEach { uri ->
+                runCatching {
+                    context.contentResolver.releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
         }
 
         fun queue(context: Context) = UploadQueue(File(context.filesDir, "upload_batches"))
 
-        /** Lists no job will finish any more (older than a week), with their permissions. */
+        /**
+         * Lists no job will finish any more (older than a week and without a waiting or running
+         * job), with their permissions. Runs off the main thread.
+         */
         fun cleanUpOldBatches(context: Context) {
             val queue = queue(context)
-            queue.idsOlderThan(TimeUnit.DAYS.toMillis(7)).forEach { id ->
-                queue.load(id)?.items?.forEach { item ->
-                    runCatching {
-                        context.contentResolver.releasePersistableUriPermission(Uri.parse(item.uri), Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                }
+            val live = WorkManager.getInstance(context).getWorkInfosByTag(TAG).get()
+                .filter { !it.state.isFinished }
+                .flatMap { info -> info.tags.filter { it.startsWith(BATCH_TAG_PREFIX) }.map { it.removePrefix(BATCH_TAG_PREFIX) } }
+                .toSet()
+            queue.idsOlderThan(TimeUnit.DAYS.toMillis(7)).filter { it !in live }.forEach { id ->
+                val uris = queue.load(id)?.items?.map { it.uri }.orEmpty()
                 queue.delete(id)
+                releaseUnused(context, queue, uris)
             }
         }
 

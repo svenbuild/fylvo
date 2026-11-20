@@ -71,7 +71,7 @@ class MainActivity : AppCompatActivity() {
         if (accepted.isNotEmpty()) {
             // Fylvo: names and the upload list off the main thread (a share can hold hundreds).
             val context = applicationContext
-            lifecycleScope.launch(Dispatchers.IO) { UploadWorker.enqueue(context, accepted, CrUri.MY_PREFIX) }
+            lifecycleScope.launch(Dispatchers.IO) { UploadWorker.enqueueSafely(context, accepted, CrUri.MY_PREFIX) }
         }
     }
 }

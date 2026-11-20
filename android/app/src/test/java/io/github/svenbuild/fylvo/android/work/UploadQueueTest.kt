@@ -106,4 +106,14 @@ class UploadQueueTest {
     fun everyFileNeedsAName() {
         UploadQueue(tmp.root).create(pickedUris(2), names(1), "cloudreve://my", overwrite = false)
     }
+
+    @Test
+    fun idsListsEveryStoredBatch() {
+        val queue = UploadQueue(tmp.root)
+        val a = queue.create(pickedUris(1), names(1), "cloudreve://my", overwrite = false)
+        val b = queue.create(pickedUris(2), names(2), "cloudreve://my", overwrite = false)
+        assertEquals(setOf(a.id, b.id), queue.ids().toSet())
+        queue.delete(a.id)
+        assertEquals(listOf(b.id), queue.ids())
+    }
 }
