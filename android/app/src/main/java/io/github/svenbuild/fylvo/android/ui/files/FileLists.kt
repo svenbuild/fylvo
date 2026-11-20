@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -57,6 +58,7 @@ internal fun FileList(
     val unknownDate = stringResource(R.string.unknown_date)
     val unknown = stringResource(R.string.unknown)
     val trashSubtitle = stringResource(R.string.trash_row_subtitle)
+    val uploadContext = LocalContext.current.applicationContext
     // Fylvo: the upload card is put above the first file; near the top, show it instead of
     // keeping the first file in place (which pushed the card out of view).
     val hasUploads = state.uploadsHere.isNotEmpty()
@@ -66,7 +68,7 @@ internal fun FileList(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 88.dp),
     ) {
-        uploadItems(state, viewModel)
+        uploadItems(state, viewModel, uploadContext)
         if (state.virtual && !state.inTrash) {
             // Timeline views read by day, like the Files app's category lists.
             state.files.groupBy { dayKey(it.updatedAt) }.forEach { (day, group) ->
@@ -125,6 +127,7 @@ internal fun FileGrid(
     actionsFor: (FileObject) -> FileActions,
 ) {
     val gallery = state.category?.gallery == true
+    val uploadContext = LocalContext.current.applicationContext
     val hasUploads = state.uploadsHere.isNotEmpty()
     LaunchedEffect(hasUploads) { if (hasUploads && gridState.firstVisibleItemIndex <= 1) gridState.scrollToItem(0) }
     LazyVerticalGrid(
@@ -137,7 +140,7 @@ internal fun FileGrid(
         verticalArrangement = Arrangement.spacedBy(if (gallery) 3.dp else 4.dp),
     ) {
         if (state.uploadsHere.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }, key = "uploads") { UploadsCard(state.uploadsHere, viewModel::cancelUpload) }
+            item(span = { GridItemSpan(maxLineSpan) }, key = "uploads") { UploadsCard(state.uploadsHere) { id -> viewModel.cancelUpload(uploadContext, id) } }
         }
         items(state.files, key = { it.id + it.path }) { file ->
             FileGridItem(
@@ -157,9 +160,9 @@ internal fun FileGrid(
     }
 }
 
-private fun LazyListScope.uploadItems(state: FilesUiState, viewModel: FilesViewModel) {
+private fun LazyListScope.uploadItems(state: FilesUiState, viewModel: FilesViewModel, uploadContext: android.content.Context) {
     if (state.uploadsHere.isNotEmpty()) {
-        item(key = "uploads") { UploadsCard(state.uploadsHere, viewModel::cancelUpload) }
+        item(key = "uploads") { UploadsCard(state.uploadsHere) { id -> viewModel.cancelUpload(uploadContext, id) } }
     }
 }
 

@@ -116,4 +116,16 @@ class UploadQueueTest {
         queue.delete(a.id)
         assertEquals(listOf(b.id), queue.ids())
     }
+
+    @Test
+    fun aBatchRemembersItsAccountAndCanUseAGivenId() {
+        val queue = UploadQueue(tmp.root)
+        val id = java.util.UUID.randomUUID().toString()
+        queue.create(pickedUris(1), names(1), "cloudreve://my", overwrite = false, account = "https://cloud.example a@example.org", id = id)
+        val loaded = queue.load(id)!!
+        assertEquals("https://cloud.example a@example.org", loaded.account)
+        // Lists written before accounts were stored still load.
+        tmp.root.resolve("$id.json").writeText(tmp.root.resolve("$id.json").readText().replace(Regex(""",?\s*"account":"[^"]*""""), ""))
+        assertNull(queue.load(id)!!.account)
+    }
 }

@@ -367,8 +367,13 @@ class FilesViewModel(
         }
     }
 
-    fun cancelUpload(id: java.util.UUID) {
-        workManager.cancelWorkById(id)
+    fun cancelUpload(context: android.content.Context, id: java.util.UUID) {
+        // Off the main thread and beyond this screen; a waiting batch also gets its server
+        // session cleaned up.
+        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { UploadWorker.cancel(context, id) }
+        }
     }
 
     /**

@@ -18,6 +18,8 @@ data class UploadBatch(
     val parentUri: String,
     val overwrite: Boolean = false,
     val items: List<UploadItem>,
+    /** The account it was queued for ("server email"); a batch never uploads into another. */
+    val account: String? = null,
 ) {
     /** Index of the next file to upload, or -1 when every file is done or failed. */
     fun next(): Int = items.indexOfFirst { it.state == UploadItem.State.Pending }
@@ -49,13 +51,21 @@ class UploadQueue(private val dir: File) {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    fun create(uris: List<String>, names: List<String>, parentUri: String, overwrite: Boolean): UploadBatch {
+    fun create(
+        uris: List<String>,
+        names: List<String>,
+        parentUri: String,
+        overwrite: Boolean,
+        account: String? = null,
+        id: String = UUID.randomUUID().toString(),
+    ): UploadBatch {
         require(uris.size == names.size) { "every file needs a name" }
         val batch = UploadBatch(
-            id = UUID.randomUUID().toString(),
+            id = id,
             parentUri = parentUri,
             overwrite = overwrite,
             items = uris.zip(names) { uri, name -> UploadItem(uri, name) },
+            account = account,
         )
         save(batch)
         return batch

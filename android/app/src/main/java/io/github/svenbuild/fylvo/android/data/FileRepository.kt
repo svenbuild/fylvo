@@ -290,7 +290,9 @@ class FileRepository(private val api: ApiClient) {
         if (session.rapidUploaded) return session
         // Fylvo: the caller remembers the session, so an upload that stops half way can be
         // cancelled on the server instead of leaving a locked 0 B placeholder.
-        onSession(session.sessionId, targetUri)
+        // The server may store the file under another name (e.g. in a shared folder where names
+        // are made unique); the session belongs to the address it answers with.
+        onSession(session.sessionId, session.uri.ifEmpty { targetUri })
 
         val urls = session.uploadUrls
         // Local/slave policies return no presigned URLs: chunks go to the
@@ -355,14 +357,23 @@ class FileRepository(private val api: ApiClient) {
      * Returns false when it did not work (no network, session already gone); the server also
      * removes abandoned placeholders by itself after 48 hours.
      */
-    suspend fun deleteUploadSession(sessionId: String, targetUri: String): Boolean = runCatching {
+    suspend fun deleteUploadSession(sessionId: String, targetUri: String): Boolean = try {
         val resp = api.service().deleteUploadSession(
             io.github.svenbuild.fylvo.android.api.DeleteUploadSessionRequest(id = sessionId, uri = targetUri)
         )
-        val ok = resp.isSuccessful
-        if (ok) checkEnvelope(resp.body()) else resp.body()?.close()
-        ok
-    }.getOrElse { e -> if (e is kotlinx.coroutines.CancellationException) throw e else false }
+        resp.body()?.close()
+        // A clear answer of the server (done, or "no such session / placeholder") leaves nothing
+        // to wait for; only server trouble does.
+        resp.code() !in 500..599
+    } catch (e: java.io.IOException) {
+        false // no network: try again later
+    }
+
+    /** Size of the file at [uri] on the server, or null when it cannot be read. */
+    suspend fun sizeOf(uri: String): Long? = runCatching {
+        val body = api.service().fileInfo(uri).body()
+        if (body?.code == 0) body.data?.size else null
+    }.getOrElse { e -> if (e is kotlinx.coroutines.CancellationException) throw e else null }
 
     /** Throws when a raw response body is a JSON envelope with a non-zero code. */
     private fun checkEnvelope(body: okhttp3.ResponseBody?) {

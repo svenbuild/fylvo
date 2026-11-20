@@ -246,14 +246,14 @@ class LoginViewModel(
             else -> null
         }
 
-        /** Known sign-in refusals in the app's own words (and language); others as the server says. */
+        /** Sign-in refusals in the app's own words and language; the server's text is never shown. */
         fun serverError(code: Int, msg: String): UiText = when (code) {
             CODE_INVALID_PASSWORD -> UiText.Res(R.string.login_wrong_password)
             CODE_TOO_MANY_ATTEMPTS -> UiText.Res(R.string.login_too_many_attempts)
             CODE_WRONG_2FA_CODE -> UiText.Res(R.string.login_wrong_code)
             CODE_USER_BLOCKED -> UiText.Res(R.string.login_account_blocked)
             CODE_USER_NOT_ACTIVATED -> UiText.Res(R.string.login_account_inactive)
-            // Other codes: the app's own words, the server text only in the log.
+            // Other codes: the app's own words with the code.
             else -> UiText.Res(R.string.login_failed_code, code)
         }
 
