@@ -4,6 +4,7 @@ import { closeSnackbar, enqueueSnackbar, SnackbarAction, SnackbarKey } from "not
 import {
   getFileDirectLinks,
   getFileEntityUrl,
+  getFileInfo,
   getFileList,
   getFileThumb,
   sendCreateFile,
@@ -1009,7 +1010,7 @@ export function openSidebar(index: number, file: FileResponse): AppThunk {
 }
 
 export function setFileVersion(index: number, file: FileResponse, version: string): AppThunk<Promise<void>> {
-  return async (dispatch, _getState) => {
+  return async (dispatch, getState) => {
     await dispatch(
       setCurrentVersion({
         uri: file.path,
@@ -1017,20 +1018,36 @@ export function setFileVersion(index: number, file: FileResponse, version: strin
       }),
     );
 
-    dispatch(
-      fileUpdated({
-        index,
-        value: [
-          {
-            file: {
-              ...file,
-              primary_entity: version,
-            },
-            oldPath: file.path,
-          },
-        ],
-      }),
-    );
+    // Size and date now come from the other version: take them from the server. The path stays
+    // the one the views know the file by; fields the info call leaves out (capability) stay.
+    let fresh: FileResponse;
+    try {
+      fresh = await dispatch(getFileInfo({ uri: file.path }, true));
+    } catch (e) {
+      console.warn("Failed to reload file after changing its version", e);
+      // Only the version changes; size and date stay as the list has them now.
+      const current = getState().fileManager[index].list?.files.find((f) => f.path === file.path) ?? file;
+      dispatch(fileUpdated({ index, value: [{ file: { ...current, primary_entity: version }, oldPath: file.path }] }));
+      return;
+    }
+
+    // Another file took this path in the meantime: leave the views alone.
+    if (fresh.id !== file.id) {
+      return;
+    }
+
+    const updated = { ...file, ...fresh, path: file.path };
+    dispatch(fileUpdated({ index, value: [{ file: updated, oldPath: file.path }] }));
+
+    const { sidebarOpen, sidebarTarget } = getState().globalState;
+    if (
+      sidebarOpen &&
+      typeof sidebarTarget === "object" &&
+      sidebarTarget?.id === file.id &&
+      sidebarTarget.path === file.path
+    ) {
+      dispatch(setSidebar({ open: true, target: updated }));
+    }
   };
 }
 
