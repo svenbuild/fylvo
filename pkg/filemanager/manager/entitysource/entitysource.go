@@ -367,7 +367,7 @@ func (f *entitySource) Serve(w http.ResponseWriter, r *http.Request, opts ...Ent
 				return nil
 			},
 			ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
-				f.l.Error("Reverse proxy error in %q: %s", request.URL.String(), err)
+				f.l.Error("Reverse proxy error in %q: %s", logging.RedactURL(request.URL.String()), logging.RedactText(err.Error()))
 				writer.WriteHeader(http.StatusBadGateway)
 				writer.Write([]byte("[Cloudreve] Bad Gateway"))
 			},

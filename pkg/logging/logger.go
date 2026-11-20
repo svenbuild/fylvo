@@ -170,7 +170,7 @@ var colors = map[string]func(a ...interface{}) string{
 	"Debug": color.New(color.FgWhite).Add(color.Bold).SprintFunc(),
 }
 
-// Request helper fund to log request.
+// Request logs a request. Secrets in path and err are replaced, see RedactURL.
 func Request(l Logger, incoming bool, code int, method, clientIP, path, err string, start time.Time) {
 	param := gin.LogFormatterParams{
 		StatusCode: code,
@@ -197,9 +197,9 @@ func Request(l Logger, incoming bool, code int, method, clientIP, path, err stri
 		time.Now().Sub(start),
 		clientIP,
 		methodColor, method, resetColor,
-		path,
+		RedactURL(path),
 	)
 	if err != "" {
-		l.Error("%s", err)
+		l.Error("%s", RedactText(err))
 	}
 }
