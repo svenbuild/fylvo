@@ -3,6 +3,9 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -127,7 +130,8 @@ func Logging() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Start timer
 		start := time.Now()
-		path := c.Request.URL.Path
+		// Escaped, so a "?" or "#" in a file name does not look like the start of the query.
+		path := c.Request.URL.EscapedPath()
 		raw := c.Request.URL.RawQuery
 
 		// Process request
@@ -141,6 +145,16 @@ func Logging() gin.HandlerFunc {
 		logging.Request(l, true, c.Writer.Status(), c.Request.Method, c.ClientIP(), path,
 			c.Errors.ByType(gin.ErrorTypePrivate).String(), start)
 	}
+}
+
+// Recovery is gin.Recovery without its dump of the raw request (on a broken pipe), which would
+// print the query with its secrets and the Cookie header.
+func Recovery() gin.HandlerFunc {
+	return gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, err any) {
+		logging.FromContext(c).Error("Panic recovered in %s %s: %v\n%s",
+			c.Request.Method, logging.RedactURL(c.Request.URL.EscapedPath()), err, debug.Stack())
+		c.AbortWithStatus(http.StatusInternalServerError)
+	})
 }
 
 func ContentCORS() gin.HandlerFunc {

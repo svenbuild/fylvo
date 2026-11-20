@@ -43,7 +43,7 @@ func InitRouter(dep dependency.Dep) *gin.Engine {
 func newGinEngine(dep dependency.Dep) *gin.Engine {
 	r := gin.New()
 	r.ContextWithFallback = true
-	r.Use(gin.Recovery())
+	r.Use(middleware.Recovery())
 	trustProxies(r, dep.Logger(), dep.ConfigProvider().System().ProxyHeader)
 	r.Use(securityHeaders())
 	r.Use(middleware.InitializeHandling(dep))

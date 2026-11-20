@@ -69,7 +69,8 @@ func NewEnvOverrideStore(next SettingStoreAdapter, l logging.Logger) SettingStor
 		if strings.HasPrefix(kv[0], EnvSettingOverwritePrefix) {
 			key := strings.TrimPrefix(kv[0], EnvSettingOverwritePrefix)
 			defaults[key] = kv[1]
-			l.Info("Override setting %q with value %q from environment", key, kv[1])
+			// Fylvo: only the key, the value can be a password.
+			l.Info("Override setting %q from environment", key)
 		}
 	}
 

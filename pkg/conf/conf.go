@@ -191,7 +191,8 @@ func getOverrideConfFromEnv(l logging.Logger) string {
 		}
 
 		confMaps[sectionKey[0]][sectionKey[1]] = configValue
-		l.Info("Override config %q = %q", configKey, configValue)
+		// Fylvo: only the key, the value can be a password.
+		l.Info("Override config %q from environment", configKey)
 	}
 
 	// generate ini content

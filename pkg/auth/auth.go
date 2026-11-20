@@ -7,12 +7,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/application/constants"
+	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 )
 
@@ -180,33 +180,9 @@ func CheckURI(ctx context.Context, instance Auth, url *url.URL) error {
 	return instance.Check(getUrlSignContent(ctx, url), sign)
 }
 
+// RedactSensitiveValues replaces secrets in the addresses in an error message.
 func RedactSensitiveValues(errorMessage string) string {
-	// Regular expression to match URLs
-	urlRegex := regexp.MustCompile(`https?://[^\s]+`)
-	// Find all URLs in the error message
-	urls := urlRegex.FindAllString(errorMessage, -1)
-
-	for _, urlStr := range urls {
-		// Parse the URL
-		parsedURL, err := url.Parse(urlStr)
-		if err != nil {
-			continue
-		}
-
-		// Get the query parameters
-		queryParams := parsedURL.Query()
-
-		// Redact the 'sign' parameter if it exists
-		if _, exists := queryParams["sign"]; exists {
-			queryParams.Set("sign", "REDACTED")
-			parsedURL.RawQuery = queryParams.Encode()
-		}
-
-		// Replace the original URL with the redacted one in the error message
-		errorMessage = strings.Replace(errorMessage, urlStr, parsedURL.String(), -1)
-	}
-
-	return errorMessage
+	return logging.RedactText(errorMessage)
 }
 
 func getUrlSignContent(ctx context.Context, url *url.URL) string {
