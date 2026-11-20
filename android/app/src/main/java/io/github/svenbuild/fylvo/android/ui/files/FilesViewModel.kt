@@ -11,6 +11,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -1237,16 +1240,37 @@ class FilesViewModel(
         }
     }
 
+    /**
+     * Fylvo: one request per file at a time. The server makes a missing preview on the first
+     * request; two at once for the same file made it twice, and the losing one deleted the
+     * winner's preview file.
+     */
+    private val thumbInFlight = ConcurrentHashMap<String, Deferred<String?>>()
+
     suspend fun thumbUrl(file: FileObject): String? {
         if (!file.mayHaveThumbnail || file.id in noThumb) return null
         thumbCache[file.id]?.let { (url, fetchedAt) ->
             if (System.currentTimeMillis() - fetchedAt < THUMB_TTL_MS) return url
         }
-        val url = repo.thumbUrl(file.path)
-        if (url == null) noThumb.add(file.id)
-        else thumbCache[file.id] = url to System.currentTimeMillis()
-        return url
+        val request = thumbInFlight.computeIfAbsent(file.id) {
+            viewModelScope.async(start = CoroutineStart.LAZY) {
+                try {
+                    // Fylvo: only a clear "no preview" is remembered; anything else is asked again later.
+                    val url = runCatching { repo.thumbUrl(file.path) }.getOrElse { return@async null }
+                    if (url == null) noThumb.add(file.id)
+                    else thumbCache[file.id] = url to System.currentTimeMillis()
+                    url
+                } finally {
+                    thumbInFlight.remove(file.id)
+                }
+            }
+        }
+        request.start()
+        return request.await()
     }
+
+    /** Fylvo: true once the server said the file has no preview. */
+    fun hasNoThumb(file: FileObject): Boolean = !file.mayHaveThumbnail || file.id in noThumb
 
     fun consumeSnackbar() {
         _state.value = _state.value.copy(snackbar = null)

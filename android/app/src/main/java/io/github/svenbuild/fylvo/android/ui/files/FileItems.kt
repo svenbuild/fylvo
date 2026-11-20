@@ -85,13 +85,21 @@ private fun selectionState(selecting: Boolean, selected: Boolean): String? = whe
     else -> stringResource(R.string.state_not_selected)
 }
 
+/** Fylvo: waits before asking again for a preview whose request failed. */
+private val THUMB_RETRY_DELAYS_MS = longArrayOf(3_000, 10_000, 30_000, 0)
+
 @Composable
 fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
     // Signed URLs expire; re-key on a coarse time bucket so any recomposition
     // past the TTL refetches instead of sticking for the VM's lifetime.
     val bucket = System.currentTimeMillis() / THUMB_TTL_MS
     val url by produceState<String?>(initialValue = null, file.id, bucket) {
-        value = viewModel.thumbUrl(file)
+        // Fylvo: a failed request (network, busy server) is tried again a few times.
+        for (wait in THUMB_RETRY_DELAYS_MS) {
+            value = viewModel.thumbUrl(file)
+            if (value != null || viewModel.hasNoThumb(file)) break
+            kotlinx.coroutines.delay(wait)
+        }
     }
     return url
 }

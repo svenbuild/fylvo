@@ -44,6 +44,8 @@ class ApiException(val code: Int, message: String, val innerCodes: List<Int> = e
 
 private const val CODE_OBJECT_EXISTS = ApiException.CODE_OBJECT_EXISTS
 private const val MAX_CHUNK_BYTES = 64L * 1024 * 1024
+/** Fylvo: the server's answer when a file has no preview ("Entity not exist"). */
+private const val CODE_NO_THUMB = 40077
 
 class FileRepository(private val api: ApiClient) {
 
@@ -165,9 +167,15 @@ class FileRepository(private val api: ApiClient) {
         }
     }
 
-    /** Resolves a thumbnail URL for the file, or null when none exists. */
-    suspend fun thumbUrl(uri: String): String? =
-        runCatching { api.service().thumb(uri).unwrap().url }.getOrNull()
+    /**
+     * Resolves a thumbnail URL for the file, or null when the server says there is none.
+     * Fylvo: any other failure (network, a busy server) throws, so it can be asked again later.
+     */
+    suspend fun thumbUrl(uri: String): String? = try {
+        api.service().thumb(uri).unwrap().url
+    } catch (e: ApiException) {
+        if (e.code == CODE_NO_THUMB) null else throw e
+    }
 
     /**
      * Creates a share link. [expireSeconds] 0 = never; [password] empty = public.
