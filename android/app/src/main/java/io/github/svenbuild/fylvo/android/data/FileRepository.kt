@@ -272,6 +272,7 @@ class FileRepository(private val api: ApiClient) {
         overwrite: Boolean = false,
         mimeType: String? = null,
         lastModified: Long = localFile.lastModified(),
+        onSession: (sessionId: String, targetUri: String) -> Unit = { _, _ -> },
         onProgress: (sent: Long, total: Long) -> Unit = { _, _ -> },
     ): UploadSessionResponse {
         val targetUri = CrUri.join(remoteParentUri, remoteName)
@@ -287,6 +288,9 @@ class FileRepository(private val api: ApiClient) {
         )
 
         if (session.rapidUploaded) return session
+        // Fylvo: the caller remembers the session, so an upload that stops half way can be
+        // cancelled on the server instead of leaving a locked 0 B placeholder.
+        onSession(session.sessionId, targetUri)
 
         val urls = session.uploadUrls
         // Local/slave policies return no presigned URLs: chunks go to the
@@ -344,6 +348,21 @@ class FileRepository(private val api: ApiClient) {
         }
         return session
     }
+
+    /**
+     * Fylvo: cancels the upload session [sessionId] of the file [targetUri] on the server, the call
+     * the web uploader makes when a person cancels. The placeholder file and its lock go away.
+     * Returns false when it did not work (no network, session already gone); the server also
+     * removes abandoned placeholders by itself after 48 hours.
+     */
+    suspend fun deleteUploadSession(sessionId: String, targetUri: String): Boolean = runCatching {
+        val resp = api.service().deleteUploadSession(
+            io.github.svenbuild.fylvo.android.api.DeleteUploadSessionRequest(id = sessionId, uri = targetUri)
+        )
+        val ok = resp.isSuccessful
+        if (ok) checkEnvelope(resp.body()) else resp.body()?.close()
+        ok
+    }.getOrElse { e -> if (e is kotlinx.coroutines.CancellationException) throw e else false }
 
     /** Throws when a raw response body is a JSON envelope with a non-zero code. */
     private fun checkEnvelope(body: okhttp3.ResponseBody?) {

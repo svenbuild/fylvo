@@ -49,6 +49,8 @@ class FylvoApp : Application() {
         syncFolderSettings = SyncFolderSettings(this)
         viewSettings = ViewSettings(this)
         appUpdater = AppUpdater(this, apiClient)
+        // Upload lists no job will finish any more; off the main thread.
+        Thread { runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cleanUpOldBatches(this) } }.start()
     }
 
     /**
@@ -88,6 +90,8 @@ class FylvoApp : Application() {
             )
             withContext(Dispatchers.IO) {
                 filesDir.resolve("offline").deleteRecursively()
+                // Lists of uploads that were still waiting (their jobs are cancelled above).
+                filesDir.resolve("upload_batches").deleteRecursively()
                 // Also removes cacheDir/updates, the downloaded app update.
                 cacheDir.listFiles()?.forEach { it.deleteRecursively() }
             }

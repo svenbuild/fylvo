@@ -356,5 +356,7 @@
     <string name="channel_uploads">Uploads</string>
     <string name="file_exists_in_folder">%s ist in diesem Ordner schon vorhanden</string>
     <string name="not_enough_storage">Nicht genug Speicherplatz für %s</string>
+    <string name="could_not_read_file">%s konnte nicht gelesen werden. Bitte erneut auswählen.</string>
+    <string name="upload_waits_for_network">Warte auf die Verbindung, um den Rest hochzuladen.</string>
     <string name="could_not_upload">%s konnte nicht hochgeladen werden</string>
 </resources>

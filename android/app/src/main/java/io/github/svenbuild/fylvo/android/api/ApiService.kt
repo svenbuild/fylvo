@@ -75,6 +75,10 @@ interface ApiService {
     @PUT("api/v4/file/upload")
     suspend fun createUploadSession(@Body request: CreateUploadSessionRequest): Response<ApiResponse<UploadSessionResponse>>
 
+    /** Cancels an unfinished upload session, so its placeholder file and lock go away. */
+    @HTTP(method = "DELETE", path = "api/v4/file/upload", hasBody = true)
+    suspend fun deleteUploadSession(@Body request: DeleteUploadSessionRequest): Response<ResponseBody>
+
     // Chunk targets are fully resolved URLs returned in upload_urls —
     // same-origin for local policies, presigned for remote policies.
     @POST

@@ -210,6 +210,12 @@ data class CreateUploadSessionRequest(
 )
 
 @Serializable
+data class DeleteUploadSessionRequest(
+    val id: String,
+    val uri: String,
+)
+
+@Serializable
 data class UploadSessionResponse(
     @SerialName("session_id") val sessionId: String = "",
     @SerialName("upload_id") val uploadId: String = "",

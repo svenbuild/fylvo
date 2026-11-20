@@ -79,7 +79,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.ViewMode
@@ -134,14 +136,20 @@ fun FilesScreen(
 
     val uploadLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        val names = uris.map { UploadWorker.displayName(context, it) }
+        val parentUri = state.currentUri
         val existing = state.files.map { it.name }.toSet()
-        val pending = PendingUpload(uris, names, state.currentUri, existing)
-        if (pending.conflicts.isEmpty()) {
-            // The transfer card above the files shows the batch as soon as it is queued.
-            UploadWorker.enqueue(context, uris, state.currentUri, names)
-        } else {
-            pendingUpload = pending
+        // Fylvo: names and the upload list are read and written off the main thread; with a few
+        // hundred picked photos that takes a moment and must not freeze the screen.
+        scope.launch {
+            val pending = withContext(Dispatchers.IO) {
+                PendingUpload(uris, uris.map { UploadWorker.displayName(context, it) }, parentUri, existing)
+            }
+            if (pending.conflicts.isEmpty()) {
+                // The transfer card above the files shows the batch as soon as it is queued.
+                withContext(Dispatchers.IO) { UploadWorker.enqueue(context, uris, parentUri, pending.names) }
+            } else {
+                pendingUpload = pending
+            }
         }
     }
 
@@ -439,7 +447,7 @@ fun FilesScreen(
             pending = pending,
             onResolve = { r ->
                 pendingUpload = null
-                UploadWorker.enqueue(context, r.uris, pending.parentUri, r.names, r.overwrite)
+                scope.launch(Dispatchers.IO) { UploadWorker.enqueue(context, r.uris, pending.parentUri, r.names, r.overwrite) }
             },
             onDismiss = { pendingUpload = null },
         )

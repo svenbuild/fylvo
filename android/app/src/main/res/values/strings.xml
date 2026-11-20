@@ -359,5 +359,7 @@
     <string name="channel_uploads">Uploads</string>
     <string name="file_exists_in_folder">%s already exists in this folder</string>
     <string name="not_enough_storage">Not enough storage for %s</string>
+    <string name="could_not_read_file">Could not read %s. Please pick it again.</string>
+    <string name="upload_waits_for_network">Waiting for the connection to upload the rest.</string>
     <string name="could_not_upload">Could not upload %s</string>
 </resources>
