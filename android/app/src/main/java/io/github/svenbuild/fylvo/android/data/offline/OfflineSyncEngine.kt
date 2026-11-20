@@ -96,20 +96,6 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
         }
         var failed = false
 
-        actions.filterIsInstance<SyncAction.Move>().forEach { move ->
-            manager.writing(id) {
-                val old = writer.entry(move.from) ?: return@writing
-                val src = store.fileOf(id, move.from)
-                val dst = store.fileOf(id, move.file.path)
-                dst.parentFile?.mkdirs()
-                if (src.renameTo(dst)) {
-                    writer.remove(move.from)
-                    writer.put(old.copy(id = move.file.id, path = move.file.path))
-                    pruneEmptyDirs(store.dirOf(id), src.parentFile)
-                }
-            }
-        }
-
         for (delete in actions.filterIsInstance<SyncAction.Delete>()) {
             if (manager.isRemoved(id)) return
             // The confirm path is the file itself only for a lone file whose folders still exist.
@@ -131,6 +117,25 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
                     file.delete()
                     writer.remove(path)
                     pruneEmptyDirs(store.dirOf(id), file.parentFile)
+                }
+            }
+        }
+
+        // Moves after deletions: a moved file may go where a deleted one was (a file `a` replaced
+        // by a folder `a/` holding a moved file).
+        actions.filterIsInstance<SyncAction.Move>().forEach { move ->
+            manager.writing(id) {
+                val old = writer.entry(move.from) ?: return@writing
+                val src = store.fileOf(id, move.from)
+                val dst = store.fileOf(id, move.file.path)
+                dst.parentFile?.mkdirs()
+                if (src.renameTo(dst)) {
+                    writer.remove(move.from)
+                    writer.put(old.copy(id = move.file.id, path = move.file.path))
+                    pruneEmptyDirs(store.dirOf(id), src.parentFile)
+                } else {
+                    // Not moved (e.g. something still in the way): not up to date, the next run tries again.
+                    failed = true
                 }
             }
         }
