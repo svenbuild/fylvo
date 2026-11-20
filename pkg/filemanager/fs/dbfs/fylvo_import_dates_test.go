@@ -107,3 +107,28 @@ func TestNormalUploadStillGetsTodaysDate(t *testing.T) {
 	require.WithinDuration(t, time.Now(), created, time.Minute)
 	require.WithinDuration(t, time.Now(), updated, time.Minute)
 }
+
+func TestNewContentOfImportedFileGetsTodaysDate(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	owner := e.as(e.owner)
+	require.NoError(t, e.importFile(owner, "cloudreve://my/Import/doc.txt", 10, diskDate))
+
+	version := types.EntityTypeVersion
+	f := e.as(e.owner)
+	session, err := f.PrepareUpload(e.ctx, &fs.UploadRequest{
+		Props: &fs.UploadProps{
+			Uri:             e.uri("cloudreve://my/Import/doc.txt"),
+			Size:            20,
+			UploadSessionID: uuid.Must(uuid.NewV4()).String(),
+			ExpireAt:        time.Now().Add(time.Hour),
+			EntityType:      &version,
+		},
+	})
+	require.NoError(t, err)
+	_, err = f.CompleteUpload(e.ctx, session)
+	require.NoError(t, err)
+
+	created, updated := e.dates(e.as(e.owner), "cloudreve://my/Import/doc.txt")
+	require.WithinDuration(t, time.Now(), updated, time.Minute)
+	requireSameTime(t, diskDate, created, "creation date stays")
+}
