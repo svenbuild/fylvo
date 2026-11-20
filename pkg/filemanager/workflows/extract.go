@@ -427,6 +427,14 @@ func (m *ExtractArchiveTask) masterExtractArchive(ctx context.Context, dep depen
 		}
 
 		_, err = fm.Update(ctx, fileData, fs.WithNoEntityType())
+		if err != nil && inventory.IsNameCaseTaken(err) {
+			// Fylvo: a name that is there in other upper and lower case is skipped, as a folder
+			// that cannot be created is.
+			m.l.Warning("File %q in archive file has a name that is there in other case, skipping...", rawPath)
+			atomic.AddInt64(&m.progress[ProgressTypeExtractCount].Current, 1)
+			m.state.ProcessedCursor = f.NameInArchive
+			return nil
+		}
 		if err != nil {
 			return fmt.Errorf("failed to upload file %q in archive file: %w", rawPath, err)
 		}

@@ -143,7 +143,13 @@ func TestRestoreNextToACaseTwinIsRefused(t *testing.T) {
 	_, res, err := owner.List(e.ctx, e.uri("cloudreve://trash"), fs.WithPageSize(10))
 	require.NoError(t, err)
 	require.Len(t, res.Files, 1)
-	requireCode(t, owner.Restore(e.ctx, res.Files[0].Uri(false)), serializer.CodeNameCaseTaken)
+	// Restore answers with an error per file, as it does for a name that is taken exactly.
+	err = owner.Restore(e.ctx, res.Files[0].Uri(false))
+	var aggregate *serializer.AggregateError
+	require.ErrorAs(t, err, &aggregate)
+	for _, inner := range aggregate.Raw() {
+		requireCode(t, inner, serializer.CodeNameCaseTaken)
+	}
 
 	// It stays in the trash, and the file in its place stays as it is.
 	_, res, err = owner.List(e.ctx, e.uri("cloudreve://trash"), fs.WithPageSize(10))

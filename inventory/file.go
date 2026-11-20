@@ -153,6 +153,9 @@ type FileClient interface {
 	TxOperator
 	// GetByHashID returns a file by its hashID.
 	GetByHashID(ctx context.Context, hashID string) (*ent.File, error)
+	// CaseTwin returns the name of an entry of the folder parent that differs from name only in
+	// upper and lower case, or "" (Fylvo, see fylvo_case_names.go).
+	CaseTwin(ctx context.Context, parent int, name string) (string, error)
 	// GetParentFile returns the parent folder of a given file
 	GetParentFile(ctx context.Context, root *ent.File, eagerLoading bool) (*ent.File, error)
 	// Search file by name from a given root. eagerLoading indicates whether to load edges determined by ctx.
@@ -305,7 +308,21 @@ func (f *fileClient) Update(ctx context.Context, file *ent.File) (*ent.File, err
 		return nil, err
 	}
 
-	return q.Save(ctx)
+	// Fylvo: a changed name must not be another spelling of a name in the folder. Other
+	// changes to an entry that has a twin already stay possible.
+	before, err := f.client.File.Get(ctx, file.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	updated, err := q.Save(ctx)
+	if err != nil || before.Name == updated.Name {
+		return updated, err
+	}
+	if err := f.ensureNoCaseTwins(ctx, updated.ID); err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
 
 func (f *fileClient) UpdateProps(ctx context.Context, file *ent.File, props *types.FileProps) (*ent.File, error) {
@@ -657,6 +674,9 @@ func (f *fileClient) Copy(ctx context.Context, args *CopyParameter) (map[int][]*
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to copy file: %w", err)
 		}
+		if err := f.ensureNoCaseTwins(ctx, newFile.ID); err != nil { // Fylvo
+			return nil, nil, err
+		}
 
 		fileMetadata, err := files[index].Edges.MetadataOrErr()
 		if err != nil {
@@ -844,6 +864,9 @@ func (f *fileClient) CreateFile(ctx context.Context, root *ent.File, args *Creat
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create file: %v", err)
 	}
+	if err := f.ensureNoCaseTwins(ctx, newFile.ID); err != nil { // Fylvo
+		return nil, nil, nil, err
+	}
 
 	// Create default primary file entity if needed
 	var storageDiff StorageDiff
@@ -1029,7 +1052,8 @@ func (f *fileClient) SetParent(ctx context.Context, files []*ent.File, parent *e
 		}
 	}
 
-	return nil
+	// Fylvo: checked after all of them moved, so that two of them cannot be twins of each other.
+	return f.ensureNoCaseTwins(ctx, lo.Map(files, func(file *ent.File, index int) int { return file.ID })...)
 }
 
 func (f *fileClient) GetParentFile(ctx context.Context, root *ent.File, eagerLoading bool) (*ent.File, error) {
@@ -1112,9 +1136,21 @@ func (f *fileClient) CreateFolder(ctx context.Context, root *ent.File, args *Cre
 		stm.SetCreatedAt(*args.ModifiedAt).SetUpdatedAt(*args.ModifiedAt)
 	}
 
+	// Fylvo: a folder that is there with exactly this name is simply used; a new one must not
+	// be another spelling of a name in the folder.
+	existed, err := f.hasExactChild(ctx, root, args.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look for the folder: %w", err)
+	}
+
 	fid, err := stm.OnConflict(sql.ConflictColumns(file.FieldFileChildren, file.FieldName)).Ignore().ID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder: %w", err)
+	}
+	if !existed {
+		if err := f.ensureNoCaseTwins(ctx, fid); err != nil {
+			return nil, err
+		}
 	}
 
 	newFolder, err := f.client.File.Get(ctx, fid)
@@ -1143,7 +1179,15 @@ func (f *fileClient) CreateFolder(ctx context.Context, root *ent.File, args *Cre
 }
 
 func (f *fileClient) Rename(ctx context.Context, original *ent.File, newName string) (*ent.File, error) {
-	return f.client.File.UpdateOne(original).SetName(newName).Save(ctx)
+	renamed, err := f.client.File.UpdateOne(original).SetName(newName).Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Fylvo: the entry itself is no twin, so a change of only its case is allowed.
+	if err := f.ensureNoCaseTwins(ctx, renamed.ID); err != nil {
+		return nil, err
+	}
+	return renamed, nil
 }
 
 func (f *fileClient) GetEntitiesByIDs(ctx context.Context, ids []int, page int) ([]*ent.Entity, int, error) {

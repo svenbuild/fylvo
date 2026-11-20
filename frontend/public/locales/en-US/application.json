@@ -877,6 +877,7 @@
     "updatedAt": "Updated at",
     "taskDetails": "Task details",
     "partialSuccessWarning": "Failed to process {{num}} object(s), they were skipped.",
+    "caseTwinsSkipped": "{{num}} object(s) were skipped: their name is already there in different upper and lower case. Rename them and import again:",
     "sendTask": "Send task",
     "sendTaskDes": "Send the task to a node to process.",
     "downloaded": "Downloaded",

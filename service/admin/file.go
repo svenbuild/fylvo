@@ -298,6 +298,9 @@ func (s *UpsertFileService) Update(c *gin.Context) (*GetFileResponse, error) {
 	newFile, err := fc.Update(ctx, s.File)
 	if err != nil {
 		_ = inventory.Rollback(tx)
+		if inventory.IsNameCaseTaken(err) { // Fylvo
+			return nil, err
+		}
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to update file", err)
 	}
 

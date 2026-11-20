@@ -2,12 +2,15 @@ package dbfs
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/enttest"
 	"github.com/cloudreve/Cloudreve/v4/ent/user"
@@ -56,9 +59,14 @@ func newSharedFolderEnv(t *testing.T) *sharedFolderEnv {
 	ctx := context.WithValue(context.Background(), logging.LoggerCtx{}, logger)
 	kv := cache.NewMemoStore("", logger)
 
-	client := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "fylvo.db"))
+	// One connection, as the server runs SQLite (inventory/client.go): a query outside of an
+	// open transaction then hangs here as it would there.
+	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "fylvo.db"))
+	require.NoError(t, err)
+	db.SetMaxOpenConns(1)
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.SQLite, db))))
 	t.Cleanup(func() { _ = client.Close() })
-	client, err := inventory.InitializeDBClient(logger, client, kv, "4.19.1")
+	client, err = inventory.InitializeDBClient(logger, client, kv, "4.19.1")
 	require.NoError(t, err)
 
 	hasher, err := hashid.New("fylvo-test")
@@ -73,7 +81,7 @@ func newSharedFolderEnv(t *testing.T) *sharedFolderEnv {
 		shareClient: inventory.NewShareClient(client, conf.SQLiteDB, hasher),
 		userClient:  inventory.NewUserClient(client),
 		policies:    inventory.NewStoragePolicyClient(client, kv),
-		settings:    setting.NewProvider(setting.NewDbSettingStore(inventory.NewSettingClient(client, kv), nil)),
+		settings:    setting.NewProvider(setting.NewKvSettingStore(kv, setting.NewDbSettingStore(inventory.NewSettingClient(client, kv), nil))),
 		locks:       lock.NewMemLS(hasher, logger),
 		kv:          kv,
 		logger:      logger,

@@ -27,7 +27,6 @@ const maxNameLength = 255
 func (f *DBFS) freeName(ctx context.Context, navigator Navigator, taken *fs.URI) (*fs.URI, error) {
 	ext := path.Ext(taken.Name())
 	base := strings.TrimSuffix(taken.Name(), ext)
-	me := hashid.EncodeUserID(f.hasher, f.user.ID)
 
 	for i := 1; i <= maxFreeNameTries; i++ {
 		// A name that is as long as names may be makes room for the addition.
@@ -42,12 +41,33 @@ func (f *DBFS) freeName(ctx context.Context, navigator Navigator, taken *fs.URI)
 			return nil, fmt.Errorf("failed to look for a free name: %w", err)
 		}
 
-		if !closest.Uri(false).IsSame(candidate, me) {
+		used, err := f.nameTaken(ctx, closest, candidate)
+		if err != nil {
+			return nil, err
+		}
+		if !used {
 			return candidate, nil
 		}
 	}
 
 	return nil, fs.ErrFileExisted
+}
+
+// nameTaken reports whether target is taken: by an entry of exactly that name or by one whose
+// name differs only in upper and lower case. closest is what reading target found.
+func (f *DBFS) nameTaken(ctx context.Context, closest *File, target *fs.URI) (bool, error) {
+	me := hashid.EncodeUserID(f.hasher, f.user.ID)
+	if closest.Uri(false).IsSame(target, me) {
+		return true, nil
+	}
+	if !closest.Uri(false).IsSame(target.DirUri(), me) {
+		return false, nil // the folder is not there either
+	}
+
+	// Inside a transaction its client is used: SQLite has a single connection.
+	fc, _ := inventory.InheritTx(ctx, f.fileClient)
+	twin, err := fc.CaseTwin(ctx, closest.ID(), target.Name())
+	return twin != "", err
 }
 
 // reserveLinkUpload counts an upload against the share link it comes in through. Only
