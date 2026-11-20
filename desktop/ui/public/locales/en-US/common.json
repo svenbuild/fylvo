@@ -94,7 +94,7 @@
     "heldDeletion": {
       "message": {
         "server": "{{count}} entries were deleted on this PC. They are kept on the server until you decide.",
-        "local": "{{count}} entries were deleted on the server. They are kept on this PC until you decide."
+        "local": "{{count}} entries were deleted on the server. They are kept on this PC until you decide. Files that were online only can no longer be opened."
       },
       "confirm": "Delete",
       "cancel": {
@@ -103,7 +103,7 @@
       },
       "confirmQuestion": {
         "server": "Delete {{count}} entries on the server too? They go to the server's trash.",
-        "local": "Delete {{count}} entries on this PC too? Files with local data go to the recycle bin."
+        "local": "Delete {{count}} entries on this PC too? Files with local changes go to the recycle bin, the others are in the server's trash."
       }
     },
     "driveStatus": {
@@ -115,7 +115,8 @@
   "about": {
     "homepage": "Homepage",
     "preview": "Preview",
-    "reportIssue": "Report Issue"
+    "reportIssue": "Report Issue",
+    "basedOn": "Based on Cloudreve Desktop, MIT License, Copyright (c) 2025 Cloudreve."
   },
   "timeAgo": {
     "justNow": "Just now",

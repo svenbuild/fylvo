@@ -90,6 +90,22 @@
     "ignorePatternsError": "パターンが無効です：{{message}}",
     "save": "保存",
     "cancel": "キャンセル",
+    "readOnlyHint": "読み取り専用で共有されています。この PC での変更はアップロードされません。",
+    "heldDeletion": {
+      "message": {
+        "server": "この PC で {{count}} 件の項目が削除されました。決定するまでサーバー上に残ります。",
+        "local": "サーバーで {{count}} 件の項目が削除されました。決定するまでこの PC に残ります。オンラインのみのファイルは開けなくなります。"
+      },
+      "confirm": "削除",
+      "cancel": {
+        "server": "復元",
+        "local": "今は残す"
+      },
+      "confirmQuestion": {
+        "server": "サーバーでも {{count}} 件の項目を削除しますか？サーバーのごみ箱に移動します。",
+        "local": "この PC でも {{count}} 件の項目を削除しますか？ローカルで変更したファイルはごみ箱に、その他はサーバーのごみ箱にあります。"
+      }
+    },
     "driveStatus": {
       "active": "アクティブ",
       "eventPushLost": "リアルタイムイベントプッシュが切断",

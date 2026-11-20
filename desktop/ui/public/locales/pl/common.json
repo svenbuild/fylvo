@@ -82,7 +82,7 @@
     "openSite": "Otwórz witrynę",
     "reauthorize": "Ponownie autoryzuj",
     "deleteDrive": "Usuń",
-    "deleteDriveConfirm": "Czy na pewno chcesz usunąć „{{name}}"?",
+    "deleteDriveConfirm": "Czy na pewno chcesz usunąć „{{name}}”?",
     "ignorePatterns": "Wzorce wykluczeń",
     "ignorePatternsTitle": "Edytuj wzorce wykluczeń",
     "ignorePatternsDescription": "Wprowadź wzorce w stylu gitignore, po jednym w wierszu. Pasujące pliki nie będą synchronizowane.",
@@ -90,6 +90,22 @@
     "ignorePatternsError": "Nieprawidłowe wzorce: {{message}}",
     "save": "Zapisz",
     "cancel": "Anuluj",
+    "readOnlyHint": "Udostępniono Ci tylko do odczytu. Zmiany na tym komputerze nie są przesyłane.",
+    "heldDeletion": {
+      "message": {
+        "server": "Na tym komputerze usunięto {{count}} elementów. Pozostaną na serwerze, dopóki nie zdecydujesz.",
+        "local": "Na serwerze usunięto {{count}} elementów. Pozostaną na tym komputerze, dopóki nie zdecydujesz. Plików dostępnych tylko online nie da się już otworzyć."
+      },
+      "confirm": "Usuń",
+      "cancel": {
+        "server": "Przywróć",
+        "local": "Na razie zachowaj"
+      },
+      "confirmQuestion": {
+        "server": "Usunąć {{count}} elementów także na serwerze? Trafią do kosza serwera.",
+        "local": "Usunąć {{count}} elementów także na tym komputerze? Pliki ze zmianami lokalnymi trafią do kosza, pozostałe są w koszu serwera."
+      }
+    },
     "driveStatus": {
       "active": "Aktywny",
       "eventPushLost": "Utracono połączenie z powiadomieniami w czasie rzeczywistym",

@@ -90,6 +90,22 @@
     "ignorePatternsError": "Pattern non validi: {{message}}",
     "save": "Salva",
     "cancel": "Annulla",
+    "readOnlyHint": "Condiviso con te in sola lettura. Le modifiche su questo PC non vengono caricate.",
+    "heldDeletion": {
+      "message": {
+        "server": "Su questo PC sono stati eliminati {{count}} elementi. Restano sul server finché non decidi.",
+        "local": "Sul server sono stati eliminati {{count}} elementi. Restano su questo PC finché non decidi. I file solo online non si possono più aprire."
+      },
+      "confirm": "Elimina",
+      "cancel": {
+        "server": "Ripristina",
+        "local": "Mantieni per ora"
+      },
+      "confirmQuestion": {
+        "server": "Eliminare {{count}} elementi anche sul server? Finiscono nel cestino del server.",
+        "local": "Eliminare {{count}} elementi anche su questo PC? I file con modifiche locali finiscono nel cestino, gli altri sono nel cestino del server."
+      }
+    },
     "driveStatus": {
       "active": "Attivo",
       "eventPushLost": "Connessione push eventi in tempo reale persa",

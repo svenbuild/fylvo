@@ -90,6 +90,22 @@
     "ignorePatternsError": "Patrones no válidos: {{message}}",
     "save": "Guardar",
     "cancel": "Cancelar",
+    "readOnlyHint": "Compartido con usted solo para lectura. Los cambios en este PC no se suben.",
+    "heldDeletion": {
+      "message": {
+        "server": "Se eliminaron {{count}} elementos en este PC. Se conservan en el servidor hasta que decida.",
+        "local": "Se eliminaron {{count}} elementos en el servidor. Se conservan en este PC hasta que decida. Los archivos que solo estaban en línea ya no se pueden abrir."
+      },
+      "confirm": "Eliminar",
+      "cancel": {
+        "server": "Restaurar",
+        "local": "Conservar por ahora"
+      },
+      "confirmQuestion": {
+        "server": "¿Eliminar también {{count}} elementos en el servidor? Van a la papelera del servidor.",
+        "local": "¿Eliminar también {{count}} elementos en este PC? Los archivos con cambios locales van a la papelera de reciclaje, los demás están en la papelera del servidor."
+      }
+    },
     "driveStatus": {
       "active": "Activo",
       "eventPushLost": "Pérdida de notificaciones en tiempo real",

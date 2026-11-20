@@ -17,7 +17,7 @@ mod event_handler;
 #[macro_use]
 extern crate rust_i18n;
 
-i18n!("../locales");
+i18n!("../locales", fallback = "en-US");
 
 /// Initialize i18n based on config setting or system locale
 fn init_i18n() {

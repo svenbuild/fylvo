@@ -90,6 +90,22 @@
     "ignorePatternsError": "Motifs invalides : {{message}}",
     "save": "Enregistrer",
     "cancel": "Annuler",
+    "readOnlyHint": "Partagé avec vous en lecture seule. Les modifications sur ce PC ne sont pas envoyées.",
+    "heldDeletion": {
+      "message": {
+        "server": "{{count}} éléments ont été supprimés sur ce PC. Ils restent sur le serveur jusqu'à votre décision.",
+        "local": "{{count}} éléments ont été supprimés sur le serveur. Ils restent sur ce PC jusqu'à votre décision. Les fichiers uniquement en ligne ne peuvent plus être ouverts."
+      },
+      "confirm": "Supprimer",
+      "cancel": {
+        "server": "Restaurer",
+        "local": "Garder pour l'instant"
+      },
+      "confirmQuestion": {
+        "server": "Supprimer aussi {{count}} éléments sur le serveur ? Ils vont dans la corbeille du serveur.",
+        "local": "Supprimer aussi {{count}} éléments sur ce PC ? Les fichiers modifiés localement vont dans la corbeille, les autres sont dans la corbeille du serveur."
+      }
+    },
     "driveStatus": {
       "active": "Actif",
       "eventPushLost": "Perte du push d'événements en temps réel",
