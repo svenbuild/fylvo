@@ -251,8 +251,6 @@ const (
 	CodeAmountTooSmall = 40085
 	// CodeNodeUsedByStoragePolicy node used by storage policy
 	CodeNodeUsedByStoragePolicy = 40086
-	// CodeDomainNotLicensed domain not licensed
-	CodeDomainNotLicensed = 40087
 	// CodeAnonymouseAccessDenied 匿名用户无法访问分享
 	CodeAnonymouseAccessDenied = 40088
 	// CodeInsufficientScope OAuth token scope insufficient

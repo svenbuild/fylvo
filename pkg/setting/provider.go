@@ -309,10 +309,6 @@ func (s *settingProvider) CustomProps(ctx context.Context) []types.CustomProps {
 	return props
 }
 
-func (s *settingProvider) License(ctx context.Context) string {
-	return s.getString(ctx, "license", "")
-}
-
 func (s *settingProvider) AvatarProcess(ctx context.Context) *AvatarProcess {
 	return &AvatarProcess{
 		Path:        s.getString(ctx, "avatar_path", "avatar"),

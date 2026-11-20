@@ -138,7 +138,6 @@ export const Code = {
   LockConflict: 40073,
   StaleVersion: 40076,
   BatchOperationNotFullyCompleted: 40081,
-  DomainNotLicensed: 40087,
   AnonymouseAccessDenied: 40088,
   CodeLoginRequired: 401,
   PermissionDenied: 403,

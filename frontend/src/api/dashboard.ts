@@ -26,10 +26,6 @@ export interface HomepageSummary {
   version: Version;
 }
 
-export interface ManualRefreshLicenseService {
-  license: string;
-}
-
 export interface GetSettingService {
   keys: string[];
 }
@@ -66,21 +62,6 @@ export interface GroupSetting {
 export interface AdminListGroupResponse {
   groups: GroupEnt[];
   pagination: PaginationResults;
-}
-
-export interface QQConnectConfig {
-  app_id?: string;
-  app_secret?: string;
-  direct_sign_in?: boolean;
-}
-
-export interface LogtoConfig {
-  endpoint?: string;
-  app_id?: string;
-  app_secret?: string;
-  direct_sign_in?: boolean;
-  display_name?: string;
-  direct_sso?: string;
 }
 
 export interface FetchWOPIDiscoveryService {
