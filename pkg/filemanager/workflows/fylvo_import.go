@@ -1,7 +1,11 @@
 package workflows
 
 import (
+	"path"
+	"regexp"
 	"strings"
+
+	"github.com/samber/lo"
 
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
@@ -46,7 +50,7 @@ func withoutThumbnails(objects []fs.PhysicalObject) []fs.PhysicalObject {
 
 	kept := objects[:0]
 	for _, o := range objects {
-		if !o.IsDir && files[thumbnailOriginal(o.RelativePath)] {
+		if !o.IsDir && lo.SomeBy(thumbnailOriginals(o.RelativePath), func(p string) bool { return files[p] }) {
 			continue
 		}
 		kept = append(kept, o)
@@ -54,12 +58,23 @@ func withoutThumbnails(objects []fs.PhysicalObject) []fs.PhysicalObject {
 	return kept
 }
 
-// thumbnailOriginal returns the path of the file a preview image belongs to, "" for other names.
-func thumbnailOriginal(path string) string {
+// thumbnailOriginals returns the paths of the file a preview image may belong to, none for other
+// names. Fylvo: newer previews carry a random prefix ("Ab3dEf9h_photo.jpg._thumb", see
+// util.UniqueThumbPath), older ones do not ("photo.jpg._thumb").
+func thumbnailOriginals(p string) []string {
 	for _, suffix := range importSkippedSuffixes {
-		if strings.HasSuffix(path, suffix) {
-			return strings.TrimSuffix(path, suffix)
+		if strings.HasSuffix(p, suffix) {
+			original := strings.TrimSuffix(p, suffix)
+			candidates := []string{original}
+			dir, name := path.Split(original)
+			if thumbPrefix.MatchString(name) {
+				candidates = append(candidates, dir+name[9:])
+			}
+			return candidates
 		}
 	}
-	return ""
+	return nil
 }
+
+// thumbPrefix is the random prefix util.UniqueThumbPath puts in front of a preview's name.
+var thumbPrefix = regexp.MustCompile(`^[0-9A-Za-z]{8}_.`)

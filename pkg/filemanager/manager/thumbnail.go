@@ -48,7 +48,8 @@ func (m *manager) Thumbnail(ctx context.Context, uri *fs.URI) (entitysource.Enti
 	})
 	// Fylvo: a thumbnail whose stored file is gone (left over by an older race between two
 	// generations of the same file) is made again; the new one replaces it in the file's entities.
-	if found && m.thumbFileGone(ctx, thumbEntity) {
+	// A preview still being uploaded has no file yet and is not counted as gone.
+	if found && thumbEntity.UploadSessionID() == nil && m.thumbFileGone(ctx, thumbEntity) {
 		m.l.Warning("Thumbnail file of %q is missing, generating it again.", uri.String())
 		found = false
 	}

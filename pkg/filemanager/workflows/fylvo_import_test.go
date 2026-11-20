@@ -19,13 +19,16 @@ func TestImportSkipsOwnThumbnails(t *testing.T) {
 		{RelativePath: "a/lonely.txt._thumb"}, // no original next to it: a real file
 		{RelativePath: "b/photo.jpg._thumb"},  // original is in another folder
 		{RelativePath: "folder._thumb", IsDir: true},
+		{RelativePath: "c/photo.jpg"},
+		{RelativePath: "c/Ab3dEf9h_photo.jpg._thumb"}, // Fylvo: newer previews carry a random prefix
+		{RelativePath: "c/Zz9yXw8v_other.jpg._thumb"}, // prefix, but no original: a real file
 	}
 
 	var paths []string
 	for _, o := range withoutThumbnails(objects) {
 		paths = append(paths, o.RelativePath)
 	}
-	require.Equal(t, []string{"a/photo.jpg", "a/lonely.txt._thumb", "b/photo.jpg._thumb", "folder._thumb"}, paths)
+	require.Equal(t, []string{"a/photo.jpg", "a/lonely.txt._thumb", "b/photo.jpg._thumb", "folder._thumb", "c/photo.jpg", "c/Zz9yXw8v_other.jpg._thumb"}, paths)
 }
 
 func TestImportListsCaseTwins(t *testing.T) {
