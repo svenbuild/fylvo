@@ -107,6 +107,10 @@ func (service *UploadService) LocalUpload(c *gin.Context) error {
 	dep := dependency.FromContext(c)
 	kv := dep.KV()
 
+	// Fylvo: the clean-up of abandoned uploads leaves a session alone while a request writes to it.
+	// Marked before the session is looked up, so no request it lets through is missed.
+	defer manager.TrackUploadRequest(service.ID)()
+
 	uploadSessionRaw, ok := kv.Get(manager.UploadSessionCachePrefix + service.ID)
 	if !ok {
 		return serializer.NewError(serializer.CodeUploadSessionExpired, "", nil)

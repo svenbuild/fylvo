@@ -111,6 +111,8 @@ var (
 	CronTypeEntityCollect    = CronType("entity_collect")
 	CronTypeTrashBinCollect  = CronType("trash_bin_collect")
 	CronTypeOauthCredRefresh = CronType("oauth_cred_refresh")
+	// Fylvo: removes placeholders of abandoned uploads.
+	CronTypeFylvoStaleUploads = CronType("fylvo_stale_uploads")
 )
 
 type Theme struct {

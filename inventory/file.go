@@ -207,6 +207,10 @@ type FileClient interface {
 	SetPrimaryEntity(ctx context.Context, file *ent.File, entity *ent.Entity) error
 	// UnlinkEntity unlinks an entity from a file
 	UnlinkEntity(ctx context.Context, entity *ent.Entity, file *ent.File, owner *ent.User) (StorageDiff, error)
+	// StaleUploads returns placeholders of local uploads started before the given time (Fylvo).
+	StaleUploads(ctx context.Context, startedBefore time.Time) ([]*ent.Entity, error)
+	// RemoveMetadataIfValue removes a metadata entry only while it has the given value (Fylvo).
+	RemoveMetadataIfValue(ctx context.Context, file *ent.File, name, value string) error
 	// CreateDirectLink creates a direct link for a file
 	CreateDirectLink(ctx context.Context, fileID int, name string, speed int, reuse bool) (*ent.DirectLink, error)
 	// CountIndexableFiles counts files suitable for FTS indexing (non-empty name, has parent, is file type).
@@ -519,6 +523,11 @@ func (f *fileClient) Delete(ctx context.Context, files []*ent.File, options *typ
 	entities := make(map[int]int)
 	// storageReduced stores the relation between owner ID and storage reduced.
 	storageReduced := make(map[int]int64)
+	// Fylvo: what is on the files now counts, not what was on them when they were loaded.
+	files, err := f.withCurrentEntities(ctx, files)
+	if err != nil {
+		return nil, nil, err
+	}
 	for _, fi := range files {
 		fileEntities, err := fi.Edges.EntitiesOrErr()
 		if err != nil {
@@ -889,8 +898,10 @@ func (f *fileClient) CapEntities(ctx context.Context, file *ent.File, owner *ent
 }
 
 func (f *fileClient) UnlinkEntity(ctx context.Context, entity *ent.Entity, file *ent.File, owner *ent.User) (StorageDiff, error) {
-	if err := f.client.Entity.UpdateOne(entity).RemoveFile(file).AddReferenceCount(-1).Exec(ctx); err != nil {
-		return nil, fmt.Errorf("failed to unlink entity: %v", err)
+	// Fylvo: only while the entity is still on the file; storage is given back once.
+	unlinked, err := f.unlinkIfLinked(ctx, entity.ID, file)
+	if err != nil || !unlinked {
+		return nil, err
 	}
 
 	return map[int]int64{owner.ID: entity.Size * int64(-1)}, nil
@@ -910,27 +921,25 @@ func (f *fileClient) IsStoragePolicyUsedByEntities(ctx context.Context, policyID
 }
 
 func (f *fileClient) RemoveStaleEntities(ctx context.Context, file *ent.File) (StorageDiff, error) {
-	entities, err := file.Edges.EntitiesOrErr()
+	// Fylvo: the entities are read again here instead of taken from the file as it was loaded before
+	// the path lock. Placeholders removed or finished in between are left alone.
+	entities, err := f.client.Entity.Query().
+		Where(entity.HasFileWith(func(s *sql.Selector) {
+			s.Where(sql.EQ(s.C("id"), file.ID))
+		}), entity.UploadSessionIDNotNil(), entity.ReferenceCount(1)).
+		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stale entities: %v", err)
 	}
 
 	sizeReduced := int64(0)
-	ids := lo.FilterMap(entities, func(e *ent.Entity, index int) (int, bool) {
-		if e.ReferenceCount == 1 && e.UploadSessionID != nil {
-			sizeReduced += e.Size
-			return e.ID, true
-		}
-
-		return 0, false
-	})
-
-	if len(ids) > 0 {
-		if err = f.client.Entity.Update().
-			Where(entity.IDIn(ids...)).
-			RemoveFile(file).
-			AddReferenceCount(-1).Exec(ctx); err != nil {
+	for _, e := range entities {
+		unlinked, err := f.unlinkIfLinked(ctx, e.ID, file)
+		if err != nil {
 			return nil, fmt.Errorf("failed to remove stale entities: %v", err)
+		}
+		if unlinked {
+			sizeReduced += e.Size
 		}
 	}
 

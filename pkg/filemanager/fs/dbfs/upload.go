@@ -83,6 +83,7 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 
 	// Get most recent ancestor or target file
 	ctx = context.WithValue(ctx, inventory.LoadFileEntity{}, true)
+	ctx = context.WithValue(ctx, inventory.LoadFileMetadata{}, true) // Fylvo: for MetadataUploadNewFile
 	ancestor, err := f.getFileByPath(ctx, navigator, req.Props.Uri)
 	if err != nil && !ent.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to get ancestor: %w", err)
@@ -261,9 +262,15 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 		lockToken = ls.Exclude(lr, f.user, f.hasher)
 
 		// create metadata to record uploading entity id
-		if err := fc.UpsertMetadata(ctx, targetFile, map[string]string{
+		uploadMetadata := map[string]string{
 			MetadataUploadSessionID: req.Props.UploadSessionID,
-		}, nil); err != nil {
+		}
+		// Fylvo: note when the upload made the file, so the clean-up of an abandoned upload knows that
+		// the file goes with it. A new upload to a file that was never finished takes the note over.
+		if !fileExisted || (ancestor.PrimaryEntityID() == 0 && ancestor.Metadata()[MetadataUploadNewFile] != "") {
+			uploadMetadata[MetadataUploadNewFile] = req.Props.UploadSessionID
+		}
+		if err := fc.UpsertMetadata(ctx, targetFile, uploadMetadata, nil); err != nil {
 			_ = inventory.Rollback(dbTx)
 			return nil, serializer.NewError(serializer.CodeDBError, "Failed to update upload session metadata", err)
 		}
@@ -363,7 +370,7 @@ func (f *DBFS) CompleteUpload(ctx context.Context, session *fs.UploadSession) (f
 	}
 
 	// Remove metadata that are defined in upload session
-	err = fc.RemoveMetadata(ctx, filePrivate.Model, MetadataUploadSessionID, ThumbDisabledKey)
+	err = fc.RemoveMetadata(ctx, filePrivate.Model, MetadataUploadSessionID, MetadataUploadNewFile, ThumbDisabledKey)
 	if err != nil {
 		_ = inventory.Rollback(tx)
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to update placeholder metadata", err)
@@ -480,15 +487,12 @@ func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID 
 		}
 	}
 
-	// Remove upload session metadata
-	// Fylvo: the thumbnail setting stays. No new version came, so nothing changed for it, and
-	// a failed upload by a member must not undo a setting of the owner.
-	if err := f.fileClient.RemoveMetadata(ctx, filePrivate.Model, MetadataUploadSessionID); err != nil {
-		return nil, nil, serializer.NewError(serializer.CodeDBError, "Failed to remove upload session metadata", err)
-	}
-
 	if entity == nil {
 		// Given upload session does not exist
+		// Fylvo: its marks go, if it left any; those of another upload stay.
+		if err := f.removeUploadMarks(ctx, filePrivate, sessionID); err != nil {
+			return nil, nil, err
+		}
 		return nil, nil, nil
 	}
 
@@ -504,13 +508,16 @@ func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID 
 	// there before can be empty and then holds nothing but the placeholder as well; it stays.
 	// Without a session only the owner removes the file, as before.
 	createdByUpload := session != nil && session.NewFileCreated
-	if len(filePrivate.Entities()) == 1 && (createdByUpload || (session == nil && f.isOwnerCall(ctx, filePrivate))) {
+	if len(filePrivate.Entities()) == 1 && filePrivate.PrimaryEntityID() == 0 &&
+		(createdByUpload || (session == nil && f.isOwnerCall(ctx, filePrivate))) {
 		// Only one placeholder entity, just delete this file
 		entities, indexDiff, err := f.Delete(WithBypassOwnerCheck(ctx), []*fs.URI{path})
 		return entities, indexDiff, err
 	}
 
-	// Delete place holder entity
+	// Delete place holder entity (it removes the upload marks as well)
+	// Fylvo: the thumbnail setting stays. No new version came, so nothing changed for it, and
+	// a failed upload by a member must not undo a setting of the owner.
 	storageDiff, err := f.deleteEntity(ctx, filePrivate, entity.ID())
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to delete placeholder entity: %w", err)

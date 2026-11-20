@@ -791,9 +791,9 @@ func (f *DBFS) deleteEntity(ctx context.Context, target *File, entityId int) (in
 	}
 
 	if targetVersion.UploadSessionID() != nil {
-		err = f.fileClient.RemoveMetadata(ctx, target.Model, MetadataUploadSessionID)
-		if err != nil {
-			return nil, serializer.NewError(serializer.CodeDBError, "Failed to remove upload session metadata", err)
+		// Fylvo: only the marks of this upload, not those of a newer one.
+		if err := f.removeUploadMarks(ctx, target, targetVersion.UploadSessionID().String()); err != nil {
+			return nil, err
 		}
 	}
 
@@ -899,8 +899,9 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 
 	// Fylvo: only the owner decides about shortcuts and system metadata in their tree, as in
 	// Create. A copy into the tree of somebody else takes none of them along. The marker of
-	// an upload in progress stays, as in any copy: the copy shows that it has no content.
-	excludedMetadata := []string{FullTextIndexKey}
+	// an upload in progress stays, as in any copy: the copy shows that it has no content. The
+	// note that an upload made the file does not: the upload did not make the copy.
+	excludedMetadata := []string{FullTextIndexKey, MetadataUploadNewFile}
 	foreignDestination := !f.isOwnerCall(ctx, destination)
 	if foreignDestination {
 		excludedMetadata = append(excludedMetadata, MetadataSharedRedirect,
