@@ -330,10 +330,10 @@ func (service *FileUpdateService) PutContent(c *gin.Context, ls fs.LockSession) 
 
 	fileData := &fs.UploadRequest{
 		Props: &fs.UploadProps{
-			Uri:             uri,
+			Uri:              uri,
 			PreviousVersion:  service.Previous,
 			PreviousRequired: service.PreviousRequired,
-			Size:            fileSize,
+			Size:             fileSize,
 		},
 		File: rc,
 		Mode: fs.ModeOverwrite,
