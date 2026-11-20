@@ -951,6 +951,7 @@
     "updatedAt": "Aktualisiert am",
     "taskDetails": "Aufgabendetails",
     "partialSuccessWarning": "{{num}} Objekte konnten nicht verarbeitet werden und wurden übersprungen.",
+    "caseTwinsSkipped": "{{num}} Objekte wurden übersprungen: Ihr Name ist schon in anderer Gross- und Kleinschreibung da. Umbenennen und nochmals importieren:",
     "sendTask": "Aufgabe senden",
     "sendTaskDes": "Aufgabe an Verarbeitungsknoten senden.",
     "downloaded": "Heruntergeladen",

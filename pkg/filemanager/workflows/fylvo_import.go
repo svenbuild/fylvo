@@ -3,8 +3,32 @@ package workflows
 import (
 	"strings"
 
+	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 )
+
+// Fylvo: a folder from Linux can hold names that differ only in upper and lower case. Fylvo
+// takes the first of them and skips the others (and what is in a skipped folder); the task
+// lists them, so they can be renamed on disk and imported again.
+const (
+	SummaryKeyCaseTwins     = "case_twins"
+	SummaryKeyCaseTwinCount = "case_twin_count"
+	// maxListedCaseTwins is how many skipped paths the task keeps; the count has all of them.
+	maxListedCaseTwins = 100
+)
+
+// skipCaseTwin notes path as skipped if err refused its name for another spelling in the
+// folder, and reports whether it did.
+func (s *ImportTaskState) skipCaseTwin(path string, err error) bool {
+	if !inventory.IsNameCaseTaken(err) {
+		return false
+	}
+	s.CaseTwinCount++
+	if len(s.CaseTwins) < maxListedCaseTwins {
+		s.CaseTwins = append(s.CaseTwins, path)
+	}
+	return true
+}
 
 // Fylvo: preview images of imported files are stored next to the originals
 // (setting thumb_entity_suffix "{blob_path}/{blob_name}._thumb"). A second or resumed import of

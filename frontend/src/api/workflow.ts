@@ -39,6 +39,9 @@ export interface TaskSummary {
     failed?: number;
     total?: number;
     download?: DownloadTaskStatus;
+    // Fylvo: names an import skipped because they are there in other upper and lower case
+    case_twins?: string[];
+    case_twin_count?: number;
   };
 }
 

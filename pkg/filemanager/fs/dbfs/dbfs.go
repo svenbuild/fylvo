@@ -635,11 +635,7 @@ func (f *DBFS) createFile(ctx context.Context, parent *File, name string, fileTy
 	file, entity, storageDiff, err := fc.CreateFile(ctx, parent.Model, createFileArgs)
 	if err != nil {
 		_ = inventory.Rollback(tx)
-		if ent.IsConstraintError(err) {
-			return nil, fs.ErrFileExisted.WithError(err)
-		}
-
-		return nil, serializer.NewError(serializer.CodeDBError, "Failed to create file", err)
+		return nil, writeError(err, "Failed to create file")
 	}
 
 	tx.AppendStorageDiff(storageDiff)

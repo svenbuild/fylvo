@@ -108,7 +108,14 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 	// Fylvo: who may only add files never replaces one. If the name is taken, the upload
 	// goes next to it under a free name. (The answer names the address used, so a visitor
 	// can tell from it that the name was taken. That is accepted.)
-	if fileExisted && !f.canWrite(ctx, ancestor) && f.canAdd(ctx, ancestor) {
+	taken := fileExisted
+	if !taken && !f.canWrite(ctx, ancestor) && f.canAdd(ctx, ancestor) {
+		// Fylvo: another spelling of the name is taken for them as well.
+		if taken, err = f.nameTaken(ctx, ancestor, req.Props.Uri); err != nil {
+			return nil, err
+		}
+	}
+	if taken && !f.canWrite(ctx, ancestor) && f.canAdd(ctx, ancestor) {
 		// Fylvo: a conditional update asked to replace this very file, not for a copy of it.
 		if req.Props.PreviousRequired {
 			return nil, fs.ErrOwnerOnly

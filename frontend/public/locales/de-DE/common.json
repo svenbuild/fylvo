@@ -100,6 +100,7 @@
     "40901": "Bitte zuerst ein neues Passwort setzen.",
     "40902": "Das neue Passwort muss sich vom bisherigen unterscheiden.",
     "40903": "Die Zeit zum Setzen des neuen Passworts ist abgelaufen. Bitte nochmals anmelden.",
+    "40905": "Hier gibt es schon eine Datei oder einen Ordner mit gleichem Namen in anderer Gross- und Kleinschreibung.",
     "50001": "Datenbankoperation fehlgeschlagen. ({{message}})",
     "50002": "Fehler beim Signieren der URL oder Anfrage. ({{message}})",
     "50004": "I/O-Operation fehlgeschlagen. ({{message}})",

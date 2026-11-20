@@ -42,12 +42,17 @@ func (f *DBFS) Create(ctx context.Context, path *fs.URI, fileType types.FileType
 		}
 	}
 
-	if ancestor.Uri(false).IsSame(path, hashid.EncodeUserID(f.hasher, f.user.ID)) {
-		// Fylvo: who may only add (a visitor of a link that takes uploads) gets a new file next
-		// to one that is there, and simply continues in a folder that is there. A name that
-		// is taken is no error for them.
-		addOnly := !f.canWrite(ctx, ancestor) && f.canAdd(ctx, ancestor)
-		if addOnly && fileType == types.FileTypeFile {
+	// Fylvo: who may only add (a visitor of a link that takes uploads) gets a new file next
+	// to one that is there, also in another spelling, and simply continues in a folder that
+	// is there. A name that is taken is no error for them. An upload (which passes its
+	// ancestor) chose its free name before, outside of its transaction.
+	addOnly := !f.canWrite(ctx, ancestor) && f.canAdd(ctx, ancestor)
+	if addOnly && fileType == types.FileTypeFile && o.ancestor == nil {
+		taken, err := f.nameTaken(ctx, ancestor, path)
+		if err != nil {
+			return nil, err
+		}
+		if taken {
 			free, err := f.freeName(ctx, navigator, path)
 			if err != nil {
 				return nil, err
@@ -55,6 +60,9 @@ func (f *DBFS) Create(ctx context.Context, path *fs.URI, fileType types.FileType
 
 			return f.Create(ctx, free, fileType, opts...)
 		}
+	}
+
+	if ancestor.Uri(false).IsSame(path, hashid.EncodeUserID(f.hasher, f.user.ID)) {
 
 		if ancestor.Type() == fileType {
 			if o.errOnConflict && !addOnly {
@@ -229,11 +237,7 @@ func (f *DBFS) Rename(ctx context.Context, path *fs.URI, newName string) (fs.Fil
 	updated, err := fc.Rename(ctx, target.Model, newName)
 	if err != nil {
 		_ = inventory.Rollback(tx)
-		if ent.IsConstraintError(err) {
-			return nil, nil, fs.ErrFileExisted.WithError(err)
-		}
-
-		return nil, nil, serializer.NewError(serializer.CodeDBError, "failed to update file", err)
+		return nil, nil, writeError(err, "failed to update file")
 	}
 
 	if target.Type() == types.FileTypeFile && !strings.EqualFold(filepath.Ext(newName), filepath.Ext(oldName)) {
@@ -964,11 +968,7 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 				DstMap:               initialDstMap,
 			})
 			if err != nil {
-				if ent.IsConstraintError(err) {
-					return fs.ErrFileExisted.WithError(err)
-				}
-
-				return serializer.NewError(serializer.CodeDBError, "Failed to copy files", err)
+				return writeError(err, "Failed to copy files")
 			}
 
 			storageDiff.Merge(diff)
@@ -1017,11 +1017,7 @@ func (f *DBFS) moveFiles(ctx context.Context, targets []*File, destination *File
 
 	// Change targets' parent
 	if err := fc.SetParent(ctx, models, destination.Model); err != nil {
-		if ent.IsConstraintError(err) {
-			return nil, nil, fs.ErrFileExisted.WithError(err)
-		}
-
-		return nil, nil, serializer.NewError(serializer.CodeDBError, "Failed to move file", err)
+		return nil, nil, writeError(err, "Failed to move file")
 	}
 
 	var (
@@ -1036,11 +1032,7 @@ func (f *DBFS) moveFiles(ctx context.Context, targets []*File, destination *File
 
 		// renaming it to its original name
 		if _, err := fc.Rename(ctx, file.Model, file.DisplayName()); err != nil {
-			if ent.IsConstraintError(err) {
-				return nil, nil, fs.ErrFileExisted.WithError(err)
-			}
-
-			return storageDiff, nil, serializer.NewError(serializer.CodeDBError, "Failed to rename file from trash bin to its original name", err)
+			return storageDiff, nil, writeError(err, "Failed to rename file from trash bin to its original name")
 		}
 
 		if err := restoreModifiedAt(ctx, fc, file); err != nil {

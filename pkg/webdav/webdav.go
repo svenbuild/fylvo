@@ -685,6 +685,15 @@ func handleCopyMove(c *gin.Context, user *ent.User, fm manager.FileManager) (sta
 		return http.StatusForbidden, errDestinationEqualsSource
 	}
 
+	// Fylvo: names in other case. An existing destination that may not be replaced is
+	// answered by performCopyMove (412), as before.
+	if overwrite || !dstExists {
+		if err := refuseCaseTwin(c, fm, srcUri, dstUri, dstFolderUri, c.Request.Method == "COPY", dstExists,
+			hashid.EncodeUserID(hasher, user.ID)); err != nil {
+			return purposeStatusCodeFromError(err), err
+		}
+	}
+
 	if c.Request.Method == "COPY" {
 		// Section 7.5.1 says that a COPY only needs to lock the destination,
 		// not both destination and source. Strictly speaking, this is racy,
@@ -857,6 +866,8 @@ func purposeStatusCodeFromError(err error) int {
 			return http.StatusLocked
 		case serializer.CodeObjectExist:
 			return http.StatusMethodNotAllowed
+		case serializer.CodeNameCaseTaken: // Fylvo
+			return http.StatusConflict
 		}
 	}
 
