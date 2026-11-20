@@ -137,11 +137,13 @@ fun FilesScreen(
     val uploadLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         val parentUri = state.currentUri
-        val existing = state.files.map { it.name }.toSet()
+        val loaded = state.files.map { it.name }.toSet()
         // Fylvo: names and the upload list are read and written off the main thread; with a few
         // hundred picked photos that takes a moment and must not freeze the screen.
         scope.launch {
             val pending = withContext(Dispatchers.IO) {
+                // All names in the folder, not only the loaded pages (a big folder has many).
+                val existing = loaded + viewModel.namesInFolder(parentUri)
                 PendingUpload(uris, UploadWorker.uniqueWithinSelection(uris.map { UploadWorker.displayName(context, it) }, existing), parentUri, existing)
             }
             if (pending.conflicts.isEmpty()) {
@@ -447,7 +449,7 @@ fun FilesScreen(
             pending = pending,
             onResolve = { r ->
                 pendingUpload = null
-                scope.launch(Dispatchers.IO) { UploadWorker.enqueueSafely(context, r.uris, pending.parentUri, r.names, r.overwrite) }
+                scope.launch(Dispatchers.IO) { UploadWorker.enqueueSafely(context, r.uris, pending.parentUri, r.names, r.overwrite, r.overwriteOnly) }
             },
             onDismiss = { pendingUpload = null },
         )

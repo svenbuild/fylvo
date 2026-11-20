@@ -367,6 +367,16 @@ class FilesViewModel(
         }
     }
 
+    /**
+     * Every name in [folderUri] for the upload conflict check, not only the loaded pages; falls
+     * back to the loaded ones when the server cannot be asked.
+     */
+    suspend fun namesInFolder(folderUri: String): Set<String> =
+        runCatching { repo.namesIn(folderUri) }.getOrElse { e ->
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            _state.value.files.map { it.name }.toSet()
+        }
+
     fun cancelUpload(context: android.content.Context, id: java.util.UUID) {
         // Off the main thread and beyond this screen; a waiting batch also gets its server
         // session cleaned up.

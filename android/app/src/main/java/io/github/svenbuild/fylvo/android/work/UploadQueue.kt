@@ -45,6 +45,8 @@ data class UploadItem(
     val targetUri: String? = null,
     /** An earlier run was stopped while this file was being sent (its session was cancelled). */
     val interrupted: Boolean = false,
+    /** Replace an existing file of this name; null means the batch's setting. */
+    val overwrite: Boolean? = null,
 ) {
     @Serializable
     enum class State { Pending, Done, Failed }

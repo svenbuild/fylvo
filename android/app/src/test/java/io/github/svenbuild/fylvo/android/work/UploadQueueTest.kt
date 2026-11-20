@@ -136,4 +136,14 @@ class UploadQueueTest {
         // The first keeps its name (the conflict dialog asks about it), the second gets a free one.
         assertEquals(listOf("x.jpg", "x (2).jpg", "y.jpg"), names)
     }
+
+    @Test
+    fun aPerFileOverwriteIsStored() {
+        val queue = UploadQueue(tmp.root)
+        val batch = queue.create(pickedUris(2), listOf("x.jpg", "x (2).jpg"), "cloudreve://my", overwrite = true)
+        val perFile = batch.copy(items = batch.items.map { it.copy(overwrite = it.name in setOf("x.jpg")) })
+        queue.save(perFile)
+        val loaded = queue.load(batch.id)!!
+        assertEquals(listOf(true, false), loaded.items.map { it.overwrite ?: loaded.overwrite })
+    }
 }

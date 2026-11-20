@@ -127,11 +127,14 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                 val item = synchronized(lock) { batch.items[i] }
                                 // A big file needs a buffer of a whole chunk (up to 64 MB): it runs
                                 // alone, so several of them never fill the memory at once.
-                                val permits = if (sizeOf(item) > BIG_FILE_BYTES) lanes else 1
+                                val size = sizeOf(item)
+                                val permits = if (size == 0L || size > BIG_FILE_BYTES) lanes else 1
                                 withMemory(permits) {
+                                    // Another upload may have stopped the run while this one waited.
+                                    if (stop.get() != null) return@withMemory
                                     synchronized(lock) { inFlight[i] = 0 }
                                     reportAll(item.name, i, 0, 0, force = true)
-                                    val outcome = uploadOne(app, item, parentUri, batch.overwrite, item.interrupted, onSession = { sessionId, targetUri ->
+                                    val outcome = uploadOne(app, item, parentUri, item.overwrite ?: batch.overwrite, item.interrupted, onSession = { sessionId, targetUri ->
                                         update(i) { it.copy(sessionId = sessionId, targetUri = targetUri) }
                                     }) { sent, size -> reportAll(item.name, i, sent, size) }
                                     when (outcome) {
@@ -451,6 +454,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             parentUri: String,
             names: List<String>? = null,
             overwrite: Boolean = false,
+            overwriteOnly: Set<String>? = null,
         ) {
             if (uris.isEmpty()) return
             // Shared files (no folder listing here): two with the same name would race for one
@@ -468,7 +472,11 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             }
             val account = kotlinx.coroutines.runBlocking { currentAccount(context.applicationContext as FylvoApp) }
-            val batch = queue(context).create(uris.map { it.toString() }, fileNames, parentUri, overwrite, account = account)
+            var batch = queue(context).create(uris.map { it.toString() }, fileNames, parentUri, overwrite, account = account)
+            if (overwrite && overwriteOnly != null) {
+                batch = batch.copy(items = batch.items.map { it.copy(overwrite = it.name in overwriteOnly) })
+                queue(context).save(batch)
+            }
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
                 .addTag(TAG)
                 .addTag(BATCH_TAG_PREFIX + batch.id)
@@ -511,6 +519,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             }
             queue.delete(batchId)
             releaseUnused(context, queue, batch.items.map { it.uri })
+            File(context.cacheDir, "upload_staging").listFiles { f -> f.name.startsWith("$workId-") }?.forEach { it.delete() }
         }
 
         /**
@@ -523,9 +532,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             parentUri: String,
             names: List<String>? = null,
             overwrite: Boolean = false,
+            overwriteOnly: Set<String>? = null,
         ) {
             try {
-                enqueue(context, uris, parentUri, names, overwrite)
+                enqueue(context, uris, parentUri, names, overwrite, overwriteOnly)
             } catch (e: Exception) {
                 Log.w(LOG_TAG, "Could not queue an upload: ${e.javaClass.simpleName}")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {

@@ -244,6 +244,18 @@ class FileRepository(private val api: ApiClient) {
         return response.unwrap().takeUnless { it.isFolder }
     }
 
+    /** Names of everything directly in the folder [folderUri], over all pages of the listing. */
+    suspend fun namesIn(folderUri: String): Set<String> {
+        val out = HashSet<String>()
+        var token: String? = null
+        do {
+            val page = list(folderUri, pageToken = token, pageSize = 500)
+            page.files.forEach { out += it.name }
+            token = page.pagination.nextToken
+        } while (!token.isNullOrEmpty())
+        return out
+    }
+
     /**
      * Every file under [rootUri], recursively, as `canonical uri -> size`. The `type=file`
      * search walks the whole subtree server-side, so this is one request per 500
