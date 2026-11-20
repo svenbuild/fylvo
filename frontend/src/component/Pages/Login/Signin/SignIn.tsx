@@ -11,6 +11,7 @@ import {
   send2FALogin,
   sendConsentOauthApp,
   sendLogin,
+  sendPasswordChange,
   sendPrepareLogin,
   sendResetEmail,
 } from "../../../../api/api.ts";
@@ -30,6 +31,7 @@ import PhaseCollectEmail from "../Phases/PhaseCollectEmail.tsx";
 import PhaseCollectPassword from "../Phases/PhaseCollectPassword.tsx";
 import PhaseConsent from "../Phases/PhaseConsent.tsx";
 import PhaseForgetPassword from "../Phases/PhaseForgetPassword.tsx";
+import PhaseSetNewPassword from "../Phases/PhaseSetNewPassword.tsx";
 import PhaseSignupNeeded from "../Phases/PhaseSignupNeeded.tsx";
 import "../SideTransition.css";
 
@@ -43,6 +45,7 @@ enum EmailLoginPhase {
   Collect2FA,
   ForgetPassword,
   Consent,
+  SetNewPassword,
 }
 
 export interface Control {
@@ -95,6 +98,10 @@ const EmailLogin = ({ oauthConsent }: SignInProps) => {
   const [loading, setLoading] = useState(false);
   const captchaState = useRef<CaptchaParams>();
   const twoFaSession = useRef<string>("");
+  // Fylvo: ticket for the forced password change, and the new password typed twice
+  const passwordChangeTicket = useRef<string>("");
+  const [newPwd, setNewPwd] = useState("");
+  const [newPwdRepeat, setNewPwdRepeat] = useState("");
   const [loginOptions, setLoginOptions] = useState<PrepareLoginResponse>();
 
   // OAuth-specific state
@@ -192,6 +199,14 @@ const EmailLogin = ({ oauthConsent }: SignInProps) => {
     [dispatch, loadAppRegistration, checkAndProceed],
   );
 
+  // Fylvo: the password was right, but the account has to set a new one first.
+  const startPasswordChange = useCallback((ticket: string) => {
+    passwordChangeTicket.current = ticket;
+    setNewPwd("");
+    setNewPwdRepeat("");
+    setPhase(EmailLoginPhase.SetNewPassword);
+  }, []);
+
   const prepareLogin = useCallback(async () => {
     try {
       setLoading(true);
@@ -223,6 +238,8 @@ const EmailLogin = ({ oauthConsent }: SignInProps) => {
           twoFaSession.current = e.response.data;
           // User needs 2FA
           setPhase(EmailLoginPhase.Collect2FA);
+        } else if (e instanceof AppError && e.code === Code.PasswordChangeRequired) {
+          startPasswordChange(e.response.data);
         } else {
           setCaptchaGen((g) => g + 1);
         }
@@ -243,12 +260,48 @@ const EmailLogin = ({ oauthConsent }: SignInProps) => {
         } else {
           dispatch(refreshUserSession(loginRes, query.get("redirect")));
         }
+      } catch (e) {
+        if (e instanceof AppError && e.code === Code.PasswordChangeRequired) {
+          startPasswordChange(e.response.data);
+        }
       } finally {
         setOTP("");
         setLoading(false);
       }
     },
-    [dispatch, isOAuthFlow, handleOAuthSessionSwitch, query],
+    [dispatch, isOAuthFlow, handleOAuthSessionSwitch, query, startPasswordChange],
+  );
+
+  const finishPasswordChange = useCallback(
+    async (password: string, repeat: string) => {
+      if (password !== repeat) {
+        enqueueSnackbar({
+          message: t("login.passwordNotMatch"),
+          variant: "warning",
+          action: DefaultCloseAction,
+        });
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const loginRes = await dispatch(sendPasswordChange({ password, session_id: passwordChangeTicket.current }));
+        if (isOAuthFlow) {
+          await handleOAuthSessionSwitch(loginRes);
+        } else {
+          dispatch(refreshUserSession(loginRes, query.get("redirect")));
+        }
+      } catch (e) {
+        // The ticket expired: sign in again.
+        if (e instanceof AppError && e.code === Code.PasswordChangeExpired) {
+          setPwd("");
+          setPhase(EmailLoginPhase.CollectPassword);
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [dispatch, isOAuthFlow, handleOAuthSessionSwitch, query, t],
   );
 
   const submitSendResetEmail = useCallback(
@@ -291,6 +344,9 @@ const EmailLogin = ({ oauthConsent }: SignInProps) => {
         break;
       case EmailLoginPhase.Consent:
         sendConsent();
+        break;
+      case EmailLoginPhase.SetNewPassword:
+        finishPasswordChange(newPwd, newPwdRepeat);
         break;
     }
   };
@@ -368,6 +424,14 @@ const EmailLogin = ({ oauthConsent }: SignInProps) => {
         phaseSetting = {
           title: t("login.resetPassword"),
           nextButtonText: t("login.sendMeAnEmail"),
+          showBackButton: true,
+          previous: EmailLoginPhase.CollectPassword,
+        };
+        break;
+      case EmailLoginPhase.SetNewPassword:
+        phaseSetting = {
+          title: t("login.setNewPassword"),
+          nextButtonText: t("login.saveAndSignIn"),
           showBackButton: true,
           previous: EmailLoginPhase.CollectPassword,
         };
@@ -460,6 +524,16 @@ const EmailLogin = ({ oauthConsent }: SignInProps) => {
                   captchaGen={captchaGen}
                   setCaptchaState={(s) => (captchaState.current = s)}
                   onOAuthPasskeyLogin={isOAuthFlow ? handleOAuthSessionSwitch : undefined}
+                  onPasswordChangeRequired={startPasswordChange}
+                />
+              )}
+              {phase === EmailLoginPhase.SetNewPassword && (
+                <PhaseSetNewPassword
+                  password={newPwd}
+                  setPassword={setNewPwd}
+                  repeat={newPwdRepeat}
+                  setRepeat={setNewPwdRepeat}
+                  control={phaseConfig.control}
                 />
               )}
               {phase === EmailLoginPhase.SignupNeeded && (
@@ -479,6 +553,7 @@ const EmailLogin = ({ oauthConsent }: SignInProps) => {
                   setEmail={setEmail}
                   control={phaseConfig.control}
                   onOAuthPasskeyLogin={isOAuthFlow ? handleOAuthSessionSwitch : undefined}
+                  onPasswordChangeRequired={startPasswordChange}
                 />
               )}
               {phase === EmailLoginPhase.Consent && app && (

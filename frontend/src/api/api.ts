@@ -97,6 +97,7 @@ import {
   SendResetEmailService,
   SignUpService,
   Token,
+  PasswordChangeRequest,
   TwoFALoginRequest,
   User,
   UserSettings,
@@ -182,7 +183,8 @@ export function sendLogin(req: PasswordLoginRequest): ThunkResponse<LoginRespons
         {
           ...defaultOpts,
           noCredential: true,
-          bypassSnackbar: (e) => e instanceof AppError && e.code == Code.Continue,
+          bypassSnackbar: (e) =>
+            e instanceof AppError && (e.code == Code.Continue || e.code == Code.PasswordChangeRequired),
         },
       ),
     );
@@ -194,6 +196,26 @@ export function send2FALogin(req: TwoFALoginRequest): ThunkResponse<LoginRespons
     return await dispatch(
       send(
         "/session/token/2fa",
+        {
+          data: req,
+          method: "POST",
+        },
+        {
+          ...defaultOpts,
+          noCredential: true,
+          bypassSnackbar: (e) => e instanceof AppError && e.code == Code.PasswordChangeRequired,
+        },
+      ),
+    );
+  };
+}
+
+// Fylvo: sets the new password of a held sign-in and signs in
+export function sendPasswordChange(req: PasswordChangeRequest): ThunkResponse<LoginResponse> {
+  return async (dispatch, _getState) => {
+    return await dispatch(
+      send(
+        "/session/token/password",
         {
           data: req,
           method: "POST",
@@ -1201,6 +1223,7 @@ export function sendFinishPasskeyLogin(req: FinishPasskeyLoginService): ThunkRes
         {
           ...defaultOpts,
           noCredential: true,
+          bypassSnackbar: (e) => e instanceof AppError && e.code == Code.PasswordChangeRequired,
         },
       ),
     );

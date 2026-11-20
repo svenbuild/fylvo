@@ -10,6 +10,7 @@ import { DenseFilledTextField } from "../../Common/StyledComponents";
 import DraggableDialog from "../../Dialogs/DraggableDialog";
 import SettingForm from "../../Pages/Setting/SettingForm";
 import GroupSelectionInput from "../Common/GroupSelectionInput";
+import MustChangePasswordSwitch from "./MustChangePasswordSwitch";
 
 export interface NewUserDialogProps {
   open: boolean;
@@ -33,11 +34,13 @@ const NewUserDialog = ({ open, onClose, onCreated }: NewUserDialogProps) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<User>({ ...defaultUser });
+  const [mustChangePassword, setMustChangePassword] = useState(true);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (open) {
       setUser({ ...defaultUser });
+      setMustChangePassword(true);
     }
   }, [open]);
 
@@ -50,7 +53,7 @@ const NewUserDialog = ({ open, onClose, onCreated }: NewUserDialogProps) => {
     let newUser = { ...user, nick: user.email.split("@")[0] };
 
     setLoading(true);
-    dispatch(upsertUser({ user: newUser, password: user.password }))
+    dispatch(upsertUser({ user: newUser, password: user.password, must_change_password: mustChangePassword }))
       .then((r) => {
         onCreated(r);
         onClose();
@@ -99,6 +102,7 @@ const NewUserDialog = ({ open, onClose, onCreated }: NewUserDialogProps) => {
                 value={user.password}
                 onChange={(e) => setUser({ ...user, password: e.target.value })}
               />
+              <MustChangePasswordSwitch checked={mustChangePassword} onChange={setMustChangePassword} />
             </SettingForm>
             <SettingForm title={t("user.group")} lgWidth={12}>
               <GroupSelectionInput

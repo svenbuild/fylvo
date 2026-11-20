@@ -296,6 +296,8 @@ export interface UserSetting {
   version_retention_max?: number;
   pined?: PinedFile[];
   language?: string;
+  // Fylvo: the person has to set a new password at the next sign-in
+  fylvo_must_change_password?: boolean;
 }
 
 export interface PinedFile {
@@ -362,6 +364,8 @@ export interface UpsertUserService {
   user: User;
   password?: string;
   two_fa?: string;
+  // Fylvo: on by default for new accounts and with a new password
+  must_change_password?: boolean;
 }
 
 export interface BatchIDService {

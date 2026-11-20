@@ -143,6 +143,10 @@ export const Code = {
   CodeLoginRequired: 401,
   PermissionDenied: 403,
   NodeFound: 404,
+  // Fylvo: the account has to set a new password first; data is the ticket
+  PasswordChangeRequired: 40901,
+  SamePassword: 40902,
+  PasswordChangeExpired: 40903,
 };
 
 export const CrHeaderPrefix = "X-Cr-";

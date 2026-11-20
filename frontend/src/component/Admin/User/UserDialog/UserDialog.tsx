@@ -100,6 +100,9 @@ const UserDialog = ({ open, onClose, userID, onUpdated }: UserDialogProps) => {
       args.password = args.user.password;
     }
 
+    // Fylvo: the server only stores it when it changes.
+    args.must_change_password = !!args.user.settings?.fylvo_must_change_password;
+
     setSubmitting(true);
     dispatch(upsertUser(args))
       .then((res) => {

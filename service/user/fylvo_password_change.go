@@ -98,7 +98,7 @@ func (s *PasswordChangeService) Finish(c *gin.Context) (*ent.User, error) {
 		return nil, err
 	}
 	if !valid {
-		return nil, serializer.NewError(serializer.CodeNotFound, "Session expired, please sign in again", nil)
+		return nil, serializer.NewError(serializer.CodePasswordChangeExpired, "Session expired, please sign in again", nil)
 	}
 
 	if inventory.CheckPassword(u, s.Password) == nil {
@@ -107,7 +107,7 @@ func (s *PasswordChangeService) Finish(c *gin.Context) (*ent.User, error) {
 
 	if err := dep.UserClient().SetOwnPassword(c, u, s.Password); err != nil {
 		if errors.Is(err, inventory.ErrPasswordChangedMeanwhile) {
-			return nil, serializer.NewError(serializer.CodeNotFound, "Session expired, please sign in again", nil)
+			return nil, serializer.NewError(serializer.CodePasswordChangeExpired, "Session expired, please sign in again", nil)
 		}
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to update password", err)
 	}

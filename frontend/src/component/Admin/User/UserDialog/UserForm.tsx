@@ -26,6 +26,7 @@ import Delete from "../../../Icons/Delete";
 import SettingForm from "../../../Pages/Setting/SettingForm";
 import { CapacityBar } from "../../../Pages/Setting/StorageSetting";
 import GroupSelectionInput from "../../Common/GroupSelectionInput";
+import MustChangePasswordSwitch from "../MustChangePasswordSwitch";
 import { UserDialogContext } from "./UserDialog";
 
 const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loading: boolean) => void }) => {
@@ -70,7 +71,20 @@ const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loa
 
   const onPasswordChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      setUser((prev) => ({ ...prev, password: e.target.value ? e.target.value : undefined }));
+      const password = e.target.value ? e.target.value : undefined;
+      // Fylvo: a password from the admin has to be replaced at the next sign-in.
+      setUser((prev) => ({
+        ...prev,
+        password,
+        settings: password ? { ...prev.settings, fylvo_must_change_password: true } : prev.settings,
+      }));
+    },
+    [setUser],
+  );
+
+  const onMustChangePasswordChange = useCallback(
+    (checked: boolean) => {
+      setUser((prev) => ({ ...prev, settings: { ...prev.settings, fylvo_must_change_password: checked } }));
     },
     [setUser],
   );
@@ -180,6 +194,10 @@ const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loa
                 }}
                 onChange={onPasswordChange}
                 type={"password"}
+              />
+              <MustChangePasswordSwitch
+                checked={!!values.settings?.fylvo_must_change_password}
+                onChange={onMustChangePasswordChange}
               />
             </SettingForm>
             <SettingForm title={t("user.createdAt")} noContainer lgWidth={6}>

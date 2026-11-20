@@ -10,4 +10,6 @@ const (
 	CodePasswordChangeRequired = 40901
 	// CodeSamePassword the new password is the same as the current one
 	CodeSamePassword = 40902
+	// CodePasswordChangeExpired the ticket of the password change is unknown or expired
+	CodePasswordChangeExpired = 40903
 )

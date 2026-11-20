@@ -91,7 +91,7 @@ func TestPasswordChangeFlow(t *testing.T) {
 
 	// The ticket is used up.
 	_, err = (&PasswordChangeService{SessionID: ticket, Password: "noch-eines-1"}).Finish(e.context())
-	require.Equal(t, serializer.CodeNotFound, appErrorCode(t, err))
+	require.Equal(t, serializer.CodePasswordChangeExpired, appErrorCode(t, err))
 }
 
 func TestPasswordChangeTicketEndsWithAnotherPassword(t *testing.T) {
@@ -102,7 +102,7 @@ func TestPasswordChangeTicketEndsWithAnotherPassword(t *testing.T) {
 	_, err := e.users.Upsert(context.Background(), e.held, "admin-passwort", "", nil)
 	require.NoError(t, err)
 	_, err = (&PasswordChangeService{SessionID: ticket, Password: "eigenes-passwort"}).Finish(e.context())
-	require.Equal(t, serializer.CodeNotFound, appErrorCode(t, err))
+	require.Equal(t, serializer.CodePasswordChangeExpired, appErrorCode(t, err))
 }
 
 func TestPasswordChangeTicketEndsWhenAdminLiftsTheHold(t *testing.T) {
@@ -112,14 +112,14 @@ func TestPasswordChangeTicketEndsWhenAdminLiftsTheHold(t *testing.T) {
 	_, err := e.users.Upsert(context.Background(), e.held, "", "", &types.UserSetting{})
 	require.NoError(t, err)
 	_, err = (&PasswordChangeService{SessionID: ticket, Password: "eigenes-passwort"}).Finish(e.context())
-	require.Equal(t, serializer.CodeNotFound, appErrorCode(t, err))
+	require.Equal(t, serializer.CodePasswordChangeExpired, appErrorCode(t, err))
 }
 
 func TestUnknownPasswordChangeTicket(t *testing.T) {
 	e := newPasswordChangeEnv(t)
 	for _, ticket := range []string{"", "unbekannt", "1:abc"} {
 		_, err := (&PasswordChangeService{SessionID: ticket, Password: "eigenes-passwort"}).Finish(e.context())
-		require.Equal(t, serializer.CodeNotFound, appErrorCode(t, err))
+		require.Equal(t, serializer.CodePasswordChangeExpired, appErrorCode(t, err))
 	}
 }
 

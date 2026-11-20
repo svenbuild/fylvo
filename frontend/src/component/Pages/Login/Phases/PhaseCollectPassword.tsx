@@ -18,6 +18,7 @@ interface PhaseCollectPasswordProps {
   setCaptchaState: (state: CaptchaParams) => void;
   onForget?: () => void;
   onOAuthPasskeyLogin?: (response: LoginResponse) => void;
+  onPasswordChangeRequired?: (ticket: string) => void;
 }
 
 const PhaseCollectPassword = ({
@@ -30,6 +31,7 @@ const PhaseCollectPassword = ({
   setCaptchaState,
   onForget,
   onOAuthPasskeyLogin,
+  onPasswordChangeRequired,
 }: PhaseCollectPasswordProps) => {
   const { t } = useTranslation();
   const { login_captcha, authn } = useAppSelector((state) => state.siteConfig.login.config);
@@ -83,7 +85,12 @@ const PhaseCollectPassword = ({
         </Typography>
       )}
       <Stack spacing={1}>
-        {loginOptions?.webauthn_enabled && authn && <PasskeyLoginButton onLoginSuccess={onOAuthPasskeyLogin} />}
+        {loginOptions?.webauthn_enabled && authn && (
+          <PasskeyLoginButton
+            onLoginSuccess={onOAuthPasskeyLogin}
+            onPasswordChangeRequired={onPasswordChangeRequired}
+          />
+        )}
       </Stack>
       {control?.back}
     </>
