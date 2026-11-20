@@ -141,10 +141,14 @@ fun FilesScreen(
         // Fylvo: names and the upload list are read and written off the main thread; with a few
         // hundred picked photos that takes a moment and must not freeze the screen.
         scope.launch {
-            val pending = withContext(Dispatchers.IO) {
+            val pending = runCatching { withContext(Dispatchers.IO) {
                 // All names in the folder, not only the loaded pages (a big folder has many).
                 val existing = loaded + viewModel.namesInFolder(parentUri)
                 PendingUpload(uris, UploadWorker.uniqueWithinSelection(uris.map { UploadWorker.displayName(context, it) }, existing), parentUri, existing)
+            } }.getOrElse { e ->
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                android.widget.Toast.makeText(context, context.getString(R.string.upload_could_not_start), android.widget.Toast.LENGTH_LONG).show()
+                return@launch
             }
             if (pending.conflicts.isEmpty()) {
                 // The transfer card above the files shows the batch as soon as it is queued.

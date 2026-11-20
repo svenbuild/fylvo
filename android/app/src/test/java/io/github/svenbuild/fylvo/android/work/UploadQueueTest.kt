@@ -146,4 +146,17 @@ class UploadQueueTest {
         val loaded = queue.load(batch.id)!!
         assertEquals(listOf(true, false), loaded.items.map { it.overwrite ?: loaded.overwrite })
     }
+
+    @Test
+    fun aStoppedUploadCountsAsFinishedOnlyWithTheFullSizeOnTheServer() {
+        assertEquals(true, UploadWorker.finishedBeforeStop(replace = false, uploadSize = 2_400_000, serverSize = 2_400_000))
+        // The placeholder of an unfinished upload has size 0.
+        assertEquals(false, UploadWorker.finishedBeforeStop(replace = false, uploadSize = 2_400_000, serverSize = 0))
+        // Gone or unknown.
+        assertEquals(false, UploadWorker.finishedBeforeStop(replace = false, uploadSize = 2_400_000, serverSize = null))
+        // An empty file can never be told apart from a placeholder.
+        assertEquals(false, UploadWorker.finishedBeforeStop(replace = false, uploadSize = 0, serverSize = 0))
+        // Replace: the old version has a size of its own.
+        assertEquals(false, UploadWorker.finishedBeforeStop(replace = true, uploadSize = 2_400_000, serverSize = 2_400_000))
+    }
 }

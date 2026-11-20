@@ -47,6 +47,8 @@ data class UploadItem(
     val interrupted: Boolean = false,
     /** Replace an existing file of this name; null means the batch's setting. */
     val overwrite: Boolean? = null,
+    /** Bytes being sent with [sessionId]; a server file of this size means the upload finished. */
+    val uploadSize: Long = 0,
 ) {
     @Serializable
     enum class State { Pending, Done, Failed }

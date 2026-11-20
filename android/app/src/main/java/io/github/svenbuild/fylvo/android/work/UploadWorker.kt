@@ -72,7 +72,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val total = batch.items.size
 
         // Copies of this job left in the cache by a stop during the copy.
-        File(applicationContext.cacheDir, "upload_staging").listFiles { f -> f.name.startsWith("$id-") }?.forEach { it.delete() }
+        stagingFiles().forEach { it.delete() }
 
         createChannel()
         var lastError: String? = null
@@ -83,13 +83,27 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             queue.save(batch)
         }
         try {
-            // Sessions left by a run that was stopped half way: cancel them on the server first,
-            // so their 0 B placeholders and locks go away before the files are sent again. If that
-            // does not work now (only network or server trouble say so), wait and try later.
+            // Sessions left by a run that was stopped half way. While our session exists, its
+            // placeholder and lock hold the name, so nobody else can put a file there: if the file
+            // there already has the full size, the upload finished and only its answer got lost.
+            // Otherwise cancel the session, so its 0 B placeholder and lock go away before the
+            // file is sent again. If the server cannot be asked now, wait and try later.
             batch.items.forEachIndexed { i, item ->
                 if (item.state == UploadItem.State.Pending && item.sessionId != null) {
+                    val target = item.targetUri
+                    val replace = item.overwrite ?: batch.overwrite
+                    if (!replace && target != null && item.uploadSize > 0) {
+                        val serverSize = try {
+                            app.fileRepository.sizeOf(target)
+                        } catch (e: java.io.IOException) {
+                            return Result.retry()
+                        }
+                        if (finishedBeforeStop(replace, item.uploadSize, serverSize)) {
+                            update(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null) }
+                            return@forEachIndexed
+                        }
+                    }
                     if (!cancelSession(app, item)) return Result.retry()
-                    // Remembered in the list, so a later run still knows it if this one stops.
                     update(i) { it.copy(sessionId = null, targetUri = null, interrupted = true) }
                 }
             }
@@ -134,13 +148,15 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                     if (stop.get() != null) return@withMemory
                                     synchronized(lock) { inFlight[i] = 0 }
                                     reportAll(item.name, i, 0, 0, force = true)
-                                    val outcome = uploadOne(app, item, parentUri, item.overwrite ?: batch.overwrite, item.interrupted, onSession = { sessionId, targetUri ->
-                                        update(i) { it.copy(sessionId = sessionId, targetUri = targetUri) }
+                                    val outcome = uploadOne(app, item, parentUri, item.overwrite ?: batch.overwrite, onSession = { sessionId, targetUri, size ->
+                                        update(i) { it.copy(sessionId = sessionId, targetUri = targetUri, uploadSize = size) }
                                     }) { sent, size -> reportAll(item.name, i, sent, size) }
                                     when (outcome) {
                                         is Outcome.Done -> synchronized(lock) {
                                             inFlight.remove(i)
                                             update(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null, interrupted = false) }
+                                            // Progress: server hiccups so far do not count against the rest.
+                                            if (batch.serverRetries > 0) batch = batch.copy(serverRetries = 0).also(queue::save)
                                         }
                                         is Outcome.Failed -> {
                                             cancelSession(app, synchronized(lock) { batch.items[i] })
@@ -178,13 +194,17 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             }
         } catch (e: CancellationException) {
             // Stopped: by the person (cancel), or by the system, which runs the job again later.
+            // A system stop keeps the sessions: the next run checks them first (see above).
             withContext(NonCancellable) {
-                batch.items.forEachIndexed { i, item ->
-                    if (item.state == UploadItem.State.Pending && item.sessionId != null && cancelSession(app, item)) {
-                        update(i) { it.copy(sessionId = null, targetUri = null, interrupted = true) }
+                stagingFiles().forEach { it.delete() }
+                if (isCancelledByPerson()) {
+                    batch.items.forEachIndexed { i, item ->
+                        if (item.state == UploadItem.State.Pending && item.sessionId != null && cancelSession(app, item)) {
+                            update(i) { it.copy(sessionId = null, targetUri = null) }
+                        }
                     }
+                    finish(queue, batch)
                 }
-                if (isCancelledByPerson()) finish(queue, batch)
             }
             throw e
         } finally {
@@ -227,6 +247,16 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         return foregroundInfo("", 0, 0, 0, 0)
     }
 
+    private fun stagingFiles(): List<File> =
+        File(applicationContext.cacheDir, "upload_staging").listFiles { f -> f.name.startsWith("$id-") }.orEmpty().toList()
+
+    /** Last change of the picked file as the provider reports it, or null. */
+    private fun lastModifiedOf(uri: Uri): Long? = runCatching {
+        applicationContext.contentResolver.query(uri, arrayOf(android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED), null, null, null)?.use {
+            if (it.moveToFirst() && !it.isNull(0)) it.getLong(0).takeIf { t -> t > 0 } else null
+        }
+    }.getOrNull()
+
     /** Size of the picked file, or 0 when the provider does not say. */
     private fun sizeOf(item: UploadItem): Long = runCatching {
         applicationContext.contentResolver.query(Uri.parse(item.uri), arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use {
@@ -257,8 +287,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         item: UploadItem,
         parentUri: String,
         overwrite: Boolean,
-        interrupted: Boolean,
-        onSession: (String, String) -> Unit,
+        onSession: (String, String, Long) -> Unit,
         onProgress: (sent: Long, size: Long) -> Unit,
     ): Outcome {
         val uri = Uri.parse(item.uri)
@@ -275,7 +304,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             val mime = applicationContext.contentResolver.getType(uri)
             app.fileRepository.uploadFile(
                 tmp, parentUri, remoteName = item.name, overwrite = overwrite, mimeType = mime,
-                onSession = onSession, onProgress = onProgress,
+                lastModified = lastModifiedOf(uri) ?: tmp.lastModified(),
+                onSession = { sessionId, target -> onSession(sessionId, target, tmp.length()) }, onProgress = onProgress,
             )
             Outcome.Done
         } catch (e: CancellationException) {
@@ -285,11 +315,6 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             Outcome.TryLater(applicationContext.localized().getString(R.string.upload_waits_for_network), network = true)
         } catch (e: ApiException) {
             Log.w(LOG_TAG, "Upload refused: code ${e.code}")
-            // The answer to the last part of an earlier attempt got lost, but the server had the
-            // whole file: counts as done only when the file there has exactly this size.
-            if (interrupted && !overwrite && e.code == CODE_OBJECT_EXISTS &&
-                app.fileRepository.sizeOf(CrUri.join(parentUri, item.name)) == tmp.length()
-            ) return Outcome.Done
             if (e.isTransient) Outcome.TryLater(describe(e, item.name), network = false) else Outcome.Failed(describe(e, item.name))
         } catch (e: Exception) {
             Log.w(LOG_TAG, "Upload failed: ${e.javaClass.simpleName}")
@@ -612,6 +637,14 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 name
             }
         }
+
+        /**
+         * Whether an upload whose run was stopped had in fact finished: while its session exists,
+         * its placeholder holds the name and has size 0 until the upload completes, so the full
+         * size there means it arrived. Not for Replace, where the old version has a size too.
+         */
+        fun finishedBeforeStop(replace: Boolean, uploadSize: Long, serverSize: Long?): Boolean =
+            !replace && uploadSize > 0 && serverSize == uploadSize
 
         /** "report.pdf" -> "report (1).pdf", counting up until the name is free. */
         fun uniqueName(name: String, taken: Set<String>): String {
