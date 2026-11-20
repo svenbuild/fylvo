@@ -400,15 +400,25 @@ class FileRepository(private val api: ApiClient) {
     suspend fun sizeOf(uri: String): Long? {
         val resp = api.service().fileInfo(uri)
         if (resp.code() in 500..599) throw java.io.IOException("server answered ${resp.code()}")
-        val body = resp.body()
-        return if (body?.code == 0) body.data?.size else null
+        val body = resp.body() ?: throw java.io.IOException("no answer from the server")
+        return when (body.code) {
+            0 -> body.data?.size
+            // Clearly not there.
+            404, ApiException.CODE_PATH_NOT_EXIST -> null
+            // Anything else is unclear: ask again later instead of guessing.
+            else -> throw java.io.IOException("unclear answer ${body.code}")
+        }
     }
 
     /** Throws when a raw response body is a JSON envelope with a non-zero code. */
     private fun checkEnvelope(body: okhttp3.ResponseBody?) {
-        val text = body?.use { it.string() } ?: return
-        val obj = runCatching { api.json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject }.getOrNull() ?: return
-        val code = (obj["code"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() ?: return
+        // Fylvo always answers with its JSON envelope. Anything else (a Wi-Fi login page, a proxy
+        // page) means the part did not reach the server: never count it as sent.
+        val text = body?.use { it.string() } ?: throw java.io.IOException("no answer from the server")
+        val obj = runCatching { api.json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject }.getOrNull()
+            ?: throw java.io.IOException("unexpected answer instead of the server's")
+        val code = (obj["code"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull()
+            ?: throw java.io.IOException("unexpected answer instead of the server's")
         if (code != 0) {
             val msg = (obj["msg"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
             throw ApiException(code, msg.ifEmpty { "Upload failed (code $code)" })

@@ -20,7 +20,7 @@ data class UploadBatch(
     val items: List<UploadItem>,
     /** The account it was queued for ("server email"); a batch never uploads into another. */
     val account: String? = null,
-    /** Runs that ended in server trouble (not in a lost network); limits the retries. */
+    /** Runs in a row that ended in server trouble without finishing a file; ends the batch at a limit. */
     val serverRetries: Int = 0,
 ) {
     /** Index of the next file to upload, or -1 when every file is done or failed. */

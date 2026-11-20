@@ -125,6 +125,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             // A network or server problem in one upload: the others finish the file they are on
             // (cancelling them could leave a session the list does not know), then the run stops.
             val stop = java.util.concurrent.atomic.AtomicReference<Outcome.TryLater?>(null)
+            var progressed = false // a file finished in this run (read and written under [lock])
 
             val lanes = parallelUploads()
             val memory = Semaphore(lanes)
@@ -159,6 +160,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                         is Outcome.Done -> synchronized(lock) {
                                             inFlight.remove(i)
                                             update(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null, interrupted = false) }
+                                            progressed = true
                                         }
                                         is Outcome.Failed -> {
                                             cancelSession(app, synchronized(lock) { batch.items[i] })
@@ -196,7 +198,24 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             // No network or the server is away: keep the list and the session ids, WorkManager
             // runs the batch again later. A missing network never ends the batch; a file that
             // keeps failing on the server is given up alone after a few tries (above).
-            if (stop.get() != null) return Result.retry()
+            stop.get()?.let { outcome ->
+                if (outcome.network) return Result.retry()
+                // Server trouble: a run that finished nothing counts; a lasting server-wide
+                // problem ends the batch instead of waiting for weeks.
+                val idle = synchronized(lock) { !progressed }
+                val runs = if (idle) batch.serverRetries + 1 else 0
+                if (runs < MAX_IDLE_RUNS) {
+                    synchronized(lock) { batch = batch.copy(serverRetries = runs).also(queue::save) }
+                    return Result.retry()
+                }
+                batch.items.forEachIndexed { i, item ->
+                    if (item.state == UploadItem.State.Pending) {
+                        cancelSession(app, item)
+                        update(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null) }
+                    }
+                }
+                lastError = outcome.message
+            }
         } catch (e: CancellationException) {
             // Stopped: by the person (cancel), or by the system, which runs the job again later.
             // A system stop keeps the sessions: the next run checks them first (see above).
@@ -315,6 +334,9 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             Outcome.TryLater(applicationContext.localized().getString(R.string.upload_waits_for_network), network = true)
         } catch (e: ApiException) {
             Log.w(LOG_TAG, "Upload refused: code ${e.code}")
+            // The proxy cannot reach the NAS (502/503/504): like a lost network, never counted
+            // against the file.
+            if (e.code in 502..504) return Outcome.TryLater(applicationContext.localized().getString(R.string.upload_waits_for_network), network = true)
             if (e.isTransient) Outcome.TryLater(describe(e, item.name), network = false) else Outcome.Failed(describe(e, item.name))
         } catch (e: Exception) {
             Log.w(LOG_TAG, "Upload failed: ${e.javaClass.simpleName}")
@@ -442,6 +464,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         private const val LEGACY_KEY_NAMES = "names"
         private const val LEGACY_KEY_OVERWRITE = "overwrite"
         private const val MAX_ATTEMPTS = 8
+        /** Runs in a row with server trouble and no finished file before a batch ends. */
+        private const val MAX_IDLE_RUNS = 16
         /** Files at once on Wi-Fi or another unmetered line, and on mobile data. */
         private const val PARALLEL_UNMETERED = 3
         private const val PARALLEL_METERED = 2
