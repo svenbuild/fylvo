@@ -20,7 +20,7 @@ data class UploadBatch(
     val items: List<UploadItem>,
     /** The account it was queued for ("server email"); a batch never uploads into another. */
     val account: String? = null,
-    /** Runs that ended in server trouble (not in a lost network); limits the retries. */
+    /** Runs in a row that ended in server trouble without finishing a file; ends the batch at a limit. */
     val serverRetries: Int = 0,
 ) {
     /** Index of the next file to upload, or -1 when every file is done or failed. */
@@ -47,6 +47,10 @@ data class UploadItem(
     val interrupted: Boolean = false,
     /** Replace an existing file of this name; null means the batch's setting. */
     val overwrite: Boolean? = null,
+    /** Bytes being sent with [sessionId]; a server file of this size means the upload finished. */
+    val uploadSize: Long = 0,
+    /** Runs this file stopped with server trouble (not a lost network); it is given up after a few. */
+    val serverRetries: Int = 0,
 ) {
     @Serializable
     enum class State { Pending, Done, Failed }

@@ -64,6 +64,14 @@ class FylvoApp : Application() {
     suspend fun endSession(expired: Boolean = false) {
         // Runs to the end even when the caller's screen or search is cancelled meanwhile.
         withContext(NonCancellable) {
+            // Open uploads first, while the sign-in still works (their sessions are cancelled).
+            if (!expired) {
+                withContext(Dispatchers.IO) {
+                    kotlinx.coroutines.withTimeoutOrNull(15_000) {
+                        runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cancelAllForSignOut(this@FylvoApp) }
+                    }
+                }
+            }
             if (!expired) {
                 runCatching {
                     apiClient.authService().signOut(RefreshTokenRequest(sessionManager.refreshTokenNow()))

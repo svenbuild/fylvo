@@ -29,12 +29,17 @@ class ApiException(val code: Int, message: String, val innerCodes: List<Int> = e
         const val CODE_LOGIN_REQUIRED = 401
         /** A file or folder with that name is already there (pkg/serializer/error.go). */
         const val CODE_OBJECT_EXISTS = 40004
+        /** The upload session is gone (CodeUploadSessionExpired): the file starts again. */
+        const val CODE_UPLOAD_SESSION_EXPIRED = 40011
+        /** Another upload or edit holds the file (CodeLockConflict). */
+        const val CODE_LOCK_CONFLICT = 40073
         /** No file or folder at that URI (CodeParentNotExist, "Path not exist"). */
         const val CODE_PATH_NOT_EXIST = 40016
     }
 
     /** Server trouble or an expired session, as opposed to a verdict on one request. */
-    val isTransient: Boolean get() = code in 500..599 || code == 429 || code == CODE_LOGIN_REQUIRED
+    val isTransient: Boolean get() = code in 500..599 || code == 429 || code == CODE_LOGIN_REQUIRED ||
+        code >= 50000 || code == CODE_UPLOAD_SESSION_EXPIRED
 }
 
 private const val CODE_OBJECT_EXISTS = ApiException.CODE_OBJECT_EXISTS
@@ -383,22 +388,37 @@ class FileRepository(private val api: ApiClient) {
                     ?.get("code")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() }
             }.getOrNull()
         } ?: 0
-        resp.code() !in 500..599 && code != 401 && code < 50000
+        resp.code() !in 500..599 && code != 401 && code < 50000 && code != ApiException.CODE_LOCK_CONFLICT
     } catch (e: java.io.IOException) {
         false // no network: try again later
     }
 
-    /** Size of the file at [uri] on the server, or null when it cannot be read. */
-    suspend fun sizeOf(uri: String): Long? = runCatching {
-        val body = api.service().fileInfo(uri).body()
-        if (body?.code == 0) body.data?.size else null
-    }.getOrElse { e -> if (e is kotlinx.coroutines.CancellationException) throw e else null }
+    /**
+     * Size of the file at [uri] on the server, or null when there is none (or no clear answer).
+     * Network trouble throws an IOException, so the caller can try again later.
+     */
+    suspend fun sizeOf(uri: String): Long? {
+        val resp = api.service().fileInfo(uri)
+        if (resp.code() in 500..599) throw java.io.IOException("server answered ${resp.code()}")
+        val body = resp.body() ?: throw java.io.IOException("no answer from the server")
+        return when (body.code) {
+            0 -> body.data?.size
+            // Clearly not there.
+            404, ApiException.CODE_PATH_NOT_EXIST -> null
+            // Anything else is unclear: ask again later instead of guessing.
+            else -> throw java.io.IOException("unclear answer ${body.code}")
+        }
+    }
 
     /** Throws when a raw response body is a JSON envelope with a non-zero code. */
     private fun checkEnvelope(body: okhttp3.ResponseBody?) {
-        val text = body?.use { it.string() } ?: return
-        val obj = runCatching { api.json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject }.getOrNull() ?: return
-        val code = (obj["code"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() ?: return
+        // Fylvo always answers with its JSON envelope. Anything else (a Wi-Fi login page, a proxy
+        // page) means the part did not reach the server: never count it as sent.
+        val text = body?.use { it.string() } ?: throw java.io.IOException("no answer from the server")
+        val obj = runCatching { api.json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject }.getOrNull()
+            ?: throw java.io.IOException("unexpected answer instead of the server's")
+        val code = (obj["code"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull()
+            ?: throw java.io.IOException("unexpected answer instead of the server's")
         if (code != 0) {
             val msg = (obj["msg"] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
             throw ApiException(code, msg.ifEmpty { "Upload failed (code $code)" })
