@@ -139,6 +139,7 @@ func (m *ImportTask) processImport(ctx context.Context, dep dependency.Dep) (tas
 		return task.StatusError, fmt.Errorf("failed to list physical files: %w", err)
 	}
 
+	physicalFiles = withoutThumbnails(physicalFiles)
 	m.l.Info("Importing %d physical files", len(physicalFiles))
 
 	m.Lock()
@@ -185,7 +186,8 @@ func (m *ImportTask) processBatch(ctx context.Context, dep dependency.Dep, user 
 	for _, physicalFile := range batch {
 		if physicalFile.IsDir {
 			m.l.Info("Creating folder %s", physicalFile.RelativePath)
-			_, err := fm.Create(ctx, dst.Join(physicalFile.RelativePath), types.FileTypeFolder)
+			_, err := fm.Create(ctx, dst.Join(physicalFile.RelativePath), types.FileTypeFolder,
+				fs.WithModifiedAt(physicalFile.LastModify))
 			atomic.AddInt64(&m.progress[ProgressTypeImported].Current, 1)
 			if err != nil {
 				m.l.Warning("Failed to create folder %s: %s", physicalFile.RelativePath, err)

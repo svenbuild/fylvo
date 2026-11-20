@@ -72,12 +72,18 @@ func (handler *Driver) List(ctx context.Context, path string, onProgress driver.
 
 			// Skip root directory
 			if path == root {
-				return nil
+				// Fylvo: a folder that is missing or cannot be read is an error, not an empty import.
+				return err
 			}
 
 			if err != nil {
-				handler.l.Warning("Failed to walk folder %q: %s", path, err)
-				return filepath.SkipDir
+				// Fylvo: a file that cannot be read is left out alone. Upstream returned SkipDir
+				// here, which for a file silently skips the rest of its folder.
+				handler.l.Warning("Failed to walk %q: %s", path, err)
+				if info != nil && info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
 			}
 
 			// Transform absolute path to relative path

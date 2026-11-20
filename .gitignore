@@ -40,3 +40,4 @@ cloudreve
 .DS_Store
 # Screenshots taken while working on the UI
 .shots/
+__pycache__/
