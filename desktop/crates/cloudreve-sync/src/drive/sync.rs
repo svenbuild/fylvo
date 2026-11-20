@@ -833,6 +833,11 @@ impl Mount {
                     if *parent == sync_root {
                         anyhow::bail!("the synced folder is missing on the server");
                     }
+                    // A missing subfolder reads as "everything in it was deleted", but only if
+                    // the synced folder itself is still there.
+                    if !self.server_has(&sync_root).await? {
+                        anyhow::bail!("the synced folder is missing on the server");
+                    }
                     tracing::debug!(
                         target: "drive::sync",
                         id = %self.id,
@@ -976,11 +981,9 @@ impl Mount {
         let (kept, doomed): (Vec<PathBuf>, Vec<PathBuf>) =
             doomed.into_iter().partition(|p| self.is_kept_locally(p));
         let plan = without_paths(plan, &kept);
-        // Once a deletion is held, it stays held even if a later pass sees fewer entries.
-        let already_held = doomed
-            .iter()
-            .any(|p| self.is_deletion_held(DeletionSide::Local, p));
-        if !doomed.is_empty() && (already_held || self.mass_deletion_count(&doomed).is_some()) {
+        // Many deletions at once (or within a short time) wait for the user's answer. Once a
+        // deletion is held, the following ones wait too.
+        if !doomed.is_empty() && self.local_deletion_needs_hold(&doomed) {
             self.hold_deletion(DeletionSide::Local, doomed.clone());
             return without_paths(plan, &doomed);
         }

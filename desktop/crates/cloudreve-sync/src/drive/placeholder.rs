@@ -100,21 +100,21 @@ impl CrPlaceholder {
 
     /// Remove the local file or folder and its inventory entry.
     ///
-    /// Fylvo: nothing with local data is deleted for good. Online-only placeholders hold no
-    /// data of their own (the server keeps the file, in its trash if it was deleted there)
-    /// and are removed. A file with local data goes to the Windows recycle bin, first turned
-    /// back into a normal file so it can be restored from there; if that fails, the file is
-    /// kept. A folder is removed only when it is empty on disk (a folder that was never
-    /// opened has nothing on disk).
+    /// Fylvo: nothing that only exists here is deleted for good. A placeholder in sync holds no
+    /// byte the server does not have (the server keeps the file, renamed or in its trash) and
+    /// is removed, whether it was downloaded or not. A file with local changes, or a normal
+    /// file, goes to the Windows recycle bin, a placeholder first turned back into a normal
+    /// file so it can be restored from there; if that fails, the file is kept. A folder is
+    /// removed only when it is empty on disk (a folder that was never opened has nothing on
+    /// disk).
     pub fn delete_placeholder(&self, inventory: Arc<InventoryDb>) -> Result<()> {
         let info = &self.local_file_info;
         if info.exists {
-            // Online only and unchanged: no byte here that the server does not have.
-            let online_only = info.is_placeholder() && info.partial_on_disk() && info.in_sync();
+            let same_as_server = info.is_placeholder() && info.in_sync();
             if info.is_directory {
                 std::fs::remove_dir(&self.local_path)
                     .context("local folder is not empty, it was kept")?;
-            } else if online_only {
+            } else if same_as_server {
                 std::fs::remove_file(&self.local_path).context("failed to delete local file")?;
             } else {
                 if info.is_placeholder() {

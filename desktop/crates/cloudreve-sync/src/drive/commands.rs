@@ -1015,9 +1015,10 @@ impl Mount {
             return Ok(());
         }
 
-        // Fylvo: many deletions at once wait for the user's answer. Once a deletion is held,
-        // the following ones wait too, so a large deletion cannot pass in small parts.
-        if self.has_server_deletion_held() || self.mass_deletion_count(&paths).is_some() {
+        // Fylvo: many deletions at once (or within a short time) wait for the user's answer.
+        // Once a deletion is held, the following ones wait too, so a large deletion cannot
+        // pass in small parts.
+        if self.server_deletion_needs_hold(&paths).await {
             self.hold_deletion(DeletionSide::Server, paths);
             return Ok(());
         }
@@ -1026,7 +1027,7 @@ impl Mount {
     }
 
     /// Delete the given local paths on the server. They go to the server's trash. Returns the
-    /// paths the server did not delete (a re-sync for them is already requested).
+    /// paths that were not deleted (for those the server refused, a re-sync is requested).
     pub(crate) async fn delete_on_server(&self, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
         if paths.is_empty() {
             return Ok(Vec::new());
@@ -1035,14 +1036,16 @@ impl Mount {
             let config = self.config.read().await;
             (config.sync_path.clone(), config.remote_path.to_string())
         };
-        let path_uri_mappings: HashMap<String, PathBuf> = paths
-            .into_iter()
-            .filter_map(|path| {
-                local_path_to_cr_uri(path.clone(), sync_path.clone(), remote_base.clone())
-                    .ok()
-                    .map(|uri| (uri.to_string(), path))
-            })
-            .collect();
+        let mut path_uri_mappings: HashMap<String, PathBuf> = HashMap::new();
+        let mut unmapped = Vec::new();
+        for path in paths {
+            match local_path_to_cr_uri(path.clone(), sync_path.clone(), remote_base.clone()) {
+                Ok(uri) => {
+                    path_uri_mappings.insert(uri.to_string(), path);
+                }
+                Err(_) => unmapped.push(path),
+            }
+        }
         let uris: Vec<String> = path_uri_mappings.keys().cloned().collect();
 
         // cancel related tasks
@@ -1103,10 +1106,12 @@ impl Mount {
                 .context("Failed to update local inventory after deletions")?;
         }
 
-        Ok(path_uri_mappings
-            .into_values()
-            .filter(|path| !successful_paths.contains(path))
-            .collect())
+        unmapped.extend(
+            path_uri_mappings
+                .into_values()
+                .filter(|path| !successful_paths.contains(path)),
+        );
+        Ok(unmapped)
     }
 
     /// Build a mapping from remote URIs to local paths for the given events.
@@ -1217,7 +1222,7 @@ impl Mount {
     }
 
     /// Update the local inventory to remove entries for successfully deleted paths.
-    fn update_inventory_for_deletions(&self, paths: &[PathBuf]) -> Result<()> {
+    pub(crate) fn update_inventory_for_deletions(&self, paths: &[PathBuf]) -> Result<()> {
         let path_strs: Vec<&str> = paths
             .iter()
             .filter_map(|path| {

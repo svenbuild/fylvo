@@ -14,10 +14,13 @@ use crate::drive::{
 use crate::tasks::TaskPayload;
 use crate::utils::toast;
 use anyhow::Result;
+use crate::drive::utils::local_path_to_cr_uri;
 use cloudreve_api::{
+    ApiError,
+    error::ErrorCode,
     api::ExplorerApi,
     boolset::Boolset,
-    models::explorer::{ListFileService, navigator_capability},
+    models::explorer::{GetFileInfoService, ListFileService, navigator_capability},
 };
 use serde::Serialize;
 use std::{
@@ -35,6 +38,12 @@ const MASS_DELETE_SHARE_MIN: i64 = 10;
 const MASS_DELETE_SHARE_PERCENT: i64 = 30;
 /// How long a confirmation (or a known server rename) lets local deletions under its paths pass.
 const CONFIRMATION_VALID_FOR: Duration = Duration::from_secs(600);
+/// Deletions of one side within this time add up, so a large deletion that arrives in small
+/// parts (one folder after the other) is held too.
+const RECENT_WINDOW: Duration = Duration::from_secs(120);
+/// At most this many folders this PC never opened are counted on the server per deletion; more
+/// are held without asking the server.
+const MAX_UNOPENED_LOOKUPS: usize = 10;
 
 /// Whether deleting `affected` of `total` known entries needs the user's confirmation.
 pub fn is_mass_deletion(affected: i64, total: i64) -> bool {
@@ -75,6 +84,11 @@ pub struct DeletionGuardState {
     confirmed_local: Vec<(PathBuf, Instant)>,
     /// Paths the user chose to keep here for this run; not deleted and not asked about again.
     kept_local: Vec<PathBuf>,
+    /// Deletions that passed recently, per side: when and how many entries.
+    recent_server: Vec<(Instant, i64)>,
+    recent_local: Vec<(Instant, i64)>,
+    /// Held folders this PC never opened, with their number of entries on the server.
+    unopened: Vec<(PathBuf, i64)>,
 }
 
 impl DeletionGuardState {
@@ -83,6 +97,31 @@ impl DeletionGuardState {
             DeletionSide::Server => &mut self.server,
             DeletionSide::Local => &mut self.local,
         }
+    }
+
+    /// Whether `affected` more deletions on this side, added to the recent ones, make a mass
+    /// deletion of a drive with `total` entries. If not, they count as recent from now on.
+    fn check_recent(&mut self, side: DeletionSide, affected: i64, total: i64, now: Instant) -> bool {
+        let recent = match side {
+            DeletionSide::Server => &mut self.recent_server,
+            DeletionSide::Local => &mut self.recent_local,
+        };
+        recent.retain(|(at, _)| now.duration_since(*at) < RECENT_WINDOW);
+        let sum = recent.iter().map(|(_, n)| n).sum::<i64>() + affected;
+        if is_mass_deletion(sum, total) {
+            return true;
+        }
+        recent.push((now, affected));
+        false
+    }
+
+    /// Entries under unopened folders among `paths` that the inventory does not know.
+    fn unopened_entries(&self, paths: &[PathBuf]) -> i64 {
+        self.unopened
+            .iter()
+            .filter(|(folder, _)| is_under(folder, paths))
+            .map(|(_, n)| n)
+            .sum()
     }
 
     /// Add paths to the hold of a side. Returns `None` if nothing changed, else whether a new
@@ -151,12 +190,12 @@ impl DeletionGuardState {
     /// a second answer is refused until `release` or `unclaim`.
     fn answered(&mut self, side: DeletionSide, version: u64) -> Result<Option<HeldDeletion>> {
         match self.slot(side) {
-            Some(held) if held.resolving => anyhow::bail!("this deletion is being handled"),
+            Some(held) if held.resolving => anyhow::bail!("{}", t!("heldDeletionBusy")),
             Some(held) if held.version == version && held.counted => {
                 held.resolving = true;
                 Ok(Some(held.clone()))
             }
-            Some(_) => anyhow::bail!("the held deletion changed, please look at it again"),
+            Some(_) => anyhow::bail!("{}", t!("heldDeletionChanged")),
             None => Ok(None),
         }
     }
@@ -175,12 +214,15 @@ impl DeletionGuardState {
         let held = slot.as_mut()?;
         held.resolving = false;
         held.paths.retain(|p| !resolved.contains(p));
-        if held.paths.is_empty() {
+        let remaining = if held.paths.is_empty() {
             *slot = None;
-            return None;
-        }
-        held.counted = false;
-        Some(held.paths.clone())
+            None
+        } else {
+            held.counted = false;
+            Some(held.paths.clone())
+        };
+        self.unopened.retain(|(folder, _)| !resolved.contains(folder));
+        remaining
     }
 
     fn keep(&mut self, paths: &[PathBuf]) {
@@ -202,6 +244,29 @@ pub fn is_under(path: &Path, roots: &[PathBuf]) -> bool {
     roots.iter().any(|root| path.starts_with(root))
 }
 
+/// The server's answer for a path that does not exist.
+pub fn is_not_found(error: &ApiError) -> bool {
+    matches!(error, ApiError::ApiError { code, .. }
+        if *code == ErrorCode::ParentNotExist as i32 || *code == ErrorCode::NotFound as i32)
+}
+
+/// An answer to a held deletion that is running. Ends the claim when dropped while active.
+struct Claim<'a> {
+    mount: &'a Mount,
+    side: DeletionSide,
+    active: bool,
+}
+
+impl Drop for Claim<'_> {
+    fn drop(&mut self) {
+        if self.active {
+            if let Ok(mut state) = self.mount.deletion_guard.lock() {
+                state.unclaim(self.side);
+            }
+        }
+    }
+}
+
 /// Read-only means the user may neither create, upload nor change files in the drive.
 /// `None` when the server sent no capability set.
 pub fn is_read_only_capability(capability: Option<&str>) -> Option<bool> {
@@ -217,10 +282,33 @@ pub fn is_read_only_capability(capability: Option<&str>) -> Option<bool> {
 }
 
 impl Mount {
-    /// Number of affected entries if deleting `paths` needs the user's confirmation.
-    pub(crate) fn mass_deletion_count(&self, paths: &[PathBuf]) -> Option<i64> {
+    /// Whether deleting `paths` on the server needs the user's confirmation. Folders this PC
+    /// never opened are counted on the server, since the inventory does not know their content.
+    pub(crate) async fn server_deletion_needs_hold(&self, paths: &[PathBuf]) -> bool {
+        if self.has_deletion_held(DeletionSide::Server) {
+            return true;
+        }
+        let unopened = self.count_unopened_folders(paths).await;
         let (affected, total) = self.count_deletion(paths);
-        is_mass_deletion(affected, total).then_some(affected)
+        let affected = affected + unopened.iter().map(|(_, n)| n).sum::<i64>();
+        let mut state = self.deletion_guard.lock().unwrap();
+        let hold = state.check_recent(DeletionSide::Server, affected, total, Instant::now());
+        if hold {
+            state.unopened.extend(unopened);
+        }
+        hold
+    }
+
+    /// Whether deleting `paths` on this PC needs the user's confirmation.
+    pub(crate) fn local_deletion_needs_hold(&self, paths: &[PathBuf]) -> bool {
+        if self.has_deletion_held(DeletionSide::Local) {
+            return true;
+        }
+        let (affected, total) = self.count_deletion(paths);
+        self.deletion_guard
+            .lock()
+            .unwrap()
+            .check_recent(DeletionSide::Local, affected, total, Instant::now())
     }
 
     /// Entries at or under `paths`, and all entries of the drive. Without numbers from the
@@ -231,10 +319,90 @@ impl Mount {
             .inventory
             .count_under_paths(&self.id, &strs)
             .and_then(|affected| Ok((affected, self.inventory.count_for_drive(&self.id)?)));
-        counts.unwrap_or_else(|e| {
+        let (affected, total) = counts.unwrap_or_else(|e| {
             tracing::error!(target: "drive::guard", id = %self.id, error = ?e, "Failed to count deletion");
             (paths.len() as i64, 0)
-        })
+        });
+        let unopened = self.deletion_guard.lock().unwrap().unopened_entries(paths);
+        (affected + unopened, total)
+    }
+
+    /// Folders among `paths` whose content this PC never saw, with their number of entries on
+    /// the server. A folder the server cannot count counts as a mass deletion.
+    async fn count_unopened_folders(&self, paths: &[PathBuf]) -> Vec<(PathBuf, i64)> {
+        let unopened: Vec<&PathBuf> = paths
+            .iter()
+            .filter(|path| {
+                let Some(text) = path.to_str() else {
+                    return false;
+                };
+                let is_folder =
+                    matches!(self.inventory.query_by_path(text), Ok(Some(meta)) if meta.is_folder);
+                is_folder && matches!(self.inventory.count_under_paths(&self.id, &[text]), Ok(1))
+            })
+            .collect();
+        let mut counted = Vec::with_capacity(unopened.len());
+        for (i, path) in unopened.into_iter().enumerate() {
+            let entries = if i < MAX_UNOPENED_LOOKUPS {
+                self.count_on_server(path).await.unwrap_or(MASS_DELETE_COUNT)
+            } else {
+                MASS_DELETE_COUNT
+            };
+            counted.push((path.clone(), entries));
+        }
+        counted
+    }
+
+    /// Number of entries in a folder on the server, `None` if the server cannot tell.
+    async fn count_on_server(&self, path: &Path) -> Option<i64> {
+        let uri = self.remote_uri(path).await.ok()?;
+        let info = self
+            .cr_client
+            .get_file_info(&GetFileInfoService {
+                uri: Some(uri),
+                id: None,
+                extended: None,
+                folder_summary: Some(true),
+            })
+            .await;
+        match info {
+            Ok(file) => file
+                .folder_summary
+                .map(|summary| summary.files as i64 + summary.folders as i64),
+            Err(e) => {
+                tracing::warn!(target: "drive::guard", id = %self.id, path = %path.display(), error = %e, "Failed to count folder on the server");
+                None
+            }
+        }
+    }
+
+    /// Whether the server still has the entry at the local `path`. `Err` if it cannot tell.
+    pub(crate) async fn server_has(&self, path: &Path) -> Result<bool> {
+        let uri = self.remote_uri(path).await?;
+        let info = self
+            .cr_client
+            .get_file_info(&GetFileInfoService {
+                uri: Some(uri),
+                id: None,
+                extended: None,
+                folder_summary: None,
+            })
+            .await;
+        match info {
+            Ok(_) => Ok(true),
+            Err(e) if is_not_found(&e) => Ok(false),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    async fn remote_uri(&self, path: &Path) -> Result<String> {
+        let config = self.config.read().await;
+        Ok(local_path_to_cr_uri(
+            path.to_path_buf(),
+            config.sync_path.clone(),
+            config.remote_path.to_string(),
+        )?
+        .to_string())
     }
 
     /// Hold a deletion until the user decides. Adds to an already held deletion of that side.
@@ -265,8 +433,8 @@ impl Mount {
         self.deletion_guard.lock().unwrap().is_kept(path)
     }
 
-    pub(crate) fn has_server_deletion_held(&self) -> bool {
-        self.deletion_guard.lock().unwrap().server.is_some()
+    fn has_deletion_held(&self, side: DeletionSide) -> bool {
+        self.deletion_guard.lock().unwrap().slot(side).is_some()
     }
 
     /// Whether all `paths` may be deleted locally without asking.
@@ -314,54 +482,70 @@ impl Mount {
         let Some(held) = self.deletion_guard.lock().unwrap().answered(side, version)? else {
             return Ok(());
         };
+        // Ends the claim if the answer stops early (an error or a panic).
+        let mut claim = Claim {
+            mount: self,
+            side,
+            active: true,
+        };
         tracing::info!(target: "drive::guard", id = %self.id, side = ?side, confirm, count = held.count, "Held deletion resolved");
 
         match (side, confirm) {
             (DeletionSide::Server, true) => {
-                // Only what is surely still gone on this PC. The hold stays until the server
-                // answered, so no sync brings the files back meanwhile.
-                let gone: Vec<PathBuf> = held
-                    .paths
-                    .iter()
-                    .filter(|p| matches!(p.try_exists(), Ok(false)))
-                    .cloned()
-                    .collect();
-                let failed = match self.delete_on_server(gone).await {
-                    Ok(failed) => failed,
-                    Err(e) => {
-                        self.deletion_guard.lock().unwrap().unclaim(side);
-                        return Err(e);
+                // Only what is surely still gone on this PC; what is back counts as resolved,
+                // what cannot be checked stays held. The hold stays until the server answered,
+                // so no sync brings the files back meanwhile.
+                let mut gone = Vec::new();
+                let mut failed = Vec::new();
+                for path in &held.paths {
+                    match path.try_exists() {
+                        Ok(false) => gone.push(path.clone()),
+                        Ok(true) => {}
+                        Err(_) => failed.push(path.clone()),
                     }
-                };
-                // What the server refused stays held; the user can try again or restore it.
+                }
+                let refused = self.delete_on_server(gone).await?;
+                // An entry the server no longer has is deleted already (by another device, or
+                // by an earlier try whose answer got lost).
+                let mut already_gone = Vec::new();
+                for path in refused {
+                    match self.server_has(&path).await {
+                        Ok(false) => already_gone.push(path),
+                        _ => failed.push(path),
+                    }
+                }
+                if !already_gone.is_empty() {
+                    self.update_inventory_for_deletions(&already_gone)?;
+                }
                 let resolved: Vec<PathBuf> = held
                     .paths
                     .iter()
                     .filter(|p| !failed.contains(p))
                     .cloned()
                     .collect();
+                claim.active = false;
                 self.release_held(side, &resolved);
                 if !failed.is_empty() {
-                    anyhow::bail!(
-                        "{} entries could not be deleted on the server, they stay held",
-                        failed.len()
-                    );
+                    anyhow::bail!("{}", t!("heldDeletionPartlyFailed", "count" => failed.len()));
                 }
                 Ok(())
             }
             (DeletionSide::Server, false) => {
                 // Bring the files back from the server.
+                claim.active = false;
                 self.release_held(side, &held.paths);
                 self.request_sync(held.paths)
             }
             (DeletionSide::Local, true) => {
                 self.allow_local_deletion(held.paths.clone());
+                claim.active = false;
                 self.release_held(side, &held.paths);
                 self.request_sync(held.paths)
             }
             (DeletionSide::Local, false) => {
                 // Keep the local files for this run; they are not asked about again.
                 self.deletion_guard.lock().unwrap().keep(&held.paths);
+                claim.active = false;
                 self.release_held(side, &held.paths);
                 Ok(())
             }
@@ -557,6 +741,58 @@ mod tests {
         state.set_count(DeletionSide::Local, &remaining, 1);
         assert!(state.release(DeletionSide::Local, &remaining).is_none());
         assert!(state.local.is_none());
+    }
+
+    #[test]
+    fn deletions_in_small_parts_add_up() {
+        let mut state = DeletionGuardState::default();
+        let now = Instant::now();
+        // 60 entries in 12 folders of 5, in a drive of 10000: each part alone is small.
+        for i in 0..9 {
+            let at = now + Duration::from_secs(i);
+            assert!(!state.check_recent(DeletionSide::Local, 5, 10_000, at));
+        }
+        // The tenth part reaches 50 within the window and is held.
+        let at = now + Duration::from_secs(9);
+        assert!(state.check_recent(DeletionSide::Local, 5, 10_000, at));
+        // A held part does not count as passed, the next one is held too.
+        assert!(state.check_recent(DeletionSide::Local, 5, 10_000, at));
+        // The other side counts on its own.
+        assert!(!state.check_recent(DeletionSide::Server, 5, 10_000, at));
+        // After the window, small deletions pass again.
+        let later = now + RECENT_WINDOW + Duration::from_secs(10);
+        assert!(!state.check_recent(DeletionSide::Local, 5, 10_000, later));
+    }
+
+    #[test]
+    fn unopened_folder_counts_until_released() {
+        let mut state = DeletionGuardState::default();
+        state.unopened.push((PathBuf::from(r"C:\S\Photos"), 10_000));
+        assert_eq!(state.unopened_entries(&paths(&[r"C:\S\Photos"])), 10_000);
+        // Also when held together with its parent folder, not for a sibling.
+        assert_eq!(state.unopened_entries(&paths(&[r"C:\S"])), 10_000);
+        assert_eq!(state.unopened_entries(&paths(&[r"C:\S\Photos2"])), 0);
+        let (_, merged) = state.add(DeletionSide::Server, paths(&[r"C:\S\Photos"])).unwrap();
+        state.set_count(DeletionSide::Server, &merged, 10_001);
+        let version = state.server.as_ref().unwrap().version;
+        state.answered(DeletionSide::Server, version).unwrap();
+        state.release(DeletionSide::Server, &merged);
+        assert_eq!(state.unopened_entries(&paths(&[r"C:\S\Photos"])), 0);
+    }
+
+    #[test]
+    fn not_found_answers() {
+        let api = |code: i32| ApiError::ApiError {
+            code,
+            message: String::new(),
+            error_detail: None,
+            correlation_id: None,
+            aggregated_errors: None,
+        };
+        assert!(is_not_found(&api(ErrorCode::ParentNotExist as i32)));
+        assert!(is_not_found(&api(ErrorCode::NotFound as i32)));
+        assert!(!is_not_found(&api(ErrorCode::LockConflict as i32)));
+        assert!(!is_not_found(&ApiError::Other("offline".into())));
     }
 
     #[test]
