@@ -178,6 +178,8 @@ func TestPreviousRequiredRules(t *testing.T) {
 	previous := e.version("cloudreve://my/Shared/doc.txt")
 	_, err = e.conditionalUpload(e.as(visitor), path("/doc.txt"), 30, previous, true)
 	requireCode(t, err, serializer.CodeOwnerOnly)
+	_, err = e.conditionalUpload(e.as(visitor), path("/doc.txt"), 30, "", true)
+	requireCode(t, err, serializer.CodeParamErr)
 	session, err := e.conditionalUpload(e.as(visitor), path("/doc.txt"), 30, previous)
 	require.NoError(t, err)
 	require.Equal(t, "doc (1).txt", session.Props.Uri.Name())
