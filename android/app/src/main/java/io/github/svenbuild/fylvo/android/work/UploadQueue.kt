@@ -49,6 +49,8 @@ data class UploadItem(
     val overwrite: Boolean? = null,
     /** Bytes being sent with [sessionId]; a server file of this size means the upload finished. */
     val uploadSize: Long = 0,
+    /** Runs this file stopped with server trouble (not a lost network); it is given up after a few. */
+    val serverRetries: Int = 0,
 ) {
     @Serializable
     enum class State { Pending, Done, Failed }

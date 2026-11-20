@@ -93,9 +93,13 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                     val target = item.targetUri
                     val replace = item.overwrite ?: batch.overwrite
                     if (!replace && target != null && item.uploadSize > 0) {
+                        // Any unclear answer (no network, server trouble, a login page of a
+                        // public Wi-Fi instead of JSON): ask again later, never guess.
                         val serverSize = try {
                             app.fileRepository.sizeOf(target)
-                        } catch (e: java.io.IOException) {
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
                             return Result.retry()
                         }
                         if (finishedBeforeStop(replace, item.uploadSize, serverSize)) {
@@ -155,8 +159,6 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                         is Outcome.Done -> synchronized(lock) {
                                             inFlight.remove(i)
                                             update(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null, interrupted = false) }
-                                            // Progress: server hiccups so far do not count against the rest.
-                                            if (batch.serverRetries > 0) batch = batch.copy(serverRetries = 0).also(queue::save)
                                         }
                                         is Outcome.Failed -> {
                                             cancelSession(app, synchronized(lock) { batch.items[i] })
@@ -169,8 +171,21 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                         // Its session stays in the list and is cancelled at the start
                                         // of the next run.
                                         is Outcome.TryLater -> {
-                                            stop.compareAndSet(null, outcome)
-                                            synchronized(lock) { inFlight.remove(i) }
+                                            val tries = synchronized(lock) { batch.items[i].serverRetries }
+                                            if (!outcome.network && tries + 1 >= MAX_ATTEMPTS) {
+                                                // This one file keeps failing on the server: give it up
+                                                // alone, the others go on.
+                                                cancelSession(app, synchronized(lock) { batch.items[i] })
+                                                synchronized(lock) {
+                                                    inFlight.remove(i)
+                                                    update(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null) }
+                                                    lastError = outcome.message
+                                                }
+                                            } else {
+                                                if (!outcome.network) update(i) { it.copy(serverRetries = it.serverRetries + 1) }
+                                                stop.compareAndSet(null, outcome)
+                                                synchronized(lock) { inFlight.remove(i) }
+                                            }
                                         }
                                     }
                                 }
@@ -178,20 +193,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                         }
                     }
                 }
-            stop.get()?.let { outcome ->
-                // No network or the server is away: keep the list and the session ids,
-                // WorkManager runs the batch again when the network is back. A missing
-                // network never ends the batch; server trouble does after a few runs.
-                if (outcome.network) return Result.retry()
-                // Count only server trouble, not the runs a lost network or a stop caused.
-                if (batch.serverRetries < MAX_ATTEMPTS) {
-                    synchronized(lock) { batch = batch.copy(serverRetries = batch.serverRetries + 1).also(queue::save) }
-                    return Result.retry()
-                }
-                batch.items.filter { it.state == UploadItem.State.Pending && it.sessionId != null }.forEach { cancelSession(app, it) }
-                batch = failRest(queue, batch)
-                lastError = outcome.message
-            }
+            // No network or the server is away: keep the list and the session ids, WorkManager
+            // runs the batch again later. A missing network never ends the batch; a file that
+            // keeps failing on the server is given up alone after a few tries (above).
+            if (stop.get() != null) return Result.retry()
         } catch (e: CancellationException) {
             // Stopped: by the person (cancel), or by the system, which runs the job again later.
             // A system stop keeps the sessions: the next run checks them first (see above).
@@ -222,11 +227,6 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         // that waits for it in WorkManager.
         return Result.success(output)
     }
-
-    private fun failRest(queue: UploadQueue, batch: UploadBatch): UploadBatch =
-        batch.copy(items = batch.items.map {
-            if (it.state == UploadItem.State.Pending) it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null) else it
-        }).also(queue::save)
 
     /**
      * An upload queued by 1.0.0 (the file list in the job input): turn it into a batch, under the
@@ -545,6 +545,26 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             queue.delete(batchId)
             releaseUnused(context, queue, batch.items.map { it.uri })
             File(context.cacheDir, "upload_staging").listFiles { f -> f.name.startsWith("$workId-") }?.forEach { it.delete() }
+        }
+
+        /**
+         * Sign-out: stops all uploads and cancels their open server sessions while the sign-in is
+         * still valid, so no locked 0 B placeholders stay behind. Then forgets the lists.
+         */
+        suspend fun cancelAllForSignOut(context: Context) {
+            WorkManager.getInstance(context).cancelAllWorkByTag(TAG).result.get()
+            val app = context.applicationContext as FylvoApp
+            val queue = queue(context)
+            queue.ids().forEach { id ->
+                queue.load(id)?.items?.forEach { item ->
+                    val sessionId = item.sessionId
+                    val target = item.targetUri
+                    if (item.state == UploadItem.State.Pending && sessionId != null && target != null) {
+                        app.fileRepository.deleteUploadSession(sessionId, target)
+                    }
+                }
+                queue.delete(id)
+            }
         }
 
         /**
