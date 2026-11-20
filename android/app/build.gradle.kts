@@ -13,7 +13,7 @@ android {
         applicationId = "io.github.svenbuild.fylvo.android"
         minSdk = 28
         targetSdk = 36
-        versionCode = 4
+        versionCode = 5
         versionName = "1.1.1"
     }
 

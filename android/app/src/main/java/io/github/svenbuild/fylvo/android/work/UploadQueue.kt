@@ -43,6 +43,8 @@ data class UploadItem(
     val sessionId: String? = null,
     /** The file's address on the server, which the session belongs to. */
     val targetUri: String? = null,
+    /** An earlier run was stopped while this file was being sent (its session was cancelled). */
+    val interrupted: Boolean = false,
 ) {
     @Serializable
     enum class State { Pending, Done, Failed }

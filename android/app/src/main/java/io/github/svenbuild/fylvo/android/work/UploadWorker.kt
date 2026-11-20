@@ -35,7 +35,6 @@ import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.localized
 import java.io.File
 import java.io.FileOutputStream
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -81,58 +80,55 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             // Sessions left by a run that was stopped half way: cancel them on the server first,
             // so their 0 B placeholders and locks go away before the files are sent again. If that
             // does not work now (only network or server trouble say so), wait and try later.
-            val interrupted = mutableSetOf<Int>()
             batch.items.forEachIndexed { i, item ->
                 if (item.state == UploadItem.State.Pending && item.sessionId != null) {
                     if (!cancelSession(app, item)) return Result.retry()
-                    update(i) { it.copy(sessionId = null, targetUri = null) }
-                    interrupted += i
+                    // Remembered in the list, so a later run still knows it if this one stops.
+                    update(i) { it.copy(sessionId = null, targetUri = null, interrupted = true) }
                 }
             }
 
             val pending = batch.items.indices.filter { batch.items[it].state == UploadItem.State.Pending }
             val cursor = AtomicInteger(0)
-            val inFlight = ConcurrentHashMap<Int, LongArray>() // index -> [sent, size]
-            fun reportAll(name: String, force: Boolean = false) {
-                val done = synchronized(lock) { batch.uploaded + batch.failed }
-                val sent = inFlight.values.sumOf { it[0] }
-                val size = inFlight.values.sumOf { it[1] }
-                report(name, done, total, sent, size, parentUri, force)
+            // Per file in flight: how far it is, in thousandths. Read and written under [lock], so
+            // every report is one consistent picture.
+            val inFlight = HashMap<Int, Int>()
+            fun reportAll(name: String, i: Int, sent: Long, size: Long, force: Boolean = false) = synchronized(lock) {
+                if (i in inFlight) inFlight[i] = if (size > 0) (sent * 1000 / size).toInt().coerceIn(0, 1000) else 0
+                val done = batch.uploaded + batch.failed
+                report(name, done, total, inFlight.values.sum(), inFlight.size, parentUri, force)
             }
+            // A network or server problem in one upload: the others finish the file they are on
+            // (cancelling them could leave a session the list does not know), then the run stops.
+            val stop = java.util.concurrent.atomic.AtomicReference<Outcome.TryLater?>(null)
 
-            try {
-                coroutineScope {
+            coroutineScope {
                     repeat(parallelUploads()) {
                         launch {
-                            while (true) {
+                            while (stop.get() == null) {
                                 val i = pending.getOrNull(cursor.getAndIncrement()) ?: break
-                                val item = synchronized(lock) { batch.items[i] }
-                                inFlight[i] = longArrayOf(0, 0)
-                                reportAll(item.name, force = true)
-                                val outcome = uploadOne(app, item, parentUri, batch.overwrite, i in interrupted, onSession = { sessionId, targetUri ->
+                                val item = synchronized(lock) { batch.items[i].also { inFlight[i] = 0 } }
+                                reportAll(item.name, i, 0, 0, force = true)
+                                val outcome = uploadOne(app, item, parentUri, batch.overwrite, item.interrupted, onSession = { sessionId, targetUri ->
                                     update(i) { it.copy(sessionId = sessionId, targetUri = targetUri) }
-                                }) { sent, size ->
-                                    inFlight[i]?.let { it[0] = sent; it[1] = size }
-                                    reportAll(item.name)
-                                }
-                                inFlight.remove(i)
+                                }) { sent, size -> reportAll(item.name, i, sent, size) }
                                 when (outcome) {
-                                    is Outcome.Done -> update(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null) }
+                                    is Outcome.Done -> update(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null, interrupted = false) }
                                     is Outcome.Failed -> {
                                         cancelSession(app, synchronized(lock) { batch.items[i] })
-                                        update(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null) }
-                                        lastError = outcome.message
+                                        update(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null, interrupted = false) }
+                                        synchronized(lock) { lastError = outcome.message }
                                     }
-                                    // Stops the other uploads of this run too; their sessions stay
-                                    // in the list and are cancelled at the start of the next run.
-                                    is Outcome.TryLater -> throw StopBatch(outcome)
+                                    // Its session stays in the list and is cancelled at the start of
+                                    // the next run.
+                                    is Outcome.TryLater -> stop.compareAndSet(null, outcome)
                                 }
+                                synchronized(lock) { inFlight.remove(i) }
                             }
                         }
                     }
                 }
-            } catch (stop: StopBatch) {
-                val outcome = stop.outcome
+            stop.get()?.let { outcome ->
                 // No network or the server is away: keep the list and the session ids,
                 // WorkManager runs the batch again when the network is back. A missing
                 // network never ends the batch; server trouble does after a few runs.
@@ -197,9 +193,6 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         return foregroundInfo("", 0, 0, 0, 0)
     }
 
-    /** Ends all uploads of this run because one of them met network or server trouble. */
-    private class StopBatch(val outcome: Outcome.TryLater) : Exception()
-
     /**
      * How many files go up at once. More than one fills the pauses between the small requests
      * of each file (session, parts, finish) on a good line; on mobile data two keep a slow line
@@ -229,7 +222,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     ): Outcome {
         val uri = Uri.parse(item.uri)
         val tmp = try {
-            stageToCache(uri)
+            withContext(Dispatchers.IO) { stageToCache(uri) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -291,22 +284,21 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
      * Called from OkHttp's write loop, hence the non-suspending Async variants.
      */
     private fun report(
-        name: String, index: Int, total: Int, sent: Long, size: Long, parentUri: String, force: Boolean = false,
+        name: String, done: Int, total: Int, permille: Int, inFlight: Int, parentUri: String, force: Boolean = false,
     ) {
         setProgressAsync(
             workDataOf(
                 KEY_PARENT_URI to parentUri,
                 KEY_PROGRESS_NAME to name,
-                KEY_PROGRESS_INDEX to index,
+                KEY_PROGRESS_INDEX to done,
                 KEY_PROGRESS_TOTAL to total,
-                KEY_PROGRESS_SENT to sent,
-                KEY_PROGRESS_SIZE to size,
+                KEY_PROGRESS_PERMILLE to permille,
             )
         )
         val now = System.currentTimeMillis()
         if (force || now - lastNotified >= NOTIFY_INTERVAL_MS) {
             lastNotified = now
-            setForegroundAsync(foregroundInfo(name, index, total, sent, size))
+            setForegroundAsync(foregroundInfo(name, done, total, permille.toLong(), inFlight * 1000L))
         }
     }
 
@@ -397,6 +389,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         const val KEY_PROGRESS_TOTAL = "total"
         const val KEY_PROGRESS_SENT = "sent"
         const val KEY_PROGRESS_SIZE = "size"
+        /** Sum of the files in flight, each in thousandths (0 to 1000). */
+        const val KEY_PROGRESS_PERMILLE = "permille"
         private const val CHANNEL_ID = "uploads"
         private const val NOTIF_ID_BASE = 0x10000
         private const val NOTIFY_INTERVAL_MS = 500L
@@ -419,7 +413,11 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             overwrite: Boolean = false,
         ) {
             if (uris.isEmpty()) return
-            val fileNames = names ?: uris.map { displayName(context, it) }
+            // Two picked files with the same name would race for one address: keep both.
+            val fileNames = (names ?: uris.map { displayName(context, it) }).let { list ->
+                val taken = mutableSetOf<String>()
+                list.map { n -> uniqueName(n, taken).also { taken += it } }
+            }
             // Keep the read permissions while Android's cap allows it with room to spare (it drops
             // the oldest ones beyond, e.g. the folder-sync folder). Only picker documents can be
             // kept; without it a file can still be read until the app is closed.
@@ -572,14 +570,16 @@ data class UploadStatus(
     val error: String?,
     /** Stopped for lack of network (or server) and waiting to go on by itself. */
     val waitingForNetwork: Boolean = false,
+    /** Sum of the files in flight, each in thousandths. */
+    val permille: Int = 0,
 ) {
     val active: Boolean get() = !state.isFinished
-    /** Whole-batch fraction, or null while the current file's size is unknown. */
+    /** Whole-batch fraction: finished files plus the parts of the files in flight. */
     val fraction: Float?
         get() {
             if (total <= 0) return null
-            val current = if (size > 0) sent.toFloat() / size else return if (index > 0) index.toFloat() / total else null
-            return ((index + current) / total).coerceIn(0f, 1f)
+            if (index == 0 && permille == 0) return null
+            return ((index + permille / 1000f) / total).coerceIn(0f, 1f)
         }
 
     companion object {
@@ -601,6 +601,7 @@ data class UploadStatus(
                 failed = o.getInt(UploadWorker.KEY_FAILED, 0),
                 error = o.getString(UploadWorker.KEY_ERROR),
                 waitingForNetwork = info.state == WorkInfo.State.ENQUEUED && info.runAttemptCount > 0,
+                permille = p.getInt(UploadWorker.KEY_PROGRESS_PERMILLE, 0),
             )
         }
     }

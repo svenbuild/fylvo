@@ -309,7 +309,9 @@ class FileRepository(private val api: ApiClient) {
         val svc = api.service()
         var sent = 0L
         localFile.inputStream().buffered().use { input ->
-            val buffer = ByteArray(chunkSize.coerceAtMost(64L * 1024 * 1024).toInt())
+            // Never larger than the file: several uploads run at once, a 2 MB photo needs no
+            // buffer of the server's full chunk size.
+            val buffer = ByteArray(chunkSize.coerceAtMost(64L * 1024 * 1024).coerceAtMost(localFile.length().coerceAtLeast(1)).toInt())
             for (index in 0 until totalChunks) {
                 val read = input.readFully(buffer)
                 if (index == 0 && read == 0 && localFile.length() > 0) break
