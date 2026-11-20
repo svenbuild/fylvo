@@ -26,6 +26,7 @@ import Delete from "../../../Icons/Delete";
 import SettingForm from "../../../Pages/Setting/SettingForm";
 import { CapacityBar } from "../../../Pages/Setting/StorageSetting";
 import GroupSelectionInput from "../../Common/GroupSelectionInput";
+import MustChangePasswordSwitch from "../MustChangePasswordSwitch";
 import { UserDialogContext } from "./UserDialog";
 
 const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loading: boolean) => void }) => {
@@ -34,7 +35,7 @@ const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loa
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const { t } = useTranslation("dashboard");
-  const { formRef, values, setUser } = useContext(UserDialogContext);
+  const { formRef, values, setUser, loaded } = useContext(UserDialogContext);
 
   const removeAvatar = useCallback(() => {
     setUser((prev) => ({ ...prev, avatar: undefined }));
@@ -70,7 +71,26 @@ const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loa
 
   const onPasswordChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      setUser((prev) => ({ ...prev, password: e.target.value ? e.target.value : undefined }));
+      const password = e.target.value ? e.target.value : undefined;
+      // Fylvo: a password from the admin has to be replaced at the next sign-in. The switch turns
+      // on when a password is first typed (the admin can still turn it off), and goes back to the
+      // value the account had when the field is emptied.
+      setUser((prev) => {
+        let mustChange = prev.settings?.fylvo_must_change_password;
+        if (!password) {
+          mustChange = !!loaded?.settings?.fylvo_must_change_password;
+        } else if (!prev.password) {
+          mustChange = true;
+        }
+        return { ...prev, password, settings: { ...prev.settings, fylvo_must_change_password: mustChange } };
+      });
+    },
+    [setUser, loaded],
+  );
+
+  const onMustChangePasswordChange = useCallback(
+    (checked: boolean) => {
+      setUser((prev) => ({ ...prev, settings: { ...prev.settings, fylvo_must_change_password: checked } }));
     },
     [setUser],
   );
@@ -180,6 +200,10 @@ const UserForm = ({ reload, setLoading }: { reload: () => void; setLoading: (loa
                 }}
                 onChange={onPasswordChange}
                 type={"password"}
+              />
+              <MustChangePasswordSwitch
+                checked={!!values.settings?.fylvo_must_change_password}
+                onChange={onMustChangePasswordChange}
               />
             </SettingForm>
             <SettingForm title={t("user.createdAt")} noContainer lgWidth={6}>

@@ -71,6 +71,12 @@ export interface TwoFALoginRequest {
   session_id: string;
 }
 
+// Fylvo: new password with the ticket of a held sign-in
+export interface PasswordChangeRequest {
+  password: string;
+  session_id: string;
+}
+
 export interface RefreshTokenRequest {
   refresh_token: string;
 }
