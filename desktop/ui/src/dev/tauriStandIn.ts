@@ -108,6 +108,8 @@ w.__TAURI_OS_PLUGIN_INTERNALS__ = {
   eol: "\r\n",
 };
 
+w.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+
 w.__TAURI_INTERNALS__ = {
   metadata: {
     currentWindow: { label: location.hash.slice(2).split("/")[0] || "main" },

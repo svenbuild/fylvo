@@ -5,12 +5,15 @@ import LanguageDetector from "i18next-browser-languagedetector";
 
 const supportedLngs = ['en-US', 'zh-CN', 'zh-TW', 'ja', 'de', 'fr', 'es', 'ko', 'ru', 'pl', 'it'];
 
-// Fylvo: Windows reports regional languages such as "de-CH" or "en-GB". Use the supported
-// language with the same base ("de", "en-US") instead of falling back to English.
+// Fylvo: Windows reports regional languages such as "de-CH", "en-GB" or "zh-HK". Use the
+// supported language with the same base ("de", "en-US"), Chinese by its script.
 export function toSupportedLanguage(lng: string): string {
-  if (supportedLngs.includes(lng)) return lng;
-  const base = lng.split("-")[0].toLowerCase();
-  return supportedLngs.find((code) => code.split("-")[0] === base) ?? lng;
+  const parts = lng.toLowerCase().split(/[-_]/);
+  if (parts[0] === "zh") {
+    return parts.some((p) => ["hant", "tw", "hk", "mo"].includes(p)) ? "zh-TW" : "zh-CN";
+  }
+  const exact = supportedLngs.find((code) => code.toLowerCase() === lng.toLowerCase());
+  return exact ?? supportedLngs.find((code) => code.split("-")[0] === parts[0]) ?? lng;
 }
 
 i18n

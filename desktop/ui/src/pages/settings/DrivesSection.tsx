@@ -326,17 +326,17 @@ export default function DrivesSection() {
                             bgcolor: getStatusColor(drive.status),
                           }}
                         />
-                        <Typography
-                          variant="caption"
-                          sx={{ color: getStatusColor(drive.status) }}
-                        >
+                        <Typography variant="caption" color="text.secondary">
                           {getStatusLabel(drive.status)}
                         </Typography>
                       </Box>
                     </Box>
 
                     {/* Site URL */}
-                    <Tooltip title={drive.remote_path} placement="bottom-start">
+                    <Tooltip
+                      title={drive.remote_path.replace(/^cloudreve:\/\//, "")}
+                      placement="bottom-start"
+                    >
                       <Box
                         sx={{
                           display: "flex",

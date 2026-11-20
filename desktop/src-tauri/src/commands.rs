@@ -427,7 +427,11 @@ pub async fn show_reauthorize_window(
 
 /// Show or create the add-drive window
 pub fn show_add_drive_window_impl(app: &AppHandle) {
-    show_drive_window_internal(app, "Add Drive", &get_url_with_lang("index.html/#/add-drive"));
+    show_drive_window_internal(
+        app,
+        &t!("addDriveWindowTitle"),
+        &get_url_with_lang("index.html/#/add-drive"),
+    );
 }
 
 /// Show or create the reauthorize window for a specific drive
@@ -444,7 +448,7 @@ pub fn show_reauthorize_window_impl(
         "index.html/#/reauthorize/{}/{}/{}",
         drive_id, encoded_site_url, encoded_drive_name
     );
-    show_drive_window_internal(app, "Reauthorize Drive", &get_url_with_lang(&url_path));
+    show_drive_window_internal(app, &t!("reauthorizeWindowTitle"), &get_url_with_lang(&url_path));
 }
 
 /// Internal function to show or create the add-drive/reauthorize window
@@ -517,7 +521,7 @@ pub fn show_settings_window_impl(app: &AppHandle) {
         "settings",
         WebviewUrl::App(get_url_with_lang("index.html/#/settings").into()),
     )
-    .title("Settings")
+    .title(t!("settings"))
     .inner_size(700.0, 500.0)
     .min_inner_size(600.0, 400.0)
     .visible(false)
@@ -690,10 +694,7 @@ pub async fn set_language(app: AppHandle, language: Option<String>) -> CommandRe
         .map_err(|e| e.to_string())?;
 
     // Update rust_i18n locale
-    let locale = language.unwrap_or_else(|| {
-        sys_locale::get_locale().unwrap_or_else(|| String::from("en-US"))
-    });
-    rust_i18n::set_locale(&locale);
+    rust_i18n::set_locale(&crate::get_effective_locale());
 
     // Close main window to force reload with new language
      // Check if window already exists
