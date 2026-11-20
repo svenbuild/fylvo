@@ -161,8 +161,6 @@ pub struct Mount {
     pub(crate) drive_letter_state: std::sync::Mutex<crate::drive::drive_letter::LetterState>,
     pub(crate) drive_letter_notified: AtomicBool,
     pub(crate) drive_letter_handle: Mutex<Option<JoinHandle<()>>>,
-    /// One change of the drive letter at a time (the check, the settings, the shutdown).
-    pub(crate) drive_letter_lock: Mutex<()>,
     pub(crate) drive_letter_closed: AtomicBool,
 }
 
@@ -280,7 +278,6 @@ impl Mount {
             drive_letter_state: std::sync::Mutex::new(Default::default()),
             drive_letter_notified: AtomicBool::new(false),
             drive_letter_handle: Mutex::new(None),
-            drive_letter_lock: Mutex::new(()),
             drive_letter_closed: AtomicBool::new(false),
         }
     }
