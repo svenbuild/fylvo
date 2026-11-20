@@ -53,6 +53,10 @@ pub struct DriveConfig {
     #[serde(default)]
     pub ignore_patterns: Vec<String>,
 
+    /// Fylvo: the drive letter the sync folder also shows as (None = switched off).
+    #[serde(default)]
+    pub drive_letter: Option<char>,
+
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
 }
@@ -153,6 +157,11 @@ pub struct Mount {
     /// Fylvo: the user may only read this drive (shared folder with "Lesen").
     pub(crate) read_only: AtomicBool,
     pub(crate) read_only_notified: AtomicBool,
+    /// Fylvo: the drive letter, see `drive_letter.rs`.
+    pub(crate) drive_letter_state: std::sync::Mutex<crate::drive::drive_letter::LetterState>,
+    pub(crate) drive_letter_notified: AtomicBool,
+    pub(crate) drive_letter_handle: Mutex<Option<JoinHandle<()>>>,
+    pub(crate) drive_letter_closed: AtomicBool,
 }
 
 impl Mount {
@@ -266,6 +275,10 @@ impl Mount {
             deletion_guard: std::sync::Mutex::new(DeletionGuardState::default()),
             read_only: AtomicBool::new(false),
             read_only_notified: AtomicBool::new(false),
+            drive_letter_state: std::sync::Mutex::new(Default::default()),
+            drive_letter_notified: AtomicBool::new(false),
+            drive_letter_handle: Mutex::new(None),
+            drive_letter_closed: AtomicBool::new(false),
         }
     }
 
@@ -658,6 +671,9 @@ impl Mount {
 
     pub async fn shutdown(&self) {
         tracing::info!(target: "drive::mounts", id=%self.id, "Shutting down Mount");
+
+        // Fylvo: the drive letter goes first, while the sync still runs.
+        self.close_drive_letter().await;
 
         // Stop the remote event listener
         if let Some(handle) = self.remote_event_handle.lock().await.take() {

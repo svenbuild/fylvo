@@ -33,6 +33,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { DriveInfo, HeldDeletion } from "./types";
 import {  SecondaryButton, SecondaryErrorButton } from "../../common/StyledComponent";
 import { ask, message } from '@tauri-apps/plugin-dialog';
+import DriveLetterRow from "./DriveLetterRow";
 
 interface DriveInfoResponse {
   id: string;
@@ -52,6 +53,8 @@ interface DriveInfoResponse {
   };
   read_only: boolean;
   held_deletions: HeldDeletion[];
+  drive_letter: string | null;
+  drive_letter_state: DriveInfo["drive_letter_state"];
 }
 
 export default function DrivesSection() {
@@ -218,13 +221,13 @@ export default function DrivesSection() {
   const getStatusColor = (status: DriveInfo["status"]) => {
     switch (status) {
       case "active":
-        return "#4caf50"; // green
+        return "success.main";
       case "event_push_lost":
-        return "#ff9800"; // orange
+        return "warning.main";
       case "credential_expired":
-        return "#f44336"; // red
+        return "error.main";
       default:
-        return "#9e9e9e"; // grey
+        return "text.disabled";
     }
   };
 
@@ -326,17 +329,17 @@ export default function DrivesSection() {
                             bgcolor: getStatusColor(drive.status),
                           }}
                         />
-                        <Typography
-                          variant="caption"
-                          sx={{ color: getStatusColor(drive.status) }}
-                        >
+                        <Typography variant="caption" color="text.secondary">
                           {getStatusLabel(drive.status)}
                         </Typography>
                       </Box>
                     </Box>
 
                     {/* Site URL */}
-                    <Tooltip title={drive.remote_path} placement="bottom-start">
+                    <Tooltip
+                      title={drive.remote_path.replace(/^cloudreve:\/\//, "")}
+                      placement="bottom-start"
+                    >
                       <Box
                         sx={{
                           display: "flex",
@@ -435,32 +438,32 @@ export default function DrivesSection() {
                   </Box>
                 </Box>
 
+                <DriveLetterRow drive={drive} onChanged={fetchDrives} />
+
                 {/* Fylvo: held mass deletions */}
                 {drive.held_deletions?.map((held) => (
                   <Alert
                     key={held.side}
                     severity="warning"
                     sx={{ mt: 2 }}
-                    action={
-                      <Stack direction="row" spacing={1}>
-                        <SecondaryErrorButton
-                          size="small"
-                          disabled={resolving}
-                          onClick={() => handleResolveDeletion(drive, held, true)}
-                        >
-                          {t("settings.heldDeletion.confirm")}
-                        </SecondaryErrorButton>
-                        <SecondaryButton
-                          size="small"
-                          disabled={resolving}
-                          onClick={() => handleResolveDeletion(drive, held, false)}
-                        >
-                          {t(`settings.heldDeletion.cancel.${held.side}`)}
-                        </SecondaryButton>
-                      </Stack>
-                    }
                   >
                     {t(`settings.heldDeletion.message.${held.side}`, { count: held.count })}
+                    <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                      <SecondaryErrorButton
+                        size="small"
+                        disabled={resolving}
+                        onClick={() => handleResolveDeletion(drive, held, true)}
+                      >
+                        {t("settings.heldDeletion.confirm")}
+                      </SecondaryErrorButton>
+                      <SecondaryButton
+                        size="small"
+                        disabled={resolving}
+                        onClick={() => handleResolveDeletion(drive, held, false)}
+                      >
+                        {t(`settings.heldDeletion.cancel.${held.side}`)}
+                      </SecondaryButton>
+                    </Stack>
                   </Alert>
                 ))}
 

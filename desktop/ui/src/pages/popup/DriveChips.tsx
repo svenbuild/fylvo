@@ -1,3 +1,4 @@
+import { shellSurface } from "../../theme";
 import { Box, Chip, styled } from "@mui/material";
 import { Add as AddIcon } from "@mui/icons-material";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -106,7 +107,7 @@ export default function DriveChips({
           bottom: 0,
           width: 32,
           background: (theme) =>
-            `linear-gradient(to right, ${theme.palette.mode === "light" ? theme.palette.grey[100] : theme.palette.grey[900]}, transparent)`,
+            `linear-gradient(to right, ${shellSurface(theme)}, transparent)`,
           pointerEvents: "none",
           zIndex: 1,
           opacity: scrollState.canScrollLeft ? 1 : 0,
@@ -122,7 +123,7 @@ export default function DriveChips({
           bottom: 0,
           width: 32,
           background: (theme) =>
-            `linear-gradient(to left, ${theme.palette.mode === "light" ? theme.palette.grey[100] : theme.palette.grey[900]}, transparent)`,
+            `linear-gradient(to left, ${shellSurface(theme)}, transparent)`,
           pointerEvents: "none",
           zIndex: 1,
           opacity: scrollState.canScrollRight ? 1 : 0,

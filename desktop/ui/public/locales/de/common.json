@@ -1,19 +1,19 @@
 {
   "addDrive": {
     "title": "Laufwerk hinzufügen",
-    "description": "Geben Sie Ihre Fylvo-URL ein, um eine Verbindung herzustellen",
-    "siteUrl": "Website-URL",
+    "description": "Geben Sie die Adresse Ihres Fylvo-Servers ein, um eine Verbindung herzustellen",
+    "siteUrl": "Fylvo-Adresse",
     "siteUrlPlaceholder": "https://cloud.example.com",
     "connect": "Verbinden",
     "waitingTitle": "Zum Fortfahren anmelden",
-    "waitingDescription": "Schließen Sie den Anmeldevorgang in Ihrem Browser ab, um Ihr Laufwerk zu verbinden.",
+    "waitingDescription": "Schliessen Sie die Anmeldung in Ihrem Browser ab, um Ihr Laufwerk zu verbinden.",
     "reopenBrowser": "Browser erneut öffnen",
     "back": "Zurück",
-    "finalSetupTitle": "Letzte Einrichtung",
-    "finalSetupDescription": "Wählen Sie einen lokalen Ordner aus, in dem Ihr Cloud-Laufwerk eingebunden wird.",
+    "finalSetupTitle": "Letzter Schritt",
+    "finalSetupDescription": "Wählen Sie einen leeren lokalen Ordner, in dem Ihr Fylvo-Laufwerk erscheint.",
     "localPath": "Lokaler Pfad",
-    "localDriveName": "Mount-Name",
-    "localPathPlaceholder": "C:\\CloudDrive",
+    "localDriveName": "Name des Laufwerks",
+    "localPathPlaceholder": "C:\\Fylvo",
     "browse": "Durchsuchen",
     "selectFolder": "Ordner auswählen",
     "folderNotEmpty": "Der ausgewählte Ordner ist nicht leer. Bitte wählen Sie einen leeren Ordner.",
@@ -21,7 +21,7 @@
     "settingUp": "Einrichtung läuft...",
     "successTitle": "Fertig!",
     "openDrive": "{{name}} öffnen",
-    "close": "Schließen",
+    "close": "Schliessen",
     "reauthorizeTitle": "Erneute Autorisierung bestätigen",
     "reauthorizeDescription": "Klicken Sie auf Bestätigen, um die Anmeldedaten für dieses Laufwerk zu aktualisieren.",
     "reauthorizeConfirm": "Bestätigen",
@@ -42,7 +42,7 @@
     "loading": "Laden...",
     "noActivity": "Keine aktuellen Aktivitäten",
     "syncing": "Synchronisierung",
-    "recent": "Aktuell",
+    "recent": "Zuletzt",
     "syncingStatus": "{{count}} Datei(en) werden synchronisiert...",
     "upToDate": "Ihre Dateien sind aktuell.",
     "waiting": "Warten...",
@@ -67,7 +67,7 @@
     "notificationSettings": "Benachrichtigungen",
     "notifyCredentialExpired": "Benachrichtigung bei Anmeldedatenablauf",
     "notifyCredentialExpiredDescription": "Benachrichtigung anzeigen, wenn Laufwerksanmeldedaten ablaufen",
-    "notifyFileConflict": "Dateikonflikbenachrichtigung",
+    "notifyFileConflict": "Benachrichtigung bei Dateikonflikten",
     "notifyFileConflictDescription": "Benachrichtigung anzeigen, wenn Dateikonflikte auftreten",
     "logSettings": "Protokollierung",
     "logFolder": "Protokollordner",
@@ -81,8 +81,8 @@
     "openFolder": "Ordner öffnen",
     "openSite": "Website öffnen",
     "reauthorize": "Erneut autorisieren",
-    "deleteDrive": "Löschen",
-    "deleteDriveConfirm": "Sind Sie sicher, dass Sie \"{{name}}\" löschen möchten?",
+    "deleteDrive": "Entfernen",
+    "deleteDriveConfirm": "Möchten Sie \"{{name}}\" wirklich entfernen?",
     "ignorePatterns": "Ignoriermuster",
     "ignorePatternsTitle": "Ignoriermuster bearbeiten",
     "ignorePatternsDescription": "Geben Sie gitignore-Muster ein, eines pro Zeile. Übereinstimmende Dateien werden nicht synchronisiert.",
@@ -90,11 +90,17 @@
     "ignorePatternsError": "Ungültige Muster: {{message}}",
     "save": "Speichern",
     "cancel": "Abbrechen",
-    "readOnlyHint": "Nur zum Lesen mit dir geteilt. Änderungen auf diesem PC werden nicht hochgeladen.",
+    "readOnlyHint": "Nur zum Lesen mit Ihnen geteilt. Änderungen auf diesem PC werden nicht hochgeladen.",
+    "driveLetter": {
+      "title": "Als Laufwerksbuchstabe anzeigen",
+      "off": "Zeigt diesen Ordner im Explorer zusätzlich als eigenes Laufwerk, zum Beispiel F:.",
+      "active": "Erscheint im Explorer zusätzlich als {{letter}}:.",
+      "conflict": "{{letter}}: wird von einem anderen Laufwerk verwendet. Bitte wählen Sie einen anderen Buchstaben."
+    },
     "heldDeletion": {
       "message": {
-        "server": "{{count}} Einträge wurden auf diesem PC gelöscht. Auf dem Server bleiben sie, bis du entscheidest.",
-        "local": "{{count}} Einträge wurden auf dem Server gelöscht. Auf diesem PC bleiben sie, bis du entscheidest."
+        "server": "{{count}} Einträge wurden auf diesem PC gelöscht. Auf dem Server bleiben sie, bis Sie entscheiden.",
+        "local": "{{count}} Einträge wurden auf dem Server gelöscht. Auf diesem PC bleiben sie, bis Sie entscheiden. Was nur online lag, lässt sich nicht mehr öffnen."
       },
       "confirm": "Löschen",
       "cancel": {
@@ -108,14 +114,15 @@
     },
     "driveStatus": {
       "active": "Aktiv",
-      "eventPushLost": "Echtzeit-Event-Push unterbrochen",
+      "eventPushLost": "Echtzeit-Verbindung unterbrochen",
       "credentialExpired": "Anmeldedaten abgelaufen"
     }
   },
   "about": {
     "homepage": "Startseite",
     "preview": "Vorschau",
-    "reportIssue": "Problem melden"
+    "reportIssue": "Problem melden",
+    "basedOn": "Basiert auf Cloudreve Desktop, MIT-Lizenz, Copyright (c) 2025 Cloudreve."
   },
   "timeAgo": {
     "justNow": "Gerade eben",

@@ -833,6 +833,11 @@ impl Mount {
                     if *parent == sync_root {
                         anyhow::bail!("the synced folder is missing on the server");
                     }
+                    // A missing subfolder reads as "everything in it was deleted", but only if
+                    // the synced folder itself is still there.
+                    if !self.sync_root_exists().await? {
+                        anyhow::bail!("the synced folder is missing on the server");
+                    }
                     tracing::debug!(
                         target: "drive::sync",
                         id = %self.id,
@@ -968,20 +973,21 @@ impl Mount {
     /// Fylvo: hold the local deletions of this plan if they are a mass deletion. Returns the
     /// plan without them in that case.
     fn hold_mass_local_deletion(&self, plan: SyncPlan) -> SyncPlan {
-        let doomed = doomed_local_paths(&plan);
-        if doomed.is_empty() || self.is_local_deletion_confirmed(&doomed) {
+        // Paths the user confirmed (or renamed on the server) pass; only the others are checked.
+        let doomed: Vec<PathBuf> = doomed_local_paths(&plan)
+            .into_iter()
+            .filter(|p| !self.is_local_deletion_confirmed(std::slice::from_ref(p)))
+            .collect();
+        if doomed.is_empty() {
             return plan;
         }
         // Paths the user chose to keep stay, without asking again.
         let (kept, doomed): (Vec<PathBuf>, Vec<PathBuf>) =
             doomed.into_iter().partition(|p| self.is_kept_locally(p));
         let plan = without_paths(plan, &kept);
-        // Once a deletion is held, it stays held even if a later pass sees fewer entries.
-        let already_held = doomed
-            .iter()
-            .any(|p| self.is_deletion_held(DeletionSide::Local, p));
-        if !doomed.is_empty() && (already_held || self.mass_deletion_count(&doomed).is_some()) {
-            self.hold_deletion(DeletionSide::Local, doomed.clone());
+        // Many deletions at once (or within a short time) wait for the user's answer. Once a
+        // deletion is held, the following ones wait too.
+        if !doomed.is_empty() && self.hold_local_deletion_if_needed(&doomed) {
             return without_paths(plan, &doomed);
         }
         plan

@@ -128,7 +128,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
       pkceSessionRef.current.callbackData = callbackData;
 
       // Transition to final setup page
-      callbackData.name && setDriveName(callbackData.name);
+      if (callbackData.name) setDriveName(callbackData.name);
       setPageState("final_setup");
     }).then((fn) => {
       unlisten = fn;
@@ -365,7 +365,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
   }
 
   return (
-    <Container maxWidth="sm" sx={{ backgroundColor: isWindows10 ? "#fff" : undefined, minHeight: "100vh" }}>
+    <Container maxWidth="sm" sx={{ backgroundColor: isWindows10 ? "background.default" : undefined, minHeight: "100vh" }}>
       <Box
         sx={{
           minHeight: "100vh",

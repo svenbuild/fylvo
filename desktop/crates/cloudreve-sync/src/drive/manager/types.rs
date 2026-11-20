@@ -101,6 +101,9 @@ pub struct DriveInfo {
     pub read_only: bool,
     /// Fylvo: mass deletions waiting for the user's answer.
     pub held_deletions: Vec<crate::drive::guard::HeldDeletionInfo>,
+    /// Fylvo: the drive letter the folder also shows as, and whether it works.
+    pub drive_letter: Option<char>,
+    pub drive_letter_state: crate::drive::drive_letter::LetterState,
 }
 
 /// Drive status for the settings UI

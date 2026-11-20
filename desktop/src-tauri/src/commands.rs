@@ -149,6 +149,7 @@ pub async fn add_drive(
         user_id: config.user_id,
         sync_root_id: None,
         ignore_patterns: Vec::new(),
+        drive_letter: None,
         extra: Default::default(),
     };
 
@@ -193,6 +194,40 @@ pub async fn remove_drive(
         .map_err(|e| e.to_string())?;
 
     Ok(result)
+}
+
+/// Fylvo: switch a drive's letter on (with `letter`, or the first free one) or off.
+#[tauri::command]
+pub async fn set_drive_letter(
+    state: State<'_, AppStateHandle>,
+    drive_id: String,
+    enabled: bool,
+    letter: Option<char>,
+) -> CommandResult<cloudreve_sync::drive::drive_letter::LetterState> {
+    let app_state = state
+        .get()
+        .ok_or_else(|| "App not yet initialized".to_string())?;
+    app_state
+        .drive_manager
+        .set_drive_letter(&drive_id, enabled, letter)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Fylvo: letters free for a drive letter.
+#[tauri::command]
+pub async fn get_free_drive_letters(
+    state: State<'_, AppStateHandle>,
+    drive_id: String,
+) -> CommandResult<Vec<char>> {
+    let app_state = state
+        .get()
+        .ok_or_else(|| "App not yet initialized".to_string())?;
+    app_state
+        .drive_manager
+        .free_drive_letters(&drive_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Get ignore patterns for a drive
@@ -427,7 +462,11 @@ pub async fn show_reauthorize_window(
 
 /// Show or create the add-drive window
 pub fn show_add_drive_window_impl(app: &AppHandle) {
-    show_drive_window_internal(app, "Add Drive", &get_url_with_lang("index.html/#/add-drive"));
+    show_drive_window_internal(
+        app,
+        &t!("addDriveWindowTitle"),
+        &get_url_with_lang("index.html/#/add-drive"),
+    );
 }
 
 /// Show or create the reauthorize window for a specific drive
@@ -444,7 +483,7 @@ pub fn show_reauthorize_window_impl(
         "index.html/#/reauthorize/{}/{}/{}",
         drive_id, encoded_site_url, encoded_drive_name
     );
-    show_drive_window_internal(app, "Reauthorize Drive", &get_url_with_lang(&url_path));
+    show_drive_window_internal(app, &t!("reauthorizeWindowTitle"), &get_url_with_lang(&url_path));
 }
 
 /// Internal function to show or create the add-drive/reauthorize window
@@ -517,7 +556,7 @@ pub fn show_settings_window_impl(app: &AppHandle) {
         "settings",
         WebviewUrl::App(get_url_with_lang("index.html/#/settings").into()),
     )
-    .title("Settings")
+    .title(t!("settings"))
     .inner_size(700.0, 500.0)
     .min_inner_size(600.0, 400.0)
     .visible(false)
@@ -690,10 +729,7 @@ pub async fn set_language(app: AppHandle, language: Option<String>) -> CommandRe
         .map_err(|e| e.to_string())?;
 
     // Update rust_i18n locale
-    let locale = language.unwrap_or_else(|| {
-        sys_locale::get_locale().unwrap_or_else(|| String::from("en-US"))
-    });
-    rust_i18n::set_locale(&locale);
+    rust_i18n::set_locale(&crate::get_effective_locale());
 
     // Close main window to force reload with new language
      // Check if window already exists

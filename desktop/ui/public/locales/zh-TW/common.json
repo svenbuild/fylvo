@@ -90,6 +90,22 @@
     "ignorePatternsError": "規則無效：{{message}}",
     "save": "儲存",
     "cancel": "取消",
+    "readOnlyHint": "以唯讀方式與你共用。此電腦上的變更不會上傳。",
+    "heldDeletion": {
+      "message": {
+        "server": "此電腦上刪除了 {{count}} 個項目。在你決定之前，它們會保留在伺服器上。",
+        "local": "伺服器上刪除了 {{count}} 個項目。在你決定之前，它們會保留在此電腦上。僅在線上的檔案已無法開啟。"
+      },
+      "confirm": "刪除",
+      "cancel": {
+        "server": "還原",
+        "local": "暫時保留"
+      },
+      "confirmQuestion": {
+        "server": "也在伺服器上刪除 {{count}} 個項目？它們將移至伺服器資源回收筒。",
+        "local": "也在此電腦上刪除 {{count}} 個項目？有本機資料的檔案將移至資源回收筒。"
+      }
+    },
     "driveStatus": {
       "active": "活躍",
       "eventPushLost": "即時事件推送中斷",

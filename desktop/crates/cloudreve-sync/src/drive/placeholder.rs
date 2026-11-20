@@ -101,11 +101,11 @@ impl CrPlaceholder {
     /// Remove the local file or folder and its inventory entry.
     ///
     /// Fylvo: nothing with local data is deleted for good. Online-only placeholders hold no
-    /// data of their own (the server keeps the file, in its trash if it was deleted there)
-    /// and are removed. A file with local data goes to the Windows recycle bin, first turned
-    /// back into a normal file so it can be restored from there; if that fails, the file is
-    /// kept. A folder is removed only when it is empty on disk (a folder that was never
-    /// opened has nothing on disk).
+    /// data of their own and are removed. A file with local data goes to the Windows recycle
+    /// bin, even when unchanged: it may have been deleted for good on the server. A placeholder
+    /// is first turned back into a normal file so it can be restored from there; if that fails,
+    /// the file is kept. A folder is removed only when it is empty on disk (a folder that was
+    /// never opened has nothing on disk).
     pub fn delete_placeholder(&self, inventory: Arc<InventoryDb>) -> Result<()> {
         let info = &self.local_file_info;
         if info.exists {

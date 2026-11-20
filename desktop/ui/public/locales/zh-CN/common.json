@@ -90,6 +90,22 @@
     "ignorePatternsError": "规则无效：{{message}}",
     "save": "保存",
     "cancel": "取消",
+    "readOnlyHint": "以只读方式与你共享。此电脑上的更改不会上传。",
+    "heldDeletion": {
+      "message": {
+        "server": "此电脑上删除了 {{count}} 个项目。在你决定之前，它们会保留在服务器上。",
+        "local": "服务器上删除了 {{count}} 个项目。在你决定之前，它们会保留在此电脑上。仅在线的文件已无法打开。"
+      },
+      "confirm": "删除",
+      "cancel": {
+        "server": "恢复",
+        "local": "暂时保留"
+      },
+      "confirmQuestion": {
+        "server": "也在服务器上删除 {{count}} 个项目？它们将进入服务器回收站。",
+        "local": "也在此电脑上删除 {{count}} 个项目？有本地数据的文件将移至回收站。"
+      }
+    },
     "driveStatus": {
       "active": "活跃",
       "eventPushLost": "实时事件推送丢失",

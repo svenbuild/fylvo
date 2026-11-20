@@ -170,7 +170,8 @@ impl InventoryDb {
             let prefix = descendant_prefix(path);
             let row: CountRow = diesel::sql_query(
                 "SELECT COUNT(*) AS n FROM file_metadata WHERE drive_id = ? \
-                 AND (local_path = ? OR substr(local_path, 1, length(?)) = ?)",
+                 AND (local_path = ? COLLATE NOCASE \
+                 OR substr(local_path, 1, length(?)) = ? COLLATE NOCASE)",
             )
             .bind::<Text, _>(drive_id)
             .bind::<Text, _>(path)
@@ -456,6 +457,8 @@ mod tests {
             db.count_under_paths(&id, &[r"C:\S\a", r"C:\S\a\1.txt"]).unwrap(),
             3
         );
+        // Windows ignores case in paths, so does the count.
+        assert_eq!(db.count_under_paths(&id, &[r"C:\s\A"]).unwrap(), 3);
         // A path without entry counts as one.
         assert_eq!(db.count_under_paths(&id, &[r"C:\S\new.txt"]).unwrap(), 1);
     }

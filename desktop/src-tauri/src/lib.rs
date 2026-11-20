@@ -17,27 +17,50 @@ mod event_handler;
 #[macro_use]
 extern crate rust_i18n;
 
-i18n!("../locales");
+i18n!("../locales", fallback = "en-US");
 
 /// Initialize i18n based on config setting or system locale
 fn init_i18n() {
-    use rust_i18n::set_locale;
-    use sys_locale::get_locale;
-
-    // Try to get language from config, fallback to system locale
-    let locale = ConfigManager::try_get()
-        .and_then(|cm| cm.language())
-        .unwrap_or_else(|| get_locale().unwrap_or_else(|| String::from("en-US")));
-    set_locale(locale.as_str());
+    rust_i18n::set_locale(&get_effective_locale());
 }
 
 /// Get the current effective locale (from config or system)
 pub fn get_effective_locale() -> String {
     use sys_locale::get_locale;
 
-    ConfigManager::try_get()
+    let locale = ConfigManager::try_get()
         .and_then(|cm| cm.language())
-        .unwrap_or_else(|| get_locale().unwrap_or_else(|| String::from("en-US")))
+        .unwrap_or_else(|| get_locale().unwrap_or_else(|| String::from("en-US")));
+    chinese_script(&locale)
+}
+
+/// Fylvo: the app has Chinese in two scripts, but Windows also reports e.g. "zh-HK" or
+/// "zh-Hans-CN". Other regional languages ("de-CH") fall back to their base language.
+fn chinese_script(locale: &str) -> String {
+    let lower = locale.to_ascii_lowercase();
+    if !lower.starts_with("zh") {
+        return locale.to_string();
+    }
+    let parts: Vec<&str> = lower.split(['-', '_']).collect();
+    // An explicit script wins over the region ("zh-Hans-HK" is simplified).
+    let traditional = !parts.contains(&"hans")
+        && ["hant", "tw", "hk", "mo"].iter().any(|p| parts.contains(p));
+    String::from(if traditional { "zh-TW" } else { "zh-CN" })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::chinese_script;
+
+    #[test]
+    fn chinese_locales_map_to_their_script() {
+        assert_eq!(chinese_script("zh-HK"), "zh-TW");
+        assert_eq!(chinese_script("zh-Hant-TW"), "zh-TW");
+        assert_eq!(chinese_script("zh-SG"), "zh-CN");
+        assert_eq!(chinese_script("zh-Hans-CN"), "zh-CN");
+        assert_eq!(chinese_script("zh-Hans-HK"), "zh-CN");
+        assert_eq!(chinese_script("de-CH"), "de-CH");
+    }
 }
 
 /// Application state containing the drive manager and event broadcaster
@@ -301,6 +324,8 @@ pub fn run() {
             commands::set_ignore_patterns,
             commands::get_sync_status,
             commands::resolve_held_deletion,
+            commands::set_drive_letter,
+            commands::get_free_drive_letters,
             commands::get_status_summary,
             commands::get_drives_info,
             commands::get_file_icon,
