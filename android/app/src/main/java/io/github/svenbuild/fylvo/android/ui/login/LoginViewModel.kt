@@ -122,13 +122,13 @@ class LoginViewModel(
                         otp = "",
                         error = if (expired) UiText.Res(R.string.sign_in_timed_out)
                         else if (body != null && body.code != 0) serverError(body.code, body.msg)
-                        else UiText.Res(R.string.incorrect_code_http, resp.code()),
+                        else UiText.Res(R.string.login_failed_http, resp.code()),
                     )
                     return@launch
                 }
                 completeLogin(body.data)
             } catch (e: Exception) {
-                _state.value = _state.value.copy(loading = false, otp = "", error = e.message?.let { UiText.Raw(it) } ?: UiText.Res(R.string.verification_failed))
+                _state.value = _state.value.copy(loading = false, otp = "", error = describe(e))
             }
         }
     }

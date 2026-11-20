@@ -302,8 +302,6 @@
     <string name="server_unreachable">Server nicht erreichbar. Ist er online?</string>
     <string name="server_timeout">Der Server hat zu lange nicht geantwortet.</string>
     <string name="sign_in_timed_out">Anmeldung abgelaufen, bitte gib dein Passwort erneut ein</string>
-    <string name="incorrect_code_http">Falscher Code (HTTP %d)</string>
-    <string name="verification_failed">Bestätigung fehlgeschlagen</string>
 
     <!-- Notifications from background work -->
     <string name="folder_sync_notification_title">Fylvo Ordner-Sync</string>

@@ -305,8 +305,6 @@
     <string name="server_unreachable">Couldn\'t reach the server. Is it online?</string>
     <string name="server_timeout">The server took too long to respond.</string>
     <string name="sign_in_timed_out">Sign-in timed out, please enter your password again</string>
-    <string name="incorrect_code_http">Incorrect code (HTTP %d)</string>
-    <string name="verification_failed">Verification failed</string>
 
     <!-- Notifications from background work -->
     <string name="folder_sync_notification_title">Fylvo folder sync</string>
