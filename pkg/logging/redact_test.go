@@ -35,6 +35,8 @@ func TestRedactURL(t *testing.T) {
 			"/home?path=cloudreve%3A%2F%2F***%40share%2FDocs"},
 		// User and password in an address, and a fragment.
 		{"https://user:hunter2@host.example/x", "https://***@host.example/x"},
+		{"https://user:@hunter2@host.example/x", "https://***@host.example/x"},
+		{"https://host.example/x?mail=a@b.example", "https://host.example/x?mail=a@b.example"},
 		{"/x#access_token=hunter2", "/x#***"},
 		// Upload callback key.
 		{"/api/v4/callback/s3/sess-1/k3y", "/api/v4/callback/s3/sess-1/***"},
