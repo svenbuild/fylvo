@@ -169,6 +169,15 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 		files = append(files, file)
 	}
 
+	// Fylvo: a guest of a link downloading a ZIP, see the share navigator.
+	if o.DryRun == nil {
+		for _, file := range files {
+			if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
+				m.l.Warning("Failed to execute navigator hooks: %s", err)
+			}
+		}
+	}
+
 	zipWriter := zip.NewWriter(writer)
 	defer zipWriter.Close()
 

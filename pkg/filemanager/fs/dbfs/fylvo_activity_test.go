@@ -208,3 +208,56 @@ func TestActivitySystemDeletes(t *testing.T) {
 	require.Equal(t, activity.ViaSystem, entries[1].Via)
 	require.Equal(t, "secret.txt", entries[1].Content.Name)
 }
+
+// A member copying an own file into the shared folder: the owner of the folder gets the copy,
+// but not the name of the member's private folder.
+func TestActivityCopyIntoSharedFolderHidesTheSource(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	editor := e.as(e.editor)
+	e.mkdir(editor, "cloudreve://my/Geheim")
+	e.upload(editor, "cloudreve://my/Geheim/mine.txt", 3)
+	log := e.activityLog()
+
+	_, err := editor.MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/Geheim/mine.txt")}, e.shared(""), true)
+	require.NoError(t, err)
+	_, err = editor.MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/Geheim/mine.txt")}, e.uri("cloudreve://my"), true)
+	require.NoError(t, err)
+
+	entries := log()
+	require.Equal(t, []activity.Type{activity.FileCopy, activity.FileCopy}, typesOf(entries))
+	require.Equal(t, e.owner.ID, entries[0].OwnerID)
+	require.Empty(t, entries[0].Content.FromFolder, "not the member's folder name")
+	require.Equal(t, e.editor.ID, entries[1].OwnerID)
+	require.Equal(t, "Geheim", entries[1].Content.FromFolder, "within the own files it is shown")
+}
+
+func TestActivityVersions(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	require.NoError(t, e.client.User.UpdateOneID(e.owner.ID).
+		SetSettings(&types.UserSetting{VersionRetention: true}).Exec(e.ctx))
+	owner := e.as(e.owner)
+	first := e.version("cloudreve://my/Private/secret.txt")
+	_, err := e.conditionalUpload(owner, e.uri("cloudreve://my/Private/secret.txt"), 4, first)
+	require.NoError(t, err)
+	log := e.activityLog()
+
+	file, err := owner.Get(e.ctx, e.uri("cloudreve://my/Private/secret.txt"), WithFileEntities())
+	require.NoError(t, err)
+	var older int
+	for _, entity := range file.Entities() {
+		if entity.ID() != file.PrimaryEntityID() {
+			older = entity.ID()
+		}
+	}
+	require.NotZero(t, older, "version retention keeps the first version")
+
+	// The current one again: no change, no entry.
+	_, err = owner.VersionControl(e.ctx, e.uri("cloudreve://my/Private/secret.txt"), file.PrimaryEntityID(), false)
+	require.NoError(t, err)
+	_, err = owner.VersionControl(e.ctx, e.uri("cloudreve://my/Private/secret.txt"), older, false)
+	require.NoError(t, err)
+	_, err = owner.VersionControl(e.ctx, e.uri("cloudreve://my/Private/secret.txt"), file.PrimaryEntityID(), true)
+	require.NoError(t, err)
+
+	require.Equal(t, []activity.Type{activity.VersionRestore, activity.VersionDelete}, typesOf(log()))
+}

@@ -74,6 +74,9 @@ type Entry struct {
 	FromParentID int
 	ShareID      int
 	Content      types.ActivityContent
+	// NoAddress leaves out address and device, when the entry is shown to someone else than
+	// who did it (an admin setting the password of an account).
+	NoAddress bool
 }
 
 type (
@@ -118,7 +121,7 @@ func Record(ctx context.Context, e Entry) {
 	}
 
 	r := &row{Entry: e, at: time.Now(), via: via}
-	if info := requestinfo.RequestInfoFromContext(ctx); info != nil && via != ViaSystem {
+	if info := requestinfo.RequestInfoFromContext(ctx); info != nil && via != ViaSystem && !e.NoAddress {
 		r.ip = info.IP
 		r.userAgent = truncate(info.UserAgent, 256)
 	}
@@ -197,20 +200,27 @@ func Start(client inventory.ActivityClient, l logging.Logger) *Recorder {
 // Close stops taking entries, writes what is left and waits for the writer. Entries recorded
 // after Close are dropped.
 func (r *Recorder) Close() {
+	r.CloseWithin(context.Background())
+}
+
+// CloseWithin is Close that stops waiting for the writer when ctx ends (shutdown grace period).
+func (r *Recorder) CloseWithin(ctx context.Context) {
 	if r == nil {
 		return
 	}
 
 	r.mu.Lock()
-	if r.closed {
-		r.mu.Unlock()
-		<-r.done
-		return
+	if !r.closed {
+		r.closed = true
+		close(r.rows)
 	}
-	r.closed = true
-	close(r.rows)
 	r.mu.Unlock()
-	<-r.done
+
+	select {
+	case <-r.done:
+	case <-ctx.Done():
+		r.l.Warning("Activity log entries not written before shutdown: the database did not answer in time.")
+	}
 }
 
 // Flush waits until everything recorded so far is written. Used by tests.
@@ -244,9 +254,8 @@ func (r *Recorder) push(e *row) {
 	select {
 	case r.rows <- e:
 	default:
-		if n := r.dropped.Add(1); n == 1 || n%100 == 0 {
-			r.l.Warning("Activity log buffer is full, %d entries dropped so far.", n)
-		}
+		// Counted only: the writer reports it, a request never waits for the log.
+		r.dropped.Add(1)
 	}
 }
 
@@ -289,6 +298,10 @@ func (r *Recorder) run() {
 }
 
 func (r *Recorder) write(batch []*row) {
+	if n := r.dropped.Swap(0); n > 0 {
+		r.l.Warning("Activity log buffer was full, %d entries dropped.", n)
+	}
+
 	for start := 0; start < len(batch); start += batchSize {
 		end := min(start+batchSize, len(batch))
 		creates := make([]*ent.ActivityCreate, 0, end-start)

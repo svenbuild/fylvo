@@ -501,11 +501,17 @@ func (f *DBFS) VersionControl(ctx context.Context, path *fs.URI, versionId int, 
 	}
 
 	if delete {
+		// Fylvo: removing the part of an upload that never finished is no deleted version.
+		finished := lo.ContainsBy(target.Entities(), func(e fs.Entity) bool {
+			return e.ID() == versionId && e.Type() == types.EntityTypeVersion && e.UploadSessionID() == nil
+		})
 		storageDiff, err := f.deleteEntity(ctx, target, versionId)
 		if err != nil {
 			return nil, err
 		}
-		activity.Record(ctx, f.activityEntry(activity.VersionDelete, target, path))
+		if finished {
+			activity.Record(ctx, f.activityEntry(activity.VersionDelete, target, path))
+		}
 
 		if err := f.userClient.ApplyStorageDiff(ctx, storageDiff); err != nil {
 			f.l.Error("Failed to apply storage diff after deleting version: %s", err)
@@ -739,7 +745,11 @@ func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCo
 				copied := newFile(destination, copiedNewTargetsMap[target.ID()])
 				f.emitFileCreated(ctx, copied)
 				e := f.activityEntry(activity.FileCopy, copied, dst)
-				e.Content.FromFolder = before[i].folder
+				// Fylvo: the folder it came from only when the copy stays with its owner; the
+				// owner of the destination must not learn the name of someone else's folder.
+				if target.Model.OwnerID == copied.Model.OwnerID {
+					e.Content.FromFolder = before[i].folder
+				}
 				e.Content.ToFolder = folderName(destination)
 				activity.Record(ctx, e)
 			} else {

@@ -1055,7 +1055,7 @@
     "type_33_reset": "Password reset with the link by email",
     "type_34": "Two-factor sign-in turned on",
     "type_35": "Two-factor sign-in turned off",
-    "type_36": "Access of an app removed",
+    "type_36": "Removed the access of {{target}}",
     "type_37": "{{actor}} deleted the account {{target}}.",
     "share_link": "link",
     "share_upload": "upload link",
@@ -1076,6 +1076,7 @@
     "what": "What",
     "owner": "Owner",
     "device": "Device",
-    "address": "IP address"
+    "address": "IP address",
+    "type_30_app": "Signed in with {{target}}"
   }
 }

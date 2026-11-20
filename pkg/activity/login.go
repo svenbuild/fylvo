@@ -23,7 +23,7 @@ const (
 // once. WebDAV clients with an old password retry all the time.
 const failureQuiet = 10 * time.Minute
 
-// maxThrottleKeys caps the memory of the throttle; above it, old keys are dropped first.
+// maxThrottleKeys caps the memory of the throttle.
 const maxThrottleKeys = 10000
 
 type throttle struct {
@@ -50,8 +50,10 @@ func (t *throttle) allow(key string) bool {
 				delete(t.seen, k)
 			}
 		}
+		// Still full (many names tried at once): start over rather than hide new failures
+		// of real accounts. At worst a failure is logged twice.
 		if len(t.seen) >= maxThrottleKeys {
-			return false
+			clear(t.seen)
 		}
 	}
 

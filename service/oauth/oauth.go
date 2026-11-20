@@ -277,8 +277,13 @@ func (s *DeleteOAuthGrantService) Delete(c *gin.Context) error {
 	}
 
 	if deleted {
+		// Fylvo: the name of the app, as the web app shows it.
+		name := s.AppID
+		if app, err := oAuthClient.GetByGUID(c, s.AppID); err == nil {
+			name = app.Name
+		}
 		activity.Record(c, activity.Entry{Type: activity.AppRevoked, UserID: user.ID, OwnerID: user.ID,
-			Content: types.ActivityContent{Target: s.AppID}})
+			Content: types.ActivityContent{Target: name}})
 	}
 	if !deleted {
 		return serializer.NewError(serializer.CodeNotFound, "OAuth grant not found", nil)

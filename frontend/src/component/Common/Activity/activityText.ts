@@ -41,6 +41,9 @@ export const activityText = (t: TFunction, entry: ActivityEntry) => {
   if (entry.type === ActivityType.password_change && (c.method === "admin" || c.method === "reset")) {
     key += `_${c.method}`;
   }
+  if (entry.type === ActivityType.login && c.method === "app" && c.target) {
+    key += "_app";
+  }
 
   return t(key, {
     ns: "application",
@@ -50,7 +53,8 @@ export const activityText = (t: TFunction, entry: ActivityEntry) => {
     to: folderName(t, c.to_folder),
     kind: c.target ? t(`activity.share_${c.target}`, { ns: "application", defaultValue: c.target }) : "",
     method: c.method ? t(`activity.method_${c.method}`, { ns: "application", defaultValue: c.method }) : "",
-    target: c.target ?? "",
+    // Apps are named by a text key, for example "application:oauth.fylvoDesktop".
+    target: c.target ? t(c.target, { defaultValue: c.target }) : "",
     defaultValue: t("activity.unknown", { ns: "application" }),
   });
 };

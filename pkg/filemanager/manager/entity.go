@@ -250,9 +250,12 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 		if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeBeforeDownload, file); err != nil {
 			m.l.Warning("Failed to execute navigator hooks: %s", err)
 		}
-		if o.IsDownload {
-			if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
-				m.l.Warning("Failed to execute navigator hooks: %s", err)
+		// Fylvo: a guest's download is logged once its link is there, see below.
+		downloadLinkHook := func() {
+			if o.IsDownload {
+				if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
+					m.l.Warning("Failed to execute navigator hooks: %s", err)
+				}
 			}
 		}
 
@@ -275,6 +278,7 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 				Url:                        cachedItem.Url,
 				BrowserDownloadDisplayName: cachedItem.BrowserDownloadDisplayName,
 			}
+			downloadLinkHook()
 			continue
 		}
 
@@ -291,6 +295,7 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 			ae.Add(arg.URI.String(), err)
 			continue
 		}
+		downloadLinkHook()
 
 		// Find the earliest expiry time
 		if downloadUrl.ExpireAt != nil && (earliestExpireAt == nil || downloadUrl.ExpireAt.Before(*earliestExpireAt)) {

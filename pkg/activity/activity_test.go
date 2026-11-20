@@ -134,3 +134,23 @@ func TestTruncateKeepsUTF8(t *testing.T) {
 	require.Equal(t, "a", truncate("aä", 2), "the two bytes of ä are not cut apart")
 	require.Equal(t, "aä", truncate("aäb", 3))
 }
+
+func TestFullThrottleStartsOver(t *testing.T) {
+	now := time.Now()
+	th := &throttle{now: func() time.Time { return now }, seen: make(map[string]time.Time)}
+	for i := 0; i < maxThrottleKeys; i++ {
+		require.True(t, th.allow(string(rune(i))+"-unknown"))
+	}
+	require.True(t, th.allow("real-account"), "a flood of unknown names does not hide a real failure")
+}
+
+func TestNoAddressLeavesOutTheAdminsDevice(t *testing.T) {
+	client, r := newLog(t)
+	ctx := context.WithValue(context.Background(), requestinfo.RequestInfoCtx{}, &requestinfo.RequestInfo{IP: "192.0.2.9", UserAgent: "x"})
+	Record(ctx, Entry{Type: PasswordChange, UserID: 1, OwnerID: 2, NoAddress: true})
+	r.Flush()
+	entry, err := client.Activity.Query().Only(ctx)
+	require.NoError(t, err)
+	require.Empty(t, entry.IP)
+	require.Empty(t, entry.UserAgent)
+}

@@ -194,7 +194,7 @@ func (s *UpsertUserService) Update(c *gin.Context) (*GetUserResponse, error) {
 	if s.Password != "" {
 		// Fylvo: an admin set the password of this account.
 		activity.Record(c, activity.Entry{Type: activity.PasswordChange, UserID: inventory.UserIDFromContext(c),
-			OwnerID: newUser.ID, Content: types.ActivityContent{Method: "admin"}})
+			OwnerID: newUser.ID, Content: types.ActivityContent{Method: "admin"}, NoAddress: true})
 	}
 
 	service := &SingleUserService{ID: newUser.ID}
