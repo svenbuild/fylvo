@@ -120,7 +120,9 @@ class FylvoDocumentsProvider : DocumentsProvider() {
         if (mode.contains('w')) {
             throw FileNotFoundException("Fylvo documents are read-only here")
         }
-        val local = fetchToCache(documentId)
+        // Fylvo: a file kept offline is served from its copy on this phone (also without a connection).
+        val app = context!!.applicationContext as FylvoApp
+        val local = runBlocking(ioScope) { app.offlineManager.localCopy(documentId) } ?: fetchToCache(documentId)
         return ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY)
     }
 
@@ -179,7 +181,7 @@ class FylvoDocumentsProvider : DocumentsProvider() {
     private suspend fun downloadTo(url: String, dest: File): File {
         val resp = repo.download(url)
         if (!resp.isSuccessful) {
-            resp.body()?.close()
+            resp.errorBody()?.close()
             throw FileNotFoundException("Download failed: HTTP ${resp.code()}")
         }
         dest.parentFile?.mkdirs()

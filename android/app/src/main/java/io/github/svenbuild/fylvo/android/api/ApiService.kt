@@ -41,6 +41,10 @@ interface ApiService {
     @GET("api/v4/site/config/login")
     suspend fun siteConfig(): Response<ApiResponse<SiteConfig>>
 
+    /** Fylvo: explorer settings; only the file type icons are read. No sign-in needed. */
+    @GET("api/v4/site/config/explorer")
+    suspend fun explorerConfig(): Response<ApiResponse<ExplorerConfig>>
+
     @GET("api/v4/file")
     suspend fun listFiles(
         @Query("uri") uri: String,
@@ -90,6 +94,8 @@ interface ApiService {
     @POST
     suspend fun completeUpload(@Url url: String): Response<ResponseBody>
 
+    // Streamed: a large file must never be held in memory as a whole.
+    @Streaming
     @GET
     suspend fun download(@Url url: String): Response<ResponseBody>
 

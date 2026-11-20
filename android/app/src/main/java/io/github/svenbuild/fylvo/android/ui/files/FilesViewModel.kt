@@ -23,9 +23,11 @@ import kotlinx.coroutines.sync.withPermit
 import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.ApiException
-import io.github.svenbuild.fylvo.android.data.FavoriteEntry
-import io.github.svenbuild.fylvo.android.data.FavoritesStore
 import io.github.svenbuild.fylvo.android.data.FileRepository
+import io.github.svenbuild.fylvo.android.data.offline.OfflineCoverage
+import io.github.svenbuild.fylvo.android.data.offline.OfflineManager
+import io.github.svenbuild.fylvo.android.data.offline.OfflineRootInfo
+import io.github.svenbuild.fylvo.android.data.offline.hasRoomFor
 import io.github.svenbuild.fylvo.android.data.SortBy
 import io.github.svenbuild.fylvo.android.data.SortOrder
 import io.github.svenbuild.fylvo.android.data.ViewMode
@@ -62,6 +64,32 @@ enum class Category(val uri: String, @StringRes val label: Int, val filter: Stri
 
 /** Signed thumbnail URLs are refetched after this; servers typically sign for ~1 h. */
 internal const val THUMB_TTL_MS = 50L * 60 * 1000
+
+/** Fylvo: the server address a folder or file is kept offline under (a shared folder's own share). */
+fun offlineUriOf(file: FileObject): String = file.sharedRedirect ?: file.path
+
+/** Fylvo: offline is offered in My files and in shared folders, not in the trash. */
+fun canKeepOffline(file: FileObject): Boolean {
+    val uri = offlineUriOf(file)
+    val place = (CrUri.root(uri) == CrUri.MY_PREFIX && !CrUri.isRoot(uri)) || CrUri.isShare(uri)
+    return place && !file.isUploading
+}
+
+/**
+ * Fylvo: the question before a folder is kept offline: how much it is and what stays free.
+ * [loading] while the folder is counted; [refusal] set when it cannot be kept offline.
+ */
+data class OfflinePrompt(
+    val uri: String,
+    val name: String,
+    val loading: Boolean = true,
+    val files: Int = 0,
+    val bytes: Long = 0,
+    val freeBytes: Long = 0,
+    val refusal: Refusal? = null,
+) {
+    enum class Refusal { NoRoom, TooManyFolders }
+}
 
 /** One-off message for the snackbar, optionally with an action such as Undo. */
 data class UiMessage(val text: UiText, val actionLabel: UiText? = null, val action: (() -> Unit)? = null)
@@ -100,11 +128,21 @@ data class FilesUiState(
     val searchLoading: Boolean = false,
     val searchLoadingMore: Boolean = false,
     val searchError: UiText? = null,
-    val favorites: List<FavoriteEntry> = emptyList(),
+    /** Fylvo: offline folders and files of this account. */
+    val offlineRoots: List<OfflineRootInfo> = emptyList(),
+    val offlineCoverage: OfflineCoverage = OfflineCoverage(),
+    /** Id of the offline root being synced right now. */
+    val offlineSyncing: String? = null,
+    /** The folder on screen comes from the copies on this phone (no connection). */
+    val offlineMode: Boolean = false,
+    val offlinePrompt: OfflinePrompt? = null,
+    /** Paths opened from the copy on this phone because the server failed: maybe outdated. */
+    val staleCopies: Set<String> = emptySet(),
     /** Fylvo: the folder on screen as the server describes it, with its capability set. */
     val parent: FileObject? = null,
 ) {
-    val favoritePaths: Set<String> get() = favorites.map { it.path }.toSet()
+    /** Fylvo: kept on this phone, as a root or inside an offline folder (shown with a pin). */
+    fun isOffline(file: FileObject): Boolean = offlineCoverage.isOffline(offlineUriOf(file))
     val selecting: Boolean get() = selected.isNotEmpty()
     /** Uploads landing in the folder on screen; shown inline above the files. */
     val uploadsHere: List<UploadStatus> get() = uploads.filter { it.parentUri == currentUri }
@@ -113,14 +151,14 @@ data class FilesUiState(
     val virtual: Boolean get() = category != null
     val inTrash: Boolean get() = category == Category.TRASH
     /** Fylvo: may upload and create folders here (share capability or ownership). */
-    val canAddHere: Boolean get() = !home && category == null && Permissions.canAddTo(parent)
+    val canAddHere: Boolean get() = !home && category == null && !offlineMode && Permissions.canAddTo(parent)
     /** Effective display mode: galleries keep their own preference. */
     val effectiveMode: ViewMode get() = if (category?.gallery == true) view.galleryMode else view.mode
 }
 
 class FilesViewModel(
     private val repo: FileRepository,
-    private val favorites: FavoritesStore,
+    private val offline: OfflineManager,
     private val viewSettings: ViewSettings,
     private val workManager: WorkManager,
     /** Invoked when the server no longer accepts our session; the caller returns to login. */
@@ -152,9 +190,20 @@ class FilesViewModel(
         loadRecent()
         observeUploads()
         viewModelScope.launch {
-            favorites.entries.collect { list ->
-                _state.value = _state.value.copy(favorites = list)
+            runCatching { offline.start() }
+        }
+        // Fylvo: the web app's file type colours, once per app start.
+        if (FileIcons.claimFetch()) viewModelScope.launch {
+            val icons = repo.explorerIcons()
+            if (icons == null) FileIcons.fetchFailed() else FileIcons.update(icons)
+        }
+        viewModelScope.launch {
+            offline.roots.collect { list ->
+                _state.value = _state.value.copy(offlineRoots = list, offlineCoverage = OfflineCoverage(list.map { it.root }))
             }
+        }
+        viewModelScope.launch {
+            offline.syncing.collect { _state.value = _state.value.copy(offlineSyncing = it) }
         }
         viewModelScope.launch {
             var first = true
@@ -184,6 +233,7 @@ class FilesViewModel(
             parent = cached?.parent,
             selected = emptySet(),
             loadingMore = false,
+            offlineMode = false,
         )
         viewModelScope.launch {
             try {
@@ -203,15 +253,22 @@ class FilesViewModel(
                 prefetchThumbs(files)
             } catch (e: Exception) {
                 if (_state.value.currentUri != uri) return@launch
-                if (!handleSessionExpiry(e)) {
-                    // Keep showing the cached files if we had them; only surface the error otherwise.
+                if (handleSessionExpiry(e)) return@launch
+                // Fylvo: no connection inside an offline folder: show the copies on this phone.
+                val local = if (e is CancellationException || (e is ApiException && !e.isTransient)) null else offline.browse(uri)
+                if (local != null && _state.value.currentUri == uri) {
                     _state.value = _state.value.copy(
-                        loading = false,
-                        revalidating = false,
-                        error = if (cached == null) userError(e) else null,
-                        snackbar = if (cached != null) failure(e) else null,
+                        loading = false, revalidating = false, files = local, nextToken = null, parent = null, offlineMode = true,
                     )
+                    return@launch
                 }
+                // Keep showing the cached files if we had them; only surface the error otherwise.
+                _state.value = _state.value.copy(
+                    loading = false,
+                    revalidating = false,
+                    error = if (cached == null) userError(e) else null,
+                    snackbar = if (cached != null) failure(e) else null,
+                )
             }
         }
     }
@@ -396,23 +453,41 @@ class FilesViewModel(
             it.cancel()
             return
         }
+        // Fylvo: a file kept offline opens from its copy on this phone when that is the current
+        // version (or there is no connection); otherwise from the server like any file.
+        if (state.value.isOffline(file)) {
+            viewModelScope.launch {
+                val local = currentOfflineCopy(file)
+                if (local != null) onReady(local) else fetchFromServer(context, file, onReady)
+            }
+            return
+        }
+        fetchFromServer(context, file, onReady)
+    }
+
+    private fun fetchFromServer(context: Context, file: FileObject, onReady: (File) -> Unit) {
         val dest = cacheFileFor(context, file)
-        if (dest.exists() && dest.length() == file.size) {
+        if (cachedCopy(dest, file)) {
             onReady(dest)
             return
         }
         setDownloading(file.path, null)
         val job = viewModelScope.launch {
             try {
-                val url = repo.downloadUrl(file.path)
+                // The exact version, so the cache under its version key holds that version.
+                val url = repo.downloadUrl(file.path, entity = file.primaryEntity)
                 repo.downloadToFile(url, dest) { done, total ->
                     setDownloading(file.path, if (total > 0) done.toFloat() / total else null)
                 }
+                markFresh(file)
                 onReady(dest)
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
             } catch (e: Exception) {
-                _state.value = _state.value.copy(snackbar = failure(e, fallback = R.string.download_failed))
+                // Fylvo: no connection: an older copy kept offline is better than nothing.
+                val local = anyOfflineCopy(file)
+                if (local != null) onReady(local)
+                else _state.value = _state.value.copy(snackbar = failure(e, fallback = R.string.download_failed))
             } finally {
                 downloadJobs.remove(file.path)
                 clearDownloading(file.path)
@@ -437,8 +512,13 @@ class FilesViewModel(
         _state.value = _state.value.copy(downloading = _state.value.downloading - path)
     }
 
+    /** Fylvo: keyed by the file's version too, so an older copy of the same size is never reused. */
     private fun cacheFileFor(context: Context, file: FileObject): File =
-        File(File(context.cacheDir, "downloads"), file.id).resolve(file.name)
+        File(File(context.cacheDir, "downloads"), file.id).resolve(file.primaryEntity.ifEmpty { "unknown" }).resolve(file.name)
+
+    /** A cached download of exactly this version (none when the version is unknown). */
+    private fun cachedCopy(dest: File, file: FileObject): Boolean =
+        file.primaryEntity.isNotEmpty() && dest.exists() && dest.length() == file.size
 
     /**
      * Downloads [file] somewhere the user can actually find it: the MediaStore
@@ -517,7 +597,10 @@ class FilesViewModel(
     /** Streams a download [url] into [out] with throttled progress for [path]. */
     private suspend fun streamTo(url: String, out: OutputStream, path: String) {
         val resp = repo.download(url)
-        if (!resp.isSuccessful) throw ApiException(resp.code(), "Download failed: HTTP ${resp.code()}")
+        if (!resp.isSuccessful) {
+            resp.errorBody()?.close()
+            throw ApiException(resp.code(), "Download failed: HTTP ${resp.code()}")
+        }
         val body = resp.body() ?: throw ApiException(-1, "Empty download")
         val total = body.contentLength()
         var done = 0L
@@ -537,15 +620,62 @@ class FilesViewModel(
     }
 
     /** Signed inline URL for streaming a preview (image, video, audio). */
-    suspend fun previewUrl(file: FileObject): String = repo.contentUrl(file.path)
+    suspend fun previewUrl(file: FileObject): String {
+        currentOfflineCopy(file)?.let { return android.net.Uri.fromFile(it).toString() }
+        return try {
+            repo.contentUrl(file.path).also { markFresh(file) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            anyOfflineCopy(file)?.let { android.net.Uri.fromFile(it).toString() } ?: throw e
+        }
+    }
+
+    /**
+     * Fylvo: the copy on this phone of a file kept offline when it is the version the listing
+     * shows (any copy while the folder is shown from the phone); null otherwise.
+     */
+    private suspend fun currentOfflineCopy(file: FileObject): File? = when {
+        !_state.value.isOffline(file) -> null
+        _state.value.offlineMode -> offline.localCopy(file.path)
+        file.primaryEntity.isNotEmpty() -> offline.localCopy(file.path, entity = file.primaryEntity)
+        else -> null
+    }
+
+    /**
+     * Fylvo: any copy on this phone, for when the server answered with an error or cannot be
+     * reached; says that it may be outdated.
+     */
+    private suspend fun anyOfflineCopy(file: FileObject): File? {
+        if (!_state.value.isOffline(file)) return null
+        val local = offline.localCopy(file.path) ?: return null
+        _state.value = _state.value.copy(
+            snackbar = UiMessage(UiText.Res(R.string.offline_copy_may_be_outdated)),
+            staleCopies = _state.value.staleCopies + file.path,
+        )
+        return local
+    }
+
+    /** The server answered for [file] again: no "may be outdated" note for it any more. */
+    private fun markFresh(file: FileObject) {
+        if (file.path in _state.value.staleCopies) _state.value = _state.value.copy(staleCopies = _state.value.staleCopies - file.path)
+    }
 
     /** Local copy for renderers that need a file (PDF, text); downloads if missing. */
     suspend fun localCopy(context: Context, file: FileObject, onProgress: (Float?) -> Unit): File {
+        currentOfflineCopy(file)?.let { return it }
         val dest = cacheFileFor(context, file)
-        if (dest.exists() && dest.length() == file.size) return dest
-        val url = repo.downloadUrl(file.path)
-        repo.downloadToFile(url, dest) { done, total -> onProgress(if (total > 0) done.toFloat() / total else null) }
-        return dest
+        if (cachedCopy(dest, file)) return dest
+        return try {
+            val url = repo.downloadUrl(file.path, entity = file.primaryEntity)
+            repo.downloadToFile(url, dest) { done, total -> onProgress(if (total > 0) done.toFloat() / total else null) }
+            markFresh(file)
+            dest
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            anyOfflineCopy(file) ?: throw e
+        }
     }
 
     /** Files of the folder on screen that open in the in-app viewer, in list order. */
@@ -820,60 +950,86 @@ class FilesViewModel(
         }
     }
 
-    /** Saves the file under filesDir/offline and registers it as a favorite, with the tile showing progress. */
-    fun toggleFavorite(context: Context, file: FileObject) {
-        if (file.isFolder) return
-        val existing = _state.value.favorites.firstOrNull { it.path == file.path }
-        if (existing != null) {
-            removeFavorite(existing)
+    /**
+     * Fylvo: switches offline on or off for [file]. A file becomes a single-file root at once (when
+     * at least 1 GB stays free); a folder is counted first and asked about ([FilesUiState.offlinePrompt]).
+     */
+    fun toggleOffline(file: FileObject) {
+        val s = _state.value
+        val uri = offlineUriOf(file)
+        s.offlineCoverage.rootAt(uri)?.let { root ->
+            removeOffline(root.id, root.name)
             return
         }
-        if (file.path in _state.value.downloading) return
-        setDownloading(file.path, null)
-        viewModelScope.launch {
-            runCatching {
-                val dir = File(context.filesDir, "offline").apply { mkdirs() }
-                val local = File(dir, "${file.path.hashCode()}_${file.name}")
-                val url = repo.downloadUrl(file.path)
-                repo.downloadToFile(url, local) { done, total ->
-                    setDownloading(file.path, if (total > 0) done.toFloat() / total else null)
+        // Inside an offline folder the folder's copy is used; nothing to switch.
+        if (s.offlineCoverage.coveringFolder(uri) != null || !canKeepOffline(file)) return
+        if (!file.isFolder) {
+            viewModelScope.launch {
+                if (!hasRoomFor(file.size, offline.freeBytes())) {
+                    _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.offline_no_room)))
+                    return@launch
                 }
-                favorites.put(
-                    FavoriteEntry(
-                        path = file.path,
-                        name = file.name,
-                        size = file.size,
-                        localFile = local.absolutePath,
-                        savedAt = System.currentTimeMillis(),
-                        remoteUpdatedAt = file.updatedAt,
+                if (offline.addRoot(uri, file.name, folder = false)) {
+                    _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.offline_switched_on, file.name)))
+                }
+            }
+            return
+        }
+        _state.value = s.copy(offlinePrompt = OfflinePrompt(uri = uri, name = file.name))
+        viewModelScope.launch {
+            try {
+                val tree = repo.listTree(uri)
+                val bytes = tree.files.sumOf { it.size }
+                val free = offline.freeBytes()
+                val refusal = when {
+                    !tree.complete -> OfflinePrompt.Refusal.TooManyFolders
+                    !hasRoomFor(bytes, free) -> OfflinePrompt.Refusal.NoRoom
+                    else -> null
+                }
+                if (_state.value.offlinePrompt?.uri == uri) {
+                    _state.value = _state.value.copy(
+                        offlinePrompt = OfflinePrompt(uri, file.name, loading = false, files = tree.files.size, bytes = bytes, freeBytes = free, refusal = refusal),
                     )
-                )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (handleSessionExpiry(e)) return@launch
+                _state.value = _state.value.copy(offlinePrompt = null, snackbar = failure(e))
             }
-                .onSuccess { _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.available_offline_message, file.name))) }
-                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, listOf(file.path))) }
-            clearDownloading(file.path)
         }
     }
 
-    /** Re-downloads a favorite to refresh its local copy. */
-    fun refreshFavorite(context: Context, entry: FavoriteEntry) {
+    /** The person agreed to keep the counted folder offline. */
+    fun confirmOffline() {
+        val prompt = _state.value.offlinePrompt ?: return
+        _state.value = _state.value.copy(offlinePrompt = null)
+        if (prompt.loading || prompt.refusal != null) return
         viewModelScope.launch {
-            runCatching {
-                val url = repo.downloadUrl(entry.path)
-                // .part-then-rename keeps the previous copy intact if this fails.
-                repo.downloadToFile(url, File(entry.localFile)) { _, _ -> }
-                favorites.put(entry.copy(savedAt = System.currentTimeMillis()))
+            if (offline.addRoot(prompt.uri, prompt.name, folder = true)) {
+                _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.offline_switched_on, prompt.name)))
             }
-                .onFailure { _state.value = _state.value.copy(snackbar = failure(it)) }
         }
     }
 
-    fun removeFavorite(entry: FavoriteEntry) {
+    fun dismissOfflinePrompt() {
+        _state.value = _state.value.copy(offlinePrompt = null)
+    }
+
+    /** Switches an offline root off: its copies on this phone are deleted. */
+    fun removeOffline(rootId: String, name: String) {
         viewModelScope.launch {
-            File(entry.localFile).delete()
-            favorites.remove(entry.path)
+            offline.removeRoot(rootId)
+            _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.offline_switched_off, name)))
         }
     }
+
+    fun syncOfflineNow() {
+        viewModelScope.launch { offline.syncNow() }
+    }
+
+    /** The copy on this phone of a single offline file, for the Offline screen. */
+    suspend fun offlineFile(uri: String): File? = offline.localCopy(uri)
 
     suspend fun shareLink(
         file: FileObject,

@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +52,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.ui.files.FileKind
+import io.github.svenbuild.fylvo.android.ui.files.fileIconOf
+import io.github.svenbuild.fylvo.android.ui.files.fileIconTint
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
 import io.github.svenbuild.fylvo.android.ui.files.subtitleFor
 import io.github.svenbuild.fylvo.android.util.userError
@@ -100,6 +103,8 @@ fun PreviewScreen(
     var chromeVisible by remember { mutableStateOf(true) }
     var menuOpen by remember { mutableStateOf(false) }
     val current = files[pager.currentPage]
+    // Fylvo: shown from the copy on this phone because the server failed.
+    val staleCopies = viewModel.state.collectAsState().value.staleCopies
     val dark = previewKindOf(current).let { it == PreviewKind.IMAGE || it == PreviewKind.VIDEO }
 
     BackHandler(onBack = onClose)
@@ -135,6 +140,15 @@ fun PreviewScreen(
                             style = MaterialTheme.typography.labelMedium,
                             color = if (dark) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (current.path in staleCopies) {
+                            Text(
+                                stringResource(R.string.offline_copy_may_be_outdated),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (dark) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
@@ -203,10 +217,9 @@ private fun PreviewPage(
 
 @Composable
 private fun NoPreview(file: FileObject, onOpenWith: () -> Unit) {
-    val kind = FileKind.of(file)
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
-            Icon(kind.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(72.dp))
+            Icon(fileIconOf(file), contentDescription = null, tint = fileIconTint(file), modifier = Modifier.size(72.dp))
             Text(stringResource(R.string.no_preview), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
             Button(onClick = onOpenWith, modifier = Modifier.padding(top = 16.dp)) { Text(stringResource(R.string.open_with_another_app)) }
         }

@@ -4,11 +4,8 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 private val Context.favoritesStore by preferencesDataStore(name = "favorites")
@@ -27,13 +24,12 @@ data class FavoriteEntry(
 )
 
 /**
- * Offline-favorite registry: remote path → downloaded local copy.
- * JSON list in DataStore — jarvis: ceiling a few hundred entries,
- * upgrade to Room if sync status or per-file history is ever needed.
+ * Single offline files of app versions before 1.2 (JSON list in DataStore). Fylvo 1.2 keeps
+ * offline files and folders in data/offline; this list is only read once to take them over
+ * (see OfflineManager.migrateLegacy) and then cleared.
  */
 class FavoritesStore(private val context: Context) {
 
-    /** Fylvo: drops everything; used on sign-out. */
     suspend fun clear() {
         context.favoritesStore.edit { it.clear() }
     }
@@ -44,26 +40,7 @@ class FavoritesStore(private val context: Context) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    val entries: Flow<List<FavoriteEntry>> = context.favoritesStore.data.map {
-        decode(it[Keys.entriesJson])
-    }
-
-    suspend fun listNow(): List<FavoriteEntry> = entries.first()
-
-    suspend fun put(entry: FavoriteEntry) {
-        context.favoritesStore.edit { prefs ->
-            val list = decode(prefs[Keys.entriesJson])
-                .filterNot { it.path == entry.path } + entry
-            prefs[Keys.entriesJson] = json.encodeToString(list)
-        }
-    }
-
-    suspend fun remove(path: String) {
-        context.favoritesStore.edit { prefs ->
-            val list = decode(prefs[Keys.entriesJson]).filterNot { it.path == path }
-            prefs[Keys.entriesJson] = json.encodeToString(list)
-        }
-    }
+    suspend fun listNow(): List<FavoriteEntry> = decode(context.favoritesStore.data.first()[Keys.entriesJson])
 
     private fun decode(raw: String?): List<FavoriteEntry> =
         raw?.let {

@@ -213,6 +213,7 @@ class LoginViewModel(
             refreshToken = login.token.refreshToken,
             accessExpiresAt = ApiClient.parseExpiresAt(login.token.accessExpires),
             email = login.user.email,
+            userId = login.user.id,
             nick = login.user.nickname,
         )
         _state.value = _state.value.copy(

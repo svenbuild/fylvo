@@ -21,6 +21,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -442,8 +443,13 @@ fun FilesScreen(
                     Category.DOCUMENTS -> EmptyState(icon = Icons.Outlined.Description, title = stringResource(R.string.no_documents))
                     Category.SHARED_WITH_ME -> EmptyState(icon = Icons.Outlined.FolderOpen, title = stringResource(R.string.nothing_shared))
                 }
-                state.effectiveMode == ViewMode.GRID -> FileGrid(state, viewModel, gridState, ::actionsFor)
-                else -> FileList(state, viewModel, listState, ::actionsFor)
+                else -> Column(Modifier.fillMaxSize()) {
+                    if (state.offlineMode) OfflineBanner()
+                    Box(Modifier.weight(1f)) {
+                        if (state.effectiveMode == ViewMode.GRID) FileGrid(state, viewModel, gridState, ::actionsFor)
+                        else FileList(state, viewModel, listState, ::actionsFor)
+                    }
+                }
             } }
         }
     }
@@ -523,12 +529,14 @@ fun FilesScreen(
         FileActionSheet(
             file = file,
             thumbUrl = rememberThumbUrl(viewModel, file),
-            isFavorite = file.path in state.favoritePaths,
+            offlineOn = state.offlineCoverage.rootAt(offlineUriOf(file)) != null,
+            offlineCovered = state.offlineCoverage.coveringFolder(offlineUriOf(file)) != null,
+            offlineAllowed = canKeepOffline(file) && !state.offlineMode,
             onDismiss = { sheetTarget = null },
             onOpen = { sheetTarget = null; if (file.isFolder) viewModel.navigateTo(file) else openFile(file) },
             onShare = { sheetTarget = null; shareLink(file) },
             onDownload = { viewModel.saveToDevice(context, file) },
-            onToggleFavorite = { sheetTarget = null; viewModel.toggleFavorite(context, file) },
+            onToggleOffline = { sheetTarget = null; viewModel.toggleOffline(file) },
             onRename = { sheetTarget = null; renameTarget = file },
             onDelete = { sheetTarget = null; deleteTarget = file },
             onSelect = { sheetTarget = null; viewModel.toggleSelected(file) },
@@ -642,7 +650,7 @@ fun FilesScreen(
 
     if (accountOpen) {
         AccountScreen(
-            offlineCount = state.favorites.size,
+            offlineCount = state.offlineRoots.size,
             onOpenOffline = { offlineOpen = true },
             onBack = { accountOpen = false },
             onSignOut = onSignOut,
@@ -656,13 +664,31 @@ fun FilesScreen(
         exit = slideOutHorizontally(tween(200)) { it / 3 } + fadeOut(tween(160)),
     ) {
         OfflineScreen(
-            favorites = state.favorites,
+            roots = state.offlineRoots,
+            syncing = state.offlineSyncing,
             onBack = { offlineOpen = false },
-            onOpen = { entry -> openWithSystem(context, File(entry.localFile)) },
-            onRefresh = { entry -> viewModel.refreshFavorite(context, entry) },
-            onRemove = { entry -> viewModel.removeFavorite(entry) },
+            onOpen = { root ->
+                if (root.folder) {
+                    // Browsable without a connection too (the Files tab falls back to the copies).
+                    offlineOpen = false
+                    accountOpen = false
+                    viewModel.navigateTo(FileObject(type = 1, name = root.name, path = root.uri))
+                } else {
+                    scope.launch {
+                        val local = viewModel.offlineFile(root.uri)
+                        if (local != null) openWithSystem(context, local)
+                        else snackbar.showSnackbar(context.getString(R.string.offline_not_here_yet))
+                    }
+                }
+            },
+            onSyncNow = { viewModel.syncOfflineNow() },
+            onRemove = { root -> viewModel.removeOffline(root.id, root.name) },
             bottomBar = { BottomTabs(Tab.ACCOUNT, ::selectTab) },
         )
+    }
+
+    state.offlinePrompt?.let { prompt ->
+        OfflinePromptDialog(prompt, onConfirm = { viewModel.confirmOffline() }, onDismiss = { viewModel.dismissOfflinePrompt() })
     }
 }
 

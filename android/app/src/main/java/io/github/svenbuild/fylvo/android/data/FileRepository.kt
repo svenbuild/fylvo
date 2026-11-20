@@ -79,17 +79,23 @@ class FileRepository(private val api: ApiClient) {
             orderDirection = orderDirection,
         ).unwrap()
 
-    suspend fun downloadUrl(uri: String, archive: Boolean = false): String = signedUrl(uri, download = true, archive = archive)
+    /** [entity] asks for that exact version of the file (empty = the current one). */
+    suspend fun downloadUrl(uri: String, archive: Boolean = false, entity: String = ""): String =
+        signedUrl(uri, download = true, archive = archive, entity = entity)
 
     /** Signed URL served inline (no attachment disposition), for streaming previews. */
     suspend fun contentUrl(uri: String): String = signedUrl(uri, download = false)
 
-    private suspend fun signedUrl(uri: String, download: Boolean, archive: Boolean = false): String {
-        val url = api.service().fileUrls(FileUrlRequest(listOf(uri), download = download, archive = archive))
+    private suspend fun signedUrl(uri: String, download: Boolean, archive: Boolean = false, entity: String = ""): String {
+        val url = api.service().fileUrls(FileUrlRequest(listOf(uri), download = download, archive = archive, entity = entity))
             .unwrap().urls.firstOrNull()?.url
             ?: throw ApiException(-1, "No URL returned for $uri")
         return reachableUrl(url)
     }
+
+    /** Fylvo: the server's file type icons (`icons` of the explorer settings), or null. */
+    suspend fun explorerIcons(): kotlinx.serialization.json.JsonElement? =
+        runCatching { api.service().explorerConfig().unwrap().icons }.getOrNull()
 
     /** Account storage usage; null when the server does not report it. */
     suspend fun capacity(): CapacityResponse? =
@@ -123,9 +129,13 @@ class FileRepository(private val api: ApiClient) {
      * (bytes, total) as it goes; total is -1 when the server sends no length.
      * Cooperative with coroutine cancellation between buffers.
      */
-    suspend fun downloadToFile(url: String, dest: File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+    suspend fun downloadToFile(url: String, dest: File, onProgress: (Long, Long) -> Unit = { _, _ -> }): Unit =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val resp = api.service().download(url)
-        if (!resp.isSuccessful) throw ApiException(resp.code(), "Download failed: HTTP ${resp.code()}")
+        if (!resp.isSuccessful) {
+            resp.errorBody()?.close()
+            throw ApiException(resp.code(), "Download failed: HTTP ${resp.code()}")
+        }
         val body = resp.body() ?: throw ApiException(-1, "Empty download")
         val total = body.contentLength()
         dest.parentFile?.mkdirs()
@@ -262,19 +272,49 @@ class FileRepository(private val api: ApiClient) {
     }
 
     /**
-     * Every file under [rootUri], recursively, as `canonical uri -> size`. The `type=file`
-     * search walks the whole subtree server-side, so this is one request per 500
-     * files rather than one per folder.
+     * Every file (or with [type] "folder" every folder) under [rootUri], recursively. The `type`
+     * search walks the whole subtree server-side, so this is one request per 500 entries rather
+     * than one per folder. The entries carry id, path, size, type and `primary_entity`.
+     * [IndexResult.complete] is false when the server stopped early (too many folders).
      */
-    suspend fun indexFiles(rootUri: String): Map<String, Long> {
-        val out = HashMap<String, Long>()
+    suspend fun indexFiles(rootUri: String, type: String = "file"): IndexResult {
+        val out = ArrayList<FileObject>()
+        var complete = true
         var token: String? = null
         do {
-            val page = list("$rootUri?type=file", pageToken = token, pageSize = 500)
-            for (f in page.files) if (!f.isFolder && f.path.isNotEmpty()) out[CrUri.canonical(f.path)] = f.size
+            val page = list("$rootUri?type=$type", pageToken = token, pageSize = 500)
+            if (page.recursionLimitReached) complete = false
+            for (f in page.files) if (f.path.isNotEmpty() && f.isFolder == (type == "folder")) out += f
             token = page.pagination.nextToken
         } while (!token.isNullOrEmpty())
-        return out
+        return IndexResult(out, complete)
+    }
+
+    class IndexResult(val entries: List<FileObject>, val complete: Boolean)
+
+    /** Fylvo: files and folders of the whole subtree of [rootUri], for offline folders. */
+    suspend fun listTree(rootUri: String): TreeListing {
+        val files = indexFiles(rootUri, "file")
+        val folders = indexFiles(rootUri, "folder")
+        return TreeListing(files.entries, folders.entries, files.complete && folders.complete)
+    }
+
+    class TreeListing(val files: List<FileObject>, val folders: List<FileObject>, val complete: Boolean)
+
+    /**
+     * Fylvo: the file or folder at exactly [uri]; null only when the server clearly says there is
+     * none (40016). Every other answer (network trouble, a non-JSON page, another code) throws,
+     * so nothing is ever deleted on unclear data.
+     */
+    suspend fun lookup(uri: String): FileObject? {
+        val resp = api.service().fileInfo(uri)
+        if (!resp.isSuccessful) throw java.io.IOException("server answered ${resp.code()}")
+        val body = resp.body() ?: throw java.io.IOException("no answer from the server")
+        return when (body.code) {
+            0 -> body.data ?: throw java.io.IOException("empty answer")
+            ApiException.CODE_PATH_NOT_EXIST -> null
+            else -> throw java.io.IOException("unclear answer ${body.code}")
+        }
     }
 
     /**

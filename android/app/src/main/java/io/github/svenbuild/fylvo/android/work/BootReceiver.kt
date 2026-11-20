@@ -25,6 +25,7 @@ class BootReceiver : BroadcastReceiver() {
                 val sync = app.syncFolderSettings.snapshotNow()
                 if (sync.enabled) SyncFolderWorker.apply(context, sync.wifiOnly)
                 if (app.taskNotifySettings.enabledNow()) TaskPollWorker.apply(context)
+                if (app.sessionManager.refreshTokenNow().isNotEmpty()) app.offlineManager.start()
             } finally {
                 result.finish()
             }

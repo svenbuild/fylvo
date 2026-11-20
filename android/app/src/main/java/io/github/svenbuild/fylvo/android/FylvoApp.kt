@@ -3,6 +3,7 @@ package io.github.svenbuild.fylvo.android
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -16,6 +17,7 @@ import io.github.svenbuild.fylvo.android.data.SessionManager
 import io.github.svenbuild.fylvo.android.data.TaskNotifySettings
 import io.github.svenbuild.fylvo.android.data.SyncFolderSettings
 import io.github.svenbuild.fylvo.android.data.ViewSettings
+import io.github.svenbuild.fylvo.android.data.offline.OfflineManager
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.localized
 
@@ -37,6 +39,8 @@ class FylvoApp : Application() {
         private set
     lateinit var appUpdater: AppUpdater
         private set
+    lateinit var offlineManager: OfflineManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -49,6 +53,7 @@ class FylvoApp : Application() {
         syncFolderSettings = SyncFolderSettings(this)
         viewSettings = ViewSettings(this)
         appUpdater = AppUpdater(this, apiClient)
+        offlineManager = OfflineManager(this, sessionManager, favoritesStore)
         // Upload lists no job will finish any more; off the main thread.
         Thread { runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cleanUpOldBatches(this) } }.start()
     }
@@ -84,6 +89,9 @@ class FylvoApp : Application() {
             io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames()
             appUpdater.reset()
             favoritesStore.clear()
+            // Offline copies are read-only in this version, nothing on the phone is lost. After an
+            // expired session they stay for the same account (bound to it, see OfflineStore).
+            if (expired) offlineManager.forget() else offlineManager.deleteAll()
             syncFolderSettings.clear()
             taskNotifySettings.clear()
             contentResolver.persistedUriPermissions.forEach {
@@ -96,8 +104,14 @@ class FylvoApp : Application() {
                 Uri.parse("content://$packageName.documents/"),
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
             )
+            // Also the grants to opened files (offline copies stay after an expired session).
+            revokeUriPermission(
+                "content://$packageName.fileprovider/".toUri(),
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
             withContext(Dispatchers.IO) {
-                filesDir.resolve("offline").deleteRecursively()
+                // Copies of app versions before 1.2 (directly in offline/); offline/files is handled above.
+                filesDir.resolve("offline").listFiles()?.forEach { if (it.name != "files") it.deleteRecursively() }
                 // Lists of uploads that were still waiting (their jobs are cancelled above).
                 filesDir.resolve("upload_batches").deleteRecursively()
                 // Also removes cacheDir/updates, the downloaded app update.

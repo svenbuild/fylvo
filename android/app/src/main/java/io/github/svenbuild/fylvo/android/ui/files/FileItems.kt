@@ -85,7 +85,6 @@ fun FileThumb(
     /** Fylvo: list rows show the bare icon; only a real thumbnail gets a rounded frame. */
     plain: Boolean = false,
 ) {
-    val kind = FileKind.of(file)
     val shape = RoundedCornerShape(corner)
     Box(
         modifier
@@ -100,11 +99,11 @@ fun FileThumb(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
-                loading = { KindIcon(kind, iconSize) },
-                error = { KindIcon(kind, iconSize) },
+                loading = { KindIcon(file, iconSize) },
+                error = { KindIcon(file, iconSize) },
             )
         } else {
-            KindIcon(kind, iconSize, uploading = file.isUploading)
+            KindIcon(file, iconSize, uploading = file.isUploading)
         }
         if (downloading) {
             Box(
@@ -125,11 +124,12 @@ fun FileThumb(
 }
 
 @Composable
-private fun KindIcon(kind: FileKind, size: Dp, uploading: Boolean = false) {
+private fun KindIcon(file: FileObject, size: Dp, uploading: Boolean = false) {
+    // Fylvo: the web app's colour per file type; an unfinished upload stays neutral.
     Icon(
-        if (uploading) Icons.Outlined.CloudUpload else kind.icon,
+        if (uploading) Icons.Outlined.CloudUpload else fileIconOf(file),
         contentDescription = null,
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        tint = if (uploading) MaterialTheme.colorScheme.onSurfaceVariant else fileIconTint(file),
         modifier = Modifier.size(size),
     )
 }
@@ -222,6 +222,8 @@ fun FileGridItem(
     downloadProgress: Float? = null,
     /** Photo-gallery look: edge-to-edge thumbnail, no caption, play badge on videos. */
     gallery: Boolean = false,
+    /** Fylvo: kept on this phone; a small pin before the caption's second line. */
+    offline: Boolean = false,
 ) {
     val shape = RoundedCornerShape(if (gallery) 6.dp else 16.dp)
     val background = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
@@ -273,14 +275,23 @@ fun FileGridItem(
                 overflow = TextOverflow.Ellipsis,
             )
             val subtitle = fileSubtitle(file)
-            if (subtitle.isNotEmpty()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            if (subtitle.isNotEmpty() || offline) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (offline) {
+                        Icon(
+                            Icons.Default.OfflinePin, contentDescription = stringResource(R.string.available_offline),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(end = 4.dp).size(12.dp),
+                        )
+                    }
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
