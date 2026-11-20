@@ -283,6 +283,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         const val TAG = "upload"
         /** Id of the [UploadBatch] with the files; the list itself is not in the job's input. */
         const val KEY_BATCH_ID = "batch_id"
+        const val PARENT_TAG_PREFIX = "upload-parent:"
         private const val UNIQUE_WORK = "uploads"
         private const val MAX_ATTEMPTS = 8
         private const val LOG_TAG = "FylvoUpload"
@@ -328,6 +329,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             val batch = queue(context).create(uris.map { it.toString() }, fileNames, parentUri, overwrite)
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
                 .addTag(TAG)
+                // The target folder as a tag: a waiting job has no progress data to read it from.
+                .addTag(PARENT_TAG_PREFIX + parentUri)
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
@@ -398,6 +401,8 @@ data class UploadStatus(
     val uploaded: Int,
     val failed: Int,
     val error: String?,
+    /** Stopped for lack of network (or server) and waiting to go on by itself. */
+    val waitingForNetwork: Boolean = false,
 ) {
     val active: Boolean get() = !state.isFinished
     /** Whole-batch fraction, or null while the current file's size is unknown. */
@@ -415,7 +420,9 @@ data class UploadStatus(
             return UploadStatus(
                 id = info.id,
                 state = info.state,
-                parentUri = p.getString(UploadWorker.KEY_PARENT_URI) ?: o.getString(UploadWorker.KEY_PARENT_URI) ?: "",
+                parentUri = p.getString(UploadWorker.KEY_PARENT_URI) ?: o.getString(UploadWorker.KEY_PARENT_URI)
+                    ?: info.tags.firstOrNull { it.startsWith(UploadWorker.PARENT_TAG_PREFIX) }?.removePrefix(UploadWorker.PARENT_TAG_PREFIX)
+                    ?: "",
                 name = p.getString(UploadWorker.KEY_PROGRESS_NAME) ?: "",
                 index = p.getInt(UploadWorker.KEY_PROGRESS_INDEX, 0),
                 total = p.getInt(UploadWorker.KEY_PROGRESS_TOTAL, 0),
@@ -424,6 +431,7 @@ data class UploadStatus(
                 uploaded = o.getInt(UploadWorker.KEY_UPLOADED, 0),
                 failed = o.getInt(UploadWorker.KEY_FAILED, 0),
                 error = o.getString(UploadWorker.KEY_ERROR),
+                waitingForNetwork = info.state == WorkInfo.State.ENQUEUED && info.runAttemptCount > 0,
             )
         }
     }

@@ -47,6 +47,7 @@ fun UploadsCard(uploads: List<UploadStatus>, onCancel: (UUID) -> Unit) {
 private fun UploadRow(u: UploadStatus, onCancel: (UUID) -> Unit) {
     val queued = u.total == 0
     val headline = when {
+        u.waitingForNetwork -> stringResource(R.string.upload_waits_for_network)
         queued -> stringResource(R.string.waiting_to_upload)
         u.total > 1 -> stringResource(R.string.uploading_n_of, u.index + 1, u.total)
         else -> stringResource(R.string.uploading)

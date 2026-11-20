@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -56,6 +57,10 @@ internal fun FileList(
     val unknownDate = stringResource(R.string.unknown_date)
     val unknown = stringResource(R.string.unknown)
     val trashSubtitle = stringResource(R.string.trash_row_subtitle)
+    // Fylvo: the upload card is put above the first file; near the top, show it instead of
+    // keeping the first file in place (which pushed the card out of view).
+    val hasUploads = state.uploadsHere.isNotEmpty()
+    LaunchedEffect(hasUploads) { if (hasUploads && listState.firstVisibleItemIndex <= 1) listState.scrollToItem(0) }
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
@@ -120,6 +125,8 @@ internal fun FileGrid(
     actionsFor: (FileObject) -> FileActions,
 ) {
     val gallery = state.category?.gallery == true
+    val hasUploads = state.uploadsHere.isNotEmpty()
+    LaunchedEffect(hasUploads) { if (hasUploads && gridState.firstVisibleItemIndex <= 1) gridState.scrollToItem(0) }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = if (gallery) 118.dp else 110.dp),
         state = gridState,
