@@ -259,6 +259,9 @@ type (
 		MimeType        string                 `json:"mime_type,omitempty"`     // Expected mimetype
 		UploadPolicy    string                 `json:"upload_policy,omitempty"` // Upyun upload policy
 		EncryptMetadata *types.EncryptMetadata `json:"encrypt_metadata,omitempty"`
+		// Fylvo: the hashed id of the entity this upload creates. It becomes the current
+		// version of the file when the upload is completed.
+		EntityID string `json:"entity_id,omitempty"`
 	}
 
 	// UploadSession stores the information of an upload session, used in server side.
@@ -297,6 +300,9 @@ type (
 		MimeType               string
 		Metadata               map[string]string
 		PreviousVersion        string
+		// Fylvo: PreviousRequired makes the upload fail when there is no file to replace,
+		// instead of creating it new (see dbfs/fylvo_upload_previous.go).
+		PreviousRequired bool
 		// EntityType is the type of the entity to be created. If not set, a new file will be created
 		// with a default version entity. This will be set in update request for existing files.
 		EntityType          *types.EntityType

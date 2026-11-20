@@ -305,6 +305,8 @@ type (
 	FileUpdateService      struct {
 		Uri      string `form:"uri" binding:"required"`
 		Previous string `form:"previous"`
+		// Fylvo: fail with 40904 instead of creating the file when there is none to replace.
+		PreviousRequired bool `form:"previous_required"`
 	}
 )
 
@@ -329,7 +331,8 @@ func (service *FileUpdateService) PutContent(c *gin.Context, ls fs.LockSession) 
 	fileData := &fs.UploadRequest{
 		Props: &fs.UploadProps{
 			Uri:             uri,
-			PreviousVersion: service.Previous,
+			PreviousVersion:  service.Previous,
+			PreviousRequired: service.PreviousRequired,
 			Size:            fileSize,
 		},
 		File: rc,

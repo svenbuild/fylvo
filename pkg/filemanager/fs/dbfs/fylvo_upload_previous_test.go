@@ -51,12 +51,13 @@ func (e *sharedFolderEnv) version(raw string) string {
 	return hashid.EncodeEntityID(e.hasher, file.PrimaryEntityID())
 }
 
-// conditionalUpload uploads a new version of target that replaces previous only.
-func (e *sharedFolderEnv) conditionalUpload(f fs.FileSystem, target *fs.URI, size int64, previous string) (*fs.UploadSession, error) {
+// conditionalUpload uploads a new version of target that replaces previous only. With
+// required, a missing target fails instead of being created.
+func (e *sharedFolderEnv) conditionalUpload(f fs.FileSystem, target *fs.URI, size int64, previous string, required ...bool) (*fs.UploadSession, error) {
 	version := types.EntityTypeVersion
 	session, err := f.PrepareUpload(e.ctx, &fs.UploadRequest{Props: &fs.UploadProps{
 		Uri: target, Size: size, UploadSessionID: uuid.Must(uuid.NewV4()).String(), ExpireAt: time.Now().Add(time.Hour),
-		EntityType: &version, PreviousVersion: previous,
+		EntityType: &version, PreviousVersion: previous, PreviousRequired: len(required) > 0 && required[0],
 	}})
 	if err != nil {
 		return nil, err
@@ -93,50 +94,94 @@ func TestConditionalUploadFailsWhenReplacedBeforeItsLock(t *testing.T) {
 	require.EqualValues(t, 20, file.Size())
 }
 
-func TestConditionalUploadFailsWhenDeletedBeforeItsLock(t *testing.T) {
-	for _, soft := range []bool{false, true} {
-		e := newSharedFolderEnv(t)
-		previous := e.version("cloudreve://my/Shared/doc.txt")
+// deletions are the two ways a file goes: for good, or into the trash.
+var deletions = map[string]bool{"hard delete": false, "soft delete": true}
 
-		phone := e.asInterleaved(e.owner, "doc.txt", func() {
-			e.remove(soft, "cloudreve://my/Shared/doc.txt")
+func TestConditionalUploadFailsWhenDeletedBeforeItsLock(t *testing.T) {
+	for name, soft := range deletions {
+		t.Run(name, func(t *testing.T) {
+			e := newSharedFolderEnv(t)
+			previous := e.version("cloudreve://my/Shared/doc.txt")
+
+			phone := e.asInterleaved(e.owner, "doc.txt", func() {
+				e.remove(soft, "cloudreve://my/Shared/doc.txt")
+			})
+			_, err := e.conditionalUpload(phone, e.uri("cloudreve://my/Shared/doc.txt"), 30, previous, true)
+			requireCode(t, err, serializer.CodeUploadTargetGone)
+			e.requireMissing("cloudreve://my/Shared/doc.txt")
+
+			// Without PreviousRequired it fails as well, as a conflict, as any change before a lock does.
+			e.upload(e.as(e.owner), "cloudreve://my/Shared/doc.txt", 10)
+			previous = e.version("cloudreve://my/Shared/doc.txt")
+			phone = e.asInterleaved(e.owner, "doc.txt", func() {
+				e.remove(soft, "cloudreve://my/Shared/doc.txt")
+			})
+			_, err = e.conditionalUpload(phone, e.uri("cloudreve://my/Shared/doc.txt"), 30, previous)
+			requireCode(t, err, serializer.CodeConflict)
+			e.requireMissing("cloudreve://my/Shared/doc.txt")
 		})
-		_, err := e.conditionalUpload(phone, e.uri("cloudreve://my/Shared/doc.txt"), 30, previous)
-		requireCode(t, err, serializer.CodeUploadTargetGone)
-		e.requireMissing("cloudreve://my/Shared/doc.txt")
 	}
 }
 
 func TestConditionalUploadFailsWhenDeletedBefore(t *testing.T) {
-	for _, soft := range []bool{false, true} {
-		e := newSharedFolderEnv(t)
-		previous := e.version("cloudreve://my/Shared/doc.txt")
-		e.remove(soft, "cloudreve://my/Shared/doc.txt")
+	for name, soft := range deletions {
+		t.Run(name, func(t *testing.T) {
+			e := newSharedFolderEnv(t)
+			previous := e.version("cloudreve://my/Shared/doc.txt")
+			e.remove(soft, "cloudreve://my/Shared/doc.txt")
 
-		_, err := e.conditionalUpload(e.as(e.owner), e.uri("cloudreve://my/Shared/doc.txt"), 30, previous)
-		requireCode(t, err, serializer.CodeUploadTargetGone)
-		e.requireMissing("cloudreve://my/Shared/doc.txt")
+			_, err := e.conditionalUpload(e.as(e.owner), e.uri("cloudreve://my/Shared/doc.txt"), 30, previous, true)
+			requireCode(t, err, serializer.CodeUploadTargetGone)
+			e.requireMissing("cloudreve://my/Shared/doc.txt")
+
+			// Without PreviousRequired the file is created new, as the web app and the desktop
+			// client expect today.
+			_, err = e.conditionalUpload(e.as(e.owner), e.uri("cloudreve://my/Shared/doc.txt"), 30, previous)
+			require.NoError(t, err)
+		})
 	}
 }
 
 func TestConditionalUploadFailsWhenAnotherFileTookThePlace(t *testing.T) {
-	for _, soft := range []bool{false, true} {
-		e := newSharedFolderEnv(t)
-		previous := e.version("cloudreve://my/Shared/doc.txt")
+	for name, soft := range deletions {
+		t.Run(name, func(t *testing.T) {
+			e := newSharedFolderEnv(t)
+			previous := e.version("cloudreve://my/Shared/doc.txt")
 
-		// Between the read and the lock, the file is deleted and a copy of it with the very
-		// same content (the same version) takes its place.
-		phone := e.asInterleaved(e.owner, "doc.txt", func() {
-			owner := e.as(e.owner)
-			_, err := owner.MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/Shared/doc.txt")}, e.uri("cloudreve://my/Private"), true)
-			require.NoError(t, err)
-			e.remove(soft, "cloudreve://my/Shared/doc.txt")
-			_, err = owner.MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/Private/doc.txt")}, e.uri("cloudreve://my/Shared"), false)
-			require.NoError(t, err)
+			// Between the read and the lock, the file is deleted and a copy of it with the very
+			// same content (the same version) takes its place.
+			phone := e.asInterleaved(e.owner, "doc.txt", func() {
+				owner := e.as(e.owner)
+				_, err := owner.MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/Shared/doc.txt")}, e.uri("cloudreve://my/Private"), true)
+				require.NoError(t, err)
+				e.remove(soft, "cloudreve://my/Shared/doc.txt")
+				_, err = owner.MoveOrCopy(e.ctx, []*fs.URI{e.uri("cloudreve://my/Private/doc.txt")}, e.uri("cloudreve://my/Shared"), false)
+				require.NoError(t, err)
+			})
+			_, err := e.conditionalUpload(phone, e.uri("cloudreve://my/Shared/doc.txt"), 30, previous, true)
+			requireCode(t, err, serializer.CodeStaleVersion)
 		})
-		_, err := e.conditionalUpload(phone, e.uri("cloudreve://my/Shared/doc.txt"), 30, previous)
-		requireCode(t, err, serializer.CodeStaleVersion)
 	}
+}
+
+func TestPreviousRequiredRules(t *testing.T) {
+	e := newSharedFolderEnv(t)
+
+	// It needs a version to compare with.
+	_, err := e.conditionalUpload(e.as(e.owner), e.uri("cloudreve://my/Shared/doc.txt"), 30, "", true)
+	requireCode(t, err, serializer.CodeParamErr)
+
+	// A visitor of an upload link only adds files. Without PreviousRequired the upload goes to
+	// a free name, as before; with it, it fails, as the visitor may not replace the file.
+	_, path := e.uploadLink(&types.ShareProps{AllowUpload: true})
+	visitor := e.visitors()[0]
+	previous := e.version("cloudreve://my/Shared/doc.txt")
+	_, err = e.conditionalUpload(e.as(visitor), path("/doc.txt"), 30, previous, true)
+	requireCode(t, err, serializer.CodeOwnerOnly)
+	session, err := e.conditionalUpload(e.as(visitor), path("/doc.txt"), 30, previous)
+	require.NoError(t, err)
+	require.Equal(t, "doc (1).txt", session.Props.Uri.Name())
+	require.Equal(t, previous, e.version("cloudreve://my/Shared/doc.txt"))
 }
 
 func TestConditionalUploadReplacesItsVersion(t *testing.T) {
