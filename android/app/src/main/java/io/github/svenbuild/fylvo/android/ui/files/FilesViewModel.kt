@@ -310,12 +310,14 @@ class FilesViewModel(
         val token = s.nextToken ?: return
         val uri = s.currentUri
         if (s.loadingMore) return
+        val generation = refreshGeneration
         _state.value = s.copy(loadingMore = true)
         viewModelScope.launch {
             try {
                 val res = list(uri, token)
-                // The user may have navigated away; the page belongs to the old folder.
-                if (_state.value.currentUri != uri) return@launch
+                // The user may have navigated away; the page belongs to the old folder. Fylvo: a
+                // refresh since then has a newer first page; this one would bring back old rows.
+                if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
                 val files = sortFiles(_state.value.files + res.files)
                 listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, _state.value.parent)
                 _state.value = _state.value.copy(
@@ -324,7 +326,7 @@ class FilesViewModel(
                     nextToken = res.pagination.nextToken,
                 )
             } catch (e: Exception) {
-                if (_state.value.currentUri == uri) {
+                if (_state.value.currentUri == uri && generation == refreshGeneration) {
                     _state.value = _state.value.copy(loadingMore = false, snackbar = failure(e))
                 }
             }
@@ -685,7 +687,8 @@ class FilesViewModel(
         var n = 1
         // Fylvo: the name is taken at once (createNewFile is atomic), so two saves of files with the
         // same name running at the same time never write into the same file.
-        while (!dest.createNewFile()) {
+        // A name whose ".part" is taken is skipped too: that file is the download's temporary file.
+        while (File(dir, dest.name + ".part").exists() || !dest.createNewFile()) {
             dest = File(dir, "${file.name} ($n)${if (archive) ".zip" else ""}")
             n++
         }
