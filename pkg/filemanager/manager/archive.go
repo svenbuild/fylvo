@@ -193,6 +193,8 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 			}
 
 		} else {
+			// Fylvo: a folder counts as downloaded when something of it is in the ZIP.
+			written := 0
 			if err := m.Walk(ctx, file.Uri(false), intsets.MaxInt, func(f fs.File, level int) error {
 				if f.Type() == types.FileTypeFolder || f.IsSymbolic() {
 					return nil
@@ -201,6 +203,8 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 					file.Uri(false).Dir()), f, zipWriter, o.ArchiveCompression, o.DryRun); err != nil {
 					failed++
 					m.l.Warning("Failed to compress file %s: %s, skipping it...", f.Uri(false), err)
+				} else {
+					written++
 				}
 
 				compressed += f.Size()
@@ -216,6 +220,9 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 			}); err != nil {
 				m.l.Warning("Failed to walk folder %s: %s, skipping it...", file.Uri(false), err)
 				failed++
+			}
+			if written == 0 {
+				included = included[:len(included)-1]
 			}
 		}
 	}

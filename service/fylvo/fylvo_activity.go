@@ -102,16 +102,18 @@ func (s *FileActivityService) List(c *gin.Context) (*ListActivityResponse, error
 		return nil, serializer.NewError(serializer.CodeNoPermissionErr, "Only the owner sees the history", nil)
 	}
 
+	// The owner is checked here, not in the query: SQLite would then pick the index of the
+	// owner and read all of the owner's entries for a file with few.
 	res, err := activityClient(dep).List(c, &inventory.ListActivityArgs{
 		FileID:   file.ID(),
 		Folder:   file.Type() == types.FileTypeFolder,
-		OwnerID:  u.ID,
 		Before:   s.Next,
 		PageSize: activityPageSize,
 	})
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to list activity", err)
 	}
+	res.Entries = lo.Filter(res.Entries, func(e *ent.Activity, _ int) bool { return e.OwnerID == u.ID })
 
 	return buildActivity(c, dep, res, buildOptions{}), nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -71,7 +72,8 @@ func FailureWanted(ctx context.Context, typ Type, method, subject string) bool {
 		ip = info.IP
 	}
 	// A fixed size per key, however long the name a client sends.
-	sum := sha256.Sum256([]byte(strconv.Itoa(int(typ)) + "|" + method + "|" + subject + "|" + ip))
+	// Email addresses in any spelling are the same account.
+	sum := sha256.Sum256([]byte(strconv.Itoa(int(typ)) + "|" + method + "|" + strings.ToLower(subject) + "|" + ip))
 	return failures.allow(string(sum[:]))
 }
 

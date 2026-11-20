@@ -318,9 +318,10 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 		}
 	}
 
-	// Fylvo: only when all links are there; a failed batch may be refused as a whole.
+	// Fylvo: the links handed out: all of them, or with SkipError those that worked. Without
+	// SkipError a batch with a failure is refused as a whole.
 	err := ae.Aggregate()
-	if err == nil {
+	if err == nil || o.SkipError {
 		for _, file := range handedOut {
 			if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
 				m.l.Warning("Failed to execute navigator hooks: %s", err)

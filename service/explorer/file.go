@@ -461,6 +461,7 @@ func (s *FileURLService) Get(c *gin.Context) (*FileURLResponse, error) {
 		fs.WithIsDownload(s.Download),
 		fs.WithNoCache(s.NoCache),
 		fs.WithUrlExpire(&expire),
+		fs.WithSkipError(s.SkipError),
 	)
 	if err != nil && !s.SkipError {
 		return nil, fmt.Errorf("failed to get entity url: %w", err)

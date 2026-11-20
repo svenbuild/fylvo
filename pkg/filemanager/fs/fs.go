@@ -336,6 +336,8 @@ type (
 		DryRun         CreateArchiveDryRunFunc
 		// Fylvo: the archive goes to the person downloading it, see WithArchiveDownload.
 		ArchiveDownload bool
+		// Fylvo: links that worked are handed out even when others failed.
+		SkipError       bool
 		Policy          *ent.StoragePolicy
 		Node            StatelessUploadManager
 		StatelessUserID int
@@ -609,6 +611,13 @@ func WithMaxArchiveSize(s int64) Option {
 func WithArchiveDownload() Option {
 	return OptionFunc(func(o *FsOption) {
 		o.ArchiveDownload = true
+	})
+}
+
+// WithSkipError tells that the links that worked are handed out even when others failed (Fylvo).
+func WithSkipError(b bool) Option {
+	return OptionFunc(func(o *FsOption) {
+		o.SkipError = b
 	})
 }
 
