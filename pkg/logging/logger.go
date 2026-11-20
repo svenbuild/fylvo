@@ -131,6 +131,8 @@ func (ll *consoleLogger) Debug(format string, v ...any) {
 func (ll *consoleLogger) println(level string, msg string) {
 	c := color.New()
 	_, filename, line, _ := runtime.Caller(3)
+	// Fylvo: no secrets from addresses in any log line, for example in an error of the HTTP client.
+	msg = RedactText(msg)
 
 	_, _ = c.Printf(
 		"%s\t %s [%s:%d]%s %s\n",
@@ -170,7 +172,7 @@ var colors = map[string]func(a ...interface{}) string{
 	"Debug": color.New(color.FgWhite).Add(color.Bold).SprintFunc(),
 }
 
-// Request logs a request. Secrets in path and err are replaced, see RedactURL.
+// Request logs a request. Secrets in path are replaced, see RedactURL.
 func Request(l Logger, incoming bool, code int, method, clientIP, path, err string, start time.Time) {
 	param := gin.LogFormatterParams{
 		StatusCode: code,
@@ -200,6 +202,6 @@ func Request(l Logger, incoming bool, code int, method, clientIP, path, err stri
 		RedactURL(path),
 	)
 	if err != "" {
-		l.Error("%s", RedactText(err))
+		l.Error("%s", err)
 	}
 }

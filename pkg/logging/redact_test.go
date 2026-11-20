@@ -1,7 +1,10 @@
 package logging
 
 import (
+	"bytes"
 	"testing"
+
+	"github.com/fatih/color"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -26,6 +29,13 @@ func TestRedactURL(t *testing.T) {
 		{"/s/Ab/hunter2", "/s/Ab/***"},
 		{"/s/Ab", "/s/Ab"},
 		{"https://cloud.example/s/Ab/hunter2", "https://cloud.example/s/Ab/***"},
+		{"/s/Ab/hunter2/", "/s/Ab/***/"},
+		// Share URI after the redirect of a share link: the password goes, the path stays.
+		{"/home?path=cloudreve%3A%2F%2FAb%3Ahunter2%40share%2FDocs",
+			"/home?path=cloudreve%3A%2F%2F***%40share%2FDocs"},
+		// User and password in an address, and a fragment.
+		{"https://user:hunter2@host.example/x", "https://***@host.example/x"},
+		{"/x#access_token=hunter2", "/x#***"},
 		// Upload callback key.
 		{"/api/v4/callback/s3/sess-1/k3y", "/api/v4/callback/s3/sess-1/***"},
 		// Outgoing S3 link.
@@ -45,4 +55,19 @@ func TestRedactURL(t *testing.T) {
 func TestRedactText(t *testing.T) {
 	in := `Get "https://s3.example/b/o?X-Amz-Signature=ff00&n=1": dial tcp: timeout`
 	assert.Equal(t, `Get "https://s3.example/b/o?X-Amz-Signature=***&n=1": dial tcp: timeout`, RedactText(in))
+	// Upper case scheme, and punctuation after the address stays.
+	assert.Equal(t, "see HTTPS://h/s/a/***, then", RedactText("see HTTPS://h/s/a/pw, then"))
+}
+
+// TestConsoleLoggerRedacts checks that every line of the console logger goes through RedactText.
+func TestConsoleLoggerRedacts(t *testing.T) {
+	var buf bytes.Buffer
+	old := color.Output
+	color.Output = &buf
+	defer func() { color.Output = old }()
+
+	NewConsoleLogger(LevelInformational).Warning("task failed: %s",
+		`Get "https://api.example/geo?access_token=pk.hunter2": context deadline exceeded`)
+	assert.NotContains(t, buf.String(), "hunter2")
+	assert.Contains(t, buf.String(), "access_token=***")
 }

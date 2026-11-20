@@ -7,8 +7,9 @@ import (
 )
 
 // Fylvo: log lines must not carry secrets. Request addresses often do (the WOPI access_token,
-// signed links, the password reset secret, a share password in /s/<id>/<password>), so every
-// address goes through RedactURL before it is logged.
+// signed links, the password reset secret, a share password in /s/<id>/<password>). Request
+// passes the address of every request log line through RedactURL, and every log line goes
+// through RedactText, which catches full addresses in error messages.
 
 // Redacted replaces a secret in a log line.
 const Redacted = "***"
@@ -30,35 +31,43 @@ const minTokenLength = 24
 var (
 	// tokenValue matches values made only of the characters of tokens, ids and signatures.
 	tokenValue = regexp.MustCompile(`^[A-Za-z0-9._~+=:-]+$`)
-	// secretPaths match paths with a secret as the last segment, which is kept in group 1.
+	// userInfo matches the user and password in an address like scheme://user:password@host,
+	// also cloudreve://<share id>:<password>@share. Group 1 keeps the scheme.
+	userInfo = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/@\s]*@`)
+	// secretPaths match paths with a secret segment; group 1 is kept before it.
 	secretPaths = []*regexp.Regexp{
 		// Share link with its password: /s/<id>/<password>
-		regexp.MustCompile(`^((?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*)?/s/[^/]+/)[^/]+$`),
+		regexp.MustCompile(`^((?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*)?/s/[^/]+/)[^/]+`),
 		// Upload callback with its key: /api/v4/callback/<policy>/<session>/<key>
-		regexp.MustCompile(`^((?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*)?/api/v4/callback/[^/]+/[^/]+/)[^/]+$`),
+		regexp.MustCompile(`^((?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*)?/api/v4/callback/[^/]+/[^/]+/)[^/]+`),
 	}
-	urlInText = regexp.MustCompile(`https?://[^\s"']+`)
+	// urlInText finds addresses in a text; it stops before trailing punctuation.
+	urlInText = regexp.MustCompile(`(?i)https?://[^\s"'<>]*[^\s"'<>.,;:)]`)
 )
 
-// RedactURL returns a URL or a path with query for a log line, with secret values replaced by
-// Redacted. Parameter names, the scheme, the host and the path stay readable.
+// RedactURL returns a URL or a path with query for a log line, with secrets replaced by
+// Redacted: user and password, secret path segments, secret query values and the fragment.
+// Parameter names, the scheme, the host and the path stay readable.
 func RedactURL(raw string) string {
+	raw, _, hasFragment := strings.Cut(raw, "#")
 	path, query, hasQuery := strings.Cut(raw, "?")
+	path = userInfo.ReplaceAllString(path, "${1}"+Redacted+"@")
 	for _, re := range secretPaths {
 		path = re.ReplaceAllString(path, "${1}"+Redacted)
 	}
-	if !hasQuery {
-		return path
-	}
-
-	parts := strings.Split(query, "&")
-	for i, part := range parts {
-		name, value, hasValue := strings.Cut(part, "=")
-		if hasValue && value != "" && isSecret(name, value) {
-			parts[i] = name + "=" + Redacted
+	if hasQuery {
+		parts := strings.Split(query, "&")
+		for i, part := range parts {
+			if name, value, ok := strings.Cut(part, "="); ok && value != "" {
+				parts[i] = name + "=" + redactValue(name, value)
+			}
 		}
+		path += "?" + strings.Join(parts, "&")
 	}
-	return path + "?" + strings.Join(parts, "&")
+	if hasFragment {
+		path += "#" + Redacted
+	}
+	return path
 }
 
 // RedactText applies RedactURL to every http(s) address in a text, for example an error message.
@@ -66,16 +75,26 @@ func RedactText(text string) string {
 	return urlInText.ReplaceAllStringFunc(text, RedactURL)
 }
 
-func isSecret(name, value string) bool {
+// redactValue returns the raw query value, Redacted, or the value without the password of an
+// address inside it (a share URI in /home?path=...).
+func redactValue(name, value string) string {
+	rawValue := value
 	if decoded, err := url.QueryUnescape(name); err == nil {
 		name = decoded
 	}
 	if secretParams[strings.ToLower(name)] {
-		return true
+		return Redacted
 	}
 	if decoded, err := url.PathUnescape(value); err == nil {
 		value = decoded
 	}
-	return len(value) >= minTokenLength && tokenValue.MatchString(value) &&
-		strings.ContainsAny(value, "0123456789")
+	if len(value) >= minTokenLength && tokenValue.MatchString(value) &&
+		strings.ContainsAny(value, "0123456789") {
+		return Redacted
+	}
+	if userInfo.MatchString(value) {
+		escaped := url.QueryEscape(userInfo.ReplaceAllString(value, "${1}"+Redacted+"@"))
+		return strings.Replace(escaped, url.QueryEscape(Redacted), Redacted, 1)
+	}
+	return rawValue
 }
