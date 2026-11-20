@@ -321,6 +321,8 @@ private fun Modifier.dragSelect(
             // The edge bands count only once the finger moved: the first row lies in the top band.
             var moved = false
             var stopped = false
+            // The first update selects the anchor; from then on an empty selection was cleared from outside.
+            var started = false
 
             /**
              * How far the finger reaches into the top (negative) or bottom (positive) edge band,
@@ -336,6 +338,11 @@ private fun Modifier.dragSelect(
             }
 
             fun update() {
+                // Cleared from outside (back, a tab) while a scroll step ran: nothing comes back.
+                if (stopped || (started && viewModel.state.value.selected.isEmpty())) {
+                    stopped = true
+                    return
+                }
                 val pull = edgePull()
                 val target = when {
                     pull < 0f -> edgeFile(top = true)
@@ -357,6 +364,7 @@ private fun Modifier.dragSelect(
                     return
                 }
                 if (next != s.selected) viewModel.setSelected(next)
+                started = true
             }
 
             update()

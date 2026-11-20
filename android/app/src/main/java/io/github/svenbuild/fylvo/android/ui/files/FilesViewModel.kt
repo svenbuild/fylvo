@@ -233,8 +233,12 @@ class FilesViewModel(
     private val listingCache = HashMap<String, Listing>()
     private data class Listing(val files: List<FileObject>, val nextToken: String?, val sortKey: SortOrder, val parent: FileObject?)
 
+    /** Fylvo: counts refreshes; only the newest one may change the listing. */
+    private var refreshGeneration = 0
+
     fun refresh() {
         val uri = _state.value.currentUri
+        val generation = ++refreshGeneration
         val cached = listingCache[uri]?.takeIf { it.sortKey == _state.value.view.sort }
         _state.value = _state.value.copy(
             loading = cached == null,
@@ -249,8 +253,8 @@ class FilesViewModel(
         viewModelScope.launch {
             try {
                 val res = list(uri)
-                // The user may have moved on while this was in flight.
-                if (_state.value.currentUri != uri) return@launch
+                // The user may have moved on while this was in flight, or a newer refresh started.
+                if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
                 rememberShareNames(uri, res)
                 val files = sortFiles(res.files)
                 listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, res.parent)
@@ -264,11 +268,11 @@ class FilesViewModel(
                 )
                 prefetchThumbs(files)
             } catch (e: Exception) {
-                if (_state.value.currentUri != uri) return@launch
+                if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
                 if (handleSessionExpiry(e)) return@launch
                 // Fylvo: no connection inside an offline folder: show the copies on this phone.
                 val local = if (e is CancellationException || (e is ApiException && !e.isTransient)) null else offline.browse(uri)
-                if (local != null && _state.value.currentUri == uri) {
+                if (local != null && _state.value.currentUri == uri && generation == refreshGeneration) {
                     _state.value = _state.value.copy(
                         loading = false, revalidating = false, files = local, nextToken = null, parent = null, offlineMode = true,
                         selected = keepListed(local),
@@ -276,7 +280,7 @@ class FilesViewModel(
                     return@launch
                 }
                 // Fylvo: the offline lookup may have taken a while; the user may be elsewhere now.
-                if (_state.value.currentUri != uri) return@launch
+                if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
                 // Keep showing the cached files if we had them; only surface the error otherwise.
                 _state.value = _state.value.copy(
                     loading = false,
@@ -676,14 +680,22 @@ class FilesViewModel(
         // dir needs no permission and survives cache eviction.
         val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: File(context.filesDir, "downloads")
+        dir.mkdirs()
         var dest = File(dir, displayName)
         var n = 1
-        while (dest.exists()) {
+        // Fylvo: the name is taken at once (createNewFile is atomic), so two saves of files with the
+        // same name running at the same time never write into the same file.
+        while (!dest.createNewFile()) {
             dest = File(dir, "${file.name} ($n)${if (archive) ".zip" else ""}")
             n++
         }
-        repo.downloadToFile(url, dest) { done, total ->
-            setDownloading(file.path, if (total > 0) done.toFloat() / total else null)
+        try {
+            repo.downloadToFile(url, dest) { done, total ->
+                setDownloading(file.path, if (total > 0) done.toFloat() / total else null)
+            }
+        } catch (e: Exception) {
+            dest.delete()
+            throw e
         }
         return dest.name
     }
