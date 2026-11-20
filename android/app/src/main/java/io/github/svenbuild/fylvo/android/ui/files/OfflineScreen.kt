@@ -22,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.OfflinePin
@@ -135,7 +134,7 @@ private fun OfflineRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val root = info.root
-    val kind = FileKind.of(FileObject(name = root.name))
+    val asFile = FileObject(type = if (root.folder) 1 else 0, name = root.name)
     val state = when {
         syncing -> stringResource(R.string.offline_state_syncing)
         root.state == OfflineState.Synced -> stringResource(R.string.offline_state_synced)
@@ -161,10 +160,7 @@ private fun OfflineRow(
                 .background(MaterialTheme.colorScheme.surfaceContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                if (root.folder) Icons.Default.Folder else kind.icon, contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp),
-            )
+            Icon(fileIconOf(asFile), contentDescription = null, tint = fileIconTint(asFile), modifier = Modifier.size(24.dp))
         }
         Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
             Text(root.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)

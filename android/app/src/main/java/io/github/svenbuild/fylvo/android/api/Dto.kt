@@ -288,3 +288,9 @@ data class AndroidRelease(
     val sha256: String = "",
     val size: Long = 0,
 )
+
+/** Fylvo: `site/config/explorer`; `icons` is a JSON string of a list (or a list). */
+@Serializable
+data class ExplorerConfig(
+    val icons: kotlinx.serialization.json.JsonElement? = null,
+)

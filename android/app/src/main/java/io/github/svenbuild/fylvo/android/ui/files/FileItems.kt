@@ -85,7 +85,6 @@ fun FileThumb(
     /** Fylvo: list rows show the bare icon; only a real thumbnail gets a rounded frame. */
     plain: Boolean = false,
 ) {
-    val kind = FileKind.of(file)
     val shape = RoundedCornerShape(corner)
     Box(
         modifier
@@ -100,11 +99,11 @@ fun FileThumb(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
-                loading = { KindIcon(kind, iconSize) },
-                error = { KindIcon(kind, iconSize) },
+                loading = { KindIcon(file, iconSize) },
+                error = { KindIcon(file, iconSize) },
             )
         } else {
-            KindIcon(kind, iconSize, uploading = file.isUploading)
+            KindIcon(file, iconSize, uploading = file.isUploading)
         }
         if (downloading) {
             Box(
@@ -125,11 +124,12 @@ fun FileThumb(
 }
 
 @Composable
-private fun KindIcon(kind: FileKind, size: Dp, uploading: Boolean = false) {
+private fun KindIcon(file: FileObject, size: Dp, uploading: Boolean = false) {
+    // Fylvo: the web app's colour per file type; an unfinished upload stays neutral.
     Icon(
-        if (uploading) Icons.Outlined.CloudUpload else kind.icon,
+        if (uploading) Icons.Outlined.CloudUpload else fileIconOf(file),
         contentDescription = null,
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        tint = if (uploading) MaterialTheme.colorScheme.onSurfaceVariant else fileIconTint(file),
         modifier = Modifier.size(size),
     )
 }

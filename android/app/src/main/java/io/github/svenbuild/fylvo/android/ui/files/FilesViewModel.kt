@@ -190,6 +190,11 @@ class FilesViewModel(
         viewModelScope.launch {
             runCatching { offline.start() }
         }
+        // Fylvo: the web app's file type colours, once per app start.
+        if (FileIcons.claimFetch()) viewModelScope.launch {
+            val icons = repo.explorerIcons()
+            if (icons == null) FileIcons.fetchFailed() else FileIcons.update(icons)
+        }
         viewModelScope.launch {
             offline.roots.collect { list ->
                 _state.value = _state.value.copy(offlineRoots = list, offlineCoverage = OfflineCoverage(list.map { it.root }))
@@ -446,10 +451,11 @@ class FilesViewModel(
             it.cancel()
             return
         }
-        // Fylvo: a file kept offline opens from its copy on this phone.
+        // Fylvo: a file kept offline opens from its copy on this phone when that is the current
+        // version (or there is no connection); otherwise from the server like any file.
         if (state.value.isOffline(file)) {
             viewModelScope.launch {
-                val local = offline.localCopy(file.path)
+                val local = currentOfflineCopy(file)
                 if (local != null) onReady(local) else fetchFromServer(context, file, onReady)
             }
             return
@@ -474,7 +480,10 @@ class FilesViewModel(
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
             } catch (e: Exception) {
-                _state.value = _state.value.copy(snackbar = failure(e, fallback = R.string.download_failed))
+                // Fylvo: no connection: an older copy kept offline is better than nothing.
+                val local = anyOfflineCopy(file)
+                if (local != null) onReady(local)
+                else _state.value = _state.value.copy(snackbar = failure(e, fallback = R.string.download_failed))
             } finally {
                 downloadJobs.remove(file.path)
                 clearDownloading(file.path)
@@ -579,7 +588,10 @@ class FilesViewModel(
     /** Streams a download [url] into [out] with throttled progress for [path]. */
     private suspend fun streamTo(url: String, out: OutputStream, path: String) {
         val resp = repo.download(url)
-        if (!resp.isSuccessful) throw ApiException(resp.code(), "Download failed: HTTP ${resp.code()}")
+        if (!resp.isSuccessful) {
+            resp.errorBody()?.close()
+            throw ApiException(resp.code(), "Download failed: HTTP ${resp.code()}")
+        }
         val body = resp.body() ?: throw ApiException(-1, "Empty download")
         val total = body.contentLength()
         var done = 0L
@@ -599,21 +611,46 @@ class FilesViewModel(
     }
 
     /** Signed inline URL for streaming a preview (image, video, audio). */
-    suspend fun previewUrl(file: FileObject): String =
-        offlineCopy(file)?.let { android.net.Uri.fromFile(it).toString() } ?: repo.contentUrl(file.path)
+    suspend fun previewUrl(file: FileObject): String {
+        currentOfflineCopy(file)?.let { return android.net.Uri.fromFile(it).toString() }
+        return try {
+            repo.contentUrl(file.path)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            anyOfflineCopy(file)?.let { android.net.Uri.fromFile(it).toString() } ?: throw e
+        }
+    }
 
-    /** Fylvo: the copy on this phone of a file kept offline, or null. */
-    private suspend fun offlineCopy(file: FileObject): File? =
+    /**
+     * Fylvo: the copy on this phone of a file kept offline when it is the version the listing
+     * shows (any copy while the folder is shown from the phone); null otherwise.
+     */
+    private suspend fun currentOfflineCopy(file: FileObject): File? = when {
+        !_state.value.isOffline(file) -> null
+        _state.value.offlineMode -> offline.localCopy(file.path)
+        file.primaryEntity.isNotEmpty() -> offline.localCopy(file.path, entity = file.primaryEntity)
+        else -> null
+    }
+
+    /** Fylvo: any copy on this phone, for when the server cannot be reached. */
+    private suspend fun anyOfflineCopy(file: FileObject): File? =
         if (_state.value.isOffline(file)) offline.localCopy(file.path) else null
 
     /** Local copy for renderers that need a file (PDF, text); downloads if missing. */
     suspend fun localCopy(context: Context, file: FileObject, onProgress: (Float?) -> Unit): File {
-        offlineCopy(file)?.let { return it }
+        currentOfflineCopy(file)?.let { return it }
         val dest = cacheFileFor(context, file)
         if (dest.exists() && dest.length() == file.size) return dest
-        val url = repo.downloadUrl(file.path)
-        repo.downloadToFile(url, dest) { done, total -> onProgress(if (total > 0) done.toFloat() / total else null) }
-        return dest
+        return try {
+            val url = repo.downloadUrl(file.path)
+            repo.downloadToFile(url, dest) { done, total -> onProgress(if (total > 0) done.toFloat() / total else null) }
+            dest
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            anyOfflineCopy(file) ?: throw e
+        }
     }
 
     /** Files of the folder on screen that open in the in-app viewer, in list order. */
@@ -902,11 +939,11 @@ class FilesViewModel(
         // Inside an offline folder the folder's copy is used; nothing to switch.
         if (s.offlineCoverage.coveringFolder(uri) != null || !canKeepOffline(file)) return
         if (!file.isFolder) {
-            if (!hasRoomFor(file.size, offline.freeBytes())) {
-                _state.value = s.copy(snackbar = UiMessage(UiText.Res(R.string.offline_no_room)))
-                return
-            }
             viewModelScope.launch {
+                if (!hasRoomFor(file.size, offline.freeBytes())) {
+                    _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.offline_no_room)))
+                    return@launch
+                }
                 if (offline.addRoot(uri, file.name, folder = false)) {
                     _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.offline_switched_on, file.name)))
                 }

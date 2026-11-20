@@ -20,6 +20,7 @@ import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.work.OfflineSyncWorker
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 private val Context.offlineSettingsStore by preferencesDataStore(name = "offline_settings")
 
@@ -77,8 +78,18 @@ class OfflineManager(
 
     suspend fun setMobileData(on: Boolean) {
         context.offlineSettingsStore.edit { it[mobileDataKey] = on }
-        if (_roots.value.isNotEmpty()) OfflineSyncWorker.apply(context, on)
+        if (_roots.value.isNotEmpty()) {
+            OfflineSyncWorker.apply(context, on)
+            // A sync still waiting for its network gets the new setting too.
+            withContext(Dispatchers.IO) { OfflineSyncWorker.replaceWaiting(context, on) }
+        }
     }
+
+    /** "Sync now" was asked for; a run that is busy does every root once more. */
+    private val syncRequested = AtomicBoolean(false)
+
+    /** True (and cleared) when "Sync now" was asked for since the last call. */
+    fun takeSyncRequest(): Boolean = syncRequested.getAndSet(false)
 
     /** The store of the signed-in account, or null when nobody is signed in. */
     suspend fun store(): OfflineStore? {
@@ -93,9 +104,38 @@ class OfflineManager(
     /** While signed in: takes over the old offline files, shows the roots, keeps the periodic sync. */
     suspend fun start() = withContext(Dispatchers.IO) {
         val store = store() ?: return@withContext
+        // A running engine does this itself at its start.
+        if (engineLock.tryLock()) {
+            try {
+                prepareAccount(store)
+            } finally {
+                engineLock.unlock()
+            }
+        }
         migrateLegacy(store)
         reload(store)
         if (_roots.value.isNotEmpty()) OfflineSyncWorker.apply(context, mobileData.first())
+    }
+
+    /**
+     * Data of a session from before 1.2 (key from the email) moves to the key with the user id;
+     * offline data of other accounts goes. Called with [engineLock] held.
+     */
+    suspend fun prepareAccount(store: OfflineStore) {
+        val emailKey = accountKey(session.serverUrlNow(), "", session.userEmail.first())
+        writeLock.withLock {
+            OfflineStore.adoptAccount(context.filesDir, emailKey, store.accountKey)
+            OfflineStore.deleteOtherAccounts(context.filesDir, store.accountKey)
+        }
+    }
+
+    /** Leftovers: tmp files of a stopped run, copies of a root whose "Remove" was interrupted. */
+    suspend fun cleanUp(store: OfflineStore) {
+        writeLock.withLock {
+            store.tmpDir.deleteRecursively()
+            store.tmpDir.mkdirs()
+            store.orphanDirs().forEach { it.deleteRecursively() }
+        }
     }
 
     /** Single offline files of app versions before 1.2 become single-file roots (once). */
@@ -171,6 +211,7 @@ class OfflineManager(
     }
 
     suspend fun syncNow() {
+        syncRequested.set(true)
         OfflineSyncWorker.syncNow(context, mobileData.first())
     }
 
@@ -181,8 +222,11 @@ class OfflineManager(
         if (file.canonicalFile.parentFile == legacyDir) file.delete()
     }
 
-    /** The local copy of the server file [path] (also inside an offline folder), or null. */
-    suspend fun localCopy(path: String): File? = withContext(Dispatchers.IO) {
+    /**
+     * The local copy of the server file [path] (also inside an offline folder), or null. With
+     * [entity], only a copy of exactly that version (the one the server lists right now).
+     */
+    suspend fun localCopy(path: String, entity: String? = null): File? = withContext(Dispatchers.IO) {
         val store = store() ?: return@withContext null
         val c = CrUri.canonical(path)
         for (index in store.indexes()) {
@@ -195,10 +239,12 @@ class OfflineManager(
                 else -> null
             } ?: continue
             val entry = index.entries.firstOrNull { it.path == rel }
+            if (entity != null && (entry == null || entry.entity != entity)) continue
             if (entry != null && entry.localSize >= 0) {
                 val file = store.fileOf(root.id, rel)
                 if (file.isFile && file.length() == entry.localSize) return@withContext file
             }
+            if (entity != null) continue
             root.legacyFile?.let(::File)?.takeIf { !root.folder && it.isFile }?.let { return@withContext it }
         }
         null
@@ -237,10 +283,10 @@ class OfflineManager(
     }
 
     /** Bytes the app can still use on the phone (the system may free its caches for them). */
-    fun freeBytes(): Long {
+    suspend fun freeBytes(): Long = withContext(Dispatchers.IO) {
         val storage = context.getSystemService(android.os.storage.StorageManager::class.java)
         // No answer counts as no room: nothing is fetched then.
-        return runCatching { storage.getAllocatableBytes(storage.getUuidForPath(context.filesDir)) }.getOrDefault(0)
+        runCatching { storage.getAllocatableBytes(storage.getUuidForPath(context.filesDir)) }.getOrDefault(0L)
     }
 }
 

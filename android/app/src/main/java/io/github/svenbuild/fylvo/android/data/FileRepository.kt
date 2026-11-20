@@ -93,6 +93,10 @@ class FileRepository(private val api: ApiClient) {
         return reachableUrl(url)
     }
 
+    /** Fylvo: the server's file type icons (`icons` of the explorer settings), or null. */
+    suspend fun explorerIcons(): kotlinx.serialization.json.JsonElement? =
+        runCatching { api.service().explorerConfig().unwrap().icons }.getOrNull()
+
     /** Account storage usage; null when the server does not report it. */
     suspend fun capacity(): CapacityResponse? =
         runCatching { api.service().capacity().unwrap() }.getOrNull()
@@ -125,9 +129,13 @@ class FileRepository(private val api: ApiClient) {
      * (bytes, total) as it goes; total is -1 when the server sends no length.
      * Cooperative with coroutine cancellation between buffers.
      */
-    suspend fun downloadToFile(url: String, dest: File, onProgress: (Long, Long) -> Unit = { _, _ -> }) {
+    suspend fun downloadToFile(url: String, dest: File, onProgress: (Long, Long) -> Unit = { _, _ -> }): Unit =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val resp = api.service().download(url)
-        if (!resp.isSuccessful) throw ApiException(resp.code(), "Download failed: HTTP ${resp.code()}")
+        if (!resp.isSuccessful) {
+            resp.errorBody()?.close()
+            throw ApiException(resp.code(), "Download failed: HTTP ${resp.code()}")
+        }
         val body = resp.body() ?: throw ApiException(-1, "Empty download")
         val total = body.contentLength()
         dest.parentFile?.mkdirs()

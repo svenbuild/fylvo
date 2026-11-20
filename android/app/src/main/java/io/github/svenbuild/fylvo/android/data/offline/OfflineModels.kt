@@ -1,6 +1,8 @@
 package io.github.svenbuild.fylvo.android.data.offline
 
 import kotlinx.serialization.Serializable
+import io.github.svenbuild.fylvo.android.api.FileObject
+import io.github.svenbuild.fylvo.android.util.CrUri
 import java.security.MessageDigest
 
 /**
@@ -122,9 +124,12 @@ fun planSync(
     return actions
 }
 
-/** The local copy holds the server's current version: known, same entity, copy present and whole. */
+/**
+ * The local copy holds the server's current version: known, same entity, copy present and whole.
+ * An empty file may have no entity at all; then the empty copy is enough.
+ */
 private fun isCurrent(entry: OfflineEntry, file: RemoteFile, stat: LocalStat?): Boolean =
-    entry.entity.isNotEmpty() && entry.entity == file.entity && entry.localSize >= 0 &&
+    entry.entity == file.entity && (entry.entity.isNotEmpty() || file.size == 0L) && entry.localSize >= 0 &&
         stat != null && stat.size == entry.localSize
 
 /** "a/b/c.txt" -> ["a", "a/b"]. */
@@ -148,6 +153,53 @@ fun relativePath(canonicalRoot: String, canonicalPath: String): String? {
     val parts = rel.split('/')
     if (rel.isEmpty() || parts.any { it.isEmpty() || it == "." || it == ".." || it.contains('\u0000') }) return null
     return rel
+}
+
+/**
+ * After a complete listing missed something, the lookup of its topmost missing path says gone:
+ * nothing there, or something of the other type (a file became a folder or the other way round),
+ * or for a single file another file (other id) under the same name.
+ */
+fun confirmsGone(found: FileObject?, expectFolder: Boolean, expectedId: String?): Boolean =
+    found == null || found.isFolder != expectFolder ||
+        (!expectFolder && !expectedId.isNullOrEmpty() && found.id != expectedId)
+
+/**
+ * A root inside the offline folder [outer] can go only when [outer]'s index holds a local copy of
+ * each of its files (same id and version where known). A root no longer on the server stays.
+ */
+fun isCoveredBy(inner: OfflineIndex, outer: OfflineIndex): Boolean {
+    if (!outer.root.folder || inner.root.id == outer.root.id || inner.root.state == OfflineState.Gone) return false
+    val rel = relativePath(CrUri.canonical(outer.root.uri), CrUri.canonical(inner.root.uri)) ?: return false
+    if (!inner.root.folder && inner.entries.isEmpty()) return false
+    val outerByPath = outer.entries.associateBy { it.path }
+    return inner.entries.all { entry ->
+        val path = if (inner.root.folder) "$rel/${entry.path}" else rel
+        val copy = outerByPath[path] ?: return@all false
+        copy.localSize >= 0 &&
+            (entry.id.isEmpty() || entry.id == copy.id) &&
+            (entry.entity.isEmpty() || entry.entity == copy.entity)
+    }
+}
+
+/**
+ * Space promised to downloads that are still running, so two at once cannot together eat into
+ * the reserve: free - reserved - this file must stay at least [reserve].
+ */
+class SpaceReservation(private val reserve: Long = OFFLINE_RESERVE_BYTES) {
+    private var reserved = 0L
+
+    @Synchronized
+    fun tryReserve(size: Long, freeBytes: Long): Boolean {
+        if (!hasRoomFor(size + reserved, freeBytes, reserve)) return false
+        reserved += size
+        return true
+    }
+
+    @Synchronized
+    fun release(size: Long) {
+        reserved -= size
+    }
 }
 
 /** Bytes that must stay free on the phone after a download. */

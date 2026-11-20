@@ -8,6 +8,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import io.github.svenbuild.fylvo.android.FylvoApp
@@ -61,6 +62,18 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_ONCE,
                 ExistingWorkPolicy.KEEP,
+                OneTimeWorkRequestBuilder<OfflineSyncWorker>().setConstraints(constraints(mobileData)).build(),
+            )
+        }
+
+        /** A one-time run still waiting (not running) is replaced by one with the new network setting. Blocking. */
+        fun replaceWaiting(context: Context, mobileData: Boolean) {
+            val wm = WorkManager.getInstance(context)
+            val waiting = wm.getWorkInfosForUniqueWork(WORK_ONCE).get().any { it.state == WorkInfo.State.ENQUEUED }
+            if (!waiting) return
+            wm.enqueueUniqueWork(
+                WORK_ONCE,
+                ExistingWorkPolicy.REPLACE,
                 OneTimeWorkRequestBuilder<OfflineSyncWorker>().setConstraints(constraints(mobileData)).build(),
             )
         }

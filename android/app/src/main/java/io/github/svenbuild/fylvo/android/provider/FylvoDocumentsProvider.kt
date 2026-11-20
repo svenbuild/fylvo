@@ -181,7 +181,7 @@ class FylvoDocumentsProvider : DocumentsProvider() {
     private suspend fun downloadTo(url: String, dest: File): File {
         val resp = repo.download(url)
         if (!resp.isSuccessful) {
-            resp.body()?.close()
+            resp.errorBody()?.close()
             throw FileNotFoundException("Download failed: HTTP ${resp.code()}")
         }
         dest.parentFile?.mkdirs()

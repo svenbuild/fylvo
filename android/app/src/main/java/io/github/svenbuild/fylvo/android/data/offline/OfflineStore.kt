@@ -46,6 +46,12 @@ class OfflineStore(private val base: File, val accountKey: String) {
 
     fun dirOf(id: String): File = File(filesRoot, id)
 
+    /** Folders of copies with no index (an interrupted "Remove"): nothing points to them any more. */
+    fun orphanDirs(): List<File> {
+        val ids = indexDir.listFiles { f -> f.name.endsWith(".json") }.orEmpty().mapTo(HashSet()) { it.name.removeSuffix(".json") }
+        return filesRoot.listFiles().orEmpty().filter { it.name !in ids }
+    }
+
     /** The local copy of [relativePath] in root [id]; the path was checked by [relativePath]. */
     fun fileOf(id: String, relativePath: String): File = File(dirOf(id), relativePath)
 
@@ -62,6 +68,26 @@ class OfflineStore(private val base: File, val accountKey: String) {
 
         private fun read(file: File): OfflineIndex? =
             runCatching { json.decodeFromString(OfflineIndex.serializer(), file.readText()) }.getOrNull()
+
+        /**
+         * Sessions of app versions before 1.2 had no user id, so their data lies under the key made
+         * from the email. Once the id is known, that data moves to the id key (when there is none yet).
+         */
+        fun adoptAccount(base: File, fromKey: String, toKey: String) {
+            if (fromKey == toKey) return
+            for (dir in listOf(INDEX_DIR, FILES_DIR)) {
+                val from = File(base, "$dir/$fromKey")
+                val to = File(base, "$dir/$toKey")
+                if (from.exists() && !to.exists()) from.renameTo(to)
+            }
+        }
+
+        /** Offline data of every other account on this phone (read-only copies, nothing to lose). */
+        fun deleteOtherAccounts(base: File, keepKey: String) {
+            for (dir in listOf(INDEX_DIR, FILES_DIR)) {
+                File(base, dir).listFiles().orEmpty().filter { it.name != keepKey }.forEach { it.deleteRecursively() }
+            }
+        }
 
         /** Every account's offline data (sign-out). */
         fun deleteAll(base: File) {

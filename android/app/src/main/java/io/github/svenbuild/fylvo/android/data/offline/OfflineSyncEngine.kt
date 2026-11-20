@@ -9,6 +9,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import io.github.svenbuild.fylvo.android.data.ApiException
 import io.github.svenbuild.fylvo.android.data.FileRepository
 import io.github.svenbuild.fylvo.android.util.CrUri
 import java.io.File
@@ -26,21 +27,29 @@ import java.util.concurrent.atomic.AtomicInteger
 class OfflineSyncEngine(private val repo: FileRepository, private val manager: OfflineManager) {
 
     private val storageFull = AtomicBoolean(false)
+    private val space = SpaceReservation()
 
     private class RootGone : Exception()
 
     suspend fun run() = withContext(Dispatchers.IO) {
         val store = manager.store() ?: return@withContext
+        manager.prepareAccount(store)
         manager.migrateLegacy(store)
-        // Leftovers of a stopped run; only the engine uses this folder.
-        store.tmpDir.deleteRecursively()
-        store.tmpDir.mkdirs()
+        // Leftovers of a stopped run (tmp) or an interrupted "Remove" (copies without an index).
+        manager.cleanUp(store)
+        // A "Sync now" from before this run is covered by it.
+        manager.takeSyncRequest()
         val done = HashSet<String>()
         try {
             // Roots switched on during the run are taken too.
             while (!storageFull.get()) {
                 val next = store.indexes().filter { it.root.id !in done && !manager.isRemoved(it.root.id) }
-                if (next.isEmpty()) break
+                if (next.isEmpty()) {
+                    // "Sync now" while this run was busy: every root once more.
+                    if (!manager.takeSyncRequest()) break
+                    done.clear()
+                    continue
+                }
                 for (index in next) {
                     done += index.root.id
                     if (storageFull.get()) break
@@ -103,8 +112,11 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
 
         for (delete in actions.filterIsInstance<SyncAction.Delete>()) {
             if (manager.isRemoved(id)) return
+            // The confirm path is the file itself only for a lone file whose folders still exist.
+            val single = delete.paths.singleOrNull()?.takeIf { it == delete.confirm }
             val gone = try {
-                repo.lookup(CrUri.join(root.uri, delete.confirm)) == null
+                val found = repo.lookup(CrUri.join(root.uri, delete.confirm))
+                confirmsGone(found, expectFolder = single == null, expectedId = single?.let { writer.entry(it)?.id })
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -151,14 +163,23 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
 
     /** The server's view of [root]; throws [RootGone] when the server clearly has nothing there. */
     private suspend fun listing(root: OfflineRoot): RemoteListing {
-        val obj = repo.lookup(root.uri) ?: throw RootGone()
-        if (obj.isFolder != root.folder) throw RootGone()
-        if (!root.folder) {
-            val name = CrUri.fileName(root.uri)
-            val rel = relativePath("x", "x/$name") ?: throw IOException("unusable file name")
-            return RemoteListing(listOf(RemoteFile(obj.id, rel, obj.primaryEntity, obj.size, root.uri)), emptyList(), complete = true)
+        // The top of a shared folder has no file info (the server refuses it); its listing tells.
+        val shareTop = root.folder && CrUri.isShare(root.uri) && CrUri.isRoot(root.uri)
+        if (!shareTop) {
+            val obj = repo.lookup(root.uri) ?: throw RootGone()
+            if (obj.isFolder != root.folder) throw RootGone()
+            if (!root.folder) {
+                val name = CrUri.fileName(root.uri)
+                val rel = relativePath("x", "x/$name") ?: throw IOException("unusable file name")
+                return RemoteListing(listOf(RemoteFile(obj.id, rel, obj.primaryEntity, obj.size, root.uri)), emptyList(), complete = true)
+            }
         }
-        val tree = repo.listTree(root.uri)
+        val tree = try {
+            repo.listTree(root.uri)
+        } catch (e: ApiException) {
+            if (shareTop && e.code in GONE_CODES) throw RootGone()
+            throw e
+        }
         val rootCanonical = CrUri.canonical(root.uri)
         val files = tree.files.filter { !it.isUploading }.mapNotNull { f ->
             relativePath(rootCanonical, CrUri.canonical(f.path))?.let { RemoteFile(f.id, it, f.primaryEntity, f.size, f.path) }
@@ -169,15 +190,21 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
 
     /** Fetches [file] into offline-tmp and renames it into place; false on any trouble. */
     private suspend fun download(store: OfflineStore, writer: IndexWriter, id: String, file: RemoteFile): Boolean {
-        if (!hasRoomFor(file.size, manager.freeBytes())) {
+        if (!space.tryReserve(file.size, manager.freeBytes())) {
             storageFull.set(true)
             return false
         }
         val tmp = File(store.tmpDir, "$id-${UUID.randomUUID()}")
         return try {
-            // The exact version of the listing, not whatever is current by now.
-            val url = repo.downloadUrl(file.uri, entity = file.entity)
-            repo.downloadToFile(url, tmp)
+            if (file.size == 0L) {
+                // An empty file may have no version to ask for: nothing to fetch.
+                tmp.parentFile?.mkdirs()
+                tmp.createNewFile()
+            } else {
+                // The exact version of the listing, not whatever is current by now.
+                val url = repo.downloadUrl(file.uri, entity = file.entity)
+                repo.downloadToFile(url, tmp)
+            }
             if (tmp.length() != file.size) throw IOException("size differs from the listing")
             manager.writing(id) {
                 val dest = store.fileOf(id, file.path)
@@ -198,6 +225,7 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
             false
         } finally {
             tmp.delete()
+            space.release(file.size)
         }
     }
 
@@ -216,13 +244,15 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
         }
     }
 
-    /** A root inside an offline folder that is up to date uses that folder's copies: it goes. */
+    /**
+     * A root inside an up-to-date offline folder goes once that folder holds copies of all its
+     * files ([isCoveredBy]); its own copies are never deleted just because the folder was pinned.
+     */
     private suspend fun dropCoveredRoots(store: OfflineStore) {
-        val roots = store.indexes().map { it.root }.filter { !manager.isRemoved(it.id) }
-        val synced = roots.filter { it.folder && it.state == OfflineState.Synced }
-        roots.filter { inner ->
-            synced.any { outer -> outer.id != inner.id && relativePath(CrUri.canonical(outer.uri), CrUri.canonical(inner.uri)) != null }
-        }.forEach { manager.removeRoot(it.id) }
+        val indexes = store.indexes().filter { !manager.isRemoved(it.root.id) }
+        val synced = indexes.filter { it.root.folder && it.root.state == OfflineState.Synced }
+        indexes.filter { inner -> synced.any { outer -> isCoveredBy(inner, outer) } }
+            .forEach { manager.removeRoot(it.root.id) }
     }
 
     /** Removes empty folders from [dir] up to (not including) [rootDir]. */
@@ -236,5 +266,7 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
 
     private companion object {
         const val PARALLEL_DOWNLOADS = 2
+        /** Answers on a shared folder's listing that mean it is gone. */
+        val GONE_CODES = setOf(ApiException.CODE_PATH_NOT_EXIST, 404)
     }
 }

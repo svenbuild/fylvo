@@ -1,5 +1,6 @@
 package io.github.svenbuild.fylvo.android.data.offline
 
+import io.github.svenbuild.fylvo.android.api.FileObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -124,5 +125,64 @@ class PlanSyncTest {
         assertTrue(a != accountKey("https://other.example", "u1", "a@example.org"))
         assertEquals(accountKey("https://c", "", "A@Example.org"), accountKey("https://c", "", "a@example.org"))
         assertTrue(accountKey("https://c", "", "a@example.org") != accountKey("https://c", "", "b@example.org"))
+    }
+
+    @Test fun emptyFileWithoutEntityIsCurrentOnceThere() {
+        val index = listOf(entry("1", "empty.txt", "", size = 0))
+        val file = remote("1", "empty.txt", "", size = 0)
+        assertEquals(emptyList<SyncAction>(), planSync(RemoteListing(listOf(file), emptyList(), true), index, allLocal(index)))
+        assertEquals(listOf(SyncAction.Download(file)), planSync(RemoteListing(listOf(file), emptyList(), true), emptyList()) { null })
+    }
+
+    @Test fun lookupConfirmsGoneOnTypeChangeOrOtherId() {
+        val file = FileObject(type = 0, id = "1")
+        val folder = FileObject(type = 1, id = "9")
+        assertTrue(confirmsGone(null, expectFolder = false, expectedId = "1"))
+        assertTrue(!confirmsGone(file, expectFolder = false, expectedId = "1"))
+        // a -> a/ : the file became a folder.
+        assertTrue(confirmsGone(folder, expectFolder = false, expectedId = "1"))
+        // Reports/ -> Reports : the folder became a file.
+        assertTrue(confirmsGone(file, expectFolder = true, expectedId = null))
+        assertTrue(!confirmsGone(folder, expectFolder = true, expectedId = null))
+        // Another file under the same name.
+        assertTrue(confirmsGone(FileObject(type = 0, id = "2"), expectFolder = false, expectedId = "1"))
+        assertTrue(!confirmsGone(FileObject(type = 0, id = "2"), expectFolder = false, expectedId = ""))
+    }
+
+    private fun index(uri: String, folder: Boolean, entries: List<OfflineEntry>, state: OfflineState = OfflineState.Synced) =
+        OfflineIndex(OfflineRoot(id = uri, uri = uri, name = uri, folder = folder, state = state), entries)
+
+    @Test fun nestedRootGoesOnlyWhenTheFolderHoldsThatExactFile() {
+        val single = index("cloudreve://my/A/b/c.pdf", false, listOf(entry("7", "c.pdf", "e1")))
+        val holds = index("cloudreve://my/A", true, listOf(entry("7", "b/c.pdf", "e1")))
+        assertTrue(isCoveredBy(single, holds))
+        // Not yet downloaded in the folder.
+        assertTrue(!isCoveredBy(single, index("cloudreve://my/A", true, listOf(entry("7", "b/c.pdf", "e1").copy(localSize = -1)))))
+        assertTrue(!isCoveredBy(single, index("cloudreve://my/A", true, emptyList())))
+        // Another version or another file.
+        assertTrue(!isCoveredBy(single, index("cloudreve://my/A", true, listOf(entry("7", "b/c.pdf", "e2")))))
+        assertTrue(!isCoveredBy(single, index("cloudreve://my/A", true, listOf(entry("8", "b/c.pdf", "e1")))))
+        // Gone from the server: stays its own root.
+        assertTrue(!isCoveredBy(single.copy(root = single.root.copy(state = OfflineState.Gone)), holds))
+        // Not inside.
+        assertTrue(!isCoveredBy(single, index("cloudreve://my/B", true, listOf(entry("7", "b/c.pdf", "e1")))))
+    }
+
+    @Test fun nestedFolderRootNeedsAllItsFiles() {
+        val inner = index("cloudreve://my/A/b", true, listOf(entry("1", "x.txt", "e1"), entry("2", "y/z.txt", "e2")))
+        assertTrue(isCoveredBy(inner, index("cloudreve://my/A", true, listOf(entry("1", "b/x.txt", "e1"), entry("2", "b/y/z.txt", "e2")))))
+        assertTrue(!isCoveredBy(inner, index("cloudreve://my/A", true, listOf(entry("1", "b/x.txt", "e1")))))
+    }
+
+    @Test fun parallelDownloadsShareTheReserve() {
+        val gb = OFFLINE_RESERVE_BYTES
+        val space = SpaceReservation()
+        val free = gb + 100
+        assertTrue(space.tryReserve(60, free))
+        // 60 already promised: 60 more would leave less than 1 GB.
+        assertTrue(!space.tryReserve(60, free))
+        assertTrue(space.tryReserve(40, free))
+        space.release(60)
+        assertTrue(space.tryReserve(60, free))
     }
 }

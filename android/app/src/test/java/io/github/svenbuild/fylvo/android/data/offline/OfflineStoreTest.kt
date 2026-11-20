@@ -127,4 +127,43 @@ class OfflineStoreTest {
         assertEquals("cloudreve://my/Photos/sub", top[1].path)
         assertEquals(listOf("deeper", "b.jpg"), listOffline(index, "sub", "cloudreve://my/Photos/sub").map { it.name })
     }
+
+    @Test fun orphanCopiesAreFound() {
+        val store = OfflineStore(tmp.root, "acc")
+        val kept = root()
+        store.save(OfflineIndex(kept))
+        store.dirOf(kept.id).mkdirs()
+        val orphan = store.dirOf(OfflineStore.newId()).apply { mkdirs() }
+        assertEquals(listOf(orphan), store.orphanDirs())
+    }
+
+    @Test fun dataOfAnOldSessionMovesToTheIdKeyAndOtherAccountsGo() {
+        val emailKey = accountKey("https://c", "", "a@example.org")
+        val idKey = accountKey("https://c", "42", "a@example.org")
+        val old = OfflineStore(tmp.root, emailKey)
+        val r = root()
+        old.save(OfflineIndex(r))
+        old.fileOf(r.id, "a.txt").apply { parentFile!!.mkdirs(); writeText("x") }
+        val other = OfflineStore(tmp.root, "someone-else")
+        other.save(OfflineIndex(root()))
+
+        OfflineStore.adoptAccount(tmp.root, emailKey, idKey)
+        OfflineStore.deleteOtherAccounts(tmp.root, idKey)
+
+        val now = OfflineStore(tmp.root, idKey)
+        assertEquals(listOf(r.id), now.indexes().map { it.root.id })
+        assertEquals("x", now.fileOf(r.id, "a.txt").readText())
+        assertEquals(0, old.indexes().size)
+        assertEquals(0, other.indexes().size)
+        assertEquals(listOf(idKey), File(tmp.root, "offline/files").list()!!.toList())
+    }
+
+    @Test fun existingIdKeyDataIsNotOverwritten() {
+        val idStore = OfflineStore(tmp.root, "id")
+        val mine = root()
+        idStore.save(OfflineIndex(mine))
+        OfflineStore(tmp.root, "email").save(OfflineIndex(root()))
+        OfflineStore.adoptAccount(tmp.root, "email", "id")
+        assertEquals(listOf(mine.id), idStore.indexes().map { it.root.id })
+    }
 }
