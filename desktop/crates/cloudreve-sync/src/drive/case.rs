@@ -12,6 +12,7 @@
 use crate::{
     cfapi::placeholder::LocalFileInfo,
     drive::{commands::MountCommand, mounts::Mount, sync::SyncMode, utils::move_no_replace},
+    tasks::TaskPayload,
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -19,26 +20,76 @@ use cloudreve_api::models::explorer::{FileResponse, file_type};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+use windows::Win32::{
+    Foundation::LPARAM,
+    Globalization::{LCMAP_UPPERCASE, LCMapStringEx, LOCALE_NAME_INVARIANT},
 };
 
-/// A name as NTFS compares it: each character in its simple upper case form when that is one
-/// character of the Basic Multilingual Plane (like the volume's upcase table: `ü` = `Ü`, but
-/// `ß` stays `ß`, not `SS`). No Unicode normalisation.
+/// A name as Windows compares file names: upper case with the system's invariant table (one
+/// UTF-16 unit to one, so `ü` = `Ü` but `ß` stays `ß`, not `SS`). No Unicode normalisation.
 pub fn ntfs_fold(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            let mut upper = c.to_uppercase();
-            match (upper.next(), upper.next()) {
-                (Some(u), None) if (u as u32) <= 0xFFFF && (c as u32) <= 0xFFFF => u,
-                _ => c,
-            }
-        })
-        .collect()
+    let wide: Vec<u16> = name.encode_utf16().collect();
+    if wide.is_empty() {
+        return String::new();
+    }
+    let mut upper = vec![0u16; wide.len()];
+    let written = unsafe {
+        LCMapStringEx(
+            LOCALE_NAME_INVARIANT,
+            LCMAP_UPPERCASE,
+            &wide,
+            Some(&mut upper),
+            None,
+            None,
+            LPARAM(0),
+        )
+    };
+    if written <= 0 {
+        // Not expected; compare exactly then, as before this module.
+        return name.to_string();
+    }
+    String::from_utf16_lossy(&upper[..written as usize])
 }
 
 /// Whether two paths are the same file on NTFS.
 pub fn same_on_ntfs(a: &Path, b: &Path) -> bool {
     ntfs_fold(&a.to_string_lossy()) == ntfs_fold(&b.to_string_lossy())
+}
+
+/// Folded names that occur more than once among `names` (server entries of one folder).
+pub fn case_twins<'a>(names: impl Iterator<Item = &'a str>) -> HashSet<String> {
+    let mut seen = HashSet::new();
+    let mut twins = HashSet::new();
+    for name in names {
+        let key = ntfs_fold(name);
+        if !seen.insert(key.clone()) {
+            twins.insert(key);
+        }
+    }
+    twins
+}
+
+/// The first folder between `parent` (included) and `sync_root` (excluded) that exists on disk
+/// spelled differently. A sync under it would read the server folder of one spelling and
+/// change the local folder of the other.
+pub(crate) fn case_mismatched_ancestor(
+    parent: &Path,
+    sync_root: &Path,
+    on_disk: impl Fn(&Path) -> Option<PathBuf>,
+) -> Option<PathBuf> {
+    let mut current = parent;
+    while current.starts_with(sync_root) && current != sync_root {
+        if let Some(disk) = on_disk(current) {
+            if disk != current {
+                return Some(current.to_path_buf());
+            }
+        }
+        current = current.parent()?;
+    }
+    None
 }
 
 /// What a sync pass does about names that are one file here.
@@ -56,8 +107,8 @@ pub(crate) struct CasePlan {
     pub held: Vec<PathBuf>,
 }
 
-/// What the inventory knows about a path: folder or not, and the server's creation time.
-pub(crate) type KnownEntry = (bool, i64);
+/// What the inventory knows about a path: folder or not, the server's creation time, the etag.
+pub(crate) type KnownEntry = (bool, i64, String);
 
 /// Decide the case questions of one folder. `requested` are the paths a sync pass was asked for,
 /// `remote` the server entries found for them (keyed by the server's own name), `on_disk`
@@ -128,22 +179,62 @@ pub(crate) fn plan_case(
 
 /// Whether the local file at `disk` represents the server entry `server` (same folder, other
 /// spelling). The inventory row of exactly one of the two names must match the server entry's
-/// kind and creation time, which a rename does not change.
+/// kind and creation time, which a rename does not change, and for a file also its content
+/// version (etag).
 fn is_same_object(
     disk: &Path,
     server: &Path,
     remote: &FileResponse,
     known: &impl Fn(&Path) -> Option<KnownEntry>,
 ) -> bool {
-    let row = match (known(disk), known(server)) {
+    let (is_folder, created_at, etag) = match (known(disk), known(server)) {
         (Some(row), None) | (None, Some(row)) => row,
         _ => return false,
     };
+    let remote_is_folder = remote.file_type == file_type::FOLDER;
     let created = remote
         .created_at
         .parse::<DateTime<Utc>>()
         .map(|time| time.timestamp());
-    row.0 == (remote.file_type == file_type::FOLDER) && created.is_ok_and(|time| time == row.1)
+    let same_content = remote_is_folder
+        || (!etag.is_empty() && remote.primary_entity.as_deref() == Some(etag.as_str()));
+    is_folder == remote_is_folder && created.is_ok_and(|time| time == created_at) && same_content
+}
+
+/// How long a registered own rename waits for its callbacks.
+const OWN_RENAME_TTL: Duration = Duration::from_secs(60);
+
+/// Renames the app makes itself (to the server's spelling of a name). The cfapi rename
+/// callbacks pass them without telling the server: the server has the new name already.
+#[derive(Clone, Default)]
+pub struct OwnRenames(Arc<Mutex<Vec<(PathBuf, PathBuf, Instant)>>>);
+
+impl OwnRenames {
+    pub fn register(&self, from: &Path, to: &Path) {
+        let mut renames = self.0.lock().unwrap();
+        renames.retain(|(_, _, at)| at.elapsed() < OWN_RENAME_TTL);
+        renames.push((from.to_path_buf(), to.to_path_buf(), Instant::now()));
+    }
+
+    /// Whether renaming `source` to `target` is a registered own rename. `consume` removes it
+    /// (the rename completed or failed).
+    pub fn matches(&self, source: &Path, target: &Path, consume: bool) -> bool {
+        let mut renames = self.0.lock().unwrap();
+        let found = renames.iter().position(|(from, to, at)| {
+            at.elapsed() < OWN_RENAME_TTL
+                && same_on_ntfs(source, from)
+                && same_on_ntfs(target, to)
+                && target.file_name() == to.file_name()
+        });
+        match found {
+            Some(index) if consume => {
+                renames.remove(index);
+                true
+            }
+            Some(_) => true,
+            None => false,
+        }
+    }
 }
 
 impl Mount {
@@ -157,7 +248,7 @@ impl Mount {
         let inventory = self.inventory.clone();
         let plan = plan_case(paths, remote, LocalFileInfo::on_disk_path, |path| {
             let row = inventory.query_by_path(path.to_str()?).ok()??;
-            Some((row.is_folder, row.created_at))
+            Some((row.is_folder, row.created_at, row.etag))
         });
 
         let mut errors = Vec::new();
@@ -171,7 +262,8 @@ impl Mount {
                 tracing::info!(target: "drive::case", id = %self.id, from = %from.display(), to = %to.display(), "Renamed local file to the server's spelling");
             }
         }
-        self.report_case_clash(&plan.hidden, &plan.held);
+        self.report_case_clash(&plan.hidden, "caseClashMessage");
+        self.report_case_clash(&plan.held, "caseHeldMessage");
 
         let paths = plan
             .paths
@@ -189,25 +281,35 @@ impl Mount {
         let info = LocalFileInfo::from_path(from)?;
         let was_in_sync = info.is_placeholder() && info.in_sync();
 
+        self.own_renames.register(from, to);
+        if let Err(err) = move_no_replace(from, to) {
+            self.own_renames.matches(from, to, true);
+            return Err(err);
+        }
+        // The inventory refuses when rows under the new spelling exist already: then the disk
+        // gets its old name back and nothing has changed.
+        if let Err(err) = self.inventory.rename_path(from_str, to_str) {
+            self.own_renames.register(to, from);
+            if let Err(undo) = move_no_replace(to, from) {
+                self.own_renames.matches(to, from, true);
+                tracing::error!(target: "drive::case", id = %self.id, path = %to.display(), error = ?undo, "Could not undo the case rename");
+            }
+            return Err(err.context("inventory rows under the new name exist"));
+        }
+
         // Tasks under the old spelling would reach the server under the old name.
         let cancelled = self
             .task_queue
             .cancel_by_path(from.to_path_buf())
             .await
             .unwrap_or(0);
-
-        // The inventory first: it refuses when rows under the new spelling exist already, and
-        // then nothing has changed on disk.
-        self.inventory
-            .rename_path(from_str, to_str)
-            .context("inventory rows under the new name exist")?;
-        if let Err(err) = move_no_replace(from, to) {
-            let _ = self.inventory.rename_path(to_str, from_str);
-            return Err(err);
-        }
-
         if was_in_sync && !LocalFileInfo::from_path(to)?.in_sync() {
             crate::drive::commands::mark_path_in_sync(to).await?;
+        }
+        // A local change waiting for upload: the plan sees no server change, so queue it here.
+        if !was_in_sync && !info.is_directory {
+            self.enqueue_upload(TaskPayload::upload(to.to_path_buf()))
+                .await?;
         }
         if cancelled > 0 {
             self.command_tx
@@ -222,27 +324,29 @@ impl Mount {
     }
 
     /// Tell the user once per run about names that cannot be synced as they are.
-    pub(crate) fn report_case_clash(&self, hidden: &[PathBuf], held: &[PathBuf]) {
-        let mut notified = self.case_clash_notified.lock().unwrap();
-        let mut fresh = hidden
-            .iter()
-            .chain(held)
-            .filter(|path| notified.insert((*path).clone()));
-        let Some(first) = fresh.next() else {
-            return;
+    pub(crate) fn report_case_clash(&self, paths: &[PathBuf], message_key: &str) {
+        let first = {
+            let mut notified = self.case_clash_notified.lock().unwrap();
+            let fresh: Vec<&PathBuf> = paths
+                .iter()
+                .filter(|path| notified.insert((*path).clone()))
+                .collect();
+            for path in &fresh {
+                tracing::warn!(target: "drive::case", id = %self.id, path = %path.display(), kind = message_key, "Name differs only in case, not synced");
+            }
+            match fresh.first() {
+                Some(first) => (*first).clone(),
+                None => return,
+            }
         };
-        tracing::warn!(target: "drive::case", id = %self.id, path = %first.display(), "Names that differ only in case, not synced");
         let name = first
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_default();
-        let others = fresh.count();
-        let message = if others == 0 {
-            t!("caseClashMessage", "name" => name)
-        } else {
-            t!("caseClashMessageMore", "name" => name, "count" => others)
-        };
-        crate::utils::toast::send_warning_toast(&t!("caseClashTitle"), &message);
+        crate::utils::toast::send_warning_toast(
+            &t!("caseClashTitle"),
+            &t!(message_key, "name" => name),
+        );
     }
 }
 
@@ -252,6 +356,7 @@ mod tests {
 
     const CREATED: &str = "2026-11-19T10:00:00Z";
     const CREATED_TS: i64 = 1_795_082_400;
+    const ETAG: &str = "e1";
 
     fn p(name: &str) -> PathBuf {
         PathBuf::from(r"C:\S").join(name)
@@ -271,6 +376,7 @@ mod tests {
                         name: name.to_string(),
                         file_type: if folder { file_type::FOLDER } else { file_type::FILE },
                         created_at: CREATED.to_string(),
+                        primary_entity: (!folder).then(|| ETAG.to_string()),
                         ..Default::default()
                     },
                 )
@@ -288,13 +394,12 @@ mod tests {
         }
     }
 
-    /// The inventory has a row for each of `names`.
+    /// The inventory has a row for each of `names`, matching the server entries.
     fn known(names: &'static [&'static str], folder: bool) -> impl Fn(&Path) -> Option<KnownEntry> {
         move |path: &Path| {
-            names
-                .iter()
-                .any(|name| p(name) == path)
-                .then_some((folder, CREATED_TS))
+            names.iter().any(|name| p(name) == path).then(|| {
+                (folder, CREATED_TS, if folder { String::new() } else { ETAG.to_string() })
+            })
         }
     }
 
@@ -308,14 +413,32 @@ mod tests {
     }
 
     #[test]
-    fn fold_is_like_ntfs() {
+    fn fold_is_like_windows() {
         assert_eq!(ntfs_fold("foto.JPG"), ntfs_fold("Foto.jpg"));
         assert_eq!(ntfs_fold("Übung"), ntfs_fold("übung"));
-        // NTFS does not turn one character into two.
+        // Greek with a subscript: one name on NTFS, two characters in Rust's full upper case.
+        assert_eq!(ntfs_fold("\u{1F80}"), ntfs_fold("\u{1F88}"));
+        // Windows does not turn one character into two.
         assert_ne!(ntfs_fold("Straße"), ntfs_fold("STRASSE"));
         // Composed and decomposed umlauts are two names on NTFS.
         assert_ne!(ntfs_fold("M\u{00FC}ller"), ntfs_fold("Mu\u{0308}ller"));
         assert_ne!(ntfs_fold("M\u{00DC}LLER"), ntfs_fold("mu\u{0308}ller"));
+    }
+
+    #[test]
+    fn fold_matches_the_real_file_system() {
+        // The test PC's NTFS decides: a second spelling must open the same file.
+        let dir = tempfile::tempdir().unwrap();
+        for (created, other) in [("fÖto.txt", "FöTO.TXT"), ("\u{1F80}.txt", "\u{1F88}.txt")] {
+            std::fs::write(dir.path().join(created), b"x").unwrap();
+            assert!(dir.path().join(other).exists(), "{other}");
+            assert!(same_on_ntfs(Path::new(created), Path::new(other)));
+            assert_eq!(
+                LocalFileInfo::on_disk_path(&dir.path().join(other)),
+                Some(dir.path().join(created))
+            );
+        }
+        assert_eq!(LocalFileInfo::on_disk_path(&dir.path().join("missing.txt")), None);
     }
 
     #[test]
@@ -398,23 +521,23 @@ mod tests {
 
     #[test]
     fn other_object_with_other_case_is_held() {
-        // Local `a.jpg` was server `a.jpg`; that was deleted and a different `A.jpg` remains
-        // (other creation time or kind): not the same object, so no rename.
-        let other_kind = plan_case(
-            &[p("a.jpg")],
-            &server(&["A.jpg"]),
-            disk(&["a.jpg"]),
-            known(&["a.jpg"], true),
-        );
-        assert_eq!(other_kind.held, [p("A.jpg")]);
-        let other_time = plan_case(
-            &[p("a.jpg")],
-            &server(&["A.jpg"]),
-            disk(&["a.jpg"]),
-            |path: &Path| (path == p("a.jpg")).then_some((false, CREATED_TS + 1)),
-        );
-        assert_eq!(other_time.held, [p("A.jpg")]);
-        assert!(other_time.renames.is_empty());
+        // Local `a.jpg` was server `a.jpg`; that was deleted and a different `A.jpg` remains.
+        let held = |row: KnownEntry| {
+            plan_case(&[p("a.jpg")], &server(&["A.jpg"]), disk(&["a.jpg"]), |path: &Path| {
+                (path == p("a.jpg")).then(|| row.clone())
+            })
+        };
+        // Other kind, other creation time, other content (same second, same kind).
+        for row in [
+            (true, CREATED_TS, ETAG.to_string()),
+            (false, CREATED_TS + 1, ETAG.to_string()),
+            (false, CREATED_TS, "e2".to_string()),
+            (false, CREATED_TS, String::new()),
+        ] {
+            let plan = held(row);
+            assert_eq!(plan.held, [p("A.jpg")]);
+            assert!(plan.renames.is_empty() && plan.paths.is_empty());
+        }
     }
 
     #[test]
@@ -515,5 +638,46 @@ mod tests {
             nothing_known,
         );
         assert_eq!(plan.paths, [p("Neu.txt")]);
+    }
+
+    #[test]
+    fn twins_are_found_by_folded_name() {
+        let twins = case_twins(["a.jpg", "A.jpg", "b.jpg", "M\u{00FC}ller", "Mu\u{0308}ller"].into_iter());
+        assert_eq!(twins, HashSet::from([ntfs_fold("a.jpg")]));
+    }
+
+    #[test]
+    fn ancestor_spelled_differently_on_disk_is_found() {
+        let root = PathBuf::from(r"C:\S");
+        // Disk: `C:\S\Photos\2025`. A sync under the server's `photos` must not run. Like
+        // `on_disk_path`, the lookup returns the disk's spelling of the last name only.
+        let on_disk = |path: &Path| {
+            [p("Photos"), p(r"Photos\2025")]
+                .into_iter()
+                .find(|disk| same_on_ntfs(disk, path))
+                .map(|disk| path.with_file_name(disk.file_name().unwrap()))
+        };
+        assert_eq!(
+            case_mismatched_ancestor(&p(r"photos\2025"), &root, on_disk),
+            Some(p("photos"))
+        );
+        assert_eq!(
+            case_mismatched_ancestor(&p(r"Photos\2025"), &root, on_disk),
+            None
+        );
+        // A folder missing on disk is no mismatch.
+        assert_eq!(case_mismatched_ancestor(&p(r"Other\x"), &root, on_disk), None);
+        assert_eq!(case_mismatched_ancestor(&root, &root, on_disk), None);
+    }
+
+    #[test]
+    fn own_renames_match_once_and_only_their_target() {
+        let renames = OwnRenames::default();
+        renames.register(&p("foto.jpg"), &p("Foto.jpg"));
+        assert!(!renames.matches(&p("foto.jpg"), &p("FOTO.jpg"), false));
+        assert!(!renames.matches(&p("other.jpg"), &p("Foto.jpg"), false));
+        assert!(renames.matches(&p("FOTO.JPG"), &p("Foto.jpg"), false));
+        assert!(renames.matches(&p("foto.jpg"), &p("Foto.jpg"), true));
+        assert!(!renames.matches(&p("foto.jpg"), &p("Foto.jpg"), false));
     }
 }

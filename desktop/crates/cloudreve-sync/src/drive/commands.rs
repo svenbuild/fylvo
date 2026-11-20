@@ -5,9 +5,10 @@ use crate::{
         utility::WriteAt,
     },
     drive::{
+        case::{case_twins, ntfs_fold},
         mounts::Mount,
         placeholder::CrPlaceholder,
-        sync::{GroupedFsEvents, SyncMode},
+        sync::{GroupedFsEvents, SyncMode, is_symbolic_link},
         utils::{is_in_cloud_sync_root, local_path_to_cr_uri, notify_shell_change},
     },
     inventory::ConflictState,
@@ -402,16 +403,21 @@ impl Mount {
         }
         drop(matcher);
 
-        // Fylvo: server names that are one file here (only case differs): create one of them,
-        // the same one the sync keeps later (see `case.rs`).
-        let by_path: HashMap<PathBuf, FileResponse> = placehodlers
-            .iter()
-            .map(|file| (path.join(&file.name), file.clone()))
-            .collect();
-        let hidden = crate::drive::case::plan_case(&[], &by_path, |_| None, |_| None).hidden;
-        if !hidden.is_empty() {
-            placehodlers.retain(|file| !hidden.contains(&path.join(&file.name)));
-            self.report_case_clash(&hidden, &[]);
+        // Fylvo: server names that are one file here (only case differs) are not created now:
+        // the sync picks one of them with a look at the disk (see `case.rs`).
+        let twins = case_twins(
+            placehodlers
+                .iter()
+                .filter(|file| !is_symbolic_link(file))
+                .map(|file| file.name.as_str()),
+        );
+        if !twins.is_empty() {
+            let (left_out, kept): (Vec<FileResponse>, Vec<FileResponse>) = placehodlers
+                .into_iter()
+                .partition(|file| twins.contains(&ntfs_fold(&file.name)));
+            placehodlers = kept;
+            let left_out: Vec<PathBuf> = left_out.iter().map(|file| path.join(&file.name)).collect();
+            self.report_case_clash(&left_out, "caseClashMessage");
         }
 
         Ok(GetPlacehodlerResult {

@@ -5,7 +5,7 @@ use crate::{
         placeholder_file::PlaceholderFile,
     },
     drive::{
-        case::ntfs_fold,
+        case::{case_mismatched_ancestor, ntfs_fold},
         guard::DeletionSide,
         mounts::Mount,
         placeholder::CrPlaceholder,
@@ -476,6 +476,21 @@ impl Mount {
             return aggregate_error.into_result();
         }
 
+        // Fylvo: a folder on the way spelled differently on disk (only case): the server
+        // folder of one spelling must not be compared with the local folder of the other.
+        if let Some(ancestor) =
+            case_mismatched_ancestor(parent, &sync_root, LocalFileInfo::on_disk_path)
+        {
+            tracing::info!(
+                target: "drive::sync",
+                id = %self.id,
+                parent = %parent.display(),
+                ancestor = %ancestor.display(),
+                "Skipping sync, a folder is spelled differently on disk"
+            );
+            return Ok(());
+        }
+
         let remote_files = match prefetched_remote_files {
             Some(files) => files,
             None => self.fetch_remote_file_infos(parent, paths).await?,
@@ -756,7 +771,8 @@ impl Mount {
                 // Cancel tasks for the original path
                 _ = self.task_queue.cancel_by_path(original.clone()).await;
 
-                if let Err(err) = std::fs::rename(original, renamed) {
+                // Fylvo: never replaces another file (an older conflict copy).
+                if let Err(err) = crate::drive::utils::move_no_replace(original, renamed) {
                     tracing::error!(
                         target: "drive::sync",
                         id = %self.id,
@@ -765,19 +781,7 @@ impl Mount {
                         error = ?err,
                         "Failed to rename local file"
                     );
-                    aggregate_error.push(original.clone(), anyhow::Error::from(err));
-                    return;
-                }
-                // Fylvo: this rename is the app's own and is not sent to the server (see
-                // `callback.rs`). The copy is a new file there: upload it.
-                if let Err(err) = self.enqueue_upload(TaskPayload::upload(renamed.clone())).await {
-                    tracing::warn!(
-                        target: "drive::sync",
-                        id = %self.id,
-                        path = %renamed.display(),
-                        error = ?err,
-                        "Failed to enqueue upload of the conflict copy"
-                    );
+                    aggregate_error.push(original.clone(), err);
                 }
             }
         }
@@ -894,42 +898,49 @@ impl Mount {
         Ok(remote_entries)
     }
 
-    /// Fylvo: whether the server has the local folder `path` under another upper/lower case
-    /// spelling of its name.
-    async fn server_has_case_variant(&self, path: &PathBuf) -> Result<bool> {
-        let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
-            return Ok(false);
-        };
+    /// Fylvo: whether the local folder `path`, missing on the server, is there under another
+    /// upper/lower case spelling of its name or of a folder above it.
+    async fn server_has_case_variant(&self, path: &Path) -> Result<bool> {
         let (remote_base, sync_root) = {
             let config = self.config.read().await;
             (config.remote_path.clone(), config.sync_path.clone())
         };
-        let parent_uri =
-            local_path_to_cr_uri(parent.to_path_buf(), sync_root, remote_base)?.to_string();
-        let name = ntfs_fold(&name.to_string_lossy());
-        let mut previous_response = None;
-        loop {
-            let response = match self
-                .cr_client
-                .list_files_all(previous_response.as_ref(), &parent_uri, REMOTE_PAGE_SIZE)
-                .await
-            {
-                Ok(response) => response,
-                Err(ApiError::ApiError { code, .. })
-                    if code == ErrorCode::ParentNotExist as i32 =>
-                {
-                    return Ok(false);
-                }
-                Err(err) => return Err(err.into()),
-            };
-            if response.res.files.iter().any(|file| ntfs_fold(&file.name) == name) {
-                return Ok(true);
-            }
-            if !response.more {
+        let mut missing = path;
+        // Go up to the first folder the server can list.
+        while let (Some(parent), Some(name)) = (missing.parent(), missing.file_name()) {
+            if !parent.starts_with(&sync_root) {
                 return Ok(false);
             }
-            previous_response = Some(response);
+            let parent_uri =
+                local_path_to_cr_uri(parent.to_path_buf(), sync_root.clone(), remote_base.clone())?
+                    .to_string();
+            let name = ntfs_fold(&name.to_string_lossy());
+            let mut previous_response = None;
+            loop {
+                let response = match self
+                    .cr_client
+                    .list_files_all(previous_response.as_ref(), &parent_uri, REMOTE_PAGE_SIZE)
+                    .await
+                {
+                    Ok(response) => response,
+                    Err(ApiError::ApiError { code, .. })
+                        if code == ErrorCode::ParentNotExist as i32 =>
+                    {
+                        break;
+                    }
+                    Err(err) => return Err(err.into()),
+                };
+                if response.res.files.iter().any(|file| ntfs_fold(&file.name) == name) {
+                    return Ok(true);
+                }
+                if !response.more {
+                    return Ok(false);
+                }
+                previous_response = Some(response);
+            }
+            missing = parent;
         }
+        Ok(false)
     }
 
     async fn fetch_inventory_entries(
@@ -1206,6 +1217,9 @@ impl Mount {
                     // Fylvo: see fetch_remote_file_infos.
                     if *directory == sync_root {
                         anyhow::bail!("the synced folder is missing on the server");
+                    }
+                    if self.server_has_case_variant(directory).await? {
+                        anyhow::bail!("the folder exists on the server in another case");
                     }
                     tracing::debug!(
                         target: "drive::sync",
