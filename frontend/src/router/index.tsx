@@ -200,6 +200,13 @@ export const router = createBrowserRouter([
                 },
               },
               {
+                path: "activity",
+                async lazy() {
+                  let { ActivityLog } = await import("../component/Admin/AdminBundle.tsx");
+                  return { Component: ActivityLog };
+                },
+              },
+              {
                 path: "filesystem",
                 async lazy() {
                   let { FileSystem } = await import("../component/Admin/AdminBundle.tsx");

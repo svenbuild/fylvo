@@ -39,6 +39,7 @@ import SettingForm from "../SettingForm.tsx";
 import Disable2FADialog from "./Disable2FADialog.tsx";
 import Enable2FADialog from "./Enable2FADialog.tsx";
 import PasskeyList from "./PasskeyList.tsx";
+import RecentSignIns from "./RecentSignIns.tsx";
 import dayjs from "dayjs";
 
 export interface SecuritySettingProps {
@@ -360,6 +361,9 @@ const SecuritySetting = ({ setting, setSetting }: ProfileSettingProps) => {
           </List>
         </SettingForm>
       )}
+      <SettingForm title={t("activity.recentSignIns")} lgWidth={5}>
+        <RecentSignIns />
+      </SettingForm>
       <Enable2FADialog open={enable2FAOpen} onClose={() => setEnable2FAOpen(false)} on2FAEnabled={on2FAChange(true)} />
       <Disable2FADialog
         open={disable2FAOpen}

@@ -1,4 +1,5 @@
 import { AxiosProgressEvent, CancelToken } from "axios";
+import { AdminActivityService, ListActivityResponse } from "./activity.ts";
 import { EncryptedBlob } from "../component/Uploader/core/uploader/encrypt/blob.ts";
 import i18n from "../i18n.ts";
 import {
@@ -2207,6 +2208,58 @@ export function sendRebuildFTSIndex(req: RebuildFTSIndexWorkflowService): ThunkR
         {
           data: req,
           method: "POST",
+        },
+        {
+          ...defaultOpts,
+        },
+      ),
+    );
+  };
+}
+
+// Fylvo: activity log, see api/activity.ts.
+export function getFileActivity(uri: string, next?: number): ThunkResponse<ListActivityResponse> {
+  return async (dispatch, _getState) => {
+    return await dispatch(
+      send(
+        "/file/activity",
+        {
+          method: "GET",
+          params: { uri, next },
+        },
+        {
+          ...defaultOpts,
+        },
+      ),
+    );
+  };
+}
+
+export function getOwnActivity(next?: number): ThunkResponse<ListActivityResponse> {
+  return async (dispatch, _getState) => {
+    return await dispatch(
+      send(
+        "/user/setting/activity",
+        {
+          method: "GET",
+          params: { next },
+        },
+        {
+          ...defaultOpts,
+        },
+      ),
+    );
+  };
+}
+
+export function getAdminActivity(params: AdminActivityService): ThunkResponse<ListActivityResponse> {
+  return async (dispatch, _getState) => {
+    return await dispatch(
+      send(
+        "/admin/activity",
+        {
+          method: "GET",
+          params,
         },
         {
           ...defaultOpts,
