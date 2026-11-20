@@ -5,9 +5,10 @@ use crate::{
         utility::WriteAt,
     },
     drive::{
+        case::{case_twins, ntfs_fold},
         mounts::Mount,
         placeholder::CrPlaceholder,
-        sync::{GroupedFsEvents, SyncMode},
+        sync::{GroupedFsEvents, SyncMode, is_symbolic_link},
         utils::{is_in_cloud_sync_root, local_path_to_cr_uri, notify_shell_change},
     },
     inventory::ConflictState,
@@ -198,6 +199,31 @@ impl ConflictAction {
     }
 }
 
+/// Mark a placeholder as in sync with the server (after a rename).
+pub(crate) async fn mark_path_in_sync(path: &Path) -> Result<()> {
+    tracing::trace!(target: "drive::commands", path = %path.display(), "Marking file as in-sync: OPEN");
+    match OpenOptions::new()
+        .write_access()
+        .exclusive()
+        .open_with_retry(path)
+        .await
+    {
+        Ok(mut handle) => {
+            tracing::trace!(target: "drive::commands", path = %path.display(), "Marking file as in-sync");
+            if let Err(e) = handle.mark_in_sync(true, None) {
+                tracing::error!(target: "drive::commands", error = %e, "Failed to mark as in-sync");
+                return Err(e.into());
+            }
+            tracing::trace!(target: "drive::commands", path = %path.display(), "Marked file as in-sync: complete");
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!(target: "drive::commands", error = %e, "Failed to open file after retries");
+            Err(e.into())
+        }
+    }
+}
+
 impl Mount {
     pub async fn fetch_data(
         &self,
@@ -377,6 +403,23 @@ impl Mount {
         }
         drop(matcher);
 
+        // Fylvo: server names that are one file here (only case differs) are not created now:
+        // the sync picks one of them with a look at the disk (see `case.rs`).
+        let twins = case_twins(
+            placehodlers
+                .iter()
+                .filter(|file| !is_symbolic_link(file))
+                .map(|file| file.name.as_str()),
+        );
+        if !twins.is_empty() {
+            let (left_out, kept): (Vec<FileResponse>, Vec<FileResponse>) = placehodlers
+                .into_iter()
+                .partition(|file| twins.contains(&ntfs_fold(&file.name)));
+            placehodlers = kept;
+            let left_out: Vec<PathBuf> = left_out.iter().map(|file| path.join(&file.name)).collect();
+            self.report_case_clash(&left_out, "caseClashMessage");
+        }
+
         Ok(GetPlacehodlerResult {
             files: placehodlers,
             local_path: path.clone(),
@@ -446,30 +489,7 @@ impl Mount {
 
         // Cancel ongoing/pending tasks
         match self.task_queue.cancel_by_path(source.clone()).await {
-            Ok(0) => {
-                // Mark file as in-sync
-                tracing::trace!(target: "drive::commands", path = %destination.display(), "Marking file as in-sync: OPEN");
-                match OpenOptions::new()
-                    .write_access()
-                    .exclusive()
-                    .open_with_retry(&destination)
-                    .await
-                {
-                    Ok(mut handle) => {
-                        tracing::trace!(target: "drive::commands", path = %destination.display(), "Marking file as in-sync");
-                        if let Err(e) = handle.mark_in_sync(true, None) {
-                            tracing::error!(target: "drive::commands", error = %e, "Failed to mark as in-sync");
-                            return Err(e.into());
-                        }
-                        tracing::trace!(target: "drive::commands", path = %destination.display(), "Marked file as in-sync: complete");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        tracing::error!(target: "drive::commands", error = %e, "Failed to open file after retries");
-                        Err(e.into())
-                    }
-                }
-            }
+            Ok(0) => mark_path_in_sync(&destination).await,
             Ok(count) => {
                 tracing::info!(target: "drive::commands", path = %source.display(), count = count, "Cancelled tasks");
                 // We have tasks canceled, we need to trigger sync on the moved file

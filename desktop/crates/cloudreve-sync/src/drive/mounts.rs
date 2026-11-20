@@ -162,6 +162,12 @@ pub struct Mount {
     pub(crate) drive_letter_notified: AtomicBool,
     pub(crate) drive_letter_handle: Mutex<Option<JoinHandle<()>>>,
     pub(crate) drive_letter_closed: AtomicBool,
+    /// Fylvo: names that differ only in case, already reported in this run (see `case.rs`).
+    pub(crate) case_clash_notified: std::sync::Mutex<std::collections::HashSet<PathBuf>>,
+    /// Fylvo: local renames the app makes itself, not sent to the server (see `case.rs`).
+    pub(crate) own_renames: crate::drive::case::OwnRenames,
+    /// Fylvo: names whose case rename waits for a retry (one timer per name).
+    pub(crate) case_retries: Arc<std::sync::Mutex<std::collections::HashSet<PathBuf>>>,
 }
 
 impl Mount {
@@ -279,6 +285,9 @@ impl Mount {
             drive_letter_notified: AtomicBool::new(false),
             drive_letter_handle: Mutex::new(None),
             drive_letter_closed: AtomicBool::new(false),
+            case_clash_notified: Default::default(),
+            own_renames: Default::default(),
+            case_retries: Default::default(),
         }
     }
 
@@ -457,6 +466,7 @@ impl Mount {
                     self.command_tx.clone(),
                     self.id.clone(),
                     self.inventory.clone(),
+                    self.own_renames.clone(),
                 ),
             )
             .context("failed to connect to sync root")?;

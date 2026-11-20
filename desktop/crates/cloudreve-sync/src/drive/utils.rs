@@ -8,6 +8,7 @@ use widestring::U16CString;
 use windows::Win32::Storage::CloudFilters::{
     CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByPath,
 };
+use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
 use windows::Win32::UI::Shell::{
     FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, FOF_WANTNUKEWARNING,
     SHCNE_ID, SHCNF_PATHW, SHChangeNotify, SHFILEOPSTRUCTW, SHFileOperationW,
@@ -144,6 +145,21 @@ pub fn move_to_recycle_bin(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Fylvo: rename `from` to `to` without ever replacing another file (`std::fs::rename`
+/// replaces). A rename that only changes upper and lower case of the same file works.
+pub fn move_no_replace(from: &Path, to: &Path) -> Result<()> {
+    let from_w = U16CString::from_os_str(from.as_os_str())?;
+    let to_w = U16CString::from_os_str(to.as_os_str())?;
+    unsafe {
+        MoveFileExW(
+            PCWSTR(from_w.as_ptr()),
+            PCWSTR(to_w.as_ptr()),
+            MOVE_FILE_FLAGS(0),
+        )
+    }
+    .with_context(|| format!("could not rename {} to {}", from.display(), to.display()))
+}
+
 // notify_shell_change notify the shell to refresh the file or directory
 pub fn notify_shell_change(path: &PathBuf, event: SHCNE_ID) -> Result<()> {
     let utf16_path = U16CString::from_os_str(path.as_path())?;
@@ -170,6 +186,24 @@ mod tests {
 
     /// Puts a small temp file into the Windows recycle bin of the PC running the tests, so it
     /// only runs when asked: `cargo test -p cloudreve-sync -- --ignored recycle`.
+    #[test]
+    fn move_no_replace_changes_case_but_never_replaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let lower = dir.path().join("foto.jpg");
+        std::fs::write(&lower, b"one").unwrap();
+        move_no_replace(&lower, &dir.path().join("Foto.jpg")).unwrap();
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["Foto.jpg"]);
+
+        let other = dir.path().join("other.jpg");
+        std::fs::write(&other, b"two").unwrap();
+        assert!(move_no_replace(&other, &dir.path().join("FOTO.jpg")).is_err());
+        assert_eq!(std::fs::read(dir.path().join("Foto.jpg")).unwrap(), b"one");
+    }
+
     #[test]
     #[ignore]
     fn recycle_moves_file_away() {

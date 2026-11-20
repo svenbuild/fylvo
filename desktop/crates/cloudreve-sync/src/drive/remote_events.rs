@@ -1,6 +1,6 @@
 use crate::{
     cfapi::placeholder::LocalFileInfo,
-    drive::{commands::MountCommand, mounts::Mount, sync::SyncMode},
+    drive::{case::same_on_ntfs, commands::MountCommand, mounts::Mount, sync::SyncMode},
 };
 use anyhow::{Context, Result};
 use cloudreve_api::{
@@ -218,8 +218,16 @@ impl Mount {
             // Handle `from` path (like delete) - only if it exists locally
             let from_relative: PathBuf = event.from.trim_start_matches('/').split('/').collect();
             let local_from_path = sync_root.join(&from_relative);
+            let to_relative: PathBuf = event.to.trim_start_matches('/').split('/').collect();
+            let local_to_path = sync_root.join(&to_relative);
 
-            let from_exists = match LocalFileInfo::from_path(&local_from_path) {
+            // Fylvo: only upper/lower case changed: on this PC both names are the same file.
+            // Syncing the new name renames it here (see `case.rs`); the old name must not be
+            // handled as a deletion.
+            let case_only = local_from_path.parent() == local_to_path.parent()
+                && same_on_ntfs(&local_from_path, &local_to_path);
+
+            let from_exists = !case_only && match LocalFileInfo::from_path(&local_from_path) {
                 Ok(info) => info.exists,
                 Err(e) => {
                     tracing::trace!(
@@ -242,9 +250,6 @@ impl Mount {
             }
 
             // Handle `to` path (like create) - always process
-            let to_relative: PathBuf = event.to.trim_start_matches('/').split('/').collect();
-            let local_to_path = sync_root.join(&to_relative);
-
             if let Some(parent) = local_to_path.parent() {
                 to_grouped_by_parent
                     .entry(parent.to_path_buf())

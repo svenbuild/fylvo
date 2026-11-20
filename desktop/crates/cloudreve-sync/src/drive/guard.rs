@@ -198,11 +198,24 @@ impl DeletionGuardState {
     fn is_held(&mut self, side: DeletionSide, path: &Path) -> bool {
         self.slot(side)
             .as_ref()
-            .is_some_and(|held| is_under(path, &held.paths))
+            .is_some_and(|held| is_under_any_case(path, &held.paths))
     }
 
     fn is_kept(&self, path: &Path) -> bool {
-        is_under(path, &self.kept_local)
+        is_under_any_case(path, &self.kept_local)
+    }
+
+    /// Whether a held deletion lies at, under or above `path` (any upper/lower case spelling).
+    /// Kept paths need no check: they match in any spelling.
+    fn touches(&self, path: &Path) -> bool {
+        [&self.server, &self.local]
+            .into_iter()
+            .flatten()
+            .flat_map(|held| held.paths.iter())
+            .any(|other| {
+                is_under_any_case(path, std::slice::from_ref(other))
+                    || is_under_any_case(other, &[path.to_path_buf()])
+            })
     }
 
     fn is_confirmed(&mut self, paths: &[PathBuf], now: Instant) -> bool {
@@ -278,6 +291,16 @@ enum Decision {
     Pass,
     /// Held. When the hold changed: whether it just started, and all held paths.
     Hold(Option<(bool, Vec<PathBuf>)>),
+}
+
+/// Fylvo: like `is_under`, in any upper/lower case spelling (one file on NTFS).
+pub fn is_under_any_case(path: &Path, roots: &[PathBuf]) -> bool {
+    let fold = |p: &Path| crate::drive::case::ntfs_fold(&p.to_string_lossy());
+    let path = fold(path);
+    roots.iter().any(|root| {
+        let root = fold(root);
+        path == root || path.starts_with(&format!("{root}{}", std::path::MAIN_SEPARATOR))
+    })
 }
 
 pub fn is_under(path: &Path, roots: &[PathBuf]) -> bool {
@@ -519,6 +542,12 @@ impl Mount {
     /// Whether a deletion of `path` on this side is held.
     pub(crate) fn is_deletion_held(&self, side: DeletionSide, path: &Path) -> bool {
         self.deletion_guard.lock().unwrap().is_held(side, path)
+    }
+
+    /// Fylvo: whether a held deletion lies at, under or above `path`. A case rename of `path`
+    /// waits then, so the confirmed deletion still reaches its paths.
+    pub(crate) fn guard_touches(&self, path: &Path) -> bool {
+        self.deletion_guard.lock().unwrap().touches(path)
     }
 
     /// Whether the user chose to keep `path` here although it was deleted on the server.
@@ -768,6 +797,24 @@ mod tests {
         // Nothing sent or garbage: unknown.
         assert_eq!(is_read_only_capability(None), None);
         assert_eq!(is_read_only_capability(Some("%%%")), None);
+    }
+
+    #[test]
+    fn touches_finds_holds_and_kept_paths_in_any_case() {
+        let mut state = DeletionGuardState::default();
+        assert!(!state.touches(Path::new(r"C:\S\Photos")));
+        state.add(DeletionSide::Server, vec![PathBuf::from(r"C:\S\Photos\a.jpg")]);
+        state.keep(&[PathBuf::from(r"C:\S\Docs")]);
+        // A held child, the folder itself spelled otherwise, a path inside a kept folder.
+        assert!(state.touches(Path::new(r"C:\S\photos")));
+        assert!(state.touches(Path::new(r"C:\S\PHOTOS\a.jpg")));
+        // Siblings with a common start are not related.
+        assert!(!state.touches(Path::new(r"C:\S\Photos2")));
+        assert!(!state.touches(Path::new(r"C:\S\Doc")));
+        // A held or kept path stays so when the server spells it differently.
+        assert!(state.is_held(DeletionSide::Server, Path::new(r"C:\S\photos\A.JPG")));
+        assert!(!state.is_held(DeletionSide::Server, Path::new(r"C:\S\photos\b.jpg")));
+        assert!(state.is_kept(Path::new(r"C:\S\DOCS\x.txt")));
     }
 
     #[test]

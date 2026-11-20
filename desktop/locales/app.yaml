@@ -635,3 +635,12 @@ driveLetterNotFree:
 driveLetterNoneFree:
   en-US: "No drive letter is free."
   de: "Kein Laufwerksbuchstabe ist frei."
+caseClashTitle:
+  en-US: "Names differ only in case"
+  de: "Namen unterscheiden sich nur in Gross-/Kleinschreibung"
+caseClashMessage:
+  en-US: "\"%{name}\" exists more than once, spelled with different upper/lower case. Windows can keep only one of them in a folder; the other stays online only for now. Rename one of them in the web app."
+  de: "\"%{name}\" gibt es mehrfach, nur mit anderer Gross-/Kleinschreibung. Windows kann davon nur einen in einem Ordner haben, der andere bleibt nur online. Benennen Sie einen davon in der Web-App um."
+caseHeldMessage:
+  en-US: "\"%{name}\" on this PC and on the server differ only in upper/lower case, and it is not sure they are the same file. Nothing is changed for this name until you rename one of them."
+  de: "\"%{name}\" auf diesem PC und auf dem Server unterscheiden sich nur in Gross-/Kleinschreibung, und es ist nicht sicher, dass es dieselbe Datei ist. Für diesen Namen wird nichts geändert, bis Sie einen davon umbenennen."

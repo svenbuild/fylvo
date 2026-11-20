@@ -288,7 +288,7 @@ impl CrPlaceholder {
             size: file_info.size,
             etag: file_info.primary_entity.clone().unwrap_or_default(),
             id: 0,
-            metadata: file_info.metadata.clone().unwrap_or_default(),
+            metadata: crate::drive::sync::metadata_with_file_id(file_info),
             props: None,
             permissions: file_info.permission.clone().unwrap_or_default(),
             shared: file_info.shared.unwrap_or(false),
