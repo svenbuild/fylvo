@@ -19,7 +19,7 @@ const ActivityList = ({ entries, withDevice, loading, hasMore, onLoadMore }: Act
   const { t } = useTranslation("application");
   const theme = useTheme();
 
-  if (!loading && entries.length === 0) {
+  if (!loading && entries.length === 0 && !hasMore) {
     return (
       <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
         {t("activity.empty")}

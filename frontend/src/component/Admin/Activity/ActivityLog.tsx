@@ -68,10 +68,12 @@ const ActivityLog = () => {
       .finally(() => setSaving(false));
   };
 
+  const accountName = (u: ActivityUser) => u.nickname || u.email || t("activity.deletedAccount");
+
   const accountCell = (u?: ActivityUser) =>
     u ? (
       <Link component="button" variant="body2" underline="hover" onClick={() => setAccount(u)}>
-        {u.nickname || u.email}
+        {accountName(u)}
       </Link>
     ) : (
       ""
@@ -105,7 +107,7 @@ const ActivityLog = () => {
           {account && (
             <Chip
               size="small"
-              label={account.nickname || account.email}
+              label={accountName(account)}
               onDelete={() => setAccount(undefined)}
             />
           )}

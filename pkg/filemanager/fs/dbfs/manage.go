@@ -169,6 +169,10 @@ func (f *DBFS) Create(ctx context.Context, path *fs.URI, fileType types.FileType
 			if err != nil {
 				return nil, err
 			}
+			if o.UploadRequest == nil {
+				// Fylvo: an upload is logged when it is complete, see CompleteUpload.
+				activity.Record(ctx, f.activityEntry(activity.FileCreate, file, path))
+			}
 
 			return file, nil
 		}
