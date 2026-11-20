@@ -86,6 +86,7 @@ import io.github.svenbuild.fylvo.android.data.ViewMode
 import io.github.svenbuild.fylvo.android.ui.settings.AccountScreen
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.Permissions
+import io.github.svenbuild.fylvo.android.util.asString
 import io.github.svenbuild.fylvo.android.work.UploadWorker
 import io.github.svenbuild.fylvo.android.ui.files.transfers.PendingUpload
 import io.github.svenbuild.fylvo.android.ui.files.transfers.UploadConflictDialog
@@ -197,6 +198,11 @@ fun FilesScreen(
 
     /** In-app viewer for media, PDFs and text; everything else goes to the system. */
     fun openFile(file: FileObject) {
+        // Fylvo: an unfinished upload has no content yet; its sheet says so.
+        if (file.isUploading) {
+            sheetTarget = file
+            return
+        }
         if (previewKindOf(file) == null) {
             openWithSystemApp(file)
             return
@@ -405,7 +411,7 @@ fun FilesScreen(
                 state.error != null -> EmptyState(
                     icon = Icons.Outlined.FolderOpen,
                     title = stringResource(R.string.load_folder_failed),
-                    detail = state.error,
+                    detail = state.error?.asString(),
                     action = stringResource(R.string.retry) to { viewModel.refresh() },
                 )
                 state.files.isEmpty() && state.uploadsHere.isEmpty() -> when (state.category) {

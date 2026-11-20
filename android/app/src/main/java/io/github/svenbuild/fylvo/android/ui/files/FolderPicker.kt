@@ -46,6 +46,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.util.CrUri
+import io.github.svenbuild.fylvo.android.util.UiText
+import io.github.svenbuild.fylvo.android.util.asString
+import io.github.svenbuild.fylvo.android.util.userError
 
 /**
  * Full-screen destination chooser for Move / Copy, drawn over the files
@@ -68,7 +71,7 @@ fun FolderPicker(
 ) {
     var current by remember { mutableStateOf(startUri) }
     var folders by remember { mutableStateOf<List<FileObject>?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<UiText?>(null) }
     var mkdirOpen by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
 
@@ -77,7 +80,7 @@ fun FolderPicker(
         error = null
         runCatching { loadFolders(current) }
             .onSuccess { folders = it }
-            .onFailure { error = it.message }
+            .onFailure { error = userError(it) }
     }
 
     val atRoot = CrUri.isRoot(current)
@@ -134,7 +137,7 @@ fun FolderPicker(
                     val list = folders
                     when {
                         error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(error ?: "", color = MaterialTheme.colorScheme.error)
+                            Text(error?.asString().orEmpty(), color = MaterialTheme.colorScheme.error)
                         }
                         list == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()

@@ -34,6 +34,7 @@ import io.github.svenbuild.fylvo.android.data.ViewSettings
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.Permissions
 import io.github.svenbuild.fylvo.android.util.UiText
+import io.github.svenbuild.fylvo.android.util.userError
 import io.github.svenbuild.fylvo.android.work.BackgroundSync
 import io.github.svenbuild.fylvo.android.work.UploadStatus
 import io.github.svenbuild.fylvo.android.work.UploadWorker
@@ -78,7 +79,7 @@ data class FilesUiState(
     val revalidating: Boolean = false,
     val loadingMore: Boolean = false,
     val nextToken: String? = null,
-    val error: String? = null,
+    val error: UiText? = null,
     val snackbar: UiMessage? = null,
     val view: ViewPrefs = ViewPrefs(),
     /** Paths of files picked in selection mode; empty means not selecting. */
@@ -98,7 +99,7 @@ data class FilesUiState(
     val searchNextToken: String? = null,
     val searchLoading: Boolean = false,
     val searchLoadingMore: Boolean = false,
-    val searchError: String? = null,
+    val searchError: UiText? = null,
     val favorites: List<FavoriteEntry> = emptyList(),
     /** Fylvo: the folder on screen as the server describes it, with its capability set. */
     val parent: FileObject? = null,
@@ -207,8 +208,8 @@ class FilesViewModel(
                     _state.value = _state.value.copy(
                         loading = false,
                         revalidating = false,
-                        error = if (cached == null) e.message else null,
-                        snackbar = (if (cached != null) e.message else null).toMessage(),
+                        error = if (cached == null) userError(e) else null,
+                        snackbar = if (cached != null) failure(e) else null,
                     )
                 }
             }
@@ -235,7 +236,7 @@ class FilesViewModel(
                 )
             } catch (e: Exception) {
                 if (_state.value.currentUri == uri) {
-                    _state.value = _state.value.copy(loadingMore = false, snackbar = (e.message).toMessage())
+                    _state.value = _state.value.copy(loadingMore = false, snackbar = failure(e))
                 }
             }
         }
@@ -327,7 +328,7 @@ class FilesViewModel(
             }.onFailure { e ->
                 _state.value = _state.value.copy(recentLoading = false)
                 if (!handleSessionExpiry(e as? Exception ?: Exception(e))) {
-                    _state.value = _state.value.copy(snackbar = (e.message).toMessage())
+                    _state.value = _state.value.copy(snackbar = failure(e))
                 }
             }
         }
@@ -396,7 +397,7 @@ class FilesViewModel(
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
             } catch (e: Exception) {
-                _state.value = _state.value.copy(snackbar = e.message.orFallback(R.string.download_failed))
+                _state.value = _state.value.copy(snackbar = failure(e, fallback = R.string.download_failed))
             } finally {
                 downloadJobs.remove(file.path)
                 clearDownloading(file.path)
@@ -441,7 +442,7 @@ class FilesViewModel(
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
             } catch (e: Exception) {
-                _state.value = _state.value.copy(snackbar = e.message.orFallback(R.string.download_failed))
+                _state.value = _state.value.copy(snackbar = failure(e, fallback = R.string.download_failed))
             } finally {
                 downloadJobs.remove(key)
                 clearDownloading(file.path)
@@ -537,7 +538,7 @@ class FilesViewModel(
         val kind = FileKind.of(file)
         val gallery = kind == FileKind.IMAGE || kind == FileKind.VIDEO
         return _state.value.files.filter {
-            !it.isFolder && if (gallery) FileKind.of(it).let { k -> k == FileKind.IMAGE || k == FileKind.VIDEO } else FileKind.of(it) == kind
+            !it.isFolder && !it.isUploading && if (gallery) FileKind.of(it).let { k -> k == FileKind.IMAGE || k == FileKind.VIDEO } else FileKind.of(it) == kind
         }.ifEmpty { listOf(file) }
     }
 
@@ -601,7 +602,7 @@ class FilesViewModel(
                     )
                     refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
+                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, paths)) }
         }
     }
 
@@ -670,7 +671,7 @@ class FilesViewModel(
                 prefetchThumbs(res.files)
             } catch (_: CancellationException) {
             } catch (e: Exception) {
-                if (!handleSessionExpiry(e)) _state.value = _state.value.copy(searchLoading = false, searchError = e.message)
+                if (!handleSessionExpiry(e)) _state.value = _state.value.copy(searchLoading = false, searchError = userError(e))
             }
         }
     }
@@ -693,7 +694,7 @@ class FilesViewModel(
                 )
             } catch (e: Exception) {
                 if (searchUri() == uri) {
-                    _state.value = _state.value.copy(searchLoadingMore = false, snackbar = (e.message).toMessage())
+                    _state.value = _state.value.copy(searchLoadingMore = false, snackbar = failure(e))
                 }
             }
         }
@@ -726,7 +727,7 @@ class FilesViewModel(
                     listingCache.remove(parent)
                     if (parent == _state.value.currentUri) refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
+                .onFailure { _state.value = _state.value.copy(snackbar = failure(it)) }
         }
     }
 
@@ -735,7 +736,7 @@ class FilesViewModel(
         viewModelScope.launch {
             runCatching { repo.rename(file.path, newName) }
                 .onSuccess { refresh() }
-                .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
+                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, listOf(file.path))) }
         }
     }
 
@@ -765,7 +766,7 @@ class FilesViewModel(
                     )
                     refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
+                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, paths)) }
         }
     }
 
@@ -800,7 +801,7 @@ class FilesViewModel(
                     _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.restored)))
                     refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
+                .onFailure { _state.value = _state.value.copy(snackbar = failure(it)) }
         }
     }
 
@@ -834,7 +835,7 @@ class FilesViewModel(
                 )
             }
                 .onSuccess { _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.available_offline_message, file.name))) }
-                .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
+                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, listOf(file.path))) }
             clearDownloading(file.path)
         }
     }
@@ -848,7 +849,7 @@ class FilesViewModel(
                 repo.downloadToFile(url, File(entry.localFile)) { _, _ -> }
                 favorites.put(entry.copy(savedAt = System.currentTimeMillis()))
             }
-                .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
+                .onFailure { _state.value = _state.value.copy(snackbar = failure(it)) }
         }
     }
 
@@ -879,7 +880,7 @@ class FilesViewModel(
                     )
                     refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
+                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, paths)) }
         }
     }
 
@@ -895,7 +896,7 @@ class FilesViewModel(
                     )
                     refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = it.message.toMessage()) }
+                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, paths)) }
         }
     }
 
@@ -929,11 +930,20 @@ class FilesViewModel(
         _state.value = _state.value.copy(snackbar = null)
     }
 
-    /** Error texts from the server or the network come as they are. */
-    private fun String?.toMessage(): UiMessage? = this?.let { UiMessage(UiText.Raw(it)) }
+    /**
+     * Fylvo: a human sentence for a failed request on [paths]. When one of them is a file whose
+     * upload has not finished, a lock answer also says that such uploads go away by themselves.
+     */
+    private fun failure(e: Throwable, paths: List<String> = emptyList(), @StringRes fallback: Int? = null): UiMessage {
+        val involvesUpload = paths.isNotEmpty() && paths.any { it in uploadingPaths() }
+        return UiMessage(userError(e, involvesUpload, fallback))
+    }
 
-    private fun String?.orFallback(@StringRes fallback: Int): UiMessage =
-        UiMessage(this?.let { UiText.Raw(it) } ?: UiText.Res(fallback))
+    /** Paths of the files on screen whose upload has not finished (FileObject.isUploading). */
+    private fun uploadingPaths(): Set<String> {
+        val s = _state.value
+        return (s.files + s.searchResults + s.recent).filter { it.isUploading }.mapTo(HashSet()) { it.path }
+    }
 
     /**
      * Folders always stay on top like the Files app. The server's name order is

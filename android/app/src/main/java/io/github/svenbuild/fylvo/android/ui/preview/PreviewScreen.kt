@@ -53,6 +53,7 @@ import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.ui.files.FileKind
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
 import io.github.svenbuild.fylvo.android.ui.files.subtitleFor
+import io.github.svenbuild.fylvo.android.util.userError
 import java.io.File
 
 /** Which viewer to use; anything else is handed to the system. */
@@ -230,7 +231,7 @@ internal fun rememberLocalCopy(file: FileObject, viewModel: FilesViewModel): Tri
     LaunchedEffect(file.id) {
         runCatching { viewModel.localCopy(context, file) { progress = it } }
             .onSuccess { local = it }
-            .onFailure { error = it.message ?: context.getString(R.string.download_failed) }
+            .onFailure { error = userError(it, fallback = R.string.download_failed).resolve(context) }
     }
     return Triple(local, progress, error)
 }

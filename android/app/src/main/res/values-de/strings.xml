@@ -238,6 +238,26 @@
     <string name="password_in_link">Steckt im Link, Empfänger müssen nichts eintippen</string>
     <string name="anyone_with_link">Alle mit dem Link haben Zugriff</string>
     <string name="create_link_failed">Link konnte nicht erstellt werden</string>
+    <!-- Fylvo: error texts for refused requests (util/ErrorText) -->
+    <string name="error_locked">Diese Datei wird gerade hochgeladen oder bearbeitet. Bitte später nochmals versuchen.</string>
+    <string name="error_locked_upload">Diese Datei wird gerade hochgeladen oder bearbeitet. Bitte später nochmals versuchen. Nicht beendete Uploads werden nach 48 Stunden automatisch entfernt.</string>
+    <string name="error_not_found">Diese Datei oder dieser Ordner existiert nicht mehr. Bitte die Liste neu laden.</string>
+    <string name="error_exists">Hier gibt es schon eine Datei oder einen Ordner mit diesem Namen.</string>
+    <string name="error_quota">Es ist nicht mehr genug Speicherplatz frei.</string>
+    <string name="error_permission">Dafür fehlt dir die Berechtigung.</string>
+    <string name="error_login_required">Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.</string>
+    <string name="error_too_many_attempts">Zu viele Versuche. Bitte kurz warten und nochmals versuchen.</string>
+    <string name="error_bad_name">Dieser Name ist nicht erlaubt.</string>
+    <string name="error_too_many_items">Zu viele Elemente auf einmal. Bitte weniger auswählen.</string>
+    <string name="error_file_too_large">Diese Datei übersteigt das erlaubte Limit.</string>
+    <string name="error_file_type">Dieser Dateityp ist hier nicht erlaubt.</string>
+    <string name="error_feature_off">Diese Funktion ist auf dem Server ausgeschaltet.</string>
+    <string name="error_server">Der Server hat gerade ein Problem. Bitte später nochmals versuchen.</string>
+    <string name="error_network">Keine Verbindung zum Server. Bitte die Internetverbindung prüfen.</string>
+    <string name="error_generic_code">Etwas ist schiefgegangen (Fehler %1$d)</string>
+    <string name="error_generic">Etwas ist schiefgegangen. Bitte nochmals versuchen.</string>
+    <string name="uploading_file">Wird hochgeladen…</string>
+    <string name="uploading_note">Dieser Upload ist nicht beendet. Nicht beendete Uploads werden nach 48 Stunden automatisch entfernt.</string>
     <string name="create_link">Link erstellen</string>
     <string name="link_copied">Link kopiert</string>
     <string name="copy">Kopieren</string>

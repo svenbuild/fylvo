@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.util.CrUri
+import io.github.svenbuild.fylvo.android.util.asString
 
 /** Search bar in the top-bar slot: plain text field, live results, clear button. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -140,7 +141,7 @@ fun SearchResults(
             state.searchLoading && state.searchResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            state.searchError != null -> Hint(Icons.Outlined.SearchOff, state.searchError)
+            state.searchError != null -> Hint(Icons.Outlined.SearchOff, state.searchError.asString())
             state.searchResults.isEmpty() -> Hint(Icons.Outlined.SearchOff, stringResource(R.string.no_files_match, query))
             else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                 items(state.searchResults, key = { it.id + it.path }) { file ->
@@ -149,7 +150,7 @@ fun SearchResults(
                         thumbUrl = rememberThumbUrl(viewModel, file),
                         selecting = false,
                         selected = false,
-                        subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} · ${CrUri.parentDisplayName(file.path)}",
+                        subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                         actions = actionsFor(file),
                     )
                 }

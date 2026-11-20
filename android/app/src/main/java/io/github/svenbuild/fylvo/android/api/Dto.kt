@@ -2,12 +2,15 @@ package io.github.svenbuild.fylvo.android.api
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class ApiResponse<T>(
     val code: Int = 0,
     val msg: String = "",
     val data: T? = null,
+    /** Fylvo: codes of the single failures of a batch answer (40081), see ApiEnvelope. */
+    @Transient val innerCodes: List<Int> = emptyList(),
 )
 
 @Serializable
@@ -98,15 +101,23 @@ data class FileObject(
      * `thumb:disabled` (set after the first failed generation attempt).
      */
     val mayHaveThumbnail: Boolean
-        get() = !isFolder && metadata?.containsKey(METADATA_THUMB_DISABLED) != true
+        get() = !isFolder && !isUploading && metadata?.containsKey(METADATA_THUMB_DISABLED) != true
 
     /** Where a trashed file came from; only set on items listed under cloudreve://trash. */
     val restoreUri: String? get() = metadata?.get(METADATA_RESTORE_URI)
+
+    /**
+     * Fylvo: an upload into this file has not finished; the server holds a lock on it until the
+     * upload ends or is cleaned up. Same test as the web UI (GridFile.tsx, Metadata.upload_session_id).
+     */
+    val isUploading: Boolean get() = !isFolder && metadata?.containsKey(METADATA_UPLOAD_SESSION_ID) == true
 
     companion object {
         const val METADATA_THUMB_DISABLED = "thumb:disabled"
         const val METADATA_RESTORE_URI = "sys:restore_uri"
         const val METADATA_SHARED_REDIRECT = "sys:shared_redirect"
+        /** Set while an upload into this file is not finished (pkg/filemanager/fs/dbfs/file.go). */
+        const val METADATA_UPLOAD_SESSION_ID = "sys:upload_session_id"
     }
 }
 

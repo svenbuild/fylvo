@@ -19,7 +19,11 @@ import kotlinx.coroutines.ensureActive
 import retrofit2.Response
 import java.io.File
 
-class ApiException(val code: Int, message: String) : Exception(message) {
+/**
+ * A refused request: the server's envelope code (or the HTTP status), its message for the log, and
+ * for a batch answer (40081) the codes of the single failures. Never shown as it is; see util/ErrorText.
+ */
+class ApiException(val code: Int, message: String, val innerCodes: List<Int> = emptyList()) : Exception(message) {
     companion object {
         /** Server envelope code for "login required" (session expired or revoked). */
         const val CODE_LOGIN_REQUIRED = 401
@@ -42,7 +46,7 @@ class FileRepository(private val api: ApiClient) {
         if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
         val body = body() ?: throw ApiException(-1, "Empty response")
         if (body.code != 0 || body.data == null) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" })
+            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes)
         }
         return body.data
     }
@@ -51,7 +55,7 @@ class FileRepository(private val api: ApiClient) {
         if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
         val body = body() ?: throw ApiException(-1, "Empty response")
         if (body.code != 0) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" })
+            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes)
         }
     }
 

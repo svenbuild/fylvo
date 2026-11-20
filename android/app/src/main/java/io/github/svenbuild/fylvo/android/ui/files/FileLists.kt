@@ -82,7 +82,7 @@ internal fun FileList(
                         downloading = file.path in state.downloading,
                         offline = file.path in state.favoritePaths,
                         actions = actionsFor(file),
-                        subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} · ${CrUri.parentDisplayName(file.path)}",
+                        subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                     )
                 }
             }
@@ -102,7 +102,7 @@ internal fun FileList(
                 subtitle = if (state.inTrash) {
                     trashSubtitle.format(formatDate(file.updatedAt), file.restoreUri?.let { CrUri.displayName(it) } ?: unknown)
                 } else {
-                    subtitleFor(file.size, file.updatedAt, file.isFolder)
+                    fileSubtitle(file)
                 },
             )
         }
