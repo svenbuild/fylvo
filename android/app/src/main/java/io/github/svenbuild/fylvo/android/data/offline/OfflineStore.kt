@@ -46,6 +46,29 @@ class OfflineStore(private val base: File, val accountKey: String) {
 
     fun dirOf(id: String): File = File(filesRoot, id)
 
+    /**
+     * Deletes everything in root [id]'s copy folder that is not one of [indexed] (relative paths of
+     * its index entries, pending ones included), then the folders left empty. Returns what was deleted.
+     */
+    fun removeUnindexed(id: String, indexed: Set<String>): List<String> {
+        val dir = dirOf(id)
+        if (!dir.isDirectory) return emptyList()
+        val keepDirs = indexed.flatMapTo(HashSet()) { parentsOf(it) }
+        val deleted = ArrayList<String>()
+        fun walk(folder: File, prefix: String) {
+            folder.listFiles().orEmpty().forEach { child ->
+                val rel = prefix + child.name
+                when {
+                    child.isDirectory && rel in keepDirs -> walk(child, "$rel/")
+                    child.isFile && rel in indexed -> Unit
+                    else -> if (child.deleteRecursively()) deleted += rel
+                }
+            }
+        }
+        walk(dir, "")
+        return deleted
+    }
+
     /** Folders of copies with no index (an interrupted "Remove"): nothing points to them any more. */
     fun orphanDirs(): List<File> {
         val ids = indexDir.listFiles { f -> f.name.endsWith(".json") }.orEmpty().mapTo(HashSet()) { it.name.removeSuffix(".json") }

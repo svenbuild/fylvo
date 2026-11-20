@@ -58,13 +58,13 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
         }
 
         /**
-         * One run soon. KEEP: a run that is waiting or busy already covers it (a busy run also
-         * takes the roots switched on meanwhile).
+         * One run soon. APPEND_OR_REPLACE: a request while a run is busy is queued after it, never
+         * dropped (and a busy run also takes it through the sync request flag).
          */
         fun syncNow(context: Context, mobileData: Boolean) {
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_ONCE,
-                ExistingWorkPolicy.KEEP,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
                 OneTimeWorkRequestBuilder<OfflineSyncWorker>().setConstraints(constraints(mobileData)).build(),
             )
         }

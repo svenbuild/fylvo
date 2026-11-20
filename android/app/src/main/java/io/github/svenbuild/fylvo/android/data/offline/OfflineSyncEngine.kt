@@ -91,6 +91,11 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
             return
         }
 
+        // Files without an index entry (a run stopped after writing one) are read-only copies
+        // nobody points to; they could block a path the server now uses differently. Anything
+        // needed is fetched again below.
+        manager.writing(id) { store.removeUnindexed(id, writer.current.entries.mapTo(HashSet()) { it.path }) } ?: return
+
         val actions = planSync(remote, writer.current.entries) { rel ->
             store.fileOf(id, rel).takeIf { it.isFile }?.let { LocalStat(it.length(), it.lastModified()) }
         }
@@ -173,8 +178,10 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
             writer.put(old.copy(id = move.file.id, path = move.file.path))
             return true
         }
-        // Something is in the way: the file is fetched at its new place instead.
-        tmp.delete()
+        // Something is in the way: the old copy goes back (so a failed download never loses it)
+        // and the file is fetched at its new place instead.
+        src.parentFile?.mkdirs()
+        if (tmp.renameTo(src)) writer.put(old) else tmp.delete()
         return false
     }
 
@@ -225,6 +232,13 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
             if (tmp.length() != file.size) throw IOException("size differs from the listing")
             manager.writing(id) {
                 val dest = store.fileOf(id, file.path)
+                // A folder left at this path with no indexed copy inside (the server turned the
+                // folder into a file) gives way.
+                if (dest.isDirectory && writer.current.entries.none { it.path.startsWith(file.path + "/") }) {
+                    dest.deleteRecursively()
+                }
+                // Follow-up: this writes the whole index once per replaced file, which costs a lot
+                // for very large folders; a small journal of pending entries would avoid it.
                 // Replacing a copy: first record on disk that this path is being replaced, so a stop
                 // between the rename and the next index write never leaves new bytes under the old
                 // version (a pending entry counts as no copy and is fetched again).
@@ -259,12 +273,13 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
             writer.setRoot {
                 it.copy(state = state, lastSyncAt = if (state == OfflineState.Synced) System.currentTimeMillis() else it.lastSyncAt)
             }
-            // The copy of an older app version goes once the new one exists.
+            // The new copy is recorded on disk first; only then does the older app version's copy go.
+            writer.flush()
             if (legacy != null && state == OfflineState.Synced) {
                 manager.deleteLegacyCopy(legacy)
                 writer.setRoot { it.copy(legacyFile = null) }
+                writer.flush()
             }
-            writer.flush()
         }
     }
 

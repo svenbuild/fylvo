@@ -149,8 +149,13 @@ class PlanSyncTest {
         assertTrue(!confirmsGone(FileObject(type = 0, id = "2"), expectFolder = false, expectedId = ""))
     }
 
-    private fun index(uri: String, folder: Boolean, entries: List<OfflineEntry>, state: OfflineState = OfflineState.Synced) =
-        OfflineIndex(OfflineRoot(id = uri, uri = uri, name = uri, folder = folder, state = state), entries)
+    private fun index(
+        uri: String,
+        folder: Boolean,
+        entries: List<OfflineEntry>,
+        state: OfflineState = OfflineState.Synced,
+        folders: List<String> = emptyList(),
+    ) = OfflineIndex(OfflineRoot(id = uri, uri = uri, name = uri, folder = folder, state = state), entries, folders)
 
     @Test fun nestedRootGoesOnlyWhenTheFolderHoldsThatExactFile() {
         val single = index("cloudreve://my/A/b/c.pdf", false, listOf(entry("7", "c.pdf", "e1")))
@@ -170,8 +175,20 @@ class PlanSyncTest {
 
     @Test fun nestedFolderRootNeedsAllItsFiles() {
         val inner = index("cloudreve://my/A/b", true, listOf(entry("1", "x.txt", "e1"), entry("2", "y/z.txt", "e2")))
-        assertTrue(isCoveredBy(inner, index("cloudreve://my/A", true, listOf(entry("1", "b/x.txt", "e1"), entry("2", "b/y/z.txt", "e2")))))
-        assertTrue(!isCoveredBy(inner, index("cloudreve://my/A", true, listOf(entry("1", "b/x.txt", "e1")))))
+        val both = listOf(entry("1", "b/x.txt", "e1"), entry("2", "b/y/z.txt", "e2"))
+        assertTrue(isCoveredBy(inner, index("cloudreve://my/A", true, both, folders = listOf("b", "b/y"))))
+        assertTrue(!isCoveredBy(inner, index("cloudreve://my/A", true, listOf(entry("1", "b/x.txt", "e1")), folders = listOf("b", "b/y"))))
+        // The folder does not know "b" as a folder.
+        assertTrue(!isCoveredBy(inner, index("cloudreve://my/A", true, both)))
+        // Not up to date itself.
+        assertTrue(!isCoveredBy(inner.copy(root = inner.root.copy(state = OfflineState.Pending)), index("cloudreve://my/A", true, both, folders = listOf("b", "b/y"))))
+    }
+
+    @Test fun emptyNestedFolderRootGoesOnlyWhenTheFolderKnowsIt() {
+        val empty = index("cloudreve://my/A/e", true, emptyList())
+        assertTrue(!isCoveredBy(empty, index("cloudreve://my/A", true, emptyList())))
+        assertTrue(isCoveredBy(empty, index("cloudreve://my/A", true, emptyList(), folders = listOf("e"))))
+        assertTrue(!isCoveredBy(empty.copy(root = empty.root.copy(state = OfflineState.Pending)), index("cloudreve://my/A", true, emptyList(), folders = listOf("e"))))
     }
 
     @Test fun parallelDownloadsShareTheReserve() {

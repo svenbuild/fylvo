@@ -136,6 +136,8 @@ data class FilesUiState(
     /** The folder on screen comes from the copies on this phone (no connection). */
     val offlineMode: Boolean = false,
     val offlinePrompt: OfflinePrompt? = null,
+    /** Paths opened from the copy on this phone because the server failed: maybe outdated. */
+    val staleCopies: Set<String> = emptySet(),
     /** Fylvo: the folder on screen as the server describes it, with its capability set. */
     val parent: FileObject? = null,
 ) {
@@ -472,10 +474,12 @@ class FilesViewModel(
         setDownloading(file.path, null)
         val job = viewModelScope.launch {
             try {
-                val url = repo.downloadUrl(file.path)
+                // The exact version, so the cache under its version key holds that version.
+                val url = repo.downloadUrl(file.path, entity = file.primaryEntity)
                 repo.downloadToFile(url, dest) { done, total ->
                     setDownloading(file.path, if (total > 0) done.toFloat() / total else null)
                 }
+                markFresh(file)
                 onReady(dest)
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
@@ -619,7 +623,7 @@ class FilesViewModel(
     suspend fun previewUrl(file: FileObject): String {
         currentOfflineCopy(file)?.let { return android.net.Uri.fromFile(it).toString() }
         return try {
-            repo.contentUrl(file.path)
+            repo.contentUrl(file.path).also { markFresh(file) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -645,8 +649,16 @@ class FilesViewModel(
     private suspend fun anyOfflineCopy(file: FileObject): File? {
         if (!_state.value.isOffline(file)) return null
         val local = offline.localCopy(file.path) ?: return null
-        _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.offline_copy_may_be_outdated)))
+        _state.value = _state.value.copy(
+            snackbar = UiMessage(UiText.Res(R.string.offline_copy_may_be_outdated)),
+            staleCopies = _state.value.staleCopies + file.path,
+        )
         return local
+    }
+
+    /** The server answered for [file] again: no "may be outdated" note for it any more. */
+    private fun markFresh(file: FileObject) {
+        if (file.path in _state.value.staleCopies) _state.value = _state.value.copy(staleCopies = _state.value.staleCopies - file.path)
     }
 
     /** Local copy for renderers that need a file (PDF, text); downloads if missing. */
@@ -655,8 +667,9 @@ class FilesViewModel(
         val dest = cacheFileFor(context, file)
         if (cachedCopy(dest, file)) return dest
         return try {
-            val url = repo.downloadUrl(file.path)
+            val url = repo.downloadUrl(file.path, entity = file.primaryEntity)
             repo.downloadToFile(url, dest) { done, total -> onProgress(if (total > 0) done.toFloat() / total else null) }
+            markFresh(file)
             dest
         } catch (e: CancellationException) {
             throw e

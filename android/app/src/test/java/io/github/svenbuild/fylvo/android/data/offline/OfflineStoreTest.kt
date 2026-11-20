@@ -166,4 +166,21 @@ class OfflineStoreTest {
         OfflineStore.adoptAccount(tmp.root, "email", "id")
         assertEquals(listOf(mine.id), idStore.indexes().map { it.root.id })
     }
+
+    @Test fun unindexedLeftoversAreRemoved() {
+        val store = OfflineStore(tmp.root, "acc")
+        val r = root()
+        fun put(rel: String) = store.fileOf(r.id, rel).apply { parentFile!!.mkdirs(); writeText("x") }
+        put("keep.txt")
+        put("sub/keep.jpg")
+        put("a/child.jpg") // written before a stop, never indexed
+        put("sub/stray.tmp")
+        store.fileOf(r.id, "empty").mkdirs()
+        val deleted = store.removeUnindexed(r.id, setOf("keep.txt", "sub/keep.jpg"))
+        assertEquals(setOf("a", "sub/stray.tmp", "empty"), deleted.toSet())
+        assertTrue(store.fileOf(r.id, "keep.txt").isFile)
+        assertTrue(store.fileOf(r.id, "sub/keep.jpg").isFile)
+        // The path `a` is free again, e.g. for a file the server put there.
+        assertFalse(store.fileOf(r.id, "a").exists())
+    }
 }

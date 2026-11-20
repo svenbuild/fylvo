@@ -181,8 +181,12 @@ fun isCoveredBy(
     outer: OfflineIndex,
     present: (String, String, Long) -> Boolean = { _, _, _ -> true },
 ): Boolean {
-    if (!outer.root.folder || inner.root.id == outer.root.id || inner.root.state == OfflineState.Gone) return false
+    if (!outer.root.folder || inner.root.id == outer.root.id) return false
+    // Only an up-to-date root goes (not one still waiting, failed or no longer on the server).
+    if (inner.root.state != OfflineState.Synced) return false
     val rel = relativePath(CrUri.canonical(outer.root.uri), CrUri.canonical(inner.root.uri)) ?: return false
+    // The folder knows the root itself: as a folder, or as a file for a single-file root.
+    if (inner.root.folder && rel !in outer.folders) return false
     if (!inner.root.folder && inner.entries.isEmpty()) return false
     val outerByPath = outer.entries.associateBy { it.path }
     return inner.entries.all { entry ->

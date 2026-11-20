@@ -191,6 +191,8 @@ class OfflineManager(
         }
         reload(store)
         if (added) {
+            // A run that is busy takes it before it ends.
+            syncRequested.set(true)
             val mobile = mobileData.first()
             OfflineSyncWorker.apply(context, mobile)
             OfflineSyncWorker.syncNow(context, mobile)
