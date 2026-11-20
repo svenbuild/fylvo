@@ -90,6 +90,7 @@ fun AccountScreen(
     val syncSnap by sync.snapshot.collectAsState(initial = null)
     val serverUrl by app.sessionManager.serverUrl.collectAsState(initial = "")
     val email by app.sessionManager.userEmail.collectAsState(initial = "")
+    val offlineMobileData by app.offlineManager.mobileData.collectAsState(initial = false)
 
     // Fylvo: the user edits a plain path below My files ("Sync/Phone"), stored as a cloudreve:// URI.
     var syncFolder by remember(syncSnap?.remoteFolder) {
@@ -177,6 +178,14 @@ fun AccountScreen(
                 },
                 leadingContent = { Icon(Icons.Default.OfflinePin, contentDescription = null) },
             )
+            if (offlineCount > 0) {
+                SwitchRow(
+                    title = stringResource(R.string.offline_mobile_data),
+                    subtitle = if (offlineMobileData) null else stringResource(R.string.offline_mobile_data_hint),
+                    checked = offlineMobileData,
+                    onCheckedChange = { on -> scope.launch { app.offlineManager.setMobileData(on) } },
+                )
+            }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionLabel(stringResource(R.string.folder_sync))

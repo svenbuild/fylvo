@@ -107,7 +107,6 @@
         <item quantity="one">%d Element endgültig gelöscht</item>
         <item quantity="other">%d Elemente endgültig gelöscht</item>
     </plurals>
-    <string name="available_offline_message">%s ist offline verfügbar</string>
 
     <!-- File action sheet and details -->
     <string name="open">Öffnen</string>
@@ -213,10 +212,33 @@
         <item quantity="other">%1$d Dateien • %2$s auf diesem Gerät</item>
     </plurals>
     <string name="no_offline_files">Keine Offline-Dateien</string>
-    <string name="no_offline_files_hint">Öffne das Menü einer Datei und wähle „Offline verfügbar machen“, um sie ohne Verbindung hier zu haben.</string>
-    <string name="offline_row_subtitle">%1$s • gespeichert %2$s</string>
-    <string name="update_copy">Kopie aktualisieren</string>
+    <string name="no_offline_files_hint">Öffne das Menü einer Datei oder eines Ordners und schalte „Offline verfügbar“ ein, um sie ohne Verbindung hier zu haben.</string>
     <string name="remove_from_device">Vom Gerät entfernen</string>
+    <string name="offline_covered">Teil eines Offline-Ordners</string>
+    <string name="offline_no_room">Auf dem Handy blieben weniger als 1 GB frei. Gib Speicher frei oder wähle etwas Kleineres.</string>
+    <string name="offline_switched_on">%s wird auf diesem Handy behalten</string>
+    <string name="offline_switched_off">%s wird nicht mehr auf diesem Handy behalten</string>
+    <string name="offline_not_here_yet">Noch nicht auf diesem Handy</string>
+    <string name="offline_banner">Keine Verbindung: Kopien auf diesem Handy</string>
+    <string name="offline_prompt_title">„%s“ offline verfügbar machen?</string>
+    <string name="offline_counting">Dateien werden gezählt…</string>
+    <string name="offline_too_many_folders">Dieser Ordner hat zu viele Unterordner, um ihn offline zu behalten.</string>
+    <string name="offline_free_space">Frei auf diesem Handy: %s</string>
+    <plurals name="offline_root_files">
+        <item quantity="one">%1$d Datei, %2$s</item>
+        <item quantity="other">%1$d Dateien, %2$s</item>
+    </plurals>
+    <string name="offline_state_synced">Aktuell</string>
+    <string name="offline_state_waiting_wifi">Wartet auf WLAN</string>
+    <string name="offline_state_waiting">Wartet auf Synchronisierung</string>
+    <string name="offline_state_syncing">Wird synchronisiert…</string>
+    <string name="offline_state_error">Synchronisierung fehlgeschlagen, neuer Versuch später</string>
+    <string name="offline_state_gone">Nicht mehr auf dem Server</string>
+    <string name="offline_state_storage_full">Speicher fast voll</string>
+    <string name="offline_last_sync">Zuletzt synchronisiert %s</string>
+    <string name="offline_mobile_data">Offline-Ordner auch über mobile Daten</string>
+    <string name="offline_mobile_data_hint">Sonst nur über WLAN</string>
+    <string name="ok">OK</string>
 
     <!-- Search -->
     <string name="close_search">Suche schliessen</string>
@@ -278,7 +300,7 @@
     <string name="signed_in">Angemeldet</string>
     <string name="storage">Speicher</string>
     <string name="storage_used">%1$s von %2$s belegt</string>
-    <string name="offline_files_hint">Dateien, die du auf diesem Handy behältst</string>
+    <string name="offline_files_hint">Dateien und Ordner, die du auf diesem Handy behältst</string>
     <string name="offline_count">%d auf diesem Handy</string>
     <string name="folder_sync">Ordner-Sync</string>
     <string name="mirror_local_folder">Lokalen Ordner spiegeln</string>

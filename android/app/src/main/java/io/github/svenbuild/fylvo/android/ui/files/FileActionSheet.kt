@@ -33,6 +33,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -53,12 +54,17 @@ import io.github.svenbuild.fylvo.android.api.FileObject
 fun FileActionSheet(
     file: FileObject,
     thumbUrl: String?,
-    isFavorite: Boolean,
+    /** Fylvo: kept offline as its own root. */
+    offlineOn: Boolean,
+    /** Fylvo: inside an offline folder; uses the folder's copy and cannot be switched separately. */
+    offlineCovered: Boolean,
+    /** Fylvo: offline can be switched here (My files, shared folders). */
+    offlineAllowed: Boolean,
     onDismiss: () -> Unit,
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onDownload: () -> Unit,
-    onToggleFavorite: () -> Unit,
+    onToggleOffline: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onSelect: () -> Unit,
@@ -128,11 +134,14 @@ fun FileActionSheet(
         onShowInFolder?.let { SheetAction(Icons.Default.FolderOpen, stringResource(R.string.show_in_folder), it) }
         if (canShare) SheetAction(Icons.Default.Link, stringResource(R.string.share_link), onShare)
         SheetAction(Icons.Default.Download, stringResource(if (file.isFolder) R.string.download_as_zip else R.string.download), onDownload)
-        if (!file.isFolder) {
-            SheetAction(
-                if (isFavorite) Icons.Default.OfflinePin else Icons.Outlined.OfflinePin,
-                stringResource(if (isFavorite) R.string.remove_offline_copy else R.string.keep_offline),
-                onToggleFavorite,
+        when {
+            offlineCovered -> OfflineSwitchRow(checked = true, enabled = false, subtitle = stringResource(R.string.offline_covered), onToggle = {})
+            !offlineAllowed -> Unit
+            file.isFolder -> OfflineSwitchRow(checked = offlineOn, enabled = true, subtitle = null, onToggle = onToggleOffline)
+            else -> SheetAction(
+                if (offlineOn) Icons.Default.OfflinePin else Icons.Outlined.OfflinePin,
+                stringResource(if (offlineOn) R.string.remove_offline_copy else R.string.keep_offline),
+                onToggleOffline,
             )
         }
         SheetAction(Icons.Default.Checklist, stringResource(R.string.select), onSelect)
@@ -145,6 +154,24 @@ fun FileActionSheet(
         if (canModify) SheetAction(Icons.Default.Delete, stringResource(R.string.delete), onDelete, tint = MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(24.dp))
     }
+}
+
+/** Fylvo: "Available offline" for a folder, or shown switched on for anything in an offline folder. */
+@Composable
+private fun OfflineSwitchRow(checked: Boolean, enabled: Boolean, subtitle: String?, onToggle: () -> Unit) {
+    ListItem(
+        modifier = if (enabled) Modifier.clickable(onClick = onToggle) else Modifier,
+        headlineContent = { Text(stringResource(R.string.available_offline)) },
+        supportingContent = subtitle?.let { { Text(it) } },
+        leadingContent = {
+            Icon(
+                if (checked) Icons.Default.OfflinePin else Icons.Outlined.OfflinePin, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        trailingContent = { Switch(checked = checked, onCheckedChange = { onToggle() }, enabled = enabled) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
 }
 
 @Composable

@@ -1,0 +1,240 @@
+package io.github.svenbuild.fylvo.android.data.offline
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import io.github.svenbuild.fylvo.android.data.FileRepository
+import io.github.svenbuild.fylvo.android.util.CrUri
+import java.io.File
+import java.io.IOException
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * Fylvo: one sync run over all offline roots of the signed-in account (server to phone only in
+ * this version). Every step can be stopped at any point: copies are fetched into offline-tmp and
+ * renamed into place, the index records only finished copies, and the next run goes on from there.
+ * The caller holds [OfflineManager.engineLock].
+ */
+class OfflineSyncEngine(private val repo: FileRepository, private val manager: OfflineManager) {
+
+    private val storageFull = AtomicBoolean(false)
+
+    private class RootGone : Exception()
+
+    suspend fun run() = withContext(Dispatchers.IO) {
+        val store = manager.store() ?: return@withContext
+        manager.migrateLegacy(store)
+        // Leftovers of a stopped run; only the engine uses this folder.
+        store.tmpDir.deleteRecursively()
+        store.tmpDir.mkdirs()
+        val done = HashSet<String>()
+        try {
+            // Roots switched on during the run are taken too.
+            while (!storageFull.get()) {
+                val next = store.indexes().filter { it.root.id !in done && !manager.isRemoved(it.root.id) }
+                if (next.isEmpty()) break
+                for (index in next) {
+                    done += index.root.id
+                    if (storageFull.get()) break
+                    syncRoot(store, index)
+                }
+            }
+            dropCoveredRoots(store)
+        } finally {
+            manager.setSyncing(null)
+        }
+    }
+
+    private suspend fun syncRoot(store: OfflineStore, initial: OfflineIndex) {
+        val root = initial.root
+        val id = root.id
+        manager.setSyncing(id)
+        val writer = IndexWriter(store, initial, canWrite = { !manager.isRemoved(id) }, onSaved = manager::publish)
+        try {
+            syncRoot(store, writer, root)
+        } catch (e: CancellationException) {
+            // Stopped (time limit, constraints, sign-out): keep what is done for the next run.
+            withContext(NonCancellable) { manager.writing(id) { writer.flush() } }
+            throw e
+        }
+    }
+
+    private suspend fun syncRoot(store: OfflineStore, writer: IndexWriter, root: OfflineRoot) {
+        val id = root.id
+        val remote = try {
+            listing(root)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: RootGone) {
+            // Renamed, moved or deleted on the server: the copies stay until it is switched off.
+            finish(writer, id, OfflineState.Gone)
+            return
+        } catch (_: Exception) {
+            finish(writer, id, OfflineState.Error)
+            return
+        }
+
+        val actions = planSync(remote, writer.current.entries) { rel ->
+            store.fileOf(id, rel).takeIf { it.isFile }?.let { LocalStat(it.length(), it.lastModified()) }
+        }
+        var failed = false
+
+        actions.filterIsInstance<SyncAction.Move>().forEach { move ->
+            manager.writing(id) {
+                val old = writer.entry(move.from) ?: return@writing
+                val src = store.fileOf(id, move.from)
+                val dst = store.fileOf(id, move.file.path)
+                dst.parentFile?.mkdirs()
+                if (src.renameTo(dst)) {
+                    writer.remove(move.from)
+                    writer.put(old.copy(id = move.file.id, path = move.file.path))
+                    pruneEmptyDirs(store.dirOf(id), src.parentFile)
+                }
+            }
+        }
+
+        for (delete in actions.filterIsInstance<SyncAction.Delete>()) {
+            if (manager.isRemoved(id)) return
+            val gone = try {
+                repo.lookup(CrUri.join(root.uri, delete.confirm)) == null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                failed = true
+                false
+            }
+            // Still there or no clear answer: keep the copies.
+            if (!gone) continue
+            manager.writing(id) {
+                delete.paths.forEach { path ->
+                    val file = store.fileOf(id, path)
+                    file.delete()
+                    writer.remove(path)
+                    pruneEmptyDirs(store.dirOf(id), file.parentFile)
+                }
+            }
+        }
+
+        val failures = AtomicInteger(0)
+        val gate = Semaphore(PARALLEL_DOWNLOADS)
+        coroutineScope {
+            actions.filterIsInstance<SyncAction.Download>().map { download ->
+                async {
+                    gate.withPermit {
+                        if (storageFull.get() || manager.isRemoved(id)) return@withPermit
+                        if (!download(store, writer, id, download.file)) failures.incrementAndGet()
+                    }
+                }
+            }.awaitAll()
+        }
+        if (failures.get() > 0) failed = true
+
+        manager.writing(id) {
+            if (remote.complete) writer.setFolders(remote.folders.sorted())
+            else writer.setFolders((writer.current.folders + remote.folders).distinct().sorted())
+        }
+        val state = when {
+            storageFull.get() -> OfflineState.StorageFull
+            failed || !remote.complete -> OfflineState.Error
+            else -> OfflineState.Synced
+        }
+        finish(writer, id, state)
+    }
+
+    /** The server's view of [root]; throws [RootGone] when the server clearly has nothing there. */
+    private suspend fun listing(root: OfflineRoot): RemoteListing {
+        val obj = repo.lookup(root.uri) ?: throw RootGone()
+        if (obj.isFolder != root.folder) throw RootGone()
+        if (!root.folder) {
+            val name = CrUri.fileName(root.uri)
+            val rel = relativePath("x", "x/$name") ?: throw IOException("unusable file name")
+            return RemoteListing(listOf(RemoteFile(obj.id, rel, obj.primaryEntity, obj.size, root.uri)), emptyList(), complete = true)
+        }
+        val tree = repo.listTree(root.uri)
+        val rootCanonical = CrUri.canonical(root.uri)
+        val files = tree.files.filter { !it.isUploading }.mapNotNull { f ->
+            relativePath(rootCanonical, CrUri.canonical(f.path))?.let { RemoteFile(f.id, it, f.primaryEntity, f.size, f.path) }
+        }
+        val folders = tree.folders.mapNotNull { relativePath(rootCanonical, CrUri.canonical(it.path)) }
+        return RemoteListing(files, folders, tree.complete)
+    }
+
+    /** Fetches [file] into offline-tmp and renames it into place; false on any trouble. */
+    private suspend fun download(store: OfflineStore, writer: IndexWriter, id: String, file: RemoteFile): Boolean {
+        if (!hasRoomFor(file.size, manager.freeBytes())) {
+            storageFull.set(true)
+            return false
+        }
+        val tmp = File(store.tmpDir, "$id-${UUID.randomUUID()}")
+        return try {
+            // The exact version of the listing, not whatever is current by now.
+            val url = repo.downloadUrl(file.uri, entity = file.entity)
+            repo.downloadToFile(url, tmp)
+            if (tmp.length() != file.size) throw IOException("size differs from the listing")
+            manager.writing(id) {
+                val dest = store.fileOf(id, file.path)
+                dest.parentFile?.mkdirs()
+                if (!tmp.renameTo(dest)) throw IOException("could not move the copy into place")
+                writer.put(
+                    OfflineEntry(
+                        id = file.id, path = file.path, entity = file.entity, size = file.size,
+                        localSize = dest.length(), localMtime = dest.lastModified(), state = EntryState.Synced,
+                    )
+                )
+            }
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Network trouble, a non-server answer, a full disk: try again next run.
+            false
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    private suspend fun finish(writer: IndexWriter, id: String, state: OfflineState) {
+        manager.writing(id) {
+            val legacy = writer.current.root.legacyFile
+            writer.setRoot {
+                it.copy(state = state, lastSyncAt = if (state == OfflineState.Synced) System.currentTimeMillis() else it.lastSyncAt)
+            }
+            // The copy of an older app version goes once the new one exists.
+            if (legacy != null && state == OfflineState.Synced) {
+                manager.deleteLegacyCopy(legacy)
+                writer.setRoot { it.copy(legacyFile = null) }
+            }
+            writer.flush()
+        }
+    }
+
+    /** A root inside an offline folder that is up to date uses that folder's copies: it goes. */
+    private suspend fun dropCoveredRoots(store: OfflineStore) {
+        val roots = store.indexes().map { it.root }.filter { !manager.isRemoved(it.id) }
+        val synced = roots.filter { it.folder && it.state == OfflineState.Synced }
+        roots.filter { inner ->
+            synced.any { outer -> outer.id != inner.id && relativePath(CrUri.canonical(outer.uri), CrUri.canonical(inner.uri)) != null }
+        }.forEach { manager.removeRoot(it.id) }
+    }
+
+    /** Removes empty folders from [dir] up to (not including) [rootDir]. */
+    private fun pruneEmptyDirs(rootDir: File, dir: File?) {
+        var current = dir
+        while (current != null && current != rootDir && current.path.startsWith(rootDir.path)) {
+            if (current.list()?.isEmpty() != true || !current.delete()) return
+            current = current.parentFile
+        }
+    }
+
+    private companion object {
+        const val PARALLEL_DOWNLOADS = 2
+    }
+}

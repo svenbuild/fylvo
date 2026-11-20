@@ -222,6 +222,8 @@ fun FileGridItem(
     downloadProgress: Float? = null,
     /** Photo-gallery look: edge-to-edge thumbnail, no caption, play badge on videos. */
     gallery: Boolean = false,
+    /** Fylvo: kept on this phone; a small pin before the caption's second line. */
+    offline: Boolean = false,
 ) {
     val shape = RoundedCornerShape(if (gallery) 6.dp else 16.dp)
     val background = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
@@ -273,14 +275,23 @@ fun FileGridItem(
                 overflow = TextOverflow.Ellipsis,
             )
             val subtitle = fileSubtitle(file)
-            if (subtitle.isNotEmpty()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            if (subtitle.isNotEmpty() || offline) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (offline) {
+                        Icon(
+                            Icons.Default.OfflinePin, contentDescription = stringResource(R.string.available_offline),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(end = 4.dp).size(12.dp),
+                        )
+                    }
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

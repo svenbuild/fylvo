@@ -87,7 +87,7 @@ internal fun FileList(
                         selected = file.path in state.selected,
                         downloadProgress = state.downloading[file.path],
                         downloading = file.path in state.downloading,
-                        offline = file.path in state.favoritePaths,
+                        offline = state.isOffline(file),
                         actions = actionsFor(file),
                         subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                     )
@@ -104,7 +104,7 @@ internal fun FileList(
                 selected = file.path in state.selected,
                 downloadProgress = state.downloading[file.path],
                 downloading = file.path in state.downloading,
-                offline = file.path in state.favoritePaths,
+                offline = state.isOffline(file),
                 actions = actionsFor(file),
                 subtitle = if (state.inTrash) {
                     trashSubtitle.format(formatDate(file.updatedAt), file.restoreUri?.let { CrUri.displayName(it) } ?: unknown)
@@ -152,6 +152,7 @@ internal fun FileGrid(
                 downloading = file.path in state.downloading,
                 actions = actionsFor(file),
                 gallery = gallery,
+                offline = state.isOffline(file),
             )
         }
         if (state.loadingMore) {

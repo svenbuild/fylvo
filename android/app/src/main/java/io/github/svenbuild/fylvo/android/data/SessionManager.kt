@@ -40,12 +40,15 @@ class SessionManager(private val context: Context) {
         val accessExpiresAt = longPreferencesKey("access_expires_at")
         val userEmail = stringPreferencesKey("user_email")
         val userNick = stringPreferencesKey("user_nick")
+        /** Fylvo: the account's id on the server; binds the offline data to the account. */
+        val userId = stringPreferencesKey("user_id")
     }
 
     val serverUrl: Flow<String> = context.sessionStore.data.map { it[Keys.serverUrl] ?: "" }
     val accessToken: Flow<String> = context.sessionStore.data.map { it.secret(Keys.accessToken) }
     val userEmail: Flow<String> = context.sessionStore.data.map { it[Keys.userEmail] ?: "" }
     val userNick: Flow<String> = context.sessionStore.data.map { it[Keys.userNick] ?: "" }
+    val userId: Flow<String> = context.sessionStore.data.map { it[Keys.userId] ?: "" }
     val isLoggedIn: Flow<Boolean> = context.sessionStore.data.map {
         it.secret(Keys.refreshToken).isNotEmpty() && !it[Keys.serverUrl].isNullOrEmpty()
     }
@@ -71,6 +74,7 @@ class SessionManager(private val context: Context) {
         accessExpiresAt: Long,
         email: String,
         nick: String,
+        userId: String = "",
     ) {
         val accessSealed = SecretBox.encrypt(accessToken)
         val refreshSealed = SecretBox.encrypt(refreshToken)
@@ -80,6 +84,7 @@ class SessionManager(private val context: Context) {
             it[Keys.accessExpiresAt] = accessExpiresAt
             it[Keys.userEmail] = email
             it[Keys.userNick] = nick
+            it[Keys.userId] = userId
         }
         notifyDocumentsRoots()
     }

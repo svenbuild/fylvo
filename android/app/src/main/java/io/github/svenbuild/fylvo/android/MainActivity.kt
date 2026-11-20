@@ -84,7 +84,7 @@ private class AppViewModelFactory(private val app: FylvoApp) : ViewModelProvider
         modelClass.isAssignableFrom(FilesViewModel::class.java) ->
             FilesViewModel(
                 app.fileRepository,
-                app.favoritesStore,
+                app.offlineManager,
                 app.viewSettings,
                 androidx.work.WorkManager.getInstance(app),
                 onSessionExpired = { app.endSession(expired = true) },

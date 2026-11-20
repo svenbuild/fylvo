@@ -109,7 +109,7 @@ fun HomeScreen(
                     thumbUrl = rememberThumbUrl(viewModel, file),
                     selecting = false,
                     selected = false,
-                    offline = file.path in state.favoritePaths,
+                    offline = state.isOffline(file),
                     actions = FileActions(onOpen = { onOpenFile(file) }, onLongPress = { onFileMore(file) }, onMore = { onFileMore(file) }),
                     subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                 )

@@ -89,6 +89,8 @@ data class FileObject(
     val capability: String? = null,
     /** True when the signed-in user owns the file. */
     val owned: Boolean? = null,
+    /** Fylvo: id of the file's current version (entity); changes with every new version. */
+    @SerialName("primary_entity") val primaryEntity: String = "",
 ) {
     val isFolder: Boolean get() = type == 1
 
@@ -134,6 +136,8 @@ data class ListFileResponse(
     val pagination: Pagination = Pagination(),
     @SerialName("storage_policy") val storagePolicy: StoragePolicy? = null,
     val parent: FileObject? = null,
+    /** Fylvo: a subtree search stopped early (too many folders); the result is incomplete. */
+    @SerialName("recursion_limit_reached") val recursionLimitReached: Boolean = false,
 )
 
 @Serializable
@@ -149,6 +153,8 @@ data class FileUrlRequest(
     val download: Boolean = false,
     /** Server-side zip of a folder; the returned URL points at the archive. */
     val archive: Boolean = false,
+    /** Fylvo: this exact version (entity id) of a single file; empty = the current one. */
+    val entity: String = "",
 )
 
 @Serializable
