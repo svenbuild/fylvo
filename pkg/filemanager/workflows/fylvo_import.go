@@ -8,13 +8,21 @@ import (
 
 // Fylvo: preview images of imported files are stored next to the originals
 // (setting thumb_entity_suffix "{blob_path}/{blob_name}._thumb"). A second or resumed import of
-// the same folder must not take them for files of the user.
-var importSkippedSuffixes = []string{"._thumb", "._thumb_sidecar"}
+// the same folder must not take them for files of the user. Only a file whose original is right
+// next to it counts as a preview image; any other name is imported as it is.
+var importSkippedSuffixes = []string{"._thumb_sidecar", "._thumb"}
 
 func withoutThumbnails(objects []fs.PhysicalObject) []fs.PhysicalObject {
+	files := make(map[string]bool, len(objects))
+	for _, o := range objects {
+		if !o.IsDir {
+			files[o.RelativePath] = true
+		}
+	}
+
 	kept := objects[:0]
 	for _, o := range objects {
-		if !o.IsDir && hasThumbnailSuffix(o.Name) {
+		if !o.IsDir && files[thumbnailOriginal(o.RelativePath)] {
 			continue
 		}
 		kept = append(kept, o)
@@ -22,11 +30,12 @@ func withoutThumbnails(objects []fs.PhysicalObject) []fs.PhysicalObject {
 	return kept
 }
 
-func hasThumbnailSuffix(name string) bool {
+// thumbnailOriginal returns the path of the file a preview image belongs to, "" for other names.
+func thumbnailOriginal(path string) string {
 	for _, suffix := range importSkippedSuffixes {
-		if strings.HasSuffix(name, suffix) {
-			return true
+		if strings.HasSuffix(path, suffix) {
+			return strings.TrimSuffix(path, suffix)
 		}
 	}
-	return false
+	return ""
 }

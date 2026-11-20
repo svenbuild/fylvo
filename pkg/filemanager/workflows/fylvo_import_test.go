@@ -9,16 +9,17 @@ import (
 
 func TestImportSkipsOwnThumbnails(t *testing.T) {
 	objects := []fs.PhysicalObject{
-		{Name: "photo.jpg"},
-		{Name: "photo.jpg._thumb"},
-		{Name: "photo.jpg._thumb_sidecar"},
-		{Name: "folder._thumb", IsDir: true},
-		{Name: "_thumb.txt"},
+		{RelativePath: "a/photo.jpg"},
+		{RelativePath: "a/photo.jpg._thumb"},
+		{RelativePath: "a/photo.jpg._thumb_sidecar"},
+		{RelativePath: "a/lonely.txt._thumb"}, // no original next to it: a real file
+		{RelativePath: "b/photo.jpg._thumb"},  // original is in another folder
+		{RelativePath: "folder._thumb", IsDir: true},
 	}
 
-	var names []string
+	var paths []string
 	for _, o := range withoutThumbnails(objects) {
-		names = append(names, o.Name)
+		paths = append(paths, o.RelativePath)
 	}
-	require.Equal(t, []string{"photo.jpg", "folder._thumb", "_thumb.txt"}, names)
+	require.Equal(t, []string{"a/photo.jpg", "a/lonely.txt._thumb", "b/photo.jpg._thumb", "folder._thumb"}, paths)
 }

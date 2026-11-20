@@ -38,3 +38,12 @@ func TestListGivesDatesOnDisk(t *testing.T) {
 	require.Equal(t, int64(3), objects[1].Size)
 	require.True(t, objects[1].LastModify.Equal(date))
 }
+
+func TestListOfAFileFails(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "a.txt")
+	require.NoError(t, os.WriteFile(file, []byte("abc"), 0o644))
+
+	d := &Driver{l: logging.NewConsoleLogger(logging.LevelError)}
+	_, err := d.List(context.Background(), file, func(int) {}, true)
+	require.Error(t, err)
+}
