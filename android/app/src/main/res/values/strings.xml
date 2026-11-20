@@ -220,6 +220,7 @@
     <string name="offline_switched_on">%s will be kept on this phone</string>
     <string name="offline_switched_off">%s is no longer kept on this phone</string>
     <string name="offline_not_here_yet">Not on this phone yet</string>
+    <string name="offline_copy_may_be_outdated">Showing the copy on this phone, it may be outdated</string>
     <string name="offline_banner">No connection: showing the copies on this phone</string>
     <string name="offline_prompt_title">Keep \"%s\" offline?</string>
     <string name="offline_counting">Counting files…</string>

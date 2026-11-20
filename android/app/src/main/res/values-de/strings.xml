@@ -219,6 +219,7 @@
     <string name="offline_switched_on">%s wird auf diesem Handy behalten</string>
     <string name="offline_switched_off">%s wird nicht mehr auf diesem Handy behalten</string>
     <string name="offline_not_here_yet">Noch nicht auf diesem Handy</string>
+    <string name="offline_copy_may_be_outdated">Kopie auf diesem Handy wird gezeigt, sie ist vielleicht veraltet</string>
     <string name="offline_banner">Keine Verbindung: Kopien auf diesem Handy</string>
     <string name="offline_prompt_title">„%s“ offline verfügbar machen?</string>
     <string name="offline_counting">Dateien werden gezählt…</string>

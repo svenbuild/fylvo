@@ -107,9 +107,46 @@ object FileIcons {
         return table.firstOrNull { entry -> entry.exts.any { it.equals(ext, ignoreCase = true) } }
     }
 
-    /** ARGB of the entry's colour for the light or dark look (dark falls back to light), or null. */
-    fun argb(entry: FileTypeIcon, dark: Boolean): Int? =
-        parseHexColor(entry.colorDark.takeIf { dark && it.isNotBlank() } ?: entry.color)
+    /**
+     * ARGB of the entry's colour for the light or dark look, or null. Without a dark colour the
+     * dark look takes the light one, lightened when it would hardly show on the dark background.
+     */
+    fun argb(entry: FileTypeIcon, dark: Boolean): Int? {
+        if (dark && entry.colorDark.isNotBlank()) return parseHexColor(entry.colorDark)
+        val color = parseHexColor(entry.color) ?: return null
+        return if (dark) lightenForDark(color) else color
+    }
+
+    /** Lowest relative luminance of an icon on the dark background (about 3:1 contrast). */
+    const val MIN_DARK_LUMINANCE = 0.15
+
+    /** Mixes [argb] with white in small steps until it reaches [MIN_DARK_LUMINANCE]. */
+    fun lightenForDark(argb: Int): Int {
+        var color = argb
+        var step = 0
+        while (luminance(color) < MIN_DARK_LUMINANCE && step < 10) {
+            step++
+            color = mixWithWhite(argb, step / 10.0)
+        }
+        return color
+    }
+
+    private fun mixWithWhite(argb: Int, amount: Double): Int {
+        fun channel(shift: Int): Int {
+            val c = (argb shr shift) and 0xFF
+            return (c + (255 - c) * amount).toInt().coerceIn(0, 255) shl shift
+        }
+        return (argb and 0xFF000000.toInt()) or channel(16) or channel(8) or channel(0)
+    }
+
+    /** WCAG relative luminance of an ARGB colour. */
+    fun luminance(argb: Int): Double {
+        fun linear(shift: Int): Double {
+            val c = ((argb shr shift) and 0xFF) / 255.0
+            return if (c <= 0.03928) c / 12.92 else Math.pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(16) + 0.7152 * linear(8) + 0.0722 * linear(0)
+    }
 
     /** "#rgb", "#rrggbb" or "#aarrggbb" as ARGB; null when it is not one of those. */
     fun parseHexColor(value: String): Int? {

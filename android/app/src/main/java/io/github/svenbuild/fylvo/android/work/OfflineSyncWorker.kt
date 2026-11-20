@@ -26,14 +26,17 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
         val app = applicationContext as FylvoApp
         if (app.sessionManager.refreshTokenNow().isEmpty()) return Result.success()
         val manager = app.offlineManager
-        // Another run is busy: it also takes roots switched on meanwhile.
-        if (!manager.engineLock.tryLock()) return Result.success()
-        try {
-            OfflineSyncEngine(app.fileRepository, manager).run()
-        } finally {
-            manager.engineLock.unlock()
+        while (true) {
+            // Another run is busy: it also takes roots switched on (and "Sync now" asked) meanwhile.
+            if (!manager.engineLock.tryLock()) return Result.success()
+            try {
+                OfflineSyncEngine(app.fileRepository, manager).run()
+            } finally {
+                manager.engineLock.unlock()
+            }
+            // A "Sync now" that came at the very end (its enqueue was dropped while this job ran).
+            if (!manager.hasSyncRequest()) return Result.success()
         }
-        return Result.success()
     }
 
     companion object {

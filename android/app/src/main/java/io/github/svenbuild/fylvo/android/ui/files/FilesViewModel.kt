@@ -465,7 +465,7 @@ class FilesViewModel(
 
     private fun fetchFromServer(context: Context, file: FileObject, onReady: (File) -> Unit) {
         val dest = cacheFileFor(context, file)
-        if (dest.exists() && dest.length() == file.size) {
+        if (cachedCopy(dest, file)) {
             onReady(dest)
             return
         }
@@ -508,8 +508,13 @@ class FilesViewModel(
         _state.value = _state.value.copy(downloading = _state.value.downloading - path)
     }
 
+    /** Fylvo: keyed by the file's version too, so an older copy of the same size is never reused. */
     private fun cacheFileFor(context: Context, file: FileObject): File =
-        File(File(context.cacheDir, "downloads"), file.id).resolve(file.name)
+        File(File(context.cacheDir, "downloads"), file.id).resolve(file.primaryEntity.ifEmpty { "unknown" }).resolve(file.name)
+
+    /** A cached download of exactly this version (none when the version is unknown). */
+    private fun cachedCopy(dest: File, file: FileObject): Boolean =
+        file.primaryEntity.isNotEmpty() && dest.exists() && dest.length() == file.size
 
     /**
      * Downloads [file] somewhere the user can actually find it: the MediaStore
@@ -633,15 +638,22 @@ class FilesViewModel(
         else -> null
     }
 
-    /** Fylvo: any copy on this phone, for when the server cannot be reached. */
-    private suspend fun anyOfflineCopy(file: FileObject): File? =
-        if (_state.value.isOffline(file)) offline.localCopy(file.path) else null
+    /**
+     * Fylvo: any copy on this phone, for when the server answered with an error or cannot be
+     * reached; says that it may be outdated.
+     */
+    private suspend fun anyOfflineCopy(file: FileObject): File? {
+        if (!_state.value.isOffline(file)) return null
+        val local = offline.localCopy(file.path) ?: return null
+        _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.offline_copy_may_be_outdated)))
+        return local
+    }
 
     /** Local copy for renderers that need a file (PDF, text); downloads if missing. */
     suspend fun localCopy(context: Context, file: FileObject, onProgress: (Float?) -> Unit): File {
         currentOfflineCopy(file)?.let { return it }
         val dest = cacheFileFor(context, file)
-        if (dest.exists() && dest.length() == file.size) return dest
+        if (cachedCopy(dest, file)) return dest
         return try {
             val url = repo.downloadUrl(file.path)
             repo.downloadToFile(url, dest) { done, total -> onProgress(if (total > 0) done.toFloat() / total else null) }

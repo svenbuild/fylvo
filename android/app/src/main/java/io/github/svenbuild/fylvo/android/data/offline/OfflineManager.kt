@@ -210,6 +210,32 @@ class OfflineManager(
         if (_roots.value.isEmpty()) OfflineSyncWorker.cancel(context)
     }
 
+    /**
+     * Removes root [id] when, checked again under the lock, an up-to-date offline folder that is
+     * still switched on holds copies of all its files. Called by the engine.
+     */
+    suspend fun removeIfCovered(store: OfflineStore, id: String) {
+        val dropped = writeLock.withLock {
+            if (id in removed) return@withLock false
+            val inner = store.load(id) ?: return@withLock false
+            val covered = store.indexes().any { outer ->
+                outer.root.id !in removed && outer.root.folder && outer.root.state == OfflineState.Synced &&
+                    isCoveredBy(inner, outer) { rootId, path, size ->
+                        store.fileOf(rootId, path).let { it.isFile && it.length() == size }
+                    }
+            }
+            if (!covered) return@withLock false
+            removed += id
+            inner.root.legacyFile?.let(::deleteLegacyCopy)
+            store.delete(id)
+            true
+        }
+        if (dropped) reload(store)
+    }
+
+    /** True while a "Sync now" waits for a run to take it. */
+    fun hasSyncRequest(): Boolean = syncRequested.get()
+
     suspend fun syncNow() {
         syncRequested.set(true)
         OfflineSyncWorker.syncNow(context, mobileData.first())
@@ -240,7 +266,8 @@ class OfflineManager(
             } ?: continue
             val entry = index.entries.firstOrNull { it.path == rel }
             if (entity != null && (entry == null || entry.entity != entity)) continue
-            if (entry != null && entry.localSize >= 0) {
+            // A pending entry (copy being replaced) is no copy.
+            if (entry != null && entry.localSize >= 0 && entry.state == EntryState.Synced) {
                 val file = store.fileOf(root.id, rel)
                 if (file.isFile && file.length() == entry.localSize) return@withContext file
             }

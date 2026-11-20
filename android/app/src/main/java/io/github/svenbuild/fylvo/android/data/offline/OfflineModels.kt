@@ -165,10 +165,22 @@ fun confirmsGone(found: FileObject?, expectFolder: Boolean, expectedId: String?)
         (!expectFolder && !expectedId.isNullOrEmpty() && found.id != expectedId)
 
 /**
+ * The index entry written just before a copy at [file]'s path is replaced: the new version, but
+ * no copy yet. If the run stops before the next index write, the copy is fetched again.
+ */
+fun pendingEntry(file: RemoteFile): OfflineEntry =
+    OfflineEntry(id = file.id, path = file.path, entity = file.entity, size = file.size, localSize = -1, state = EntryState.Pending)
+
+/**
  * A root inside the offline folder [outer] can go only when [outer]'s index holds a local copy of
  * each of its files (same id and version where known). A root no longer on the server stays.
+ * [present] checks that a copy (root id, path, size) is really on the phone.
  */
-fun isCoveredBy(inner: OfflineIndex, outer: OfflineIndex): Boolean {
+fun isCoveredBy(
+    inner: OfflineIndex,
+    outer: OfflineIndex,
+    present: (String, String, Long) -> Boolean = { _, _, _ -> true },
+): Boolean {
     if (!outer.root.folder || inner.root.id == outer.root.id || inner.root.state == OfflineState.Gone) return false
     val rel = relativePath(CrUri.canonical(outer.root.uri), CrUri.canonical(inner.root.uri)) ?: return false
     if (!inner.root.folder && inner.entries.isEmpty()) return false
@@ -176,9 +188,10 @@ fun isCoveredBy(inner: OfflineIndex, outer: OfflineIndex): Boolean {
     return inner.entries.all { entry ->
         val path = if (inner.root.folder) "$rel/${entry.path}" else rel
         val copy = outerByPath[path] ?: return@all false
-        copy.localSize >= 0 &&
+        copy.localSize >= 0 && copy.state == EntryState.Synced &&
             (entry.id.isEmpty() || entry.id == copy.id) &&
-            (entry.entity.isEmpty() || entry.entity == copy.entity)
+            (entry.entity.isEmpty() || entry.entity == copy.entity) &&
+            present(outer.root.id, copy.path, copy.localSize)
     }
 }
 

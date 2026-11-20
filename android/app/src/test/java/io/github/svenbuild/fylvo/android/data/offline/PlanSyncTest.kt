@@ -185,4 +185,22 @@ class PlanSyncTest {
         space.release(60)
         assertTrue(space.tryReserve(60, free))
     }
+
+    @Test fun replacementStoppedBeforeTheIndexWriteIsFetchedAgain() {
+        // Written to disk before the rename: new version, no copy yet.
+        val file = remote("1", "a.txt", "e2", size = 10)
+        val index = listOf(pendingEntry(file))
+        // The new bytes may already be in place with the same size; still not trusted.
+        val actions = planSync(RemoteListing(listOf(file), emptyList(), true), index) { LocalStat(10, 1) }
+        assertEquals(listOf(SyncAction.Download(file)), actions)
+    }
+
+    @Test fun nestedRootStaysWhenTheFolderCopyIsMissingOrPending() {
+        val single = index("cloudreve://my/A/c.pdf", false, listOf(entry("7", "c.pdf", "e1")))
+        val outer = index("cloudreve://my/A", true, listOf(entry("7", "c.pdf", "e1")))
+        assertTrue(isCoveredBy(single, outer) { _, _, _ -> true })
+        assertTrue(!isCoveredBy(single, outer) { _, _, _ -> false })
+        val pending = index("cloudreve://my/A", true, listOf(entry("7", "c.pdf", "e1").copy(state = EntryState.Pending)))
+        assertTrue(!isCoveredBy(single, pending))
+    }
 }

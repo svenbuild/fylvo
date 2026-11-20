@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FileIconsTest {
@@ -42,5 +43,16 @@ class FileIconsTest {
         assertEquals(0x80112233.toInt(), FileIcons.parseHexColor("#80112233"))
         assertNull(FileIcons.parseHexColor("red"))
         assertNull(FileIcons.parseHexColor(""))
+    }
+
+    @Test fun veryDarkColoursAreLightenedInTheDarkLookOnly() {
+        val exe = FileIcons.find("setup.exe", FileIcons.DEFAULTS)!!
+        assertEquals(0xFF1A237E.toInt(), FileIcons.argb(exe, dark = false))
+        val dark = FileIcons.argb(exe, dark = true)!!
+        assertTrue(FileIcons.luminance(dark) >= FileIcons.MIN_DARK_LUMINANCE)
+        assertTrue(FileIcons.luminance(dark) < 0.6)
+        // Own dark colours and light enough colours stay as they are.
+        assertEquals(0xFFFFFFFF.toInt(), FileIcons.argb(FileIcons.find("main.rs", FileIcons.DEFAULTS)!!, dark = true))
+        assertEquals(0xFF4CAF50.toInt(), FileIcons.lightenForDark(0xFF4CAF50.toInt()))
     }
 }
