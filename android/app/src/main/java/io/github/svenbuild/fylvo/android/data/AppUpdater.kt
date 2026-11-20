@@ -127,6 +127,18 @@ class AppUpdater(private val context: Context, private val api: ApiClient) {
         }
     }
 
+    /**
+     * Back in the app after the "install unknown apps" setting: if the user allowed it there,
+     * go on with the install they asked for instead of leaving the hint on screen.
+     */
+    fun onResume() {
+        val s = _state.value as? State.Available ?: return
+        if (s.error == R.string.update_allow_install && context.packageManager.canRequestPackageInstalls()) {
+            _state.value = s.copy(error = null)
+            downloadAndInstall()
+        }
+    }
+
     /** Sign-out: forget the state so the next account starts fresh (files go with cacheDir). */
     fun reset() {
         job?.cancel()

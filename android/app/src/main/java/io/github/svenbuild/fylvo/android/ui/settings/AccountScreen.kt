@@ -54,6 +54,7 @@ import io.github.svenbuild.fylvo.android.FylvoApp
 import io.github.svenbuild.fylvo.android.BuildConfig
 import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.data.AppUpdater
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import io.github.svenbuild.fylvo.android.api.CapacityResponse
 import io.github.svenbuild.fylvo.android.ui.files.formatSize
 import io.github.svenbuild.fylvo.android.util.AppLanguage
@@ -322,6 +323,10 @@ fun AccountScreen(
 @Composable
 private fun UpdateRows(updater: AppUpdater) {
     val state by updater.state.collectAsState()
+    LifecycleResumeEffect(updater) {
+        updater.onResume()
+        onPauseOrDispose { }
+    }
     val status = when (state) {
         AppUpdater.State.Checking -> stringResource(R.string.update_checking)
         AppUpdater.State.UpToDate -> stringResource(R.string.update_up_to_date)
