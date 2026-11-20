@@ -486,19 +486,28 @@ impl Mount {
             .iter()
             .filter(|task| is_under_any_case(Path::new(&task.local_path), &[path.to_path_buf()]))
         {
+            // A task of a kind this code cannot queue again is left alone: wait for it.
+            let Some(kind) = TaskKind::from_str(&task.task_type) else {
+                self.queue_tasks_again(&stopped, path, path).await;
+                return Err(RetryLater("a task of unknown kind under this name").into());
+            };
             let cancelled = task.status == TaskStatus::Pending
-                && self.inventory.change_task_status_if(
+                && match self.inventory.change_task_status_if(
                     &task.id,
                     TaskStatus::Pending,
                     TaskStatus::Cancelled,
-                )?;
+                ) {
+                    Ok(cancelled) => cancelled,
+                    Err(err) => {
+                        self.queue_tasks_again(&stopped, path, path).await;
+                        return Err(err);
+                    }
+                };
             if !cancelled {
                 self.queue_tasks_again(&stopped, path, path).await;
                 return Err(RetryLater("a transfer under this name is running").into());
             }
-            if let Some(kind) = TaskKind::from_str(&task.task_type) {
-                stopped.push((kind, PathBuf::from(&task.local_path)));
-            }
+            stopped.push((kind, PathBuf::from(&task.local_path)));
         }
         Ok(stopped)
     }
