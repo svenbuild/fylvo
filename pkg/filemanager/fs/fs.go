@@ -259,8 +259,8 @@ type (
 		MimeType        string                 `json:"mime_type,omitempty"`     // Expected mimetype
 		UploadPolicy    string                 `json:"upload_policy,omitempty"` // Upyun upload policy
 		EncryptMetadata *types.EncryptMetadata `json:"encrypt_metadata,omitempty"`
-		// Fylvo: the hashed id of the entity this upload creates. It becomes the current
-		// version of the file when the upload is completed.
+		// Fylvo: the hashed id of the entity this upload fills. For a file or a new version
+		// it is the current version of the file once the upload is completed.
 		EntityID string `json:"entity_id,omitempty"`
 	}
 

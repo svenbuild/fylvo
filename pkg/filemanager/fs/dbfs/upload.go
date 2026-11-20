@@ -13,6 +13,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/lock"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -99,6 +100,11 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 		fileExisted = true
 	}
 
+	// Fylvo: a conditional update that must replace a file fails if there is none.
+	if err := checkPreviousRequired(req.Props, fileExisted); err != nil {
+		return nil, err
+	}
+
 	// Fylvo: who may only add files never replaces one. If the name is taken, the upload
 	// goes next to it under a free name. (The answer names the address used, so a visitor
 	// can tell from it that the name was taken. That is accepted.)
@@ -117,11 +123,6 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 		req.Props.EntityType = nil
 		req.Props.PreviousVersion = ""
 		return f.PrepareUpload(ctx, req, opts...)
-	}
-
-	// Fylvo: a conditional update that must replace a file fails if there is none.
-	if err := checkPreviousRequired(req.Props, fileExisted); err != nil {
-		return nil, err
 	}
 
 	// If file already exist, and update operation is suspended or existing file is not a file
@@ -345,8 +346,8 @@ func (f *DBFS) CompleteUpload(ctx context.Context, session *fs.UploadSession) (f
 	}
 
 	// Confirm locks on placeholder file
-	// Fylvo: the confirmed lock is held until the new version is committed, so it can
-	// neither run out nor be released while this upload becomes the current version.
+	// Fylvo: the confirmed lock is held until the new version is committed, so nobody can
+	// release it or take it over while this upload becomes the current version.
 	releaseHold := func() {}
 	if session.LockToken != "" {
 		release, ls, err := f.ConfirmLock(ctx, file, file.Uri(false), session.LockToken)
@@ -431,7 +432,8 @@ func (f *DBFS) CompleteUpload(ctx context.Context, session *fs.UploadSession) (f
 	// Unlock file
 	releaseHold()
 	if session.LockToken != "" {
-		if err := f.ls.Unlock(time.Now(), session.LockToken); err != nil {
+		// Fylvo: a lock that ran out during the commit is gone already; the upload is done.
+		if err := f.ls.Unlock(time.Now(), session.LockToken); err != nil && !errors.Is(err, lock.ErrNoSuchLock) {
 			return nil, serializer.NewError(serializer.CodeLockConflict, "Failed to unlock file", err)
 		}
 	}

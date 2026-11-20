@@ -203,8 +203,8 @@ func TestConditionalUploadReplacesItsVersion(t *testing.T) {
 	requireCode(t, err, serializer.CodeStaleVersion)
 
 	// A reader may not, whatever the version.
-	_, err = e.conditionalUpload(e.as(e.reader), e.shared("/doc.txt"), 50, e.version("cloudreve://my/Shared/doc.txt"))
-	require.Error(t, err)
+	_, err = e.conditionalUpload(e.as(e.reader), e.shared("/doc.txt"), 50, e.version("cloudreve://my/Shared/doc.txt"), true)
+	requireCode(t, err, serializer.CodeNoPermissionErr)
 }
 
 func (e *sharedFolderEnv) tryUploadVersion(f fs.FileSystem, target *fs.URI, size int64, entityType *types.EntityType) error {
