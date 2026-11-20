@@ -9,6 +9,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
@@ -66,8 +67,12 @@ func (service *BatchDeleteShareService) Delete(c *gin.Context) error {
 		ids = append(ids, id)
 	}
 
-	if err := shareClient.DeleteBatchByUserID(c, uid, ids); err != nil {
+	deleted, err := shareClient.DeleteBatchByUserID(c, uid, ids)
+	if err != nil {
 		return serializer.NewError(serializer.CodeDBError, "Failed to delete shares", err)
+	}
+	for _, share := range deleted {
+		activity.RecordShare(c, activity.ShareDelete, uid, share, nil)
 	}
 
 	return nil
@@ -153,6 +158,7 @@ func DeleteShare(c *gin.Context, shareId int) error {
 	if err := shareClient.Delete(c, share.ID); err != nil {
 		return serializer.NewError(serializer.CodeDBError, "Failed to delete share", err)
 	}
+	activity.RecordShare(c, activity.ShareDelete, user.ID, share, nil)
 
 	return nil
 }

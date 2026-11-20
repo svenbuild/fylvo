@@ -13,6 +13,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/task"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/crontab"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
@@ -348,6 +349,8 @@ func CronCollectTrashBin(ctx context.Context) {
 
 func collectTrashBin(ctx context.Context, files []fs.File, dep dependency.Dep, l logging.Logger) {
 	l.Info("Start to collect %d files in trash bin", len(files))
+	// Fylvo: the files are deleted by the system, not by their owner.
+	ctx = activity.System(ctx)
 	uc := dep.UserClient()
 
 	// Group files by Owners

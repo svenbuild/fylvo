@@ -15,6 +15,7 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/cloudreve/Cloudreve/v4/ent/activity"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/directlink"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
@@ -40,6 +41,8 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// Activity is the client for interacting with the Activity builders.
+	Activity *ActivityClient
 	// DavAccount is the client for interacting with the DavAccount builders.
 	DavAccount *DavAccountClient
 	// DirectLink is the client for interacting with the DirectLink builders.
@@ -83,6 +86,7 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.Activity = NewActivityClient(c.config)
 	c.DavAccount = NewDavAccountClient(c.config)
 	c.DirectLink = NewDirectLinkClient(c.config)
 	c.Entity = NewEntityClient(c.config)
@@ -191,6 +195,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	return &Tx{
 		ctx:           ctx,
 		config:        cfg,
+		Activity:      NewActivityClient(cfg),
 		DavAccount:    NewDavAccountClient(cfg),
 		DirectLink:    NewDirectLinkClient(cfg),
 		Entity:        NewEntityClient(cfg),
@@ -226,6 +231,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	return &Tx{
 		ctx:           ctx,
 		config:        cfg,
+		Activity:      NewActivityClient(cfg),
 		DavAccount:    NewDavAccountClient(cfg),
 		DirectLink:    NewDirectLinkClient(cfg),
 		Entity:        NewEntityClient(cfg),
@@ -248,7 +254,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		DavAccount.
+//		Activity.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -271,8 +277,8 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.DavAccount, c.DirectLink, c.Entity, c.File, c.FsEvent, c.Group, c.Metadata,
-		c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey, c.Setting, c.Share,
+		c.Activity, c.DavAccount, c.DirectLink, c.Entity, c.File, c.FsEvent, c.Group,
+		c.Metadata, c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey, c.Setting, c.Share,
 		c.StoragePolicy, c.Task, c.User,
 	} {
 		n.Use(hooks...)
@@ -283,8 +289,8 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.DavAccount, c.DirectLink, c.Entity, c.File, c.FsEvent, c.Group, c.Metadata,
-		c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey, c.Setting, c.Share,
+		c.Activity, c.DavAccount, c.DirectLink, c.Entity, c.File, c.FsEvent, c.Group,
+		c.Metadata, c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey, c.Setting, c.Share,
 		c.StoragePolicy, c.Task, c.User,
 	} {
 		n.Intercept(interceptors...)
@@ -294,6 +300,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *ActivityMutation:
+		return c.Activity.mutate(ctx, m)
 	case *DavAccountMutation:
 		return c.DavAccount.mutate(ctx, m)
 	case *DirectLinkMutation:
@@ -328,6 +336,139 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.User.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// ActivityClient is a client for the Activity schema.
+type ActivityClient struct {
+	config
+}
+
+// NewActivityClient returns a client for the Activity from the given config.
+func NewActivityClient(c config) *ActivityClient {
+	return &ActivityClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `activity.Hooks(f(g(h())))`.
+func (c *ActivityClient) Use(hooks ...Hook) {
+	c.hooks.Activity = append(c.hooks.Activity, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `activity.Intercept(f(g(h())))`.
+func (c *ActivityClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Activity = append(c.inters.Activity, interceptors...)
+}
+
+// Create returns a builder for creating a Activity entity.
+func (c *ActivityClient) Create() *ActivityCreate {
+	mutation := newActivityMutation(c.config, OpCreate)
+	return &ActivityCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Activity entities.
+func (c *ActivityClient) CreateBulk(builders ...*ActivityCreate) *ActivityCreateBulk {
+	return &ActivityCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ActivityClient) MapCreateBulk(slice any, setFunc func(*ActivityCreate, int)) *ActivityCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ActivityCreateBulk{err: fmt.Errorf("calling to ActivityClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ActivityCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ActivityCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Activity.
+func (c *ActivityClient) Update() *ActivityUpdate {
+	mutation := newActivityMutation(c.config, OpUpdate)
+	return &ActivityUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ActivityClient) UpdateOne(a *Activity) *ActivityUpdateOne {
+	mutation := newActivityMutation(c.config, OpUpdateOne, withActivity(a))
+	return &ActivityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ActivityClient) UpdateOneID(id int) *ActivityUpdateOne {
+	mutation := newActivityMutation(c.config, OpUpdateOne, withActivityID(id))
+	return &ActivityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Activity.
+func (c *ActivityClient) Delete() *ActivityDelete {
+	mutation := newActivityMutation(c.config, OpDelete)
+	return &ActivityDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ActivityClient) DeleteOne(a *Activity) *ActivityDeleteOne {
+	return c.DeleteOneID(a.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ActivityClient) DeleteOneID(id int) *ActivityDeleteOne {
+	builder := c.Delete().Where(activity.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ActivityDeleteOne{builder}
+}
+
+// Query returns a query builder for Activity.
+func (c *ActivityClient) Query() *ActivityQuery {
+	return &ActivityQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeActivity},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Activity entity by its id.
+func (c *ActivityClient) Get(ctx context.Context, id int) (*Activity, error) {
+	return c.Query().Where(activity.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ActivityClient) GetX(ctx context.Context, id int) *Activity {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ActivityClient) Hooks() []Hook {
+	return c.hooks.Activity
+}
+
+// Interceptors returns the client interceptors.
+func (c *ActivityClient) Interceptors() []Interceptor {
+	return c.inters.Activity
+}
+
+func (c *ActivityClient) mutate(ctx context.Context, m *ActivityMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ActivityCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ActivityUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ActivityUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ActivityDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Activity mutation op: %q", m.Op())
 	}
 }
 
@@ -3100,12 +3241,12 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		DavAccount, DirectLink, Entity, File, FsEvent, Group, Metadata, Node,
+		Activity, DavAccount, DirectLink, Entity, File, FsEvent, Group, Metadata, Node,
 		OAuthClient, OAuthGrant, Passkey, Setting, Share, StoragePolicy, Task,
 		User []ent.Hook
 	}
 	inters struct {
-		DavAccount, DirectLink, Entity, File, FsEvent, Group, Metadata, Node,
+		Activity, DavAccount, DirectLink, Entity, File, FsEvent, Group, Metadata, Node,
 		OAuthClient, OAuthGrant, Passkey, Setting, Share, StoragePolicy, Task,
 		User []ent.Interceptor
 	}

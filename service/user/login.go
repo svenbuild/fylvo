@@ -9,6 +9,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/user"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/attempts"
 	"github.com/cloudreve/Cloudreve/v4/pkg/auth"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster/routes"
@@ -69,6 +70,7 @@ func (service *UserResetService) Reset(c *gin.Context) (*User, error) {
 		}
 		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to update password", err)
 	}
+	activity.RecordAccount(c, activity.PasswordChange, u.ID, "reset")
 
 	// Fylvo: the password is already stored, so a failed delete is only logged.
 	if err := kv.Delete(fmt.Sprintf("user_reset_%d", uid)); err != nil {
@@ -179,7 +181,17 @@ func (service *UserLoginService) Login(c *gin.Context) (*ent.User, string, error
 
 	// 一系列校验
 	if limitErr != nil {
+		// Fylvo: the account is looked up only when the entry is wanted, see FailureWanted.
+		if activity.FailureWanted(c, activity.LoginLocked, activity.MethodPassword, service.UserName) {
+			if u, err := userClient.GetByEmail(c, service.UserName); err == nil {
+				activity.RecordFailure(c, activity.LoginLocked, u.ID, activity.MethodPassword)
+			}
+		}
 		return nil, "", limitErr
+	}
+	if !right && expectedUser != nil &&
+		activity.FailureWanted(c, activity.LoginFailed, activity.MethodPassword, service.UserName) {
+		activity.RecordFailure(c, activity.LoginFailed, expectedUser.ID, activity.MethodPassword)
 	}
 	if !right {
 		err = serializer.NewError(serializer.CodeInvalidPassword, "Incorrect password or email address", err)
@@ -298,9 +310,15 @@ func (service *OtpValidationService) Verify2FA(c *gin.Context) (*ent.User, error
 			return totp.Validate(service.OTP, expectedUser.TwoFactorSecret)
 		})
 		if err != nil {
+			if activity.FailureWanted(c, activity.LoginLocked, activity.MethodTwoFA, fmt.Sprint(uid)) {
+				activity.RecordFailure(c, activity.LoginLocked, uid, activity.MethodTwoFA)
+			}
 			return nil, err
 		}
 		if !right {
+			if activity.FailureWanted(c, activity.LoginFailed, activity.MethodTwoFA, fmt.Sprint(uid)) {
+				activity.RecordFailure(c, activity.LoginFailed, uid, activity.MethodTwoFA)
+			}
 			err := serializer.NewError(serializer.Code2FACodeErr, "Incorrect 2FA code", nil)
 			return nil, err
 		}

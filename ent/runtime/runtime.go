@@ -5,6 +5,7 @@ package runtime
 import (
 	"time"
 
+	"github.com/cloudreve/Cloudreve/v4/ent/activity"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/directlink"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
@@ -29,6 +30,12 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	activityFields := schema.Activity{}.Fields()
+	_ = activityFields
+	// activityDescCreatedAt is the schema descriptor for created_at field.
+	activityDescCreatedAt := activityFields[0].Descriptor()
+	// activity.DefaultCreatedAt holds the default value on creation for the created_at field.
+	activity.DefaultCreatedAt = activityDescCreatedAt.Default.(func() time.Time)
 	davaccountMixin := schema.DavAccount{}.Mixin()
 	davaccountMixinHooks0 := davaccountMixin[0].Hooks()
 	davaccount.Hooks[0] = davaccountMixinHooks0[0]

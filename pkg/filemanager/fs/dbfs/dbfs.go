@@ -13,6 +13,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/encrypt"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/eventhub"
@@ -646,6 +647,10 @@ func (f *DBFS) createFile(ctx context.Context, parent *File, name string, fileTy
 	file.SetEntities([]*ent.Entity{entity})
 	newFile := newFile(parent, file)
 	f.emitFileCreated(ctx, newFile)
+	if o.UploadRequest == nil {
+		// Fylvo: an upload is logged when it is complete, see CompleteUpload.
+		activity.Record(ctx, f.activityEntry(activity.FileCreate, newFile, nil))
+	}
 	return newFile, nil
 }
 

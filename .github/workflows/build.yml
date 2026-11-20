@@ -41,7 +41,7 @@ jobs:
         run: scripts/build.sh
 
       - name: Go tests
-        run: go test ./pkg/attempts/ ./pkg/filemanager/... ./pkg/webdav/ ./pkg/setting/ ./pkg/balancer/ ./pkg/util/ ./pkg/searcher/... ./pkg/request/ssrftest/ ./pkg/wopi/ ./inventory/... ./service/... ./routers/...
+        run: go test ./pkg/activity/ ./middleware/ ./pkg/attempts/ ./pkg/filemanager/... ./pkg/webdav/ ./pkg/setting/ ./pkg/balancer/ ./pkg/util/ ./pkg/searcher/... ./pkg/request/ssrftest/ ./pkg/wopi/ ./inventory/... ./service/... ./routers/...
 
       - name: Short commit
         id: commit

@@ -8,6 +8,60 @@ import (
 )
 
 var (
+	// ActivitiesColumns holds the columns for the "activities" table.
+	ActivitiesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "type", Type: field.TypeInt},
+		{Name: "user_id", Type: field.TypeInt, Nullable: true},
+		{Name: "owner_id", Type: field.TypeInt, Nullable: true},
+		{Name: "file_id", Type: field.TypeInt, Nullable: true},
+		{Name: "parent_id", Type: field.TypeInt, Nullable: true},
+		{Name: "from_parent_id", Type: field.TypeInt, Nullable: true},
+		{Name: "share_id", Type: field.TypeInt, Nullable: true},
+		{Name: "ip", Type: field.TypeString, Nullable: true},
+		{Name: "user_agent", Type: field.TypeString, Nullable: true},
+		{Name: "via", Type: field.TypeString, Nullable: true},
+		{Name: "content", Type: field.TypeJSON, Nullable: true},
+	}
+	// ActivitiesTable holds the schema information for the "activities" table.
+	ActivitiesTable = &schema.Table{
+		Name:       "activities",
+		Columns:    ActivitiesColumns,
+		PrimaryKey: []*schema.Column{ActivitiesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "activity_file_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ActivitiesColumns[5], ActivitiesColumns[1]},
+			},
+			{
+				Name:    "activity_parent_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ActivitiesColumns[6], ActivitiesColumns[1]},
+			},
+			{
+				Name:    "activity_from_parent_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ActivitiesColumns[7], ActivitiesColumns[1]},
+			},
+			{
+				Name:    "activity_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ActivitiesColumns[3], ActivitiesColumns[1]},
+			},
+			{
+				Name:    "activity_owner_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ActivitiesColumns[4], ActivitiesColumns[1]},
+			},
+			{
+				Name:    "activity_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{ActivitiesColumns[1]},
+			},
+		},
+	}
 	// DavAccountsColumns holds the columns for the "dav_accounts" table.
 	DavAccountsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt, Increment: true},
@@ -528,6 +582,7 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		ActivitiesTable,
 		DavAccountsTable,
 		DirectLinksTable,
 		EntitiesTable,

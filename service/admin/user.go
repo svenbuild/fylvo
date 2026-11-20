@@ -9,6 +9,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/user"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -190,6 +191,11 @@ func (s *UpsertUserService) Update(c *gin.Context) (*GetUserResponse, error) {
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to update user", err)
 	}
+	if s.Password != "" {
+		// Fylvo: an admin set the password of this account.
+		activity.Record(c, activity.Entry{Type: activity.PasswordChange, UserID: inventory.UserIDFromContext(c),
+			OwnerID: newUser.ID, Content: types.ActivityContent{Method: "admin"}})
+	}
 
 	service := &SingleUserService{ID: newUser.ID}
 	return service.Get(c)
@@ -241,6 +247,13 @@ func (s *BatchUserService) Delete(c *gin.Context) error {
 			continue
 		}
 
+		// Fylvo: who it was, for the activity log.
+		deleted, err := userClient.GetByID(c, id)
+		if err != nil {
+			ae.Add(strconv.Itoa(id), serializer.NewError(serializer.CodeNotFound, "User not found", err))
+			continue
+		}
+
 		fc, tx, ctx, err := inventory.WithTx(c, fileClient)
 		if err != nil {
 			ae.Add(strconv.Itoa(id), serializer.NewError(serializer.CodeDBError, "Failed to start transaction", err))
@@ -269,6 +282,9 @@ func (s *BatchUserService) Delete(c *gin.Context) error {
 			ae.Add(strconv.Itoa(id), serializer.NewError(serializer.CodeDBError, "Failed to commit transaction", err))
 			continue
 		}
+
+		activity.Record(c, activity.Entry{Type: activity.AccountDelete, UserID: current.ID, OwnerID: id,
+			Content: types.ActivityContent{Target: deleted.Email}})
 	}
 
 	return ae.Aggregate()

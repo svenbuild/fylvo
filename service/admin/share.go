@@ -8,6 +8,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster/routes"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -153,8 +154,12 @@ func (s *BatchShareService) Delete(c *gin.Context) error {
 	dep := dependency.FromContext(c)
 	shareClient := dep.ShareClient()
 
-	if err := shareClient.DeleteBatch(c, s.ShareIDs); err != nil {
+	deleted, err := shareClient.DeleteBatch(c, s.ShareIDs)
+	if err != nil {
 		return serializer.NewError(serializer.CodeDBError, "Failed to delete shares", err)
+	}
+	for _, share := range deleted {
+		activity.RecordShare(c, activity.ShareDelete, inventory.UserIDFromContext(c), share, nil)
 	}
 
 	return nil

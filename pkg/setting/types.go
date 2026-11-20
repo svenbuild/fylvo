@@ -113,6 +113,8 @@ var (
 	CronTypeOauthCredRefresh = CronType("oauth_cred_refresh")
 	// Fylvo: removes placeholders of abandoned uploads.
 	CronTypeFylvoStaleUploads = CronType("fylvo_stale_uploads")
+	// Fylvo: removes activity log entries older than the retention.
+	CronTypeFylvoActivityRetention = CronType("fylvo_activity_retention")
 )
 
 type Theme struct {

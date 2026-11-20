@@ -432,6 +432,8 @@ const (
 
 const (
 	HookTypeBeforeDownload = HookType(iota)
+	// HookTypeDownloadLink Fylvo: a link to download (not to view) a file is handed out.
+	HookTypeDownloadLink
 )
 
 func (p *UploadProps) Copy() *UploadProps {

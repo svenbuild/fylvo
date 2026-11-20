@@ -17,6 +17,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/task"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
@@ -110,6 +111,8 @@ func NewExtractArchiveTaskFromModel(task *ent.Task) queue.Task {
 }
 
 func (m *ExtractArchiveTask) Do(ctx context.Context) (task.Status, error) {
+	// Fylvo: a task with many files is not in the activity log, see pkg/activity.
+	ctx = activity.Skip(ctx)
 	dep := dependency.FromContext(ctx)
 	m.l = dep.Logger()
 

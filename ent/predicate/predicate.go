@@ -6,6 +6,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// Activity is the predicate function for activity builders.
+type Activity func(*sql.Selector)
+
 // DavAccount is the predicate function for davaccount builders.
 type DavAccount func(*sql.Selector)
 

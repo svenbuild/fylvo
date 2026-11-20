@@ -12,6 +12,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/lock"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
@@ -344,12 +345,14 @@ func (f *DBFS) PrepareUpload(ctx context.Context, req *fs.UploadRequest, opts ..
 
 func (f *DBFS) CompleteUpload(ctx context.Context, session *fs.UploadSession) (fs.File, error) {
 	// Get placeholder file
-	file, err := f.Get(ctx, session.Props.Uri, WithFileEntities(), WithNotRoot())
+	// Fylvo: with its metadata, to tell a new file from a new version (MetadataUploadNewFile).
+	file, err := f.Get(context.WithValue(ctx, inventory.LoadFileMetadata{}, true), session.Props.Uri, WithFileEntities(), WithNotRoot())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get placeholder file: %w", err)
 	}
 
 	filePrivate := file.(*File)
+	_, newByThisUpload := filePrivate.Metadata()[MetadataUploadNewFile]
 
 	// Fylvo: the right to write is checked again when the upload is finished. A member
 	// who lost the edit right in the meantime cannot complete an upload started before.
@@ -451,6 +454,13 @@ func (f *DBFS) CompleteUpload(ctx context.Context, session *fs.UploadSession) (f
 	}
 
 	f.emitFileModified(ctx, filePrivate)
+	if entityType == types.EntityTypeVersion {
+		uploaded := activity.FileUpdate
+		if newByThisUpload {
+			uploaded = activity.FileUpload
+		}
+		activity.Record(ctx, f.activityEntry(uploaded, filePrivate, session.Props.Uri))
+	}
 
 	file, err = f.Get(ctx, session.Props.Uri, WithFileEntities(), WithNotRoot())
 	if err != nil {
@@ -465,6 +475,8 @@ func (f *DBFS) CompleteUpload(ctx context.Context, session *fs.UploadSession) (f
 // - File unlocked, upload session valid
 // - File unlocked, upload session not valid
 func (f *DBFS) CancelUploadSession(ctx context.Context, path *fs.URI, sessionID string, session *fs.UploadSession) ([]fs.Entity, *fs.IndexDiff, error) {
+	// Fylvo: removing an unfinished upload is no change of the user's files.
+	ctx = activity.Skip(ctx)
 	// Get placeholder file
 	file, err := f.Get(ctx, path, WithFileEntities(), WithNotRoot())
 	if err != nil {

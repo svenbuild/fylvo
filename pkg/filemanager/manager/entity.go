@@ -250,6 +250,11 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 		if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeBeforeDownload, file); err != nil {
 			m.l.Warning("Failed to execute navigator hooks: %s", err)
 		}
+		if o.IsDownload {
+			if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
+				m.l.Warning("Failed to execute navigator hooks: %s", err)
+			}
+		}
 
 		policy, d, err := m.getEntityPolicyDriver(ctx, target, nil)
 		if err != nil {

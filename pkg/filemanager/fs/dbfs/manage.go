@@ -12,6 +12,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/user"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -148,6 +149,7 @@ func (f *DBFS) Create(ctx context.Context, path *fs.URI, fileType types.FileType
 
 			ancestor = newFile(ancestor, newFolder)
 			f.emitFileCreated(ctx, ancestor)
+			activity.Record(ctx, f.activityEntry(activity.FileCreate, ancestor, path))
 		} else {
 			// valide file name
 			policy, err := f.getPreferredPolicy(ctx, ancestor)
@@ -252,6 +254,10 @@ func (f *DBFS) Rename(ctx context.Context, path *fs.URI, newName string) (fs.Fil
 	}
 
 	f.emitFileRenamed(ctx, target, newName)
+	renamed := f.activityEntry(activity.FileRename, target, path)
+	renamed.Content.OldName = oldName
+	renamed.Content.Name = newName
+	activity.Record(ctx, renamed)
 
 	originalMetadata := target.Metadata()
 	newFile := target.Replace(updated)
@@ -316,6 +322,11 @@ func (f *DBFS) SoftDelete(ctx context.Context, path ...*fs.URI) error {
 		return err
 	}
 
+	// Fylvo: taken before, the trash renames the files and drops their folder.
+	trashed := lo.Map(targets, func(target *File, _ int) activity.Entry {
+		return f.activityEntry(activity.FileTrash, target, nil)
+	})
+
 	// Start transaction to soft-delete files
 	fc, tx, ctx, err := inventory.WithTx(ctx, f.fileClient)
 	if err != nil {
@@ -353,6 +364,9 @@ func (f *DBFS) SoftDelete(ctx context.Context, path ...*fs.URI) error {
 		return serializer.NewError(serializer.CodeDBError, "Failed to commit soft-delete change", err)
 	}
 
+	for _, e := range trashed {
+		activity.Record(ctx, e)
+	}
 	f.emitFileDeleted(ctx, targets...)
 
 	return ae.Aggregate()
@@ -374,6 +388,8 @@ func (f *DBFS) Delete(ctx context.Context, path []*fs.URI, opts ...fs.Option) ([
 	ae := serializer.NewAggregateError()
 	fileNavGroup := make(map[Navigator][]*File)
 	ctx = context.WithValue(ctx, inventory.LoadFileEntity{}, true)
+	// Fylvo: for the real name of files in the trash, see activityEntry.
+	ctx = context.WithValue(ctx, inventory.LoadFileMetadata{}, true)
 
 	for _, p := range path {
 		// Get navigator
@@ -421,6 +437,10 @@ func (f *DBFS) Delete(ctx context.Context, path []*fs.URI, opts ...fs.Option) ([
 		return nil, nil, err
 	}
 
+	deleted := lo.Map(targets, func(target *File, _ int) activity.Entry {
+		return f.activityEntry(activity.FileDelete, target, nil)
+	})
+
 	fc, tx, ctx, err := inventory.WithTx(ctx, f.fileClient)
 	if err != nil {
 		return nil, nil, serializer.NewError(serializer.CodeDBError, "Failed to start transaction", err)
@@ -436,6 +456,9 @@ func (f *DBFS) Delete(ctx context.Context, path []*fs.URI, opts ...fs.Option) ([
 	tx.AppendStorageDiff(storageDiff)
 	if err := inventory.CommitWithStorageDiff(ctx, tx, f.l, f.userClient); err != nil {
 		return nil, nil, serializer.NewError(serializer.CodeDBError, "Failed to commit delete change", err)
+	}
+	for _, e := range deleted {
+		activity.Record(ctx, e)
 	}
 	f.emitFileDeleted(ctx, targets...)
 	return newStaleEntities, &fs.IndexDiff{
@@ -482,14 +505,19 @@ func (f *DBFS) VersionControl(ctx context.Context, path *fs.URI, versionId int, 
 		if err != nil {
 			return nil, err
 		}
+		activity.Record(ctx, f.activityEntry(activity.VersionDelete, target, path))
 
 		if err := f.userClient.ApplyStorageDiff(ctx, storageDiff); err != nil {
 			f.l.Error("Failed to apply storage diff after deleting version: %s", err)
 		}
 		return nil, nil
 	} else {
+		changed := target.PrimaryEntityID() != versionId
 		if err := f.setCurrentVersion(ctx, target, versionId); err != nil {
 			return nil, err
+		}
+		if changed {
+			activity.Record(ctx, f.activityEntry(activity.VersionRestore, target, path))
 		}
 
 		if _, ok := target.Metadata()[FullTextIndexKey]; ok {
@@ -671,6 +699,13 @@ func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCo
 			return nil, err
 		}
 
+		// Fylvo: where each target comes from, before moving changes it.
+		before := lo.Map(targets, func(target *File, _ int) movedFrom {
+			_, restored := target.Metadata()[MetadataRestoreUri]
+			return movedFrom{parent: target.Model.FileChildren, folder: folderName(target.Parent), restored: restored,
+				entry: f.activityEntry(activity.FileMove, target, nil)}
+		})
+
 		// Start transaction to move files
 		fc, tx, ctx, err := inventory.WithTx(ctx, f.fileClient)
 		if err != nil {
@@ -699,11 +734,19 @@ func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCo
 			return nil, serializer.NewError(serializer.CodeDBError, "Failed to commit move change", err)
 		}
 
-		for _, target := range targets {
+		for i, target := range targets {
 			if isCopy {
-				f.emitFileCreated(ctx, newFile(destination, copiedNewTargetsMap[target.ID()]))
+				copied := newFile(destination, copiedNewTargetsMap[target.ID()])
+				f.emitFileCreated(ctx, copied)
+				e := f.activityEntry(activity.FileCopy, copied, dst)
+				e.Content.FromFolder = before[i].folder
+				e.Content.ToFolder = folderName(destination)
+				activity.Record(ctx, e)
 			} else {
 				f.emitFileMoved(ctx, target, destination)
+				if e, ok := before[i].moved(destination); ok {
+					activity.Record(ctx, e)
+				}
 			}
 		}
 
