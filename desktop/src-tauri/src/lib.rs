@@ -41,9 +41,10 @@ fn chinese_script(locale: &str) -> String {
     if !lower.starts_with("zh") {
         return locale.to_string();
     }
-    let traditional = ["hant", "tw", "hk", "mo"]
-        .iter()
-        .any(|part| lower.split(['-', '_']).any(|p| p == *part));
+    let parts: Vec<&str> = lower.split(['-', '_']).collect();
+    // An explicit script wins over the region ("zh-Hans-HK" is simplified).
+    let traditional = !parts.contains(&"hans")
+        && ["hant", "tw", "hk", "mo"].iter().any(|p| parts.contains(p));
     String::from(if traditional { "zh-TW" } else { "zh-CN" })
 }
 
@@ -57,6 +58,7 @@ mod tests {
         assert_eq!(chinese_script("zh-Hant-TW"), "zh-TW");
         assert_eq!(chinese_script("zh-SG"), "zh-CN");
         assert_eq!(chinese_script("zh-Hans-CN"), "zh-CN");
+        assert_eq!(chinese_script("zh-Hans-HK"), "zh-CN");
         assert_eq!(chinese_script("de-CH"), "de-CH");
     }
 }

@@ -10,6 +10,8 @@ const supportedLngs = ['en-US', 'zh-CN', 'zh-TW', 'ja', 'de', 'fr', 'es', 'ko', 
 export function toSupportedLanguage(lng: string): string {
   const parts = lng.toLowerCase().split(/[-_]/);
   if (parts[0] === "zh") {
+    // An explicit script wins over the region ("zh-Hans-HK" is simplified).
+    if (parts.includes("hans")) return "zh-CN";
     return parts.some((p) => ["hant", "tw", "hk", "mo"].includes(p)) ? "zh-TW" : "zh-CN";
   }
   const exact = supportedLngs.find((code) => code.toLowerCase() === lng.toLowerCase());

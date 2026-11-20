@@ -12,7 +12,7 @@ import {
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { languages } from "../../i18n";
+import { languages, toSupportedLanguage } from "../../i18n";
 
 interface SettingItemProps {
   title: string;
@@ -362,7 +362,7 @@ export default function GeneralSection() {
       // Update backend config and rust_i18n
       await invoke("set_language", { language: newLanguage });
       // Update frontend i18n without refresh
-      const effectiveLanguage = newLanguage ?? navigator.language;
+      const effectiveLanguage = newLanguage ?? toSupportedLanguage(navigator.language);
       await i18n.changeLanguage(effectiveLanguage);
     } catch (error) {
       console.error("Failed to change language:", error);
