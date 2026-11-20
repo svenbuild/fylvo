@@ -14,14 +14,15 @@ import (
 const MetadataRestoreModifiedAt = MetadataSysPrefix + "restore_modified_at"
 
 // keptModifiedAt reads the date of the file as it is now, after the lock is held, so that a
-// new version saved just before the delete is not missed.
+// new version saved just before the delete is not missed. The time zone stays as it was:
+// SQLite sorts dates as text, so a restored date must be written exactly as before.
 func keptModifiedAt(ctx context.Context, fc inventory.FileClient, file *ent.File) (string, error) {
 	current, err := fc.GetByID(ctx, file.ID)
 	if err != nil {
 		return "", err
 	}
 
-	return current.UpdatedAt.UTC().Format(time.RFC3339Nano), nil
+	return current.UpdatedAt.Format(time.RFC3339Nano), nil
 }
 
 // restoreModifiedAt gives a file back from the trash its own date. Files deleted before Fylvo

@@ -856,11 +856,7 @@ func (f *fileClient) CreateFile(ctx context.Context, root *ent.File, args *Creat
 		}
 
 		if args.EntityParameters.Importing {
-			setPrimary := f.client.File.UpdateOne(newFile).SetPrimaryEntity(defaultEntity.ID)
-			if importedAt != nil {
-				setPrimary.SetUpdatedAt(*importedAt)
-			}
-			if err := setPrimary.Exec(ctx); err != nil {
+			if err := f.client.File.UpdateOne(newFile).SetPrimaryEntity(defaultEntity.ID).Exec(ctx); err != nil {
 				return nil, nil, storageDiff, fmt.Errorf("failed to set primary entity: %v", err)
 			}
 		}

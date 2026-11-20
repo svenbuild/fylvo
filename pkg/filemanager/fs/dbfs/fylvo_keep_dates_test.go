@@ -235,3 +235,22 @@ func TestFileTrashedBeforeThisChangeStillComesBack(t *testing.T) {
 	require.NoError(t, e.as(e.owner).Restore(e.ctx, trashed.Uri(false)))
 	requireSameTime(t, deletedAt, e.changedAt("cloudreve://my/a.txt"), "keeps the deletion date")
 }
+
+func TestRestoredDateIsWrittenAsBefore(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	owner := e.as(e.owner)
+	e.upload(owner, "cloudreve://my/a.txt", 10)
+	before := e.changedAt("cloudreve://my/a.txt")
+
+	require.NoError(t, e.as(e.owner).SoftDelete(e.ctx, e.uri("cloudreve://my/a.txt")))
+	trash, err := e.as(e.owner).AllFilesInTrashBin(e.ctx, fs.WithPageSize(100))
+	require.NoError(t, err)
+	require.NoError(t, e.as(e.owner).Restore(e.ctx, trash.Files[0].Uri(false)))
+
+	// SQLite sorts dates as text: the same moment in another time zone would sort differently.
+	after := e.changedAt("cloudreve://my/a.txt")
+	require.True(t, before.Equal(after), "want %s, got %s", before, after)
+	_, beforeOffset := before.Zone()
+	_, afterOffset := after.Zone()
+	require.Equal(t, beforeOffset, afterOffset)
+}
