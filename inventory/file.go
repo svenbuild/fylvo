@@ -119,6 +119,8 @@ type (
 		IsSymbolic          bool
 		Metadata            map[string]string
 		MetadataPrivateMask map[string]bool
+		// Fylvo: creation and change date of the new folder instead of now (import).
+		ModifiedAt *time.Time
 	}
 
 	EntityParameters struct {
@@ -821,8 +823,14 @@ func (f *fileClient) CreateFile(ctx context.Context, root *ent.File, args *Creat
 		SetIsSymbolic(args.IsSymbolic).
 		SetStoragePoliciesID(args.StoragePolicyID)
 
+	// Fylvo: an imported file keeps the date of the file on disk, as its change date and,
+	// as nothing better is known, also as its creation date.
+	importedAt := importDate(args.EntityParameters)
 	if args.EntityParameters != nil && args.EntityParameters.Importing {
 		stm.SetSize(args.EntityParameters.Size)
+	}
+	if importedAt != nil {
+		stm.SetCreatedAt(*importedAt).SetUpdatedAt(*importedAt)
 	}
 
 	newFile, err := stm.Save(ctx)
@@ -841,7 +849,11 @@ func (f *fileClient) CreateFile(ctx context.Context, root *ent.File, args *Creat
 		}
 
 		if args.EntityParameters.Importing {
-			if err := f.client.File.UpdateOne(newFile).SetPrimaryEntity(defaultEntity.ID).Exec(ctx); err != nil {
+			setPrimary := f.client.File.UpdateOne(newFile).SetPrimaryEntity(defaultEntity.ID)
+			if importedAt != nil {
+				setPrimary.SetUpdatedAt(*importedAt)
+			}
+			if err := setPrimary.Exec(ctx); err != nil {
 				return nil, nil, storageDiff, fmt.Errorf("failed to set primary entity: %v", err)
 			}
 		}
@@ -977,6 +989,9 @@ func (f *fileClient) CreateEntity(ctx context.Context, file *ent.File, args *Ent
 	if args.ModifiedAt != nil {
 		stm.SetUpdatedAt(*args.ModifiedAt)
 	}
+	if importedAt := importDate(args); importedAt != nil {
+		stm.SetCreatedAt(*importedAt).SetUpdatedAt(*importedAt)
+	}
 
 	if args.UploadSessionID != uuid.Nil && !args.Importing {
 		stm.SetUploadSessionID(args.UploadSessionID)
@@ -989,7 +1004,11 @@ func (f *fileClient) CreateEntity(ctx context.Context, file *ent.File, args *Ent
 
 	diff := map[int]int64{file.OwnerID: created.Size}
 
-	if err := f.client.Entity.UpdateOne(created).AddFile(file).Exec(ctx); err != nil {
+	addFile := f.client.Entity.UpdateOne(created).AddFile(file)
+	if importedAt := importDate(args); importedAt != nil {
+		addFile.SetUpdatedAt(*importedAt)
+	}
+	if err := addFile.Exec(ctx); err != nil {
 		return nil, diff, fmt.Errorf("failed to add file entity: %v", err)
 	}
 
@@ -1085,6 +1104,9 @@ func (f *fileClient) CreateFolder(ctx context.Context, root *ent.File, args *Cre
 		SetName(args.Name)
 	if root != nil {
 		stm.SetParent(root).SetType(int(types.FileTypeFolder))
+	}
+	if args.ModifiedAt != nil {
+		stm.SetCreatedAt(*args.ModifiedAt).SetUpdatedAt(*args.ModifiedAt)
 	}
 
 	fid, err := stm.OnConflict(sql.ConflictColumns(file.FieldFileChildren, file.FieldName)).Ignore().ID(ctx)
