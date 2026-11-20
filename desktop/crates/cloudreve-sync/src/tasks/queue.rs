@@ -222,14 +222,6 @@ impl TaskQueue {
     ///
     /// Returns the number of tasks that were cancelled.
     pub async fn cancel_by_path(&self, path: impl AsRef<std::path::Path>) -> Result<usize> {
-        self.cancel_by_path_ids(path).await.map(|ids| ids.len())
-    }
-
-    /// Fylvo: like `cancel_by_path`, returns the IDs of the tasks marked as cancelled.
-    pub async fn cancel_by_path_ids(
-        &self,
-        path: impl AsRef<std::path::Path>,
-    ) -> Result<Vec<String>> {
         let path_str = path.as_ref().to_string_lossy().to_string();
 
         info!(
@@ -283,7 +275,7 @@ impl TaskQueue {
             );
         }
 
-        Ok(cancelled_ids)
+        Ok(cancelled_count)
     }
 
     async fn spawn_dispatcher(self: &Arc<Self>, command_rx: UnboundedReceiver<QueueCommand>) {
@@ -405,21 +397,33 @@ impl TaskQueue {
             _ => {}
         }
 
-        if let Err(err) = self.inventory.update_task(
+        // Fylvo: claim the task only while it is still pending, so a cancel that came in since
+        // the check above wins (a case rename relies on it, see `drive/case.rs`).
+        match self.inventory.change_task_status_if(
             &task.task_id,
-            TaskUpdate {
-                status: Some(TaskStatus::Running),
-                ..Default::default()
-            },
+            TaskStatus::Pending,
+            TaskStatus::Running,
         ) {
-            error!(
-                target: "tasks::queue",
-                drive = %self.drive_id,
-                task_id = %task.task_id,
-                error = %err,
-                "Failed to mark task as running"
-            );
-            return;
+            Ok(true) => {}
+            Ok(false) => {
+                debug!(
+                    target: "tasks::queue",
+                    drive = %self.drive_id,
+                    task_id = %task.task_id,
+                    "Task is no longer pending, skipping"
+                );
+                return;
+            }
+            Err(err) => {
+                error!(
+                    target: "tasks::queue",
+                    drive = %self.drive_id,
+                    task_id = %task.task_id,
+                    error = %err,
+                    "Failed to mark task as running"
+                );
+                return;
+            }
         }
 
         // Register task path for path-based cancellation
@@ -509,11 +513,30 @@ impl TaskQueue {
 
         match &task.payload.kind {
             TaskKind::Upload => {
+                // Fylvo: a task queued before the file or a folder above it got another
+                // upper/lower case spelling (see `drive/case.rs`) uploads under the spelling on
+                // disk, the one the server has.
+                let spelled =
+                    crate::drive::case::disk_spelling(&task.payload.local_path, &self.sync_path);
+                let mut respelled = QueuedTask {
+                    task_id: task.task_id.clone(),
+                    payload: task.payload.clone(),
+                };
+                if spelled != task.payload.local_path {
+                    info!(
+                        target: "tasks::queue",
+                        task_id = %task.task_id,
+                        path = %task.payload.local_path_display(),
+                        on_disk = %spelled.display(),
+                        "Spelled differently on disk, uploading under that spelling"
+                    );
+                    respelled.payload.local_path = spelled;
+                }
                 let mut task_executor = UploadTask::new(
                     self.inventory.clone(),
                     self.cr_client.clone(),
                     self.drive_id.as_str(),
-                    &task,
+                    &respelled,
                     self.sync_path.clone(),
                     self.remote_base.clone(),
                     Arc::clone(&self.progress),

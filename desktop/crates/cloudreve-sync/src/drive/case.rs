@@ -15,7 +15,7 @@ use crate::{
         commands::MountCommand, guard::is_under_any_case, mounts::Mount, sync::SyncMode,
         utils::move_no_replace,
     },
-    inventory::{ConflictState, TaskRecord, TaskStatus},
+    inventory::{ConflictState, TaskStatus},
     tasks::{TaskKind, TaskPayload},
 };
 use anyhow::{Context, Result};
@@ -97,10 +97,22 @@ pub(crate) fn case_mismatched_ancestor(
 }
 
 /// Whether `path` or a folder above it (up to `sync_root`) exists on disk spelled differently.
-/// A transfer under such a path would reach the server under a name it does not have (the
-/// app renames to the server's spelling and queues the transfer again under it).
+/// A transfer under such a path would reach the server under a name it does not have.
 pub fn spelled_differently_on_disk(path: &Path, sync_root: &Path) -> bool {
     case_mismatched_ancestor(path, sync_root, LocalFileInfo::on_disk_path).is_some()
+}
+
+/// `path` with every name below `sync_root` spelled as on disk (names not on disk unchanged).
+pub fn disk_spelling(path: &Path, sync_root: &Path) -> PathBuf {
+    let Ok(relative) = path.strip_prefix(sync_root) else {
+        return path.to_path_buf();
+    };
+    let mut spelled = sync_root.to_path_buf();
+    for part in relative.components() {
+        let next = spelled.join(part);
+        spelled = LocalFileInfo::on_disk_path(&next).unwrap_or(next);
+    }
+    spelled
 }
 
 /// A case rename that has to wait (a transfer runs, a deletion waits for the user's answer).
@@ -337,11 +349,14 @@ impl Mount {
         drop(matcher);
         for (from, to) in &renames {
             if let Err(err) = self.rename_local_case(from, to).await {
-                if err.is::<RetryLater>() {
+                // One waiting retry per name, however many passes run into it.
+                if err.is::<RetryLater>() && self.case_retries.lock().unwrap().insert(to.clone()) {
                     let command_tx = self.command_tx.clone();
+                    let retries = self.case_retries.clone();
                     let to = to.clone();
                     tokio::spawn(async move {
                         tokio::time::sleep(RETRY_DELAY).await;
+                        retries.lock().unwrap().remove(&to);
                         let _ = command_tx.send(MountCommand::Sync {
                             local_paths: vec![to],
                             mode: SyncMode::PathOnly,
@@ -385,6 +400,12 @@ impl Mount {
             return Err(RetryLater("a held deletion waits for the user's answer").into());
         }
         let info = LocalFileInfo::from_path(from)?;
+        // Only what the sync itself placed here: a plain file or folder with this name was put
+        // here by someone else (for example a replacement made while the app was closed).
+        if !info.is_placeholder() {
+            self.report_case_clash(&[to.to_path_buf()], "caseHeldMessage");
+            anyhow::bail!("not a synced item, left as it is");
+        }
 
         // Tasks under the old spelling would reach the server under the old name: stop them
         // before the rename and queue them again under the name that is on disk afterwards.
@@ -452,47 +473,32 @@ impl Mount {
 
     /// Stop the pending tasks at or under `path` (any case spelling). Refuses while one of them
     /// runs: a running download could still write through the old spelling after the rename.
-    /// Returns the kind and path of every task that was stopped and must be queued again.
+    /// Each pending task is cancelled only while it is still pending (the queue claims a task
+    /// the same way before it starts), so a task either runs and the rename waits, or the
+    /// rename goes on and the task never starts. Returns the stopped tasks.
     async fn stop_tasks_under(&self, path: &Path) -> Result<Vec<(TaskKind, PathBuf)>> {
         let active = self
             .task_queue
             .list_active_tasks()
             .context("could not read the task list")?;
-        let under = |task: &TaskRecord| {
-            is_under_any_case(Path::new(&task.local_path), &[path.to_path_buf()])
-        };
-        if active
+        let mut stopped = Vec::new();
+        for task in active
             .iter()
-            .any(|task| under(task) && task.status == TaskStatus::Running)
+            .filter(|task| is_under_any_case(Path::new(&task.local_path), &[path.to_path_buf()]))
         {
-            return Err(RetryLater("a transfer under this name is running").into());
-        }
-        if !active.iter().any(under) {
-            return Ok(Vec::new());
-        }
-        let cancelled: HashSet<String> = self
-            .task_queue
-            .cancel_by_path_ids(path.to_path_buf())
-            .await?
-            .into_iter()
-            .collect();
-        // The queue's match may catch other tasks too (its pattern treats `_` as a wildcard):
-        // pending ones are queued again unchanged; running ones were not stopped and go on.
-        let stopped: Vec<(TaskKind, PathBuf)> = active
-            .iter()
-            .filter(|task| cancelled.contains(&task.id))
-            .filter(|task| under(task) || task.status == TaskStatus::Pending)
-            .filter_map(|task| {
-                Some((TaskKind::from_str(&task.task_type)?, PathBuf::from(&task.local_path)))
-            })
-            .collect();
-        // A task under the name the queue did not catch (spelled otherwise): wait.
-        if active
-            .iter()
-            .any(|task| under(task) && !cancelled.contains(&task.id))
-        {
-            self.queue_tasks_again(&stopped, path, path).await;
-            return Err(RetryLater("a transfer under this name could not be stopped").into());
+            let cancelled = task.status == TaskStatus::Pending
+                && self.inventory.change_task_status_if(
+                    &task.id,
+                    TaskStatus::Pending,
+                    TaskStatus::Cancelled,
+                )?;
+            if !cancelled {
+                self.queue_tasks_again(&stopped, path, path).await;
+                return Err(RetryLater("a transfer under this name is running").into());
+            }
+            if let Some(kind) = TaskKind::from_str(&task.task_type) {
+                stopped.push((kind, PathBuf::from(&task.local_path)));
+            }
         }
         Ok(stopped)
     }
@@ -685,6 +691,9 @@ mod tests {
         assert!(spelled_differently_on_disk(&root.join(r"Photos\A.TXT"), root));
         // Not on disk at all: nothing to compare.
         assert!(!spelled_differently_on_disk(&root.join(r"Photos\new.txt"), root));
+        // Each name spelled as on disk; a name not on disk stays as given.
+        assert_eq!(disk_spelling(&root.join(r"photos\A.TXT"), root), root.join(r"Photos\a.txt"));
+        assert_eq!(disk_spelling(&root.join(r"PHOTOS\New.txt"), root), root.join(r"Photos\New.txt"));
     }
 
     #[test]

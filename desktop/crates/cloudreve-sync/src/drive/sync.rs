@@ -1365,8 +1365,12 @@ fn plan_entry_with_remote_and_local(
         })
         .unwrap_or(false);
 
+    // Fylvo: a folder row without the server's file ID (see `case.rs`) gets it now.
+    let lacks_file_id =
+        inventory.is_some_and(|entry| !entry.metadata.contains_key(FILE_ID_KEY));
+
     if remote_is_dir {
-        if !etag_match || !modify_date_match {
+        if !etag_match || !modify_date_match || lacks_file_id {
             plan.actions.push(SyncAction::UpdateInventoryFromRemote {
                 path: path.clone(),
                 remote: remote.clone(),

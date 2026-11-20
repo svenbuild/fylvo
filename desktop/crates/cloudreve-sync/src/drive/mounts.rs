@@ -166,6 +166,8 @@ pub struct Mount {
     pub(crate) case_clash_notified: std::sync::Mutex<std::collections::HashSet<PathBuf>>,
     /// Fylvo: local renames the app makes itself, not sent to the server (see `case.rs`).
     pub(crate) own_renames: crate::drive::case::OwnRenames,
+    /// Fylvo: names whose case rename waits for a retry (one timer per name).
+    pub(crate) case_retries: Arc<std::sync::Mutex<std::collections::HashSet<PathBuf>>>,
 }
 
 impl Mount {
@@ -285,6 +287,7 @@ impl Mount {
             drive_letter_closed: AtomicBool::new(false),
             case_clash_notified: Default::default(),
             own_renames: Default::default(),
+            case_retries: Default::default(),
         }
     }
 
