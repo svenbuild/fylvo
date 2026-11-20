@@ -198,30 +198,25 @@ impl DeletionGuardState {
     fn is_held(&mut self, side: DeletionSide, path: &Path) -> bool {
         self.slot(side)
             .as_ref()
-            .is_some_and(|held| is_under(path, &held.paths))
+            .is_some_and(|held| is_under_any_case(path, &held.paths))
     }
 
     fn is_kept(&self, path: &Path) -> bool {
-        is_under(path, &self.kept_local)
+        is_under_any_case(path, &self.kept_local)
     }
 
     /// Whether a held deletion or a path the user chose to keep lies at, under or above `path`
     /// (any upper/lower case spelling).
     fn touches(&self, path: &Path) -> bool {
-        let fold = |p: &Path| crate::drive::case::ntfs_fold(&p.to_string_lossy());
-        let target = fold(path);
-        let related = |p: &PathBuf| {
-            let other = fold(p);
-            other == target
-                || other.starts_with(&format!("{target}\\"))
-                || target.starts_with(&format!("{other}\\"))
-        };
         [&self.server, &self.local]
             .into_iter()
             .flatten()
             .flat_map(|held| held.paths.iter())
             .chain(self.kept_local.iter())
-            .any(related)
+            .any(|other| {
+                is_under_any_case(path, std::slice::from_ref(other))
+                    || is_under_any_case(other, &[path.to_path_buf()])
+            })
     }
 
     fn is_confirmed(&mut self, paths: &[PathBuf], now: Instant) -> bool {
@@ -297,6 +292,16 @@ enum Decision {
     Pass,
     /// Held. When the hold changed: whether it just started, and all held paths.
     Hold(Option<(bool, Vec<PathBuf>)>),
+}
+
+/// Fylvo: like `is_under`, in any upper/lower case spelling (one file on NTFS).
+pub fn is_under_any_case(path: &Path, roots: &[PathBuf]) -> bool {
+    let fold = |p: &Path| crate::drive::case::ntfs_fold(&p.to_string_lossy());
+    let path = fold(path);
+    roots.iter().any(|root| {
+        let root = fold(root);
+        path == root || path.starts_with(&format!("{root}{}", std::path::MAIN_SEPARATOR))
+    })
 }
 
 pub fn is_under(path: &Path, roots: &[PathBuf]) -> bool {
@@ -808,6 +813,10 @@ mod tests {
         // Siblings with a common start are not related.
         assert!(!state.touches(Path::new(r"C:\S\Photos2")));
         assert!(!state.touches(Path::new(r"C:\S\Doc")));
+        // A held or kept path stays so when the server spells it differently.
+        assert!(state.is_held(DeletionSide::Server, Path::new(r"C:\S\photos\A.JPG")));
+        assert!(!state.is_held(DeletionSide::Server, Path::new(r"C:\S\photos\b.jpg")));
+        assert!(state.is_kept(Path::new(r"C:\S\DOCS\x.txt")));
     }
 
     #[test]

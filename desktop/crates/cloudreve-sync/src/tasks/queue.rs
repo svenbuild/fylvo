@@ -222,6 +222,14 @@ impl TaskQueue {
     ///
     /// Returns the number of tasks that were cancelled.
     pub async fn cancel_by_path(&self, path: impl AsRef<std::path::Path>) -> Result<usize> {
+        self.cancel_by_path_ids(path).await.map(|ids| ids.len())
+    }
+
+    /// Fylvo: like `cancel_by_path`, returns the IDs of the tasks marked as cancelled.
+    pub async fn cancel_by_path_ids(
+        &self,
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<Vec<String>> {
         let path_str = path.as_ref().to_string_lossy().to_string();
 
         info!(
@@ -275,7 +283,7 @@ impl TaskQueue {
             );
         }
 
-        Ok(cancelled_count)
+        Ok(cancelled_ids)
     }
 
     async fn spawn_dispatcher(self: &Arc<Self>, command_rx: UnboundedReceiver<QueueCommand>) {

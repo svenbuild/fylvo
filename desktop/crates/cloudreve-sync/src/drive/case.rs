@@ -10,8 +10,12 @@
 //! as two names, and so does the client.
 
 use crate::{
-    cfapi::placeholder::LocalFileInfo,
-    drive::{commands::MountCommand, mounts::Mount, sync::SyncMode, utils::move_no_replace},
+    cfapi::placeholder::{LocalFileInfo, OpenOptions},
+    drive::{
+        commands::MountCommand, guard::is_under_any_case, mounts::Mount, sync::SyncMode,
+        utils::move_no_replace,
+    },
+    inventory::{TaskRecord, TaskStatus},
     tasks::{TaskKind, TaskPayload},
 };
 use anyhow::{Context, Result};
@@ -107,8 +111,20 @@ pub(crate) struct CasePlan {
     pub held: Vec<PathBuf>,
 }
 
-/// What the inventory knows about a path: folder or not, the server's creation time, the etag.
-pub(crate) type KnownEntry = (bool, i64, String);
+/// Key of the server's file ID in the inventory's metadata map (written by Fylvo, see
+/// `with_remote_file` and `cloud_file_to_metadata_entry`).
+pub const FILE_ID_KEY: &str = "fylvo:file_id";
+
+/// What the inventory knows about a path.
+#[derive(Debug, Clone)]
+pub(crate) struct KnownEntry {
+    pub is_folder: bool,
+    /// The server's creation time.
+    pub created_at: i64,
+    pub etag: String,
+    /// The server's file ID, if the row was written by a Fylvo version that stores it.
+    pub file_id: Option<String>,
+}
 
 /// Decide the case questions of one folder. `requested` are the paths a sync pass was asked for,
 /// `remote` the server entries found for them (keyed by the server's own name), `on_disk`
@@ -178,27 +194,34 @@ pub(crate) fn plan_case(
 }
 
 /// Whether the local file at `disk` represents the server entry `server` (same folder, other
-/// spelling). The inventory row of exactly one of the two names must match the server entry's
-/// kind and creation time, which a rename does not change, and for a file also its content
-/// version (etag).
+/// spelling). Exactly one of the two names must have an inventory row, and it must carry the
+/// server entry's file ID. A row without ID (older data) counts only for a file with the same
+/// creation time and content version (etag); a folder without ID is never assumed the same.
 fn is_same_object(
     disk: &Path,
     server: &Path,
     remote: &FileResponse,
     known: &impl Fn(&Path) -> Option<KnownEntry>,
 ) -> bool {
-    let (is_folder, created_at, etag) = match (known(disk), known(server)) {
+    let row = match (known(disk), known(server)) {
         (Some(row), None) | (None, Some(row)) => row,
         _ => return false,
     };
     let remote_is_folder = remote.file_type == file_type::FOLDER;
+    if row.is_folder != remote_is_folder {
+        return false;
+    }
+    if let Some(id) = &row.file_id {
+        return !id.is_empty() && *id == remote.id;
+    }
     let created = remote
         .created_at
         .parse::<DateTime<Utc>>()
         .map(|time| time.timestamp());
-    let same_content = remote_is_folder
-        || (!etag.is_empty() && remote.primary_entity.as_deref() == Some(etag.as_str()));
-    is_folder == remote_is_folder && created.is_ok_and(|time| time == created_at) && same_content
+    !remote_is_folder
+        && created.is_ok_and(|time| time == row.created_at)
+        && !row.etag.is_empty()
+        && remote.primary_entity.as_deref() == Some(row.etag.as_str())
 }
 
 /// How long a registered own rename waits for its callbacks.
@@ -237,6 +260,23 @@ impl OwnRenames {
     }
 }
 
+/// Mark a placeholder in sync if none of its bytes is on disk. Checked and marked through one
+/// exclusive handle, so no write can come in between.
+async fn mark_in_sync_if_empty(path: &Path) -> Result<bool> {
+    let mut handle = OpenOptions::new()
+        .write_access()
+        .exclusive()
+        .open_with_retry(path)
+        .await?;
+    let empty = handle
+        .info()?
+        .is_some_and(|info| info.on_disk_data_size() == 0 && info.modified_data_size() == 0);
+    if empty {
+        handle.mark_in_sync(true, None)?;
+    }
+    Ok(empty)
+}
+
 impl Mount {
     /// Apply the case decisions of one folder before it is planned. Returns the paths to plan;
     /// paths whose rename failed are left out of this pass.
@@ -248,7 +288,12 @@ impl Mount {
         let inventory = self.inventory.clone();
         let plan = plan_case(paths, remote, LocalFileInfo::on_disk_path, |path| {
             let row = inventory.query_by_path(path.to_str()?).ok()??;
-            Some((row.is_folder, row.created_at, row.etag))
+            Some(KnownEntry {
+                is_folder: row.is_folder,
+                created_at: row.created_at,
+                file_id: row.metadata.get(FILE_ID_KEY).cloned(),
+                etag: row.etag,
+            })
         });
 
         let mut errors = Vec::new();
@@ -308,7 +353,7 @@ impl Mount {
 
         // Tasks under the old spelling would reach the server under the old name: stop them
         // before the rename and queue them again under the name that is on disk afterwards.
-        let tasks = self.stop_tasks_under(from).await;
+        let tasks = self.stop_tasks_under(from).await?;
 
         self.own_renames.register(from, to);
         if let Err(err) = move_no_replace(from, to) {
@@ -339,17 +384,30 @@ impl Mount {
             });
             return Ok(());
         }
-        // A file with local bytes that is not in sync now (changed here, or the rename cleared
-        // the flag) is uploaded: that keeps a change made at any moment, an unchanged file only
-        // gives the server a new version with the same content. Nothing is ever marked in
-        // sync here. The rename itself worked: problems from here on are only logged.
+        // A file that is not in sync now (changed here, or the rename cleared the flag). The
+        // rename itself worked: problems from here on are only logged.
         let now = LocalFileInfo::from_path(to).unwrap_or_else(|_| LocalFileInfo::missing());
+        if !now.exists || now.in_sync() {
+            return Ok(());
+        }
+        // Without any byte on disk there is no local change to lose: in sync again.
+        if info.in_sync() && now.is_placeholder() && now.partial_on_disk() {
+            match mark_in_sync_if_empty(to).await {
+                Ok(true) => return Ok(()),
+                Ok(false) => {}
+                Err(err) => {
+                    tracing::warn!(target: "drive::case", id = %self.id, path = %to.display(), error = ?err, "Could not mark the renamed file in sync");
+                    return Ok(());
+                }
+            }
+        }
+        // Local bytes: uploaded, which keeps a change made at any moment (an unchanged file
+        // only gives the server a new version with the same content). Not in a read-only
+        // drive, which keeps a local change as a conflict copy on the next server change.
         let upload_queued = tasks
             .iter()
             .any(|(kind, path)| *kind == TaskKind::Upload && same_on_ntfs(path, from));
-        let online_only = now.is_placeholder() && now.partial_on_disk();
-        if now.exists && !now.in_sync() && !online_only && !upload_queued && !self.is_read_only()
-        {
+        if !upload_queued && !self.is_read_only() {
             if let Err(err) = self.enqueue_upload(TaskPayload::upload(to.to_path_buf())).await {
                 tracing::warn!(target: "drive::case", id = %self.id, path = %to.display(), error = ?err, "Upload after the case rename could not be queued");
             }
@@ -357,27 +415,42 @@ impl Mount {
         Ok(())
     }
 
-    /// Stop the pending and running tasks at or under `path`. Returns the kind and path of
-    /// every task that was stopped (the queue's own match may catch a few more than `path`).
-    async fn stop_tasks_under(&self, path: &Path) -> Vec<(TaskKind, PathBuf)> {
-        let before = self.task_queue.list_active_tasks().unwrap_or_default();
-        if before.is_empty() || self.task_queue.cancel_by_path(path.to_path_buf()).await.is_err() {
-            return Vec::new();
-        }
-        let still_active: HashSet<String> = self
+    /// Stop the pending tasks at or under `path` (any case spelling). Refuses while one of them
+    /// runs: a running download could still write through the old spelling after the rename.
+    /// Returns the kind and path of every task that was stopped and must be queued again.
+    async fn stop_tasks_under(&self, path: &Path) -> Result<Vec<(TaskKind, PathBuf)>> {
+        let active = self
             .task_queue
             .list_active_tasks()
-            .unwrap_or_default()
+            .context("could not read the task list")?;
+        let under = |task: &TaskRecord| {
+            is_under_any_case(Path::new(&task.local_path), &[path.to_path_buf()])
+        };
+        if active
+            .iter()
+            .any(|task| under(task) && task.status == TaskStatus::Running)
+        {
+            anyhow::bail!("a task under this name is running, renamed later");
+        }
+        if !active.iter().any(under) {
+            return Ok(Vec::new());
+        }
+        let cancelled: HashSet<String> = self
+            .task_queue
+            .cancel_by_path_ids(path.to_path_buf())
+            .await?
             .into_iter()
-            .map(|task| task.id)
             .collect();
-        before
+        // The queue's match may catch other tasks too (its pattern treats `_` as a wildcard):
+        // pending ones are queued again unchanged; running ones were not stopped and go on.
+        Ok(active
             .into_iter()
-            .filter(|task| !still_active.contains(&task.id))
+            .filter(|task| cancelled.contains(&task.id))
+            .filter(|task| under(task) || task.status == TaskStatus::Pending)
             .filter_map(|task| {
                 Some((TaskKind::from_str(&task.task_type)?, PathBuf::from(task.local_path)))
             })
-            .collect()
+            .collect())
     }
 
     /// Queue stopped tasks again. Paths at or under `old` (any case spelling) get `new` in
@@ -450,6 +523,16 @@ mod tests {
     const CREATED: &str = "2026-11-19T10:00:00Z";
     const CREATED_TS: i64 = 1_795_082_400;
     const ETAG: &str = "e1";
+    const ID: &str = "id1";
+
+    fn row(folder: bool, file_id: Option<&str>) -> KnownEntry {
+        KnownEntry {
+            is_folder: folder,
+            created_at: CREATED_TS,
+            etag: if folder { String::new() } else { ETAG.to_string() },
+            file_id: file_id.map(str::to_string),
+        }
+    }
 
     fn p(name: &str) -> PathBuf {
         PathBuf::from(r"C:\S").join(name)
@@ -468,6 +551,7 @@ mod tests {
                     FileResponse {
                         name: name.to_string(),
                         file_type: if folder { file_type::FOLDER } else { file_type::FILE },
+                        id: ID.to_string(),
                         created_at: CREATED.to_string(),
                         primary_entity: (!folder).then(|| ETAG.to_string()),
                         ..Default::default()
@@ -490,9 +574,10 @@ mod tests {
     /// The inventory has a row for each of `names`, matching the server entries.
     fn known(names: &'static [&'static str], folder: bool) -> impl Fn(&Path) -> Option<KnownEntry> {
         move |path: &Path| {
-            names.iter().any(|name| p(name) == path).then(|| {
-                (folder, CREATED_TS, if folder { String::new() } else { ETAG.to_string() })
-            })
+            names
+                .iter()
+                .any(|name| p(name) == path)
+                .then(|| row(folder, Some(ID)))
         }
     }
 
@@ -615,22 +700,30 @@ mod tests {
     #[test]
     fn other_object_with_other_case_is_held() {
         // Local `a.jpg` was server `a.jpg`; that was deleted and a different `A.jpg` remains.
-        let held = |row: KnownEntry| {
-            plan_case(&[p("a.jpg")], &server(&["A.jpg"]), disk(&["a.jpg"]), |path: &Path| {
-                (path == p("a.jpg")).then(|| row.clone())
+        let plan_with = |remote: HashMap<PathBuf, FileResponse>, known: KnownEntry| {
+            plan_case(&[p("a.jpg")], &remote, disk(&["a.jpg"]), |path: &Path| {
+                (path == p("a.jpg")).then(|| known.clone())
             })
         };
-        // Other kind, other creation time, other content (same second, same kind).
-        for row in [
-            (true, CREATED_TS, ETAG.to_string()),
-            (false, CREATED_TS + 1, ETAG.to_string()),
-            (false, CREATED_TS, "e2".to_string()),
-            (false, CREATED_TS, String::new()),
-        ] {
-            let plan = held(row);
+        let other_id = KnownEntry { file_id: Some("id2".into()), ..row(false, None) };
+        let rows_without_id = [
+            KnownEntry { is_folder: true, ..row(false, None) },
+            KnownEntry { created_at: CREATED_TS + 1, ..row(false, None) },
+            KnownEntry { etag: "e2".into(), ..row(false, None) },
+            KnownEntry { etag: String::new(), ..row(false, None) },
+        ];
+        // Twins created in the same second with the same content: the ID tells them apart.
+        for known in std::iter::once(other_id).chain(rows_without_id) {
+            let plan = plan_with(server(&["A.jpg"]), known);
             assert_eq!(plan.held, [p("A.jpg")]);
             assert!(plan.renames.is_empty() && plan.paths.is_empty());
         }
+        // A folder is only renamed with a matching ID.
+        let folders = server_with(&["A.jpg"], true);
+        assert_eq!(plan_with(folders.clone(), row(true, None)).held, [p("A.jpg")]);
+        assert_eq!(plan_with(folders, row(true, Some(ID))).renames.len(), 1);
+        // A file row of an older version without ID: same creation time and etag suffice.
+        assert_eq!(plan_with(server(&["A.jpg"]), row(false, None)).renames.len(), 1);
     }
 
     #[test]

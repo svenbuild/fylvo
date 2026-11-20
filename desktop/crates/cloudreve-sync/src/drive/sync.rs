@@ -5,7 +5,7 @@ use crate::{
         placeholder_file::PlaceholderFile,
     },
     drive::{
-        case::{case_mismatched_ancestor, ntfs_fold},
+        case::{FILE_ID_KEY, case_mismatched_ancestor, ntfs_fold},
         guard::DeletionSide,
         mounts::Mount,
         placeholder::CrPlaceholder,
@@ -112,7 +112,15 @@ pub fn cloud_file_to_metadata_entry(
             .unwrap_or(&String::new())
             .clone(),
     )
-    .with_metadata(file.metadata.as_ref().unwrap_or(&HashMap::new()).clone()))
+    .with_metadata(metadata_with_file_id(file)))
+}
+
+/// Fylvo: the server's metadata of a file plus its file ID, so a later case-only rename can
+/// tell whether the local file is the same object (see `case.rs`).
+pub fn metadata_with_file_id(file: &FileResponse) -> HashMap<String, String> {
+    let mut metadata = file.metadata.clone().unwrap_or_default();
+    metadata.insert(FILE_ID_KEY.to_string(), file.id.clone());
+    metadata
 }
 
 pub fn is_symbolic_link(file: &FileResponse) -> bool {
