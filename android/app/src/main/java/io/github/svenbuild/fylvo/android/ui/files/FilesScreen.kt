@@ -65,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -73,10 +74,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.launch
+import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.ViewMode
 import io.github.svenbuild.fylvo.android.ui.settings.AccountScreen
@@ -117,7 +121,8 @@ fun FilesScreen(
     /** Folder the search was opened from (scope chip), null when opened at root/home. */
     var searchOpenedFrom by remember { mutableStateOf<String?>(null) }
     /** Fylvo: the Account tab, and the offline files page reached from it. */
-    var accountOpen by remember { mutableStateOf(false) }
+    // Saveable: a language change restarts the activity and should land on the Account tab again.
+    var accountOpen by rememberSaveable { mutableStateOf(false) }
     var offlineOpen by remember { mutableStateOf(false) }
     val searchFocus = remember { FocusRequester() }
 
@@ -146,8 +151,8 @@ fun FilesScreen(
         // Consume only after showing: clearing first would change this effect's
         // key and cancel it before the snackbar appears.
         val result = snackbar.showSnackbar(
-            message = msg.text,
-            actionLabel = msg.actionLabel,
+            message = msg.text.resolve(context),
+            actionLabel = msg.actionLabel?.resolve(context),
             duration = if (msg.action != null) SnackbarDuration.Long else SnackbarDuration.Short,
         )
         viewModel.consumeSnackbar()
@@ -284,11 +289,11 @@ fun FilesScreen(
                 )
                 "home" -> Unit
                 else -> FolderTopBar(
-                    title = state.folderName,
+                    title = state.folderTitle(),
                     subtitle = listOfNotNull(
                         when {
-                            state.inTrash -> "Kept for 7 days"
-                            state.virtual -> "Across all folders"
+                            state.inTrash -> stringResource(R.string.kept_for_7_days)
+                            state.virtual -> stringResource(R.string.across_all_folders)
                             CrUri.isRoot(state.currentUri) -> null
                             else -> CrUri.displayPath(CrUri.parent(state.currentUri))
                         },
@@ -322,7 +327,7 @@ fun FilesScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add))
                 }
             }
         },
@@ -399,23 +404,23 @@ fun FilesScreen(
                 }
                 state.error != null -> EmptyState(
                     icon = Icons.Outlined.FolderOpen,
-                    title = "Couldn't load this folder",
+                    title = stringResource(R.string.load_folder_failed),
                     detail = state.error,
-                    action = "Retry" to { viewModel.refresh() },
+                    action = stringResource(R.string.retry) to { viewModel.refresh() },
                 )
                 state.files.isEmpty() && state.uploadsHere.isEmpty() -> when (state.category) {
                     null -> EmptyState(
                         icon = Icons.Outlined.FolderOpen,
-                        title = "This folder is empty",
-                        detail = if (state.canAddHere) "Upload files or create a folder with the + button" else null,
+                        title = stringResource(R.string.folder_empty),
+                        detail = if (state.canAddHere) stringResource(R.string.folder_empty_hint) else null,
                     )
-                    Category.TRASH -> EmptyState(icon = Icons.Outlined.Delete, title = "Trash is empty", detail = "Deleted items stay here for 7 days")
-                    Category.RECENT -> EmptyState(icon = Icons.Outlined.History, title = "Nothing recent", detail = "Files you upload or change show up here")
-                    Category.IMAGES -> EmptyState(icon = Icons.Outlined.Image, title = "No images yet")
-                    Category.VIDEOS -> EmptyState(icon = Icons.Outlined.Videocam, title = "No videos yet")
-                    Category.AUDIO -> EmptyState(icon = Icons.Outlined.MusicNote, title = "No audio files yet")
-                    Category.DOCUMENTS -> EmptyState(icon = Icons.Outlined.Description, title = "No documents yet")
-                    Category.SHARED_WITH_ME -> EmptyState(icon = Icons.Outlined.FolderOpen, title = "Nothing shared with you yet")
+                    Category.TRASH -> EmptyState(icon = Icons.Outlined.Delete, title = stringResource(R.string.trash_empty), detail = stringResource(R.string.trash_empty_hint))
+                    Category.RECENT -> EmptyState(icon = Icons.Outlined.History, title = stringResource(R.string.nothing_recent), detail = stringResource(R.string.recent_hint))
+                    Category.IMAGES -> EmptyState(icon = Icons.Outlined.Image, title = stringResource(R.string.no_images))
+                    Category.VIDEOS -> EmptyState(icon = Icons.Outlined.Videocam, title = stringResource(R.string.no_videos))
+                    Category.AUDIO -> EmptyState(icon = Icons.Outlined.MusicNote, title = stringResource(R.string.no_audio))
+                    Category.DOCUMENTS -> EmptyState(icon = Icons.Outlined.Description, title = stringResource(R.string.no_documents))
+                    Category.SHARED_WITH_ME -> EmptyState(icon = Icons.Outlined.FolderOpen, title = stringResource(R.string.nothing_shared))
                 }
                 state.effectiveMode == ViewMode.GRID -> FileGrid(state, viewModel, gridState, ::actionsFor)
                 else -> FileList(state, viewModel, listState, ::actionsFor)
@@ -464,8 +469,8 @@ fun FilesScreen(
                     addSheetOpen = false
                     uploadLauncher.launch(arrayOf("*/*"))
                 },
-                headlineContent = { Text("Upload files") },
-                supportingContent = { Text("Into ${state.folderName}") },
+                headlineContent = { Text(stringResource(R.string.upload_files)) },
+                supportingContent = { Text(stringResource(R.string.into_folder, state.folderTitle())) },
                 leadingContent = { Icon(Icons.Default.UploadFile, contentDescription = null) },
             )
             ListItem(
@@ -473,7 +478,7 @@ fun FilesScreen(
                     addSheetOpen = false
                     mkdirOpen = true
                 },
-                headlineContent = { Text("New folder") },
+                headlineContent = { Text(stringResource(R.string.new_folder)) },
                 leadingContent = { Icon(Icons.Default.CreateNewFolder, contentDescription = null) },
             )
             Box(Modifier.height(24.dp))
@@ -532,8 +537,8 @@ fun FilesScreen(
     ) {
       lastPick?.let { (paths, copy) ->
         FolderPicker(
-            title = if (copy) "Copy to" else "Move to",
-            confirmLabel = if (copy) "Copy to" else "Move to",
+            title = stringResource(if (copy) R.string.copy_to else R.string.move_to),
+            confirmLabel = if (copy) R.string.copy_to_folder else R.string.move_to_folder,
             // The picked files' own folder: inside a share the picker then stays in that share.
             startUri = CrUri.parent(paths.first()),
             excluded = if (copy) emptySet() else paths.toSet(),
@@ -550,9 +555,9 @@ fun FilesScreen(
 
     if (mkdirOpen) {
         NameDialog(
-            title = "New folder",
-            label = "Folder name",
-            confirm = "Create",
+            title = stringResource(R.string.new_folder),
+            label = stringResource(R.string.folder_name),
+            confirm = stringResource(R.string.create),
             onConfirm = {
                 viewModel.mkdir(it)
                 mkdirOpen = false
@@ -563,12 +568,12 @@ fun FilesScreen(
 
     renameTarget?.let { file ->
         NameDialog(
-            title = "Rename",
-            label = "New name",
+            title = stringResource(R.string.rename),
+            label = stringResource(R.string.new_name),
             initial = file.name,
             // Select the stem so typing replaces the name and keeps the extension.
             selectEnd = if (file.isFolder) file.name.length else file.name.lastIndexOf('.').takeIf { it > 0 } ?: file.name.length,
-            confirm = "Rename",
+            confirm = stringResource(R.string.rename),
             onConfirm = {
                 viewModel.rename(file, it)
                 renameTarget = null
@@ -579,7 +584,7 @@ fun FilesScreen(
 
     deleteTarget?.let { file ->
         ConfirmDeleteDialog(
-            title = "Delete ${file.name}?",
+            title = stringResource(R.string.delete_file_title, file.name),
             onConfirm = {
                 viewModel.delete(file)
                 deleteTarget = null
@@ -592,21 +597,21 @@ fun FilesScreen(
         val n = paths.size
         AlertDialog(
             onDismissRequest = { deleteForeverTarget = null },
-            title = { Text("Delete $n item${if (n == 1) "" else "s"} forever?") },
-            text = { Text("This can't be undone.") },
+            title = { Text(pluralStringResource(R.plurals.delete_forever_title, n, n)) },
+            text = { Text(stringResource(R.string.cannot_be_undone)) },
             confirmButton = {
                 TextButton(onClick = { viewModel.deleteForever(paths); deleteForeverTarget = null }) {
-                    Text("Delete forever", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.delete_forever), color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { deleteForeverTarget = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { deleteForeverTarget = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 
     if (deleteSelectedOpen) {
         val n = state.selected.size
         ConfirmDeleteDialog(
-            title = "Delete $n item${if (n == 1) "" else "s"}?",
+            title = pluralStringResource(R.plurals.delete_items_title, n, n),
             onConfirm = {
                 viewModel.deleteSelected()
                 deleteSelectedOpen = false
@@ -642,6 +647,11 @@ fun FilesScreen(
 }
 
 // ---- helpers --------------------------------------------------------------
+
+/** Title of the place on screen: the category's name, otherwise the folder's. */
+@Composable
+private fun FilesUiState.folderTitle(): String =
+    category?.let { stringResource(it.label) } ?: CrUri.displayName(currentUri)
 
 /**
  * True while the user scrolls away from the top (content moving up), so the

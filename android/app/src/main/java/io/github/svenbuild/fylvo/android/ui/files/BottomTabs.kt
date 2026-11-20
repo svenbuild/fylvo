@@ -1,5 +1,9 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.annotation.StringRes
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -48,11 +52,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 /** Fylvo: the four places of the app, reachable from the floating bar at the bottom. */
-enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
-    HOME("Home", Icons.Outlined.Home, Icons.Filled.Home),
-    FILES("Files", Icons.Outlined.Folder, Icons.Filled.Folder),
-    SHARED("Shared", Icons.Outlined.FolderShared, Icons.Filled.FolderShared),
-    ACCOUNT("Account", Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
+enum class Tab(@StringRes val label: Int, val icon: ImageVector, val selectedIcon: ImageVector) {
+    HOME(R.string.tab_home, Icons.Outlined.Home, Icons.Filled.Home),
+    FILES(R.string.tab_files, Icons.Outlined.Folder, Icons.Filled.Folder),
+    SHARED(R.string.tab_shared, Icons.Outlined.FolderShared, Icons.Filled.FolderShared),
+    ACCOUNT(R.string.tab_account, Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
 }
 
 private val BarShape = RoundedCornerShape(30.dp)
@@ -129,6 +133,6 @@ private fun TabItem(tab: Tab, active: Boolean, modifier: Modifier, onClick: () -
             tint = iconTint,
             modifier = Modifier.size(22.dp),
         )
-        Text(tab.label, style = MaterialTheme.typography.labelSmall, color = labelColor)
+        Text(stringResource(tab.label), style = MaterialTheme.typography.labelSmall, color = labelColor)
     }
 }

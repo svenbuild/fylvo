@@ -13,8 +13,19 @@ android {
         applicationId = "io.github.svenbuild.fylvo.android"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "1.0.0"
+    }
+
+    // Fylvo ships English and German only; keep libraries from adding other languages.
+    androidResources {
+        localeFilters += listOf("en", "de")
+    }
+    // The language can be switched in the app, so an app bundle must keep all languages in the base APK.
+    bundle {
+        language {
+            enableSplit = false
+        }
     }
 
     // Fylvo release key. It stays outside the repo: the keystore path comes from the Gradle
@@ -77,6 +88,8 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.15.0")
+    // Per-app language (AppCompatDelegate.setApplicationLocales), see util/AppLanguage.kt.
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")

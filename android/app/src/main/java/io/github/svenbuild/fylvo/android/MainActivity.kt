@@ -6,11 +6,11 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.LaunchedEffect
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
@@ -33,10 +34,13 @@ import io.github.svenbuild.fylvo.android.ui.theme.FylvoTheme
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.work.UploadWorker
 
-class MainActivity : ComponentActivity() {
+// AppCompatActivity for the per-app language (util/AppLanguage.kt); the UI is all Compose.
+class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The activity is recreated on a language change, so the labels follow it.
+        CrUri.useLabelsFrom(this)
         enableEdgeToEdge()
         val fromHistory = intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
         if (savedInstanceState == null && !fromHistory) handleShareIntent(intent)
@@ -114,12 +118,15 @@ fun App() {
         val notifPermission = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { }
+        // Ask once per app start, not again when a language change recreates the screen.
+        var askedNotifications by rememberSaveable { mutableStateOf(false) }
         LaunchedEffect(loggedIn) {
-            if (loggedIn == true && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            if (loggedIn == true && !askedNotifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 ContextCompat.checkSelfPermission(
                     context, Manifest.permission.POST_NOTIFICATIONS
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
+                askedNotifications = true
                 notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }

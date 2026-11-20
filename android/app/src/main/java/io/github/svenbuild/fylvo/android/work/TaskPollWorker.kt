@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.work
 
+import io.github.svenbuild.fylvo.android.R
+import io.github.svenbuild.fylvo.android.util.localized
+
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -57,15 +60,18 @@ class TaskPollWorker(context: Context, params: WorkerParameters) :
 
     private fun notify(id: String, type: String, status: String, error: String?) {
         if (!NotificationManagerCompat.from(applicationContext).areNotificationsEnabled()) return
+        // The task type comes from the server ("remote_download") and stays as it is.
         val label = type.substringAfterLast('.').replace('_', ' ')
+        val texts = applicationContext.localized()
         val text = when (status) {
-            "completed" -> "$label completed"
-            "canceled" -> "$label canceled"
-            else -> "$label failed" + (error?.let { ": $it" } ?: "")
+            "completed" -> texts.getString(R.string.task_completed, label)
+            "canceled" -> texts.getString(R.string.task_canceled, label)
+            else -> error?.let { texts.getString(R.string.task_failed_reason, label, it) }
+                ?: texts.getString(R.string.task_failed, label)
         }
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("Fylvo task")
+            .setContentTitle(texts.getString(R.string.task_notification_title))
             .setContentText(text)
             .setAutoCancel(true)
             .build()
@@ -77,7 +83,11 @@ class TaskPollWorker(context: Context, params: WorkerParameters) :
         val manager =
             applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Task updates", NotificationManager.IMPORTANCE_DEFAULT)
+            NotificationChannel(
+                CHANNEL_ID,
+                applicationContext.localized().getString(R.string.channel_task_updates),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            )
         )
     }
 

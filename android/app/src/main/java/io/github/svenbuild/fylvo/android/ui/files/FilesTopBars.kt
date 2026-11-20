@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
@@ -85,44 +88,44 @@ internal fun FolderTopBar(
         navigationIcon = {
             if (showBack) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Up")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.up))
                 }
             }
         },
         actions = {
             IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, contentDescription = "Search")
+                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search))
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
+                    Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more_options))
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     if (showSort) DropdownMenuItem(
-                        text = { Text("Sort by") },
+                        text = { Text(stringResource(R.string.sort_by)) },
                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null) },
                         onClick = { menuOpen = false; sortOpen = true },
                     )
                     DropdownMenuItem(
-                        text = { Text(if (viewMode == ViewMode.LIST) "Grid view" else "List view") },
+                        text = { Text(stringResource(if (viewMode == ViewMode.LIST) R.string.grid_view else R.string.list_view)) },
                         leadingIcon = {
                             Icon(if (viewMode == ViewMode.LIST) Icons.Default.GridView else Icons.AutoMirrored.Filled.ViewList, null)
                         },
                         onClick = { menuOpen = false; onToggleView() },
                     )
                     DropdownMenuItem(
-                        text = { Text("Select") },
+                        text = { Text(stringResource(R.string.select)) },
                         leadingIcon = { Icon(Icons.Default.Checklist, null) },
                         onClick = { menuOpen = false; onSelect() },
                     )
                     DropdownMenuItem(
-                        text = { Text("Refresh") },
+                        text = { Text(stringResource(R.string.refresh)) },
                         leadingIcon = { Icon(Icons.Default.Refresh, null) },
                         onClick = { menuOpen = false; onRefresh() },
                     )
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { Text("Trash") },
+                        text = { Text(stringResource(R.string.trash)) },
                         leadingIcon = { Icon(Icons.Default.Delete, null) },
                         onClick = { menuOpen = false; onTrash() },
                     )
@@ -133,12 +136,14 @@ internal fun FolderTopBar(
                         DropdownMenuItem(
                             text = {
                                 Text(
-                                    when (by) {
-                                        SortBy.NAME -> "Name"
-                                        SortBy.SIZE -> "Size"
-                                        SortBy.UPDATED -> "Date modified"
-                                        SortBy.CREATED -> "Date created"
-                                    },
+                                    stringResource(
+                                        when (by) {
+                                            SortBy.NAME -> R.string.sort_name
+                                            SortBy.SIZE -> R.string.size
+                                            SortBy.UPDATED -> R.string.sort_modified
+                                            SortBy.CREATED -> R.string.sort_created
+                                        },
+                                    ),
                                 )
                             },
                             leadingIcon = {
@@ -148,7 +153,7 @@ internal fun FolderTopBar(
                             trailingIcon = {
                                 if (active) Icon(
                                     if (sort.ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
-                                    contentDescription = if (sort.ascending) "Ascending" else "Descending",
+                                    contentDescription = stringResource(if (sort.ascending) R.string.ascending else R.string.descending),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(18.dp),
                                 )
@@ -177,32 +182,32 @@ internal fun SelectionTopBar(
     onRestore: () -> Unit,
 ) {
     TopAppBar(
-        title = { Text("$count of $total selected") },
+        title = { Text(stringResource(R.string.selected_count, count, total)) },
         navigationIcon = {
             IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Clear selection")
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.clear_selection))
             }
         },
         actions = {
             IconButton(onClick = onSelectAll) {
-                Icon(Icons.Default.SelectAll, contentDescription = "Select all")
+                Icon(Icons.Default.SelectAll, contentDescription = stringResource(R.string.select_all))
             }
             if (inTrash) {
                 IconButton(onClick = onRestore) {
-                    Icon(Icons.Default.RestoreFromTrash, contentDescription = "Restore")
+                    Icon(Icons.Default.RestoreFromTrash, contentDescription = stringResource(R.string.restore))
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.DeleteForever, contentDescription = "Delete forever")
+                    Icon(Icons.Default.DeleteForever, contentDescription = stringResource(R.string.delete_forever))
                 }
             } else if (canModify) {
                 IconButton(onClick = onMove) {
-                    Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = "Move to")
+                    Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = stringResource(R.string.move_to))
                 }
                 IconButton(onClick = onCopy) {
-                    Icon(Icons.Default.FileCopy, contentDescription = "Copy to")
+                    Icon(Icons.Default.FileCopy, contentDescription = stringResource(R.string.copy_to))
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete))
                 }
             }
         },

@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.files.transfers
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -54,13 +57,13 @@ fun UploadConflictDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                if (conflicts.size == 1) "\"${conflicts.first()}\" already exists"
-                else "${conflicts.size} files already exist",
+                if (conflicts.size == 1) stringResource(R.string.already_exists_one, conflicts.first())
+                else stringResource(R.string.already_exist_many, conflicts.size),
             )
         },
         text = {
             Column {
-                Text("Replace keeps the old copy as a previous version. Keep both uploads under a new name.")
+                Text(stringResource(R.string.upload_conflict_note))
                 if (conflicts.size > 1) {
                     Text(
                         conflicts.take(5).joinToString("\n") + if (conflicts.size > 5) "\n…" else "",
@@ -74,11 +77,11 @@ fun UploadConflictDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onResolve(pending.replace()) }) { Text("Replace") }
+            TextButton(onClick = { onResolve(pending.replace()) }) { Text(stringResource(R.string.replace)) }
         },
         dismissButton = {
-            TextButton(onClick = { onResolve(pending.keepBoth()) }) { Text("Keep both") }
-            TextButton(onClick = { onResolve(pending.skip()) }) { Text("Skip") }
+            TextButton(onClick = { onResolve(pending.keepBoth()) }) { Text(stringResource(R.string.keep_both)) }
+            TextButton(onClick = { onResolve(pending.skip()) }) { Text(stringResource(R.string.skip)) }
         },
     )
 }

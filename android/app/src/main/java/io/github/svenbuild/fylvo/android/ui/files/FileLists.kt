@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +51,11 @@ internal fun FileList(
     listState: LazyListState,
     actionsFor: (FileObject) -> FileActions,
 ) {
+    val today = stringResource(R.string.today)
+    val yesterday = stringResource(R.string.yesterday)
+    val unknownDate = stringResource(R.string.unknown_date)
+    val unknown = stringResource(R.string.unknown)
+    val trashSubtitle = stringResource(R.string.trash_row_subtitle)
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
@@ -59,7 +67,7 @@ internal fun FileList(
             state.files.groupBy { dayKey(it.updatedAt) }.forEach { (day, group) ->
                 stickyHeader(key = "day-$day") {
                     DayHeader(
-                        label = dayGroupLabel(group.first().updatedAt),
+                        label = dayGroupLabel(group.first().updatedAt, today = today, yesterday = yesterday, unknown = unknownDate),
                         allSelected = group.all { it.path in state.selected },
                         onToggle = { viewModel.toggleGroup(group) },
                     )
@@ -92,7 +100,7 @@ internal fun FileList(
                 offline = file.path in state.favoritePaths,
                 actions = actionsFor(file),
                 subtitle = if (state.inTrash) {
-                    "Deleted ${formatDate(file.updatedAt)} • from ${file.restoreUri?.let { CrUri.displayName(it) } ?: "unknown"}"
+                    trashSubtitle.format(formatDate(file.updatedAt), file.restoreUri?.let { CrUri.displayName(it) } ?: unknown)
                 } else {
                     subtitleFor(file.size, file.updatedAt, file.isFolder)
                 },
@@ -162,7 +170,7 @@ private fun DayHeader(label: String, allSelected: Boolean, onToggle: () -> Unit)
         IconButton(onClick = onToggle, modifier = Modifier.size(36.dp)) {
             Icon(
                 if (allSelected) Icons.Default.CheckCircle else Icons.Outlined.CheckCircle,
-                contentDescription = if (allSelected) "Clear selection for $label" else "Select all from $label",
+                contentDescription = stringResource(if (allSelected) R.string.clear_selection_for else R.string.select_all_from, label),
                 tint = if (allSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

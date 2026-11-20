@@ -1,5 +1,9 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -46,19 +50,11 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import io.github.svenbuild.fylvo.android.api.FileObject
 
-private val EXPIRY_OPTIONS = listOf(
-    "Never" to 0,
-    "1 day" to 86_400,
-    "7 days" to 7 * 86_400,
-    "30 days" to 30 * 86_400,
-)
+/** Link lifetimes in days; 0 = never expires. */
+private val EXPIRY_DAYS = listOf(0, 1, 7, 30)
 
-private val DOWNLOAD_OPTIONS = listOf(
-    "Unlimited" to 0,
-    "5" to 5,
-    "25" to 25,
-    "100" to 100,
-)
+/** Download limits; 0 = unlimited. */
+private val DOWNLOAD_OPTIONS = listOf(0, 5, 25, 100)
 
 /**
  * Share-link flow in two steps on one sheet: choose how open the link is,
@@ -92,22 +88,25 @@ fun ShareLinkSheet(
         ) {
             FileThumb(file, thumbUrl, size = 48.dp)
             Column(Modifier.padding(start = 16.dp)) {
-                Text("Share link", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.share_link), style = MaterialTheme.typography.titleMedium)
                 Text(file.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
 
         val made = link
         if (made == null) {
-            Text("Link expires", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp))
+            Text(stringResource(R.string.link_expires), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp))
             Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                EXPIRY_OPTIONS.forEach { (label, seconds) ->
+                EXPIRY_DAYS.forEach { days ->
+                    val seconds = days * 86_400
+                    val label = if (days == 0) stringResource(R.string.never) else pluralStringResource(R.plurals.days, days, days)
                     FilterChip(selected = expiry == seconds, onClick = { expiry = seconds }, label = { Text(label) })
                 }
             }
-            Text("Download limit", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 8.dp))
+            Text(stringResource(R.string.download_limit), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 8.dp))
             Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DOWNLOAD_OPTIONS.forEach { (label, count) ->
+                DOWNLOAD_OPTIONS.forEach { count ->
+                    val label = if (count == 0) stringResource(R.string.unlimited) else count.toString()
                     FilterChip(selected = downloads == count, onClick = { downloads = count }, label = { Text(label) })
                 }
             }
@@ -115,8 +114,8 @@ fun ShareLinkSheet(
                 modifier = Modifier
                     .padding(top = 8.dp)
                     .clickable { usePassword = !usePassword },
-                headlineContent = { Text("Require a password") },
-                supportingContent = { Text(if (usePassword) "Included in the link; recipients open it without typing" else "Anyone with the link can open it") },
+                headlineContent = { Text(stringResource(R.string.require_password)) },
+                supportingContent = { Text(stringResource(if (usePassword) R.string.password_in_link else R.string.anyone_with_link)) },
                 trailingContent = { Switch(checked = usePassword, onCheckedChange = { usePassword = it }) },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             )
@@ -124,7 +123,7 @@ fun ShareLinkSheet(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it.take(32) },
-                    label = { Text("Password") },
+                    label = { Text(stringResource(R.string.password)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier
@@ -145,12 +144,12 @@ fun ShareLinkSheet(
                         scope.launch {
                             runCatching { createLink(if (usePassword) password.trim() else "", expiry, downloads) }
                                 .onSuccess { link = it }
-                                .onFailure { onMessage(it.message ?: "Couldn't create the link") }
+                                .onFailure { onMessage(it.message ?: context.getString(R.string.create_link_failed)) }
                             creating = false
                         }
                     },
                 ) {
-                    if (creating) CircularProgressIndicator(Modifier.height(18.dp), strokeWidth = 2.dp) else Text("Create link")
+                    if (creating) CircularProgressIndicator(Modifier.height(18.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.create_link))
                 }
             }
         } else {
@@ -170,13 +169,13 @@ fun ShareLinkSheet(
             ) {
                 OutlinedButton(onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("Share link", made))
-                    onMessage("Link copied")
+                    cm.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.share_link), made))
+                    onMessage(context.getString(R.string.link_copied))
                     onDismiss()
                 }) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null)
                     Spacer(Modifier.padding(4.dp))
-                    Text("Copy")
+                    Text(stringResource(R.string.copy))
                 }
                 Button(onClick = {
                     val send = Intent(Intent.ACTION_SEND).apply {
@@ -184,12 +183,12 @@ fun ShareLinkSheet(
                         putExtra(Intent.EXTRA_SUBJECT, file.name)
                         putExtra(Intent.EXTRA_TEXT, made)
                     }
-                    context.startActivity(Intent.createChooser(send, "Share ${file.name}"))
+                    context.startActivity(Intent.createChooser(send, context.getString(R.string.share_file, file.name)))
                     onDismiss()
                 }) {
                     Icon(Icons.Default.Share, contentDescription = null)
                     Spacer(Modifier.padding(4.dp))
-                    Text("Share")
+                    Text(stringResource(R.string.share))
                 }
             }
             Spacer(Modifier.height(20.dp))

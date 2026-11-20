@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.preview
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
@@ -61,7 +64,7 @@ private fun PdfPages(local: File, onTap: () -> Unit) {
     val document = remember(local) { PdfDocument.open(local) }
     DisposableEffect(document) { onDispose { document?.close() } }
     if (document == null) {
-        FullWidthError("Couldn't read this PDF")
+        FullWidthError(stringResource(R.string.pdf_read_failed))
         return
     }
     val widthPx = with(LocalDensity.current) { (LocalConfiguration.current.screenWidthDp.dp - 24.dp).roundToPx() }
@@ -86,7 +89,7 @@ private fun PdfPages(local: File, onTap: () -> Unit) {
                     .background(Color.White),
             ) {
                 bitmap?.let {
-                    Image(it.asImageBitmap(), contentDescription = "Page ${index + 1}", contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxSize())
+                    Image(it.asImageBitmap(), contentDescription = stringResource(R.string.page_n, index + 1), contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxSize())
                 }
             }
         }

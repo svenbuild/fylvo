@@ -1,4 +1,322 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- English texts, also the fallback for every device language other than German.
+     German lives in values-de/strings.xml; both must hold the same keys (see StringsTest). -->
 <resources>
     <string name="app_name" translatable="false">Fylvo</string>
+
+    <!-- Common -->
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="delete_forever">Delete forever</string>
+    <string name="restore">Restore</string>
+    <string name="rename">Rename</string>
+    <string name="move_to">Move to</string>
+    <string name="copy_to">Copy to</string>
+    <string name="select">Select</string>
+    <string name="download">Download</string>
+    <string name="back">Back</string>
+    <string name="up">Up</string>
+    <string name="more">More</string>
+    <string name="more_options">More options</string>
+    <string name="folder">Folder</string>
+    <string name="new_folder">New folder</string>
+    <string name="folder_name">Folder name</string>
+    <string name="create">Create</string>
+    <string name="password">Password</string>
+    <string name="position_of">%1$d of %2$d</string>
+    <string name="download_failed">Download failed</string>
+
+    <!-- Tabs -->
+    <string name="tab_home">Home</string>
+    <string name="tab_files">Files</string>
+    <string name="tab_shared">Shared</string>
+    <string name="tab_account">Account</string>
+
+    <!-- Places and categories -->
+    <string name="my_files">My files</string>
+    <string name="shared_with_me">Shared with me</string>
+    <string name="trash">Trash</string>
+    <string name="shared_folder">Shared folder</string>
+    <string name="category_recent">Recent</string>
+    <string name="category_images">Images</string>
+    <string name="category_videos">Videos</string>
+    <string name="category_audio">Audio</string>
+    <string name="category_documents">Documents</string>
+
+    <!-- Files screen -->
+    <string name="add">Add</string>
+    <string name="kept_for_7_days">Kept for 7 days</string>
+    <string name="across_all_folders">Across all folders</string>
+    <string name="load_folder_failed">Couldn\'t load this folder</string>
+    <string name="retry">Retry</string>
+    <string name="folder_empty">This folder is empty</string>
+    <string name="folder_empty_hint">Upload files or create a folder with the + button</string>
+    <string name="trash_empty">Trash is empty</string>
+    <string name="trash_empty_hint">Deleted items stay here for 7 days</string>
+    <string name="nothing_recent">Nothing recent</string>
+    <string name="recent_hint">Files you upload or change show up here</string>
+    <string name="no_images">No images yet</string>
+    <string name="no_videos">No videos yet</string>
+    <string name="no_audio">No audio files yet</string>
+    <string name="no_documents">No documents yet</string>
+    <string name="nothing_shared">Nothing shared with you yet</string>
+    <string name="upload_files">Upload files</string>
+    <string name="into_folder">Into %s</string>
+    <string name="new_name">New name</string>
+    <string name="delete_file_title">Delete %s?</string>
+    <plurals name="delete_items_title">
+        <item quantity="one">Delete %d item?</item>
+        <item quantity="other">Delete %d items?</item>
+    </plurals>
+    <plurals name="delete_forever_title">
+        <item quantity="one">Delete %d item forever?</item>
+        <item quantity="other">Delete %d items forever?</item>
+    </plurals>
+    <string name="cannot_be_undone">This can\'t be undone.</string>
+    <string name="delete_to_trash_note">Items are moved to the trash and can be restored from the web app.</string>
+
+    <!-- Snackbar messages -->
+    <string name="upload_cancelled">Upload cancelled</string>
+    <plurals name="uploaded_files">
+        <item quantity="one">Uploaded %d file</item>
+        <item quantity="other">Uploaded %d files</item>
+    </plurals>
+    <string name="upload_failed">Upload failed</string>
+    <string name="upload_failed_reason">Upload failed: %s</string>
+    <string name="uploaded_some_failed">Uploaded %1$d, %2$d failed</string>
+    <string name="saved_file">Saved %s</string>
+    <plurals name="copied_items">
+        <item quantity="one">Copied %1$d item to %2$s</item>
+        <item quantity="other">Copied %1$d items to %2$s</item>
+    </plurals>
+    <plurals name="moved_items">
+        <item quantity="one">Moved %1$d item to %2$s</item>
+        <item quantity="other">Moved %1$d items to %2$s</item>
+    </plurals>
+    <string name="moved_to_trash_one">%s moved to trash</string>
+    <string name="moved_to_trash_many">%d items moved to trash</string>
+    <string name="moved_to_owner_trash_one">%s moved to the owner\'s trash</string>
+    <string name="moved_to_owner_trash_many">%d items moved to the owner\'s trash</string>
+    <string name="undo">Undo</string>
+    <string name="trash_items_not_found">Couldn\'t find the items in the trash</string>
+    <string name="restored">Restored</string>
+    <plurals name="restored_items">
+        <item quantity="one">Restored %d item</item>
+        <item quantity="other">Restored %d items</item>
+    </plurals>
+    <plurals name="deleted_items_permanently">
+        <item quantity="one">Deleted %d item permanently</item>
+        <item quantity="other">Deleted %d items permanently</item>
+    </plurals>
+    <string name="available_offline_message">%s available offline</string>
+
+    <!-- File action sheet and details -->
+    <string name="open">Open</string>
+    <string name="open_folder">Open folder</string>
+    <string name="show_in_folder">Show in folder</string>
+    <string name="share_link">Share link</string>
+    <string name="download_as_zip">Download as ZIP</string>
+    <string name="remove_offline_copy">Remove offline copy</string>
+    <string name="keep_offline">Keep offline</string>
+    <string name="details">Details</string>
+    <string name="size">Size</string>
+    <string name="size_with_bytes">%1$s (%2$s bytes)</string>
+    <string name="location">Location</string>
+    <string name="modified">Modified</string>
+    <string name="created">Created</string>
+    <string name="dimensions">Dimensions</string>
+    <string name="duration">Duration</string>
+    <string name="sharing">Sharing</string>
+    <string name="shared_via_link">Shared via link</string>
+
+    <!-- File kinds ("JPG image"); %s is the upper-case extension -->
+    <string name="kind_image">Image</string>
+    <string name="kind_image_ext">%s image</string>
+    <string name="kind_video">Video</string>
+    <string name="kind_video_ext">%s video</string>
+    <string name="kind_audio">Audio</string>
+    <string name="kind_audio_ext">%s audio</string>
+    <string name="kind_pdf">PDF document</string>
+    <string name="kind_document">Document</string>
+    <string name="kind_document_ext">%s document</string>
+    <string name="kind_spreadsheet">Spreadsheet</string>
+    <string name="kind_spreadsheet_ext">%s spreadsheet</string>
+    <string name="kind_presentation">Presentation</string>
+    <string name="kind_presentation_ext">%s presentation</string>
+    <string name="kind_archive">Archive</string>
+    <string name="kind_archive_ext">%s archive</string>
+    <string name="kind_code">Source file</string>
+    <string name="kind_code_ext">%s source file</string>
+    <string name="kind_apk">Android package</string>
+    <string name="kind_apk_ext">%s Android package</string>
+    <string name="kind_file">File</string>
+    <string name="kind_file_ext">%s file</string>
+
+    <!-- File rows and lists -->
+    <string name="available_offline">Available offline</string>
+    <string name="more_options_for">More options for %s</string>
+    <string name="video">Video</string>
+    <string name="selected_file">Selected %s</string>
+    <string name="not_selected_file">Not selected %s</string>
+    <string name="trash_row_subtitle">Deleted %1$s • from %2$s</string>
+    <string name="unknown">unknown</string>
+    <string name="clear_selection_for">Clear selection for %s</string>
+    <string name="select_all_from">Select all from %s</string>
+    <string name="today">Today</string>
+    <string name="yesterday">Yesterday</string>
+    <string name="unknown_date">Unknown date</string>
+
+    <!-- Top bars -->
+    <string name="search">Search</string>
+    <string name="sort_by">Sort by</string>
+    <string name="grid_view">Grid view</string>
+    <string name="list_view">List view</string>
+    <string name="refresh">Refresh</string>
+    <string name="sort_name">Name</string>
+    <string name="sort_modified">Date modified</string>
+    <string name="sort_created">Date created</string>
+    <string name="ascending">Ascending</string>
+    <string name="descending">Descending</string>
+    <string name="selected_count">%1$d of %2$d selected</string>
+    <string name="clear_selection">Clear selection</string>
+    <string name="select_all">Select all</string>
+
+    <!-- Folder picker -->
+    <string name="move_to_folder">Move to %s</string>
+    <string name="copy_to_folder">Copy to %s</string>
+    <string name="no_subfolders">No subfolders</string>
+    <string name="being_moved">Being moved</string>
+
+    <!-- Home and transfers -->
+    <string name="see_all">See all</string>
+    <string name="search_files">Search files</string>
+    <string name="uploading">Uploading</string>
+    <string name="uploading_n_of">Uploading %1$d of %2$d</string>
+    <string name="waiting">Waiting…</string>
+    <string name="upload_target">%1$s • to %2$s</string>
+    <string name="syncing_folder">Syncing folder</string>
+    <string name="background_progress">%1$s • %2$d of %3$d</string>
+    <string name="waiting_to_upload">Waiting to upload…</string>
+    <string name="upload_progress">%1$s • %2$s of %3$s</string>
+    <string name="cancel_upload">Cancel upload</string>
+    <string name="already_exists_one">\"%s\" already exists</string>
+    <string name="already_exist_many">%d files already exist</string>
+    <string name="upload_conflict_note">Replace keeps the old copy as a previous version. Keep both uploads under a new name.</string>
+    <string name="replace">Replace</string>
+    <string name="keep_both">Keep both</string>
+    <string name="skip">Skip</string>
+
+    <!-- Offline files -->
+    <string name="offline_files">Offline files</string>
+    <string name="nothing_saved_yet">Nothing saved yet</string>
+    <plurals name="offline_summary">
+        <item quantity="one">%1$d file • %2$s on this device</item>
+        <item quantity="other">%1$d files • %2$s on this device</item>
+    </plurals>
+    <string name="no_offline_files">No offline files</string>
+    <string name="no_offline_files_hint">Open a file\'s menu and choose Keep offline to have it here without a connection.</string>
+    <string name="offline_row_subtitle">%1$s • saved %2$s</string>
+    <string name="update_copy">Update copy</string>
+    <string name="remove_from_device">Remove from device</string>
+
+    <!-- Search -->
+    <string name="close_search">Close search</string>
+    <string name="clear">Clear</string>
+    <string name="everywhere">Everywhere</string>
+    <string name="search_hint">Type to search by file name</string>
+    <string name="no_files_match">No files match \"%s\"</string>
+
+    <!-- Share link -->
+    <string name="link_expires">Link expires</string>
+    <string name="never">Never</string>
+    <plurals name="days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <string name="download_limit">Download limit</string>
+    <string name="unlimited">Unlimited</string>
+    <string name="require_password">Require a password</string>
+    <string name="password_in_link">Included in the link; recipients open it without typing</string>
+    <string name="anyone_with_link">Anyone with the link can open it</string>
+    <string name="create_link_failed">Couldn\'t create the link</string>
+    <string name="create_link">Create link</string>
+    <string name="link_copied">Link copied</string>
+    <string name="copy">Copy</string>
+    <string name="share">Share</string>
+    <string name="share_file">Share %s</string>
+
+    <!-- Preview -->
+    <string name="copy_share_link">Copy share link</string>
+    <string name="open_with_another_app">Open with another app</string>
+    <string name="no_preview">No preview for this file type</string>
+    <string name="image_load_failed">Couldn\'t load image</string>
+    <string name="preview_load_failed">Couldn\'t load the preview (%s)</string>
+    <string name="pdf_read_failed">Couldn\'t read this PDF</string>
+    <string name="page_n">Page %d</string>
+    <string name="text_truncated">(truncated)</string>
+
+    <!-- Account -->
+    <string name="signed_in">Signed in</string>
+    <string name="storage">Storage</string>
+    <string name="storage_used">%1$s of %2$s used</string>
+    <string name="offline_files_hint">Files you keep on this phone</string>
+    <string name="offline_count">%d on this phone</string>
+    <string name="folder_sync">Folder sync</string>
+    <string name="mirror_local_folder">Mirror a local folder</string>
+    <string name="local_folder">Local: %s</string>
+    <string name="pick_device_folder">Pick a device folder to keep uploaded</string>
+    <string name="wifi_only">Wi-Fi only</string>
+    <string name="folder_in_my_files">Folder in My files</string>
+    <string name="last_folder_sync">Last folder sync %s</string>
+    <string name="sync_now">Sync now</string>
+    <string name="notifications">Notifications</string>
+    <string name="notify_finished_tasks">Notify on finished tasks</string>
+    <string name="notify_finished_tasks_hint">When a job on the server finishes</string>
+    <string name="language">Language</string>
+    <string name="language_device">Device language</string>
+    <string name="language_english" translatable="false">English</string>
+    <string name="language_german" translatable="false">Deutsch</string>
+    <string name="sign_out">Sign out</string>
+    <string name="sign_out_title">Sign out?</string>
+    <string name="sign_out_text">You will need to sign in again to sync your files.</string>
+
+    <!-- Sign-in -->
+    <string name="sign_in_to_server">Sign in to your server</string>
+    <string name="server">Server</string>
+    <string name="email">Email</string>
+    <string name="hide_password">Hide password</string>
+    <string name="show_password">Show password</string>
+    <string name="sign_in">Sign in</string>
+    <string name="two_step_verification">Two-step verification</string>
+    <string name="enter_code">Enter the 6-digit code from your authenticator app</string>
+    <string name="verification_code">Verification code</string>
+    <string name="verify">Verify</string>
+    <string name="use_different_account">Use a different account</string>
+    <string name="fill_in_login">Fill in server, email and password</string>
+    <string name="login_failed">Login failed</string>
+    <string name="login_wrong_password">Wrong email address or password.</string>
+    <string name="login_too_many_attempts">Too many wrong attempts. Sign-in for this account is locked for 15 minutes.</string>
+    <string name="login_wrong_code">Wrong code. Check your authenticator app and try again.</string>
+    <string name="login_failed_http">Login failed (HTTP %d)</string>
+    <string name="two_factor_without_session">Server requested 2FA without a session id</string>
+    <string name="https_only">Fylvo only connects over https. Use the https:// address of your server.</string>
+    <string name="secure_connection_failed">Couldn\'t make a secure connection. Check the address and the server\'s certificate.</string>
+    <string name="server_not_found">Server not found. Check the address.</string>
+    <string name="server_unreachable">Couldn\'t reach the server. Is it online?</string>
+    <string name="server_timeout">The server took too long to respond.</string>
+    <string name="sign_in_timed_out">Sign-in timed out, please enter your password again</string>
+
+    <!-- Notifications from background work -->
+    <string name="folder_sync_notification_title">Fylvo folder sync</string>
+    <string name="folder_sync_uploaded">%1$s (%2$d uploaded)</string>
+    <string name="task_notification_title">Fylvo task</string>
+    <string name="task_completed">%s completed</string>
+    <string name="task_canceled">%s canceled</string>
+    <string name="task_failed">%s failed</string>
+    <string name="task_failed_reason">%1$s failed: %2$s</string>
+    <string name="channel_task_updates">Task updates</string>
+    <string name="channel_uploads">Uploads</string>
+    <string name="file_exists_in_folder">%s already exists in this folder</string>
+    <string name="not_enough_storage">Not enough storage for %s</string>
+    <string name="could_not_upload">Could not upload %s</string>
 </resources>

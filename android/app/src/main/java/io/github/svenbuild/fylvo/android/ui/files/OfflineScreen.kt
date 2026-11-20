@@ -1,5 +1,9 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -71,17 +75,19 @@ fun OfflineScreen(
                 TopAppBar(
                     title = {
                         Column {
-                            Text("Offline files")
+                            Text(stringResource(R.string.offline_files))
                             Text(
-                                if (favorites.isEmpty()) "Nothing saved yet"
-                                else "${favorites.size} file${if (favorites.size == 1) "" else "s"} • ${formatSize(favorites.sumOf { it.size })} on this device",
+                                if (favorites.isEmpty()) stringResource(R.string.nothing_saved_yet)
+                                else pluralStringResource(
+                                    R.plurals.offline_summary, favorites.size, favorites.size, formatSize(favorites.sumOf { it.size }),
+                                ),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back)) }
                     },
                 )
             },
@@ -91,8 +97,8 @@ fun OfflineScreen(
                 Box(Modifier.fillMaxSize().padding(padding)) {
                     EmptyState(
                         icon = Icons.Outlined.OfflinePin,
-                        title = "No offline files",
-                        detail = "Open a file's menu and choose Keep offline to have it here without a connection.",
+                        title = stringResource(R.string.no_offline_files),
+                        detail = stringResource(R.string.no_offline_files_hint),
                     )
                 }
             } else {
@@ -143,7 +149,11 @@ private fun OfflineRow(entry: FavoriteEntry, onOpen: () -> Unit, onRefresh: () -
         Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
             Text(entry.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "${formatSize(entry.size)} • saved ${formatDate(OffsetDateTime.ofInstant(Instant.ofEpochMilli(entry.savedAt), ZoneId.systemDefault()).toString())}",
+                stringResource(
+                    R.string.offline_row_subtitle,
+                    formatSize(entry.size),
+                    formatDate(OffsetDateTime.ofInstant(Instant.ofEpochMilli(entry.savedAt), ZoneId.systemDefault()).toString()),
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -152,16 +162,16 @@ private fun OfflineRow(entry: FavoriteEntry, onOpen: () -> Unit, onRefresh: () -
         }
         Box {
             IconButton(onClick = { menuOpen = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "More", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
-                    text = { Text("Update copy") },
+                    text = { Text(stringResource(R.string.update_copy)) },
                     leadingIcon = { Icon(Icons.Default.Refresh, null) },
                     onClick = { menuOpen = false; onRefresh() },
                 )
                 DropdownMenuItem(
-                    text = { Text("Remove from device") },
+                    text = { Text(stringResource(R.string.remove_from_device)) },
                     leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                     onClick = { menuOpen = false; onRemove() },
                 )

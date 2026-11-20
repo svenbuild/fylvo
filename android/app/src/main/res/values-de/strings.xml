@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- German texts. Same keys as values/strings.xml. Style: short everyday German,
+     "du" where an address is needed, never the sharp s or the em dash (see StringsTest).
+     "Typos" is off because lint wants the sharp s ("Grösse", "schliessen"). -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="Typos">
+    <!-- Common -->
+    <string name="cancel">Abbrechen</string>
+    <string name="delete">Löschen</string>
+    <string name="delete_forever">Endgültig löschen</string>
+    <string name="restore">Wiederherstellen</string>
+    <string name="rename">Umbenennen</string>
+    <string name="move_to">Verschieben nach</string>
+    <string name="copy_to">Kopieren nach</string>
+    <string name="select">Auswählen</string>
+    <string name="download">Herunterladen</string>
+    <string name="back">Zurück</string>
+    <string name="up">Nach oben</string>
+    <string name="more">Mehr</string>
+    <string name="more_options">Weitere Optionen</string>
+    <string name="folder">Ordner</string>
+    <string name="new_folder">Neuer Ordner</string>
+    <string name="folder_name">Ordnername</string>
+    <string name="create">Erstellen</string>
+    <string name="password">Passwort</string>
+    <string name="position_of">%1$d von %2$d</string>
+    <string name="download_failed">Download fehlgeschlagen</string>
+
+    <!-- Tabs -->
+    <string name="tab_home">Start</string>
+    <string name="tab_files">Dateien</string>
+    <string name="tab_shared">Geteilt</string>
+    <string name="tab_account">Konto</string>
+
+    <!-- Places and categories -->
+    <string name="my_files">Meine Dateien</string>
+    <string name="shared_with_me">Mit mir geteilt</string>
+    <string name="trash">Papierkorb</string>
+    <string name="shared_folder">Geteilter Ordner</string>
+    <string name="category_recent">Zuletzt verwendet</string>
+    <string name="category_images">Bilder</string>
+    <string name="category_videos">Videos</string>
+    <string name="category_audio">Audio</string>
+    <string name="category_documents">Dokumente</string>
+
+    <!-- Files screen -->
+    <string name="add">Hinzufügen</string>
+    <string name="kept_for_7_days">Wird 7 Tage aufbewahrt</string>
+    <string name="across_all_folders">Aus allen Ordnern</string>
+    <string name="load_folder_failed">Ordner konnte nicht geladen werden</string>
+    <string name="retry">Erneut versuchen</string>
+    <string name="folder_empty">Dieser Ordner ist leer</string>
+    <string name="folder_empty_hint">Über + Dateien hochladen oder einen Ordner erstellen</string>
+    <string name="trash_empty">Papierkorb ist leer</string>
+    <string name="trash_empty_hint">Gelöschte Elemente bleiben 7 Tage hier</string>
+    <string name="nothing_recent">Keine aktuellen Dateien</string>
+    <string name="recent_hint">Hier erscheinen Dateien, die du hochlädst oder änderst</string>
+    <string name="no_images">Noch keine Bilder</string>
+    <string name="no_videos">Noch keine Videos</string>
+    <string name="no_audio">Noch keine Audiodateien</string>
+    <string name="no_documents">Noch keine Dokumente</string>
+    <string name="nothing_shared">Noch nichts mit dir geteilt</string>
+    <string name="upload_files">Dateien hochladen</string>
+    <string name="into_folder">In %s</string>
+    <string name="new_name">Neuer Name</string>
+    <string name="delete_file_title">%s löschen?</string>
+    <plurals name="delete_items_title">
+        <item quantity="one">%d Element löschen?</item>
+        <item quantity="other">%d Elemente löschen?</item>
+    </plurals>
+    <plurals name="delete_forever_title">
+        <item quantity="one">%d Element endgültig löschen?</item>
+        <item quantity="other">%d Elemente endgültig löschen?</item>
+    </plurals>
+    <string name="cannot_be_undone">Das kann nicht rückgängig gemacht werden.</string>
+    <string name="delete_to_trash_note">Die Elemente kommen in den Papierkorb und lassen sich in der Web-App wiederherstellen.</string>
+
+    <!-- Snackbar messages -->
+    <string name="upload_cancelled">Upload abgebrochen</string>
+    <plurals name="uploaded_files">
+        <item quantity="one">%d Datei hochgeladen</item>
+        <item quantity="other">%d Dateien hochgeladen</item>
+    </plurals>
+    <string name="upload_failed">Upload fehlgeschlagen</string>
+    <string name="upload_failed_reason">Upload fehlgeschlagen: %s</string>
+    <string name="uploaded_some_failed">%1$d hochgeladen, %2$d fehlgeschlagen</string>
+    <string name="saved_file">%s gespeichert</string>
+    <plurals name="copied_items">
+        <item quantity="one">%1$d Element nach %2$s kopiert</item>
+        <item quantity="other">%1$d Elemente nach %2$s kopiert</item>
+    </plurals>
+    <plurals name="moved_items">
+        <item quantity="one">%1$d Element nach %2$s verschoben</item>
+        <item quantity="other">%1$d Elemente nach %2$s verschoben</item>
+    </plurals>
+    <string name="moved_to_trash_one">%s in den Papierkorb verschoben</string>
+    <string name="moved_to_trash_many">%d Elemente in den Papierkorb verschoben</string>
+    <string name="moved_to_owner_trash_one">%s in den Papierkorb des Besitzers verschoben</string>
+    <string name="moved_to_owner_trash_many">%d Elemente in den Papierkorb des Besitzers verschoben</string>
+    <string name="undo">Rückgängig</string>
+    <string name="trash_items_not_found">Elemente im Papierkorb nicht gefunden</string>
+    <string name="restored">Wiederhergestellt</string>
+    <plurals name="restored_items">
+        <item quantity="one">%d Element wiederhergestellt</item>
+        <item quantity="other">%d Elemente wiederhergestellt</item>
+    </plurals>
+    <plurals name="deleted_items_permanently">
+        <item quantity="one">%d Element endgültig gelöscht</item>
+        <item quantity="other">%d Elemente endgültig gelöscht</item>
+    </plurals>
+    <string name="available_offline_message">%s ist offline verfügbar</string>
+
+    <!-- File action sheet and details -->
+    <string name="open">Öffnen</string>
+    <string name="open_folder">Ordner öffnen</string>
+    <string name="show_in_folder">Im Ordner anzeigen</string>
+    <string name="share_link">Link teilen</string>
+    <string name="download_as_zip">Als ZIP herunterladen</string>
+    <string name="remove_offline_copy">Offline-Kopie entfernen</string>
+    <string name="keep_offline">Offline verfügbar machen</string>
+    <string name="details">Details</string>
+    <string name="size">Grösse</string>
+    <string name="size_with_bytes">%1$s (%2$s Bytes)</string>
+    <string name="location">Speicherort</string>
+    <string name="modified">Geändert</string>
+    <string name="created">Erstellt</string>
+    <string name="dimensions">Abmessungen</string>
+    <string name="duration">Dauer</string>
+    <string name="sharing">Freigabe</string>
+    <string name="shared_via_link">Per Link geteilt</string>
+
+    <!-- File kinds ("JPG-Bild"); %s is the upper-case extension -->
+    <string name="kind_image">Bild</string>
+    <string name="kind_image_ext">%s-Bild</string>
+    <string name="kind_video">Video</string>
+    <string name="kind_video_ext">%s-Video</string>
+    <string name="kind_audio">Audio</string>
+    <string name="kind_audio_ext">%s-Audio</string>
+    <string name="kind_pdf">PDF-Dokument</string>
+    <string name="kind_document">Dokument</string>
+    <string name="kind_document_ext">%s-Dokument</string>
+    <string name="kind_spreadsheet">Tabelle</string>
+    <string name="kind_spreadsheet_ext">%s-Tabelle</string>
+    <string name="kind_presentation">Präsentation</string>
+    <string name="kind_presentation_ext">%s-Präsentation</string>
+    <string name="kind_archive">Archiv</string>
+    <string name="kind_archive_ext">%s-Archiv</string>
+    <string name="kind_code">Quelldatei</string>
+    <string name="kind_code_ext">%s-Quelldatei</string>
+    <string name="kind_apk">Android-Paket</string>
+    <string name="kind_apk_ext">%s-Android-Paket</string>
+    <string name="kind_file">Datei</string>
+    <string name="kind_file_ext">%s-Datei</string>
+
+    <!-- File rows and lists -->
+    <string name="available_offline">Offline verfügbar</string>
+    <string name="more_options_for">Weitere Optionen für %s</string>
+    <string name="video">Video</string>
+    <string name="selected_file">%s ausgewählt</string>
+    <string name="not_selected_file">%s nicht ausgewählt</string>
+    <string name="trash_row_subtitle">Gelöscht %1$s • aus %2$s</string>
+    <string name="unknown">unbekannt</string>
+    <string name="clear_selection_for">Auswahl für %s aufheben</string>
+    <string name="select_all_from">Alle von %s auswählen</string>
+    <string name="today">Heute</string>
+    <string name="yesterday">Gestern</string>
+    <string name="unknown_date">Unbekanntes Datum</string>
+
+    <!-- Top bars -->
+    <string name="search">Suchen</string>
+    <string name="sort_by">Sortieren nach</string>
+    <string name="grid_view">Rasteransicht</string>
+    <string name="list_view">Listenansicht</string>
+    <string name="refresh">Aktualisieren</string>
+    <string name="sort_name">Name</string>
+    <string name="sort_modified">Änderungsdatum</string>
+    <string name="sort_created">Erstellungsdatum</string>
+    <string name="ascending">Aufsteigend</string>
+    <string name="descending">Absteigend</string>
+    <string name="selected_count">%1$d von %2$d ausgewählt</string>
+    <string name="clear_selection">Auswahl aufheben</string>
+    <string name="select_all">Alle auswählen</string>
+
+    <!-- Folder picker -->
+    <string name="move_to_folder">Nach %s verschieben</string>
+    <string name="copy_to_folder">Nach %s kopieren</string>
+    <string name="no_subfolders">Keine Unterordner</string>
+    <string name="being_moved">Wird verschoben</string>
+
+    <!-- Home and transfers -->
+    <string name="see_all">Alle anzeigen</string>
+    <string name="search_files">Dateien suchen</string>
+    <string name="uploading">Wird hochgeladen</string>
+    <string name="uploading_n_of">Wird hochgeladen: %1$d von %2$d</string>
+    <string name="waiting">Wartet…</string>
+    <string name="upload_target">%1$s • nach %2$s</string>
+    <string name="syncing_folder">Ordner wird synchronisiert</string>
+    <string name="background_progress">%1$s • %2$d von %3$d</string>
+    <string name="waiting_to_upload">Wartet auf Upload…</string>
+    <string name="upload_progress">%1$s • %2$s von %3$s</string>
+    <string name="cancel_upload">Upload abbrechen</string>
+    <string name="already_exists_one">„%s“ ist schon vorhanden</string>
+    <string name="already_exist_many">%d Dateien sind schon vorhanden</string>
+    <string name="upload_conflict_note">Ersetzen behält die alte Datei als frühere Version. Beide behalten lädt unter neuem Namen hoch.</string>
+    <string name="replace">Ersetzen</string>
+    <string name="keep_both">Beide behalten</string>
+    <string name="skip">Überspringen</string>
+
+    <!-- Offline files -->
+    <string name="offline_files">Offline-Dateien</string>
+    <string name="nothing_saved_yet">Noch nichts gespeichert</string>
+    <plurals name="offline_summary">
+        <item quantity="one">%1$d Datei • %2$s auf diesem Gerät</item>
+        <item quantity="other">%1$d Dateien • %2$s auf diesem Gerät</item>
+    </plurals>
+    <string name="no_offline_files">Keine Offline-Dateien</string>
+    <string name="no_offline_files_hint">Öffne das Menü einer Datei und wähle „Offline verfügbar machen“, um sie ohne Verbindung hier zu haben.</string>
+    <string name="offline_row_subtitle">%1$s • gespeichert %2$s</string>
+    <string name="update_copy">Kopie aktualisieren</string>
+    <string name="remove_from_device">Vom Gerät entfernen</string>
+
+    <!-- Search -->
+    <string name="close_search">Suche schliessen</string>
+    <string name="clear">Leeren</string>
+    <string name="everywhere">Überall</string>
+    <string name="search_hint">Dateinamen eingeben, um zu suchen</string>
+    <string name="no_files_match">Keine Dateien zu „%s“</string>
+
+    <!-- Share link -->
+    <string name="link_expires">Link läuft ab</string>
+    <string name="never">Nie</string>
+    <plurals name="days">
+        <item quantity="one">%d Tag</item>
+        <item quantity="other">%d Tage</item>
+    </plurals>
+    <string name="download_limit">Download-Limit</string>
+    <string name="unlimited">Unbegrenzt</string>
+    <string name="require_password">Passwort verlangen</string>
+    <string name="password_in_link">Steckt im Link, Empfänger müssen nichts eintippen</string>
+    <string name="anyone_with_link">Alle mit dem Link haben Zugriff</string>
+    <string name="create_link_failed">Link konnte nicht erstellt werden</string>
+    <string name="create_link">Link erstellen</string>
+    <string name="link_copied">Link kopiert</string>
+    <string name="copy">Kopieren</string>
+    <string name="share">Teilen</string>
+    <string name="share_file">%s teilen</string>
+
+    <!-- Preview -->
+    <string name="copy_share_link">Freigabelink kopieren</string>
+    <string name="open_with_another_app">Mit anderer App öffnen</string>
+    <string name="no_preview">Keine Vorschau für diesen Dateityp</string>
+    <string name="image_load_failed">Bild konnte nicht geladen werden</string>
+    <string name="preview_load_failed">Vorschau konnte nicht geladen werden (%s)</string>
+    <string name="pdf_read_failed">Dieses PDF kann nicht gelesen werden</string>
+    <string name="page_n">Seite %d</string>
+    <string name="text_truncated">(gekürzt)</string>
+
+    <!-- Account -->
+    <string name="signed_in">Angemeldet</string>
+    <string name="storage">Speicher</string>
+    <string name="storage_used">%1$s von %2$s belegt</string>
+    <string name="offline_files_hint">Dateien, die du auf diesem Handy behältst</string>
+    <string name="offline_count">%d auf diesem Handy</string>
+    <string name="folder_sync">Ordner-Sync</string>
+    <string name="mirror_local_folder">Lokalen Ordner spiegeln</string>
+    <string name="local_folder">Lokal: %s</string>
+    <string name="pick_device_folder">Wähle einen Ordner auf dem Gerät, der laufend hochgeladen wird</string>
+    <string name="wifi_only">Nur über WLAN</string>
+    <string name="folder_in_my_files">Ordner in Meine Dateien</string>
+    <string name="last_folder_sync">Letzter Ordner-Sync %s</string>
+    <string name="sync_now">Jetzt synchronisieren</string>
+    <string name="notifications">Benachrichtigungen</string>
+    <string name="notify_finished_tasks">Bei fertigen Aufgaben benachrichtigen</string>
+    <string name="notify_finished_tasks_hint">Wenn ein Auftrag auf dem Server fertig ist</string>
+    <string name="language">Sprache</string>
+    <string name="language_device">Gerätesprache</string>
+    <string name="sign_out">Abmelden</string>
+    <string name="sign_out_title">Abmelden?</string>
+    <string name="sign_out_text">Du musst dich erneut anmelden, um deine Dateien zu synchronisieren.</string>
+
+    <!-- Sign-in -->
+    <string name="sign_in_to_server">Bei deinem Server anmelden</string>
+    <string name="server">Server</string>
+    <string name="email">E-Mail</string>
+    <string name="hide_password">Passwort verbergen</string>
+    <string name="show_password">Passwort anzeigen</string>
+    <string name="sign_in">Anmelden</string>
+    <string name="two_step_verification">Bestätigung in zwei Schritten</string>
+    <string name="enter_code">Gib den 6-stelligen Code aus deiner Authenticator-App ein</string>
+    <string name="verification_code">Bestätigungscode</string>
+    <string name="verify">Bestätigen</string>
+    <string name="use_different_account">Anderes Konto verwenden</string>
+    <string name="fill_in_login">Bitte Server, E-Mail und Passwort ausfüllen</string>
+    <string name="login_failed">Anmeldung fehlgeschlagen</string>
+    <string name="login_wrong_password">E-Mail-Adresse oder Passwort falsch.</string>
+    <string name="login_too_many_attempts">Zu viele falsche Versuche. Die Anmeldung für dieses Konto ist für 15 Minuten gesperrt.</string>
+    <string name="login_wrong_code">Falscher Code. Prüfe die Authenticator-App und versuche es noch einmal.</string>
+    <string name="login_failed_http">Anmeldung fehlgeschlagen (HTTP %d)</string>
+    <string name="two_factor_without_session">Der Server verlangt 2FA, aber ohne Sitzungs-ID</string>
+    <string name="https_only">Fylvo verbindet sich nur über https. Nutze die https://-Adresse deines Servers.</string>
+    <string name="secure_connection_failed">Keine sichere Verbindung möglich. Prüfe die Adresse und das Zertifikat des Servers.</string>
+    <string name="server_not_found">Server nicht gefunden. Prüfe die Adresse.</string>
+    <string name="server_unreachable">Server nicht erreichbar. Ist er online?</string>
+    <string name="server_timeout">Der Server hat zu lange nicht geantwortet.</string>
+    <string name="sign_in_timed_out">Anmeldung abgelaufen, bitte gib dein Passwort erneut ein</string>
+
+    <!-- Notifications from background work -->
+    <string name="folder_sync_notification_title">Fylvo Ordner-Sync</string>
+    <string name="folder_sync_uploaded">%1$s (%2$d hochgeladen)</string>
+    <string name="task_notification_title">Fylvo-Aufgabe</string>
+    <string name="task_completed">%s abgeschlossen</string>
+    <string name="task_canceled">%s abgebrochen</string>
+    <string name="task_failed">%s fehlgeschlagen</string>
+    <string name="task_failed_reason">%1$s fehlgeschlagen: %2$s</string>
+    <string name="channel_task_updates">Aufgaben</string>
+    <string name="channel_uploads">Uploads</string>
+    <string name="file_exists_in_folder">%s ist in diesem Ordner schon vorhanden</string>
+    <string name="not_enough_storage">Nicht genug Speicherplatz für %s</string>
+    <string name="could_not_upload">%s konnte nicht hochgeladen werden</string>
+</resources>

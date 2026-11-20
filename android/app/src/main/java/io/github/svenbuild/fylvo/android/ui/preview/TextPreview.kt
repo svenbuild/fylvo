@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.preview
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -28,8 +31,9 @@ fun TextPreview(file: FileObject, viewModel: FilesViewModel) {
         if (error != null) FullWidthError(error) else LoadingOverlay(progress)
         return
     }
+    val truncated = stringResource(R.string.text_truncated)
     val text by produceState<String?>(initialValue = null, local) {
-        value = withContext(Dispatchers.IO) { runCatching { readText(local) }.getOrNull() }
+        value = withContext(Dispatchers.IO) { runCatching { readText(local, truncated) }.getOrNull() }
     }
     when (val t = text) {
         null -> LoadingOverlay(null)
@@ -48,6 +52,6 @@ fun TextPreview(file: FileObject, viewModel: FilesViewModel) {
     }
 }
 
-private fun readText(file: File): String = file.readText().let {
-    if (it.length > 200_000) it.take(200_000) + "\n\n… (truncated)" else it
+private fun readText(file: File, truncated: String): String = file.readText().let {
+    if (it.length > 200_000) it.take(200_000) + "\n\n… " + truncated else it
 }

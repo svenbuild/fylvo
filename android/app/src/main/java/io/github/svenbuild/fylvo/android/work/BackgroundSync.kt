@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.work
 
+import androidx.annotation.StringRes
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.work.Data
 import androidx.work.WorkInfo
 import androidx.work.workDataOf
@@ -16,8 +19,8 @@ object BackgroundSync {
     private const val KEY_INDEX = "index"
     private const val KEY_TOTAL = "total"
 
-    enum class Kind(val label: String) {
-        FOLDER("Syncing folder"),
+    enum class Kind(@StringRes val label: Int) {
+        FOLDER(R.string.syncing_folder),
     }
 
     fun progress(kind: Kind, name: String, index: Int, total: Int): Data =

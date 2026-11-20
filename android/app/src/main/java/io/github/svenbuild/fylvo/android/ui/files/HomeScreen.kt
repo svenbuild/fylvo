@@ -1,5 +1,8 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.R
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -85,7 +88,7 @@ fun HomeScreen(
             ActivityCard(state, onOpenUploads = onOpenRecent)
         }
 
-        SectionHeader("Recent", action = if (state.recent.isNotEmpty()) "See all" to onOpenRecent else null)
+        SectionHeader(stringResource(R.string.category_recent), action = if (state.recent.isNotEmpty()) stringResource(R.string.see_all) to onOpenRecent else null)
         when {
             state.recent.isEmpty() && state.recentLoading -> Box(
                 Modifier
@@ -94,7 +97,7 @@ fun HomeScreen(
                 contentAlignment = Alignment.Center,
             ) { CircularProgressIndicator(Modifier.size(28.dp)) }
             state.recent.isEmpty() -> Text(
-                "Files you upload or change show up here",
+                stringResource(R.string.recent_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
@@ -127,14 +130,14 @@ private fun ActivityCard(state: FilesUiState, onOpenUploads: () -> Unit) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             state.uploads.forEach { u ->
                 ActivityRow(
-                    title = if (u.total > 1) "Uploading ${u.index + 1} of ${u.total}" else "Uploading",
-                    detail = u.name.ifEmpty { "Waiting…" } + " • to " + CrUri.displayName(u.parentUri),
+                    title = if (u.total > 1) stringResource(R.string.uploading_n_of, u.index + 1, u.total) else stringResource(R.string.uploading),
+                    detail = stringResource(R.string.upload_target, u.name.ifEmpty { stringResource(R.string.waiting) }, CrUri.displayName(u.parentUri)),
                     fraction = u.fraction,
                 )
             }
             state.backgroundSyncs.forEach { b ->
                 ActivityRow(
-                    title = "${b.kind.label} • ${b.index + 1} of ${b.total}",
+                    title = stringResource(R.string.background_progress, stringResource(b.kind.label), b.index + 1, b.total),
                     detail = b.name,
                     fraction = b.fraction,
                 )
@@ -174,7 +177,7 @@ private fun SearchField(onSearch: () -> Unit) {
                 modifier = Modifier.padding(start = 18.dp, end = 12.dp),
             )
             Text(
-                "Search files",
+                stringResource(R.string.search_files),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
