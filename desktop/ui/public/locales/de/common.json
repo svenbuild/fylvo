@@ -103,7 +103,7 @@
       },
       "confirmQuestion": {
         "server": "{{count}} Einträge auch auf dem Server löschen? Sie landen im Papierkorb des Servers.",
-        "local": "{{count}} Einträge auch auf diesem PC löschen? Dateien mit eigenen Änderungen landen im Papierkorb, die übrigen liegen im Papierkorb des Servers."
+        "local": "{{count}} Einträge auch auf diesem PC löschen? Dateien mit lokalen Daten landen im Papierkorb."
       }
     },
     "driveStatus": {

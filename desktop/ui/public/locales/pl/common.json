@@ -103,7 +103,7 @@
       },
       "confirmQuestion": {
         "server": "Usunąć {{count}} elementów także na serwerze? Trafią do kosza serwera.",
-        "local": "Usunąć {{count}} elementów także na tym komputerze? Pliki ze zmianami lokalnymi trafią do kosza, pozostałe są w koszu serwera."
+        "local": "Usunąć {{count}} elementów także na tym komputerze? Pliki z danymi lokalnymi trafią do kosza."
       }
     },
     "driveStatus": {

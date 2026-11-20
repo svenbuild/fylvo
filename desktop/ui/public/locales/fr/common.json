@@ -103,7 +103,7 @@
       },
       "confirmQuestion": {
         "server": "Supprimer aussi {{count}} éléments sur le serveur ? Ils vont dans la corbeille du serveur.",
-        "local": "Supprimer aussi {{count}} éléments sur ce PC ? Les fichiers modifiés localement vont dans la corbeille, les autres sont dans la corbeille du serveur."
+        "local": "Supprimer aussi {{count}} éléments sur ce PC ? Les fichiers avec des données locales vont dans la corbeille."
       }
     },
     "driveStatus": {

@@ -103,7 +103,7 @@
       },
       "confirmQuestion": {
         "server": "Delete {{count}} entries on the server too? They go to the server's trash.",
-        "local": "Delete {{count}} entries on this PC too? Files with local changes go to the recycle bin, the others are in the server's trash."
+        "local": "Delete {{count}} entries on this PC too? Files with local data go to the recycle bin."
       }
     },
     "driveStatus": {

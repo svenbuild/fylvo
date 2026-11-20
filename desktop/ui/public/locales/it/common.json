@@ -103,7 +103,7 @@
       },
       "confirmQuestion": {
         "server": "Eliminare {{count}} elementi anche sul server? Finiscono nel cestino del server.",
-        "local": "Eliminare {{count}} elementi anche su questo PC? I file con modifiche locali finiscono nel cestino, gli altri sono nel cestino del server."
+        "local": "Eliminare {{count}} elementi anche su questo PC? I file con dati locali finiscono nel cestino."
       }
     },
     "driveStatus": {

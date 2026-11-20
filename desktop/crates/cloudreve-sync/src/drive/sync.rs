@@ -835,7 +835,7 @@ impl Mount {
                     }
                     // A missing subfolder reads as "everything in it was deleted", but only if
                     // the synced folder itself is still there.
-                    if !self.server_has(&sync_root).await? {
+                    if !self.sync_root_exists().await? {
                         anyhow::bail!("the synced folder is missing on the server");
                     }
                     tracing::debug!(
@@ -973,8 +973,12 @@ impl Mount {
     /// Fylvo: hold the local deletions of this plan if they are a mass deletion. Returns the
     /// plan without them in that case.
     fn hold_mass_local_deletion(&self, plan: SyncPlan) -> SyncPlan {
-        let doomed = doomed_local_paths(&plan);
-        if doomed.is_empty() || self.is_local_deletion_confirmed(&doomed) {
+        // Paths the user confirmed (or renamed on the server) pass; only the others are checked.
+        let doomed: Vec<PathBuf> = doomed_local_paths(&plan)
+            .into_iter()
+            .filter(|p| !self.is_local_deletion_confirmed(std::slice::from_ref(p)))
+            .collect();
+        if doomed.is_empty() {
             return plan;
         }
         // Paths the user chose to keep stay, without asking again.

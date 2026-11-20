@@ -103,7 +103,7 @@
       },
       "confirmQuestion": {
         "server": "¿Eliminar también {{count}} elementos en el servidor? Van a la papelera del servidor.",
-        "local": "¿Eliminar también {{count}} elementos en este PC? Los archivos con cambios locales van a la papelera de reciclaje, los demás están en la papelera del servidor."
+        "local": "¿Eliminar también {{count}} elementos en este PC? Los archivos con datos locales van a la papelera de reciclaje."
       }
     },
     "driveStatus": {

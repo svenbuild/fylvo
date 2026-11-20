@@ -41,9 +41,9 @@ const CONFIRMATION_VALID_FOR: Duration = Duration::from_secs(600);
 /// Deletions of one side within this time add up, so a large deletion that arrives in small
 /// parts (one folder after the other) is held too.
 const RECENT_WINDOW: Duration = Duration::from_secs(120);
-/// At most this many folders this PC never opened are counted on the server per deletion; more
-/// are held without asking the server.
-const MAX_UNOPENED_LOOKUPS: usize = 10;
+/// At most this many folders are counted on the server per deletion; more are held without
+/// asking the server.
+const MAX_FOLDER_LOOKUPS: usize = 10;
 
 /// Whether deleting `affected` of `total` known entries needs the user's confirmation.
 pub fn is_mass_deletion(affected: i64, total: i64) -> bool {
@@ -84,11 +84,11 @@ pub struct DeletionGuardState {
     confirmed_local: Vec<(PathBuf, Instant)>,
     /// Paths the user chose to keep here for this run; not deleted and not asked about again.
     kept_local: Vec<PathBuf>,
-    /// Deletions that passed recently, per side: when and how many entries.
-    recent_server: Vec<(Instant, i64)>,
-    recent_local: Vec<(Instant, i64)>,
-    /// Held folders this PC never opened, with their number of entries on the server.
-    unopened: Vec<(PathBuf, i64)>,
+    /// Deletions that passed recently, per side: when, which paths and how many entries.
+    recent_server: Vec<(Instant, Vec<PathBuf>, i64)>,
+    recent_local: Vec<(Instant, Vec<PathBuf>, i64)>,
+    /// Held folders with more entries on the server than the inventory knows: the difference.
+    uncounted: Vec<(PathBuf, i64)>,
 }
 
 impl DeletionGuardState {
@@ -99,25 +99,52 @@ impl DeletionGuardState {
         }
     }
 
-    /// Whether `affected` more deletions on this side, added to the recent ones, make a mass
-    /// deletion of a drive with `total` entries. If not, they count as recent from now on.
-    fn check_recent(&mut self, side: DeletionSide, affected: i64, total: i64, now: Instant) -> bool {
+    fn recent(&mut self, side: DeletionSide, now: Instant) -> &mut Vec<(Instant, Vec<PathBuf>, i64)> {
         let recent = match side {
             DeletionSide::Server => &mut self.recent_server,
             DeletionSide::Local => &mut self.recent_local,
         };
-        recent.retain(|(at, _)| now.duration_since(*at) < RECENT_WINDOW);
-        let sum = recent.iter().map(|(_, n)| n).sum::<i64>() + affected;
+        recent.retain(|(at, _, _)| now.duration_since(*at) < RECENT_WINDOW);
+        recent
+    }
+
+    /// The paths not counted yet: a path inside a folder whose deletion passed recently was
+    /// counted with that folder (a sync walks into a deleted folder after the folder itself).
+    fn fresh_paths(&mut self, side: DeletionSide, paths: &[PathBuf], now: Instant) -> Vec<PathBuf> {
+        let recent = self.recent(side, now);
+        paths
+            .iter()
+            .filter(|path| !recent.iter().any(|(_, passed, _)| is_under(path, passed)))
+            .cloned()
+            .collect()
+    }
+
+    /// Whether deleting `paths` (`affected` entries of a drive with `total`) on this side waits
+    /// for the user: when a deletion of that side is held already, or when it makes a mass
+    /// deletion together with the recent ones. If not, the paths count as recent from now on.
+    fn needs_hold(
+        &mut self,
+        side: DeletionSide,
+        paths: Vec<PathBuf>,
+        affected: i64,
+        total: i64,
+        now: Instant,
+    ) -> bool {
+        if self.slot(side).is_some() {
+            return true;
+        }
+        let recent = self.recent(side, now);
+        let sum = recent.iter().map(|(_, _, n)| n).sum::<i64>() + affected;
         if is_mass_deletion(sum, total) {
             return true;
         }
-        recent.push((now, affected));
+        recent.push((now, paths, affected));
         false
     }
 
-    /// Entries under unopened folders among `paths` that the inventory does not know.
-    fn unopened_entries(&self, paths: &[PathBuf]) -> i64 {
-        self.unopened
+    /// Entries at or under `paths` that the inventory does not know.
+    fn uncounted_entries(&self, paths: &[PathBuf]) -> i64 {
+        self.uncounted
             .iter()
             .filter(|(folder, _)| is_under(folder, paths))
             .map(|(_, n)| n)
@@ -221,7 +248,7 @@ impl DeletionGuardState {
             held.counted = false;
             Some(held.paths.clone())
         };
-        self.unopened.retain(|(folder, _)| !resolved.contains(folder));
+        self.uncounted.retain(|(folder, _)| !is_under(folder, resolved));
         remaining
     }
 
@@ -282,33 +309,41 @@ pub fn is_read_only_capability(capability: Option<&str>) -> Option<bool> {
 }
 
 impl Mount {
-    /// Whether deleting `paths` on the server needs the user's confirmation. Folders this PC
-    /// never opened are counted on the server, since the inventory does not know their content.
+    /// Whether deleting `paths` on the server needs the user's confirmation. Folders are
+    /// counted on the server too, since the inventory does not know folders this PC never
+    /// opened.
     pub(crate) async fn server_deletion_needs_hold(&self, paths: &[PathBuf]) -> bool {
-        if self.has_deletion_held(DeletionSide::Server) {
-            return true;
-        }
-        let unopened = self.count_unopened_folders(paths).await;
-        let (affected, total) = self.count_deletion(paths);
-        let affected = affected + unopened.iter().map(|(_, n)| n).sum::<i64>();
+        let now = Instant::now();
+        let fresh = self
+            .deletion_guard
+            .lock()
+            .unwrap()
+            .fresh_paths(DeletionSide::Server, paths, now);
+        let uncounted = self.count_folders_on_server(&fresh).await;
+        let (affected, total) = self.count_deletion(&fresh);
+        let affected = affected + uncounted.iter().map(|(_, n)| n).sum::<i64>();
+        // Decided under one lock, so a hold started meanwhile is seen.
         let mut state = self.deletion_guard.lock().unwrap();
-        let hold = state.check_recent(DeletionSide::Server, affected, total, Instant::now());
+        let hold = state.needs_hold(DeletionSide::Server, fresh, affected, total, now);
         if hold {
-            state.unopened.extend(unopened);
+            state.uncounted.extend(uncounted);
         }
         hold
     }
 
     /// Whether deleting `paths` on this PC needs the user's confirmation.
     pub(crate) fn local_deletion_needs_hold(&self, paths: &[PathBuf]) -> bool {
-        if self.has_deletion_held(DeletionSide::Local) {
-            return true;
-        }
-        let (affected, total) = self.count_deletion(paths);
+        let now = Instant::now();
+        let fresh = self
+            .deletion_guard
+            .lock()
+            .unwrap()
+            .fresh_paths(DeletionSide::Local, paths, now);
+        let (affected, total) = self.count_deletion(&fresh);
         self.deletion_guard
             .lock()
             .unwrap()
-            .check_recent(DeletionSide::Local, affected, total, Instant::now())
+            .needs_hold(DeletionSide::Local, fresh, affected, total, now)
     }
 
     /// Entries at or under `paths`, and all entries of the drive. Without numbers from the
@@ -323,34 +358,40 @@ impl Mount {
             tracing::error!(target: "drive::guard", id = %self.id, error = ?e, "Failed to count deletion");
             (paths.len() as i64, 0)
         });
-        let unopened = self.deletion_guard.lock().unwrap().unopened_entries(paths);
-        (affected + unopened, total)
+        let uncounted = self.deletion_guard.lock().unwrap().uncounted_entries(paths);
+        (affected + uncounted, total)
     }
 
-    /// Folders among `paths` whose content this PC never saw, with their number of entries on
-    /// the server. A folder the server cannot count counts as a mass deletion.
-    async fn count_unopened_folders(&self, paths: &[PathBuf]) -> Vec<(PathBuf, i64)> {
-        let unopened: Vec<&PathBuf> = paths
+    /// Folders among `paths` with more entries on the server than the inventory knows (parts
+    /// this PC never opened), with the difference. A folder the server cannot count fully
+    /// counts as a mass deletion.
+    async fn count_folders_on_server(&self, paths: &[PathBuf]) -> Vec<(PathBuf, i64)> {
+        let folders: Vec<(&PathBuf, i64)> = paths
             .iter()
-            .filter(|path| {
-                let Some(text) = path.to_str() else {
-                    return false;
-                };
-                let is_folder =
-                    matches!(self.inventory.query_by_path(text), Ok(Some(meta)) if meta.is_folder);
-                is_folder && matches!(self.inventory.count_under_paths(&self.id, &[text]), Ok(1))
+            .filter_map(|path| {
+                let text = path.to_str()?;
+                match self.inventory.query_by_path(text) {
+                    Ok(Some(meta)) if meta.is_folder => {}
+                    _ => return None,
+                }
+                let known = self.inventory.count_under_paths(&self.id, &[text]).ok()?;
+                Some((path, known))
             })
             .collect();
-        let mut counted = Vec::with_capacity(unopened.len());
-        for (i, path) in unopened.into_iter().enumerate() {
-            let entries = if i < MAX_UNOPENED_LOOKUPS {
+        let mut uncounted = Vec::new();
+        for (i, (path, known)) in folders.into_iter().enumerate() {
+            let on_server = if i < MAX_FOLDER_LOOKUPS {
                 self.count_on_server(path).await.unwrap_or(MASS_DELETE_COUNT)
             } else {
                 MASS_DELETE_COUNT
             };
-            counted.push((path.clone(), entries));
+            // The inventory row of the folder itself is not in the server's count.
+            let missing = on_server - (known - 1);
+            if missing > 0 {
+                uncounted.push((path.clone(), missing));
+            }
         }
-        counted
+        uncounted
     }
 
     /// Number of entries in a folder on the server, `None` if the server cannot tell.
@@ -366,13 +407,37 @@ impl Mount {
             })
             .await;
         match info {
-            Ok(file) => file
-                .folder_summary
-                .map(|summary| summary.files as i64 + summary.folders as i64),
+            Ok(file) => file.folder_summary.map(|summary| {
+                let entries = summary.files as i64 + summary.folders as i64;
+                // An unfinished count stopped at the server's limit: many entries.
+                if summary.completed { entries } else { entries.max(MASS_DELETE_COUNT) }
+            }),
             Err(e) => {
                 tracing::warn!(target: "drive::guard", id = %self.id, path = %path.display(), error = %e, "Failed to count folder on the server");
                 None
             }
+        }
+    }
+
+    /// Whether the synced folder exists on the server. `Err` if it cannot tell. Lists it, since
+    /// the server gives no file info for the root of a drive.
+    pub(crate) async fn sync_root_exists(&self) -> Result<bool> {
+        let remote_path = self.config.read().await.remote_path.to_string();
+        let result = self
+            .cr_client
+            .list_files(&ListFileService {
+                uri: remote_path,
+                page: None,
+                page_size: Some(10),
+                order_by: None,
+                order_direction: None,
+                next_page_token: None,
+            })
+            .await;
+        match result {
+            Ok(_) => Ok(true),
+            Err(e) if is_not_found(&e) => Ok(false),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -431,10 +496,6 @@ impl Mount {
     /// Whether the user chose to keep `path` here although it was deleted on the server.
     pub(crate) fn is_kept_locally(&self, path: &Path) -> bool {
         self.deletion_guard.lock().unwrap().is_kept(path)
-    }
-
-    fn has_deletion_held(&self, side: DeletionSide) -> bool {
-        self.deletion_guard.lock().unwrap().slot(side).is_some()
     }
 
     /// Whether all `paths` may be deleted locally without asking.
@@ -747,37 +808,65 @@ mod tests {
     fn deletions_in_small_parts_add_up() {
         let mut state = DeletionGuardState::default();
         let now = Instant::now();
+        let part = |i: u64| paths(&[&format!(r"C:\S\folder{i}")]);
         // 60 entries in 12 folders of 5, in a drive of 10000: each part alone is small.
         for i in 0..9 {
             let at = now + Duration::from_secs(i);
-            assert!(!state.check_recent(DeletionSide::Local, 5, 10_000, at));
+            assert!(!state.needs_hold(DeletionSide::Local, part(i), 5, 10_000, at));
         }
         // The tenth part reaches 50 within the window and is held.
         let at = now + Duration::from_secs(9);
-        assert!(state.check_recent(DeletionSide::Local, 5, 10_000, at));
+        assert!(state.needs_hold(DeletionSide::Local, part(9), 5, 10_000, at));
         // A held part does not count as passed, the next one is held too.
-        assert!(state.check_recent(DeletionSide::Local, 5, 10_000, at));
+        assert!(state.needs_hold(DeletionSide::Local, part(10), 5, 10_000, at));
         // The other side counts on its own.
-        assert!(!state.check_recent(DeletionSide::Server, 5, 10_000, at));
+        assert!(!state.needs_hold(DeletionSide::Server, part(11), 5, 10_000, at));
         // After the window, small deletions pass again.
         let later = now + RECENT_WINDOW + Duration::from_secs(10);
-        assert!(!state.check_recent(DeletionSide::Local, 5, 10_000, later));
+        assert!(!state.needs_hold(DeletionSide::Local, part(12), 5, 10_000, later));
     }
 
     #[test]
-    fn unopened_folder_counts_until_released() {
+    fn a_held_side_holds_every_further_deletion() {
         let mut state = DeletionGuardState::default();
-        state.unopened.push((PathBuf::from(r"C:\S\Photos"), 10_000));
-        assert_eq!(state.unopened_entries(&paths(&[r"C:\S\Photos"])), 10_000);
+        let now = Instant::now();
+        state.add(DeletionSide::Server, paths(&[r"C:\S\a"]));
+        assert!(state.needs_hold(DeletionSide::Server, paths(&[r"C:\S\b"]), 1, 10_000, now));
+        assert!(!state.needs_hold(DeletionSide::Local, paths(&[r"C:\S\b"]), 1, 10_000, now));
+    }
+
+    #[test]
+    fn a_walk_into_a_passed_folder_is_not_counted_again() {
+        let mut state = DeletionGuardState::default();
+        let now = Instant::now();
+        // Folder A with 30 entries passed (drive of 10000).
+        assert!(!state.needs_hold(DeletionSide::Local, paths(&[r"C:\S\A"]), 31, 10_000, now));
+        // The walk into A finds its children: already counted.
+        let children = paths(&[r"C:\S\A\1.txt", r"C:\S\A\B"]);
+        assert!(state.fresh_paths(DeletionSide::Local, &children, now).is_empty());
+        // A sibling is new.
+        let sibling = paths(&[r"C:\S\AB"]);
+        assert_eq!(state.fresh_paths(DeletionSide::Local, &sibling, now), sibling);
+        // Only within the window.
+        let later = now + RECENT_WINDOW + Duration::from_secs(1);
+        assert_eq!(state.fresh_paths(DeletionSide::Local, &children, later), children);
+    }
+
+    #[test]
+    fn uncounted_entries_last_until_released() {
+        let mut state = DeletionGuardState::default();
+        state.uncounted.push((PathBuf::from(r"C:\S\Photos\2020"), 9_000));
+        assert_eq!(state.uncounted_entries(&paths(&[r"C:\S\Photos\2020"])), 9_000);
         // Also when held together with its parent folder, not for a sibling.
-        assert_eq!(state.unopened_entries(&paths(&[r"C:\S"])), 10_000);
-        assert_eq!(state.unopened_entries(&paths(&[r"C:\S\Photos2"])), 0);
+        assert_eq!(state.uncounted_entries(&paths(&[r"C:\S\Photos"])), 9_000);
+        assert_eq!(state.uncounted_entries(&paths(&[r"C:\S\Photos2"])), 0);
+        // Resolving the parent folder ends it.
         let (_, merged) = state.add(DeletionSide::Server, paths(&[r"C:\S\Photos"])).unwrap();
-        state.set_count(DeletionSide::Server, &merged, 10_001);
+        state.set_count(DeletionSide::Server, &merged, 9_004);
         let version = state.server.as_ref().unwrap().version;
         state.answered(DeletionSide::Server, version).unwrap();
         state.release(DeletionSide::Server, &merged);
-        assert_eq!(state.unopened_entries(&paths(&[r"C:\S\Photos"])), 0);
+        assert_eq!(state.uncounted_entries(&paths(&[r"C:\S\Photos"])), 0);
     }
 
     #[test]
