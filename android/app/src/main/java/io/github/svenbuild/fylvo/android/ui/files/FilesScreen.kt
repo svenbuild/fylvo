@@ -142,7 +142,7 @@ fun FilesScreen(
         // hundred picked photos that takes a moment and must not freeze the screen.
         scope.launch {
             val pending = withContext(Dispatchers.IO) {
-                PendingUpload(uris, uris.map { UploadWorker.displayName(context, it) }, parentUri, existing)
+                PendingUpload(uris, UploadWorker.uniqueWithinSelection(uris.map { UploadWorker.displayName(context, it) }, existing), parentUri, existing)
             }
             if (pending.conflicts.isEmpty()) {
                 // The transfer card above the files shows the batch as soon as it is queued.

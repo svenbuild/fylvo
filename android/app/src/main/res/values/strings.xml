@@ -307,6 +307,7 @@
     <string name="update_download_failed">Download failed</string>
     <string name="update_checksum_failed">Checksum does not match, please try again</string>
     <string name="update_changed">The update changed on the server, please try again</string>
+    <string name="update_not_installed">The update was not installed. If Play Protect warned you, tap Install again and choose \"Install anyway\".</string>
     <string name="update_invalid">Update is not valid</string>
     <string name="update_allow_install">Allow Fylvo to install apps, then tap Install again</string>
     <string name="sign_out">Sign out</string>

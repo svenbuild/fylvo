@@ -304,6 +304,7 @@
     <string name="update_download_failed">Download fehlgeschlagen</string>
     <string name="update_checksum_failed">Prüfsumme stimmt nicht, bitte erneut versuchen</string>
     <string name="update_changed">Das Update hat sich auf dem Server geändert, bitte erneut versuchen</string>
+    <string name="update_not_installed">Das Update wurde nicht installiert. Falls Play Protect gewarnt hat: erneut auf Installieren tippen und „Trotzdem installieren“ wählen.</string>
     <string name="update_invalid">Update ist ungültig</string>
     <string name="update_allow_install">Erlaube Fylvo, Apps zu installieren, und tippe dann erneut auf Installieren</string>
     <string name="sign_out">Abmelden</string>

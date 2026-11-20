@@ -128,4 +128,12 @@ class UploadQueueTest {
         tmp.root.resolve("$id.json").writeText(tmp.root.resolve("$id.json").readText().replace(Regex(""",?\s*"account":"[^"]*""""), ""))
         assertNull(queue.load(id)!!.account)
     }
+
+    @Test
+    fun sameNamesInOneSelectionNeverTakeANameFromTheFolder() {
+        // The folder has x.jpg and x (1).jpg; two picked files are both called x.jpg.
+        val names = UploadWorker.uniqueWithinSelection(listOf("x.jpg", "x.jpg", "y.jpg"), setOf("x.jpg", "x (1).jpg"))
+        // The first keeps its name (the conflict dialog asks about it), the second gets a free one.
+        assertEquals(listOf("x.jpg", "x (2).jpg", "y.jpg"), names)
+    }
 }
