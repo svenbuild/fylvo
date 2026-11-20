@@ -236,21 +236,49 @@ func TestFileTrashedBeforeThisChangeStillComesBack(t *testing.T) {
 	requireSameTime(t, deletedAt, e.changedAt("cloudreve://my/a.txt"), "keeps the deletion date")
 }
 
+// inZone runs the server in the given time zone for the rest of the test.
+func inZone(t *testing.T, zone *time.Location) {
+	old := time.Local
+	time.Local = zone
+	t.Cleanup(func() { time.Local = old })
+}
+
+// trashAndRestore moves the file into the trash and back, with change() in between.
+func (e *sharedFolderEnv) trashAndRestore(raw string, change func()) {
+	require.NoError(e.t, e.as(e.owner).SoftDelete(e.ctx, e.uri(raw)))
+	trash, err := e.as(e.owner).AllFilesInTrashBin(e.ctx, fs.WithPageSize(100))
+	require.NoError(e.t, err)
+	require.Len(e.t, trash.Files, 1)
+	change()
+	require.NoError(e.t, e.as(e.owner).Restore(e.ctx, trash.Files[0].Uri(false)))
+}
+
 func TestRestoredDateIsWrittenAsBefore(t *testing.T) {
+	// A zone other than UTC, so that the test means something on a machine that runs in UTC.
+	inZone(t, time.FixedZone("FYT", 5*3600))
 	e := newSharedFolderEnv(t)
-	owner := e.as(e.owner)
-	e.upload(owner, "cloudreve://my/a.txt", 10)
+	e.upload(e.as(e.owner), "cloudreve://my/a.txt", 10)
 	before := e.changedAt("cloudreve://my/a.txt")
 
-	require.NoError(t, e.as(e.owner).SoftDelete(e.ctx, e.uri("cloudreve://my/a.txt")))
-	trash, err := e.as(e.owner).AllFilesInTrashBin(e.ctx, fs.WithPageSize(100))
-	require.NoError(t, err)
-	require.NoError(t, e.as(e.owner).Restore(e.ctx, trash.Files[0].Uri(false)))
+	e.trashAndRestore("cloudreve://my/a.txt", func() {})
 
-	// SQLite sorts dates as text: the same moment in another time zone would sort differently.
+	// SQLite sorts dates as text: the same moment in another zone would sort differently.
 	after := e.changedAt("cloudreve://my/a.txt")
 	require.True(t, before.Equal(after), "want %s, got %s", before, after)
-	_, beforeOffset := before.Zone()
-	_, afterOffset := after.Zone()
-	require.Equal(t, beforeOffset, afterOffset)
+	require.Equal(t, before.String(), after.String())
+}
+
+func TestRestoreAfterTheServerChangedItsZone(t *testing.T) {
+	inZone(t, time.FixedZone("FYT", 5*3600))
+	e := newSharedFolderEnv(t)
+	e.upload(e.as(e.owner), "cloudreve://my/a.txt", 10)
+	before := e.changedAt("cloudreve://my/a.txt")
+
+	e.trashAndRestore("cloudreve://my/a.txt", func() { time.Local = time.FixedZone("FYW", 2*3600) })
+
+	// The file can still be read, with the same moment, now in the zone of the server.
+	after := e.changedAt("cloudreve://my/a.txt")
+	require.True(t, before.Equal(after), "want %s, got %s", before, after)
+	_, offset := after.Zone()
+	require.Equal(t, 2*3600, offset)
 }

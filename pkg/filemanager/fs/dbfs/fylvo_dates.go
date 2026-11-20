@@ -14,8 +14,7 @@ import (
 const MetadataRestoreModifiedAt = MetadataSysPrefix + "restore_modified_at"
 
 // keptModifiedAt reads the date of the file as it is now, after the lock is held, so that a
-// new version saved just before the delete is not missed. The time zone stays as it was:
-// SQLite sorts dates as text, so a restored date must be written exactly as before.
+// new version saved just before the delete is not missed.
 func keptModifiedAt(ctx context.Context, fc inventory.FileClient, file *ent.File) (string, error) {
 	current, err := fc.GetByID(ctx, file.ID)
 	if err != nil {
@@ -38,5 +37,8 @@ func restoreModifiedAt(ctx context.Context, fc inventory.FileClient, file *File)
 		return nil
 	}
 
-	return fc.UpdateModifiedAt(ctx, file.Model, modifiedAt)
+	// In the time zone of the server, as every other date is written: SQLite keeps dates as
+	// text with the name of the zone and sorts them as text, and the driver cannot read back a
+	// zone without a name, which a parsed offset that the server does not know would get.
+	return fc.UpdateModifiedAt(ctx, file.Model, modifiedAt.Local())
 }
