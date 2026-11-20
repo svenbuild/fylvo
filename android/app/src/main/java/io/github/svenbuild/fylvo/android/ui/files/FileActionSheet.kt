@@ -94,7 +94,7 @@ fun FileActionSheet(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    subtitleFor(file.size, file.updatedAt, file.isFolder).ifEmpty { if (file.isFolder) stringResource(R.string.folder) else "" },
+                    fileSubtitle(file).ifEmpty { if (file.isFolder) stringResource(R.string.folder) else "" },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -105,6 +105,21 @@ fun FileActionSheet(
         if (inTrash) {
             SheetAction(Icons.Default.RestoreFromTrash, stringResource(R.string.restore), onRestore)
             SheetAction(Icons.Default.DeleteForever, stringResource(R.string.delete_forever), onDeleteForever, tint = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.height(24.dp))
+            return@ModalBottomSheet
+        }
+
+        // Fylvo: the server locks a file while its upload is not finished; offer only what still works.
+        if (file.isUploading) {
+            Text(
+                stringResource(R.string.uploading_note),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            )
+            onShowInFolder?.let { SheetAction(Icons.Default.FolderOpen, stringResource(R.string.show_in_folder), it) }
+            SheetAction(Icons.Default.Checklist, stringResource(R.string.select), onSelect)
+            SheetAction(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
             Spacer(Modifier.height(24.dp))
             return@ModalBottomSheet
         }

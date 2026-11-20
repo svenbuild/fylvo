@@ -11,6 +11,7 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 import retrofit2.http.Url
 
 interface ApiService {
@@ -21,7 +22,11 @@ interface ApiService {
     suspend fun login(@Body request: PasswordLoginRequest): Response<ApiResponse<JsonElement>>
 
     @POST("api/v4/session/token/2fa")
-    suspend fun verify2FA(@Body request: OtpLoginRequest): Response<ApiResponse<LoginResponse>>
+    suspend fun verify2FA(@Body request: OtpLoginRequest): Response<ApiResponse<JsonElement>>
+
+    /** Fylvo: the new password for an account that must change it at sign-in. */
+    @POST("api/v4/session/token/password")
+    suspend fun setNewPassword(@Body request: NewPasswordRequest): Response<ApiResponse<JsonElement>>
 
     @POST("api/v4/session/token/refresh")
     suspend fun refreshToken(@Body request: RefreshTokenRequest): Response<ApiResponse<RefreshTokenResponse>>
@@ -70,6 +75,10 @@ interface ApiService {
     @PUT("api/v4/file/upload")
     suspend fun createUploadSession(@Body request: CreateUploadSessionRequest): Response<ApiResponse<UploadSessionResponse>>
 
+    /** Cancels an unfinished upload session, so its placeholder file and lock go away. */
+    @HTTP(method = "DELETE", path = "api/v4/file/upload", hasBody = true)
+    suspend fun deleteUploadSession(@Body request: DeleteUploadSessionRequest): Response<ResponseBody>
+
     // Chunk targets are fully resolved URLs returned in upload_urls —
     // same-origin for local policies, presigned for remote policies.
     @POST
@@ -95,4 +104,16 @@ interface ApiService {
 
     @PUT("api/v4/share")
     suspend fun createShare(@Body request: ShareCreateRequest): Response<ApiResponse<String>>
+
+    /** Fylvo: the newest Android release on the server; envelope code 404 when none is published. */
+    @GET("api/v4/fylvo/android/latest")
+    suspend fun androidLatest(): Response<ApiResponse<AndroidRelease>>
+
+    /**
+     * Fylvo: the APK of the release with this SHA-256 (lowercase hex), streamed instead of
+     * buffered. 404 or a JSON envelope means the release changed meanwhile.
+     */
+    @Streaming
+    @GET("api/v4/fylvo/android/apk/{sha256}")
+    suspend fun androidApk(@Path("sha256") sha256: String): Response<ResponseBody>
 }

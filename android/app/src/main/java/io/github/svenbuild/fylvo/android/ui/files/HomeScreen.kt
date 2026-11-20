@@ -111,7 +111,7 @@ fun HomeScreen(
                     selected = false,
                     offline = file.path in state.favoritePaths,
                     actions = FileActions(onOpen = { onOpenFile(file) }, onLongPress = { onFileMore(file) }, onMore = { onFileMore(file) }),
-                    subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} · ${CrUri.parentDisplayName(file.path)}",
+                    subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                 )
             }
         }

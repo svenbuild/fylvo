@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import kotlinx.coroutines.Dispatchers
+import androidx.lifecycle.lifecycleScope
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -67,7 +69,9 @@ class MainActivity : AppCompatActivity() {
         // Fylvo: only content:// documents of other apps, never file:// or our own providers.
         val accepted = uris.orEmpty().filter { UploadWorker.isForeignContentUri(this, it) }
         if (accepted.isNotEmpty()) {
-            UploadWorker.enqueue(this, accepted, CrUri.MY_PREFIX)
+            // Fylvo: names and the upload list off the main thread (a share can hold hundreds).
+            val context = applicationContext
+            lifecycleScope.launch(Dispatchers.IO) { UploadWorker.enqueueSafely(context, accepted, CrUri.MY_PREFIX) }
         }
     }
 }
@@ -120,6 +124,10 @@ fun App() {
         ) { }
         // Ask once per app start, not again when a language change recreates the screen.
         var askedNotifications by rememberSaveable { mutableStateOf(false) }
+        // Fylvo: look for an app update once per app start, quietly.
+        LaunchedEffect(loggedIn) {
+            if (loggedIn == true) app.appUpdater.checkOnStart()
+        }
         LaunchedEffect(loggedIn) {
             if (loggedIn == true && !askedNotifications && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 ContextCompat.checkSelfPermission(

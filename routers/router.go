@@ -872,6 +872,13 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 		auth := v4.Group("")
 		auth.Use(middleware.LoginRequired())
 		{
+			// Fylvo: in-app updates of the Android app, for signed-in users only.
+			fylvoAndroid := auth.Group("fylvo/android")
+			{
+				fylvoAndroid.GET("latest", controllers.FylvoAndroidLatest)
+				fylvoAndroid.GET("apk/:sha256", controllers.FylvoAndroidApk)
+			}
+
 			// 管理
 			admin := auth.Group("admin", middleware.IsAdmin())
 			admin.Use(middleware.RequiredScopes(types.ScopeAdminRead))

@@ -22,14 +22,21 @@ class LoginErrorTest {
     }
 
     @Test
-    fun otherCodesShowTheServerMessage() {
-        assertEquals(UiText.Raw("This account has been blocked"), LoginViewModel.serverError(40017, "This account has been blocked"))
+    fun knownAccountStatesUseOwnTexts() {
+        assertEquals(R.string.login_account_blocked, (LoginViewModel.serverError(40017, "This account has been blocked") as UiText.Res).id)
+        assertEquals(R.string.login_account_inactive, (LoginViewModel.serverError(40018, "This account is not activated") as UiText.Res).id)
+    }
+
+    @Test
+    fun otherCodesNeverShowTheServerText() {
+        val text = LoginViewModel.serverError(40099, "Some internal server text")
+        assertEquals(R.string.login_failed_code, (text as UiText.Res).id)
     }
 
     @Test
     fun emptyMessageFallsBackToGenericText() {
-        val text = LoginViewModel.serverError(40017, "")
-        assertEquals(R.string.login_failed, (text as UiText.Res).id)
+        val text = LoginViewModel.serverError(40099, "")
+        assertEquals(R.string.login_failed_code, (text as UiText.Res).id)
     }
 
     // The real server answers refusals with HTTP 200, a code and no data.

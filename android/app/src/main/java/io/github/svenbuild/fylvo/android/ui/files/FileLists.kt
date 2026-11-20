@@ -31,6 +31,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -56,12 +58,17 @@ internal fun FileList(
     val unknownDate = stringResource(R.string.unknown_date)
     val unknown = stringResource(R.string.unknown)
     val trashSubtitle = stringResource(R.string.trash_row_subtitle)
+    val uploadContext = LocalContext.current.applicationContext
+    // Fylvo: the upload card is put above the first file; near the top, show it instead of
+    // keeping the first file in place (which pushed the card out of view).
+    val hasUploads = state.uploadsHere.isNotEmpty()
+    LaunchedEffect(hasUploads) { if (hasUploads && listState.firstVisibleItemIndex <= 1) listState.scrollToItem(0) }
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 88.dp),
     ) {
-        uploadItems(state, viewModel)
+        uploadItems(state, viewModel, uploadContext)
         if (state.virtual && !state.inTrash) {
             // Timeline views read by day, like the Files app's category lists.
             state.files.groupBy { dayKey(it.updatedAt) }.forEach { (day, group) ->
@@ -82,7 +89,7 @@ internal fun FileList(
                         downloading = file.path in state.downloading,
                         offline = file.path in state.favoritePaths,
                         actions = actionsFor(file),
-                        subtitle = "${subtitleFor(file.size, file.updatedAt, file.isFolder)} · ${CrUri.parentDisplayName(file.path)}",
+                        subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                     )
                 }
             }
@@ -102,7 +109,7 @@ internal fun FileList(
                 subtitle = if (state.inTrash) {
                     trashSubtitle.format(formatDate(file.updatedAt), file.restoreUri?.let { CrUri.displayName(it) } ?: unknown)
                 } else {
-                    subtitleFor(file.size, file.updatedAt, file.isFolder)
+                    fileSubtitle(file)
                 },
             )
         }
@@ -120,6 +127,9 @@ internal fun FileGrid(
     actionsFor: (FileObject) -> FileActions,
 ) {
     val gallery = state.category?.gallery == true
+    val uploadContext = LocalContext.current.applicationContext
+    val hasUploads = state.uploadsHere.isNotEmpty()
+    LaunchedEffect(hasUploads) { if (hasUploads && gridState.firstVisibleItemIndex <= 1) gridState.scrollToItem(0) }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = if (gallery) 118.dp else 110.dp),
         state = gridState,
@@ -130,7 +140,7 @@ internal fun FileGrid(
         verticalArrangement = Arrangement.spacedBy(if (gallery) 3.dp else 4.dp),
     ) {
         if (state.uploadsHere.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }, key = "uploads") { UploadsCard(state.uploadsHere, viewModel::cancelUpload) }
+            item(span = { GridItemSpan(maxLineSpan) }, key = "uploads") { UploadsCard(state.uploadsHere) { id -> viewModel.cancelUpload(uploadContext, id) } }
         }
         items(state.files, key = { it.id + it.path }) { file ->
             FileGridItem(
@@ -150,9 +160,9 @@ internal fun FileGrid(
     }
 }
 
-private fun LazyListScope.uploadItems(state: FilesUiState, viewModel: FilesViewModel) {
+private fun LazyListScope.uploadItems(state: FilesUiState, viewModel: FilesViewModel, uploadContext: android.content.Context) {
     if (state.uploadsHere.isNotEmpty()) {
-        item(key = "uploads") { UploadsCard(state.uploadsHere, viewModel::cancelUpload) }
+        item(key = "uploads") { UploadsCard(state.uploadsHere) { id -> viewModel.cancelUpload(uploadContext, id) } }
     }
 }
 

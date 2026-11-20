@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -103,7 +104,7 @@ fun FileThumb(
                 error = { KindIcon(kind, iconSize) },
             )
         } else {
-            KindIcon(kind, iconSize)
+            KindIcon(kind, iconSize, uploading = file.isUploading)
         }
         if (downloading) {
             Box(
@@ -124,9 +125,19 @@ fun FileThumb(
 }
 
 @Composable
-private fun KindIcon(kind: FileKind, size: Dp) {
-    Icon(kind.icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(size))
+private fun KindIcon(kind: FileKind, size: Dp, uploading: Boolean = false) {
+    Icon(
+        if (uploading) Icons.Outlined.CloudUpload else kind.icon,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(size),
+    )
 }
+
+/** Fylvo: second line of a file: date and size, or "Uploading…" while its upload is not finished. */
+@Composable
+fun fileSubtitle(file: FileObject): String =
+    if (file.isUploading) stringResource(R.string.uploading_file) else subtitleFor(file.size, file.updatedAt, file.isFolder)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -140,7 +151,7 @@ fun FileListItem(
     downloadProgress: Float? = null,
     /** Fylvo: a copy is kept on this phone ("Keep offline"); shown as a small pin. */
     offline: Boolean = false,
-    subtitle: String = subtitleFor(file.size, file.updatedAt, file.isFolder),
+    subtitle: String = fileSubtitle(file),
 ) {
     val shape = RoundedCornerShape(12.dp)
     val background by animateColorAsState(
@@ -261,7 +272,7 @@ fun FileGridItem(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            val subtitle = subtitleFor(file.size, file.updatedAt, file.isFolder)
+            val subtitle = fileSubtitle(file)
             if (subtitle.isNotEmpty()) {
                 Text(
                     subtitle,

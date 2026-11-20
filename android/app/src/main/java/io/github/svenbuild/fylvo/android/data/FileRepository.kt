@@ -19,7 +19,11 @@ import kotlinx.coroutines.ensureActive
 import retrofit2.Response
 import java.io.File
 
-class ApiException(val code: Int, message: String) : Exception(message) {
+/**
+ * A refused request: the server's envelope code (or the HTTP status), its message for the log, and
+ * for a batch answer (40081) the codes of the single failures. Never shown as it is; see util/ErrorText.
+ */
+class ApiException(val code: Int, message: String, val innerCodes: List<Int> = emptyList()) : Exception(message) {
     companion object {
         /** Server envelope code for "login required" (session expired or revoked). */
         const val CODE_LOGIN_REQUIRED = 401
@@ -42,7 +46,7 @@ class FileRepository(private val api: ApiClient) {
         if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
         val body = body() ?: throw ApiException(-1, "Empty response")
         if (body.code != 0 || body.data == null) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" })
+            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes)
         }
         return body.data
     }
@@ -51,7 +55,7 @@ class FileRepository(private val api: ApiClient) {
         if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
         val body = body() ?: throw ApiException(-1, "Empty response")
         if (body.code != 0) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" })
+            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes)
         }
     }
 
@@ -268,6 +272,7 @@ class FileRepository(private val api: ApiClient) {
         overwrite: Boolean = false,
         mimeType: String? = null,
         lastModified: Long = localFile.lastModified(),
+        onSession: (sessionId: String, targetUri: String) -> Unit = { _, _ -> },
         onProgress: (sent: Long, total: Long) -> Unit = { _, _ -> },
     ): UploadSessionResponse {
         val targetUri = CrUri.join(remoteParentUri, remoteName)
@@ -283,6 +288,11 @@ class FileRepository(private val api: ApiClient) {
         )
 
         if (session.rapidUploaded) return session
+        // Fylvo: the caller remembers the session, so an upload that stops half way can be
+        // cancelled on the server instead of leaving a locked 0 B placeholder.
+        // The server may store the file under another name (e.g. in a shared folder where names
+        // are made unique); the session belongs to the address it answers with.
+        onSession(session.sessionId, session.uri.ifEmpty { targetUri })
 
         val urls = session.uploadUrls
         // Local/slave policies return no presigned URLs: chunks go to the
@@ -340,6 +350,35 @@ class FileRepository(private val api: ApiClient) {
         }
         return session
     }
+
+    /**
+     * Fylvo: cancels the upload session [sessionId] of the file [targetUri] on the server, the call
+     * the web uploader makes when a person cancels. The placeholder file and its lock go away.
+     * Returns false when it did not work (no network, session already gone); the server also
+     * removes abandoned placeholders by itself after 48 hours.
+     */
+    suspend fun deleteUploadSession(sessionId: String, targetUri: String): Boolean = try {
+        val resp = api.service().deleteUploadSession(
+            io.github.svenbuild.fylvo.android.api.DeleteUploadSessionRequest(id = sessionId, uri = targetUri)
+        )
+        // A clear answer of the server (done, or "no such session / placeholder") leaves nothing
+        // to wait for; only server trouble does. Fylvo answers errors as HTTP 200 with a code.
+        val code = resp.body()?.use { body ->
+            runCatching {
+                (api.json.parseToJsonElement(body.string()) as? kotlinx.serialization.json.JsonObject)
+                    ?.get("code")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull() }
+            }.getOrNull()
+        } ?: 0
+        resp.code() !in 500..599 && code != 401 && code < 50000
+    } catch (e: java.io.IOException) {
+        false // no network: try again later
+    }
+
+    /** Size of the file at [uri] on the server, or null when it cannot be read. */
+    suspend fun sizeOf(uri: String): Long? = runCatching {
+        val body = api.service().fileInfo(uri).body()
+        if (body?.code == 0) body.data?.size else null
+    }.getOrElse { e -> if (e is kotlinx.coroutines.CancellationException) throw e else null }
 
     /** Throws when a raw response body is a JSON envelope with a non-zero code. */
     private fun checkEnvelope(body: okhttp3.ResponseBody?) {

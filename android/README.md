@@ -35,6 +35,12 @@ Neither project is affiliated with or endorses Fylvo.
 - The bearer token goes only to that server's exact origin. No HTTP logging.
 - Sign-out also stops background jobs and deletes offline copies, cached
   downloads and the folder-sync and notification settings.
+- In-app updates from the own Fylvo server instead of a store: the app asks
+  `api/v4/fylvo/android/latest` once per start and on "App version" under
+  Account, downloads the APK, checks size, SHA-256, package name, version and
+  that it is signed with the same key, then opens the system installer after
+  a tap. Needs the `REQUEST_INSTALL_PACKAGES` permission (Android asks the user
+  once to allow installs from Fylvo).
 - "Shared with me": folders other Fylvo users share with you. Inside a
   shared folder the app offers only what the server's capability set allows
   (mirrors `frontend/src/util/permission.ts`).

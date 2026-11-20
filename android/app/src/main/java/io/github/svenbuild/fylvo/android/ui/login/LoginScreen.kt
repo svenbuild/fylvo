@@ -102,9 +102,9 @@ fun LoginScreen(viewModel: LoginViewModel, onLoggedIn: () -> Unit) {
             Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp))
 
             AnimatedContent(
-                targetState = state.twoFactorSessionId != null,
+                targetState = state.step(),
                 transitionSpec = {
-                    if (targetState) {
+                    if (targetState.ordinal > initialState.ordinal) {
                         (slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(200))) togetherWith
                             (slideOutHorizontally(tween(200)) { -it / 3 } + fadeOut(tween(140)))
                     } else {
@@ -114,8 +114,12 @@ fun LoginScreen(viewModel: LoginViewModel, onLoggedIn: () -> Unit) {
                 },
                 label = "loginStep",
                 modifier = Modifier.widthIn(max = 440.dp),
-            ) { twoFactor ->
-                if (twoFactor) TwoFactorStep(state, viewModel) else PasswordStep(state, viewModel)
+            ) { step ->
+                when (step) {
+                    LoginStep.Password -> PasswordStep(state, viewModel)
+                    LoginStep.TwoFactor -> TwoFactorStep(state, viewModel)
+                    LoginStep.NewPassword -> NewPasswordStep(state, viewModel)
+                }
             }
         }
     }
@@ -214,6 +218,72 @@ private fun TwoFactorStep(state: LoginUiState, viewModel: LoginViewModel) {
         PrimaryButton(text = stringResource(R.string.verify), loading = state.loading, enabled = state.otp.length == 6, onClick = viewModel::verify2FA)
         Spacer(Modifier.height(4.dp))
         TextButton(onClick = viewModel::cancelTwoFactor, enabled = !state.loading) { Text(stringResource(R.string.use_different_account)) }
+    }
+}
+
+/** Fylvo: the account must set its own password before it gets in. */
+@Composable
+private fun NewPasswordStep(state: LoginUiState, viewModel: LoginViewModel) {
+    val focus = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
+    var showPassword by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+    val transformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation()
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            stringResource(R.string.new_password_title),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        Text(
+            stringResource(R.string.new_password_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 4.dp, bottom = 28.dp),
+        )
+
+        FormCard {
+            SoftField(
+                value = state.newPassword,
+                onValueChange = viewModel::onNewPasswordChange,
+                label = stringResource(R.string.new_password),
+                icon = Icons.Outlined.Lock,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                visualTransformation = transformation,
+                modifier = Modifier.focusRequester(focusRequester),
+                trailing = {
+                    IconButton(onClick = { showPassword = !showPassword }) {
+                        Icon(
+                            if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = stringResource(if (showPassword) R.string.hide_password else R.string.show_password),
+                        )
+                    }
+                },
+            )
+            SoftField(
+                value = state.newPasswordRepeat,
+                onValueChange = viewModel::onNewPasswordRepeatChange,
+                label = stringResource(R.string.new_password_repeat),
+                icon = Icons.Outlined.Lock,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focus.clearFocus(); viewModel.setNewPassword() }),
+                visualTransformation = transformation,
+            )
+        }
+
+        ErrorNote(state.error?.asString())
+
+        Spacer(Modifier.height(20.dp))
+        PrimaryButton(
+            text = stringResource(R.string.new_password_save),
+            loading = state.loading,
+            enabled = state.newPassword.isNotEmpty() && state.newPasswordRepeat.isNotEmpty(),
+            onClick = { focus.clearFocus(); viewModel.setNewPassword() },
+        )
+        Spacer(Modifier.height(4.dp))
+        TextButton(onClick = viewModel::cancelPasswordChange, enabled = !state.loading) { Text(stringResource(R.string.use_different_account)) }
     }
 }
 

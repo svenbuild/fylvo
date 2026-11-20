@@ -24,6 +24,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
+import io.github.svenbuild.fylvo.android.util.asString
+import io.github.svenbuild.fylvo.android.util.userError
 
 /**
  * Streams video or audio straight from the signed content URL with
@@ -65,9 +67,10 @@ fun MediaPreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit)
     }
 
     Box(Modifier.fillMaxSize()) {
-        val failure = playerError ?: url?.exceptionOrNull()?.message
+        val loadError = remember(url) { url?.exceptionOrNull()?.let { userError(it) } }
         when {
-            failure != null -> FullWidthError(stringResource(R.string.preview_load_failed, failure))
+            playerError != null -> FullWidthError(stringResource(R.string.preview_load_failed, playerError.orEmpty()))
+            loadError != null -> FullWidthError(loadError.asString())
             url == null -> LoadingOverlay(null)
             else -> AndroidView(
                 factory = { ctx ->

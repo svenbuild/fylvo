@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import io.github.svenbuild.fylvo.android.api.FileObject
+import io.github.svenbuild.fylvo.android.util.userError
 
 /** Link lifetimes in days; 0 = never expires. */
 private val EXPIRY_DAYS = listOf(0, 1, 7, 30)
@@ -144,7 +145,7 @@ fun ShareLinkSheet(
                         scope.launch {
                             runCatching { createLink(if (usePassword) password.trim() else "", expiry, downloads) }
                                 .onSuccess { link = it }
-                                .onFailure { onMessage(it.message ?: context.getString(R.string.create_link_failed)) }
+                                .onFailure { onMessage(userError(it, fallback = R.string.create_link_failed).resolve(context)) }
                             creating = false
                         }
                     },
