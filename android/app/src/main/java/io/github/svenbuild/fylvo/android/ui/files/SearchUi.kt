@@ -144,7 +144,7 @@ fun SearchResults(
             state.searchError != null -> Hint(Icons.Outlined.SearchOff, state.searchError.asString())
             state.searchResults.isEmpty() -> Hint(Icons.Outlined.SearchOff, stringResource(R.string.no_files_match, query))
             else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                items(state.searchResults, key = { it.id + it.path }) { file ->
+                items(state.searchResults, key = ::fileKey) { file ->
                     FileListItem(
                         file = file,
                         thumbUrl = rememberThumbUrl(viewModel, file),

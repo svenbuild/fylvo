@@ -8,26 +8,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.DriveFileMove
-import androidx.compose.material.icons.filled.DeleteForever
-import androidx.compose.material.icons.filled.FileCopy
-import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.automirrored.filled.ViewList
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,13 +27,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.SortBy
 import io.github.svenbuild.fylvo.android.data.ViewMode
 import androidx.compose.runtime.getValue
@@ -64,7 +55,6 @@ internal fun FolderTopBar(
     onSearch: () -> Unit,
     onToggleView: () -> Unit,
     onSort: (SortBy) -> Unit,
-    onSelect: () -> Unit,
     onRefresh: () -> Unit,
     onTrash: () -> Unit,
 ) {
@@ -112,11 +102,6 @@ internal fun FolderTopBar(
                             Icon(if (viewMode == ViewMode.LIST) Icons.Default.GridView else Icons.AutoMirrored.Filled.ViewList, null)
                         },
                         onClick = { menuOpen = false; onToggleView() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.select)) },
-                        leadingIcon = { Icon(Icons.Default.Checklist, null) },
-                        onClick = { menuOpen = false; onSelect() },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.refresh)) },
@@ -167,52 +152,39 @@ internal fun FolderTopBar(
     )
 }
 
+/**
+ * Fylvo: information only while selecting ("3 selected" and a second line); the actions sit on
+ * the selection button, back leaves the selection.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SelectionTopBar(
-    count: Int,
-    total: Int,
-    inTrash: Boolean,
-    canModify: Boolean,
-    onClose: () -> Unit,
-    onSelectAll: () -> Unit,
-    onMove: () -> Unit,
-    onCopy: () -> Unit,
-    onDelete: () -> Unit,
-    onRestore: () -> Unit,
-) {
+internal fun SelectionTopBar(count: Int, detail: String?) {
     TopAppBar(
-        title = { Text(stringResource(R.string.selected_count, count, total)) },
-        navigationIcon = {
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.clear_selection))
-            }
-        },
-        actions = {
-            IconButton(onClick = onSelectAll) {
-                Icon(Icons.Default.SelectAll, contentDescription = stringResource(R.string.select_all))
-            }
-            if (inTrash) {
-                IconButton(onClick = onRestore) {
-                    Icon(Icons.Default.RestoreFromTrash, contentDescription = stringResource(R.string.restore))
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.DeleteForever, contentDescription = stringResource(R.string.delete_forever))
-                }
-            } else if (canModify) {
-                IconButton(onClick = onMove) {
-                    Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = stringResource(R.string.move_to))
-                }
-                IconButton(onClick = onCopy) {
-                    Icon(Icons.Default.FileCopy, contentDescription = stringResource(R.string.copy_to))
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete))
+        title = {
+            Column {
+                Text(pluralStringResource(R.plurals.n_selected, count, count), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (detail != null) {
+                    Text(
+                        detail,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        ),
     )
+}
+
+/**
+ * Fylvo: the info bar's second line. One file "name · size", one folder "name · Folder";
+ * several: the size of the selected files together (folders not counted), none when that is 0.
+ */
+internal fun selectionDetail(selected: List<FileObject>, folderLabel: String): String? {
+    val one = selected.singleOrNull()
+    return when {
+        one != null -> "${one.name} · ${if (one.isFolder) folderLabel else formatSize(one.size)}"
+        else -> selected.filter { !it.isFolder }.sumOf { it.size }.takeIf { it > 0 }?.let(::formatSize)
+    }
 }

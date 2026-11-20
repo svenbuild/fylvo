@@ -12,6 +12,10 @@
     <string name="move_to">Verschieben nach</string>
     <string name="copy_to">Kopieren nach</string>
     <string name="select">Auswählen</string>
+    <string name="deselect">Abwählen</string>
+    <string name="options">Optionen</string>
+    <string name="move">Verschieben</string>
+    <string name="close">Schliessen</string>
     <string name="download">Herunterladen</string>
     <string name="back">Zurück</string>
     <string name="up">Nach oben</string>
@@ -84,6 +88,11 @@
     <string name="upload_failed_reason">Upload fehlgeschlagen: %s</string>
     <string name="uploaded_some_failed">%1$d hochgeladen, %2$d fehlgeschlagen</string>
     <string name="saved_file">%s gespeichert</string>
+    <plurals name="saved_files">
+        <item quantity="one">%d Datei gespeichert</item>
+        <item quantity="other">%d Dateien gespeichert</item>
+    </plurals>
+    <string name="saved_some_files">%1$d von %2$d gespeichert</string>
     <plurals name="copied_items">
         <item quantity="one">%1$d Element nach %2$s kopiert</item>
         <item quantity="other">%1$d Elemente nach %2$s kopiert</item>
@@ -152,10 +161,9 @@
 
     <!-- File rows and lists -->
     <string name="available_offline">Offline verfügbar</string>
-    <string name="more_options_for">Weitere Optionen für %s</string>
     <string name="video">Video</string>
-    <string name="selected_file">%s ausgewählt</string>
-    <string name="not_selected_file">%s nicht ausgewählt</string>
+    <string name="state_selected">Ausgewählt</string>
+    <string name="state_not_selected">Nicht ausgewählt</string>
     <string name="trash_row_subtitle">Gelöscht %1$s • aus %2$s</string>
     <string name="unknown">unbekannt</string>
     <string name="clear_selection_for">Auswahl für %s aufheben</string>
@@ -175,9 +183,18 @@
     <string name="sort_created">Erstellungsdatum</string>
     <string name="ascending">Aufsteigend</string>
     <string name="descending">Absteigend</string>
-    <string name="selected_count">%1$d von %2$d ausgewählt</string>
-    <string name="clear_selection">Auswahl aufheben</string>
     <string name="select_all">Alle auswählen</string>
+
+    <!-- Selection: info bar, selection button and its menu -->
+    <plurals name="n_selected">
+        <item quantity="one">%d ausgewählt</item>
+        <item quantity="other">%d ausgewählt</item>
+    </plurals>
+    <plurals name="actions_for_selected">
+        <item quantity="one">Aktionen für %d ausgewähltes</item>
+        <item quantity="other">Aktionen für %d ausgewählte</item>
+    </plurals>
+    <string name="selection_hint">Lange drücken zum Auswählen. Finger ziehen wählt mehrere.</string>
 
     <!-- Folder picker -->
     <string name="move_to_folder">Nach %s verschieben</string>
@@ -266,6 +283,7 @@
     <string name="error_locked_upload">Diese Datei wird gerade hochgeladen oder bearbeitet. Bitte später nochmals versuchen. Nicht beendete Uploads werden nach 48 Stunden automatisch entfernt.</string>
     <string name="error_not_found">Diese Datei oder dieser Ordner existiert nicht mehr. Bitte die Liste neu laden.</string>
     <string name="error_exists">Hier gibt es schon eine Datei oder einen Ordner mit diesem Namen.</string>
+    <string name="error_name_case_taken">Hier gibt es schon eine Datei oder einen Ordner mit diesem Namen in anderer Gross- und Kleinschreibung.</string>
     <string name="error_quota">Es ist nicht mehr genug Speicherplatz frei.</string>
     <string name="error_permission">Dafür fehlt dir die Berechtigung.</string>
     <string name="error_login_required">Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.</string>

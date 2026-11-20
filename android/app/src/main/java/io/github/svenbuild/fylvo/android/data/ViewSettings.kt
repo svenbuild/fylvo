@@ -39,6 +39,7 @@ class ViewSettings(private val context: Context) {
         val galleryMode = stringPreferencesKey("gallery_mode")
         val sortBy = stringPreferencesKey("sort_by")
         val sortAsc = booleanPreferencesKey("sort_asc")
+        val selectionHintShown = booleanPreferencesKey("selectionHintShown")
     }
 
     val prefs: Flow<ViewPrefs> = context.viewStore.data.map { p ->
@@ -50,6 +51,13 @@ class ViewSettings(private val context: Context) {
                 ascending = p[Keys.sortAsc] ?: true,
             ),
         )
+    }
+
+    /** Fylvo: the one-time hint "long press to select, drag for several" was shown. */
+    val selectionHintShown: Flow<Boolean> = context.viewStore.data.map { it[Keys.selectionHintShown] ?: false }
+
+    suspend fun setSelectionHintShown() {
+        context.viewStore.edit { it[Keys.selectionHintShown] = true }
     }
 
     suspend fun setMode(mode: ViewMode) {

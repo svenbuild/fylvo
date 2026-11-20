@@ -18,6 +18,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
 import io.github.svenbuild.fylvo.android.R
@@ -34,6 +36,7 @@ import io.github.svenbuild.fylvo.android.data.ViewMode
 import io.github.svenbuild.fylvo.android.data.ViewPrefs
 import io.github.svenbuild.fylvo.android.data.ViewSettings
 import io.github.svenbuild.fylvo.android.util.CrUri
+import io.github.svenbuild.fylvo.android.util.ErrorText
 import io.github.svenbuild.fylvo.android.util.Permissions
 import io.github.svenbuild.fylvo.android.util.UiText
 import io.github.svenbuild.fylvo.android.util.userError
@@ -91,8 +94,8 @@ data class OfflinePrompt(
     enum class Refusal { NoRoom, TooManyFolders }
 }
 
-/** One-off message for the snackbar, optionally with an action such as Undo. */
-data class UiMessage(val text: UiText, val actionLabel: UiText? = null, val action: (() -> Unit)? = null)
+/** One-off message for the snackbar, optionally with an action such as Undo. [long]: stays longer (hints). */
+data class UiMessage(val text: UiText, val actionLabel: UiText? = null, val action: (() -> Unit)? = null, val long: Boolean = false)
 
 data class FilesUiState(
     /** Landing page with Recent and Categories; false while browsing a folder or category. */
@@ -118,6 +121,8 @@ data class FilesUiState(
     val backgroundSyncs: List<BackgroundSync.Status> = emptyList(),
     /** Files being fetched for open/download: path to fraction (null = size unknown). */
     val downloading: Map<String, Float?> = emptyMap(),
+    /** Fylvo: several selected files are being saved one after another. */
+    val batchSaving: Boolean = false,
     /** Non-null while the search UI is open (even with an empty query). */
     val searchQuery: String? = null,
     /** Folder the search is limited to; null = whole drive. */
@@ -143,6 +148,12 @@ data class FilesUiState(
 ) {
     /** Fylvo: kept on this phone, as a root or inside an offline folder (shown with a pin). */
     fun isOffline(file: FileObject): Boolean = offlineCoverage.isOffline(offlineUriOf(file))
+    /** Fylvo: kept offline as its own root. */
+    fun offlineOn(file: FileObject): Boolean = offlineCoverage.rootAt(offlineUriOf(file)) != null
+    /** Fylvo: inside an offline folder; uses the folder's copy and cannot be switched separately. */
+    fun offlineCovered(file: FileObject): Boolean = offlineCoverage.coveringFolder(offlineUriOf(file)) != null
+    /** Fylvo: offline can be switched here (My files, shared folders, with a connection). */
+    fun offlineAllowed(file: FileObject): Boolean = canKeepOffline(file) && !offlineMode
     val selecting: Boolean get() = selected.isNotEmpty()
     /** Uploads landing in the folder on screen; shown inline above the files. */
     val uploadsHere: List<UploadStatus> get() = uploads.filter { it.parentUri == currentUri }
@@ -180,6 +191,7 @@ class FilesViewModel(
         const val PREFETCH_PARALLELISM = 6
         const val PROGRESS_INTERVAL_MS = 200L
         const val UNDO_MAX_PAGES = 10
+        const val BATCH_SAVE_KEY = "save-batch"
     }
 
     private val downloadJobs = ConcurrentHashMap<String, Job>()
@@ -231,7 +243,6 @@ class FilesViewModel(
             files = cached?.files ?: emptyList(),
             nextToken = cached?.nextToken,
             parent = cached?.parent,
-            selected = emptySet(),
             loadingMore = false,
             offlineMode = false,
         )
@@ -249,6 +260,7 @@ class FilesViewModel(
                     files = files,
                     nextToken = res.pagination.nextToken,
                     parent = res.parent,
+                    selected = keepListed(files),
                 )
                 prefetchThumbs(files)
             } catch (e: Exception) {
@@ -259,6 +271,7 @@ class FilesViewModel(
                 if (local != null && _state.value.currentUri == uri) {
                     _state.value = _state.value.copy(
                         loading = false, revalidating = false, files = local, nextToken = null, parent = null, offlineMode = true,
+                        selected = keepListed(local),
                     )
                     return@launch
                 }
@@ -268,9 +281,22 @@ class FilesViewModel(
                     revalidating = false,
                     error = if (cached == null) userError(e) else null,
                     snackbar = if (cached != null) failure(e) else null,
+                    // Fylvo: nothing listed to act on behind the error screen.
+                    selected = if (cached == null) emptySet() else _state.value.selected,
                 )
             }
         }
+    }
+
+    /**
+     * Fylvo: the selection after a real listing landed: only paths that are still listed. The
+     * placeholder a refresh shows first never prunes it, so a selection survives a refresh.
+     */
+    private fun keepListed(files: List<FileObject>): Set<String> {
+        val selected = _state.value.selected
+        if (selected.isEmpty()) return selected
+        val paths = files.mapTo(HashSet()) { it.path }
+        return selected.filterTo(LinkedHashSet()) { it in paths }
     }
 
     fun loadMore() {
@@ -332,7 +358,7 @@ class FilesViewModel(
         // Fylvo: a "Shared with me" entry opens the share it points to.
         file.sharedRedirect?.let { CrUri.nameShare(it, file.name) }
         val target = file.sharedRedirect ?: file.path
-        _state.value = _state.value.copy(currentUri = target, home = false)
+        _state.value = _state.value.copy(currentUri = target, home = false, selected = emptySet())
         refresh()
     }
 
@@ -353,7 +379,7 @@ class FilesViewModel(
             goHome()
             return true
         }
-        _state.value = s.copy(currentUri = CrUri.parent(s.currentUri))
+        _state.value = s.copy(currentUri = CrUri.parent(s.currentUri), selected = emptySet())
         refresh()
         return true
     }
@@ -364,12 +390,12 @@ class FilesViewModel(
     }
 
     fun openMyFiles() {
-        _state.value = _state.value.copy(home = false, currentUri = CrUri.MY_PREFIX)
+        _state.value = _state.value.copy(home = false, currentUri = CrUri.MY_PREFIX, selected = emptySet())
         refresh()
     }
 
     fun openCategory(category: Category) {
-        _state.value = _state.value.copy(home = false, currentUri = category.uri)
+        _state.value = _state.value.copy(home = false, currentUri = category.uri, selected = emptySet())
         refresh()
     }
 
@@ -453,6 +479,8 @@ class FilesViewModel(
             it.cancel()
             return
         }
+        // Fylvo: already being saved by a download of several files.
+        if (file.path in batchPaths) return
         // Fylvo: a file kept offline opens from its copy on this phone when that is the current
         // version (or there is no connection); otherwise from the server like any file.
         if (state.value.isOffline(file)) {
@@ -471,6 +499,8 @@ class FilesViewModel(
             onReady(dest)
             return
         }
+        // Fylvo: a download of several files may have claimed it while the offline copy was checked.
+        if (file.path in batchPaths) return
         setDownloading(file.path, null)
         val job = viewModelScope.launch {
             try {
@@ -504,12 +534,13 @@ class FilesViewModel(
         val last = lastProgressAt[path] ?: 0L
         if (fraction != null && fraction < 1f && now - last < PROGRESS_INTERVAL_MS) return
         lastProgressAt[path] = now
-        _state.value = _state.value.copy(downloading = _state.value.downloading + (path to fraction))
+        // Fylvo: atomic, progress arrives from download threads.
+        _state.update { it.copy(downloading = it.downloading + (path to fraction)) }
     }
 
     private fun clearDownloading(path: String) {
         lastProgressAt.remove(path)
-        _state.value = _state.value.copy(downloading = _state.value.downloading - path)
+        _state.update { it.copy(downloading = it.downloading - path) }
     }
 
     /** Fylvo: keyed by the file's version too, so an older copy of the same size is never reused. */
@@ -529,6 +560,8 @@ class FilesViewModel(
     fun saveToDevice(context: Context, file: FileObject) {
         val key = "save:${file.path}"
         downloadJobs.remove(key)?.cancel()
+        // Fylvo: already being saved by a download of several files.
+        if (file.path in batchPaths) return
         setDownloading(file.path, null)
         val job = viewModelScope.launch {
             try {
@@ -544,6 +577,57 @@ class FilesViewModel(
             }
         }
         downloadJobs[key] = job
+    }
+
+    /**
+     * Fylvo: paths claimed by the running download of several files (main thread only). Each is
+     * released when its file is done; single open/save leave them alone meanwhile.
+     */
+    private val batchPaths = HashSet<String>()
+
+    /**
+     * Fylvo: saves several selected [files] one after another like [saveToDevice], with one
+     * message at the end. One such download at a time; files already being fetched are skipped.
+     */
+    fun saveAllToDevice(context: Context, files: List<FileObject>) {
+        if (_state.value.batchSaving) return
+        val mine = files.filter { it.path !in _state.value.downloading }
+        if (mine.isEmpty()) return
+        // Claimed right away, before anything suspends, so a single open/save sees them.
+        batchPaths += mine.map { it.path }
+        _state.update { s -> s.copy(batchSaving = true, downloading = s.downloading + mine.map { it.path to null }) }
+        val job = viewModelScope.launch {
+            var saved = 0
+            var lastError: Exception? = null
+            try {
+                for (file in mine) {
+                    try {
+                        withContext(Dispatchers.IO) { saveToDeviceIo(context, file) }
+                        saved++
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        lastError = e
+                    } finally {
+                        batchPaths -= file.path
+                        clearDownloading(file.path)
+                    }
+                }
+                val failed = lastError
+                val message = when {
+                    saved == mine.size -> UiMessage(UiText.Plural(R.plurals.saved_files, saved, saved))
+                    saved == 0 && failed != null -> failure(failed, fallback = R.string.download_failed)
+                    else -> UiMessage(UiText.Res(R.string.saved_some_files, saved, mine.size))
+                }
+                _state.update { it.copy(snackbar = message) }
+            } finally {
+                // Cancelled: release what is left.
+                mine.forEach { if (batchPaths.remove(it.path)) clearDownloading(it.path) }
+                downloadJobs.remove(BATCH_SAVE_KEY)
+                _state.update { it.copy(batchSaving = false) }
+            }
+        }
+        downloadJobs[BATCH_SAVE_KEY] = job
     }
 
     private suspend fun saveToDeviceIo(context: Context, file: FileObject): String {
@@ -714,22 +798,58 @@ class FilesViewModel(
         )
     }
 
-    /** Select or clear a whole date group from its header control. */
+    /** Fylvo: the selection while a finger drags over the list. */
+    fun setSelected(paths: Set<String>) {
+        _state.value = _state.value.copy(selected = paths)
+    }
+
+    /** Select or clear a whole date group from its header control; unfinished uploads stay out. */
     fun toggleGroup(files: List<FileObject>) {
-        val paths = files.map { it.path }
+        val paths = files.filter { !it.isUploading }.map { it.path }
         val cur = _state.value.selected
         _state.value = _state.value.copy(selected = if (paths.all { it in cur }) cur - paths.toSet() else cur + paths)
     }
 
+    /** Every loaded file except unfinished uploads (only a direct long press selects one of those). */
     fun selectAll() {
-        _state.value = _state.value.copy(selected = _state.value.files.map { it.path }.toSet())
+        val paths = _state.value.files.filter { !it.isUploading }.map { it.path }
+        if (paths.isEmpty()) return
+        _state.value = _state.value.copy(selected = _state.value.selected + paths)
     }
 
     fun clearSelection() {
         _state.value = _state.value.copy(selected = emptySet())
     }
 
-    fun deleteSelected() = deletePaths(_state.value.selected.toList())
+    /**
+     * Fylvo: a failed request on [paths]. A batch that failed only in part changed the folder
+     * anyway, so the listing is reloaded too (the message stays).
+     */
+    private fun reportFailure(e: Throwable, paths: List<String>) {
+        _state.value = _state.value.copy(snackbar = failure(e, paths))
+        if (e is ApiException && e.code == ErrorText.CODE_BATCH_NOT_COMPLETED) refresh()
+    }
+
+    /** Fylvo: true once the one-time selection hint was asked for in this run. */
+    private var selectionHintAsked = false
+
+    /**
+     * Fylvo: shows the one-time hint about long press and drag, unless it was shown before. When
+     * another message is waiting it does nothing; the screen asks again once that one is gone.
+     */
+    fun showSelectionHint() {
+        if (selectionHintAsked || _state.value.snackbar != null) return
+        selectionHintAsked = true
+        viewModelScope.launch {
+            if (viewSettings.selectionHintShown.first()) return@launch
+            if (_state.value.snackbar != null) {
+                selectionHintAsked = false
+                return@launch
+            }
+            _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.selection_hint), long = true))
+            viewSettings.setSelectionHintShown()
+        }
+    }
 
     /** Move or copy [paths] into [dst]; the list refreshes and the cache for both folders is dropped. */
     fun moveTo(paths: List<String>, dst: String, copy: Boolean) {
@@ -742,12 +862,13 @@ class FilesViewModel(
                     val where = CrUri.displayName(dst)
                     val text = if (copy) R.plurals.copied_items else R.plurals.moved_items
                     _state.value = _state.value.copy(
-                        selected = emptySet(),
+                        // Fylvo: moved files leave the selection; after a copy it is done.
+                        selected = if (copy) emptySet() else _state.value.selected - paths.toSet(),
                         snackbar = UiMessage(UiText.Plural(text, n, n, where)),
                     )
                     refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, paths)) }
+                .onFailure { reportFailure(it, paths) }
         }
     }
 
@@ -880,7 +1001,11 @@ class FilesViewModel(
         if (newName.isBlank() || newName == file.name) return
         viewModelScope.launch {
             runCatching { repo.rename(file.path, newName) }
-                .onSuccess { refresh() }
+                .onSuccess {
+                    // Fylvo: the old name leaves the selection.
+                    _state.value = _state.value.copy(selected = _state.value.selected - file.path)
+                    refresh()
+                }
                 .onFailure { _state.value = _state.value.copy(snackbar = failure(it, listOf(file.path))) }
         }
     }
@@ -888,7 +1013,7 @@ class FilesViewModel(
     fun delete(file: FileObject) = deletePaths(listOf(file.path))
 
     /** Moves to trash and offers Undo, which restores from the trash by origin path. */
-    private fun deletePaths(paths: List<String>) {
+    fun deletePaths(paths: List<String>) {
         if (paths.isEmpty()) return
         viewModelScope.launch {
             runCatching { repo.delete(paths) }
@@ -898,6 +1023,7 @@ class FilesViewModel(
                     // cannot list, so there is no Undo there.
                     val inShare = CrUri.isShare(paths[0])
                     _state.value = _state.value.copy(
+                        selected = _state.value.selected - paths.toSet(),
                         snackbar = UiMessage(
                             text = when {
                                 n == 1 && inShare -> UiText.Res(R.string.moved_to_owner_trash_one, CrUri.fileName(paths[0]))
@@ -911,7 +1037,7 @@ class FilesViewModel(
                     )
                     refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, paths)) }
+                .onFailure { reportFailure(it, paths) }
         }
     }
 
@@ -1046,12 +1172,12 @@ class FilesViewModel(
                 .onSuccess {
                     listingCache.clear()
                     _state.value = _state.value.copy(
-                        selected = emptySet(),
+                        selected = _state.value.selected - paths.toSet(),
                         snackbar = UiMessage(UiText.Plural(R.plurals.restored_items, paths.size, paths.size)),
                     )
                     refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, paths)) }
+                .onFailure { reportFailure(it, paths) }
         }
     }
 
@@ -1062,12 +1188,12 @@ class FilesViewModel(
             runCatching { repo.delete(paths, permanently = true) }
                 .onSuccess {
                     _state.value = _state.value.copy(
-                        selected = emptySet(),
+                        selected = _state.value.selected - paths.toSet(),
                         snackbar = UiMessage(UiText.Plural(R.plurals.deleted_items_permanently, paths.size, paths.size)),
                     )
                     refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, paths)) }
+                .onFailure { reportFailure(it, paths) }
         }
     }
 

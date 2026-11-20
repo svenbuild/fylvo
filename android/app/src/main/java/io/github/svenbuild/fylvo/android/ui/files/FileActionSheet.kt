@@ -15,7 +15,6 @@ import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.RestoreFromTrash
@@ -67,7 +66,6 @@ fun FileActionSheet(
     onToggleOffline: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
-    onSelect: () -> Unit,
     onMove: () -> Unit,
     onCopy: () -> Unit,
     onDetails: () -> Unit,
@@ -124,7 +122,6 @@ fun FileActionSheet(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
             onShowInFolder?.let { SheetAction(Icons.Default.FolderOpen, stringResource(R.string.show_in_folder), it) }
-            SheetAction(Icons.Default.Checklist, stringResource(R.string.select), onSelect)
             SheetAction(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
             Spacer(Modifier.height(24.dp))
             return@ModalBottomSheet
@@ -144,7 +141,6 @@ fun FileActionSheet(
                 onToggleOffline,
             )
         }
-        SheetAction(Icons.Default.Checklist, stringResource(R.string.select), onSelect)
         if (canModify) {
             SheetAction(Icons.AutoMirrored.Filled.DriveFileMove, stringResource(R.string.move_to), onMove)
             SheetAction(Icons.Default.FileCopy, stringResource(R.string.copy_to), onCopy)

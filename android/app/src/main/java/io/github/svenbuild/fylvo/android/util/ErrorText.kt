@@ -15,6 +15,8 @@ object ErrorText {
     const val CODE_LOCK_CONFLICT = 40073
     const val CODE_CONFLICT_UPLOAD_ONGOING = 40054
     const val CODE_BATCH_NOT_COMPLETED = 40081
+    /** CodeNameCaseTaken: the name differs only in upper and lower case from an existing one. */
+    const val CODE_NAME_CASE_TAKEN = 40905
 
     private val LOCKED = setOf(CODE_LOCK_CONFLICT, CODE_CONFLICT_UPLOAD_ONGOING)
     private val NOT_FOUND = setOf(404, 40016, 40044, 40077, 40078)
@@ -47,6 +49,7 @@ object ErrorText {
             in TOO_MANY_ATTEMPTS -> R.string.error_too_many_attempts
             ApiException.CODE_LOGIN_REQUIRED -> R.string.error_login_required
             ApiException.CODE_OBJECT_EXISTS -> R.string.error_exists
+            CODE_NAME_CASE_TAKEN -> R.string.error_name_case_taken
             40051 -> R.string.error_quota
             40052 -> R.string.error_bad_name
             40049 -> R.string.error_file_too_large
