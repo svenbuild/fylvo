@@ -218,13 +218,13 @@ export default function DrivesSection() {
   const getStatusColor = (status: DriveInfo["status"]) => {
     switch (status) {
       case "active":
-        return "#4caf50"; // green
+        return "success.main";
       case "event_push_lost":
-        return "#ff9800"; // orange
+        return "warning.main";
       case "credential_expired":
-        return "#f44336"; // red
+        return "error.main";
       default:
-        return "#9e9e9e"; // grey
+        return "text.disabled";
     }
   };
 
@@ -441,26 +441,24 @@ export default function DrivesSection() {
                     key={held.side}
                     severity="warning"
                     sx={{ mt: 2 }}
-                    action={
-                      <Stack direction="row" spacing={1}>
-                        <SecondaryErrorButton
-                          size="small"
-                          disabled={resolving}
-                          onClick={() => handleResolveDeletion(drive, held, true)}
-                        >
-                          {t("settings.heldDeletion.confirm")}
-                        </SecondaryErrorButton>
-                        <SecondaryButton
-                          size="small"
-                          disabled={resolving}
-                          onClick={() => handleResolveDeletion(drive, held, false)}
-                        >
-                          {t(`settings.heldDeletion.cancel.${held.side}`)}
-                        </SecondaryButton>
-                      </Stack>
-                    }
                   >
                     {t(`settings.heldDeletion.message.${held.side}`, { count: held.count })}
+                    <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                      <SecondaryErrorButton
+                        size="small"
+                        disabled={resolving}
+                        onClick={() => handleResolveDeletion(drive, held, true)}
+                      >
+                        {t("settings.heldDeletion.confirm")}
+                      </SecondaryErrorButton>
+                      <SecondaryButton
+                        size="small"
+                        disabled={resolving}
+                        onClick={() => handleResolveDeletion(drive, held, false)}
+                      >
+                        {t(`settings.heldDeletion.cancel.${held.side}`)}
+                      </SecondaryButton>
+                    </Stack>
                   </Alert>
                 ))}
 

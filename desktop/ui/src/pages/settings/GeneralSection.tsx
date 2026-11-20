@@ -1,3 +1,4 @@
+import { quietSurface } from "../../theme";
 import {
   Box,
   Typography,
@@ -190,10 +191,7 @@ function SettingsGroup({ title, children }: SettingsGroupProps) {
           overflow: "hidden",
           border: 1,
           borderColor: "divider",
-          bgcolor: (theme) =>
-            theme.palette.mode === "light"
-              ? theme.palette.grey[50]
-              : theme.palette.grey[900],
+          bgcolor: quietSurface,
         }}
       >
         {children}

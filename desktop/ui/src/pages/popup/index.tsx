@@ -1,3 +1,4 @@
+import { shellSurface } from "../../theme";
 import {
   Box,
   IconButton,
@@ -15,7 +16,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 import Settings from "../../common/icons/Settings";
-import CloudreveLogo from "../../common/CloudreveLogo";
+import FylvoLogo from "../../common/FylvoLogo";
 import type { StatusSummary } from "./types";
 import DriveChips from "./DriveChips";
 import TaskItem from "./TaskItem";
@@ -123,8 +124,7 @@ export default function Popup() {
           pb: 1,
           borderBottom: 1,
           borderColor: "divider",
-          backgroundColor: (theme) =>
-            theme.palette.mode === "light" ? theme.palette.grey[100] : theme.palette.grey[900],
+          backgroundColor: shellSurface,
         }}
       >
         {/* Top row: Logo and Settings */}
@@ -137,7 +137,7 @@ export default function Popup() {
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <CloudreveLogo height={28} />
+            <FylvoLogo height={28} />
           </Box>
           <IconButton size="small" onClick={handleSettings}>
             <Settings fontSize="small" />

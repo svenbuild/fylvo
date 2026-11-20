@@ -3,6 +3,16 @@ import { initReactI18next } from "react-i18next";
 import Backend from "i18next-http-backend";
 import LanguageDetector from "i18next-browser-languagedetector";
 
+const supportedLngs = ['en-US', 'zh-CN', 'zh-TW', 'ja', 'de', 'fr', 'es', 'ko', 'ru', 'pl', 'it'];
+
+// Fylvo: Windows reports regional languages such as "de-CH" or "en-GB". Use the supported
+// language with the same base ("de", "en-US") instead of falling back to English.
+export function toSupportedLanguage(lng: string): string {
+  if (supportedLngs.includes(lng)) return lng;
+  const base = lng.split("-")[0].toLowerCase();
+  return supportedLngs.find((code) => code.split("-")[0] === base) ?? lng;
+}
+
 i18n
   .use(Backend)
   .use(LanguageDetector)
@@ -19,8 +29,9 @@ i18n
     backend: {
       loadPath: "/locales/{{lng}}/{{ns}}.json",
     },
-    supportedLngs: ['en-US', 'zh-CN', 'zh-TW', 'ja', 'de', 'fr', 'es', 'ko', 'ru', 'pl', 'it'],
+    supportedLngs,
     detection: {
+      convertDetectedLanguage: toSupportedLanguage,
       // Order of detection: URL query param first, then other methods
       order: ['querystring', 'navigator', 'htmlTag'],
       // Look for 'lng' in query string

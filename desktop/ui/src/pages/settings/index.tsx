@@ -1,3 +1,4 @@
+import { shellSurface } from "../../theme";
 import {
   Box,
   List,
@@ -7,7 +8,7 @@ import {
 } from "@mui/material";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import CloudreveLogo from "../../common/CloudreveLogo";
+import FylvoLogo from "../../common/FylvoLogo";
 import DrivesSection from "./DrivesSection";
 import GeneralSection from "./GeneralSection";
 import AboutSection from "./AboutSection";
@@ -57,10 +58,7 @@ export default function Settings() {
           borderColor: "divider",
           display: "flex",
           flexDirection: "column",
-          bgcolor: (theme) =>
-            theme.palette.mode === "light"
-              ? theme.palette.grey[50]
-              : theme.palette.grey[900],
+          bgcolor: shellSurface,
         }}
       >
         {/* Title with drag region */}
@@ -75,7 +73,7 @@ export default function Settings() {
             gap: 1.5,
           }}
         >
-          <CloudreveLogo height={24} />
+          <FylvoLogo height={24} />
         </Box>
 
         {/* Navigation Items */}
@@ -85,13 +83,7 @@ export default function Settings() {
               key={section.id}
               selected={activeSection === section.id}
               onClick={() => setActiveSection(section.id)}
-              sx={{
-                borderRadius: 1,
-                mb: 0.5,
-                "&.Mui-selected": {
-                  bgcolor: "action.selected",
-                },
-              }}
+              sx={{ mb: 0.5 }}
             >
               <ListItemIcon sx={{ minWidth: 36 }}>{section.icon}</ListItemIcon>
               <ListItemText primary={section.label} />
