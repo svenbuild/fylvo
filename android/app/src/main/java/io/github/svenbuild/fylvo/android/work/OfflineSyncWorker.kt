@@ -6,6 +6,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
@@ -30,7 +31,7 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
             // Another run is busy: it also takes roots switched on (and "Sync now" asked) meanwhile.
             if (!manager.engineLock.tryLock()) return Result.success()
             try {
-                OfflineSyncEngine(app.fileRepository, manager).run()
+                OfflineSyncEngine(app.fileRepository, manager, app.offlineEdits).run()
             } finally {
                 manager.engineLock.unlock()
             }
@@ -43,7 +44,7 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
         private const val WORK_PERIODIC = "offline_sync_periodic"
         private const val WORK_ONCE = "offline_sync_once"
 
-        private fun constraints(mobileData: Boolean): Constraints =
+        internal fun constraints(mobileData: Boolean): Constraints =
             Constraints.Builder()
                 .setRequiredNetworkType(if (mobileData) NetworkType.CONNECTED else NetworkType.UNMETERED)
                 .setRequiresBatteryNotLow(true)
@@ -62,13 +63,17 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
          * while one is busy, one more is queued after it (never dropped). Blocking.
          */
         fun syncNow(context: Context, mobileData: Boolean) {
+            enqueueOnce(context, WORK_ONCE, OneTimeWorkRequestBuilder<OfflineSyncWorker>().setConstraints(constraints(mobileData)).build())
+        }
+
+        /**
+         * Fylvo: [request] as the unique work [name], unless one is already waiting (enqueued, or
+         * blocked behind a busy one), which covers it; while one is busy it is queued after it.
+         */
+        internal fun enqueueOnce(context: Context, name: String, request: OneTimeWorkRequest) {
             val wm = WorkManager.getInstance(context)
-            if (wm.getWorkInfosForUniqueWork(WORK_ONCE).get().any { it.state in WAITING }) return
-            wm.enqueueUniqueWork(
-                WORK_ONCE,
-                ExistingWorkPolicy.APPEND_OR_REPLACE,
-                OneTimeWorkRequestBuilder<OfflineSyncWorker>().setConstraints(constraints(mobileData)).build(),
-            )
+            if (wm.getWorkInfosForUniqueWork(name).get().any { it.state in WAITING }) return
+            wm.enqueueUniqueWork(name, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
         }
 
         /**
@@ -92,7 +97,7 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : CoroutineW
             )
         }
 
-        private val WAITING = setOf(WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED)
+        internal val WAITING = setOf(WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED)
 
         fun cancel(context: Context) {
             val wm = WorkManager.getInstance(context)

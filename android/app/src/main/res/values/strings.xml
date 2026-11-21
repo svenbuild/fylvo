@@ -409,4 +409,47 @@
     <string name="could_not_read_file">Could not read %s. Please pick it again.</string>
     <string name="upload_waits_for_network">Waiting for the connection to upload the rest.</string>
     <string name="could_not_upload">Could not upload %s</string>
+    <!-- Fylvo: editing offline files on the phone (1.3) -->
+    <string name="edit">Edit</string>
+    <string name="edit_finish">Finish editing</string>
+    <string name="edit_discard">Discard changes</string>
+    <string name="edit_conflict_label">phone conflict</string>
+    <string name="edit_badge">Edited</string>
+    <string name="edit_state_uploading">uploading</string>
+    <string name="edit_state_synced">uploaded</string>
+    <string name="edit_state_conflict">conflict copy made</string>
+    <string name="edit_state_error">error</string>
+    <string name="edit_not_ready">Not up to date yet. Please try again after the sync.</string>
+    <string name="edit_no_editor">No app found to edit this file</string>
+    <string name="edit_opened_to_view">No app offers editing, opened to view. What is saved there is uploaded too.</string>
+    <string name="edit_uploading_now">Uploading changes…</string>
+    <string name="edit_finished">Finished editing %s</string>
+    <string name="edit_discarded">Changes to %s discarded</string>
+    <string name="edit_discard_title">Discard changes to \"%s\"?</string>
+    <string name="edit_discard_text">Changes not uploaded yet are lost. This cannot be undone.</string>
+    <string name="edit_not_uploaded_title">Not uploaded yet</string>
+    <string name="edit_not_uploaded_text">The changes to %1$s are not on the server yet. %2$s</string>
+    <string name="edit_reason_offline">There is no connection the offline setting allows.</string>
+    <string name="edit_reason_pending">An earlier upload is still being cleared up.</string>
+    <string name="edit_reason_missing">The file is missing on this phone.</string>
+    <string name="edit_reason_failed">The upload did not work.</string>
+    <string name="edit_retry_later">Try again later</string>
+    <string name="edit_upload_first">Upload first</string>
+    <plurals name="edit_unuploaded_title">
+        <item quantity="one">%d edited file not uploaded yet</item>
+        <item quantity="other">%d edited files not uploaded yet</item>
+    </plurals>
+    <string name="edit_root_text">Upload the changes before \"%s\" is switched off, or discard them?</string>
+    <string name="edit_sign_out_text">Upload the changes before signing out, or discard them?</string>
+    <string name="edit_upload_failed">Not every change could be uploaded. %s</string>
+    <string name="edit_section">Edited files</string>
+    <string name="edit_problem_missing">File missing</string>
+    <string name="edit_problem_server_full">Storage on the server is full, tries again later</string>
+    <string name="edit_problem_stalled">Upload was stopped several times, tries again at the next sync</string>
+    <string name="edit_problem_refused">Refused by the server (code %d)</string>
+    <string name="edit_conflict_notice">Conflict copy made: %s</string>
+    <string name="edit_retired_waiting">Finished, a late change is uploaded as a conflict copy</string>
+    <string name="edit_waiting">Waiting for upload</string>
+    <string name="edit_dismiss_notice">Hide note</string>
+    <string name="edit_retry_now">Try again now</string>
 </resources>

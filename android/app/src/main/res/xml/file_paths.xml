@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Fylvo: only the folders the app hands to other apps (downloaded and offline copies, and
-     the downloaded app update for the system installer).
+<!-- Fylvo: only the folders the app hands to other apps (downloaded and offline copies, working
+     copies in use for editors (never finished ones or the edit index), and the downloaded app
+     update for the system installer).
      Never the whole filesDir: it holds the session store. -->
 <paths>
     <cache-path name="downloads" path="downloads/" />
     <files-path name="offline" path="offline/" />
+    <files-path name="edit" path="offline-edit/files/" />
     <cache-path name="updates" path="updates/" />
 </paths>

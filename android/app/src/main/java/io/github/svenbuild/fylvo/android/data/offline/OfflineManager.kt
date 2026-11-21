@@ -17,6 +17,7 @@ import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.FavoritesStore
 import io.github.svenbuild.fylvo.android.data.SessionManager
 import io.github.svenbuild.fylvo.android.util.CrUri
+import io.github.svenbuild.fylvo.android.work.OfflineEditWorker
 import io.github.svenbuild.fylvo.android.work.OfflineSyncWorker
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -58,6 +59,12 @@ class OfflineManager(
     /** One sync engine run at a time in the whole process; a run that finds it held ends at once. */
     val engineLock = Mutex()
 
+    /**
+     * Fylvo: the edit index and every upload of working copies (see OfflineEdits). Short, so
+     * "Bearbeiten" never waits behind a long download. Always taken before [writeLock], never inside it.
+     */
+    val editLock = Mutex()
+
     /** Short sections that write copies or an index; switching a root off takes it too. */
     private val writeLock = Mutex()
 
@@ -78,7 +85,10 @@ class OfflineManager(
 
     suspend fun setMobileData(on: Boolean) {
         context.offlineSettingsStore.edit { it[mobileDataKey] = on }
-        if (_roots.value.isNotEmpty()) {
+        val edits = store()?.let { hasEdits(it) } == true
+        // Fylvo: edit checks still waiting get the new setting too.
+        if (edits) withContext(Dispatchers.IO) { OfflineEditWorker.replaceWaiting(context, on) }
+        if (_roots.value.isNotEmpty() || edits) {
             OfflineSyncWorker.apply(context, on)
             // A busy run left alone covers the request (see replaceWaiting).
             syncRequested.set(true)
@@ -117,18 +127,25 @@ class OfflineManager(
         }
         migrateLegacy(store)
         reload(store)
-        if (_roots.value.isNotEmpty()) OfflineSyncWorker.apply(context, mobileData.first())
+        // Fylvo: also with no root left while working copies wait (their uploads run in the sync).
+        if (_roots.value.isNotEmpty() || hasEdits(store)) OfflineSyncWorker.apply(context, mobileData.first())
     }
+
+    /** Fylvo: the account has working copies (in use or finished); see EditStore. */
+    fun hasEdits(store: OfflineStore): Boolean = EditStore(context.filesDir, store.accountKey).hasEntries()
 
     /**
      * Data of a session from before 1.2 (key from the email) moves to the key with the user id;
-     * offline data of other accounts goes. Called with [engineLock] held.
+     * offline data of other accounts goes (never their working copies). Called with [engineLock] held.
      */
     suspend fun prepareAccount(store: OfflineStore) {
         val emailKey = accountKey(session.serverUrlNow(), "", session.userEmail.first())
-        writeLock.withLock {
-            OfflineStore.adoptAccount(context.filesDir, emailKey, store.accountKey)
-            OfflineStore.deleteOtherAccounts(context.filesDir, store.accountKey)
+        editLock.withLock {
+            writeLock.withLock {
+                OfflineStore.adoptAccount(context.filesDir, emailKey, store.accountKey)
+                EditStore.adoptAccount(context.filesDir, emailKey, store.accountKey)
+                OfflineStore.deleteOtherAccounts(context.filesDir, store.accountKey)
+            }
         }
     }
 
@@ -214,7 +231,7 @@ class OfflineManager(
             store.tmpOf(id).deleteRecursively()
         }
         reload(store)
-        if (_roots.value.isEmpty()) OfflineSyncWorker.cancel(context)
+        if (_roots.value.isEmpty() && !hasEdits(store)) OfflineSyncWorker.cancel(context)
     }
 
     /**
@@ -266,12 +283,7 @@ class OfflineManager(
         for (index in store.indexes()) {
             val root = index.root
             if (root.id in removed) continue
-            val rootCanonical = CrUri.canonical(root.uri)
-            val rel = when {
-                root.folder -> relativePath(rootCanonical, c)
-                rootCanonical == c -> index.entries.firstOrNull()?.path
-                else -> null
-            } ?: continue
+            val rel = relIn(index, c) ?: continue
             val entry = index.entries.firstOrNull { it.path == rel }
             if (entity != null && (entry == null || entry.entity != entity)) continue
             // A pending entry (copy being replaced) is no copy.
@@ -283,6 +295,59 @@ class OfflineManager(
             root.legacyFile?.let(::File)?.takeIf { !root.folder && it.isFile }?.let { return@withContext it }
         }
         null
+    }
+
+    /** Path below [index]'s root of the server path [canonical], or null when the root does not hold it. */
+    private fun relIn(index: OfflineIndex, canonical: String): String? {
+        val rootCanonical = CrUri.canonical(index.root.uri)
+        return when {
+            index.root.folder -> relativePath(rootCanonical, canonical)
+            rootCanonical == canonical -> index.entries.firstOrNull()?.path
+            else -> null
+        }
+    }
+
+    /** Fylvo: the server file id of the synced copy of [path], or null when no root holds it. */
+    suspend fun syncedFileIdAt(path: String): String? = withContext(Dispatchers.IO) {
+        val store = store() ?: return@withContext null
+        val c = CrUri.canonical(path)
+        store.indexes().filter { it.root.id !in removed }.firstNotNullOfOrNull { index ->
+            relIn(index, c)?.let { rel -> index.entries.firstOrNull { it.path == rel }?.id?.takeIf { id -> id.isNotEmpty() } }
+        }
+    }
+
+    /** Fylvo: the server address of the file [fileId] as the sync knows it now (a root still on), or null. */
+    fun syncedUri(store: OfflineStore, fileId: String): String? {
+        if (fileId.isEmpty()) return null
+        for (index in store.indexes()) {
+            if (index.root.id in removed) continue
+            val entry = index.entries.firstOrNull { it.id == fileId } ?: continue
+            return if (index.root.folder) CrUri.join(index.root.uri, entry.path) else index.root.uri
+        }
+        return null
+    }
+
+    /** Fylvo: a synced copy opened for reading, with what the index says about it. */
+    class OpenedCopy(val rootId: String, val entity: String, val stream: java.io.InputStream)
+
+    /**
+     * Fylvo: opens the synced copy of [fileId] for a new working copy, under the write lock, only
+     * when the index says it is current and the file on disk is the one it recorded (same size and
+     * time). The open stream keeps these bytes even if a download replaces the file afterwards.
+     */
+    suspend fun openSyncedCopy(fileId: String): OpenedCopy? = withContext(Dispatchers.IO) {
+        val store = store() ?: return@withContext null
+        writeLock.withLock {
+            for (index in store.indexes()) {
+                if (index.root.id in removed) continue
+                val entry = index.entries.firstOrNull { it.id == fileId } ?: continue
+                if (entry.state != EntryState.Synced || entry.localSize < 0) return@withLock null
+                val file = store.fileOf(index.root.id, entry.path)
+                if (!file.isFile || file.length() != entry.localSize || file.lastModified() != entry.localMtime) return@withLock null
+                return@withLock OpenedCopy(index.root.id, entry.entity, file.inputStream())
+            }
+            null
+        }
     }
 
     /**
@@ -307,7 +372,10 @@ class OfflineManager(
         _syncing.value = null
     }
 
-    /** Sign-out: every account's offline data goes; nothing on the phone is unsynced in this version. */
+    /**
+     * Sign-out: every account's synced copies go (read-only, the server has them). Working copies
+     * are not touched here (see OfflineEdits.signOut).
+     */
     suspend fun deleteAll() = withContext(Dispatchers.IO) {
         writeLock.withLock {
             store()?.indexes()?.forEach { removed += it.root.id }

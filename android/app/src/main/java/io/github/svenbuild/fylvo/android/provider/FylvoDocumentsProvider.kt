@@ -120,9 +120,10 @@ class FylvoDocumentsProvider : DocumentsProvider() {
         if (mode.contains('w')) {
             throw FileNotFoundException("Fylvo documents are read-only here")
         }
-        // Fylvo: a file kept offline is served from its copy on this phone (also without a connection).
+        // Fylvo: a file kept offline is served from its copy on this phone (also without a connection);
+        // a file edited on the phone from its working copy (read-only here as well).
         val app = context!!.applicationContext as FylvoApp
-        val local = runBlocking(ioScope) { app.offlineManager.localCopy(documentId) } ?: fetchToCache(documentId)
+        val local = runBlocking(ioScope) { app.offlineEdits.localCopy(documentId, online = true) } ?: fetchToCache(documentId)
         return ParcelFileDescriptor.open(local, ParcelFileDescriptor.MODE_READ_ONLY)
     }
 
