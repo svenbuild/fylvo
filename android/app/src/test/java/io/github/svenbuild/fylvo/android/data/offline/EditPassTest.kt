@@ -396,10 +396,81 @@ class EditPassTest {
         server.files[uri] = file("f1", uri, "e1")
         val entry = edited("v1")
         store.tmpFolder()
-        store.snapshotOf(entry).writeText("old")
+        store.snapshotOf(entry).writeText("v1")
         pass().run()
         assertTrue(server.sent.isEmpty())
         assertFalse(store.snapshotOf(entry).exists())
+    }
+
+    @Test fun aSnapshotWithoutMarkerAndOtherBytesGoesUpEvenWithAWorkingCopy() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        val entry = edited("v1")
+        store.tmpFolder()
+        // Not the working copy, not the confirmed state (a marker write that failed, say).
+        store.snapshotOf(entry).writeText("other")
+        commitsConflict()
+        pass().run()
+        assertEquals("other", server.sent.single().third)
+        assertEquals("", server.sent.single().second)
+    }
+
+    @Test fun aRefusalIsRecordedBeforeItsSnapshotMoves() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        server.onUpload = { _, _, _ -> throw ApiException(40049, "too large") }
+        val entry = edited("big")
+        pass().run()
+        store.fileOf(entry).apply { writeText("small"); setLastModified(now - 10 * 60_000) }
+        now += EDIT_RECOVERY_DELAY_MS
+        var fileAtRecord: Boolean? = null
+        EditPass(server, store, { null }, EditPhase.End, "L", { true }, { index ->
+            val kept = index.entries.first().refusedSnapshots.firstOrNull()
+            if (kept != null && fileAtRecord == null) fileAtRecord = store.refusedOf(entry, kept).exists()
+        }, { now }).run()
+        // The index named the refused file before it was there.
+        assertEquals(false, fileAtRecord)
+    }
+
+    @Test fun aStopBetweenRecordAndMoveIsFinishedLater() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        val kept = EditMarker(UploadKind.Version, EditSnapshot(3, 0, sha("big")), target = uri, at = 0, refusedCode = 40049)
+        val entry = edited("v1").copy(refusedSnapshots = listOf(kept)).also { store.put(it) }
+        store.tmpFolder()
+        store.snapshotOf(entry).writeText("big")
+        pass().run()
+        assertEquals("big", store.refusedOf(entry, kept).readText())
+        assertFalse(store.snapshotOf(entry).exists())
+        assertTrue(server.sent.isEmpty())
+    }
+
+    @Test fun aRefusedFileWithoutItsListEntryIsLinkedAgainNeverDeleted() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        val entry = edited("v1")
+        val lost = File(store.tmpFolder(), "refused-${entry.id}-0000000000000000").apply { writeText("big") }
+        pass().run()
+        val after = store.entry(entry.id)!!
+        val kept = after.refusedSnapshots.single()
+        assertEquals(sha("big"), kept.snapshot.sha256)
+        assertEquals("big", store.refusedOf(after, kept).readText())
+        assertFalse(lost.exists())
+        assertTrue(server.sent.isEmpty())
+    }
+
+    @Test fun anEntryWithRefusedSnapshotsNeverExpires() = runBlocking {
+        val kept = EditMarker(UploadKind.Version, EditSnapshot(3, 0, sha("big")), target = uri, at = 0, refusedCode = 40049)
+        val entry = edited("v1").copy(refusedSnapshots = listOf(kept), retiredAt = now - EDIT_RETIRED_KEEP_MS - 1).also { store.put(it) }
+        store.moveToDone(entry.copy(retiredAt = 0))
+        store.tmpFolder()
+        store.refusedOf(entry, kept).writeText("big")
+        // Never outdated either.
+        assertFalse(isOutdated(entry.copy(retiredAt = 0), false, Preflight.Found("f1", false, "e9")))
+        pass().run()
+        assertNotNull(store.entry(entry.id))
+        assertTrue(store.refusedOf(entry, kept).exists())
+        // Also when the finished copy is gone.
+        store.fileOf(entry).delete()
+        pass().run()
+        assertNotNull(store.entry(entry.id))
+        assertTrue(needsAttention(store.entry(entry.id)!!))
     }
 
     @Test fun aKeptFileOfNoEntryGetsAReadableName() = runBlocking {

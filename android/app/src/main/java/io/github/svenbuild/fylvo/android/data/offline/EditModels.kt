@@ -185,9 +185,15 @@ fun planEdit(entry: EditEntry, stat: LocalStat?, sha256: String?, now: Long, exp
         entry.state == EditState.Creating -> EditStep.Skip
         entry.state == EditState.Error && !retryErrors && !explicit -> EditStep.Skip
         pending != null -> if (now - pending.at >= EDIT_RECOVERY_DELAY_MS) EditStep.Recover else EditStep.WaitRecovery
-        stat == null || sha256 == null -> if (entry.retired) EditStep.Expire else EditStep.Missing
+        // An entry with refused snapshots never expires: they go only with an explicit discard.
+        stat == null || sha256 == null -> when {
+            !entry.retired -> EditStep.Missing
+            entry.refusedSnapshots.isEmpty() -> EditStep.Expire
+            else -> EditStep.Skip
+        }
         !isChanged(entry, sha256) ->
-            if (entry.retired && now - entry.retiredAt >= EDIT_RETIRED_KEEP_MS) EditStep.Expire else EditStep.Unchanged
+            if (entry.retired && entry.refusedSnapshots.isEmpty() && now - entry.retiredAt >= EDIT_RETIRED_KEEP_MS) EditStep.Expire
+            else EditStep.Unchanged
         explicit || isStable(stat, entry.seen, now) -> EditStep.Upload
         else -> EditStep.Unstable
     }
@@ -327,7 +333,7 @@ fun canPark(entry: EditEntry, sha256: String?): Boolean {
  * the synced copy, "Bearbeiten" makes a fresh working copy.
  */
 fun isOutdated(entry: EditEntry, changed: Boolean, server: Preflight): Boolean =
-    !changed && entry.pending == null && !entry.retired && server is Preflight.Found &&
+    !changed && entry.pending == null && entry.refusedSnapshots.isEmpty() && !entry.retired && server is Preflight.Found &&
         server.id == entry.fileId && server.primaryEntity.isNotEmpty() && server.primaryEntity != entry.baseEntity
 
 /**
@@ -335,7 +341,7 @@ fun isOutdated(entry: EditEntry, changed: Boolean, server: Preflight): Boolean =
  * copy that was made, a late change of a finished copy waiting for its upload).
  */
 fun needsAttention(entry: EditEntry): Boolean = entry.state != EditState.Creating && (
-    entry.state == EditState.Error || entry.problem != null ||
+    entry.state == EditState.Error || entry.problem != null || entry.refusedSnapshots.isNotEmpty() ||
         (!entry.retired && entry.conflict.isNotEmpty()) || (entry.retired && entry.state == EditState.Uploading)
     )
 

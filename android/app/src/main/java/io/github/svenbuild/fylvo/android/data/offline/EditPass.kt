@@ -154,22 +154,45 @@ internal class EditPass(
                 !entry.retired && store.isOnlyInDone(entry) -> put(entry.copy(retiredAt = now))
             }
         }
+        // A refusal recorded before its snapshot was renamed (a stop in between): the rename now.
+        store.load().entries.forEach { entry ->
+            entry.refusedSnapshots.forEach { kept ->
+                val dest = store.refusedOf(entry, kept)
+                val snap = store.snapshotOf(entry)
+                if (!dest.exists() && entry.pending == null && snap.isFile && EditStore.sha256(snap) == kept.snapshot.sha256) snap.renameTo(dest)
+            }
+        }
         // While an account move is not finished its files may show up here without their entries.
         if (!scanOrphans) return
         // An editor wrote after a finish, or the index was lost: such files go up as conflict copies.
         for (orphan in store.orphans(store.load())) adopt(orphan, EditStore.safeName(orphan.name), null)
-        // A snapshot no marker points to: when its entry still has a working copy, those bytes are
-        // there or on the server and it goes; otherwise a conflict copy next to its file, if known.
+        // A file in tmp/ no entry points to. A snapshot whose bytes are its entry's working copy or
+        // its last confirmed state goes (they are there or on the server). A refused snapshot is
+        // never deleted: linked to its entry again. Anything else goes up as a conflict copy.
         val index = store.load()
         for (stray in store.strayTmp(index)) {
             val owner = EditStore.ownerOf(stray)?.let { id -> index.entries.firstOrNull { it.id == id } }
-            if (owner != null && store.fileOf(owner).isFile) {
+            val hash = EditStore.sha256(stray)
+            if (owner != null && stray.name.startsWith("refused-")) {
+                relinkRefused(owner, stray, hash)
+                continue
+            }
+            if (owner != null && (hash == owner.reference.sha256 || hash == store.fileOf(owner).takeIf { it.isFile }?.let(EditStore::sha256))) {
                 stray.delete()
                 continue
             }
             val time = SimpleDateFormat("yyyy-MM-dd HH-mm", Locale.ROOT).format(Date(now))
             adopt(stray, owner?.name ?: "$strayLabel $time", owner?.uri)
         }
+    }
+
+    /** A refused snapshot that lost its place in the list goes back into it (under the name its bytes give). */
+    private fun relinkRefused(owner: EditEntry, file: File, hash: String) {
+        val kept = EditMarker(UploadKind.Version, EditSnapshot(file.length(), file.lastModified(), hash), target = owner.uri, at = clock())
+        val dest = store.refusedOf(owner, kept)
+        if (file != dest && (dest.exists() || !file.renameTo(dest))) return
+        val current = store.entry(owner.id) ?: return
+        if (current.refusedSnapshots.none { it.snapshot.sha256 == hash }) put(current.copy(refusedSnapshots = current.refusedSnapshots + kept))
     }
 
     /** Takes [file] into done/ as a finished copy that goes up as a conflict copy (into [uri]'s folder, else My files). */
@@ -241,10 +264,15 @@ internal class EditPass(
         val marker = entry.pending ?: return
         val kept = marker.copy(refusedCode = entry.errorCode)
         val dest = store.refusedOf(entry, kept)
-        // The same bytes were refused before: that copy is kept already.
-        if (dest.exists()) store.snapshotOf(entry).delete() else if (!store.snapshotOf(entry).renameTo(dest)) return
         val list = entry.refusedSnapshots.filter { it.snapshot.sha256 != kept.snapshot.sha256 } + kept
+        // The index first (with the name the file gets), then the rename; a stop in between is
+        // finished by the next housekeeping.
         put(entry.copy(pending = null, refusedSnapshots = list, state = EditState.Uploading, problem = null, errorCode = 0, attempts = 0))
+        val snap = store.snapshotOf(entry)
+        // The same bytes were refused before: that copy is kept already.
+        val moved = if (dest.exists() && EditStore.sha256(dest) == kept.snapshot.sha256) snap.delete() else snap.renameTo(dest)
+        // Not moved: no new snapshot may be written over it before the housekeeping moves it.
+        if (!moved) return result.again()
         store.entry(entry.id)?.let { handle(it) }
     }
 
@@ -253,16 +281,15 @@ internal class EditPass(
      * one that has to wait stays referenced and is sent later; one never marked goes.
      */
     private suspend fun upload(entry: EditEntry) {
-        var marked = false
-        try {
-            val snapshot = takeSnapshot(entry) ?: return later(entry)
-            val kind = if (entry.retired || entry.baseEntity.isEmpty()) UploadKind.Conflict else UploadKind.Version
-            put(entry.copy(pending = EditMarker(kind, snapshot, target = entry.uri, at = clock()), state = EditState.Uploading, attempts = 0))
-            marked = true
-            store.entry(entry.id)?.let { sendSnapshot(it, snapshot) }
-        } finally {
-            if (!marked) store.snapshotOf(entry).delete()
-        }
+        // A refused snapshot still under the snapshot's name (not moved yet) is never written over.
+        if (entry.refusedSnapshots.any { !store.refusedOf(entry, it).exists() } && store.snapshotOf(entry).exists()) return later(entry)
+        val snapshot = takeSnapshot(entry) ?: return later(entry)
+        val kind = if (entry.retired || entry.baseEntity.isEmpty()) UploadKind.Conflict else UploadKind.Version
+        // Nothing can stop the pass between the snapshot and this write (no suspension). If the
+        // write fails locally, the snapshot stays for the housekeeping, which deletes it only when
+        // its bytes are the working copy's or the confirmed ones, and else uploads it.
+        put(entry.copy(pending = EditMarker(kind, snapshot, target = entry.uri, at = clock()), state = EditState.Uploading, attempts = 0))
+        store.entry(entry.id)?.let { sendSnapshot(it, snapshot) }
     }
 
     /**
@@ -297,8 +324,14 @@ internal class EditPass(
         store.tmpFolder()
         val before = statOf(src) ?: return null
         // On the disk before a marker points to it (a power loss must not leave a damaged snapshot behind a marker).
-        val hash = src.inputStream().use { input ->
-            java.io.FileOutputStream(snap).use { out -> EditStore.copyHashing(input, out).also { out.fd.sync() } }
+        // A copy that fails half way goes at once: it never had a marker and its bytes are in the working copy.
+        val hash = try {
+            src.inputStream().use { input ->
+                java.io.FileOutputStream(snap).use { out -> EditStore.copyHashing(input, out).also { out.fd.sync() } }
+            }
+        } catch (e: Throwable) {
+            snap.delete()
+            throw e
         }
         if (statOf(src) != before || EditStore.sha256(src) != hash) {
             snap.delete()

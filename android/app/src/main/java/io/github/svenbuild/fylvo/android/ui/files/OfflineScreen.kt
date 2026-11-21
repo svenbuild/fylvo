@@ -57,6 +57,7 @@ import io.github.svenbuild.fylvo.android.data.offline.OfflineRootInfo
 import io.github.svenbuild.fylvo.android.data.offline.EditEntry
 import io.github.svenbuild.fylvo.android.data.offline.EditProblem
 import io.github.svenbuild.fylvo.android.data.offline.EditState
+import io.github.svenbuild.fylvo.android.data.offline.refusalCode
 import androidx.compose.material.icons.outlined.EditOff
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.TaskAlt
@@ -244,12 +245,13 @@ private fun EditRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val asFile = FileObject(type = 0, name = entry.name)
-    val error = entry.state == EditState.Error || entry.problem != null
+    val error = entry.state == EditState.Error || entry.problem != null || entry.refusedSnapshots.isNotEmpty()
     val detail = when {
         entry.problem == EditProblem.Missing -> stringResource(R.string.edit_problem_missing)
         entry.problem == EditProblem.ServerFull -> stringResource(R.string.edit_problem_server_full)
         entry.problem == EditProblem.Stalled -> stringResource(R.string.edit_problem_stalled)
-        entry.problem == EditProblem.Refused -> stringResource(R.string.edit_problem_refused, entry.errorCode)
+        entry.problem == EditProblem.Refused || entry.refusedSnapshots.isNotEmpty() ->
+            stringResource(R.string.edit_problem_refused, refusalCode(entry))
         entry.retired -> stringResource(R.string.edit_retired_waiting)
         entry.conflict.isNotEmpty() -> stringResource(R.string.edit_conflict_notice, entry.conflict)
         else -> stringResource(R.string.edit_waiting)
