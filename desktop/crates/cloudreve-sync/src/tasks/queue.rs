@@ -445,6 +445,15 @@ impl TaskQueue {
         // Register task path for path-based cancellation
         self.task_paths
             .insert(task.task_id.clone(), task.payload.local_path_display());
+        // Fylvo: a cancel by path marks the row first and then looks for the path. One that came
+        // in between the claim and the line above found no path: it is seen here.
+        if !matches!(
+            self.inventory.get_task_status(&task.task_id),
+            Ok(Some(TaskStatus::Running))
+        ) {
+            self.cleanup_task_entry(&task.task_id).await;
+            return;
+        }
 
         self.register_progress_entry(&task).await;
 
@@ -479,6 +488,11 @@ impl TaskQueue {
                 if matches!(completed, Ok(true)) {
                     self.upload_later(path, crate::tasks::upload::upload_again_after(&task.payload.local_path));
                 }
+                return;
+            }
+            // Fylvo: stopped by a shutdown: the row stays Running, so the next start resumes it.
+            Ok(TaskRunState::Cancelled) if self.shutting_down.load(Ordering::SeqCst) => {
+                self.cleanup_task_entry(&task.task_id).await;
                 return;
             }
             Ok(TaskRunState::Cancelled) => {
