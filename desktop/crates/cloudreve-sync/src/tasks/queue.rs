@@ -259,9 +259,8 @@ impl TaskQueue {
             .collect();
 
         for task_id in tasks_to_abort {
-            if let Some((_, token)) = self.cancel_tokens.remove(&task_id) {
-                token.cancel();
-            }
+            // Abort first, so the task does not take the cancel for a failure; then stop its
+            // chunk workers, which run as tasks of their own.
             if let Some((_, handle)) = self.task_handles.remove(&task_id) {
                 handle.abort();
                 debug!(
@@ -270,6 +269,9 @@ impl TaskQueue {
                     task_id = %task_id,
                     "Aborted running task"
                 );
+            }
+            if let Some((_, token)) = self.cancel_tokens.remove(&task_id) {
+                token.cancel();
             }
             self.task_paths.remove(&task_id);
             self.progress.remove(&task_id);
@@ -462,17 +464,17 @@ impl TaskQueue {
             }
             Ok(TaskRunState::UploadAgain(path)) => {
                 // Fylvo: the file changed during the upload. This task is done; a new one
-                // uploads the newer content.
-                if let Err(err) = self.inventory.update_task(
+                // uploads the newer content, unless the task was cancelled meanwhile (the file
+                // was renamed, deleted or is downloaded: what happens to it is decided there).
+                let completed = self.inventory.change_task_status_if(
                     &task.task_id,
-                    TaskUpdate {
-                        status: Some(TaskStatus::Completed),
-                        ..Default::default()
-                    },
-                ) {
-                    warn!(target: "tasks::queue", drive = %self.drive_id, task_id = %task.task_id, error = %err, "Failed to mark task as completed");
-                }
+                    TaskStatus::Running,
+                    TaskStatus::Completed,
+                );
                 self.cleanup_task_entry(&task.task_id).await;
+                if !matches!(completed, Ok(true)) {
+                    return;
+                }
                 if let Err(err) = self.enqueue(TaskPayload::upload(path)).await {
                     warn!(target: "tasks::queue", drive = %self.drive_id, task_id = %task.task_id, error = %err, "Failed to queue the upload of the newer content");
                 }
@@ -736,11 +738,11 @@ impl TaskQueue {
             .collect();
 
         for task_id in running {
-            if let Some((_, token)) = self.cancel_tokens.remove(&task_id) {
-                token.cancel();
-            }
             if let Some((_, handle)) = self.task_handles.remove(&task_id) {
                 handle.abort();
+            }
+            if let Some((_, token)) = self.cancel_tokens.remove(&task_id) {
+                token.cancel();
             }
 
             self.progress.remove(&task_id);

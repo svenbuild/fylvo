@@ -1,5 +1,5 @@
 use super::InventoryDb;
-use crate::drive::guard::is_under_any_case;
+use crate::drive::{case::same_on_ntfs, guard::is_under_any_case};
 use crate::inventory::{NewTaskRecord, TaskRecord, TaskStatus, TaskUpdate};
 use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
@@ -8,28 +8,30 @@ use diesel::prelude::*;
 use crate::inventory::schema::task_queue::{self, dsl as task_queue_dsl};
 
 impl InventoryDb {
-    /// Insert a task queue record if no pending/running task with the same type and path exists.
+    /// Insert a task queue record if no pending/running task with the same type and path exists
+    /// (in any upper/lower case spelling: one file on NTFS, see `cancel_tasks_by_path`).
     /// Returns `true` if the task was inserted, `false` if a duplicate was found.
     pub fn insert_task_if_not_exist(&self, task: &NewTaskRecord) -> Result<bool> {
         let mut conn = self.connection()?;
 
-        // Check if a pending or running task with the same type and path already exists
         let active_statuses = vec![
             TaskStatus::Pending.as_str().to_string(),
             TaskStatus::Running.as_str().to_string(),
         ];
 
-        let existing: Option<String> = task_queue_dsl::task_queue
+        let paths: Vec<String> = task_queue_dsl::task_queue
             .filter(task_queue_dsl::drive_id.eq(&task.drive_id))
             .filter(task_queue_dsl::task_type.eq(&task.task_type))
-            .filter(task_queue_dsl::local_path.eq(&task.local_path))
             .filter(task_queue_dsl::status.eq_any(&active_statuses))
-            .select(task_queue_dsl::id)
-            .first(&mut conn)
-            .optional()
+            .select(task_queue_dsl::local_path)
+            .load(&mut conn)
             .context("Failed to check for existing task")?;
 
-        if existing.is_some() {
+        let new_path = std::path::Path::new(&task.local_path);
+        if paths
+            .iter()
+            .any(|path| same_on_ntfs(std::path::Path::new(path), new_path))
+        {
             return Ok(false);
         }
 
@@ -427,6 +429,8 @@ mod tests {
         assert!(db.insert_task_if_not_exist(&task("t1", r"C:\S\report.txt")).unwrap());
         assert!(db.insert_task_if_not_exist(&task("t2", r"C:\S\docs\b.txt")).unwrap());
         assert!(db.insert_task_if_not_exist(&task("t3", r"C:\S\reports.txt")).unwrap());
+        // The same file in another spelling is queued already.
+        assert!(!db.insert_task_if_not_exist(&task("t4", r"C:\S\Report.TXT")).unwrap());
         let mut cancelled = db.cancel_tasks_by_path("d", r"C:\S\Report.txt").unwrap();
         cancelled.extend(db.cancel_tasks_by_path("d", r"C:\S\Docs").unwrap());
         cancelled.sort();

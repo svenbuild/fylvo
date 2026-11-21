@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use crate::cfapi::placeholder::LocalFileInfo;
+
 use crate::utils::toast::send_conflict_toast;
 use crate::{
     drive::{placeholder::CrPlaceholder, utils::local_path_to_cr_uri},
@@ -65,6 +65,8 @@ pub struct UploadTask<'a> {
     cancel_token: CancellationToken,
     /// Reference to the in-memory progress map for real-time progress updates
     progress_map: Arc<DashMap<String, TaskProgress>>,
+    /// Fylvo: size and last write time of the file when its upload started.
+    started: Option<ContentState>,
     /// Fylvo: the file changed while it was uploaded; it needs another upload.
     changed_meanwhile: bool,
 }
@@ -90,6 +92,7 @@ impl<'a> UploadTask<'a> {
             remote_base,
             cancel_token: CancellationToken::new(),
             progress_map,
+            started: None,
             changed_meanwhile: false,
         }
     }
@@ -162,6 +165,11 @@ impl<'a> UploadTask<'a> {
             warn!(target: "tasks::upload", task_id = %self.task.task_id, local_path = %self.task.payload.local_path_display(), error = ?e, "Failed to clear sync error state");
         }
 
+        // Fylvo: read after the error state is cleared, right before the content is read.
+        if !is_directory {
+            self.started = content_state(&self.task.payload.local_path);
+        }
+
         // Handle empty files and directories separately
         let upload_res = match (
             is_directory,
@@ -180,10 +188,7 @@ impl<'a> UploadTask<'a> {
     async fn handle_error(&mut self, r: Result<()>) -> Result<()> {
         let path = &self.task.payload.local_path;
         match r {
-            Ok(()) => {
-                forget_failure(path);
-                Ok(())
-            }
+            Ok(()) => Ok(()),
             Err(e) => {
                 // Fylvo: a refused name (40905) can pass with a case rename any moment, any
                 // other failure waits before the sync tries the file again.
@@ -447,32 +452,34 @@ impl<'a> UploadTask<'a> {
 
         // Fylvo: saved again while it was uploaded. Marking it in sync would take the newer
         // bytes for the uploaded version, and they would never reach the server. The server's
-        // new version goes to the inventory only; the queue uploads the file again.
-        let started = &self.local_file.as_ref().unwrap().local_file_info;
-        if !started.is_directory {
-            let now = LocalFileInfo::from_path(&self.task.payload.local_path)?;
-            if !same_content_state(started, &now) {
-                info!(
-                    target: "tasks::upload",
-                    task_id = %self.task.task_id,
-                    local_path = %self.task.payload.local_path_display(),
-                    "File changed during the upload, uploading it again"
-                );
-                self.local_file
-                    .as_ref()
-                    .unwrap()
-                    .commit_inventory_only(&self.inventory)
-                    .context("failed to commit uploaded version")?;
-                self.changed_meanwhile = true;
-                return Ok(());
-            }
+        // new version goes to the inventory only; the queue uploads the file again, a few
+        // times in a row at most (a file written to all the time would else make versions
+        // without end; after that the sync tries it again later).
+        let path = &self.task.payload.local_path;
+        if self.started.is_some() && content_state(path) != self.started {
+            self.local_file
+                .as_ref()
+                .unwrap()
+                .commit_inventory_only(&self.inventory)
+                .context("failed to commit uploaded version")?;
+            self.changed_meanwhile = may_upload_again(path);
+            info!(
+                target: "tasks::upload",
+                task_id = %self.task.task_id,
+                local_path = %self.task.payload.local_path_display(),
+                again = self.changed_meanwhile,
+                "File changed during the upload"
+            );
+            return Ok(());
         }
 
-        self.local_file
-            .as_mut()
-            .unwrap()
-            .commit(self.inventory.clone())
-            .context("failed to commit placeholder")?;
+        if let Err(err) = self.local_file.as_mut().unwrap().commit(self.inventory.clone()) {
+            // Fylvo: the server has the new version either way. Without it in the inventory
+            // the next upload would name the old one and conflict with this PC's own upload.
+            let _ = self.local_file.as_ref().unwrap().commit_inventory_only(&self.inventory);
+            return Err(err.context("failed to commit placeholder"));
+        }
+        forget_uploads(path);
 
         self.local_file
             .as_mut()
@@ -483,38 +490,71 @@ impl<'a> UploadTask<'a> {
     }
 }
 
-/// Whether a file looks unchanged between two reads: same size and last write time.
-fn same_content_state(before: &LocalFileInfo, after: &LocalFileInfo) -> bool {
-    after.exists && before.file_size == after.file_size && before.last_modified == after.last_modified
+/// Size and last write time of a file, read through a handle (the folder entry that
+/// `LocalFileInfo` reads may lag behind a writer that keeps the file open). Opening without
+/// data access does not download an online-only file.
+type ContentState = (u64, SystemTime);
+
+fn content_state(path: &Path) -> Option<ContentState> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.len(), meta.modified().ok()?))
 }
 
 /// How long the sync waits before it tries again a file whose upload failed.
 const RETRY_FAILED_AFTER: Duration = Duration::from_secs(10 * 60);
 
-/// Uploads that failed recently, by path (see `failed_recently`).
-static FAILED_UPLOADS: Mutex<Option<HashMap<PathBuf, Instant>>> = Mutex::new(None);
+/// How often in a row a file changed during its upload is uploaded again at once.
+const MAX_UPLOADS_AGAIN: u32 = 3;
 
-fn note_failure(path: &Path) {
-    let mut failed = FAILED_UPLOADS.lock().unwrap();
-    failed.get_or_insert_with(HashMap::new).insert(path.to_path_buf(), Instant::now());
+/// Recent upload trouble of a path.
+#[derive(Default)]
+struct Recent {
+    failed_at: Option<Instant>,
+    uploads_again: u32,
 }
 
-fn forget_failure(path: &Path) {
-    if let Some(failed) = FAILED_UPLOADS.lock().unwrap().as_mut() {
-        failed.remove(path);
+/// By path, folded as NTFS compares names (a file may be asked for in another spelling).
+static RECENT: Mutex<Option<HashMap<String, Recent>>> = Mutex::new(None);
+
+fn with_recent<T>(path: &Path, f: impl FnOnce(&mut Recent) -> T) -> T {
+    let mut recent = RECENT.lock().unwrap();
+    let key = crate::drive::case::ntfs_fold(&path.to_string_lossy());
+    f(recent.get_or_insert_with(HashMap::new).entry(key).or_default())
+}
+
+fn note_failure(path: &Path) {
+    with_recent(path, |recent| recent.failed_at = Some(Instant::now()));
+}
+
+/// Forget the trouble of a path: its upload ended in sync.
+fn forget_uploads(path: &Path) {
+    if let Some(recent) = RECENT.lock().unwrap().as_mut() {
+        recent.remove(&crate::drive::case::ntfs_fold(&path.to_string_lossy()));
     }
+}
+
+/// Whether a file changed during its upload may be uploaded again at once. Past the limit it
+/// counts as failed, so the sync tries it again later.
+fn may_upload_again(path: &Path) -> bool {
+    let again = with_recent(path, |recent| {
+        recent.uploads_again += 1;
+        recent.uploads_again <= MAX_UPLOADS_AGAIN
+    });
+    if !again {
+        note_failure(path);
+    }
+    again
 }
 
 /// Whether an upload of `path` failed less than `RETRY_FAILED_AFTER` ago. A sync pass does not
 /// send such a file again yet: a refusal that does not pass (quota, size, rights) would else
 /// send it on every pass. A change of the file uploads it at once, as before.
 pub(crate) fn failed_recently(path: &Path) -> bool {
-    FAILED_UPLOADS
-        .lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|failed| failed.get(path))
-        .is_some_and(|at| at.elapsed() < RETRY_FAILED_AFTER)
+    with_recent(path, |recent| {
+        recent
+            .failed_at
+            .is_some_and(|at| at.elapsed() < RETRY_FAILED_AFTER)
+    })
 }
 
 /// Whether an upload failed because the server has another version than the one the file was
@@ -548,12 +588,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("a.txt");
         std::fs::write(&path, "one").unwrap();
-        let started = LocalFileInfo::from_path(&path).unwrap();
-        assert!(same_content_state(&started, &LocalFileInfo::from_path(&path).unwrap()));
-        std::fs::write(&path, "one and more").unwrap();
-        assert!(!same_content_state(&started, &LocalFileInfo::from_path(&path).unwrap()));
+        let started = content_state(&path);
+        assert!(started.is_some());
+        assert_eq!(content_state(&path), started);
+        // Written through a handle that stays open: seen before the writer closes it.
+        let mut writer = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        std::io::Write::write_all(&mut writer, b" and more").unwrap();
+        assert_ne!(content_state(&path), started);
+        drop(writer);
         std::fs::remove_file(&path).unwrap();
-        assert!(!same_content_state(&started, &LocalFileInfo::missing()));
+        assert_eq!(content_state(&path), None);
     }
 
     #[test]
@@ -562,8 +606,23 @@ mod tests {
         assert!(!failed_recently(path));
         note_failure(path);
         assert!(failed_recently(path));
-        forget_failure(path);
+        // The sync may ask with the server's spelling.
+        assert!(failed_recently(Path::new(r"C:\S\Failed.TXT")));
+        forget_uploads(path);
         assert!(!failed_recently(path));
+    }
+
+    #[test]
+    fn a_file_changed_during_each_upload_is_uploaded_again_a_few_times_only() {
+        let path = Path::new(r"C:\S\busy.log");
+        for _ in 0..MAX_UPLOADS_AGAIN {
+            assert!(may_upload_again(path));
+        }
+        assert!(!may_upload_again(path));
+        assert!(failed_recently(path), "the sync tries it again later");
+        forget_uploads(path);
+        assert!(may_upload_again(path));
+        forget_uploads(path);
     }
 
     #[test]
