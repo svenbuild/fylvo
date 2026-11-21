@@ -22,33 +22,37 @@ impl InventoryDb {
             TaskStatus::Running.as_str().to_string(),
         ];
 
-        let paths: Vec<String> = task_queue_dsl::task_queue
-            .filter(task_queue_dsl::drive_id.eq(&task.drive_id))
-            .filter(task_queue_dsl::task_type.eq(&task.task_type))
-            .filter(task_queue_dsl::status.eq_any(&active_statuses))
-            .filter(
-                task_queue_dsl::local_path
-                    .like(ntfs_like_pattern(&task.local_path))
-                    .escape('!'),
-            )
-            .select(task_queue_dsl::local_path)
-            .load(&mut conn)
-            .context("Failed to check for existing task")?;
-
-        let new_path = std::path::Path::new(&task.local_path);
-        if paths
-            .iter()
-            .any(|path| same_on_ntfs(std::path::Path::new(path), new_path))
-        {
-            return Ok(false);
-        }
-
         let row = NewTaskRow::try_from(task)?;
-        diesel::insert_into(task_queue::table)
-            .values(&row)
-            .execute(&mut conn)
-            .context("Failed to insert task queue record")?;
-        Ok(true)
+        // Fylvo: check and insert in one write transaction, so two tasks queued at the same
+        // moment cannot both go in.
+        conn.immediate_transaction(|conn| {
+            let paths: Vec<String> = task_queue_dsl::task_queue
+                .filter(task_queue_dsl::drive_id.eq(&task.drive_id))
+                .filter(task_queue_dsl::task_type.eq(&task.task_type))
+                .filter(task_queue_dsl::status.eq_any(&active_statuses))
+                .filter(
+                    task_queue_dsl::local_path
+                        .like(ntfs_like_pattern(&task.local_path))
+                        .escape('!'),
+                )
+                .select(task_queue_dsl::local_path)
+                .load(conn)
+                .context("Failed to check for existing task")?;
+
+            let new_path = std::path::Path::new(&task.local_path);
+            if paths
+                .iter()
+                .any(|path| same_on_ntfs(std::path::Path::new(path), new_path))
+            {
+                return Ok(false);
+            }
+
+            diesel::insert_into(task_queue::table)
+                .values(&row)
+                .execute(conn)
+                .context("Failed to insert task queue record")?;
+            Ok(true)
+        })
     }
 
     /// Fylvo: change a task's status only if it still has `from`, in one statement. Returns

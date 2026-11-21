@@ -52,6 +52,8 @@ pub struct TaskQueue {
     /// Fylvo: cancels a running upload including its chunk workers, which aborting the task
     /// handle alone does not stop.
     cancel_tokens: DashMap<String, CancellationToken>,
+    /// Fylvo: files with an upload waiting to be queued later (see `upload_later`).
+    later: DashMap<String, ()>,
 }
 
 impl TaskQueue {
@@ -86,6 +88,7 @@ impl TaskQueue {
             task_handles: DashMap::new(),
             task_paths: DashMap::new(),
             cancel_tokens: DashMap::new(),
+            later: DashMap::new(),
         });
 
         queue.spawn_dispatcher(command_rx).await;
@@ -547,10 +550,16 @@ impl TaskQueue {
     /// Fylvo: queue an upload of `path` after `delay` (at once for none). A task for the path
     /// that is queued by then takes its place.
     fn upload_later(self: &Arc<Self>, path: PathBuf, delay: Duration) {
+        // One waiting upload per file, however many uploads ask for one meanwhile.
+        let key = crate::drive::case::ntfs_fold(&path.to_string_lossy());
+        if !delay.is_zero() && self.later.insert(key.clone(), ()).is_some() {
+            return;
+        }
         let queue = Arc::clone(self);
         tokio::spawn(async move {
             if !delay.is_zero() {
                 tokio::time::sleep(delay).await;
+                queue.later.remove(&key);
             }
             if let Err(err) = queue.enqueue(TaskPayload::upload(path.clone())).await {
                 warn!(target: "tasks::queue", drive = %queue.drive_id, path = %path.display(), error = %err, "Failed to queue the upload again");
@@ -591,6 +600,10 @@ impl TaskQueue {
                 }
                 let token = CancellationToken::new();
                 self.cancel_tokens.insert(task.task_id.clone(), token.clone());
+                // Fylvo: a shutdown that swept the tasks before this one was registered.
+                if self.shutting_down.load(Ordering::SeqCst) {
+                    return Ok(TaskRunState::Cancelled);
+                }
                 let mut task_executor = UploadTask::new(
                     self.inventory.clone(),
                     self.cr_client.clone(),
@@ -776,6 +789,11 @@ impl TaskQueue {
             self.progress.remove(&task_id);
             self.task_paths.remove(&task_id);
         }
+        // And every upload that registered its token but not yet its handle.
+        for entry in self.cancel_tokens.iter() {
+            entry.value().cancel();
+        }
+        self.cancel_tokens.clear();
     }
 
     fn payload_from_record(record: &TaskRecord) -> Result<TaskPayload> {

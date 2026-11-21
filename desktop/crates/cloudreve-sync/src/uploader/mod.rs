@@ -175,7 +175,9 @@ impl Uploader {
                 &params.local_path,
                 &mut session,
                 progress,
-                &self.cancel_token,
+                // Fylvo: a failed chunk stops the other workers through this token. A child
+                // keeps that stop apart from a cancel of the whole task.
+                &self.cancel_token.child_token(),
             )
             .await;
 

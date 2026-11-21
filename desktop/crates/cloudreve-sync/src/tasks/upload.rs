@@ -169,8 +169,10 @@ impl<'a> UploadTask<'a> {
         // this size, and the change check in `file_uploaded` compares with it.
         let mut file_size = 0;
         if !is_directory {
-            let started = content_state(&self.task.payload.local_path)
-                .context("the file cannot be read right now")?;
+            let Some(started) = content_state(&self.task.payload.local_path) else {
+                let err = anyhow::anyhow!("the file cannot be read right now");
+                return self.handle_error(Err(err)).await;
+            };
             file_size = started.0;
             let info = &mut self.local_file.as_mut().unwrap().local_file_info;
             info.file_size = Some(started.0);
@@ -329,11 +331,12 @@ impl<'a> UploadTask<'a> {
             remote_uri: uri,
             file_size,
             mime_type: None, // Could be detected from file extension
-            last_modified: local_file.local_file_info.last_modified.map(|t| {
-                t.duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as i64
-            }),
+            // Fylvo: a time before 1970 (valid on Windows) is not sent instead of a panic.
+            last_modified: local_file
+                .local_file_info
+                .last_modified
+                .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .map(|t| t.as_millis() as i64),
             overwrite: !is_new_file || self.task.payload.force_override,
             previous_version,
             task_id: self.task.task_id.clone(),
@@ -555,6 +558,8 @@ pub(crate) fn upload_again_after(path: &Path) -> Duration {
         if recent.uploads_again <= MAX_UPLOADS_AGAIN {
             Duration::ZERO
         } else {
+            // A sync pass waits as well (see `failed_recently`).
+            recent.failed_at = Some(Instant::now());
             RETRY_FAILED_AFTER
         }
     })
@@ -643,6 +648,7 @@ mod tests {
             assert_eq!(upload_again_after(path), Duration::ZERO);
         }
         assert_eq!(upload_again_after(path), RETRY_FAILED_AFTER);
+        assert!(failed_recently(path), "a sync pass waits as well");
         forget_uploads(path);
         assert_eq!(upload_again_after(path), Duration::ZERO);
         forget_uploads(path);
