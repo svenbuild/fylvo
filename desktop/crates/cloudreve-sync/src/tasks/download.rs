@@ -8,7 +8,7 @@
 //! - Only operates on hydrated placeholder files
 
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
     sync::{
         Arc,
@@ -30,7 +30,10 @@ use crate::{
     cfapi::placeholder::LocalFileInfo,
     drive::{placeholder::CrPlaceholder, utils::local_path_to_cr_uri},
     inventory::{FileMetadata, InventoryDb},
-    tasks::queue::QueuedTask,
+    tasks::{
+        queue::QueuedTask,
+        upload::{ContentState, content_state},
+    },
 };
 
 use super::types::TaskProgress;
@@ -171,6 +174,8 @@ pub struct DownloadTask<'a> {
     inventory_meta: Option<FileMetadata>,
     /// Latest file info fetched from remote before download
     remote_file_info: Option<cloudreve_api::models::explorer::FileResponse>,
+    /// Fylvo: size and write time of the local file when the download started.
+    started: Option<ContentState>,
     cancel_token: CancellationToken,
     progress_map: Arc<DashMap<String, TaskProgress>>,
 }
@@ -192,6 +197,7 @@ impl<'a> DownloadTask<'a> {
             local_file_info: None,
             inventory_meta: None,
             remote_file_info: None,
+            started: None,
             task,
             sync_path,
             remote_base,
@@ -269,6 +275,20 @@ impl<'a> DownloadTask<'a> {
             );
             return Ok(());
         }
+
+        // Fylvo: changed here since the sync decided on this download: the upload of the change
+        // meets the server's newer version and becomes a conflict, nothing is overwritten.
+        if !local_file_info.in_sync() {
+            info!(
+                target: "tasks::download",
+                task_id = %self.task.task_id,
+                local_path = %self.task.payload.local_path_display(),
+                "File changed here, skipping download"
+            );
+            return Ok(());
+        }
+        // Fylvo: size and write time now, compared again right before the content is replaced.
+        self.started = content_state(&self.task.payload.local_path);
 
         self.local_file_info = Some(local_file_info);
 
@@ -485,6 +505,19 @@ impl<'a> DownloadTask<'a> {
             "Replacing placeholder content"
         );
 
+        // Fylvo: a file kept on this device ("always keep") can be changed while its new
+        // version downloads. Replacing it then would throw the change away: keep it instead.
+        let in_sync = LocalFileInfo::from_path(local_path).is_ok_and(|info| info.in_sync());
+        if !in_sync || !unchanged_since(self.started, local_path) {
+            info!(
+                target: "tasks::download",
+                task_id = %self.task.task_id,
+                local_path = %local_path.display(),
+                "File changed during the download, keeping the local change"
+            );
+            return Ok(());
+        }
+
         // Use Windows ReplaceFileW for atomic replacement
         // This preserves file attributes and provides atomicity
         #[cfg(windows)]
@@ -556,5 +589,32 @@ impl<'a> DownloadTask<'a> {
         );
 
         Ok(())
+    }
+}
+
+/// Whether a file still has the size and write time it had at `started` (read through a
+/// handle). Unknown counts as changed.
+fn unchanged_since(started: Option<ContentState>, path: &Path) -> bool {
+    started.is_some() && content_state(path) == started
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_changed_during_the_download_is_not_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("kept.docx");
+        std::fs::write(&path, "server version 1").unwrap();
+        let started = content_state(&path);
+        assert!(unchanged_since(started, &path));
+        // The user saves while the server's version 2 downloads.
+        let mut writer = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        std::io::Write::write_all(&mut writer, b", edited here").unwrap();
+        assert!(!unchanged_since(started, &path));
+        drop(writer);
+        // Without a first reading nothing is replaced either.
+        assert!(!unchanged_since(None, &path));
     }
 }

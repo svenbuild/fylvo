@@ -505,9 +505,9 @@ impl<'a> UploadTask<'a> {
 /// Size and last write time of a file, read through a handle (the folder entry that
 /// `LocalFileInfo` reads may lag behind a writer that keeps the file open). Opening without
 /// data access does not download an online-only file.
-type ContentState = (u64, SystemTime);
+pub(crate) type ContentState = (u64, SystemTime);
 
-fn content_state(path: &Path) -> Option<ContentState> {
+pub(crate) fn content_state(path: &Path) -> Option<ContentState> {
     let meta = std::fs::metadata(path).ok()?;
     Some((meta.len(), meta.modified().ok()?))
 }

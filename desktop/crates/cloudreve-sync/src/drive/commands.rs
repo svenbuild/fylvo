@@ -1021,6 +1021,28 @@ impl Mount {
             .into_values()
             .filter(|path| *path != sync_path)
             .collect();
+        // Fylvo: saved by replacement. Many programs (Excel, PowerPoint and others) save by
+        // deleting the file and putting a new one under the same name. When the delayed event
+        // arrives, a file is at the path again: a new version of the same file, not a deletion.
+        // The inventory row stays, so the upload names the version it replaces, and the
+        // server keeps the file's versions and shares.
+        let (replaced, paths): (Vec<PathBuf>, Vec<PathBuf>) =
+            paths.into_iter().partition(|path| {
+                file_back_at(path)
+                    && path.to_str().is_some_and(|p| {
+                        self.inventory
+                            .query_by_path(p)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|row| !row.is_folder)
+                    })
+            });
+        for path in replaced {
+            tracing::info!(target: "drive::commands", path = %path.display(), "Deleted and written again, uploading as a new version");
+            if let Err(e) = self.enqueue_upload(TaskPayload::upload(path.clone())).await {
+                tracing::warn!(target: "drive::commands", path = %path.display(), error = %e, "Failed to enqueue upload task");
+            }
+        }
         if paths.is_empty() {
             return Ok(());
         }
@@ -1270,5 +1292,36 @@ impl Mount {
         }
 
         Ok(())
+    }
+}
+
+/// Fylvo: whether a file is at `path` again, spelled exactly so (a file put back under another
+/// upper/lower case spelling is a new name to the server, see `case.rs`).
+fn file_back_at(path: &Path) -> bool {
+    let is_file = LocalFileInfo::from_path(path).is_ok_and(|info| info.exists && !info.is_directory);
+    is_file && LocalFileInfo::on_disk_path(path).as_deref() == Some(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_deleted_and_written_again_counts_as_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Book.xlsx");
+        // Excel: the original is deleted, a new file is renamed to its name.
+        std::fs::write(&path, "version 1").unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert!(!file_back_at(&path), "really deleted");
+        let temp = dir.path().join("Cedd4100");
+        std::fs::write(&temp, "version 2").unwrap();
+        std::fs::rename(&temp, &path).unwrap();
+        assert!(file_back_at(&path));
+        // Back under another spelling, or as a folder: a deletion of this name.
+        assert!(!file_back_at(&dir.path().join("book.xlsx")));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(!file_back_at(&path));
     }
 }
