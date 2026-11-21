@@ -74,8 +74,10 @@ class FylvoApp : Application(), ImageLoaderFactory {
      * Fylvo: sign-out, with [choice] for working copies whose changes are not on the server yet
      * (see OfflineEdits.signOut). The result says whether it happened or what to ask first.
      */
-    suspend fun signOut(choice: OfflineEdits.SignOutChoice = OfflineEdits.SignOutChoice.None): OfflineEdits.SignOutResult =
-        offlineEdits.signOut(choice) { endSession() }
+    suspend fun signOut(
+        choice: OfflineEdits.SignOutChoice = OfflineEdits.SignOutChoice.None,
+        shown: Set<String> = emptySet(),
+    ): OfflineEdits.SignOutResult = offlineEdits.signOut(choice, shown) { endSession() }
 
     /**
      * Fylvo: ends the session and removes what the account left on the device: background

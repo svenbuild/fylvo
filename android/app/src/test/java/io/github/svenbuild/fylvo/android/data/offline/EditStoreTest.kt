@@ -45,14 +45,22 @@ class EditStoreTest {
         assertFalse(store.hasEntries())
     }
 
-    @Test fun aBrokenIndexReadsAsEmptySoItsCopiesBecomeOrphans() {
+    @Test fun aBrokenIndexIsNeverWrittenOver() {
         val store = EditStore(tmp.root, "acc")
         val a = entry()
         store.put(a)
-        store.write(a)
-        File(tmp.root, "offline-edit/index/acc.json").writeText("{broken")
-        assertEquals(EditIndex(), store.load())
-        assertEquals(listOf(store.fileOf(a)), store.orphans(store.load()))
+        val file = File(tmp.root, "offline-edit/index/acc.json")
+        file.writeText("{broken")
+        assertTrue(runCatching { store.load() }.isFailure)
+        assertTrue(runCatching { store.put(entry()) }.isFailure)
+        assertEquals("{broken", file.readText())
+        // It may hold entries: the account keeps its background work.
+        assertTrue(store.hasEntries())
+    }
+
+    @Test fun noIndexYetIsEmpty() {
+        assertEquals(EditIndex(), EditStore(tmp.root, "acc").load())
+        assertFalse(EditStore(tmp.root, "acc").hasEntries())
     }
 
     @Test fun aStoppedSaveLeavesTheOldIndex() {

@@ -1,7 +1,5 @@
 package io.github.svenbuild.fylvo.android.data.offline
 
-import io.github.svenbuild.fylvo.android.api.EntityInfo
-import io.github.svenbuild.fylvo.android.api.ExtendedInfo
 import io.github.svenbuild.fylvo.android.api.FileObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -142,18 +140,12 @@ class EditModelsTest {
         assertEquals(CancelOutcome.Keep, classifyCancel(40073))
     }
 
-    @Test fun commitProof() {
-        val file = FileObject(
-            id = "f1", primaryEntity = "e3",
-            extendedInfo = ExtendedInfo(listOf(EntityInfo("e1"), EntityInfo("e2"), EntityInfo("e3"))),
-        )
+    @Test fun commitProofIsTheCurrentVersionOnly() {
+        val file = FileObject(id = "f1", primaryEntity = "e3")
+        // A newer version on top, or an unfinished upload listed among the versions: not proven.
         assertFalse(isCurrentVersion(file, "e2"))
         assertTrue(isCurrentVersion(file, "e3"))
         assertFalse(isCurrentVersion(file.copy(primaryEntity = ""), ""))
-        // In a recovery a newer version on top still proves ours got in.
-        assertTrue(holdsVersion(file, "e2"))
-        assertFalse(holdsVersion(file, "e9"))
-        assertFalse(holdsVersion(file.copy(extendedInfo = null), "e2"))
     }
 
     // ---- rebase, finish, sign-out ----

@@ -1216,13 +1216,15 @@ class FilesViewModel(
         if (prompt.busy) return
         _state.update { it.copy(rootPrompt = prompt.copy(busy = true)) }
         viewModelScope.launch {
-            val done = if (upload) edits.upload(prompt.entries) else edits.discardAll(prompt.entries).let { true }
-            _state.update { it.copy(rootPrompt = null) }
-            if (done) {
-                switchOff(prompt.rootId, prompt.name)
+            // Why it did not work, or null when the root can go.
+            val problem = if (upload) {
+                edits.upload(prompt.entries)?.let { UiText.Res(R.string.edit_upload_failed, UiText.Res(notUploadedText(it))) }
             } else {
-                _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_upload_failed, ""))) }
+                UiText.Res(R.string.edit_discard_failed, prompt.name).takeUnless { edits.discardAll(prompt.entries.mapTo(HashSet()) { it.id }) }
             }
+            _state.update { it.copy(rootPrompt = null) }
+            if (problem == null) switchOff(prompt.rootId, prompt.name)
+            else _state.update { it.copy(snackbar = UiMessage(problem)) }
         }
     }
 
@@ -1265,8 +1267,8 @@ class FilesViewModel(
     fun discardEditing(entryId: String, name: String) {
         _state.update { it.copy(editPrompt = null) }
         viewModelScope.launch {
-            edits.discard(entryId)
-            _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_discarded, name))) }
+            val text = if (edits.discard(entryId)) R.string.edit_discarded else R.string.edit_discard_failed
+            _state.update { it.copy(snackbar = UiMessage(UiText.Res(text, name))) }
         }
     }
 

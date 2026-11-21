@@ -421,6 +421,7 @@
     <string name="edit_opened_to_view">Keine App bietet Bearbeiten an, zum Ansehen geöffnet. Was dort gespeichert wird, wird auch hochgeladen.</string>
     <string name="edit_uploading_now">Änderungen werden hochgeladen…</string>
     <string name="edit_finished">Bearbeitung von %s abgeschlossen</string>
+    <string name="edit_discard_failed">Die Änderungen an %s konnten nicht verworfen werden</string>
     <string name="edit_discarded">Änderungen an %s verworfen</string>
     <string name="edit_discard_title">Änderungen an \"%s\" verwerfen?</string>
     <string name="edit_discard_text">Noch nicht hochgeladene Änderungen gehen verloren. Das kann nicht rückgängig gemacht werden.</string>

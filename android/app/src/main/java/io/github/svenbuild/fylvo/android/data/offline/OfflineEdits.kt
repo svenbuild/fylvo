@@ -62,9 +62,9 @@ class OfflineEdits(
 
     sealed class SignOutResult {
         data object Done : SignOutResult()
-        /** Working copies with changes not uploaded: ask first. */
-        data class NeedsChoice(val count: Int) : SignOutResult()
-        data class Failed(val count: Int, val reason: NotUploaded) : SignOutResult()
+        /** Working copies ([ids]) with changes not uploaded: ask first. */
+        data class NeedsChoice(val ids: Set<String>) : SignOutResult()
+        data class Failed(val ids: Set<String>, val reason: NotUploaded) : SignOutResult()
     }
 
     private suspend fun stores(): Pair<OfflineStore, EditStore>? =
@@ -77,7 +77,9 @@ class OfflineEdits(
     /** App start or return to the app: shows the entries, and checks soon when something waits. */
     suspend fun start() = withContext(Dispatchers.IO) {
         val (offline, store) = stores() ?: return@withContext
-        val entries = store.load().entries
+        val entries = guarded(null) { store.load().entries }
+        // An index that cannot be read is left alone (never written over); the periodic run tries again.
+        if (entries == null) return@withContext
         _entries.value = entries
         if (entries.any { needsCheck(it, statOf(store.fileOf(it))) }) scheduleCheck(offline.accountKey)
     }
@@ -91,14 +93,29 @@ class OfflineEdits(
     suspend fun pass(offline: OfflineStore, phase: EditPhase) {
         if (gate.get()) return
         val store = EditStore(context.filesDir, offline.accountKey)
-        val result = lock.withLock {
-            if (gate.get()) return
-            runPass(offline, store, phase)
+        // A local failure (an unreadable index, a full disk) never stops the sync run.
+        val result = guarded(null) {
+            lock.withLock {
+                if (gate.get()) return
+                runPass(offline, store, phase)
+            }
         }
         // The start pass leaves what waits to the end pass of the same run.
         if (phase == EditPhase.Start) return
-        if (result.syncWanted && phase == EditPhase.Check) manager.syncNow()
-        if (result.again) scheduleCheck(offline.accountKey, result.delay)
+        guarded(Unit) {
+            if (result?.syncWanted == true && phase == EditPhase.Check) manager.syncNow()
+            // A pass that failed as a whole (the index cannot be read) is left to the periodic run.
+            if (result?.again == true) scheduleCheck(offline.accountKey, result.delay)
+        }
+    }
+
+    /** Runs [block]; a local failure gives [fallback] instead of a crash. Cancellation goes through. */
+    private inline fun <T> guarded(fallback: T, block: () -> T): T = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        fallback
     }
 
     /** The edit check of [accountKey], only while that account is signed in. */
@@ -111,7 +128,7 @@ class OfflineEdits(
     private suspend fun runPass(offline: OfflineStore, store: EditStore, phase: EditPhase, only: Set<String>? = null): EditPass.Result =
         withContext(Dispatchers.IO) {
             EditPass(
-                repo, manager, store, offline, phase,
+                RepoEditServer(repo), store, { manager.syncedUri(offline, it) }, phase,
                 conflictLabel = context.localized().getString(R.string.edit_conflict_label),
                 stillSignedIn = { manager.store()?.accountKey == offline.accountKey },
                 publish = ::publish,
@@ -132,25 +149,25 @@ class OfflineEdits(
     /** The working copy in use for the server file [fileId] (not an outdated one), or null. */
     suspend fun workingCopy(fileId: String): File? = withContext(Dispatchers.IO) {
         val (_, store) = stores() ?: return@withContext null
-        store.load().entries.firstOrNull { it.active && !it.outdated && it.fileId == fileId }
-            ?.let { store.fileOf(it) }?.takeIf { it.isFile }
+        guarded(null) {
+            store.load().entries.firstOrNull { it.active && !it.outdated && it.fileId == fileId }
+                ?.let { store.fileOf(it) }?.takeIf { it.isFile }
+        }
     }
 
     /**
      * The file to read for the server file [path]: its working copy when there is one (whatever
      * version is asked for), else the synced copy ([OfflineManager.localCopy]). The working copy
-     * is found by address or by the file id the synced index gives; with [online] also by the
-     * server's file id (a working copy that outlived its root).
+     * is found by the file id at [path] (from the synced index, with [online] also from the
+     * server, for a working copy that outlived its root); only when no id can be known, by address.
      */
     suspend fun localCopy(path: String, entity: String? = null, online: Boolean = false): File? = withContext(Dispatchers.IO) {
         val store = stores()?.second
-        val entries = store?.load()?.entries.orEmpty().filter { it.active && !it.outdated }
+        val entries = guarded(emptyList()) { store?.load()?.entries.orEmpty().filter { it.active && !it.outdated } }
         if (store != null && entries.isNotEmpty()) {
-            val c = CrUri.canonical(path)
-            val hit = entries.firstOrNull { CrUri.canonical(it.uri) == c } ?: run {
-                val id = manager.syncedFileIdAt(path) ?: if (online) lookupId(path) else null
-                entries.firstOrNull { id != null && it.fileId == id }
-            }
+            val id = manager.syncedFileIdAt(path) ?: if (online) lookupId(path) else null
+            val hit = if (id != null) entries.firstOrNull { it.fileId == id }
+            else CrUri.canonical(path).let { c -> entries.firstOrNull { CrUri.canonical(it.uri) == c } }
             hit?.let { store.fileOf(it) }?.takeIf { it.isFile }?.let { return@withContext it }
         }
         manager.localCopy(path, entity)
@@ -171,10 +188,14 @@ class OfflineEdits(
      */
     suspend fun startEditing(file: FileObject, offlineMode: Boolean): StartResult = withContext(Dispatchers.IO) {
         val (_, store) = stores() ?: return@withContext StartResult.NotReady
-        lock.withLock {
+        guarded(StartResult.NotReady) { lock.withLock { startLocked(store, file, offlineMode) } }
+    }
+
+    private suspend fun startLocked(store: EditStore, file: FileObject, offlineMode: Boolean): StartResult {
+        run {
             store.load().entries.firstOrNull { it.active && it.fileId == file.id }?.let { existing ->
                 val local = store.fileOf(existing)
-                if (!existing.outdated && local.isFile) return@withLock StartResult.Ready(local, existing.id)
+                if (!existing.outdated && local.isFile) return StartResult.Ready(local, existing.id)
                 // Outdated (no unsaved change) or gone: it is finished, a fresh copy follows.
                 retireLocked(store, existing)
             }
@@ -194,10 +215,10 @@ class OfflineEdits(
             }
             if (made == null) {
                 dropCreating(store, entry)
-                return@withLock StartResult.NotReady
+                return StartResult.NotReady
             }
             publish(store.put(made))
-            StartResult.Ready(store.fileOf(made), made.id)
+            return StartResult.Ready(store.fileOf(made), made.id)
         }
     }
 
@@ -228,10 +249,12 @@ class OfflineEdits(
     /** An editor got write access to [entryId]: noted, and its changes are checked in a few minutes. */
     suspend fun opened(entryId: String) = withContext(Dispatchers.IO) {
         val (offline, store) = stores() ?: return@withContext
-        lock.withLock {
-            store.entry(entryId)?.let { publish(store.put(it.copy(grantedAt = System.currentTimeMillis()))) }
+        guarded(Unit) {
+            lock.withLock {
+                store.entry(entryId)?.let { publish(store.put(it.copy(grantedAt = System.currentTimeMillis()))) }
+            }
         }
-        scheduleCheck(offline.accountKey)
+        guarded(Unit) { scheduleCheck(offline.accountKey) }
     }
 
     /**
@@ -241,13 +264,15 @@ class OfflineEdits(
      */
     suspend fun finish(entryId: String): FinishResult = withContext(Dispatchers.IO) {
         val (offline, store) = stores() ?: return@withContext FinishResult.Done
-        lock.withLock {
-            val entry = store.entry(entryId) ?: return@withLock FinishResult.Done
-            revoke(store, entry)
-            val failed = uploadLocked(offline, store, listOf(entry))
-            if (failed != null) return@withLock FinishResult.Failed(failed)
-            store.entry(entryId)?.let { retireLocked(store, it) }
-            FinishResult.Done
+        guarded(FinishResult.Failed(NotUploaded.Failed)) {
+            lock.withLock {
+                val entry = store.entry(entryId) ?: return@withLock FinishResult.Done
+                revoke(store, entry)
+                val failed = uploadLocked(offline, store, listOf(entry))
+                if (failed != null) return@withLock FinishResult.Failed(failed)
+                store.entry(entryId)?.let { retireLocked(store, it) }
+                FinishResult.Done
+            }
         }
     }
 
@@ -270,11 +295,8 @@ class OfflineEdits(
         }
     }
 
-    /** "Änderungen verwerfen": the working copy goes at once (with its unfinished upload, if any). */
-    suspend fun discard(entryId: String) = withContext(Dispatchers.IO) {
-        val (_, store) = stores() ?: return@withContext
-        lock.withLock { store.entry(entryId)?.let { discardLocked(store, it) } }
-    }
+    /** "Änderungen verwerfen": the working copy goes at once (with its unfinished upload, if any). False when that failed. */
+    suspend fun discard(entryId: String): Boolean = discardAll(setOf(entryId))
 
     private suspend fun discardLocked(store: EditStore, entry: EditEntry) {
         revoke(store, entry)
@@ -289,75 +311,100 @@ class OfflineEdits(
     /** The note about a conflict copy was read. */
     suspend fun dismissNotice(entryId: String) = withContext(Dispatchers.IO) {
         val (_, store) = stores() ?: return@withContext
-        lock.withLock { store.entry(entryId)?.let { publish(store.put(it.copy(conflict = ""))) } }
+        guarded(Unit) { lock.withLock { store.entry(entryId)?.let { publish(store.put(it.copy(conflict = ""))) } } }
     }
 
-    /** Working copies made in root [rootId] (or of its files) with changes the server does not have. */
+    /**
+     * Working copies made in root [rootId] (or of its files) with changes the server does not
+     * have. On a local failure none: switching a root off never touches working copies anyway.
+     */
     suspend fun rootBlockers(rootId: String): List<EditEntry> = withContext(Dispatchers.IO) {
         val (offline, store) = stores() ?: return@withContext emptyList()
-        val ids = offline.load(rootId)?.entries.orEmpty().mapTo(HashSet()) { it.id }
-        blockers(store).filter { it.rootId == rootId || it.fileId in ids }
-    }
-
-    /** Explicit upload of [entries] (switching a root off); true when the server holds every change. */
-    suspend fun upload(entries: List<EditEntry>): Boolean = withContext(Dispatchers.IO) {
-        val (offline, store) = stores() ?: return@withContext false
-        lock.withLock {
-            entries.forEach { revoke(store, it) }
-            uploadLocked(offline, store, entries) == null
+        guarded(emptyList()) {
+            val ids = offline.load(rootId)?.entries.orEmpty().mapTo(HashSet()) { it.id }
+            blockers(store).filter { it.rootId == rootId || it.fileId in ids }
         }
     }
 
-    suspend fun discardAll(entries: List<EditEntry>) = withContext(Dispatchers.IO) {
-        val (_, store) = stores() ?: return@withContext
-        lock.withLock { entries.forEach { e -> store.entry(e.id)?.let { discardLocked(store, it) } } }
+    /** Explicit upload of [entries] (switching a root off); null when the server holds every change, else why not. */
+    suspend fun upload(entries: List<EditEntry>): NotUploaded? = withContext(Dispatchers.IO) {
+        val (offline, store) = stores() ?: return@withContext NotUploaded.Failed
+        guarded(NotUploaded.Failed) {
+            lock.withLock {
+                entries.forEach { revoke(store, it) }
+                uploadLocked(offline, store, entries)
+            }
+        }
     }
 
-    /** How many working copies hold changes the server does not have (asked before a sign-out). */
-    suspend fun signOutBlockers(): Int = withContext(Dispatchers.IO) { stores()?.second?.let { blockers(it).size } ?: 0 }
+    /** Discards the working copies [ids]; false when that failed. */
+    suspend fun discardAll(ids: Set<String>): Boolean = withContext(Dispatchers.IO) {
+        val (_, store) = stores() ?: return@withContext false
+        guarded(false) {
+            lock.withLock { ids.forEach { id -> store.entry(id)?.let { discardLocked(store, it) } } }
+            true
+        }
+    }
 
     private fun blockers(store: EditStore): List<EditEntry> =
         signOutBlockers(store.load().entries.map { it to hashOf(store, it) })
 
     /**
-     * Fylvo: sign-out with working copies. With the lock held (a running pass ends first) the
-     * choice is applied: [SignOutChoice.Upload] uploads every change and goes on only when all
-     * are on the server; [SignOutChoice.Discard] deletes them. Then the workers stop, [end] ends
-     * the session (revokes the token), and the remaining copies are finished; they stay for the
-     * same account (done/, 7 days).
+     * Fylvo: sign-out with working copies. First no new work and the running offline and edit
+     * workers stop; the lock then waits for a pass that is still running. Then the choice is
+     * applied: [SignOutChoice.Upload] uploads every change and goes on only when all are on the
+     * server; [SignOutChoice.Discard] deletes exactly the copies [shown] in the question (when
+     * another one changed meanwhile it asks again). Then [end] ends the session (revokes the
+     * token), and the remaining copies are finished; they stay for the same account (done/,
+     * 7 days). When it does not sign out, the background work is set up again.
      */
-    suspend fun signOut(choice: SignOutChoice, end: suspend () -> Unit): SignOutResult {
+    suspend fun signOut(choice: SignOutChoice, shown: Set<String>, end: suspend () -> Unit): SignOutResult = withContext(Dispatchers.IO) {
         val stores = stores()
         gate.set(true)
+        var result: SignOutResult = SignOutResult.Failed(shown, NotUploaded.Failed)
         try {
-            return lock.withLock {
-                if (stores != null) {
-                    val (offline, store) = stores
-                    val open = blockers(store)
-                    when (choice) {
-                        SignOutChoice.None -> if (open.isNotEmpty()) return@withLock SignOutResult.NeedsChoice(open.size)
-                        SignOutChoice.Discard -> open.forEach { discardLocked(store, it) }
-                        SignOutChoice.Upload -> {
-                            open.forEach { revoke(store, it) }
-                            uploadLocked(offline, store, open)?.let { reason ->
-                                return@withLock SignOutResult.Failed(blockers(store).size, reason)
+            OfflineSyncWorker.cancel(context)
+            OfflineEditWorker.cancel(context)
+            result = guarded(result) {
+                lock.withLock {
+                    if (stores != null) {
+                        val (offline, store) = stores
+                        val open = blockers(store)
+                        val ids = open.mapTo(LinkedHashSet()) { it.id }
+                        when (choice) {
+                            SignOutChoice.None -> if (open.isNotEmpty()) return@withLock SignOutResult.NeedsChoice(ids)
+                            SignOutChoice.Discard -> {
+                                if (!shown.containsAll(ids)) return@withLock SignOutResult.NeedsChoice(ids)
+                                shown.forEach { id -> store.entry(id)?.let { discardLocked(store, it) } }
+                            }
+                            SignOutChoice.Upload -> {
+                                open.forEach { revoke(store, it) }
+                                uploadLocked(offline, store, open)?.let { reason ->
+                                    return@withLock SignOutResult.Failed(blockers(store).mapTo(LinkedHashSet()) { it.id }, reason)
+                                }
                             }
                         }
                     }
-                }
-                withContext(NonCancellable) {
-                    withContext(Dispatchers.IO) {
-                        OfflineSyncWorker.cancel(context)
-                        OfflineEditWorker.cancel(context)
+                    withContext(NonCancellable) {
+                        end()
+                        stores?.second?.let { store ->
+                            runCatching { store.load().entries.filter { it.active }.forEach { retireLocked(store, it) } }
+                        }
+                        forget()
                     }
-                    end()
-                    stores?.second?.let { store -> store.load().entries.filter { it.active }.forEach { retireLocked(store, it) } }
-                    forget()
+                    SignOutResult.Done
                 }
-                SignOutResult.Done
             }
+            result
         } finally {
             gate.set(false)
+            // Still signed in: the background work comes back.
+            if (result != SignOutResult.Done) withContext(NonCancellable) {
+                guarded(Unit) {
+                    manager.start()
+                    stores?.let { scheduleCheck(it.first.accountKey) }
+                }
+            }
         }
     }
 

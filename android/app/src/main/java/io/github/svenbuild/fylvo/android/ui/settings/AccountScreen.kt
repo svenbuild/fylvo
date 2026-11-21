@@ -135,10 +135,10 @@ fun AccountScreen(
     fun signOut(choice: OfflineEdits.SignOutChoice) {
         editSignOut = editSignOut?.copy(busy = true)
         scope.launch {
-            editSignOut = when (val result = app.signOut(choice)) {
+            editSignOut = when (val result = app.signOut(choice, editSignOut?.ids.orEmpty())) {
                 OfflineEdits.SignOutResult.Done -> null
-                is OfflineEdits.SignOutResult.NeedsChoice -> EditSignOut(result.count)
-                is OfflineEdits.SignOutResult.Failed -> EditSignOut(result.count, result.reason)
+                is OfflineEdits.SignOutResult.NeedsChoice -> EditSignOut(result.ids)
+                is OfflineEdits.SignOutResult.Failed -> EditSignOut(result.ids, result.reason)
             }
         }
     }
@@ -313,7 +313,7 @@ fun AccountScreen(
 
     editSignOut?.let { prompt ->
         EditChoiceDialog(
-            title = pluralStringResource(R.plurals.edit_unuploaded_title, prompt.count, prompt.count),
+            title = pluralStringResource(R.plurals.edit_unuploaded_title, prompt.ids.size, prompt.ids.size),
             text = stringResource(R.string.edit_sign_out_text),
             busy = prompt.busy,
             error = prompt.reason?.let { stringResource(R.string.edit_upload_failed, stringResource(notUploadedText(it))) },
@@ -457,9 +457,9 @@ private fun formatDateTime(millis: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(millis))
 
 
-/** Fylvo: the question before a sign-out with [count] edited files not uploaded; [reason] after a failed upload. */
+/** Fylvo: the question before a sign-out with the edited files [ids] not uploaded; [reason] after a failed upload. */
 private data class EditSignOut(
-    val count: Int,
+    val ids: Set<String>,
     val reason: OfflineEdits.NotUploaded? = null,
     val busy: Boolean = false,
 )

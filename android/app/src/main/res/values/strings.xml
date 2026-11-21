@@ -424,6 +424,7 @@
     <string name="edit_opened_to_view">No app offers editing, opened to view. What is saved there is uploaded too.</string>
     <string name="edit_uploading_now">Uploading changes…</string>
     <string name="edit_finished">Finished editing %s</string>
+    <string name="edit_discard_failed">Could not discard the changes to %s</string>
     <string name="edit_discarded">Changes to %s discarded</string>
     <string name="edit_discard_title">Discard changes to \"%s\"?</string>
     <string name="edit_discard_text">Changes not uploaded yet are lost. This cannot be undone.</string>

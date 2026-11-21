@@ -23,20 +23,30 @@ class EditStore(private val base: File, val accountKey: String) {
     private val doneDir = File(base, "$ROOT/done/$accountKey")
     private val tmpDir = File(base, "$ROOT/tmp/$accountKey")
 
-    /** The edit index; empty when there is none (or it cannot be read: the copies then count as orphans). */
-    fun load(): EditIndex =
-        runCatching { json.decodeFromString(EditIndex.serializer(), indexFile.readText()) }.getOrNull() ?: EditIndex()
+    /**
+     * The edit index; empty only when there is none yet. One that cannot be read throws, so
+     * nothing is written over it (and no entry is lost by a guess).
+     */
+    fun load(): EditIndex {
+        if (!indexFile.exists()) return EditIndex()
+        return json.decodeFromString(EditIndex.serializer(), indexFile.readText())
+    }
 
-    fun hasEntries(): Boolean = indexFile.isFile && load().entries.isNotEmpty()
+    /** True also for an index that cannot be read (it may hold entries). */
+    fun hasEntries(): Boolean = indexFile.isFile && runCatching { load().entries.isNotEmpty() }.getOrDefault(true)
 
+    /** Written to a temporary file, synced to disk, then moved over the index in one step; on any failure the old index stays. */
     fun save(index: EditIndex) {
         indexFile.parentFile?.mkdirs()
         val tmp = File(indexFile.path + ".tmp")
-        tmp.writeText(json.encodeToString(EditIndex.serializer(), index))
-        if (!tmp.renameTo(indexFile)) {
-            indexFile.delete()
-            check(tmp.renameTo(indexFile)) { "could not store the edit index" }
+        java.io.FileOutputStream(tmp).use { out ->
+            out.write(json.encodeToString(EditIndex.serializer(), index).toByteArray(Charsets.UTF_8))
+            out.fd.sync()
         }
+        java.nio.file.Files.move(
+            tmp.toPath(), indexFile.toPath(),
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+        )
     }
 
     fun entry(id: String): EditEntry? = load().entries.firstOrNull { it.id == id }
@@ -155,9 +165,10 @@ class EditStore(private val base: File, val accountKey: String) {
             if (fromKey == toKey) return
             val from = EditStore(base, fromKey)
             val to = EditStore(base, toKey)
-            if (from.indexFile.isFile) {
-                val moving = from.load()
-                val target = to.load()
+            // An index that cannot be read stays where it is (its copies are moved; they go up as orphans).
+            val moving = runCatching { from.load() }.getOrNull()
+            val target = runCatching { to.load() }.getOrNull()
+            if (from.indexFile.exists() && moving != null && target != null) {
                 val known = target.entries.mapTo(HashSet()) { it.id }
                 to.save(EditIndex(target.entries + moving.entries.filter { it.id !in known }))
                 from.indexFile.delete()

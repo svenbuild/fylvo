@@ -126,6 +126,8 @@ data class EditEntry(
 const val EDIT_STABLE_MS = 2 * 60_000L
 const val EDIT_RECOVERY_DELAY_MS = 3 * 60_000L
 const val EDIT_RETIRED_KEEP_MS = 7 * 24 * 60 * 60_000L
+/** After an editor got access, the edit check keeps looking this long. */
+const val EDIT_WATCH_MS = 60 * 60_000L
 const val EDIT_MAX_STALLS = 3
 const val CONFLICT_MAX_TRIES = 20
 const val NAME_MAX_BYTES = 255
@@ -256,12 +258,12 @@ fun classifyCancel(code: Int?): CancelOutcome = when (code) {
     else -> CancelOutcome.Keep
 }
 
-/** Right after an upload: it counts only when it is the file's current version. */
+/**
+ * An upload counts only when it is the file's current version: the file's version list also
+ * holds the entity of an upload that never finished, so being listed proves nothing.
+ */
 fun isCurrentVersion(file: FileObject, entityId: String): Boolean = entityId.isNotEmpty() && file.primaryEntity == entityId
 
-/** In a recovery: the upload got in if the file holds it as one of its versions (newer ones may be on top). */
-fun holdsVersion(file: FileObject, entityId: String): Boolean =
-    entityId.isNotEmpty() && file.extendedInfo?.entities.orEmpty().any { it.id == entityId }
 
 /** A confirmed version upload: the working copy is based on it now. */
 fun confirmVersion(entry: EditEntry, marker: EditMarker): EditEntry = settled(entry, marker).copy(baseEntity = marker.entityId)

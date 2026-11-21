@@ -3,6 +3,7 @@ package io.github.svenbuild.fylvo.android.data.offline
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.ApiException
 import io.github.svenbuild.fylvo.android.data.FileRepository
 import io.github.svenbuild.fylvo.android.util.CrUri
@@ -27,16 +28,46 @@ enum class EditPhase(val decideGone: Boolean, val retryErrors: Boolean, val expl
 }
 
 /**
+ * Fylvo: what an edit pass needs from the server (see [RepoEditServer]); a fake in the unit tests.
+ */
+internal interface EditServer {
+    /** The file at [uri]; null when it is clearly not there. Refusals throw [ApiException]. */
+    suspend fun lookup(uri: String): FileObject?
+
+    /**
+     * Uploads [file] as [name] into [folder]: with [previous] as a new version of exactly that
+     * version of the file (previous_required), without as a new file that replaces nothing.
+     */
+    suspend fun upload(file: File, folder: String, name: String, lastModified: Long, previous: String, onSession: (String, String, String) -> Unit)
+
+    /** Cancels an upload session; the server's parsed code, or null without a clear answer. */
+    suspend fun cancel(sessionId: String, uri: String): Int?
+}
+
+internal class RepoEditServer(private val repo: FileRepository) : EditServer {
+    override suspend fun lookup(uri: String): FileObject? = repo.lookup(uri)
+
+    override suspend fun upload(file: File, folder: String, name: String, lastModified: Long, previous: String, onSession: (String, String, String) -> Unit) {
+        repo.uploadFile(
+            file, folder, name, overwrite = previous.isNotEmpty(), lastModified = lastModified,
+            previous = previous, previousRequired = previous.isNotEmpty(), strict = true, onSession = onSession,
+        )
+    }
+
+    override suspend fun cancel(sessionId: String, uri: String): Int? = repo.cancelUploadStrict(sessionId, uri)
+}
+
+/**
  * Fylvo: one pass over the edit index of [store]: uploads changed working copies (as a version of
  * their file, or as a conflict copy), clears up uploads an earlier run did not finish, and keeps
  * the finished copies. The caller holds [OfflineManager.editLock]; every change of an entry is
  * written to the index at once, so a stop at any point goes on from there.
  */
 internal class EditPass(
-    private val repo: FileRepository,
-    private val manager: OfflineManager,
+    private val server: EditServer,
     private val store: EditStore,
-    private val offline: OfflineStore,
+    /** The server address of a file id as the synced index knows it now (renames). */
+    private val syncedUri: (String) -> String?,
     private val phase: EditPhase,
     /** "Konflikt Handy" in the app language. */
     private val conflictLabel: String,
@@ -72,15 +103,32 @@ internal class EditPass(
     }
 
     suspend fun run(only: Set<String>? = null): Result {
-        if (only == null) housekeeping()
-        refreshUris()
+        if (only == null) guarded { housekeeping() }
+        guarded { refreshUris() }
         for (id in store.load().entries.map { it.id }) {
             if (only != null && id !in only) continue
             if (!stillSignedIn()) break
-            store.entry(id)?.let { handle(it) }
+            guarded { store.entry(id)?.let { handle(it) } }
         }
-        if (only == null) refreshUris()
+        if (only == null) guarded { refreshUris() }
+        // An editor got access within the last hour: keep looking every few minutes.
+        val now = clock()
+        if (store.load().entries.any { it.active && now - it.grantedAt < EDIT_WATCH_MS }) result.again()
         return result
+    }
+
+    /**
+     * A local failure (full disk, unreadable file) must not stop the pass or the sync run: the
+     * entry stays as it is on disk (its marker too) and is looked at again later.
+     */
+    private suspend fun guarded(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            result.again()
+        }
     }
 
     private fun put(entry: EditEntry) = publish(store.put(entry))
@@ -115,7 +163,7 @@ internal class EditPass(
     /** A rename or move on the server: the address follows the file id in the synced index. */
     private fun refreshUris() {
         store.load().entries.filter { !it.retired && it.state != EditState.Creating }.forEach { entry ->
-            val uri = manager.syncedUri(offline, entry.fileId) ?: return@forEach
+            val uri = syncedUri(entry.fileId) ?: return@forEach
             if (CrUri.canonical(uri) != CrUri.canonical(entry.uri)) put(entry.copy(uri = uri))
         }
     }
@@ -193,25 +241,25 @@ internal class EditPass(
     }
 
     private suspend fun sendVersion(entry: EditEntry, snapshot: EditSnapshot) {
+        if (!stillSignedIn()) return
         put(entry.copy(pending = EditMarker(UploadKind.Version, snapshot, target = entry.uri, at = clock()), state = EditState.Uploading))
         val sent = send(entry.id) {
-            repo.uploadFile(
-                store.snapshotOf(entry), CrUri.parent(entry.uri), CrUri.fileName(entry.uri), overwrite = true,
-                lastModified = snapshot.mtime, previous = entry.baseEntity, previousRequired = true, strict = true,
-                onSession = sessionNoted(entry.id),
+            server.upload(
+                store.snapshotOf(entry), CrUri.parent(entry.uri), CrUri.fileName(entry.uri), snapshot.mtime,
+                previous = entry.baseEntity, onSession = sessionNoted(entry.id),
             )
         }
         if (sent == Sent.Done) return
-        // Nothing reached the server: the marker goes, the snapshot is used once more or cleaned up.
-        val current = store.entry(entry.id)?.copy(pending = null) ?: return
-        put(current)
+        // Nothing reached the server. Network trouble or "later": the marker and its snapshot stay,
+        // a later recovery sends that snapshot again.
+        val current = store.entry(entry.id) ?: return
         if (sent !is Sent.Refused) return later(current)
         when (classifyRefusal(sent.code)) {
             UploadOutcome.Conflict -> sendConflict(current, snapshot, private = false)
             UploadOutcome.PrivateConflict -> sendConflict(current, snapshot, private = true)
             UploadOutcome.Later, UploadOutcome.Replan -> later(current)
             UploadOutcome.ServerFull -> later(current, EditProblem.ServerFull)
-            UploadOutcome.Error -> refused(current, sent.code)
+            UploadOutcome.Error -> refused(current.copy(pending = null), sent.code)
         }
     }
 
@@ -225,16 +273,14 @@ internal class EditPass(
         val baseName = CrUri.fileName(entry.uri).ifEmpty { entry.name }
         var counter = 1
         while (counter <= CONFLICT_MAX_TRIES) {
+            if (!stillSignedIn()) return
             val current = store.entry(entry.id) ?: return
             val folder = conflictFolder(current, mine)
             val name = conflictName(baseName, conflictLabel, time, counter)
             val marker = EditMarker(UploadKind.Conflict, snapshot, target = folder, name = name, at = clock())
             put(current.copy(pending = marker, state = EditState.Uploading))
             val sent = send(entry.id) {
-                repo.uploadFile(
-                    store.snapshotOf(entry), folder, name, overwrite = false, lastModified = snapshot.mtime, strict = true,
-                    onSession = sessionNoted(entry.id),
-                )
+                server.upload(store.snapshotOf(entry), folder, name, snapshot.mtime, previous = "", onSession = sessionNoted(entry.id))
             }
             // Network trouble: the marker stays, a later recovery sends the same snapshot again.
             if (sent == Sent.Done) return
@@ -292,20 +338,21 @@ internal class EditPass(
         val marker = entry.pending ?: return
         // No session (a rapid upload): nothing to prove it by; it is sent again (a duplicate at worst).
         if (marker.sessionId.isEmpty()) return lost(id)
-        val file = runCatching { repo.lookup(marker.sessionUri) }.getOrElse {
+        val file = runCatching { server.lookup(marker.sessionUri) }.getOrElse {
             if (it is CancellationException) throw it
             null
         }
         if (file != null && isCurrentVersion(file, marker.entityId)) commit(entry, marker, file) else lost(id)
     }
 
-    private fun commit(entry: EditEntry, marker: EditMarker, file: io.github.svenbuild.fylvo.android.api.FileObject) {
+    private fun commit(entry: EditEntry, marker: EditMarker, file: FileObject) {
         val next = if (marker.kind == UploadKind.Version) confirmVersion(entry, marker) else rebaseOnto(entry, file, marker)
-        store.snapshotOf(entry).delete()
         // Written to again meanwhile: that change waits for the next upload.
         val stat = statOf(store.fileOf(next))
         val changed = stat != null && (stat.size != marker.snapshot.size || stat.mtime != marker.snapshot.mtime)
+        // The index first: the snapshot goes only once nothing points to it any more.
         put(next.copy(state = if (changed) EditState.Uploading else EditState.Synced, seen = null))
+        store.snapshotOf(entry).delete()
         if (changed) result.again()
     }
 
@@ -336,7 +383,10 @@ internal class EditPass(
 
     /**
      * An upload of an earlier run without a final answer. With a session: the session is cancelled
-     * first (a finished one is not affected), then the file tells whether our version got in.
+     * first (a finished one is not affected), then the file tells whether our version got in: only
+     * when it is the file's current version (an unfinished upload is listed among the versions
+     * too, so being listed proves nothing). Whatever is not proven goes up again from the kept
+     * snapshot, the only copy known to be whole; a duplicate is acceptable, a loss is not.
      */
     private suspend fun recover(entry: EditEntry) {
         val marker = entry.pending!!
@@ -345,14 +395,8 @@ internal class EditPass(
             put(entry.copy(pending = null))
             return store.entry(entry.id)?.let { handle(it) } ?: Unit
         }
-        if (marker.sessionId.isEmpty()) {
-            // Nothing reached the server. A version is planned anew, a conflict copy sent again.
-            if (marker.kind == UploadKind.Version) {
-                put(entry.copy(pending = null))
-                return store.entry(entry.id)?.let { handle(it) } ?: Unit
-            }
-            return sendConflict(entry, marker.snapshot, private = marker.target == CrUri.MY_PREFIX)
-        }
+        // Nothing reached the server: the same snapshot goes again.
+        if (marker.sessionId.isEmpty()) return resend(entry, marker)
         // A version belongs to the working copy's file (found by id); a conflict copy to its session's address.
         val target = if (marker.kind == UploadKind.Version) entry.uri else marker.sessionUri
         val found = preflight(target)
@@ -367,33 +411,35 @@ internal class EditPass(
             }
             // Our version cannot be on that file: the snapshot goes up as a conflict copy.
             !ours -> sendConflict(entry, marker.snapshot, private = false)
-            else -> when (classifyCancel(repo.cancelUploadStrict(marker.sessionId, marker.sessionUri))) {
+            else -> when (classifyCancel(server.cancel(marker.sessionId, marker.sessionUri))) {
                 CancelOutcome.Keep -> keep(entry)
                 CancelOutcome.PrivateConflict -> sendConflict(entry, marker.snapshot, private = true)
                 CancelOutcome.Check -> {
                     val file = try {
-                        repo.lookup(target, extended = true)
+                        server.lookup(target)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
                         return keep(entry)
                     }
-                    when {
-                        file != null && holdsVersion(file, marker.entityId) -> commit(entry, marker, file)
-                        marker.kind == UploadKind.Version -> {
-                            put(entry.copy(pending = null))
-                            store.entry(entry.id)?.let { handle(it) }
-                        }
-                        else -> sendConflict(entry, marker.snapshot, private = marker.target == CrUri.MY_PREFIX)
-                    }
+                    if (file != null && isCurrentVersion(file, marker.entityId)) commit(entry, marker, file) else resend(entry, marker)
                 }
             }
         }
     }
 
+    /**
+     * Sends the kept snapshot of [marker] again: as a version (a newer version on the server turns
+     * it into a conflict copy), or as a conflict copy.
+     */
+    private suspend fun resend(entry: EditEntry, marker: EditMarker) = when (marker.kind) {
+        UploadKind.Version -> sendVersion(entry, marker.snapshot)
+        UploadKind.Conflict -> sendConflict(entry, marker.snapshot, private = marker.target == CrUri.MY_PREFIX)
+    }
+
     /** The server's view of [uri] before an upload. */
     private suspend fun preflight(uri: String): Preflight = try {
-        preflightOf(repo.lookup(uri), null)
+        preflightOf(server.lookup(uri), null)
     } catch (e: CancellationException) {
         throw e
     } catch (e: ApiException) {
