@@ -1,4 +1,8 @@
 use super::InventoryDb;
+use crate::drive::{
+    case::{ntfs_like_pattern, same_on_ntfs},
+    guard::is_under_any_case,
+};
 use crate::inventory::{NewTaskRecord, TaskRecord, TaskStatus, TaskUpdate};
 use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
@@ -7,37 +11,48 @@ use diesel::prelude::*;
 use crate::inventory::schema::task_queue::{self, dsl as task_queue_dsl};
 
 impl InventoryDb {
-    /// Insert a task queue record if no pending/running task with the same type and path exists.
+    /// Insert a task queue record if no pending/running task with the same type and path exists
+    /// (in any upper/lower case spelling: one file on NTFS, see `cancel_tasks_by_path`).
     /// Returns `true` if the task was inserted, `false` if a duplicate was found.
     pub fn insert_task_if_not_exist(&self, task: &NewTaskRecord) -> Result<bool> {
         let mut conn = self.connection()?;
 
-        // Check if a pending or running task with the same type and path already exists
         let active_statuses = vec![
             TaskStatus::Pending.as_str().to_string(),
             TaskStatus::Running.as_str().to_string(),
         ];
 
-        let existing: Option<String> = task_queue_dsl::task_queue
-            .filter(task_queue_dsl::drive_id.eq(&task.drive_id))
-            .filter(task_queue_dsl::task_type.eq(&task.task_type))
-            .filter(task_queue_dsl::local_path.eq(&task.local_path))
-            .filter(task_queue_dsl::status.eq_any(&active_statuses))
-            .select(task_queue_dsl::id)
-            .first(&mut conn)
-            .optional()
-            .context("Failed to check for existing task")?;
-
-        if existing.is_some() {
-            return Ok(false);
-        }
-
         let row = NewTaskRow::try_from(task)?;
-        diesel::insert_into(task_queue::table)
-            .values(&row)
-            .execute(&mut conn)
-            .context("Failed to insert task queue record")?;
-        Ok(true)
+        // Fylvo: check and insert in one write transaction, so two tasks queued at the same
+        // moment cannot both go in.
+        conn.immediate_transaction(|conn| {
+            let paths: Vec<String> = task_queue_dsl::task_queue
+                .filter(task_queue_dsl::drive_id.eq(&task.drive_id))
+                .filter(task_queue_dsl::task_type.eq(&task.task_type))
+                .filter(task_queue_dsl::status.eq_any(&active_statuses))
+                .filter(
+                    task_queue_dsl::local_path
+                        .like(ntfs_like_pattern(&task.local_path))
+                        .escape('!'),
+                )
+                .select(task_queue_dsl::local_path)
+                .load(conn)
+                .context("Failed to check for existing task")?;
+
+            let new_path = std::path::Path::new(&task.local_path);
+            if paths
+                .iter()
+                .any(|path| same_on_ntfs(std::path::Path::new(path), new_path))
+            {
+                return Ok(false);
+            }
+
+            diesel::insert_into(task_queue::table)
+                .values(&row)
+                .execute(conn)
+                .context("Failed to insert task queue record")?;
+            Ok(true)
+        })
     }
 
     /// Fylvo: change a task's status only if it still has `from`, in one statement. Returns
@@ -118,28 +133,35 @@ impl InventoryDb {
         Ok(())
     }
 
-    /// Cancel all pending/running tasks matching a path or its descendants.
+    /// Cancel all pending/running tasks matching a path or its descendants, in any upper/lower
+    /// case spelling (one file on NTFS; a task may run under the spelling on disk).
     /// Returns the list of task IDs that were cancelled.
     pub fn cancel_tasks_by_path(&self, drive_id: &str, path: &str) -> Result<Vec<String>> {
         let mut conn = self.connection()?;
 
-        // Find tasks that match the exact path or are descendants (path starts with "path/")
-        let prefix = format!("{}{}", path, std::path::MAIN_SEPARATOR);
         let active_statuses = vec![
             TaskStatus::Pending.as_str().to_string(),
             TaskStatus::Running.as_str().to_string(),
         ];
 
+        let roots = [std::path::PathBuf::from(path)];
+        let pattern = ntfs_like_pattern(path);
         let matching_tasks: Vec<TaskRow> = task_queue_dsl::task_queue
             .filter(task_queue_dsl::drive_id.eq(drive_id))
             .filter(task_queue_dsl::status.eq_any(&active_statuses))
             .filter(
                 task_queue_dsl::local_path
-                    .eq(path)
-                    .or(task_queue_dsl::local_path.like(format!("{}%", prefix))),
+                    .like(pattern.clone())
+                    .escape('!')
+                    .or(task_queue_dsl::local_path
+                        .like(format!("{pattern}{}%", std::path::MAIN_SEPARATOR))
+                        .escape('!')),
             )
-            .load(&mut conn)
-            .context("Failed to query tasks by path")?;
+            .load::<TaskRow>(&mut conn)
+            .context("Failed to query tasks by path")?
+            .into_iter()
+            .filter(|task| is_under_any_case(std::path::Path::new(&task.local_path), &roots))
+            .collect();
 
         let task_ids: Vec<String> = matching_tasks.iter().map(|t| t.id.clone()).collect();
 
@@ -414,5 +436,30 @@ mod tests {
         assert!(db.change_task_status_if("t1", TaskStatus::Pending, TaskStatus::Cancelled).unwrap());
         assert!(!db.change_task_status_if("t1", TaskStatus::Pending, TaskStatus::Running).unwrap());
         assert_eq!(db.get_task_status("t1").unwrap(), Some(TaskStatus::Cancelled));
+    }
+
+    fn task(id: &str, path: &str) -> NewTaskRecord {
+        NewTaskRecord::new(id, "d", "upload", path)
+    }
+
+    #[test]
+    fn cancel_by_path_finds_tasks_in_any_case_spelling() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = InventoryDb::with_path(dir.path().join("meta.db")).unwrap();
+        // Queued as `report.txt`, it runs as `Report.txt` after a case rename on the server.
+        assert!(db.insert_task_if_not_exist(&task("t1", r"C:\S\report.txt")).unwrap());
+        assert!(db.insert_task_if_not_exist(&task("t2", r"C:\S\docs\b.txt")).unwrap());
+        assert!(db.insert_task_if_not_exist(&task("t3", r"C:\S\reports.txt")).unwrap());
+        // The same file in another spelling is queued already.
+        assert!(!db.insert_task_if_not_exist(&task("t4", r"C:\S\Report.TXT")).unwrap());
+        // Letters outside ASCII, `%` and `_` in names.
+        assert!(db.insert_task_if_not_exist(&task("t5", r"C:\S\Ünd_100%.txt")).unwrap());
+        assert!(!db.insert_task_if_not_exist(&task("t6", r"C:\S\ünd_100%.TXT")).unwrap());
+        assert!(db.insert_task_if_not_exist(&task("t7", r"C:\S\Undx100x.txt")).unwrap());
+        let mut cancelled = db.cancel_tasks_by_path("d", r"C:\S\Report.txt").unwrap();
+        cancelled.extend(db.cancel_tasks_by_path("d", r"C:\S\Docs").unwrap());
+        cancelled.sort();
+        assert_eq!(cancelled, ["t1", "t2"]);
+        assert_eq!(db.get_task_status("t3").unwrap(), Some(TaskStatus::Pending));
     }
 }

@@ -240,6 +240,8 @@ enum SyncAction {
 enum UploadReason {
     RemoteMismatch,
     RemoteMissing,
+    /// Fylvo: changed here from the version the server still has (an earlier upload failed).
+    NotUploaded,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -653,6 +655,12 @@ impl Mount {
                 }
             }
             SyncAction::QueueUpload { path, reason } => {
+                if matches!(reason, UploadReason::NotUploaded)
+                    && crate::tasks::failed_recently(&path)
+                {
+                    tracing::debug!(target: "drive::sync", id = %self.id, path = %path.display(), "Upload failed a moment ago, tried again later");
+                    return;
+                }
                 tracing::info!(
                     target: "drive::sync",
                     id = %self.id,
@@ -1383,7 +1391,32 @@ fn plan_entry_with_remote_and_local(
 
     if !etag_match || !modify_date_match {
         plan_file_actions(path, remote, local, inventory, read_only, plan);
+    } else if local_change_not_uploaded(local, inventory, read_only) {
+        // Fylvo: the server has the version this file was changed from, so the change is
+        // still to be uploaded. Before, a failed upload (for example refused for a moment
+        // during a case rename on the server) stayed undone until the file changed again.
+        plan.actions.push(SyncAction::QueueUpload {
+            path: path.clone(),
+            reason: UploadReason::NotUploaded,
+        });
     }
+}
+
+/// Whether a local file with an inventory row holds a change that is not on the server: it is
+/// no synced placeholder or not in sync. Not an online-only placeholder (no local bytes, so no
+/// local change), not in a read-only drive (nothing can be uploaded there) and not while a
+/// conflict waits for the user's choice.
+fn local_change_not_uploaded(
+    local: &LocalFileInfo,
+    inventory: Option<&FileMetadata>,
+    read_only: bool,
+) -> bool {
+    let Some(entry) = inventory else {
+        return false;
+    };
+    !read_only
+        && entry.conflict_state != Some(ConflictState::Pending)
+        && (!local.is_placeholder() || (!local.in_sync() && !local.partial_on_disk()))
 }
 
 fn plan_entry_with_local_only(
@@ -1761,6 +1794,35 @@ mod tests {
             kinds(&plan_one(Some(&server), &modified(), Some(&known), true)),
             ["conflict_copy", "create"]
         );
+    }
+
+    #[test]
+    fn local_change_whose_upload_failed_is_uploaded_again() {
+        // The server still has the version the file was changed from: the upload was refused
+        // (40905 during a case rename on the server) or failed otherwise.
+        let server = remote(false, "e1");
+        let known = inventory("e1");
+        assert_eq!(
+            kinds(&plan_one(Some(&server), &modified(), Some(&known), false)),
+            ["upload"]
+        );
+        assert_eq!(
+            kinds(&plan_one(Some(&server), &normal(false), Some(&known), false)),
+            ["upload"]
+        );
+        // Not an online-only file (no local bytes: only its metadata changed).
+        let online_only_changed = local(
+            false,
+            Some(CF_PLACEHOLDER_STATE_PLACEHOLDER | CF_PLACEHOLDER_STATE_PARTIALLY_ON_DISK),
+        );
+        assert!(plan_one(Some(&server), &online_only_changed, Some(&known), false)
+            .actions
+            .is_empty());
+        // Not in a read-only drive, and not while a conflict waits for the user.
+        assert!(plan_one(Some(&server), &modified(), Some(&known), true).actions.is_empty());
+        let mut waiting = inventory("e1");
+        waiting.conflict_state = Some(ConflictState::Pending);
+        assert!(plan_one(Some(&server), &modified(), Some(&waiting), false).actions.is_empty());
     }
 
     #[test]

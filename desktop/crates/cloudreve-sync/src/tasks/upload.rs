@@ -1,4 +1,11 @@
-use std::{path::PathBuf, str::FromStr, sync::Arc, time::SystemTime};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant, SystemTime},
+};
+
 
 use crate::utils::toast::send_conflict_toast;
 use crate::{
@@ -58,6 +65,10 @@ pub struct UploadTask<'a> {
     cancel_token: CancellationToken,
     /// Reference to the in-memory progress map for real-time progress updates
     progress_map: Arc<DashMap<String, TaskProgress>>,
+    /// Fylvo: size and last write time of the file when its upload started.
+    started: Option<ContentState>,
+    /// Fylvo: the file changed while it was uploaded; it needs another upload.
+    changed_meanwhile: bool,
 }
 
 impl<'a> UploadTask<'a> {
@@ -81,11 +92,17 @@ impl<'a> UploadTask<'a> {
             remote_base,
             cancel_token: CancellationToken::new(),
             progress_map,
+            started: None,
+            changed_meanwhile: false,
         }
     }
 
+    /// Whether the file changed while it was uploaded (see `file_uploaded`).
+    pub fn changed_meanwhile(&self) -> bool {
+        self.changed_meanwhile
+    }
+
     /// Set the cancellation token
-    #[allow(dead_code)]
     pub fn with_cancel_token(mut self, token: CancellationToken) -> Self {
         self.cancel_token = token;
         self
@@ -122,7 +139,6 @@ impl<'a> UploadTask<'a> {
         }
 
         let is_directory = placeholder_file.local_file_info.is_directory;
-        let file_size = placeholder_file.local_file_info.file_size.unwrap_or(0);
         self.local_file = Some(placeholder_file);
 
         // Get inventory meta
@@ -148,6 +164,22 @@ impl<'a> UploadTask<'a> {
             warn!(target: "tasks::upload", task_id = %self.task.task_id, local_path = %self.task.payload.local_path_display(), error = ?e, "Failed to clear sync error state");
         }
 
+        // Fylvo: size and write time as the file has them now, read through a handle after the
+        // error state is cleared, right before the content is read. The upload sends exactly
+        // this size, and the change check in `file_uploaded` compares with it.
+        let mut file_size = 0;
+        if !is_directory {
+            let Some(started) = content_state(&self.task.payload.local_path) else {
+                let err = anyhow::anyhow!("the file cannot be read right now");
+                return self.handle_error(Err(err)).await;
+            };
+            file_size = started.0;
+            let info = &mut self.local_file.as_mut().unwrap().local_file_info;
+            info.file_size = Some(started.0);
+            info.last_modified = Some(started.1);
+            self.started = Some(started);
+        }
+
         // Handle empty files and directories separately
         let upload_res = match (
             is_directory,
@@ -164,25 +196,18 @@ impl<'a> UploadTask<'a> {
     }
 
     async fn handle_error(&mut self, r: Result<()>) -> Result<()> {
+        let path = &self.task.payload.local_path;
         match r {
             Ok(()) => Ok(()),
+            // Fylvo: cancelled for a rename, a deletion or a download: not a failure.
+            Err(e) if self.cancel_token.is_cancelled() => Err(e),
             Err(e) => {
-                // Check if the error is an ApiError with StaleVersion (40076)
-                // The error might be wrapped with anyhow context, so check the chain
-                let is_conflict_error = e.chain().any(|cause| {
-                    if let Some(api_err) = cause.downcast_ref::<ApiError>() {
-                        matches!(
-                            api_err,
-                            ApiError::ApiError { code, .. }
-                                if *code == ErrorCode::StaleVersion as i32
-                                || *code == ErrorCode::ObjectExisted as i32
-                        )
-                    } else {
-                        false
-                    }
-                });
-
-                if is_conflict_error {
+                // Fylvo: a refused name (40905) can pass with a case rename any moment, any
+                // other failure waits before the sync tries the file again.
+                if !crate::drive::case::is_name_case_taken(&e) {
+                    note_failure(path);
+                }
+                if is_conflict_error(&e) {
                     warn!(
                         target: "tasks::upload",
                         task_id = %self.task.task_id,
@@ -215,6 +240,10 @@ impl<'a> UploadTask<'a> {
                             .unwrap_or(0),
                     )
                 }
+
+                // Fylvo: the server has the name in other upper/lower case. Tried again only
+                // when the file or the sync changes it, never in a loop.
+                crate::drive::case::report_name_case_taken(&self.task.payload.local_path, &e);
 
                 // Mark file as error state
                 if let Err(e) = self
@@ -302,11 +331,12 @@ impl<'a> UploadTask<'a> {
             remote_uri: uri,
             file_size,
             mime_type: None, // Could be detected from file extension
-            last_modified: local_file.local_file_info.last_modified.map(|t| {
-                t.duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as i64
-            }),
+            // Fylvo: a time before 1970 (valid on Windows) is not sent instead of a panic.
+            last_modified: local_file
+                .local_file_info
+                .last_modified
+                .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .map(|t| t.as_millis() as i64),
             overwrite: !is_new_file || self.task.payload.force_override,
             previous_version,
             task_id: self.task.task_id.clone(),
@@ -327,19 +357,20 @@ impl<'a> UploadTask<'a> {
         );
 
         // Execute upload
-        uploader
+        let created = uploader
             .upload(params, progress)
             .await
             .context("failed to upload file")?;
 
         // Update local file placeholder status after successful upload
-        self.finalize_upload().await?;
+        self.finalize_upload(created).await?;
 
         Ok(())
     }
 
-    /// Finalize upload by updating local file placeholder
-    async fn finalize_upload(&mut self) -> Result<()> {
+    /// Finalize upload by updating local file placeholder. `created` is the version the upload
+    /// made, if the server named it.
+    async fn finalize_upload(&mut self, created: Option<String>) -> Result<()> {
         // Get file info from server to confirm upload
         let uri = local_path_to_cr_uri(
             self.task.payload.local_path.clone(),
@@ -359,6 +390,19 @@ impl<'a> UploadTask<'a> {
             })
             .await
             .context("failed to get file info after upload")?;
+
+        // Fylvo: another device may have saved a newer version right after this upload. Its
+        // version must not be taken for this file's content: that would mark the local file
+        // in sync with bytes it does not have. Handled as a conflict instead.
+        if !upload_is_current(created.as_deref(), &file_info) {
+            return Err(anyhow::Error::new(ApiError::ApiError {
+                code: ErrorCode::StaleVersion as i32,
+                message: "another version was saved right after this upload".to_string(),
+                error_detail: None,
+                correlation_id: None,
+                aggregated_errors: None,
+            }));
+        }
 
         self.file_uploaded(&file_info)
             .context("failed to commit uploaded file")?;
@@ -419,11 +463,35 @@ impl<'a> UploadTask<'a> {
                 .with_remote_file(file),
         );
 
-        self.local_file
-            .as_mut()
-            .unwrap()
-            .commit(self.inventory.clone())
-            .context("failed to commit placeholder")?;
+        // Fylvo: saved again while it was uploaded. Marking it in sync would take the newer
+        // bytes for the uploaded version, and they would never reach the server. The server's
+        // new version goes to the inventory only; the queue uploads the file again, a few
+        // times in a row at most (a file written to all the time would else make versions
+        // without end; after that the sync tries it again later).
+        let path = &self.task.payload.local_path;
+        if self.started.is_some() && content_state(path) != self.started {
+            self.local_file
+                .as_ref()
+                .unwrap()
+                .commit_inventory_only(&self.inventory)
+                .context("failed to commit uploaded version")?;
+            self.changed_meanwhile = true;
+            info!(
+                target: "tasks::upload",
+                task_id = %self.task.task_id,
+                local_path = %self.task.payload.local_path_display(),
+                "File changed during the upload"
+            );
+            return Ok(());
+        }
+
+        if let Err(err) = self.local_file.as_mut().unwrap().commit(self.inventory.clone()) {
+            // Fylvo: the server has the new version either way. Without it in the inventory
+            // the next upload would name the old one and conflict with this PC's own upload.
+            let _ = self.local_file.as_ref().unwrap().commit_inventory_only(&self.inventory);
+            return Err(err.context("failed to commit placeholder"));
+        }
+        forget_uploads(path);
 
         self.local_file
             .as_mut()
@@ -431,5 +499,178 @@ impl<'a> UploadTask<'a> {
             .update_sync_error_state(false)
             .context("failed to clear sync error state")?;
         Ok(())
+    }
+}
+
+/// Size and last write time of a file, read through a handle (the folder entry that
+/// `LocalFileInfo` reads may lag behind a writer that keeps the file open). Opening without
+/// data access does not download an online-only file.
+type ContentState = (u64, SystemTime);
+
+fn content_state(path: &Path) -> Option<ContentState> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.len(), meta.modified().ok()?))
+}
+
+/// How long the sync waits before it tries again a file whose upload failed.
+const RETRY_FAILED_AFTER: Duration = Duration::from_secs(10 * 60);
+
+/// How often in a row a file changed during its upload is uploaded again at once.
+const MAX_UPLOADS_AGAIN: u32 = 3;
+
+/// How long an upload refused with 40905 waits before it is tried again.
+const NAME_TAKEN_RETRY: Duration = Duration::from_secs(90);
+
+/// Recent upload trouble of a path.
+#[derive(Default)]
+struct Recent {
+    failed_at: Option<Instant>,
+    uploads_again: u32,
+    name_retries: u32,
+}
+
+/// By path, folded as NTFS compares names (a file may be asked for in another spelling).
+static RECENT: Mutex<Option<HashMap<String, Recent>>> = Mutex::new(None);
+
+fn with_recent<T>(path: &Path, f: impl FnOnce(&mut Recent) -> T) -> T {
+    let mut recent = RECENT.lock().unwrap();
+    let key = crate::drive::case::ntfs_fold(&path.to_string_lossy());
+    f(recent.get_or_insert_with(HashMap::new).entry(key).or_default())
+}
+
+fn note_failure(path: &Path) {
+    with_recent(path, |recent| recent.failed_at = Some(Instant::now()));
+}
+
+/// Forget the trouble of a path: its upload ended in sync.
+fn forget_uploads(path: &Path) {
+    if let Some(recent) = RECENT.lock().unwrap().as_mut() {
+        recent.remove(&crate::drive::case::ntfs_fold(&path.to_string_lossy()));
+    }
+}
+
+/// When a file changed during its upload is uploaded again: at once a few times in a row,
+/// then after `RETRY_FAILED_AFTER` each time (a file written to all the time makes a version
+/// only that often).
+pub(crate) fn upload_again_after(path: &Path) -> Duration {
+    with_recent(path, |recent| {
+        recent.uploads_again += 1;
+        if recent.uploads_again <= MAX_UPLOADS_AGAIN {
+            Duration::ZERO
+        } else {
+            // A sync pass waits as well (see `failed_recently`).
+            recent.failed_at = Some(Instant::now());
+            RETRY_FAILED_AFTER
+        }
+    })
+}
+
+/// When an upload the server refused with 40905 is tried again: a case rename on its way
+/// resolves it (the app tries a waiting rename again after `case::RETRY_DELAY`). A few times
+/// only: a real clash of two names stays as it is, with its message.
+pub(crate) fn retry_name_taken_after(path: &Path) -> Option<Duration> {
+    with_recent(path, |recent| {
+        recent.name_retries += 1;
+        (recent.name_retries <= MAX_UPLOADS_AGAIN).then_some(NAME_TAKEN_RETRY)
+    })
+}
+
+/// Whether an upload of `path` failed less than `RETRY_FAILED_AFTER` ago. A sync pass does not
+/// send such a file again yet: a refusal that does not pass (quota, size, rights) would else
+/// send it on every pass. A change of the file uploads it at once, as before.
+pub(crate) fn failed_recently(path: &Path) -> bool {
+    with_recent(path, |recent| {
+        recent
+            .failed_at
+            .is_some_and(|at| at.elapsed() < RETRY_FAILED_AFTER)
+    })
+}
+
+/// Whether an upload failed because the server has another version than the one the file was
+/// changed from (40076), or the name is taken (40004). The error may be wrapped in context.
+pub(crate) fn is_conflict_error(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        matches!(cause.downcast_ref::<ApiError>(), Some(ApiError::ApiError { code, .. })
+            if *code == ErrorCode::StaleVersion as i32 || *code == ErrorCode::ObjectExisted as i32)
+    })
+}
+
+/// Whether the server's current version of a file is the one an upload created. Unknown when
+/// the server did not name the created version (older server): taken as current, as before.
+pub(crate) fn upload_is_current(created: Option<&str>, file: &FileResponse) -> bool {
+    created.is_none_or(|created| file.primary_entity.as_deref() == Some(created))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(primary: Option<&str>) -> FileResponse {
+        FileResponse {
+            primary_entity: primary.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_file_saved_during_the_upload_counts_as_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        std::fs::write(&path, "one").unwrap();
+        let started = content_state(&path);
+        assert!(started.is_some());
+        assert_eq!(content_state(&path), started);
+        // Written through a handle that stays open: seen before the writer closes it.
+        let mut writer = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        std::io::Write::write_all(&mut writer, b" and more").unwrap();
+        assert_ne!(content_state(&path), started);
+        drop(writer);
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(content_state(&path), None);
+    }
+
+    #[test]
+    fn a_failed_upload_waits_before_the_sync_tries_it_again() {
+        let path = Path::new(r"C:\S\failed.txt");
+        assert!(!failed_recently(path));
+        note_failure(path);
+        assert!(failed_recently(path));
+        // The sync may ask with the server's spelling.
+        assert!(failed_recently(Path::new(r"C:\S\Failed.TXT")));
+        forget_uploads(path);
+        assert!(!failed_recently(path));
+    }
+
+    #[test]
+    fn a_file_changed_during_each_upload_is_uploaded_again_at_once_a_few_times_only() {
+        let path = Path::new(r"C:\S\busy.log");
+        for _ in 0..MAX_UPLOADS_AGAIN {
+            assert_eq!(upload_again_after(path), Duration::ZERO);
+        }
+        assert_eq!(upload_again_after(path), RETRY_FAILED_AFTER);
+        assert!(failed_recently(path), "a sync pass waits as well");
+        forget_uploads(path);
+        assert_eq!(upload_again_after(path), Duration::ZERO);
+        forget_uploads(path);
+    }
+
+    #[test]
+    fn an_upload_refused_with_40905_is_tried_again_a_few_times_only() {
+        let path = Path::new(r"C:\S\docs\b.txt");
+        for _ in 0..MAX_UPLOADS_AGAIN {
+            assert_eq!(retry_name_taken_after(path), Some(NAME_TAKEN_RETRY));
+        }
+        assert_eq!(retry_name_taken_after(path), None);
+        forget_uploads(path);
+    }
+
+    #[test]
+    fn a_version_saved_right_after_the_upload_is_not_taken_for_it() {
+        assert!(upload_is_current(Some("e2"), &file(Some("e2"))));
+        // Another device saved e3 after this upload made e2.
+        assert!(!upload_is_current(Some("e2"), &file(Some("e3"))));
+        assert!(!upload_is_current(Some("e2"), &file(None)));
+        // An older server does not name the created version.
+        assert!(upload_is_current(None, &file(Some("e3"))));
     }
 }

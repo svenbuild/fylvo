@@ -727,16 +727,23 @@ async fn upload_chunk_with_retry(
         // Capture bytes counter before stream is consumed
         let bytes_sent_counter = progress_stream.bytes_sent_counter();
 
-        match providers::upload_chunk_with_progress(
+        // Fylvo: a cancel also ends a chunk request that is under way (dropping it closes the
+        // connection), so a cancelled upload does not finish on the server later.
+        let request = providers::upload_chunk_with_progress(
             http_client,
             cr_client,
             policy_type,
             chunk,
             progress_stream,
             session.as_ref(),
-        )
-        .await
-        {
+        );
+        let result = tokio::select! {
+            result = request => result,
+            _ = cancel_token.cancelled() => {
+                return Err(anyhow::anyhow!("Upload cancelled during a chunk request"));
+            }
+        };
+        match result {
             Ok(etag) => {
                 debug!(
                     target: "uploader::chunk",

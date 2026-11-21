@@ -20,7 +20,11 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use cloudreve_api::models::explorer::{FileResponse, file_type};
+use cloudreve_api::{
+    ApiError,
+    error::ErrorCode,
+    models::explorer::{FileResponse, file_type},
+};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
@@ -56,6 +60,25 @@ pub fn ntfs_fold(name: &str) -> String {
         return name.to_string();
     }
     String::from_utf16_lossy(&upper[..written as usize])
+}
+
+/// A SQL `LIKE` pattern (escape character `!`) that matches every spelling of `text` that may be
+/// the same on NTFS, and some more: SQLite's `LIKE` ignores the case of ASCII letters only, so
+/// every other character, and `i` and `s` (`ı` and `ſ` are upper case `I` and `S`), match any one
+/// character. Check the hits with `same_on_ntfs`.
+pub(crate) fn ntfs_like_pattern(text: &str) -> String {
+    let mut pattern = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '%' | '_' | '!' => {
+                pattern.push('!');
+                pattern.push(c);
+            }
+            c if !c.is_ascii() || "iIsS".contains(c) => pattern.push('_'),
+            c => pattern.push(c),
+        }
+    }
+    pattern
 }
 
 /// Whether two paths are the same file on NTFS.
@@ -371,8 +394,8 @@ impl Mount {
                 tracing::info!(target: "drive::case", id = %self.id, from = %from.display(), to = %to.display(), "Renamed local file to the server's spelling");
             }
         }
-        self.report_case_clash(&plan.hidden, "caseClashMessage");
-        self.report_case_clash(&plan.held, "caseHeldMessage");
+        report_case_clash(&plan.hidden, "caseClashMessage");
+        report_case_clash(&plan.held, "caseHeldMessage");
 
         let paths = plan
             .paths
@@ -391,7 +414,7 @@ impl Mount {
         if self.inventory.has_rows_at_or_under(from_str)?
             && self.inventory.has_rows_at_or_under(to_str)?
         {
-            self.report_case_clash(&[to.to_path_buf()], "caseHeldMessage");
+            report_case_clash(&[to.to_path_buf()], "caseHeldMessage");
             anyhow::bail!("inventory rows exist under both spellings");
         }
         // A held mass deletion or a kept path under it is keyed by the old spelling: rename
@@ -403,7 +426,7 @@ impl Mount {
         // Only what the sync itself placed here: a plain file or folder with this name was put
         // here by someone else (for example a replacement made while the app was closed).
         if !info.is_placeholder() {
-            self.report_case_clash(&[to.to_path_buf()], "caseHeldMessage");
+            report_case_clash(&[to.to_path_buf()], "caseHeldMessage");
             anyhow::bail!("not a synced item, left as it is");
         }
 
@@ -550,8 +573,7 @@ impl Mount {
                 TaskKind::Download => self
                     .task_queue
                     .enqueue(TaskPayload::download(path.clone()))
-                    .await
-                    .map(|_| ()),
+                    .await,
             };
             if let Err(err) = result {
                 tracing::warn!(target: "drive::case", id = %self.id, path = %path.display(), error = ?err, "Could not queue a stopped task again");
@@ -559,30 +581,51 @@ impl Mount {
         }
     }
 
-    /// Tell the user once per run about names that cannot be synced as they are.
-    pub(crate) fn report_case_clash(&self, paths: &[PathBuf], message_key: &str) {
-        let first = {
-            let mut notified = self.case_clash_notified.lock().unwrap();
-            let fresh: Vec<&PathBuf> = paths
-                .iter()
-                .filter(|path| notified.insert((*path).clone()))
-                .collect();
-            for path in &fresh {
-                tracing::warn!(target: "drive::case", id = %self.id, path = %path.display(), kind = message_key, "Name differs only in case, not synced");
-            }
-            match fresh.first() {
-                Some(first) => (*first).clone(),
-                None => return,
-            }
-        };
-        let name = first
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_default();
-        crate::utils::toast::send_warning_toast(
-            &t!("caseClashTitle"),
-            &t!(message_key, "name" => name),
-        );
+}
+
+/// Names already reported in this run.
+static CASE_NOTIFIED: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+
+/// Tell the user once per run about names that cannot be synced as they are.
+pub(crate) fn report_case_clash(paths: &[PathBuf], message_key: &str) {
+    let first = {
+        let mut notified = CASE_NOTIFIED.lock().unwrap();
+        let notified = notified.get_or_insert_with(HashSet::new);
+        let fresh: Vec<&PathBuf> = paths
+            .iter()
+            .filter(|path| notified.insert((*path).clone()))
+            .collect();
+        for path in &fresh {
+            tracing::warn!(target: "drive::case", path = %path.display(), kind = message_key, "Name differs only in case, not synced");
+        }
+        match fresh.first() {
+            Some(first) => (*first).clone(),
+            None => return,
+        }
+    };
+    let name = first
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    crate::utils::toast::send_warning_toast(
+        &t!("caseClashTitle"),
+        &t!(message_key, "name" => name),
+    );
+}
+
+/// Whether the server refused a name because its folder has the name in other upper/lower
+/// case (40905). Such a write never succeeds as it is: it is reported, not tried again.
+pub fn is_name_case_taken(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        matches!(cause.downcast_ref::<ApiError>(), Some(ApiError::ApiError { code, .. })
+            if *code == ErrorCode::NameCaseTaken as i32)
+    })
+}
+
+/// Report a write of `path` the server refused with 40905, once per run.
+pub fn report_name_case_taken(path: &Path, error: &anyhow::Error) {
+    if is_name_case_taken(error) {
+        report_case_clash(&[path.to_path_buf()], "caseTakenMessage");
     }
 }
 
