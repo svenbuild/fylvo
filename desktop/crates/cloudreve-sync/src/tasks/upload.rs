@@ -527,6 +527,7 @@ struct Recent {
     failed_at: Option<Instant>,
     uploads_again: u32,
     name_retries: u32,
+    uploaded_at: Option<Instant>,
 }
 
 /// By path, folded as NTFS compares names (a file may be asked for in another spelling).
@@ -542,11 +543,38 @@ fn note_failure(path: &Path) {
     with_recent(path, |recent| recent.failed_at = Some(Instant::now()));
 }
 
-/// Forget the trouble of a path: its upload ended in sync.
+/// The upload of a path ended in sync: its trouble is forgotten, the time is kept for
+/// `uploaded_recently`. Entries with nothing left to tell are dropped.
 fn forget_uploads(path: &Path) {
-    if let Some(recent) = RECENT.lock().unwrap().as_mut() {
-        recent.remove(&crate::drive::case::ntfs_fold(&path.to_string_lossy()));
-    }
+    let mut recent = RECENT.lock().unwrap();
+    let recent = recent.get_or_insert_with(HashMap::new);
+    recent.retain(|_, entry| {
+        entry.failed_at.is_some()
+            || entry.uploads_again > 0
+            || entry.name_retries > 0
+            || entry.uploaded_at.is_some_and(|at| at.elapsed() < UPLOADED_RECENTLY)
+    });
+    recent.insert(
+        crate::drive::case::ntfs_fold(&path.to_string_lossy()),
+        Recent {
+            uploaded_at: Some(Instant::now()),
+            ..Default::default()
+        },
+    );
+}
+
+/// How long after its upload a file counts as just uploaded by this app.
+const UPLOADED_RECENTLY: Duration = Duration::from_secs(60);
+
+/// Whether this app uploaded `path` and marked it in sync less than a minute ago. A deletion
+/// reported for it now is older than that upload (a file saved by replacement and uploaded by a
+/// sync pass before the delayed delete event came in): the new version is not trashed.
+pub(crate) fn uploaded_recently(path: &Path) -> bool {
+    with_recent(path, |recent| {
+        recent
+            .uploaded_at
+            .is_some_and(|at| at.elapsed() < UPLOADED_RECENTLY)
+    })
 }
 
 /// When a file changed during its upload is uploaded again: at once a few times in a row,
@@ -639,6 +667,15 @@ mod tests {
         assert!(failed_recently(Path::new(r"C:\S\Failed.TXT")));
         forget_uploads(path);
         assert!(!failed_recently(path));
+    }
+
+    #[test]
+    fn a_file_just_uploaded_counts_as_such() {
+        let path = Path::new(r"C:\S\Book.xlsx");
+        assert!(!uploaded_recently(path));
+        forget_uploads(path);
+        assert!(uploaded_recently(path));
+        assert!(uploaded_recently(Path::new(r"C:\S\book.XLSX")));
     }
 
     #[test]

@@ -674,6 +674,13 @@ impl Mount {
                     .with_remote_file(remote)
                     .commit(self.inventory.clone())
                 {
+                    // Fylvo: Windows refused it because the file changed right now: that is
+                    // the guard working, not a failure. The path is planned again.
+                    let now = LocalFileInfo::from_path(path).unwrap_or_else(|_| LocalFileInfo::missing());
+                    if !remote.file_type.eq(&file_type::FOLDER) && appeared_meanwhile(&now) {
+                        self.plan_again(path);
+                        return;
+                    }
                     tracing::error!(
                         target: "drive::sync",
                         id = %self.id,

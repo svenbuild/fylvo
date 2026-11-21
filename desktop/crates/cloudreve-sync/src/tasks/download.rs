@@ -454,9 +454,11 @@ impl<'a> DownloadTask<'a> {
         }
 
         // Create temp file
-        let mut file = tokio::fs::File::create(&temp_path)
-            .await
-            .context("failed to create temp file")?;
+        // Fylvo: created at once, not in the background: a cancel that removes the temp file
+        // must not come before the file exists.
+        let mut file = tokio::fs::File::from_std(
+            std::fs::File::create(temp_path).context("failed to create temp file")?,
+        );
 
         // Stream download with progress tracking
         let mut stream = response.bytes_stream();
@@ -579,8 +581,11 @@ fn replace_with_backup(local: &Path, temp: &Path, task_id: &str) -> Result<()> {
     };
     if let Err(err) = result {
         if !local.exists() && backup.0.exists() {
-            std::fs::rename(&backup.0, local)
-                .context("failed to put the local file back after a failed replace")?;
+            if let Err(back) = std::fs::rename(&backup.0, local) {
+                // The backup is the only local copy now: it stays (under its `~` name).
+                std::mem::forget(backup);
+                return Err(back).context("failed to put the local file back after a failed replace");
+            }
         }
         return Err(err).context("failed to replace the local file");
     }

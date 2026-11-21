@@ -12,7 +12,7 @@ use crate::{
         utils::{is_in_cloud_sync_root, local_path_to_cr_uri, notify_shell_change},
     },
     inventory::ConflictState,
-    tasks::TaskPayload,
+    tasks::{TaskPayload, uploaded_recently},
     utils::toast,
 };
 use anyhow::{Context, Result};
@@ -663,7 +663,8 @@ impl Mount {
 
             if path_uri_mappings.is_empty() {
                 tracing::warn!(target: "drive::commands", "No valid URIs to process");
-                return Ok(());
+                // Fylvo: the other groups of the batch still count.
+                continue;
             }
 
             match event_kind {
@@ -1038,11 +1039,15 @@ impl Mount {
         // server keeps the file's versions and shares.
         // A row that cannot be read now counts as a file row: in doubt nothing is deleted on
         // the server (the upload then fails or makes a new version, the file stays).
+        // A synced placeholder back at the path counts too if this app uploaded it a moment ago
+        // (a sync pass uploaded the new version before the delayed delete event came in). Only
+        // a folder row turns a file back at the path into a deletion; without a row (not
+        // uploaded yet) the upload decides, so the server file is never trashed for a save.
         let (replaced, paths): (Vec<PathBuf>, Vec<PathBuf>) =
             paths.into_iter().partition(|path| {
-                file_back_at(path)
+                (file_back_at(path) || (synced_file_at(path) && uploaded_recently(path)))
                     && path.to_str().is_some_and(|p| match self.inventory.query_by_path(p) {
-                        Ok(row) => row.is_some_and(|row| !row.is_folder),
+                        Ok(row) => row.is_none_or(|row| !row.is_folder),
                         Err(_) => true,
                     })
             });
@@ -1308,10 +1313,19 @@ impl Mount {
 /// placeholder in sync: that one the sync itself put back (a real deletion then stays one).
 /// Not under another upper/lower case spelling: that is a new name to the server (`case.rs`).
 fn file_back_at(path: &Path) -> bool {
-    let changed_file = LocalFileInfo::from_path(path).is_ok_and(|info| {
-        info.exists && !info.is_directory && !(info.is_placeholder() && info.in_sync())
-    });
-    changed_file && LocalFileInfo::on_disk_path(path).as_deref() == Some(path)
+    file_at(path, |info| !(info.is_placeholder() && info.in_sync()))
+}
+
+/// Fylvo: whether a synced placeholder in sync is at `path`, spelled exactly so.
+fn synced_file_at(path: &Path) -> bool {
+    file_at(path, |info| info.is_placeholder() && info.in_sync())
+}
+
+/// Whether a file that `test` accepts is at `path`, spelled exactly so.
+fn file_at(path: &Path, test: impl Fn(&LocalFileInfo) -> bool) -> bool {
+    let file = LocalFileInfo::from_path(path)
+        .is_ok_and(|info| info.exists && !info.is_directory && test(&info));
+    file && LocalFileInfo::on_disk_path(path).as_deref() == Some(path)
 }
 
 #[cfg(test)]
