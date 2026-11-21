@@ -133,21 +133,32 @@ func TestNewContentOfImportedFileGetsTodaysDate(t *testing.T) {
 	requireSameTime(t, diskDate, created, "creation date stays")
 }
 
-// A file on disk that an imported file uses stays known after a rename, a move or the trash, so
-// that a second import does not register it again (two files on one file on disk: deleting one
-// for good would delete the content of the other).
-func TestImportedSourceStaysKnownAfterRename(t *testing.T) {
+// A file on disk that an imported file uses stays known after a rename, in the trash and while it
+// waits to be recycled after a delete for good, so that a second import does not register it again
+// (two files on one file on disk: deleting one for good would delete the content of the other).
+// The skip itself was checked with a real second import (deploy/UMZUG.md, "Probe").
+func TestImportedSourceStaysKnown(t *testing.T) {
 	e := newSharedFolderEnv(t)
-	owner := e.as(e.owner)
-	require.NoError(t, e.importFile(owner, "cloudreve://my/Import/a.txt", 10, diskDate))
+	require.NoError(t, e.importFile(e.as(e.owner), "cloudreve://my/Import/a.txt", 10, diskDate))
+	known := func(what string) {
+		used, err := e.fileClient.ImportedSources(e.ctx, []string{"import/x", "import/other"})
+		require.NoError(t, err)
+		require.Equal(t, map[string]bool{"import/x": true}, used, what)
+	}
+	known("after the import")
+
 	require.NoError(t, e.rename(e.as(e.owner), "cloudreve://my/Import/a.txt", "b.txt"))
+	known("after a rename")
 
-	used, err := e.fileClient.ImportedSources(e.ctx, 1, []string{"import/x", "import/other"})
+	id := e.fileID(e.as(e.owner), "cloudreve://my/Import/b.txt")
+	e.remove(true, "cloudreve://my/Import/b.txt")
+	known("in the trash")
+
+	_, _, err := e.as(e.owner).Delete(e.ctx, []*fs.URI{e.trashUri(e.as(e.owner), id)})
 	require.NoError(t, err)
-	require.Equal(t, map[string]bool{"import/x": true}, used)
+	known("deleted for good, waiting to be recycled")
 
-	// Another storage policy has its own files on disk.
-	used, err = e.fileClient.ImportedSources(e.ctx, 2, []string{"import/x"})
+	used, err := e.fileClient.ImportedSources(e.ctx, nil)
 	require.NoError(t, err)
 	require.Empty(t, used)
 }

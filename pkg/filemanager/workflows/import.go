@@ -191,7 +191,7 @@ func (m *ImportTask) processBatch(ctx context.Context, dep dependency.Dep, user 
 	failed := 0
 	// Fylvo: a file on disk that a stored file already uses is not registered again, even if
 	// that file was renamed, moved or put in the trash since the last run.
-	imported, err := dep.FileClient().ImportedSources(ctx, m.state.PolicyID, fileSources(batch))
+	imported, err := dep.FileClient().ImportedSources(ctx, fileSources(batch))
 	if err != nil {
 		m.l.Error("Failed to look up already imported files: %s, skipping the files of this batch", err)
 	}

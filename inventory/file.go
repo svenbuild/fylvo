@@ -156,9 +156,9 @@ type FileClient interface {
 	// CaseTwins returns the names of the entries of the folder parent that differ from name
 	// only in upper and lower case (Fylvo, see fylvo_case_names.go).
 	CaseTwins(ctx context.Context, parent int, name string) ([]string, error)
-	// ImportedSources returns which of the paths on disk a stored file of the policy already
-	// uses (Fylvo, see fylvo_import.go).
-	ImportedSources(ctx context.Context, policyID int, sources []string) (map[string]bool, error)
+	// ImportedSources returns which of the paths on disk a stored file already uses (Fylvo, see
+	// fylvo_import.go).
+	ImportedSources(ctx context.Context, sources []string) (map[string]bool, error)
 	// GetParentFile returns the parent folder of a given file
 	GetParentFile(ctx context.Context, root *ent.File, eagerLoading bool) (*ent.File, error)
 	// Search file by name from a given root. eagerLoading indicates whether to load edges determined by ctx.
