@@ -211,6 +211,7 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 	var earliestExpireAt *time.Time
 	res := make([]EntityUrl, len(args))
 	ae := serializer.NewAggregateError()
+	handedOut := make([]fs.File, 0, len(args))
 	for i, arg := range args {
 		file, err := m.fs.Get(
 			ctx, arg.URI,
@@ -250,6 +251,12 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 		if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeBeforeDownload, file); err != nil {
 			m.l.Warning("Failed to execute navigator hooks: %s", err)
 		}
+		// Fylvo: a guest's download is logged once its link is there, see the end.
+		downloadLinkHook := func() {
+			if o.IsDownload {
+				handedOut = append(handedOut, file)
+			}
+		}
 
 		policy, d, err := m.getEntityPolicyDriver(ctx, target, nil)
 		if err != nil {
@@ -270,6 +277,7 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 				Url:                        cachedItem.Url,
 				BrowserDownloadDisplayName: cachedItem.BrowserDownloadDisplayName,
 			}
+			downloadLinkHook()
 			continue
 		}
 
@@ -286,6 +294,7 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 			ae.Add(arg.URI.String(), err)
 			continue
 		}
+		downloadLinkHook()
 
 		// Find the earliest expiry time
 		if downloadUrl.ExpireAt != nil && (earliestExpireAt == nil || downloadUrl.ExpireAt.Before(*earliestExpireAt)) {
@@ -309,7 +318,18 @@ func (m *manager) GetEntityUrls(ctx context.Context, args []GetEntityUrlArgs, op
 		}
 	}
 
-	return res, earliestExpireAt, ae.Aggregate()
+	// Fylvo: the links handed out: all of them, or with SkipError those that worked. Without
+	// SkipError a batch with a failure is refused as a whole.
+	err := ae.Aggregate()
+	if err == nil || o.SkipError {
+		for _, file := range handedOut {
+			if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
+				m.l.Warning("Failed to execute navigator hooks: %s", err)
+			}
+		}
+	}
+
+	return res, earliestExpireAt, err
 }
 
 func (m *manager) GetEntitySource(ctx context.Context, entityID int, opts ...fs.Option) (entitysource.EntitySource, error) {

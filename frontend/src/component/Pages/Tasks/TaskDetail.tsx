@@ -46,6 +46,19 @@ const TaskDetail = ({ task, downloading }: TaskDetailProps) => {
             })}
           </Alert>
         )}
+        {!!task.summary?.props?.case_twin_count && (
+          // Fylvo: an import skips names that are there in other upper and lower case.
+          <Alert severity={"warning"}>
+            {t("setting.caseTwinsSkipped", {
+              num: task.summary?.props?.case_twin_count,
+            })}
+            {task.summary?.props?.case_twins?.map((path) => (
+              <Typography key={path} variant={"body2"} sx={{ wordBreak: "break-all" }}>
+                {path}
+              </Typography>
+            ))}
+          </Alert>
+        )}
         {task.status == TaskStatus.error && <Alert severity={"error"}>{task.error}</Alert>}
         <TaskProgress
           taskId={task.id}

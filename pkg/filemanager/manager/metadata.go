@@ -43,8 +43,6 @@ var (
 	// validateColor validates a color value
 	validateColor = func(optional bool) metadataValidator {
 		return func(ctx context.Context, m *manager, patch *fs.MetadataPatch) error {
-			patch.UpdateModifiedAt = true
-
 			if patch.Remove {
 				return nil
 			}
@@ -68,8 +66,6 @@ var (
 				if patch.Remove {
 					return fmt.Errorf("cannot remove system metadata")
 				}
-
-				patch.UpdateModifiedAt = true
 
 				dep := dependency.FromContext(ctx)
 				// Validate share owner is valid hashid
@@ -109,8 +105,6 @@ var (
 		customizeMetadataSuffix: {
 			iconColorMetadataKey: validateColor(false),
 			emojiIconMetadataKey: func(ctx context.Context, m *manager, patch *fs.MetadataPatch) error {
-				patch.UpdateModifiedAt = true
-
 				if patch.Remove {
 					return nil
 				}
@@ -140,8 +134,6 @@ var (
 		},
 		tagMetadataSuffix: {
 			wildcardMetadataKey: func(ctx context.Context, m *manager, patch *fs.MetadataPatch) error {
-				patch.UpdateModifiedAt = true
-
 				if err := validateColor(true)(ctx, m, patch); err != nil {
 					return err
 				}
@@ -155,8 +147,6 @@ var (
 		},
 		customPropsMetadataSuffix: {
 			wildcardMetadataKey: func(ctx context.Context, m *manager, patch *fs.MetadataPatch) error {
-				patch.UpdateModifiedAt = true
-
 				if patch.Remove {
 					return nil
 				}

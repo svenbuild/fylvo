@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -217,6 +218,8 @@ var (
 		"siteURL":      siteUrlPreProcessor,
 		"mime_mapping": mimeMappingPreProcessor,
 		"secret_key":   secretKeyPreProcessor,
+		// Fylvo
+		inventory.ActivityRetentionSetting: activityRetentionPreProcessor,
 	}
 	postprocessors = map[string]SettingPostProcessor{
 		"mime_mapping":                               mimeMappingPostProcessor,
@@ -429,5 +432,14 @@ func meilisearchPostProcessor(ctx context.Context, settings map[string]string) e
 func tikaPostProcessor(ctx context.Context, settings map[string]string) error {
 	dep := dependency.FromContext(ctx)
 	dep.TextExtractor(context.WithValue(ctx, dependency.ReloadCtx{}, true))
+	return nil
+}
+
+// activityRetentionPreProcessor accepts 0 (keep everything) up to ten years (Fylvo).
+func activityRetentionPreProcessor(ctx context.Context, settings map[string]string) error {
+	days, err := strconv.Atoi(settings[inventory.ActivityRetentionSetting])
+	if err != nil || days < 0 || days > 3650 {
+		return fmt.Errorf("activity retention must be a number of days from 0 to 3650")
+	}
 	return nil
 }

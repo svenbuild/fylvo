@@ -20,6 +20,9 @@ type (
 		inherited   bool
 		finished    bool
 		storageDiff StorageDiff
+		// Fylvo: committed is set once the real commit succeeded; afterCommit runs then.
+		committed   bool
+		afterCommit []func()
 	}
 
 	// TxCtx is the context key for inherited transaction
@@ -125,9 +128,41 @@ func Rollback(tx *Tx) error {
 func commit(tx *Tx) (bool, error) {
 	if !tx.inherited {
 		tx.finished = true
-		return true, tx.tx.Commit()
+		if err := tx.tx.Commit(); err != nil {
+			return true, err
+		}
+
+		tx.committed = true
+		hooks := tx.afterCommit
+		tx.afterCommit = nil
+		for _, hook := range hooks {
+			hook()
+		}
+		return true, nil
 	}
 	return false, nil
+}
+
+// AfterCommit runs fn once the changes made with ctx are stored (Fylvo). Inside an open
+// transaction, fn waits for the commit of the outermost transaction and is dropped on rollback.
+// Without a transaction, or after a successful commit, fn runs at once.
+func AfterCommit(ctx context.Context, fn func()) {
+	tx, ok := ctx.Value(TxCtx{}).(*Tx)
+	if !ok {
+		fn()
+		return
+	}
+
+	for tx.inherited {
+		tx = tx.parent
+	}
+
+	switch {
+	case !tx.finished:
+		tx.afterCommit = append(tx.afterCommit, fn)
+	case tx.committed:
+		fn()
+	}
 }
 
 func Commit(tx *Tx) error {

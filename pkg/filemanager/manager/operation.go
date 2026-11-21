@@ -11,6 +11,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/lock"
@@ -384,6 +385,14 @@ func (l *manager) CreateOrUpdateShare(ctx context.Context, path *fs.URI, args *C
 
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "failed to create share", err)
+	}
+
+	changed := activity.ShareCreate
+	if existed != nil {
+		changed = activity.ShareUpdate
+	}
+	if shared, ok := file.(*dbfs.File); ok {
+		activity.RecordShare(ctx, changed, l.user.ID, share, shared.Model)
 	}
 
 	return share, nil

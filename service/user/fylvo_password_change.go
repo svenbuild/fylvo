@@ -11,6 +11,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/attempts"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/gin-gonic/gin"
@@ -115,6 +116,7 @@ func (s *PasswordChangeService) Finish(c *gin.Context) (*ent.User, error) {
 		}
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to update password", err)
 	}
+	activity.RecordAccount(c, activity.PasswordChange, u.ID, "")
 	_ = kv.Delete(passwordChangePrefix, s.SessionID)
 
 	ctx := context.WithValue(c, inventory.LoadUserGroup{}, true)

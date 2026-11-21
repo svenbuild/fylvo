@@ -9,6 +9,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/attempts"
 	"github.com/cloudreve/Cloudreve/v4/pkg/boolset"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
@@ -401,6 +402,22 @@ func (n *shareNavigator) ExecuteHook(ctx context.Context, hookType fs.HookType, 
 	switch hookType {
 	case fs.HookTypeBeforeDownload:
 		return n.shareClient.Downloaded(ctx, n.share)
+	case fs.HookTypeDownloadLink:
+		// Fylvo: the owner sees in the activity log what guests of a link download.
+		if !n.share.Props.IsMemberOnly() && file.OwnerID() != n.user.ID {
+			e := activity.Entry{
+				Type:     activity.GuestDownload,
+				OwnerID:  file.OwnerID(),
+				FileID:   file.ID(),
+				ParentID: file.Model.FileChildren,
+				ShareID:  n.share.ID,
+				Content:  types.ActivityContent{Name: file.Name(), IsFolder: file.Type() == types.FileTypeFolder},
+			}
+			if !inventory.IsAnonymousUser(n.user) {
+				e.UserID = n.user.ID
+			}
+			activity.Record(ctx, e)
+		}
 	}
 	return nil
 }

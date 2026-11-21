@@ -9,6 +9,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/attempts"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/oss"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
@@ -134,27 +135,23 @@ func WebDAVAuth() gin.HandlerFunc {
 		var accounts []*ent.DavAccount
 		var err error
 		// Fylvo: limit wrong passwords per account and client address.
-		if _, limitErr := attempts.Guard(c, attempts.KindWebDAV, username, func() bool {
+		if right, limitErr := attempts.Guard(c, attempts.KindWebDAV, username, func() bool {
 			expectedUser, err = userClient.GetActiveByDavAccount(c, username, password)
 			if err == nil {
 				accounts, err = expectedUser.Edges.DavAccountsOrErr()
 			}
 			return err == nil && len(accounts) > 0
 		}); limitErr != nil {
+			recordWebDAVFailure(c, activity.LoginLocked, username, nil)
 			c.Header("Retry-After", strconv.Itoa(int(attempts.Window.Seconds())))
 			c.Status(http.StatusTooManyRequests)
 			c.Abort()
 			return
+		} else if !right {
+			recordWebDAVFailure(c, activity.LoginFailed, username, expectedUser)
 		}
 
 		if err != nil {
-			if username == "" {
-				if u, err := userClient.GetByEmail(c, username); err == nil {
-					// Try login with known user but incorrect password, record audit log
-					SetUserCtxByUser(c, u)
-				}
-			}
-
 			l.Debug("WebDAVAuth: failed to get user %q with provided credential: %s", username, err)
 			c.Status(http.StatusUnauthorized)
 			c.Abort()
@@ -204,8 +201,32 @@ func WebDAVAuth() gin.HandlerFunc {
 		}
 
 		SetUserCtxByUser(c, expectedUser)
+		setActivityVia(c, activity.ViaWebDAV)
 		c.Next()
 	}
+}
+
+// recordWebDAVFailure logs a failed or refused WebDAV sign-in to a known account (Fylvo). The
+// account is looked up only when the entry is wanted: clients retry an old password all the time.
+func recordWebDAVFailure(c *gin.Context, typ activity.Type, username string, known *ent.User) {
+	if !activity.FailureWanted(c, typ, activity.MethodWebDAV, username) {
+		return
+	}
+
+	if known == nil {
+		u, err := dependency.FromContext(c).UserClient().GetByEmail(c, username)
+		if err != nil {
+			return
+		}
+		known = u
+	}
+
+	activity.RecordFailure(c, typ, known.ID, activity.MethodWebDAV)
+}
+
+// setActivityVia marks the request for the activity log (Fylvo).
+func setActivityVia(c *gin.Context, via string) {
+	c.Request = c.Request.WithContext(activity.WithVia(c.Request.Context(), via))
 }
 
 // 对上传会话进行验证

@@ -2,7 +2,12 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -127,7 +132,7 @@ func Logging() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Start timer
 		start := time.Now()
-		path := c.Request.URL.Path
+		path := logPath(c.Request)
 		raw := c.Request.URL.RawQuery
 
 		// Process request
@@ -141,6 +146,50 @@ func Logging() gin.HandlerFunc {
 		logging.Request(l, true, c.Writer.Status(), c.Request.Method, c.ClientIP(), path,
 			c.Errors.ByType(gin.ErrorTypePrivate).String(), start)
 	}
+}
+
+// logPathEscaper escapes the characters that would shift the query or break the log line.
+var logPathEscaper = strings.NewReplacer("%", "%25", "?", "%3F", "#", "%23", "\n", "%0A", "\r", "%0D")
+
+// logPath returns the request path for a log line. It is the decoded path, so the masking in
+// logging.RedactURL sees the segments as they were routed (/%73/Ab/pw is /s/Ab/pw).
+func logPath(r *http.Request) string {
+	return logPathEscaper.Replace(r.URL.Path)
+}
+
+// Recovery replaces gin.Recovery, whose dump of the raw request on a lost connection would print
+// the query with its secrets and the Cookie header. A lost connection gives a warning, any other
+// panic an error with the stack and the answer 500.
+func Recovery() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			err := recover()
+			if err == nil {
+				return
+			}
+			l := logging.FromContext(c)
+			path := logging.RedactURL(logPath(c.Request))
+			if ne, ok := err.(*net.OpError); ok && connectionLost(ne) {
+				l.Warning("Connection lost in %s %s: %s", c.Request.Method, path, ne)
+				_ = c.Error(ne)
+				c.Abort()
+				return
+			}
+			l.Error("Panic recovered in %s %s: %v\n%s", c.Request.Method, path, err, debug.Stack())
+			c.AbortWithStatus(http.StatusInternalServerError)
+		}()
+		c.Next()
+	}
+}
+
+// connectionLost reports a write to a client that has gone, as gin.Recovery detects it.
+func connectionLost(err *net.OpError) bool {
+	var se *os.SyscallError
+	if !errors.As(err, &se) {
+		return false
+	}
+	msg := strings.ToLower(se.Error())
+	return strings.Contains(msg, "broken pipe") || strings.Contains(msg, "connection reset by peer")
 }
 
 func ContentCORS() gin.HandlerFunc {

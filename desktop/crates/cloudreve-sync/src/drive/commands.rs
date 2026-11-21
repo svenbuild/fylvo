@@ -5,10 +5,10 @@ use crate::{
         utility::WriteAt,
     },
     drive::{
-        guard::DeletionSide,
+        case::{case_twins, ntfs_fold},
         mounts::Mount,
         placeholder::CrPlaceholder,
-        sync::{GroupedFsEvents, SyncMode},
+        sync::{GroupedFsEvents, SyncMode, is_symbolic_link},
         utils::{is_in_cloud_sync_root, local_path_to_cr_uri, notify_shell_change},
     },
     inventory::ConflictState,
@@ -199,6 +199,31 @@ impl ConflictAction {
     }
 }
 
+/// Mark a placeholder as in sync with the server (after a rename).
+pub(crate) async fn mark_path_in_sync(path: &Path) -> Result<()> {
+    tracing::trace!(target: "drive::commands", path = %path.display(), "Marking file as in-sync: OPEN");
+    match OpenOptions::new()
+        .write_access()
+        .exclusive()
+        .open_with_retry(path)
+        .await
+    {
+        Ok(mut handle) => {
+            tracing::trace!(target: "drive::commands", path = %path.display(), "Marking file as in-sync");
+            if let Err(e) = handle.mark_in_sync(true, None) {
+                tracing::error!(target: "drive::commands", error = %e, "Failed to mark as in-sync");
+                return Err(e.into());
+            }
+            tracing::trace!(target: "drive::commands", path = %path.display(), "Marked file as in-sync: complete");
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!(target: "drive::commands", error = %e, "Failed to open file after retries");
+            Err(e.into())
+        }
+    }
+}
+
 impl Mount {
     pub async fn fetch_data(
         &self,
@@ -378,6 +403,23 @@ impl Mount {
         }
         drop(matcher);
 
+        // Fylvo: server names that are one file here (only case differs) are not created now:
+        // the sync picks one of them with a look at the disk (see `case.rs`).
+        let twins = case_twins(
+            placehodlers
+                .iter()
+                .filter(|file| !is_symbolic_link(file))
+                .map(|file| file.name.as_str()),
+        );
+        if !twins.is_empty() {
+            let (left_out, kept): (Vec<FileResponse>, Vec<FileResponse>) = placehodlers
+                .into_iter()
+                .partition(|file| twins.contains(&ntfs_fold(&file.name)));
+            placehodlers = kept;
+            let left_out: Vec<PathBuf> = left_out.iter().map(|file| path.join(&file.name)).collect();
+            self.report_case_clash(&left_out, "caseClashMessage");
+        }
+
         Ok(GetPlacehodlerResult {
             files: placehodlers,
             local_path: path.clone(),
@@ -447,30 +489,7 @@ impl Mount {
 
         // Cancel ongoing/pending tasks
         match self.task_queue.cancel_by_path(source.clone()).await {
-            Ok(0) => {
-                // Mark file as in-sync
-                tracing::trace!(target: "drive::commands", path = %destination.display(), "Marking file as in-sync: OPEN");
-                match OpenOptions::new()
-                    .write_access()
-                    .exclusive()
-                    .open_with_retry(&destination)
-                    .await
-                {
-                    Ok(mut handle) => {
-                        tracing::trace!(target: "drive::commands", path = %destination.display(), "Marking file as in-sync");
-                        if let Err(e) = handle.mark_in_sync(true, None) {
-                            tracing::error!(target: "drive::commands", error = %e, "Failed to mark as in-sync");
-                            return Err(e.into());
-                        }
-                        tracing::trace!(target: "drive::commands", path = %destination.display(), "Marked file as in-sync: complete");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        tracing::error!(target: "drive::commands", error = %e, "Failed to open file after retries");
-                        Err(e.into())
-                    }
-                }
-            }
+            Ok(0) => mark_path_in_sync(&destination).await,
             Ok(count) => {
                 tracing::info!(target: "drive::commands", path = %source.display(), count = count, "Cancelled tasks");
                 // We have tasks canceled, we need to trigger sync on the moved file
@@ -1015,10 +1034,10 @@ impl Mount {
             return Ok(());
         }
 
-        // Fylvo: many deletions at once wait for the user's answer. Once a deletion is held,
-        // the following ones wait too, so a large deletion cannot pass in small parts.
-        if self.has_server_deletion_held() || self.mass_deletion_count(&paths).is_some() {
-            self.hold_deletion(DeletionSide::Server, paths);
+        // Fylvo: many deletions at once (or within a short time) wait for the user's answer.
+        // Once a deletion is held, the following ones wait too, so a large deletion cannot
+        // pass in small parts.
+        if self.hold_server_deletion_if_needed(&paths).await {
             return Ok(());
         }
 
@@ -1026,7 +1045,7 @@ impl Mount {
     }
 
     /// Delete the given local paths on the server. They go to the server's trash. Returns the
-    /// paths the server did not delete (a re-sync for them is already requested).
+    /// paths that were not deleted (for those the server refused, a re-sync is requested).
     pub(crate) async fn delete_on_server(&self, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
         if paths.is_empty() {
             return Ok(Vec::new());
@@ -1035,14 +1054,16 @@ impl Mount {
             let config = self.config.read().await;
             (config.sync_path.clone(), config.remote_path.to_string())
         };
-        let path_uri_mappings: HashMap<String, PathBuf> = paths
-            .into_iter()
-            .filter_map(|path| {
-                local_path_to_cr_uri(path.clone(), sync_path.clone(), remote_base.clone())
-                    .ok()
-                    .map(|uri| (uri.to_string(), path))
-            })
-            .collect();
+        let mut path_uri_mappings: HashMap<String, PathBuf> = HashMap::new();
+        let mut unmapped = Vec::new();
+        for path in paths {
+            match local_path_to_cr_uri(path.clone(), sync_path.clone(), remote_base.clone()) {
+                Ok(uri) => {
+                    path_uri_mappings.insert(uri.to_string(), path);
+                }
+                Err(_) => unmapped.push(path),
+            }
+        }
         let uris: Vec<String> = path_uri_mappings.keys().cloned().collect();
 
         // cancel related tasks
@@ -1103,10 +1124,12 @@ impl Mount {
                 .context("Failed to update local inventory after deletions")?;
         }
 
-        Ok(path_uri_mappings
-            .into_values()
-            .filter(|path| !successful_paths.contains(path))
-            .collect())
+        unmapped.extend(
+            path_uri_mappings
+                .into_values()
+                .filter(|path| !successful_paths.contains(path)),
+        );
+        Ok(unmapped)
     }
 
     /// Build a mapping from remote URIs to local paths for the given events.
@@ -1217,7 +1240,7 @@ impl Mount {
     }
 
     /// Update the local inventory to remove entries for successfully deleted paths.
-    fn update_inventory_for_deletions(&self, paths: &[PathBuf]) -> Result<()> {
+    pub(crate) fn update_inventory_for_deletions(&self, paths: &[PathBuf]) -> Result<()> {
         let path_strs: Vec<&str> = paths
             .iter()
             .filter_map(|path| {

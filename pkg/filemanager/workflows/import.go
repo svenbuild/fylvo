@@ -13,6 +13,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/task"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
@@ -37,6 +38,9 @@ type (
 		Phase            ImportTaskPhase `json:"phase"`
 		Failed           int             `json:"failed,omitempty"`
 		ExtractMediaMeta bool            `json:"extract_media_meta"`
+		// Fylvo: what was skipped because its name is there in other upper and lower case.
+		CaseTwins     []string `json:"case_twins,omitempty"`
+		CaseTwinCount int      `json:"case_twin_count,omitempty"`
 	}
 	ImportTaskPhase string
 )
@@ -90,6 +94,8 @@ func NewImportTaskFromModel(task *ent.Task) queue.Task {
 }
 
 func (m *ImportTask) Do(ctx context.Context) (task.Status, error) {
+	// Fylvo: a task with many files is not in the activity log, see pkg/activity.
+	ctx = activity.Skip(ctx)
 	dep := dependency.FromContext(ctx)
 	m.l = dep.Logger()
 
@@ -189,7 +195,7 @@ func (m *ImportTask) processBatch(ctx context.Context, dep dependency.Dep, user 
 			_, err := fm.Create(ctx, dst.Join(physicalFile.RelativePath), types.FileTypeFolder,
 				fs.WithModifiedAt(physicalFile.LastModify))
 			atomic.AddInt64(&m.progress[ProgressTypeImported].Current, 1)
-			if err != nil {
+			if err != nil && !m.state.skipCaseTwin(physicalFile.RelativePath, err) {
 				m.l.Warning("Failed to create folder %s: %s", physicalFile.RelativePath, err)
 				failed++
 			}
@@ -201,6 +207,10 @@ func (m *ImportTask) processBatch(ctx context.Context, dep dependency.Dep, user 
 				var appErr serializer.AppError
 				if errors.As(err, &appErr) && appErr.Code == serializer.CodeObjectExist {
 					m.l.Info("File %s already exists, skipping", physicalFile.RelativePath)
+					continue
+				}
+				if m.state.skipCaseTwin(physicalFile.RelativePath, err) {
+					m.l.Warning("File %s has a name that is there in other case, skipping", physicalFile.RelativePath)
 					continue
 				}
 				m.l.Error("Failed to import file %s: %s, skipping", physicalFile.RelativePath, err)
@@ -232,6 +242,8 @@ func (m *ImportTask) Summarize(hasher hashid.Encoder) *queue.Summary {
 			SummaryKeyDst:            m.state.Dst,
 			SummaryKeySrcStr:         m.state.Src,
 			SummaryKeyFailed:         m.state.Failed,
+			SummaryKeyCaseTwins:      m.state.CaseTwins,
+			SummaryKeyCaseTwinCount:  m.state.CaseTwinCount,
 			SummaryKeySrcDstPolicyID: hashid.EncodePolicyID(hasher, m.state.PolicyID),
 		},
 	}

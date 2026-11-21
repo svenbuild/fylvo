@@ -3,11 +3,11 @@ import { useTheme } from "@mui/material/styles";
 import logoDark from "../assets/logo.svg";
 import logoLight from "../assets/logo_light.svg";
 
-interface CloudreveLogoProps {
+interface FylvoLogoProps {
   height?: number;
 }
 
-export default function CloudreveLogo({ height = 28 }: CloudreveLogoProps) {
+export default function FylvoLogo({ height = 28 }: FylvoLogoProps) {
   const theme = useTheme();
   const logo = theme.palette.mode === "dark" ? logoLight : logoDark;
 

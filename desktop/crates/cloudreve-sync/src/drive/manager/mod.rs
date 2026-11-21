@@ -190,6 +190,7 @@ impl DriveManager {
             .spawn_remote_event_processor(mount_arc.clone())
             .await;
         mount_arc.spawn_props_refresh_task().await;
+        mount_arc.spawn_drive_letter_task().await;
         let id = mount_arc.id.clone();
         write_guard.insert(id.clone(), mount_arc);
         Ok(id)
@@ -426,6 +427,31 @@ impl DriveManager {
         mount.resolve_held_deletion(side, version, confirm).await
     }
 
+    /// Fylvo: switch a drive's letter on (with `letter` or the first free one) or off.
+    pub async fn set_drive_letter(
+        &self,
+        id: &str,
+        enabled: bool,
+        letter: Option<char>,
+    ) -> Result<crate::drive::drive_letter::LetterState> {
+        let mount = self
+            .get_drive(id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Drive not found: {}", id))?;
+        let state = mount.set_drive_letter(enabled, letter).await?;
+        self.persist().await?;
+        Ok(state)
+    }
+
+    /// Fylvo: letters the drive may use for its drive letter.
+    pub async fn free_drive_letters(&self, id: &str) -> Result<Vec<char>> {
+        let mount = self
+            .get_drive(id)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Drive not found: {}", id))?;
+        Ok(mount.free_drive_letters().await)
+    }
+
     /// Enable/disable a drive
     pub async fn set_drive_enabled(&self, _id: &str, _enabled: bool) -> Result<()> {
         Err(anyhow::anyhow!("Not implemented"))
@@ -631,6 +657,10 @@ impl DriveManager {
                 capacity,
                 read_only: mount.is_read_only(),
                 held_deletions: mount.held_deletions(),
+                drive_letter: config
+                    .drive_letter
+                    .filter(|l| crate::drive::drive_letter::is_usable(*l)),
+                drive_letter_state: mount.drive_letter_state(),
             });
         }
 

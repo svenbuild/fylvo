@@ -209,11 +209,10 @@ type (
 	}
 
 	MetadataPatch struct {
-		Key              string `json:"key" binding:"required"`
-		Value            string `json:"value"`
-		Private          bool   `json:"private" binding:"ne=true"`
-		Remove           bool   `json:"remove"`
-		UpdateModifiedAt bool   `json:"-"`
+		Key     string `json:"key" binding:"required"`
+		Value   string `json:"value"`
+		Private bool   `json:"private" binding:"ne=true"`
+		Remove  bool   `json:"remove"`
 	}
 
 	// ListFileResult result of listing files.
@@ -260,6 +259,9 @@ type (
 		MimeType        string                 `json:"mime_type,omitempty"`     // Expected mimetype
 		UploadPolicy    string                 `json:"upload_policy,omitempty"` // Upyun upload policy
 		EncryptMetadata *types.EncryptMetadata `json:"encrypt_metadata,omitempty"`
+		// Fylvo: the hashed id of the entity this upload fills. For a file or a new version
+		// it is the current version of the file once the upload is completed.
+		EntityID string `json:"entity_id,omitempty"`
 	}
 
 	// UploadSession stores the information of an upload session, used in server side.
@@ -298,6 +300,9 @@ type (
 		MimeType               string
 		Metadata               map[string]string
 		PreviousVersion        string
+		// Fylvo: PreviousRequired makes the upload fail when there is no file to replace,
+		// instead of creating it new (see dbfs/fylvo_upload_previous.go).
+		PreviousRequired bool
 		// EntityType is the type of the entity to be created. If not set, a new file will be created
 		// with a default version entity. This will be set in update request for existing files.
 		EntityType          *types.EntityType
@@ -327,8 +332,12 @@ type (
 		Metadata           map[string]string
 		ArchiveCompression bool
 		ProgressFunc
-		MaxArchiveSize  int64
-		DryRun          CreateArchiveDryRunFunc
+		MaxArchiveSize int64
+		DryRun         CreateArchiveDryRunFunc
+		// Fylvo: the archive goes to the person downloading it, see WithArchiveDownload.
+		ArchiveDownload bool
+		// Fylvo: links that worked are handed out even when others failed.
+		SkipError       bool
 		Policy          *ent.StoragePolicy
 		Node            StatelessUploadManager
 		StatelessUserID int
@@ -427,6 +436,8 @@ const (
 
 const (
 	HookTypeBeforeDownload = HookType(iota)
+	// HookTypeDownloadLink Fylvo: a link to download (not to view) a file is handed out.
+	HookTypeDownloadLink
 )
 
 func (p *UploadProps) Copy() *UploadProps {
@@ -592,6 +603,21 @@ func WithArchiveCompression(b bool) Option {
 func WithMaxArchiveSize(s int64) Option {
 	return OptionFunc(func(o *FsOption) {
 		o.MaxArchiveSize = s
+	})
+}
+
+// WithArchiveDownload marks an archive that is streamed to the person who asked for it (Fylvo):
+// a guest of a link downloading a ZIP is logged once it is complete.
+func WithArchiveDownload() Option {
+	return OptionFunc(func(o *FsOption) {
+		o.ArchiveDownload = true
+	})
+}
+
+// WithSkipError tells that the links that worked are handed out even when others failed (Fylvo).
+func WithSkipError(b bool) Option {
+	return OptionFunc(func(o *FsOption) {
+		o.SkipError = b
 	})
 }
 

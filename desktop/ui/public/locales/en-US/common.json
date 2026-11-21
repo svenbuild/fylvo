@@ -91,10 +91,16 @@
     "save": "Save",
     "cancel": "Cancel",
     "readOnlyHint": "Shared with you for reading only. Changes on this PC are not uploaded.",
+    "driveLetter": {
+      "title": "Show as drive letter",
+      "off": "Shows this folder additionally as its own drive in the Explorer, for example F:.",
+      "active": "Also shows as {{letter}}: in the Explorer.",
+      "conflict": "{{letter}}: is used by another drive. Please choose another letter."
+    },
     "heldDeletion": {
       "message": {
         "server": "{{count}} entries were deleted on this PC. They are kept on the server until you decide.",
-        "local": "{{count}} entries were deleted on the server. They are kept on this PC until you decide."
+        "local": "{{count}} entries were deleted on the server. They are kept on this PC until you decide. Files that were online only can no longer be opened."
       },
       "confirm": "Delete",
       "cancel": {
@@ -115,7 +121,8 @@
   "about": {
     "homepage": "Homepage",
     "preview": "Preview",
-    "reportIssue": "Report Issue"
+    "reportIssue": "Report Issue",
+    "basedOn": "Based on Cloudreve Desktop, MIT License, Copyright (c) 2025 Cloudreve."
   },
   "timeAgo": {
     "justNow": "Just now",

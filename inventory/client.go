@@ -49,6 +49,9 @@ func InitializeDBClient(l logging.Logger,
 	if err := replaceCloudreveOAuthClientIcons(l, client, ctx); err != nil {
 		return nil, err
 	}
+	if err := ensureActivityLog(l, client, ctx); err != nil {
+		return nil, err
+	}
 
 	//createMockData(client, ctx)
 	return client, nil

@@ -10,8 +10,10 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster/routes"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager/entitysource"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
@@ -290,6 +292,12 @@ func (s *UpsertFileService) Update(c *gin.Context) (*GetFileResponse, error) {
 	dep := dependency.FromContext(c)
 	fileClient := dep.FileClient()
 
+	// Fylvo: the name before, for the activity log.
+	old, err := fileClient.GetByID(c, s.File.ID)
+	if err != nil {
+		return nil, serializer.NewError(serializer.CodeNotFound, "File not found", err)
+	}
+
 	fc, tx, ctx, err := inventory.WithTx(c, fileClient)
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to start transaction", err)
@@ -298,11 +306,20 @@ func (s *UpsertFileService) Update(c *gin.Context) (*GetFileResponse, error) {
 	newFile, err := fc.Update(ctx, s.File)
 	if err != nil {
 		_ = inventory.Rollback(tx)
+		if inventory.IsNameCaseTaken(err) { // Fylvo
+			return nil, err
+		}
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to update file", err)
 	}
 
 	if err := inventory.Commit(tx); err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to commit transaction", err)
+	}
+
+	if old.Name != newFile.Name {
+		e := adminFileEntry(c, activity.FileRename, newFile)
+		e.Content.OldName = old.Name
+		activity.Record(c, e)
 	}
 
 	service := &SingleFileService{ID: newFile.ID}
@@ -370,6 +387,7 @@ func (s *BatchFileService) Delete(c *gin.Context) error {
 	fileClient := dep.FileClient()
 
 	ctx := context.WithValue(c, inventory.LoadFileEntity{}, true)
+	ctx = context.WithValue(ctx, inventory.LoadFileMetadata{}, true) // Fylvo: names of files in the trash
 	files, _, err := fileClient.GetByIDs(ctx, s.IDs, 0)
 	if err != nil {
 		return serializer.NewError(serializer.CodeDBError, "Failed to get files", err)
@@ -391,7 +409,26 @@ func (s *BatchFileService) Delete(c *gin.Context) error {
 		return serializer.NewError(serializer.CodeDBError, "Failed to commit transaction", err)
 	}
 
+	for _, f := range files {
+		activity.Record(c, adminFileEntry(c, activity.FileDelete, f))
+	}
+
 	return nil
+}
+
+// adminFileEntry is an activity log entry about f done by the admin of the request (Fylvo).
+func adminFileEntry(c *gin.Context, typ activity.Type, f *ent.File) activity.Entry {
+	return activity.Entry{
+		Type:     typ,
+		UserID:   inventory.UserIDFromContext(c),
+		OwnerID:  f.OwnerID,
+		FileID:   f.ID,
+		ParentID: f.FileChildren,
+		Content: types.ActivityContent{
+			Name:     (&dbfs.File{Model: f}).DisplayName(),
+			IsFolder: f.Type == int(types.FileTypeFolder),
+		},
+	}
 }
 
 const (

@@ -42,7 +42,8 @@
     "server": "Server",
     "customProps": "Custom properties",
     "fullTextSearch": "Full-text search",
-    "oauthClients": "OAuth Apps"
+    "oauthClients": "OAuth Apps",
+    "activity": "Activity"
   },
   "oauth": {
     "oauthClients": "OAuth Apps",

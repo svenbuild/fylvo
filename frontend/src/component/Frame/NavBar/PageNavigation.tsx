@@ -20,6 +20,7 @@ import DataHistogram from "../../Icons/DataHistogram.tsx";
 import DataHistogramFilled from "../../Icons/DataHistogramFilled.tsx";
 import Folder from "../../Icons/Folder.tsx";
 import FolderOutlined from "../../Icons/FolderOutlined.tsx";
+import HistoryOutlined from "../../Icons/HistoryOutlined.tsx";
 import HomeOutlined from "../../Icons/HomeOutlined.tsx";
 import People from "../../Icons/People.tsx";
 import PeopleFilled from "../../Icons/PeopleFilled.tsx";
@@ -157,6 +158,12 @@ AdminNavigationItems = [
     label: "dashboard:nav.tasks",
     icon: [CubeSyncFilled, CubeSync],
     path: "/admin/task",
+  },
+  {
+    // Fylvo
+    label: "dashboard:nav.activity",
+    icon: [HistoryOutlined, HistoryOutlined],
+    path: "/admin/activity",
   },
   {
     label: "dashboard:nav.oauthClients",

@@ -7,6 +7,7 @@ use crate::{
         placeholder_file::PlaceholderFile,
     },
     drive::{
+        case::OwnRenames,
         commands::MountCommand,
         sync::{cloud_file_to_metadata_entry, cloud_file_to_placeholder, is_symbolic_link},
     },
@@ -20,6 +21,7 @@ pub struct CallbackHandler {
     command_tx: mpsc::UnboundedSender<MountCommand>,
     id: String,
     inventory: Arc<InventoryDb>,
+    own_renames: OwnRenames,
 }
 
 impl CallbackHandler {
@@ -27,11 +29,13 @@ impl CallbackHandler {
         command_tx: mpsc::UnboundedSender<MountCommand>,
         id: String,
         inventory: Arc<InventoryDb>,
+        own_renames: OwnRenames,
     ) -> Self {
         Self {
             command_tx,
             id: id,
             inventory: inventory,
+            own_renames,
         }
     }
 
@@ -78,7 +82,13 @@ impl SyncFilter for CallbackHandler {
     fn rename(&self, request: Request, ticket: ticket::Rename, info: info::Rename) -> CResult<()> {
         let src = request.path();
         let dest = info.target_path();
-        tracing::debug!(target: "drive::mounts", id = %self.id, source_path = %src.display(), target_path = %dest.display(), "Rename");
+        tracing::debug!(target: "drive::mounts", id = %self.id, source_path = %src.display(), target_path = %dest.display(), pid = request.process().id(), "Rename");
+        // Fylvo: the app's own rename to the server's spelling of a name (see `case.rs`): the
+        // server has that name already.
+        if self.own_renames.matches(&src, &dest, false) {
+            let _ = ticket.pass();
+            return Ok(());
+        }
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
         let command = MountCommand::Rename {
             source: src.to_path_buf(),
@@ -215,7 +225,11 @@ impl SyncFilter for CallbackHandler {
 
     fn renamed(&self, request: Request, info: info::Renamed) {
         let dest = request.path();
-        tracing::debug!(target: "drive::mounts", id = %self.id, dest_path = %dest.display(), "Renamed");
+        tracing::debug!(target: "drive::mounts", id = %self.id, dest_path = %dest.display(), pid = request.process().id(), "Renamed");
+        // Fylvo: the app's own renames update the inventory themselves, see `rename`.
+        if self.own_renames.matches(&info.source_path(), &dest, true) {
+            return;
+        }
         let command: MountCommand = MountCommand::Renamed {
             source: info.source_path(),
             destination: dest,

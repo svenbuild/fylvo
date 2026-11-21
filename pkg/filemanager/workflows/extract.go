@@ -17,6 +17,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/task"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
@@ -110,6 +111,8 @@ func NewExtractArchiveTaskFromModel(task *ent.Task) queue.Task {
 }
 
 func (m *ExtractArchiveTask) Do(ctx context.Context) (task.Status, error) {
+	// Fylvo: a task with many files is not in the activity log, see pkg/activity.
+	ctx = activity.Skip(ctx)
 	dep := dependency.FromContext(ctx)
 	m.l = dep.Logger()
 
@@ -427,6 +430,15 @@ func (m *ExtractArchiveTask) masterExtractArchive(ctx context.Context, dep depen
 		}
 
 		_, err = fm.Update(ctx, fileData, fs.WithNoEntityType())
+		if err != nil && inventory.IsNameCaseTaken(err) {
+			// Fylvo: a name that is there in other upper and lower case is skipped, as a folder
+			// that cannot be created is.
+			m.l.Warning("File %q in archive file has a name that is there in other case, skipping...", rawPath)
+			atomic.AddInt64(&m.progress[ProgressTypeExtractCount].Current, 1)
+			atomic.AddInt64(&m.progress[ProgressTypeExtractSize].Current, f.Size())
+			m.state.ProcessedCursor = f.NameInArchive
+			return nil
+		}
 		if err != nil {
 			return fmt.Errorf("failed to upload file %q in archive file: %w", rawPath, err)
 		}

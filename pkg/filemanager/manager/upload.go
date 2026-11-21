@@ -18,6 +18,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/lock"
+	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/queue"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -151,6 +152,7 @@ func (m *manager) CreateUploadSession(ctx context.Context, req *fs.UploadRequest
 	credential.StoragePolicy = uploadSession.Policy
 	credential.CallbackSecret = uploadSession.CallbackSecret
 	credential.Uri = uploadSession.Props.Uri.String()
+	credential.EntityID = hashid.EncodeEntityID(m.hasher, uploadSession.EntityID) // Fylvo
 	credential.EncryptMetadata = uploadSession.EncryptMetadata
 	if !unrelayed {
 		credential.EncryptMetadata = nil

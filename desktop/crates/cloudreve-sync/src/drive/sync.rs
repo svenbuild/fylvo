@@ -5,6 +5,7 @@ use crate::{
         placeholder_file::PlaceholderFile,
     },
     drive::{
+        case::{FILE_ID_KEY, case_mismatched_ancestor, ntfs_fold},
         guard::DeletionSide,
         mounts::Mount,
         placeholder::CrPlaceholder,
@@ -111,7 +112,15 @@ pub fn cloud_file_to_metadata_entry(
             .unwrap_or(&String::new())
             .clone(),
     )
-    .with_metadata(file.metadata.as_ref().unwrap_or(&HashMap::new()).clone()))
+    .with_metadata(metadata_with_file_id(file)))
+}
+
+/// Fylvo: the server's metadata of a file plus its file ID, so a later case-only rename can
+/// tell whether the local file is the same object (see `case.rs`).
+pub fn metadata_with_file_id(file: &FileResponse) -> HashMap<String, String> {
+    let mut metadata = file.metadata.clone().unwrap_or_default();
+    metadata.insert(FILE_ID_KEY.to_string(), file.id.clone());
+    metadata
 }
 
 pub fn is_symbolic_link(file: &FileResponse) -> bool {
@@ -475,6 +484,21 @@ impl Mount {
             return aggregate_error.into_result();
         }
 
+        // Fylvo: a folder on the way spelled differently on disk (only case): the server
+        // folder of one spelling must not be compared with the local folder of the other.
+        if let Some(ancestor) =
+            case_mismatched_ancestor(parent, &sync_root, LocalFileInfo::on_disk_path)
+        {
+            tracing::info!(
+                target: "drive::sync",
+                id = %self.id,
+                parent = %parent.display(),
+                ancestor = %ancestor.display(),
+                "Skipping sync, a folder is spelled differently on disk"
+            );
+            return Ok(());
+        }
+
         let remote_files = match prefetched_remote_files {
             Some(files) => files,
             None => self.fetch_remote_file_infos(parent, paths).await?,
@@ -488,6 +512,14 @@ impl Mount {
             "Fetched remote metadata for sync group"
         );
         tracing::trace!("{:?}", remote_files);
+
+        // Fylvo: names that are one file on NTFS (only upper/lower case differs) become one
+        // path here, renamed locally to the server's spelling where that is safe.
+        let (paths, case_errors) = self.resolve_case(paths, &remote_files).await;
+        for (path, err) in case_errors {
+            aggregate_error.push(path, err);
+        }
+        let paths = paths.as_slice();
 
         let local_files = self.fetch_local_file_infos(paths).await?;
         tracing::debug!(
@@ -747,7 +779,8 @@ impl Mount {
                 // Cancel tasks for the original path
                 _ = self.task_queue.cancel_by_path(original.clone()).await;
 
-                if let Err(err) = std::fs::rename(original, renamed) {
+                // Fylvo: never replaces another file (an older conflict copy).
+                if let Err(err) = crate::drive::utils::move_no_replace(original, renamed) {
                     tracing::error!(
                         target: "drive::sync",
                         id = %self.id,
@@ -756,7 +789,7 @@ impl Mount {
                         error = ?err,
                         "Failed to rename local file"
                     );
-                    aggregate_error.push(original.clone(), anyhow::Error::from(err));
+                    aggregate_error.push(original.clone(), err);
                 }
             }
         }
@@ -794,13 +827,13 @@ impl Mount {
             (config.remote_path.clone(), config.sync_path.clone())
         };
 
-        let mut target_remote_paths: HashMap<String, PathBuf> = HashMap::with_capacity(paths.len());
-        for path in paths {
-            let remote_uri =
-                local_path_to_cr_uri(path.clone(), sync_root.clone(), remote_base.clone())
-                    .with_context(|| format!("failed to map {} to remote uri", path.display()))?;
-            target_remote_paths.insert(remote_uri.to_string(), path.clone());
-        }
+        // Fylvo: server names are matched the way NTFS compares them, so a name that differs
+        // only in case is found too. Keyed by the server's own spelling.
+        let wanted: HashSet<String> = paths
+            .iter()
+            .filter_map(|path| path.file_name())
+            .map(|name| ntfs_fold(&name.to_string_lossy()))
+            .collect();
 
         let parent_remote_uri =
             local_path_to_cr_uri(parent.clone(), sync_root.clone(), remote_base.clone())
@@ -811,10 +844,9 @@ impl Mount {
 
         let mut remote_entries: HashMap<PathBuf, FileResponse> =
             HashMap::with_capacity(paths.len());
-        let mut remaining: HashSet<String> = target_remote_paths.keys().cloned().collect();
         let mut previous_response = None;
 
-        while !remaining.is_empty() {
+        loop {
             let response = match self
                 .cr_client
                 .list_files_all(
@@ -833,6 +865,16 @@ impl Mount {
                     if *parent == sync_root {
                         anyhow::bail!("the synced folder is missing on the server");
                     }
+                    // A missing subfolder reads as "everything in it was deleted", but only if
+                    // the synced folder itself is still there.
+                    if !self.sync_root_exists().await? {
+                        anyhow::bail!("the synced folder is missing on the server");
+                    }
+                    // Nor if the folder exists on the server spelled in another case (its local
+                    // rename is still pending).
+                    if self.server_has_case_variant(parent).await? {
+                        anyhow::bail!("the folder exists on the server in another case");
+                    }
                     tracing::debug!(
                         target: "drive::sync",
                         id = %self.id,
@@ -846,17 +888,14 @@ impl Mount {
                 }
             };
 
+            // The whole folder is read: a second spelling of a name may come on a later page.
             for file in &response.res.files {
-                if let Some(local_path) = target_remote_paths.get(&file.path) {
-                    if remote_entries.contains_key(local_path) {
-                        continue;
-                    }
-                    remote_entries.insert(local_path.clone(), file.clone());
-                    remaining.remove(&file.path);
+                if wanted.contains(&ntfs_fold(&file.name)) {
+                    remote_entries.insert(parent.join(&file.name), file.clone());
                 }
             }
 
-            let has_more = response.more && !remaining.is_empty();
+            let has_more = response.more;
             previous_response = Some(response);
 
             if !has_more {
@@ -864,21 +903,52 @@ impl Mount {
             }
         }
 
-        if !remaining.is_empty() {
-            for missing in remaining {
-                if let Some(local_path) = target_remote_paths.get(&missing) {
-                    tracing::warn!(
-                        target: "drive::sync",
-                        id = %self.id,
-                        path = %local_path.display(),
-                        remote_path = %missing,
-                        "Remote entry missing during sync"
-                    );
-                }
-            }
-        }
-
         Ok(remote_entries)
+    }
+
+    /// Fylvo: whether the local folder `path`, missing on the server, is there under another
+    /// upper/lower case spelling of its name or of a folder above it.
+    async fn server_has_case_variant(&self, path: &Path) -> Result<bool> {
+        let (remote_base, sync_root) = {
+            let config = self.config.read().await;
+            (config.remote_path.clone(), config.sync_path.clone())
+        };
+        let mut missing = path;
+        // Go up to the first folder the server can list.
+        while let (Some(parent), Some(name)) = (missing.parent(), missing.file_name()) {
+            if !parent.starts_with(&sync_root) {
+                return Ok(false);
+            }
+            let parent_uri =
+                local_path_to_cr_uri(parent.to_path_buf(), sync_root.clone(), remote_base.clone())?
+                    .to_string();
+            let name = ntfs_fold(&name.to_string_lossy());
+            let mut previous_response = None;
+            loop {
+                let response = match self
+                    .cr_client
+                    .list_files_all(previous_response.as_ref(), &parent_uri, REMOTE_PAGE_SIZE)
+                    .await
+                {
+                    Ok(response) => response,
+                    Err(ApiError::ApiError { code, .. })
+                        if code == ErrorCode::ParentNotExist as i32 =>
+                    {
+                        break;
+                    }
+                    Err(err) => return Err(err.into()),
+                };
+                if response.res.files.iter().any(|file| ntfs_fold(&file.name) == name) {
+                    return Ok(true);
+                }
+                if !response.more {
+                    return Ok(false);
+                }
+                previous_response = Some(response);
+            }
+            missing = parent;
+        }
+        Ok(false)
     }
 
     async fn fetch_inventory_entries(
@@ -968,20 +1038,21 @@ impl Mount {
     /// Fylvo: hold the local deletions of this plan if they are a mass deletion. Returns the
     /// plan without them in that case.
     fn hold_mass_local_deletion(&self, plan: SyncPlan) -> SyncPlan {
-        let doomed = doomed_local_paths(&plan);
-        if doomed.is_empty() || self.is_local_deletion_confirmed(&doomed) {
+        // Paths the user confirmed (or renamed on the server) pass; only the others are checked.
+        let doomed: Vec<PathBuf> = doomed_local_paths(&plan)
+            .into_iter()
+            .filter(|p| !self.is_local_deletion_confirmed(std::slice::from_ref(p)))
+            .collect();
+        if doomed.is_empty() {
             return plan;
         }
         // Paths the user chose to keep stay, without asking again.
         let (kept, doomed): (Vec<PathBuf>, Vec<PathBuf>) =
             doomed.into_iter().partition(|p| self.is_kept_locally(p));
         let plan = without_paths(plan, &kept);
-        // Once a deletion is held, it stays held even if a later pass sees fewer entries.
-        let already_held = doomed
-            .iter()
-            .any(|p| self.is_deletion_held(DeletionSide::Local, p));
-        if !doomed.is_empty() && (already_held || self.mass_deletion_count(&doomed).is_some()) {
-            self.hold_deletion(DeletionSide::Local, doomed.clone());
+        // Many deletions at once (or within a short time) wait for the user's answer. Once a
+        // deletion is held, the following ones wait too.
+        if !doomed.is_empty() && self.hold_local_deletion_if_needed(&doomed) {
             return without_paths(plan, &doomed);
         }
         plan
@@ -1155,6 +1226,9 @@ impl Mount {
                     if *directory == sync_root {
                         anyhow::bail!("the synced folder is missing on the server");
                     }
+                    if self.server_has_case_variant(directory).await? {
+                        anyhow::bail!("the folder exists on the server in another case");
+                    }
                     tracing::debug!(
                         target: "drive::sync",
                         id = %self.id,
@@ -1291,8 +1365,12 @@ fn plan_entry_with_remote_and_local(
         })
         .unwrap_or(false);
 
+    // Fylvo: a folder row without the server's file ID (see `case.rs`) gets it now.
+    let lacks_file_id =
+        inventory.is_some_and(|entry| !entry.metadata.contains_key(FILE_ID_KEY));
+
     if remote_is_dir {
-        if !etag_match || !modify_date_match {
+        if !etag_match || !modify_date_match || lacks_file_id {
             plan.actions.push(SyncAction::UpdateInventoryFromRemote {
                 path: path.clone(),
                 remote: remote.clone(),

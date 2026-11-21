@@ -10,6 +10,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/auth"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster/routes"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
@@ -227,6 +228,10 @@ func (s *ExchangeTokenService) Exchange(c *gin.Context) (*TokenResponse, error) 
 		return nil, serializer.NewError(serializer.CodeCredentialInvalid, "Failed to issue token", err)
 	}
 
+	// Fylvo: Fylvo Desktop and other apps sign in here.
+	activity.Record(c, activity.Entry{Type: activity.Login, UserID: user.ID, OwnerID: user.ID,
+		Content: types.ActivityContent{Method: activity.MethodApp, Target: app.Name}})
+
 	// 9. Update grant last used at
 	if err := oAuthClient.UpdateGrantLastUsedAt(c, user.ID, app.ID); err != nil {
 		dep.Logger().Warning("Failed to update grant last used at: %s", err)
@@ -271,6 +276,15 @@ func (s *DeleteOAuthGrantService) Delete(c *gin.Context) error {
 		return serializer.NewError(serializer.CodeDBError, "Failed to delete OAuth grant", err)
 	}
 
+	if deleted {
+		// Fylvo: the name of the app, as the web app shows it.
+		name := s.AppID
+		if app, err := oAuthClient.GetByGUID(c, s.AppID); err == nil {
+			name = app.Name
+		}
+		activity.Record(c, activity.Entry{Type: activity.AppRevoked, UserID: user.ID, OwnerID: user.ID,
+			Content: types.ActivityContent{Target: name}})
+	}
 	if !deleted {
 		return serializer.NewError(serializer.CodeNotFound, "OAuth grant not found", nil)
 	}

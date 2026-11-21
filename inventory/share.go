@@ -54,10 +54,11 @@ type (
 		Downloaded(ctx context.Context, share *ent.Share) error
 		// Delete deletes the share.
 		Delete(ctx context.Context, shareId int) error
-		// DeleteBatch deletes the shares with the given ids.
-		DeleteBatch(ctx context.Context, shareIds []int) error
-		// DeleteBatchByUserID deletes the shares with the given ids and user id
-		DeleteBatchByUserID(ctx context.Context, uid int, shareIds []int) error
+		// DeleteBatch deletes the shares with the given ids and returns them with their file.
+		DeleteBatch(ctx context.Context, shareIds []int) ([]*ent.Share, error)
+		// DeleteBatchByUserID deletes the shares with the given ids and user id and returns them
+		// with their file.
+		DeleteBatchByUserID(ctx context.Context, uid int, shareIds []int) ([]*ent.Share, error)
 		// List returns a list of shares with the given args.
 		List(ctx context.Context, args *ListShareArgs) (*ListShareResult, error)
 		// CountByTimeRange counts the number of shares created in the given time range.
@@ -212,14 +213,34 @@ func (c *shareClient) GetByIDs(ctx context.Context, ids []int) ([]*ent.Share, er
 	return s, nil
 }
 
-func (c *shareClient) DeleteBatch(ctx context.Context, shareIds []int) error {
-	_, err := c.client.Share.Delete().Where(share.IDIn(shareIds...)).Exec(ctx)
-	return err
+func (c *shareClient) DeleteBatch(ctx context.Context, shareIds []int) ([]*ent.Share, error) {
+	return c.deleteBatch(ctx, share.IDIn(shareIds...))
 }
 
-func (c *shareClient) DeleteBatchByUserID(ctx context.Context, uid int, shareIds []int) error {
-	_, err := c.client.Share.Delete().Where(share.IDIn(shareIds...)).Where(share.HasUserWith(user.ID(uid))).Exec(ctx)
-	return err
+func (c *shareClient) DeleteBatchByUserID(ctx context.Context, uid int, shareIds []int) ([]*ent.Share, error) {
+	return c.deleteBatch(ctx, share.IDIn(shareIds...), share.HasUserWith(user.ID(uid)))
+}
+
+// deleteBatch deletes the shares matching where. Fylvo: it returns them with their file for the
+// activity log, read in the same transaction as the delete, so only shares really deleted count.
+func (c *shareClient) deleteBatch(ctx context.Context, where ...predicate.Share) ([]*ent.Share, error) {
+	sc, tx, ctx, err := WithTx(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+
+	deleted, err := sc.client.Share.Query().Where(where...).WithFile().All(ctx)
+	if err == nil && len(deleted) > 0 {
+		_, err = sc.client.Share.Delete().Where(share.IDIn(lo.Map(deleted, func(s *ent.Share, _ int) int {
+			return s.ID
+		})...)).Exec(ctx)
+	}
+	if err != nil {
+		_ = Rollback(tx)
+		return nil, err
+	}
+
+	return deleted, Commit(tx)
 }
 
 func (c *shareClient) Delete(ctx context.Context, shareId int) error {

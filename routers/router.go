@@ -18,6 +18,7 @@ import (
 	adminsvc "github.com/cloudreve/Cloudreve/v4/service/admin"
 	"github.com/cloudreve/Cloudreve/v4/service/basic"
 	"github.com/cloudreve/Cloudreve/v4/service/explorer"
+	fylvosvc "github.com/cloudreve/Cloudreve/v4/service/fylvo"
 	"github.com/cloudreve/Cloudreve/v4/service/node"
 	"github.com/cloudreve/Cloudreve/v4/service/oauth"
 	"github.com/cloudreve/Cloudreve/v4/service/setting"
@@ -43,7 +44,7 @@ func InitRouter(dep dependency.Dep) *gin.Engine {
 func newGinEngine(dep dependency.Dep) *gin.Engine {
 	r := gin.New()
 	r.ContextWithFallback = true
-	r.Use(gin.Recovery())
+	r.Use(middleware.Recovery())
 	trustProxies(r, dep.Logger(), dep.ConfigProvider().System().ProxyHeader)
 	r.Use(securityHeaders())
 	r.Use(middleware.InitializeHandling(dep))
@@ -737,6 +738,12 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				controllers.FromQuery[explorer.GetFileInfoService](explorer.GetFileInfoParameterCtx{}),
 				controllers.GetFileInfo,
 			)
+			// Fylvo: history of a file or folder, for its owner
+			file.GET("activity",
+				middleware.LoginRequired(),
+				controllers.FromQuery[fylvosvc.FileActivityService](fylvosvc.FileActivityParamCtx{}),
+				controllers.FylvoFileActivity,
+			)
 			// Version management
 			version := file.Group("version", middleware.RequiredScopes(types.ScopeFilesWrite))
 			{
@@ -886,6 +893,11 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				admin.GET("summary",
 					controllers.FromQuery[adminsvc.SummaryService](adminsvc.SummaryParamCtx{}),
 					controllers.AdminSummary,
+				)
+				// Fylvo: the whole activity log
+				admin.GET("activity",
+					controllers.FromQuery[fylvosvc.AdminActivityService](fylvosvc.AdminActivityParamCtx{}),
+					controllers.FylvoAdminActivity,
 				)
 
 				settings := admin.Group("settings")
@@ -1296,6 +1308,12 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					)
 					// 获得二步验证初始化信息
 					setting.GET("2fa", controllers.UserInit2FA)
+					// Fylvo: recent sign-ins of the own account
+					setting.GET("activity",
+						middleware.RequiredScopes(types.ScopeUserSecurityInfoRead),
+						controllers.FromQuery[fylvosvc.OwnActivityService](fylvosvc.OwnActivityParamCtx{}),
+						controllers.FylvoOwnActivity,
+					)
 				}
 			}
 

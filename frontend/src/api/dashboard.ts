@@ -437,60 +437,6 @@ export interface ListEntityResponse {
   pagination: PaginationResults;
 }
 
-export interface LogEntry {
-  category: number;
-  failed?: boolean;
-  error?: string;
-  user_agent?: string;
-  is_system?: boolean;
-  reason?: string;
-  email_to?: string;
-  email_title?: string;
-  original_name?: string;
-  new_name?: string;
-  from?: string;
-  to?: string;
-  entity_create_time?: string;
-  storage_policy_id?: string;
-  storage_policy_name?: string;
-  account_id?: number;
-  account?: string;
-  account_uri?: string;
-  payment_id?: number;
-  points_change?: number;
-  sku?: string;
-  storage_size?: number;
-  expire?: string;
-  group_id?: number;
-  group_id_from?: number;
-  direct_link_id?: string;
-  openid_provider?: number;
-  sub?: string;
-  name?: string;
-  passkey_id?: number;
-  exts?: Record<string, string>;
-}
-
-export interface AuditLog extends CommonMixin {
-  type?: number;
-  correlation_id?: string;
-  ip?: string;
-  content?: LogEntry;
-  edges: {
-    user?: User;
-    file?: File;
-    entity?: Entity;
-    share?: Share;
-  };
-
-  user_hash_id?: string;
-}
-
-export interface ListAuditLogResponse {
-  logs: AuditLog[];
-  pagination: PaginationResults;
-}
-
 export interface TaskPublicState {
   error?: string;
   error_history?: string[];

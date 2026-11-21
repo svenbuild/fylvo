@@ -12,6 +12,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/task"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/local"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
@@ -45,6 +46,13 @@ func (m *manager) Thumbnail(ctx context.Context, uri *fs.URI) (entitysource.Enti
 	thumbEntity, found := lo.Find(entities, func(e fs.Entity) bool {
 		return e.Type() == types.EntityTypeThumbnail
 	})
+	// Fylvo: a thumbnail whose stored file is gone (left over by an older race between two
+	// generations of the same file) is made again; the new one replaces it in the file's entities.
+	// A preview still being uploaded has no file yet and is not counted as gone.
+	if found && thumbEntity.UploadSessionID() == nil && m.thumbFileGone(ctx, thumbEntity) {
+		m.l.Warning("Thumbnail file of %q is missing, generating it again.", uri.String())
+		found = false
+	}
 	if found {
 		thumbSource, err := m.GetEntitySource(ctx, 0, fs.WithEntity(thumbEntity))
 		if err != nil {
@@ -186,11 +194,20 @@ func (m *manager) generateThumb(ctx context.Context, uri *fs.URI, ext string, es
 		}
 	} else {
 		entityType := types.EntityTypeThumbnail
+		// Fylvo: each generation stores under its own name (UniqueThumbPath), so a failed one (two
+		// at once for the same file) can never clean up the file of the one that succeeded.
+		savePath, ok := util.UniqueThumbPath(path.Clean(util.ReplaceMagicVar(m.settings.ThumbEntitySuffix(ctx), fs.Separator, true, true, time.Now(), m.user.ID, uri.Name(), uri.Path(), es.Entity().Source())))
+		if !ok {
+			if err := disableThumb(ctx, m, uri); err != nil {
+				m.l.Warning("Failed to disable thumb: %v", err)
+			}
+			return nil, fmt.Errorf("thumbnail file name too long")
+		}
 		req := &fs.UploadRequest{
 			Props: &fs.UploadProps{
 				Uri:        uri,
 				Size:       fileInfo.Size(),
-				SavePath:   path.Clean(util.ReplaceMagicVar(m.settings.ThumbEntitySuffix(ctx), fs.Separator, true, true, time.Now(), m.user.ID, uri.Name(), uri.Path(), es.Entity().Source())),
+				SavePath:   savePath,
 				MimeType:   m.dep.MimeDetector(ctx).TypeByName("thumb.jpg"),
 				EntityType: &entityType,
 			},
@@ -297,4 +314,16 @@ func disableThumb(ctx context.Context, m *manager, uri *fs.URI) error {
 			Value:   "",
 			Private: false,
 		})
+}
+
+// thumbFileGone tells if the stored file of a thumbnail entity is gone (Fylvo). Only local storage
+// is asked; for other storage it would cost a request every time.
+func (m *manager) thumbFileGone(ctx context.Context, thumb fs.Entity) bool {
+	_, d, err := m.getEntityPolicyDriver(ctx, thumb, nil)
+	if err != nil || !d.Capabilities().StaticFeatures.Enabled(int(driver.HandlerCapabilityInboundGet)) {
+		return false
+	}
+
+	_, err = os.Stat(d.LocalPath(ctx, thumb.Source()))
+	return errors.Is(err, os.ErrNotExist)
 }

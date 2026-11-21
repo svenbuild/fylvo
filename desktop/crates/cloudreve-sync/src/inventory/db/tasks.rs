@@ -40,6 +40,30 @@ impl InventoryDb {
         Ok(true)
     }
 
+    /// Fylvo: change a task's status only if it still has `from`, in one statement. Returns
+    /// whether it changed. Lets a starting task and a case rename (see `drive/case.rs`) claim a
+    /// pending task without both winning.
+    pub fn change_task_status_if(
+        &self,
+        task_id: &str,
+        from: TaskStatus,
+        to: TaskStatus,
+    ) -> Result<bool> {
+        let mut conn = self.connection()?;
+        let changed = diesel::update(
+            task_queue_dsl::task_queue
+                .filter(task_queue_dsl::id.eq(task_id))
+                .filter(task_queue_dsl::status.eq(from.as_str())),
+        )
+        .set((
+            task_queue_dsl::status.eq(to.as_str()),
+            task_queue_dsl::updated_at.eq(Utc::now().timestamp()),
+        ))
+        .execute(&mut conn)
+        .context("Failed to change task status")?;
+        Ok(changed > 0)
+    }
+
     /// Update task queue record
     pub fn update_task(&self, task_id: &str, update: TaskUpdate) -> Result<()> {
         if update.is_empty() {
@@ -359,5 +383,36 @@ impl TaskChangeset {
             error: error_state,
             updated_at: Utc::now().timestamp(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_changes_only_from_the_expected_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = InventoryDb::with_path(dir.path().join("meta.db")).unwrap();
+        let task = NewTaskRecord {
+            id: "t1".into(),
+            drive_id: "d".into(),
+            task_type: "upload".into(),
+            local_path: r"C:\S\a.txt".into(),
+            status: TaskStatus::Pending,
+            progress: 0.0,
+            total_bytes: 0,
+            processed_bytes: 0,
+            priority: 0,
+            custom_state: None,
+            error: None,
+            created_at: 0,
+            updated_at: 0,
+        };
+        assert!(db.insert_task_if_not_exist(&task).unwrap());
+        // A case rename cancels the pending task: the queue can no longer start it.
+        assert!(db.change_task_status_if("t1", TaskStatus::Pending, TaskStatus::Cancelled).unwrap());
+        assert!(!db.change_task_status_if("t1", TaskStatus::Pending, TaskStatus::Running).unwrap());
+        assert_eq!(db.get_task_status("t1").unwrap(), Some(TaskStatus::Cancelled));
     }
 }

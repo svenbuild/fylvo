@@ -173,9 +173,12 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 	defer zipWriter.Close()
 
 	var compressed int64
+	included := make([]fs.File, 0, len(files))
 	for _, file := range files {
+		included = append(included, file)
 		if file.Type() == types.FileTypeFile {
 			if err := m.compressFileToArchive(ctx, "/", file, zipWriter, o.ArchiveCompression, o.DryRun); err != nil {
+				included = included[:len(included)-1]
 				failed++
 				m.l.Warning("Failed to compress file %s: %s, skipping it...", file.Uri(false), err)
 			}
@@ -190,6 +193,8 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 			}
 
 		} else {
+			// Fylvo: a folder counts as downloaded when something of it is in the ZIP.
+			written := 0
 			if err := m.Walk(ctx, file.Uri(false), intsets.MaxInt, func(f fs.File, level int) error {
 				if f.Type() == types.FileTypeFolder || f.IsSymbolic() {
 					return nil
@@ -198,6 +203,8 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 					file.Uri(false).Dir()), f, zipWriter, o.ArchiveCompression, o.DryRun); err != nil {
 					failed++
 					m.l.Warning("Failed to compress file %s: %s, skipping it...", f.Uri(false), err)
+				} else {
+					written++
 				}
 
 				compressed += f.Size()
@@ -213,6 +220,19 @@ func (m *manager) CreateArchive(ctx context.Context, uris []*fs.URI, writer io.W
 			}); err != nil {
 				m.l.Warning("Failed to walk folder %s: %s, skipping it...", file.Uri(false), err)
 				failed++
+			}
+			if written == 0 {
+				included = included[:len(included)-1]
+			}
+		}
+	}
+
+	// Fylvo: a guest of a link downloaded a ZIP, see the share navigator. Logged once the ZIP
+	// is complete, for what is in it.
+	if o.ArchiveDownload && o.DryRun == nil && zipWriter.Close() == nil {
+		for _, file := range included {
+			if err := m.fs.ExecuteNavigatorHooks(ctx, fs.HookTypeDownloadLink, file); err != nil {
+				m.l.Warning("Failed to execute navigator hooks: %s", err)
 			}
 		}
 	}

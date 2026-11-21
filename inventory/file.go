@@ -153,6 +153,9 @@ type FileClient interface {
 	TxOperator
 	// GetByHashID returns a file by its hashID.
 	GetByHashID(ctx context.Context, hashID string) (*ent.File, error)
+	// CaseTwins returns the names of the entries of the folder parent that differ from name
+	// only in upper and lower case (Fylvo, see fylvo_case_names.go).
+	CaseTwins(ctx context.Context, parent int, name string) ([]string, error)
 	// GetParentFile returns the parent folder of a given file
 	GetParentFile(ctx context.Context, root *ent.File, eagerLoading bool) (*ent.File, error)
 	// Search file by name from a given root. eagerLoading indicates whether to load edges determined by ctx.
@@ -305,7 +308,21 @@ func (f *fileClient) Update(ctx context.Context, file *ent.File) (*ent.File, err
 		return nil, err
 	}
 
-	return q.Save(ctx)
+	// Fylvo: a changed name must not be another spelling of a name in the folder. Other
+	// changes to an entry that has a twin already stay possible.
+	before, err := f.client.File.Get(ctx, file.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	updated, err := q.Save(ctx)
+	if err != nil || before.Name == updated.Name {
+		return updated, err
+	}
+	if err := f.ensureNoCaseTwins(ctx, updated.ID); err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
 
 func (f *fileClient) UpdateProps(ctx context.Context, file *ent.File, props *types.FileProps) (*ent.File, error) {
@@ -414,10 +431,12 @@ func (f *fileClient) GetByHashID(ctx context.Context, hashID string) (*ent.File,
 
 func (f *fileClient) SoftDelete(ctx context.Context, file *ent.File) error {
 	newName := uuid.Must(uuid.NewV4())
-	// Rename file to random UUID and make it stale
+	// Rename file to random UUID and make it stale. Fylvo: in the trash the date tells when the
+	// file was deleted; its own date is kept in its metadata until it is restored.
 	_, err := f.client.File.UpdateOne(file).
 		SetName(newName.String()).
 		ClearParent().
+		SetUpdatedAt(time.Now()).
 		Save(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to soft delete file %d: %w", file.ID, err)
@@ -629,7 +648,9 @@ func (f *fileClient) Copy(ctx context.Context, args *CopyParameter) (map[int][]*
 			SetSize(file.Size).
 			SetType(file.Type).
 			SetParent(dstMap[file.FileChildren][0]).
-			SetIsSymbolic(file.IsSymbolic)
+			SetIsSymbolic(file.IsSymbolic).
+			// Fylvo: a copy has the same content, so it keeps the date of its source.
+			SetUpdatedAt(file.UpdatedAt)
 		if file.StoragePolicyFiles > 0 {
 			stm.SetStoragePolicyFiles(file.StoragePolicyFiles)
 		}
@@ -652,6 +673,9 @@ func (f *fileClient) Copy(ctx context.Context, args *CopyParameter) (map[int][]*
 		newFile, err := stm.Save(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to copy file: %w", err)
+		}
+		if err := f.ensureNoCaseTwins(ctx, newFile.ID); err != nil { // Fylvo
+			return nil, nil, err
 		}
 
 		fileMetadata, err := files[index].Edges.MetadataOrErr()
@@ -793,13 +817,15 @@ func (f *fileClient) UpgradePlaceholder(ctx context.Context, file *ent.File, mod
 	}
 
 	if entityType == types.EntityTypeVersion {
+		// Fylvo: new content is the one thing that changes the date of a file.
+		changedAt := time.Now()
+		if modifiedAt != nil {
+			changedAt = *modifiedAt
+		}
 		stm := f.client.File.UpdateOne(file).
 			SetSize(placeholder.Size).
-			SetPrimaryEntity(placeholder.ID)
-
-		if modifiedAt != nil {
-			stm.SetUpdatedAt(*modifiedAt)
-		}
+			SetPrimaryEntity(placeholder.ID).
+			SetUpdatedAt(changedAt)
 
 		if err := stm.Exec(ctx); err != nil {
 			return fmt.Errorf("failed to upgrade file primary entity: %v", err)
@@ -809,7 +835,8 @@ func (f *fileClient) UpgradePlaceholder(ctx context.Context, file *ent.File, mod
 }
 
 func (f *fileClient) SetPrimaryEntity(ctx context.Context, file *ent.File, entity *ent.Entity) error {
-	return f.client.File.UpdateOne(file).SetPrimaryEntity(entity.ID).SetSize(entity.Size).Exec(ctx)
+	// Fylvo: another version is new content too.
+	return f.client.File.UpdateOne(file).SetPrimaryEntity(entity.ID).SetSize(entity.Size).SetUpdatedAt(time.Now()).Exec(ctx)
 }
 
 func (f *fileClient) CreateFile(ctx context.Context, root *ent.File, args *CreateFileParameters) (*ent.File, *ent.Entity, StorageDiff, error) {
@@ -837,6 +864,9 @@ func (f *fileClient) CreateFile(ctx context.Context, root *ent.File, args *Creat
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create file: %v", err)
 	}
+	if err := f.ensureNoCaseTwins(ctx, newFile.ID); err != nil { // Fylvo
+		return nil, nil, nil, err
+	}
 
 	// Create default primary file entity if needed
 	var storageDiff StorageDiff
@@ -849,11 +879,7 @@ func (f *fileClient) CreateFile(ctx context.Context, root *ent.File, args *Creat
 		}
 
 		if args.EntityParameters.Importing {
-			setPrimary := f.client.File.UpdateOne(newFile).SetPrimaryEntity(defaultEntity.ID)
-			if importedAt != nil {
-				setPrimary.SetUpdatedAt(*importedAt)
-			}
-			if err := setPrimary.Exec(ctx); err != nil {
+			if err := f.client.File.UpdateOne(newFile).SetPrimaryEntity(defaultEntity.ID).Exec(ctx); err != nil {
 				return nil, nil, storageDiff, fmt.Errorf("failed to set primary entity: %v", err)
 			}
 		}
@@ -1026,7 +1052,12 @@ func (f *fileClient) SetParent(ctx context.Context, files []*ent.File, parent *e
 		}
 	}
 
-	return nil
+	// Fylvo: checked after all of them moved, so that two of them cannot be twins of each other.
+	// What stays in its folder brings no new name there.
+	moved := lo.FilterMap(files, func(file *ent.File, index int) (int, bool) {
+		return file.ID, file.FileChildren != parent.ID
+	})
+	return f.ensureNoCaseTwins(ctx, moved...)
 }
 
 func (f *fileClient) GetParentFile(ctx context.Context, root *ent.File, eagerLoading bool) (*ent.File, error) {
@@ -1109,9 +1140,21 @@ func (f *fileClient) CreateFolder(ctx context.Context, root *ent.File, args *Cre
 		stm.SetCreatedAt(*args.ModifiedAt).SetUpdatedAt(*args.ModifiedAt)
 	}
 
+	// Fylvo: a folder that is there with exactly this name is simply used; a new one must not
+	// be another spelling of a name in the folder.
+	existed, err := f.hasExactChild(ctx, root, args.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look for the folder: %w", err)
+	}
+
 	fid, err := stm.OnConflict(sql.ConflictColumns(file.FieldFileChildren, file.FieldName)).Ignore().ID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder: %w", err)
+	}
+	if !existed {
+		if err := f.ensureNoCaseTwins(ctx, fid); err != nil {
+			return nil, err
+		}
 	}
 
 	newFolder, err := f.client.File.Get(ctx, fid)
@@ -1140,7 +1183,15 @@ func (f *fileClient) CreateFolder(ctx context.Context, root *ent.File, args *Cre
 }
 
 func (f *fileClient) Rename(ctx context.Context, original *ent.File, newName string) (*ent.File, error) {
-	return f.client.File.UpdateOne(original).SetName(newName).Save(ctx)
+	renamed, err := f.client.File.UpdateOne(original).SetName(newName).Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Fylvo: the entry itself is no twin, so a change of only its case is allowed.
+	if err := f.ensureNoCaseTwins(ctx, renamed.ID); err != nil {
+		return nil, err
+	}
+	return renamed, nil
 }
 
 func (f *fileClient) GetEntitiesByIDs(ctx context.Context, ids []int, page int) ([]*ent.Entity, int, error) {

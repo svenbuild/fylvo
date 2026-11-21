@@ -77,7 +77,7 @@ func (service *ArchiveService) DownloadArchived(c *gin.Context) error {
 	c.Header("Content-Disposition", "attachment;")
 	c.Header("Content-Type", "application/zip")
 
-	if _, err := fm.CreateArchive(c, archiveSession.Uris, c.Writer); err != nil {
+	if _, err := fm.CreateArchive(c, archiveSession.Uris, c.Writer, fs.WithArchiveDownload()); err != nil {
 		return serializer.NewError(serializer.CodeIOFailed, "Failed to create archive", err)
 	}
 
@@ -305,6 +305,8 @@ type (
 	FileUpdateService      struct {
 		Uri      string `form:"uri" binding:"required"`
 		Previous string `form:"previous"`
+		// Fylvo: fail with 40904 instead of creating the file when there is none to replace.
+		PreviousRequired bool `form:"previous_required"`
 	}
 )
 
@@ -328,9 +330,10 @@ func (service *FileUpdateService) PutContent(c *gin.Context, ls fs.LockSession) 
 
 	fileData := &fs.UploadRequest{
 		Props: &fs.UploadProps{
-			Uri:             uri,
-			PreviousVersion: service.Previous,
-			Size:            fileSize,
+			Uri:              uri,
+			PreviousVersion:  service.Previous,
+			PreviousRequired: service.PreviousRequired,
+			Size:             fileSize,
 		},
 		File: rc,
 		Mode: fs.ModeOverwrite,
@@ -458,6 +461,7 @@ func (s *FileURLService) Get(c *gin.Context) (*FileURLResponse, error) {
 		fs.WithIsDownload(s.Download),
 		fs.WithNoCache(s.NoCache),
 		fs.WithUrlExpire(&expire),
+		fs.WithSkipError(s.SkipError),
 	)
 	if err != nil && !s.SkipError {
 		return nil, fmt.Errorf("failed to get entity url: %w", err)

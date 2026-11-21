@@ -7,6 +7,7 @@ import (
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -66,6 +67,7 @@ func ViewerSessionValidation() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		setActivityVia(c, activity.ViaOffice)
 
 		fileId := hashid.FromContext(c)
 		if fileId != session.FileID {

@@ -53,7 +53,7 @@ export default function AboutSection() {
       </Stack>
 
       <Typography variant="body2" color="text.secondary">
-        Based on Cloudreve Desktop, MIT License, Copyright (c) 2025 Cloudreve.
+        {t("about.basedOn")}
       </Typography>
     </Box>
   );

@@ -1,9 +1,12 @@
 package controllers
 
 import (
+	"strings"
+
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -128,9 +131,24 @@ func UserIssueToken(c *gin.Context) {
 		return
 	}
 
+	// Fylvo: every way of signing in in the browser ends here.
+	activity.RecordAccount(c, activity.Login, inventory.UserFromContext(c).ID, loginMethod(c.FullPath()))
 	c.JSON(200, serializer.Response{
 		Data: resp,
 	})
+}
+
+// loginMethod tells the sign-in method from the route (Fylvo). Setting a new password after a
+// held sign-in counts as signing in with a password.
+func loginMethod(route string) string {
+	switch {
+	case strings.HasSuffix(route, "/token/2fa"):
+		return activity.MethodTwoFA
+	case strings.HasSuffix(route, "/authn"):
+		return activity.MethodPasskey
+	default:
+		return activity.MethodPassword
+	}
 }
 
 // UserRefreshToken refreshes token pair for user

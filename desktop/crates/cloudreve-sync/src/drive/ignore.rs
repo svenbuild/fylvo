@@ -5,8 +5,16 @@
 //! and input paths are expected to be absolute paths.
 
 use anyhow::{Context, Result};
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 use std::path::{Path, PathBuf};
+
+/// Fylvo: system items Windows may create at the root of a drive.
+const ROOT_SYSTEM_ITEMS: [&str; 4] = [
+    "$RECYCLE.BIN",
+    "System Volume Information",
+    "autorun.inf",
+    "desktop.ini",
+];
 
 /// A wrapper around `GlobSet` for matching ignore patterns (gitignore-style).
 ///
@@ -75,6 +83,14 @@ impl IgnoreMatcher {
         builder.add(Glob::new("**/~*")?);
         builder.add(Glob::new("**/.~lock.*")?);
         builder.add(Glob::new("**/~*.tmp")?);
+
+        // Fylvo: what Windows may put at the root of a drive (the folder can also show as a
+        // drive letter) never goes to the server.
+        for root_item in ROOT_SYSTEM_ITEMS {
+            for glob in [root_item.to_string(), format!("{root_item}/**")] {
+                builder.add(GlobBuilder::new(&glob).case_insensitive(true).build()?);
+            }
+        }
 
         let globset = builder
             .build()
@@ -193,6 +209,20 @@ mod tests {
     }
 
     #[test]
+    fn root_system_items_are_ignored_only_at_the_root() {
+        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let matcher = IgnoreMatcher::new(&[], sync_root).unwrap();
+        assert!(matcher.is_match("C:\\Users\\test\\sync\\$Recycle.Bin"));
+        assert!(matcher.is_match("C:\\Users\\test\\sync\\$RECYCLE.BIN\\S-1-5-21\\$R1.txt"));
+        assert!(matcher.is_match("C:\\Users\\test\\sync\\System Volume Information"));
+        assert!(matcher.is_match("C:\\Users\\test\\sync\\desktop.ini"));
+        assert!(matcher.is_match("C:\\Users\\test\\sync\\Autorun.inf"));
+        // The same names in a subfolder are normal files.
+        assert!(!matcher.is_match("C:\\Users\\test\\sync\\Fotos\\desktop.ini"));
+        assert!(!matcher.is_match("C:\\Users\\test\\sync\\Docs\\autorun.inf"));
+    }
+
+    #[test]
     fn test_anchored_pattern() {
         let sync_root = PathBuf::from("C:\\Users\\test\\sync");
         let patterns = vec!["/build".to_string()];
@@ -234,8 +264,9 @@ mod tests {
         ];
         let matcher = IgnoreMatcher::new(&patterns, sync_root.clone()).unwrap();
 
-        // Only *.tmp is added, next to the three built-in Office temp patterns.
-        assert_eq!(matcher.len(), 4);
+        // Only *.tmp is added, next to the three built-in Office temp patterns and the
+        // built-in root system items (two globs each).
+        assert_eq!(matcher.len(), 4 + 2 * ROOT_SYSTEM_ITEMS.len());
         assert!(matcher.is_match("C:\\Users\\test\\sync\\file.tmp"));
     }
 

@@ -1,5 +1,7 @@
 pub mod callback;
+pub mod case;
 pub mod commands;
+pub mod drive_letter;
 pub mod event_blocker;
 pub mod guard;
 pub mod ignore;

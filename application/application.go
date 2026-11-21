@@ -13,6 +13,8 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/application/constants"
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
+	"github.com/cloudreve/Cloudreve/v4/inventory"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/conf"
 	"github.com/cloudreve/Cloudreve/v4/pkg/crontab"
@@ -23,6 +25,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
 	"github.com/cloudreve/Cloudreve/v4/routers"
 	"github.com/gin-gonic/gin"
+	"github.com/robfig/cron/v3"
 )
 
 type Server interface {
@@ -50,6 +53,9 @@ type server struct {
 	pprofServer *http.Server
 	kv          cache.Driver
 	mailQueue   email.Driver
+	// Fylvo: kept to stop them in order at shutdown.
+	cron     *cron.Cron
+	activity *activity.Recorder
 }
 
 func (s *server) PrintBanner() {
@@ -85,6 +91,8 @@ func (s *server) Start() error {
 		// TODO: make sure all dep is initialized before server start.
 		s.dep.LockSystem()
 		s.dep.UAParser()
+		// Fylvo: the activity log writer, before any request can record.
+		s.activity = activity.Start(inventory.NewActivityClient(s.dbClient), s.logger)
 
 		// Initialize OneDrive credentials
 		credentials, err := onedrive.RetrieveOneDriveCredentials(context.Background(), s.dep.StoragePolicyClient())
@@ -115,6 +123,7 @@ func (s *server) Start() error {
 			return err
 		}
 		c.Start()
+		s.cron = c
 
 		// Start node pool
 		if _, err := s.dep.NodePool(context.Background()); err != nil {
@@ -180,13 +189,6 @@ func (s *server) Start() error {
 }
 
 func (s *server) Close() {
-	if s.dbClient != nil {
-		s.logger.Info("Shutting down database connection...")
-		if err := s.dbClient.Close(); err != nil {
-			s.logger.Error("Failed to close database connection: %s", err)
-		}
-	}
-
 	ctx := context.Background()
 	if conf.SystemConfig.GracePeriod != 0 {
 		var cancel context.CancelFunc
@@ -211,6 +213,15 @@ func (s *server) Close() {
 		}
 	}
 
+	// Fylvo: stop the cron jobs and wait for running ones, they still write.
+	if s.cron != nil {
+		select {
+		case <-s.cron.Stop().Done():
+		case <-ctx.Done():
+			s.logger.Warning("Cron jobs did not stop in time.")
+		}
+	}
+
 	if s.kv != nil {
 		if err := s.kv.Persist(util.DataPath(cache.DefaultCacheFile)); err != nil {
 			s.logger.Warning("Failed to persist cache: %s", err)
@@ -219,6 +230,20 @@ func (s *server) Close() {
 
 	if err := s.dep.Shutdown(ctx); err != nil {
 		s.logger.Warning("Failed to shutdown dependency manager: %s", err)
+	}
+
+	// Fylvo: write the rest of the activity log, then close the database last (it used to be
+	// closed first, while requests and tasks could still run).
+	// A limit of its own: the grace period may be used up by now, and the writer needs
+	// moments only.
+	activityCtx, cancelActivity := context.WithTimeout(context.Background(), 5*time.Second)
+	s.activity.CloseWithin(activityCtx)
+	cancelActivity()
+	if s.dbClient != nil {
+		s.logger.Info("Shutting down database connection...")
+		if err := s.dbClient.Close(); err != nil {
+			s.logger.Error("Failed to close database connection: %s", err)
+		}
 	}
 }
 

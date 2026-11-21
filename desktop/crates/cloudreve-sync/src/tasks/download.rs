@@ -222,6 +222,20 @@ impl<'a> DownloadTask<'a> {
             );
             return Ok(());
         }
+        // Fylvo: renamed meanwhile to another upper/lower case spelling; the sync decides
+        // about it under the new spelling (see `drive/case.rs`).
+        if crate::drive::case::spelled_differently_on_disk(
+            &self.task.payload.local_path,
+            &self.sync_path,
+        ) {
+            info!(
+                target: "tasks::download",
+                task_id = %self.task.task_id,
+                local_path = %self.task.payload.local_path_display(),
+                "Spelled differently on disk, skipping download"
+            );
+            return Ok(());
+        }
 
         if local_file_info.is_directory {
             info!(

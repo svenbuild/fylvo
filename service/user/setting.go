@@ -15,6 +15,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/auth"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/request"
@@ -293,6 +294,7 @@ func (s *PatchUserSetting) Patch(c *gin.Context) error {
 		if _, err := userClient.UpdatePassword(c, u, *s.NewPassword); err != nil {
 			return serializer.NewError(serializer.CodeDBError, "Failed to update user password", err)
 		}
+		activity.RecordAccount(c, activity.PasswordChange, u.ID, "")
 	}
 
 	if s.TwoFAEnabled != nil {
@@ -314,6 +316,7 @@ func (s *PatchUserSetting) Patch(c *gin.Context) error {
 			if _, err := userClient.UpdateTwoFASecret(c, u, secret.(string)); err != nil {
 				return serializer.NewError(serializer.CodeDBError, "Failed to update user 2FA", err)
 			}
+			activity.RecordAccount(c, activity.TwoFAEnable, u.ID, "")
 
 		} else {
 			if !totp.Validate(*s.TwoFACode, u.TwoFactorSecret) {
@@ -323,6 +326,7 @@ func (s *PatchUserSetting) Patch(c *gin.Context) error {
 			if _, err := userClient.UpdateTwoFASecret(c, u, ""); err != nil {
 				return serializer.NewError(serializer.CodeDBError, "Failed to update user 2FA", err)
 			}
+			activity.RecordAccount(c, activity.TwoFADisable, u.ID, "")
 
 		}
 	}
