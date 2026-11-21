@@ -51,7 +51,7 @@ class OfflineEdits(
         data object NotReady : StartResult()
     }
 
-    enum class NotUploaded { Offline, Pending, Missing, Failed }
+    enum class NotUploaded { Offline, Pending, Missing, Refused, Failed }
 
     sealed class FinishResult {
         data object Done : FinishResult()
@@ -97,6 +97,8 @@ class OfflineEdits(
         val result = guarded(null) {
             lock.withLock {
                 if (gate.get()) return
+                // An account move stopped half way goes on before any orphan is looked for.
+                EditStore.adoptAccount(context.filesDir, manager.emailKey(), offline.accountKey)
                 runPass(offline, store, phase)
             }
         }
@@ -293,6 +295,7 @@ class OfflineEdits(
         val left = open()
         return when {
             left.isEmpty() -> null
+            left.any { it.problem == EditProblem.Refused } -> NotUploaded.Refused
             left.any { it.pending != null } -> NotUploaded.Pending
             left.any(::missing) -> NotUploaded.Missing
             else -> NotUploaded.Failed

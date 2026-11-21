@@ -431,6 +431,8 @@
     <string name="edit_reason_offline">Es gibt keine Verbindung, über die hochgeladen werden darf.</string>
     <string name="edit_reason_pending">Ein früheres Hochladen wird noch geklärt.</string>
     <string name="edit_reason_missing">Die Datei fehlt auf diesem Handy.</string>
+    <string name="edit_reason_refused">Der Server hat das Hochladen abgelehnt.</string>
+    <string name="edit_reason_refused_code">Der Server hat das Hochladen abgelehnt (Code %d).</string>
     <string name="edit_reason_failed">Das Hochladen hat nicht geklappt.</string>
     <string name="edit_retry_later">Später erneut versuchen</string>
     <string name="edit_upload_first">Erst hochladen</string>

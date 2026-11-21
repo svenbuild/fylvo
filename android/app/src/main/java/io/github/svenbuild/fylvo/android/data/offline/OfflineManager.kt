@@ -138,6 +138,9 @@ class OfflineManager(
         if (_roots.value.isNotEmpty() || hasEdits(store)) OfflineSyncWorker.apply(context, mobileData.first())
     }
 
+    /** Fylvo: the key a session from before 1.2 kept its data under (from the email). */
+    suspend fun emailKey(): String = accountKey(session.serverUrlNow(), "", session.userEmail.first())
+
     /** Fylvo: the account has working copies (in use or finished); see EditStore. */
     fun hasEdits(store: OfflineStore): Boolean = EditStore(context.filesDir, store.accountKey).hasEntries()
 
@@ -146,7 +149,7 @@ class OfflineManager(
      * offline data of other accounts goes (never their working copies). Called with [engineLock] held.
      */
     suspend fun prepareAccount(store: OfflineStore) {
-        val emailKey = accountKey(session.serverUrlNow(), "", session.userEmail.first())
+        val emailKey = emailKey()
         editLock.withLock {
             writeLock.withLock {
                 OfflineStore.adoptAccount(context.filesDir, emailKey, store.accountKey)

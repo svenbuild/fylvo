@@ -71,7 +71,7 @@ class EditStore(private val base: File, val accountKey: String) {
     fun snapshotOf(entry: EditEntry): File = File(tmpDir, "snap-${entry.id}")
 
     /** Where a new working copy is written before it is renamed into place. */
-    fun creatingOf(entry: EditEntry): File = File(tmpDir, "creating-${entry.id}")
+    fun creatingOf(entry: EditEntry): File = File(tmpDir, CREATING + entry.id)
 
     /**
      * Finishing: the folder of the working copy moves to done/ in one rename, so an editor that
@@ -93,8 +93,12 @@ class EditStore(private val base: File, val accountKey: String) {
         File(filesDir, entry.id).deleteRecursively()
         File(doneDir, entry.id).deleteRecursively()
         snapshotOf(entry).delete()
+        refusedOf(entry).delete()
         creatingOf(entry).delete()
     }
+
+    /** Where a snapshot the server refused waits (see EditEntry.refused) while newer changes go up. */
+    fun refusedOf(entry: EditEntry): File = File(tmpDir, "refused-${entry.id}")
 
     /** Files in files/ or done/ that no entry of [index] points to (an editor wrote after a finish, a lost index). */
     fun orphans(index: EditIndex): List<File> {
@@ -112,24 +116,43 @@ class EditStore(private val base: File, val accountKey: String) {
         dest.parentFile?.mkdirs()
         if (!file.renameTo(dest)) return false
         // The orphan's folder, once empty.
-        file.parentFile?.takeIf { it != filesDir && it != doneDir && it.list()?.isEmpty() == true }?.delete()
+        file.parentFile?.takeIf { it != filesDir && it != doneDir && it != tmpDir && it.list()?.isEmpty() == true }?.delete()
         return true
     }
 
-    /** Leftovers in tmp/ that no entry needs: snapshots without marker, copies of no entry being made. */
-    fun cleanTmp(index: EditIndex) {
+    /**
+     * Tidies tmp/: half-made copies of no entry being made go (their bytes are in the synced copy).
+     * Anything else no entry points to (a snapshot whose marker is gone, say after an account move)
+     * is never deleted: it is returned, to be uploaded as a conflict copy.
+     */
+    fun strayTmp(index: EditIndex): List<File> {
         val keep = HashSet<File>()
         index.entries.forEach { entry ->
             if (entry.pending != null) keep += snapshotOf(entry)
+            if (entry.refused != null) keep += refusedOf(entry)
             if (entry.state == EditState.Creating) keep += creatingOf(entry)
         }
-        tmpDir.listFiles().orEmpty().filter { it !in keep }.forEach { it.deleteRecursively() }
+        val strays = ArrayList<File>()
+        tmpDir.listFiles().orEmpty().filter { it !in keep }.forEach { f ->
+            when {
+                f.name.startsWith(CREATING) -> f.deleteRecursively()
+                f.isFile -> strays += f
+                f.list()?.isEmpty() == true -> f.delete()
+                else -> strays += f.walkTopDown().filter { it.isFile }
+            }
+        }
+        return strays
     }
 
     fun tmpFolder(): File = tmpDir.also { it.mkdirs() }
 
     companion object {
         const val ROOT = "offline-edit"
+        private const val CREATING = "creating-"
+
+        /** The entry id a file in tmp/ belongs to ("snap-<id>", "refused-<id>"), or null. */
+        fun ownerOf(tmpFile: File): String? =
+            tmpFile.name.substringAfter('-', "").takeIf { tmpFile.name.startsWith("snap-") || tmpFile.name.startsWith("refused-") }
 
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -158,8 +181,11 @@ class EditStore(private val base: File, val accountKey: String) {
 
         /**
          * Sessions from before 1.2 kept their data under a key made from the email; once the user id
-         * is known it moves to the id key, item by item and only where the target is free, so a
-         * stop half way goes on next time. Nothing is deleted except folders left empty.
+         * is known it moves to the id key. First every file (working copies, finished copies,
+         * snapshots), item by item and only where the target is free; only when all of them moved
+         * the entries go into the target index, and only then the old index goes. A stop or a
+         * failure half way leaves the old index in place, and the next call goes on. Nothing is
+         * deleted except folders left empty.
          */
         fun adoptAccount(base: File, fromKey: String, toKey: String) {
             if (fromKey == toKey) return
@@ -168,21 +194,19 @@ class EditStore(private val base: File, val accountKey: String) {
             // An index that cannot be read (either one): everything stays under the old key.
             val moving = runCatching { from.load() }.getOrNull() ?: return
             val target = runCatching { to.load() }.getOrNull() ?: return
-            if (from.indexFile.exists()) {
-                val known = target.entries.mapTo(HashSet()) { it.id }
-                to.save(EditIndex(target.entries + moving.entries.filter { it.id !in known }))
-                from.indexFile.delete()
-            }
+            var complete = true
             for ((src, dst) in listOf(from.filesDir to to.filesDir, from.doneDir to to.doneDir, from.tmpDir to to.tmpDir)) {
                 src.listFiles().orEmpty().forEach { child ->
                     val dest = File(dst, child.name)
-                    if (!dest.exists()) {
-                        dst.mkdirs()
-                        child.renameTo(dest)
-                    }
+                    dst.mkdirs()
+                    if (dest.exists() || !child.renameTo(dest)) complete = false
                 }
                 if (src.list()?.isEmpty() == true) src.delete()
             }
+            if (!complete || !from.indexFile.exists()) return
+            val known = target.entries.mapTo(HashSet()) { it.id }
+            to.save(EditIndex(target.entries + moving.entries.filter { it.id !in known }))
+            from.indexFile.delete()
         }
     }
 }

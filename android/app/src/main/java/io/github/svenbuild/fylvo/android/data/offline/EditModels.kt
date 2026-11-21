@@ -98,6 +98,11 @@ data class EditEntry(
     /** The last upload the server confirmed. */
     val confirmed: EditSnapshot? = null,
     val pending: EditMarker? = null,
+    /**
+     * A snapshot the server clearly refused (kept in tmp/ as refused-<id>) while a newer state of
+     * the working copy goes up; it goes once a newer upload is confirmed, or with a discard.
+     */
+    val refused: EditMarker? = null,
     val state: EditState = EditState.Creating,
     val problem: EditProblem? = null,
     val errorCode: Int = 0,
@@ -278,7 +283,8 @@ fun rebaseOnto(entry: EditEntry, copy: FileObject, marker: EditMarker): EditEntr
     settled(entry, marker).copy(fileId = copy.id, uri = copy.path, baseEntity = marker.entityId, conflict = marker.name)
 
 private fun settled(entry: EditEntry, marker: EditMarker) = entry.copy(
-    confirmed = marker.snapshot, pending = null, state = EditState.Synced, problem = null, errorCode = 0,
+    // A newer state is on the server: a refused older one is no longer needed.
+    confirmed = marker.snapshot, pending = null, refused = null, state = EditState.Synced, problem = null, errorCode = 0,
     outdated = false, stalls = 0, attempts = 0,
 )
 
@@ -287,11 +293,23 @@ fun isSettled(entry: EditEntry, sha256: String?): Boolean =
     sha256 != null && entry.pending == null && sha256 == entry.reference.sha256
 
 /**
- * The working copies that must be uploaded or discarded before a sign-out: in use, present and
- * not settled. A missing copy holds nothing to save; finished copies stay for the same account.
+ * The working copies that must be uploaded or discarded before a sign-out: in use and not
+ * settled, or holding a kept snapshot not confirmed on the server (also when the working copy is
+ * missing). A missing copy without one holds nothing to save; finished copies stay for the same account.
  */
 fun signOutBlockers(entries: List<Pair<EditEntry, String?>>): List<EditEntry> =
-    entries.filter { (entry, sha256) -> entry.active && sha256 != null && !isSettled(entry, sha256) }.map { it.first }
+    entries.filter { (entry, sha256) -> entry.active && (entry.pending != null || (sha256 != null && !isSettled(entry, sha256))) }
+        .map { it.first }
+
+/**
+ * A pending upload the server clearly refused (a code no conflict copy avoids) that has nothing
+ * sent yet: once the working copy holds other bytes, it steps aside ([EditEntry.refused]) so the
+ * newer state is planned normally.
+ */
+fun canPark(entry: EditEntry, sha256: String?): Boolean {
+    val pending = entry.pending ?: return false
+    return entry.problem == EditProblem.Refused && pending.sessionId.isEmpty() && sha256 != null && sha256 != pending.snapshot.sha256
+}
 
 /**
  * Unchanged since its last confirmed state while the server has another version: opening shows

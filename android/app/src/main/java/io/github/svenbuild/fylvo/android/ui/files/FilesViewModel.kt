@@ -100,6 +100,8 @@ data class EditPrompt(
     val reason: OfflineEdits.NotUploaded,
     /** A kept snapshot (bytes not confirmed on the server) goes too when it is discarded. */
     val unsent: Boolean = false,
+    /** The server's code of a refusal. */
+    val code: Int = 0,
 )
 
 /** Fylvo: switching root [rootId] off while [entries] hold changes the server does not have. */
@@ -1224,7 +1226,7 @@ class FilesViewModel(
         viewModelScope.launch {
             // Why it did not work, or null when the root can go.
             val problem = if (upload) {
-                edits.upload(prompt.entries)?.let { UiText.Res(R.string.edit_upload_failed, UiText.Res(notUploadedText(it))) }
+                edits.upload(prompt.entries)?.let { UiText.Res(R.string.edit_upload_failed, notUploadedText(it)) }
             } else {
                 UiText.Res(R.string.edit_discard_failed, prompt.name).takeUnless { edits.discardAll(prompt.entries.mapTo(HashSet()) { it.id }) }
             }
@@ -1264,8 +1266,8 @@ class FilesViewModel(
                 OfflineEdits.FinishResult.Done ->
                     _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_finished, entry.name))) }
                 is OfflineEdits.FinishResult.Failed -> _state.update { s ->
-                    val unsent = s.editEntries.firstOrNull { it.id == entry.id }?.pending != null
-                    s.copy(editPrompt = EditPrompt(entry.id, entry.name, result.reason, unsent))
+                    val now = s.editEntries.firstOrNull { it.id == entry.id }
+                    s.copy(editPrompt = EditPrompt(entry.id, entry.name, result.reason, now?.pending != null, now?.errorCode ?: 0))
                 }
             }
         }

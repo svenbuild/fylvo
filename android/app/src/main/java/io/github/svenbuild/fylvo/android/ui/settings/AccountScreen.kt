@@ -54,6 +54,7 @@ import io.github.svenbuild.fylvo.android.FylvoApp
 import io.github.svenbuild.fylvo.android.data.offline.OfflineEdits
 import io.github.svenbuild.fylvo.android.ui.files.EditChoiceDialog
 import io.github.svenbuild.fylvo.android.ui.files.notUploadedText
+import io.github.svenbuild.fylvo.android.util.asString
 import androidx.compose.ui.res.pluralStringResource
 import io.github.svenbuild.fylvo.android.BuildConfig
 import io.github.svenbuild.fylvo.android.R
@@ -316,7 +317,7 @@ fun AccountScreen(
             title = pluralStringResource(R.plurals.edit_unuploaded_title, prompt.ids.size, prompt.ids.size),
             text = stringResource(R.string.edit_sign_out_text),
             busy = prompt.busy,
-            error = prompt.reason?.let { stringResource(R.string.edit_upload_failed, stringResource(notUploadedText(it))) },
+            error = prompt.reason?.let { stringResource(R.string.edit_upload_failed, notUploadedText(it).asString()) },
             onUpload = { signOut(OfflineEdits.SignOutChoice.Upload) },
             onDiscard = { signOut(OfflineEdits.SignOutChoice.Discard) },
             onDismiss = { editSignOut = null },

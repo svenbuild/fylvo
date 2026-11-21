@@ -151,15 +151,23 @@ internal class EditPass(
             }
         }
         // An editor wrote after a finish, or the index was lost: such files go up as conflict copies.
-        for (orphan in store.orphans(store.load())) {
-            val name = EditStore.safeName(orphan.name)
-            val entry = EditEntry(
-                id = EditStore.newId(), fileId = "", uri = CrUri.join(CrUri.MY_PREFIX, name), name = name,
-                base = EditSnapshot(-1, 0, ""), state = EditState.Uploading, createdAt = now, retiredAt = now,
-            )
-            if (store.adoptOrphan(orphan, entry)) put(entry)
+        for (orphan in store.orphans(store.load())) adopt(orphan, EditStore.safeName(orphan.name), null)
+        // A snapshot no marker points to (never deleted): a conflict copy next to its file, if known.
+        val index = store.load()
+        for (stray in store.strayTmp(index)) {
+            val owner = EditStore.ownerOf(stray)?.let { id -> index.entries.firstOrNull { it.id == id } }
+            adopt(stray, owner?.name ?: EditStore.safeName(stray.name), owner?.uri)
         }
-        store.cleanTmp(store.load())
+    }
+
+    /** Takes [file] into done/ as a finished copy that goes up as a conflict copy (into [uri]'s folder, else My files). */
+    private fun adopt(file: File, name: String, uri: String?) {
+        val now = clock()
+        val entry = EditEntry(
+            id = EditStore.newId(), fileId = "", uri = uri ?: CrUri.join(CrUri.MY_PREFIX, name), name = name,
+            base = EditSnapshot(-1, 0, ""), state = EditState.Uploading, createdAt = now, retiredAt = now,
+        )
+        if (store.adoptOrphan(file, entry)) put(entry)
     }
 
     /** A rename or move on the server: the address follows the file id in the synced index. */
@@ -174,7 +182,8 @@ internal class EditPass(
         val now = clock()
         val file = store.fileOf(entry)
         val stat = statOf(file)
-        val sha256 = if (stat != null && entry.pending == null) EditStore.sha256(file) else null
+        val sha256 = if (stat != null && (entry.pending == null || entry.problem == EditProblem.Refused)) EditStore.sha256(file) else null
+        if (canPark(entry, sha256)) return park(entry)
         when (planEdit(entry, stat, sha256, now, phase.explicit, phase.retryErrors)) {
             EditStep.Skip -> Unit
             EditStep.Missing -> if (entry.problem != EditProblem.Missing) {
@@ -206,8 +215,22 @@ internal class EditPass(
     }
 
     private fun later(entry: EditEntry, problem: EditProblem? = null) {
-        store.entry(entry.id)?.let { put(it.copy(state = EditState.Uploading, problem = problem)) }
+        // A kept marker waits from now on (its recovery comes a few minutes later).
+        store.entry(entry.id)?.let { put(it.copy(state = EditState.Uploading, problem = problem, pending = it.pending?.copy(at = clock()))) }
         result.again()
+    }
+
+    /**
+     * The working copy moved on from a snapshot the server refused: that snapshot steps aside
+     * (refused-<id>, replacing an older refused one) and the newer state is planned normally. It
+     * goes once a newer upload is confirmed, or with a discard.
+     */
+    private suspend fun park(entry: EditEntry) {
+        val marker = entry.pending ?: return
+        store.refusedOf(entry).delete()
+        if (!store.snapshotOf(entry).renameTo(store.refusedOf(entry))) return
+        put(entry.copy(pending = null, refused = marker, state = EditState.Uploading, problem = null, errorCode = 0, attempts = 0))
+        store.entry(entry.id)?.let { handle(it) }
     }
 
     private suspend fun upload(entry: EditEntry) {
@@ -230,10 +253,16 @@ internal class EditPass(
             TargetPlan.PrivateConflict -> sendConflict(entry, snapshot, private = true)
             TargetPlan.WaitForSync -> {
                 result.syncWanted = true
-                later(entry)
+                waitWith(entry)
             }
-            TargetPlan.Later -> later(entry)
+            TargetPlan.Later -> waitWith(entry)
         }
+    }
+
+    /** Waits; a fresh snapshot no marker points to goes (the working copy has its bytes), a kept one stays. */
+    private fun waitWith(entry: EditEntry) {
+        if (store.entry(entry.id)?.pending == null) store.snapshotOf(entry).delete()
+        later(entry)
     }
 
     /**
@@ -259,7 +288,7 @@ internal class EditPass(
 
     private suspend fun sendVersion(entry: EditEntry, snapshot: EditSnapshot) {
         if (!stillSignedIn()) return
-        put(entry.copy(pending = EditMarker(UploadKind.Version, snapshot, target = entry.uri, at = clock()), state = EditState.Uploading))
+        put(entry.copy(pending = EditMarker(UploadKind.Version, snapshot, target = entry.uri, at = clock()), state = EditState.Uploading, attempts = 0))
         val sent = send(entry.id) {
             server.upload(
                 store.snapshotOf(entry), CrUri.parent(entry.uri), CrUri.fileName(entry.uri), snapshot.mtime,
@@ -295,7 +324,7 @@ internal class EditPass(
             val folder = conflictFolder(current, mine)
             val name = conflictName(baseName, conflictLabel, time, counter)
             val marker = EditMarker(UploadKind.Conflict, snapshot, target = folder, name = name, at = clock())
-            put(current.copy(pending = marker, state = EditState.Uploading))
+            put(current.copy(pending = marker, state = EditState.Uploading, attempts = 0))
             val sent = send(entry.id) {
                 server.upload(store.snapshotOf(entry), folder, name, snapshot.mtime, previous = "", onSession = sessionNoted(entry.id))
             }
@@ -304,7 +333,8 @@ internal class EditPass(
             if (sent !is Sent.Refused) return later(current)
             when {
                 isNameTaken(sent.code) -> counter++
-                !mine && sent.code in NO_ACCESS_CODES -> {
+                // No right in the original folder (a share left, its membership ended): My files.
+                !mine && (sent.code in NO_ACCESS_CODES || sent.code in GONE_CODES) -> {
                     mine = true
                     counter = 1
                 }
@@ -376,6 +406,7 @@ internal class EditPass(
         // The index first: the snapshot goes only once nothing points to it any more.
         put(next.copy(state = if (changed) EditState.Uploading else EditState.Synced, seen = null))
         store.snapshotOf(entry).delete()
+        store.refusedOf(entry).delete()
         if (changed) result.again()
     }
 

@@ -326,6 +326,70 @@ class EditPassTest {
         assertEquals("f9", store.entry(entry.id)!!.fileId)
     }
 
+    @Test fun aConflictCopyInALeftShareGoesToMyFiles() = runBlocking {
+        val shared = "cloudreve://abc@share/a.txt"
+        server.files[shared] = file("f1", shared, "e5")
+        server.onUpload = { target, previous, session ->
+            when {
+                previous.isNotEmpty() -> throw ApiException(40076, "stale")
+                target.startsWith("cloudreve://abc@share") -> throw ApiException(404, "share gone")
+                else -> {
+                    session("s9", target, "c1")
+                    server.files[target] = file("f9", target, "c1")
+                }
+            }
+        }
+        val entry = edited().copy(uri = shared).also { store.put(it) }
+        pass().run()
+        assertTrue(server.sent.last().first.startsWith("cloudreve://my/"))
+        assertEquals("f9", store.entry(entry.id)!!.fileId)
+        assertNull(store.entry(entry.id)!!.problem)
+    }
+
+    @Test fun aRefusedSnapshotDoesNotHoldUpNewerChanges() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        server.onUpload = { _, _, _ -> throw ApiException(40049, "too large") }
+        val entry = edited("big")
+        pass().run()
+        assertEquals(40049, store.entry(entry.id)!!.errorCode)
+        // The person saves something smaller: it goes up, the refused one steps aside first.
+        store.fileOf(entry).apply { writeText("small"); setLastModified(now - 10 * 60_000) }
+        now += EDIT_RECOVERY_DELAY_MS
+        commits("e2")
+        pass(EditPhase.End).run()
+        val after = store.entry(entry.id)!!
+        assertEquals("small", server.sent.last().third)
+        assertEquals("e2", after.baseEntity)
+        // Confirmed newer bytes: the refused snapshot is no longer kept.
+        assertNull(after.refused)
+        assertFalse(store.refusedOf(entry).exists())
+        assertNull(after.pending)
+    }
+
+    @Test fun aSnapshotWithoutMarkerGoesUpAsAConflictCopy() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        val entry = edited("v1")
+        store.tmpFolder()
+        store.snapshotOf(entry).writeText("lost")
+        commitsConflict()
+        pass().run()
+        // Never deleted: taken in as a finished copy and sent as a conflict copy next to its file.
+        val sent = server.sent.single()
+        assertEquals("", sent.second)
+        assertEquals("lost", sent.third)
+        assertTrue(sent.first, sent.first.startsWith("cloudreve://my/Docs/"))
+        assertFalse(store.snapshotOf(entry).exists())
+    }
+
+    @Test fun aNewMarkerStartsWithoutAttempts() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        server.onUpload = { _, _, _ -> throw IOException("offline") }
+        val entry = edited().copy(attempts = 3).also { store.put(it) }
+        pass().run()
+        assertEquals(0, store.entry(entry.id)!!.attempts)
+        assertNotNull(store.entry(entry.id)!!.pending)
+    }
+
     @Test fun aStopAskedForByANewNetworkSettingIsNoStall() = runBlocking {
         server.files[uri] = file("f1", uri, "e1")
         server.onUpload = { target, _, session ->

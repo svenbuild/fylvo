@@ -3,7 +3,6 @@ package io.github.svenbuild.fylvo.android.ui.files
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -21,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.data.offline.EditEntry
 import io.github.svenbuild.fylvo.android.data.offline.OfflineEdits
+import io.github.svenbuild.fylvo.android.util.UiText
+import io.github.svenbuild.fylvo.android.util.asString
 import java.io.File
 
 /** Fylvo: what took a working copy. */
@@ -46,13 +47,14 @@ fun openForEdit(context: Context, local: File): Editor {
     return Editor.NONE
 }
 
-/** Fylvo: why changes are not on the server yet, as a sentence. */
-@StringRes
-fun notUploadedText(reason: OfflineEdits.NotUploaded): Int = when (reason) {
-    OfflineEdits.NotUploaded.Offline -> R.string.edit_reason_offline
-    OfflineEdits.NotUploaded.Pending -> R.string.edit_reason_pending
-    OfflineEdits.NotUploaded.Missing -> R.string.edit_reason_missing
-    OfflineEdits.NotUploaded.Failed -> R.string.edit_reason_failed
+/** Fylvo: why changes are not on the server yet, as a sentence; a refusal with its [code] when known. */
+fun notUploadedText(reason: OfflineEdits.NotUploaded, code: Int = 0): UiText = when (reason) {
+    OfflineEdits.NotUploaded.Offline -> UiText.Res(R.string.edit_reason_offline)
+    OfflineEdits.NotUploaded.Pending -> UiText.Res(R.string.edit_reason_pending)
+    OfflineEdits.NotUploaded.Missing -> UiText.Res(R.string.edit_reason_missing)
+    OfflineEdits.NotUploaded.Refused ->
+        if (code > 0) UiText.Res(R.string.edit_reason_refused_code, code) else UiText.Res(R.string.edit_reason_refused)
+    OfflineEdits.NotUploaded.Failed -> UiText.Res(R.string.edit_reason_failed)
 }
 
 /** Fylvo: [text], and when [unsent] that a stand not on the server goes with a discard. */
@@ -81,7 +83,7 @@ internal fun NotUploadedDialog(prompt: EditPrompt, onRetryLater: () -> Unit, onD
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.edit_not_uploaded_title)) },
         text = {
-            Text(unsentNote(prompt.unsent, stringResource(R.string.edit_not_uploaded_text, prompt.name, stringResource(notUploadedText(prompt.reason)))))
+            Text(unsentNote(prompt.unsent, stringResource(R.string.edit_not_uploaded_text, prompt.name, notUploadedText(prompt.reason, prompt.code).asString())))
         },
         confirmButton = { TextButton(onClick = onRetryLater) { Text(stringResource(R.string.edit_retry_later)) } },
         dismissButton = {

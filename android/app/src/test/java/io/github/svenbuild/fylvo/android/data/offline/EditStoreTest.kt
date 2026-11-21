@@ -113,7 +113,7 @@ class EditStoreTest {
         assertTrue(store.orphans(store.load()).isEmpty())
     }
 
-    @Test fun cleanTmpKeepsWhatAnEntryNeeds() {
+    @Test fun strayTmpKeepsWhatAnEntryNeedsAndNeverDeletesASnapshot() {
         val store = EditStore(tmp.root, "acc")
         val withMarker = entry(pending = EditMarker(UploadKind.Version, EditSnapshot(1, 1, "s"), "t", at = 1))
         val creating = entry(state = EditState.Creating)
@@ -122,13 +122,15 @@ class EditStoreTest {
         store.tmpFolder()
         val keep1 = store.snapshotOf(withMarker).apply { writeText("s") }
         val keep2 = store.creatingOf(creating).apply { writeText("c") }
-        val drop1 = store.snapshotOf(plain).apply { writeText("old") }
-        val drop2 = File(store.tmpFolder(), "creating-gone").apply { writeText("x") }
-        store.cleanTmp(store.load())
+        val stray = store.snapshotOf(plain).apply { writeText("old") }
+        val drop = File(store.tmpFolder(), "creating-gone").apply { writeText("x") }
+        assertEquals(listOf(stray), store.strayTmp(store.load()))
         assertTrue(keep1.exists())
         assertTrue(keep2.exists())
-        assertFalse(drop1.exists())
-        assertFalse(drop2.exists())
+        // A snapshot without marker is handed out as an orphan, never deleted.
+        assertTrue(stray.exists())
+        assertEquals(plain.id, EditStore.ownerOf(stray))
+        assertFalse(drop.exists())
     }
 
     @Test fun deleteFilesRemovesEveryPlace() {
@@ -187,6 +189,30 @@ class EditStoreTest {
         assertEquals("new", to.fileOf(a).readText())
         // The other one is not deleted.
         assertEquals("old", from.fileOf(a).readText())
+    }
+
+    @Test fun adoptionMovesTheIndexOnlyAfterEveryFile() {
+        val from = EditStore(tmp.root, "email")
+        val to = EditStore(tmp.root, "id")
+        val a = entry()
+        val b = entry(name = "b.txt")
+        from.put(a)
+        from.put(b)
+        from.write(a, "A")
+        from.write(b, "B")
+        // b's place is taken under the new key: its file cannot move.
+        File(tmp.root, "offline-edit/files/id/${b.id}").mkdirs()
+        EditStore.adoptAccount(tmp.root, "email", "id")
+        assertEquals("A", to.fileOf(a).readText())
+        // The old index stays (b is still there), the new one has nothing yet.
+        assertEquals(listOf(a, b), from.load().entries)
+        assertTrue(to.load().entries.isEmpty())
+        // Once the place is free, it goes on.
+        File(tmp.root, "offline-edit/files/id/${b.id}").delete()
+        EditStore.adoptAccount(tmp.root, "email", "id")
+        assertEquals("B", to.fileOf(b).readText())
+        assertEquals(setOf(a.id, b.id), to.load().entries.map { it.id }.toSet())
+        assertFalse(from.hasEntries())
     }
 
     @Test fun adoptionLeavesEverythingWhenAnIndexCannotBeRead() {

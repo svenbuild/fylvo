@@ -194,10 +194,25 @@ class EditModelsTest {
         val finished = entry(retiredAt = 5).copy(id = "w4")
         val creating = entry(state = EditState.Creating).copy(id = "w5")
         val pending = entry(pending = marker()).copy(id = "w6")
+        // The working copy is gone, but a kept snapshot holds bytes not on the server.
+        val missingWithSnapshot = entry(pending = marker()).copy(id = "w7")
         val blockers = signOutBlockers(
-            listOf(changed to "new", clean to "base", missing to null, finished to "late", creating to "x", pending to "base")
+            listOf(
+                changed to "new", clean to "base", missing to null, finished to "late", creating to "x", pending to "base",
+                missingWithSnapshot to null,
+            )
         )
-        assertEquals(listOf("w1", "w6"), blockers.map { it.id })
+        assertEquals(listOf("w1", "w6", "w7"), blockers.map { it.id })
+    }
+
+    @Test fun aRefusedSnapshotStepsAsideOnlyForNewerBytes() {
+        val refused = entry(state = EditState.Error, pending = marker()).copy(problem = EditProblem.Refused, errorCode = 40049)
+        assertTrue(canPark(refused, "newer"))
+        assertFalse(canPark(refused, "snap"))
+        assertFalse(canPark(refused, null))
+        assertFalse(canPark(refused.copy(problem = EditProblem.ServerFull), "newer"))
+        assertFalse(canPark(refused.copy(pending = marker(sessionId = "s")), "newer"))
+        assertFalse(canPark(entry(), "newer"))
     }
 
     @Test fun outdatedWhenUnchangedAndTheServerMovedOn() {
