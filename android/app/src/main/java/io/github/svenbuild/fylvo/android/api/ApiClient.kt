@@ -35,44 +35,35 @@ class ApiClient(private val session: SessionManager) {
 
     private val refreshMutex = Mutex()
 
-    @Volatile
-    private var cachedBaseUrl: String? = null
+    /** Fylvo: the built services by kind and server address. */
+    private val services = java.util.concurrent.ConcurrentHashMap<String, ApiService>()
 
-    @Volatile
-    private var cachedService: ApiService? = null
-
-    @Volatile
-    private var cachedAuthService: ApiService? = null
-
-    @Volatile
-    private var cachedAuthBaseUrl: String? = null
+    private enum class Kind { NORMAL, AUTH, EDIT }
 
     suspend fun serverBase(): String = session.serverUrlNow()
 
-    suspend fun service(): ApiService {
-        val base = session.serverUrlNow().ifEmpty { "http://localhost" } + "/"
-        cachedService?.let { if (cachedBaseUrl == base) return it }
-        return buildService(base, followRedirects = true).also {
-            cachedService = it
-            cachedBaseUrl = base
-        }
-    }
+    suspend fun service(): ApiService = cached(Kind.NORMAL)
 
     /**
      * Fylvo: the same API without redirects, for requests whose body carries a password or a
      * refresh token (sign-in, 2FA, sign-out). OkHttp keeps the body on 307/308 redirects, and
      * a redirect could point to another server.
      */
-    suspend fun authService(): ApiService {
+    suspend fun authService(): ApiService = cached(Kind.AUTH)
+
+    /**
+     * Fylvo: for uploads of edited offline files. OkHttp never sends a request again by itself
+     * (a repeated last chunk could claim a completion the app never saw), and the answer of the
+     * last chunk, which finishes the upload on the server, may take longer.
+     */
+    suspend fun editService(): ApiService = cached(Kind.EDIT)
+
+    private suspend fun cached(kind: Kind): ApiService {
         val base = session.serverUrlNow().ifEmpty { "http://localhost" } + "/"
-        cachedAuthService?.let { if (cachedAuthBaseUrl == base) return it }
-        return buildService(base, followRedirects = false).also {
-            cachedAuthService = it
-            cachedAuthBaseUrl = base
-        }
+        return services.getOrPut("$kind|$base") { buildService(base, kind) }
     }
 
-    private fun buildService(baseUrl: String, followRedirects: Boolean): ApiService {
+    private fun buildService(baseUrl: String, kind: Kind): ApiService {
         // Only our own API host may receive the Cloudreve bearer token. Chunk uploads and
         // downloads for S3-style policies go to presigned object-storage URLs on a
         // different host; S3/Ceph rejects a presigned request that also carries an
@@ -102,10 +93,12 @@ class ApiClient(private val session: SessionManager) {
 
         val client = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(if (kind == Kind.EDIT) 300L else 60L, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
+            .addInterceptor(userAgent)
             .addInterceptor(sessionInterceptor)
-            .followRedirects(followRedirects)
+            .followRedirects(kind != Kind.AUTH)
+            .retryOnConnectionFailure(kind != Kind.EDIT)
             .build()
 
         return Retrofit.Builder()
@@ -165,7 +158,7 @@ class ApiClient(private val session: SessionManager) {
     private fun bareService(baseUrl: String): ApiService =
         Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).followRedirects(false).build())
+            .client(OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).addInterceptor(userAgent).followRedirects(false).build())
             .addConverterFactory(EnvelopeConverterFactory(json))
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
@@ -184,6 +177,14 @@ class ApiClient(private val session: SessionManager) {
     }
 
     companion object {
+        /** Fylvo: how the app names itself to the server, e.g. in the activity log. */
+        const val USER_AGENT = "Fylvo-Android/" + io.github.svenbuild.fylvo.android.BuildConfig.VERSION_NAME
+
+        /** Fylvo: sets [USER_AGENT] on every request of a client (API, downloads, previews). */
+        val userAgent = Interceptor { chain ->
+            chain.proceed(chain.request().newBuilder().header("User-Agent", USER_AGENT).build())
+        }
+
         /** "https://host:port" with the scheme's default port filled in. */
         fun originOf(url: HttpUrl): String = "${url.scheme}://${url.host.lowercase()}:${url.port}"
 

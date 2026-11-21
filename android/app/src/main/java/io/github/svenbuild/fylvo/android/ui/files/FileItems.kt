@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalContext
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import io.github.svenbuild.fylvo.android.api.FileObject
+import io.github.svenbuild.fylvo.android.data.THUMB_TTL_MS
 
 /**
  * Gestures a row or tile responds to. Fylvo: no menu button on rows any more; a long press
@@ -93,7 +94,8 @@ fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
     // Signed URLs expire; re-key on a coarse time bucket so any recomposition
     // past the TTL refetches instead of sticking for the VM's lifetime.
     val bucket = System.currentTimeMillis() / THUMB_TTL_MS
-    val url by produceState<String?>(initialValue = null, file.id, bucket) {
+    // Fylvo: keyed by the version too, so a new version fetches its own preview.
+    val url by produceState<String?>(initialValue = null, file.id, file.primaryEntity, bucket) {
         // Fylvo: a failed request (network, busy server) is tried again a few times.
         for (wait in THUMB_RETRY_DELAYS_MS) {
             value = viewModel.thumbUrl(file)

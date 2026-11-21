@@ -91,6 +91,8 @@ data class FileObject(
     val owned: Boolean? = null,
     /** Fylvo: id of the file's current version (entity); changes with every new version. */
     @SerialName("primary_entity") val primaryEntity: String = "",
+    /** Fylvo: only with `file/info?extended=true`; the versions (entities) of the file. */
+    @SerialName("extended_info") val extendedInfo: ExtendedInfo? = null,
 ) {
     val isFolder: Boolean get() = type == 1
 
@@ -122,6 +124,19 @@ data class FileObject(
         const val METADATA_UPLOAD_SESSION_ID = "sys:upload_session_id"
     }
 }
+
+/** Fylvo: the part of `extended_info` the app reads. */
+@Serializable
+data class ExtendedInfo(
+    val entities: List<EntityInfo> = emptyList(),
+)
+
+@Serializable
+data class EntityInfo(
+    val id: String = "",
+    val size: Long = 0,
+    val type: Int = 0,
+)
 
 @Serializable
 data class Pagination(
@@ -212,7 +227,10 @@ data class CreateUploadSessionRequest(
     @SerialName("mime_type") val mimeType: String = "",
     @SerialName("policy_id") val policyId: String = "",
     @SerialName("entity_type") val entityType: String = "",
+    /** Fylvo: the version (entity id) an edit is based on; the server refuses with 40076 when it is not current. */
     val previous: String = "",
+    /** Fylvo: with [previous], fail with 40904 instead of creating the file when it is gone. */
+    @SerialName("previous_required") val previousRequired: Boolean = false,
 )
 
 @Serializable
@@ -233,6 +251,8 @@ data class UploadSessionResponse(
     @SerialName("storage_policy") val storagePolicy: StoragePolicy? = null,
     @SerialName("callback_secret") val callbackSecret: String = "",
     @SerialName("rapid_uploaded") val rapidUploaded: Boolean = false,
+    /** Fylvo: the entity (version) this upload becomes once it is finished. */
+    @SerialName("entity_id") val entityId: String = "",
 )
 
 @Serializable

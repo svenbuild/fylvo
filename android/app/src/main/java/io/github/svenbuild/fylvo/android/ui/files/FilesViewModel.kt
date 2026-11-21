@@ -11,9 +11,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -67,9 +64,6 @@ enum class Category(val uri: String, @StringRes val label: Int, val filter: Stri
         fun fromUri(uri: String): Category? = entries.firstOrNull { it.uri == uri }
     }
 }
-
-/** Signed thumbnail URLs are refetched after this; servers typically sign for ~1 h. */
-internal const val THUMB_TTL_MS = 50L * 60 * 1000
 
 /** Fylvo: the server address a folder or file is kept offline under (a shared folder's own share). */
 fun offlineUriOf(file: FileObject): String = file.sharedRedirect ?: file.path
@@ -182,9 +176,6 @@ class FilesViewModel(
     private val _state = MutableStateFlow(FilesUiState())
     val state: StateFlow<FilesUiState> = _state
 
-    /** Resolved thumbnail URLs by file id with fetch time, shared across list/grid recompositions. */
-    private val thumbCache = ConcurrentHashMap<String, Pair<String, Long>>()
-    private val noThumb = ConcurrentHashMap.newKeySet<String>()
     /** Last progress emission per path; download callbacks fire every 256 KB. */
     private val lastProgressAt = ConcurrentHashMap<String, Long>()
 
@@ -1230,47 +1221,21 @@ class FilesViewModel(
      * a listing lands, so rows do not each pay a round trip as they scroll in.
      */
     private fun prefetchThumbs(files: List<FileObject>) {
-        val wanted = files.filter { it.mayHaveThumbnail && !thumbCache.containsKey(it.id) && it.id !in noThumb }.take(PREFETCH_THUMBS)
+        val wanted = files.filter { !repo.hasNoThumb(it) }.take(PREFETCH_THUMBS)
         if (wanted.isEmpty()) return
         viewModelScope.launch {
             val gate = kotlinx.coroutines.sync.Semaphore(PREFETCH_PARALLELISM)
             wanted.forEach { f ->
-                launch { gate.withPermit { runCatching { thumbUrl(f) } } }
+                launch { gate.withPermit { thumbUrl(f) } }
             }
         }
     }
 
-    /**
-     * Fylvo: one request per file at a time. The server makes a missing preview on the first
-     * request; two at once for the same file made it twice, and the losing one deleted the
-     * winner's preview file.
-     */
-    private val thumbInFlight = ConcurrentHashMap<String, Deferred<String?>>()
+    /** Fylvo: one request per file at a time and the cache live in the repository (shared with the file picker). */
+    suspend fun thumbUrl(file: FileObject): String? = repo.cachedThumbUrl(file)
 
-    suspend fun thumbUrl(file: FileObject): String? {
-        if (!file.mayHaveThumbnail || file.id in noThumb) return null
-        thumbCache[file.id]?.let { (url, fetchedAt) ->
-            if (System.currentTimeMillis() - fetchedAt < THUMB_TTL_MS) return url
-        }
-        val request = thumbInFlight.computeIfAbsent(file.id) {
-            viewModelScope.async(start = CoroutineStart.LAZY) {
-                try {
-                    // Fylvo: only a clear "no preview" is remembered; anything else is asked again later.
-                    val url = runCatching { repo.thumbUrl(file.path) }.getOrElse { return@async null }
-                    if (url == null) noThumb.add(file.id)
-                    else thumbCache[file.id] = url to System.currentTimeMillis()
-                    url
-                } finally {
-                    thumbInFlight.remove(file.id)
-                }
-            }
-        }
-        request.start()
-        return request.await()
-    }
-
-    /** Fylvo: true once the server said the file has no preview. */
-    fun hasNoThumb(file: FileObject): Boolean = !file.mayHaveThumbnail || file.id in noThumb
+    /** Fylvo: true once the server said this version of the file has no preview. */
+    fun hasNoThumb(file: FileObject): Boolean = repo.hasNoThumb(file)
 
     fun consumeSnackbar() {
         _state.value = _state.value.copy(snackbar = null)

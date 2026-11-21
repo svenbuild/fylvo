@@ -5,6 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.work.WorkManager
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import okhttp3.OkHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -21,7 +24,7 @@ import io.github.svenbuild.fylvo.android.data.offline.OfflineManager
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.localized
 
-class FylvoApp : Application() {
+class FylvoApp : Application(), ImageLoaderFactory {
 
     lateinit var sessionManager: SessionManager
         private set
@@ -58,6 +61,11 @@ class FylvoApp : Application() {
         Thread { runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cleanUpOldBatches(this) } }.start()
     }
 
+    /** Fylvo: previews and the image viewer name the app to the server like every other request. */
+    override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
+        .okHttpClient { OkHttpClient.Builder().addInterceptor(ApiClient.userAgent).build() }
+        .build()
+
     /**
      * Fylvo: ends the session and removes what the account left on the device: background
      * jobs, offline copies, cached downloads and app updates, upload staging, folder-sync and notification
@@ -87,6 +95,7 @@ class FylvoApp : Application() {
                 WorkManager.getInstance(this@FylvoApp).pruneWork()
             }
             io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames()
+            fileRepository.forgetThumbs()
             appUpdater.reset()
             favoritesStore.clear()
             // Offline copies are read-only in this version, nothing on the phone is lost. After an

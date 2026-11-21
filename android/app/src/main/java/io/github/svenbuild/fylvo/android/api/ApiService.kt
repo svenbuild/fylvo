@@ -56,7 +56,11 @@ interface ApiService {
 
     /** One file or folder by exact URI; the envelope carries 40016 when the path does not exist. */
     @GET("api/v4/file/info")
-    suspend fun fileInfo(@Query("uri") uri: String): Response<ApiResponse<FileObject>>
+    suspend fun fileInfo(
+        @Query("uri") uri: String,
+        /** Fylvo: true adds `extended_info` with the file's versions. */
+        @Query("extended") extended: Boolean? = null,
+    ): Response<ApiResponse<FileObject>>
 
     @POST("api/v4/file/url")
     suspend fun fileUrls(@Body request: FileUrlRequest): Response<ApiResponse<FileUrlResponse>>
