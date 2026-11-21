@@ -8,7 +8,7 @@
 //! - Only operates on hydrated placeholder files
 
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
     sync::{
         Arc,
@@ -23,14 +23,17 @@ use dashmap::DashMap;
 use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::{
     cfapi::placeholder::LocalFileInfo,
     drive::{placeholder::CrPlaceholder, utils::local_path_to_cr_uri},
     inventory::{FileMetadata, InventoryDb},
-    tasks::queue::QueuedTask,
+    tasks::{
+        queue::QueuedTask,
+        upload::{ContentState, content_state},
+    },
 };
 
 use super::types::TaskProgress;
@@ -171,6 +174,10 @@ pub struct DownloadTask<'a> {
     inventory_meta: Option<FileMetadata>,
     /// Latest file info fetched from remote before download
     remote_file_info: Option<cloudreve_api::models::explorer::FileResponse>,
+    /// Fylvo: size and write time of the local file when the download started.
+    started: Option<ContentState>,
+    /// Fylvo: the file was changed here, the download left it as it is.
+    kept_local_change: bool,
     cancel_token: CancellationToken,
     progress_map: Arc<DashMap<String, TaskProgress>>,
 }
@@ -192,12 +199,19 @@ impl<'a> DownloadTask<'a> {
             local_file_info: None,
             inventory_meta: None,
             remote_file_info: None,
+            started: None,
+            kept_local_change: false,
             task,
             sync_path,
             remote_base,
             cancel_token: CancellationToken::new(),
             progress_map,
         }
+    }
+
+    /// Whether the file was changed here and the download left it as it is.
+    pub fn kept_local_change(&self) -> bool {
+        self.kept_local_change
     }
 
     /// Set the cancellation token
@@ -255,6 +269,9 @@ impl<'a> DownloadTask<'a> {
                 local_path = %self.task.payload.local_path_display(),
                 "File is not a placeholder, skipping download"
             );
+            // Fylvo: a file put here with local content (for example saved by replacement):
+            // it is uploaded (queueing this download cancelled an upload of the path).
+            self.kept_local_change = true;
             return Ok(());
         }
 
@@ -269,6 +286,25 @@ impl<'a> DownloadTask<'a> {
             );
             return Ok(());
         }
+
+        // Fylvo: changed here since the sync decided on this download: the upload of the change
+        // meets the server's newer version and becomes a conflict, nothing is overwritten. The
+        // queue uploads it (queueing this download cancelled an upload of the path).
+        if !local_file_info.in_sync() {
+            info!(
+                target: "tasks::download",
+                task_id = %self.task.task_id,
+                local_path = %self.task.payload.local_path_display(),
+                "File changed here, skipping download"
+            );
+            self.kept_local_change = true;
+            return Ok(());
+        }
+        // Fylvo: size and write time now, compared again right before the content is replaced.
+        self.started = Some(
+            content_state(&self.task.payload.local_path)
+                .context("the file cannot be read right now")?,
+        );
 
         self.local_file_info = Some(local_file_info);
 
@@ -358,15 +394,16 @@ impl<'a> DownloadTask<'a> {
             "Got download URL"
         );
 
-        // Create temp file for download
-        let temp_dir = std::env::temp_dir();
-        let temp_file_name = format!("cloudreve_download_{}", self.task.task_id);
-        let temp_path = temp_dir.join(&temp_file_name);
-
-        // Clean up any existing temp file
-        if temp_path.exists() {
-            std::fs::remove_file(&temp_path).ok();
-        }
+        // Fylvo: the temp file lies next to the file, so `ReplaceFileW` works on any drive (it
+        // cannot move across volumes). Its name starts with `~`, which the sync ignores. It is
+        // removed however the task ends (also when it is cancelled or aborted).
+        let temp = RemoveOnDrop(
+            local_path
+                .parent()
+                .context("file without a parent folder")?
+                .join(format!("~fylvo-download-{}.tmp", self.task.task_id)),
+        );
+        let temp_path = &temp.0;
 
         // Create progress tracker and reporter
         let tracker = Arc::new(DownloadProgressTracker::new(file_size));
@@ -376,42 +413,25 @@ impl<'a> DownloadTask<'a> {
         );
 
         // Download to temp file
-        let download_result = self
-            .download_to_temp(&download_url, &temp_path, tracker.clone(), &reporter)
-            .await;
+        self.download_to_temp(&download_url, temp_path, tracker.clone(), &reporter)
+            .await?;
 
-        match download_result {
-            Ok(()) => {
-                // Report final progress
-                let final_update = tracker.create_update();
-                reporter.on_progress(&final_update);
+        // Report final progress
+        let final_update = tracker.create_update();
+        reporter.on_progress(&final_update);
 
-                // Replace placeholder file with downloaded content and commit
-                self.replace_and_commit_placeholder(&temp_path)
-                    .context("failed to replace and commit placeholder")?;
+        // Replace placeholder file with downloaded content and commit
+        self.replace_and_commit_placeholder(temp_path)
+            .context("failed to replace and commit placeholder")?;
 
-                // Clean up temp file
-                if temp_path.exists() {
-                    std::fs::remove_file(&temp_path).ok();
-                }
+        info!(
+            target: "tasks::download",
+            task_id = %self.task.task_id,
+            local_path = %self.task.payload.local_path_display(),
+            "Download completed successfully"
+        );
 
-                info!(
-                    target: "tasks::download",
-                    task_id = %self.task.task_id,
-                    local_path = %self.task.payload.local_path_display(),
-                    "Download completed successfully"
-                );
-
-                Ok(())
-            }
-            Err(e) => {
-                // Clean up temp file on error
-                if temp_path.exists() {
-                    std::fs::remove_file(&temp_path).ok();
-                }
-                Err(e)
-            }
-        }
+        Ok(())
     }
 
     /// Download file content to a temporary file
@@ -434,9 +454,11 @@ impl<'a> DownloadTask<'a> {
         }
 
         // Create temp file
-        let mut file = tokio::fs::File::create(&temp_path)
-            .await
-            .context("failed to create temp file")?;
+        // Fylvo: created at once, not in the background: a cancel that removes the temp file
+        // must not come before the file exists.
+        let mut file = tokio::fs::File::from_std(
+            std::fs::File::create(temp_path).context("failed to create temp file")?,
+        );
 
         // Stream download with progress tracking
         let mut stream = response.bytes_stream();
@@ -485,57 +507,23 @@ impl<'a> DownloadTask<'a> {
             "Replacing placeholder content"
         );
 
+        // Fylvo: a file kept on this device ("always keep") can be changed while its new
+        // version downloads. Replacing it then would throw the change away: keep it instead.
+        let in_sync = LocalFileInfo::from_path(local_path).is_ok_and(|info| info.in_sync());
+        if !in_sync || !unchanged_since(self.started, local_path) {
+            info!(
+                target: "tasks::download",
+                task_id = %self.task.task_id,
+                local_path = %local_path.display(),
+                "File changed during the download, keeping the local change"
+            );
+            self.kept_local_change = true;
+            return Ok(());
+        }
+
         // Use Windows ReplaceFileW for atomic replacement
         // This preserves file attributes and provides atomicity
-        #[cfg(windows)]
-        {
-            use std::ffi::OsStr;
-            use std::os::windows::ffi::OsStrExt;
-            use windows::Win32::Storage::FileSystem::{REPLACE_FILE_FLAGS, ReplaceFileW};
-            use windows::core::PCWSTR;
-
-            // Convert paths to wide strings
-            let local_wide: Vec<u16> = OsStr::new(local_path)
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect();
-            let temp_wide: Vec<u16> = OsStr::new(temp_path)
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect();
-
-            // ReplaceFileW replaces the destination with the source
-            // The source file is deleted after the operation
-            let result = unsafe {
-                ReplaceFileW(
-                    PCWSTR::from_raw(local_wide.as_ptr()),
-                    PCWSTR::from_raw(temp_wide.as_ptr()),
-                    PCWSTR::null(),        // No backup file
-                    REPLACE_FILE_FLAGS(0), // No flags
-                    None,                  // Reserved
-                    None,                  // Reserved
-                )
-            };
-
-            if let Err(e) = result {
-                // If ReplaceFileW fails, fall back to copy + delete
-                warn!(
-                    target: "tasks::download",
-                    task_id = %self.task.task_id,
-                    error = ?e,
-                    "ReplaceFileW failed, falling back to copy"
-                );
-                std::fs::copy(temp_path, local_path)
-                    .context("failed to copy temp file to local path")?;
-            }
-        }
-
-        #[cfg(not(windows))]
-        {
-            // On non-Windows, just copy the file
-            std::fs::copy(temp_path, local_path)
-                .context("failed to copy temp file to local path")?;
-        }
+        replace_with_backup(local_path, temp_path, &self.task.task_id)?;
 
         // Use CrPlaceholder to convert and mark as in-sync
         let drive_id = Uuid::from_str(self.drive_id).context("invalid drive ID")?;
@@ -556,5 +544,121 @@ impl<'a> DownloadTask<'a> {
         );
 
         Ok(())
+    }
+}
+
+/// Put `temp` in the place of `local` with `ReplaceFileW` (keeps the file's attributes, one
+/// step for other programs).
+///
+/// Fylvo: without a backup name, Windows renames the old file to a random name and deletes it,
+/// and the sync would pass that rename and that deletion on to the server file. The backup name
+/// starts with `~`, which the sync ignores; it is removed afterwards. There is no copy over the
+/// file as a fallback: `ReplaceFileW` fails when another program has the file open, and a copy
+/// would write over what that program saves (the sync downloads it again later). If Windows
+/// moved the old file to the backup name but could not put the new one in place, the old one
+/// goes back.
+fn replace_with_backup(local: &Path, temp: &Path, task_id: &str) -> Result<()> {
+    use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
+    use windows::{
+        Win32::Storage::FileSystem::{REPLACE_FILE_FLAGS, ReplaceFileW},
+        core::PCWSTR,
+    };
+
+    let wide = |path: &Path| -> Vec<u16> {
+        OsStr::new(path).encode_wide().chain(std::iter::once(0)).collect()
+    };
+    let backup = RemoveOnDrop(temp.with_file_name(format!("~fylvo-backup-{task_id}.tmp")));
+    let (local_wide, temp_wide, backup_wide) = (wide(local), wide(temp), wide(&backup.0));
+    let result = unsafe {
+        ReplaceFileW(
+            PCWSTR::from_raw(local_wide.as_ptr()),
+            PCWSTR::from_raw(temp_wide.as_ptr()),
+            PCWSTR::from_raw(backup_wide.as_ptr()),
+            REPLACE_FILE_FLAGS(0),
+            None,
+            None,
+        )
+    };
+    if let Err(err) = result {
+        // Never over a file saved there meanwhile: then that file stays, and so does the backup.
+        if !local.exists() && backup.0.exists() {
+            if let Err(back) = crate::drive::utils::move_no_replace(&backup.0, local) {
+                // The backup is the only local copy now: it stays (under its `~` name).
+                std::mem::forget(backup);
+                return Err(back.context("failed to put the local file back after a failed replace"));
+            }
+        }
+        return Err(err).context("failed to replace the local file");
+    }
+    Ok(())
+}
+
+/// Fylvo: a file of the task itself, removed when the task ends in any way.
+struct RemoveOnDrop(PathBuf);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// Whether a file still has the size and write time it had at `started` (read through a
+/// handle). Unknown counts as changed.
+fn unchanged_since(started: Option<ContentState>, path: &Path) -> bool {
+    started.is_some() && content_state(path) == started
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_changed_during_the_download_is_not_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("kept.docx");
+        std::fs::write(&path, "server version 1").unwrap();
+        let started = content_state(&path);
+        assert!(unchanged_since(started, &path));
+        // The user saves while the server's version 2 downloads.
+        let mut writer = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        std::io::Write::write_all(&mut writer, b", edited here").unwrap();
+        assert!(!unchanged_since(started, &path));
+        drop(writer);
+        // Without a first reading nothing is replaced either.
+        assert!(!unchanged_since(None, &path));
+    }
+
+    #[test]
+    fn the_replace_leaves_no_file_with_a_random_name_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let local = dir.path().join("Book.xlsx");
+        let temp = dir.path().join("~fylvo-download-t1.tmp");
+        std::fs::write(&local, "old").unwrap();
+        std::fs::write(&temp, "new").unwrap();
+        replace_with_backup(&local, &temp, "t1").unwrap();
+        assert_eq!(std::fs::read_to_string(&local).unwrap(), "new");
+        // Only the file is left: no `Book.xlsx~RF….TMP` (passed on to the server as a rename
+        // and a deletion), no temp file, no backup.
+        let names: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(names, ["Book.xlsx"]);
+    }
+
+    #[test]
+    fn a_failed_replace_keeps_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let local = dir.path().join("Book.xlsx");
+        std::fs::write(&local, "kept").unwrap();
+        // The program that has the file open does not allow deleting it.
+        let _open = {
+            use std::os::windows::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new().read(true).share_mode(1).open(&local).unwrap()
+        };
+        let temp = dir.path().join("~fylvo-download-t2.tmp");
+        std::fs::write(&temp, "new").unwrap();
+        assert!(replace_with_backup(&local, &temp, "t2").is_err());
+        assert_eq!(std::fs::read_to_string(&local).unwrap(), "kept");
     }
 }

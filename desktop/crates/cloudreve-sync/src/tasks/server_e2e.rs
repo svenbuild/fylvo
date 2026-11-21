@@ -220,3 +220,23 @@ async fn names_in_other_case_are_refused_with_40905_and_read_as_such() {
         .unwrap();
     assert!(upload_is_current(after.as_deref(), &server.info("Docs/B.txt").await));
 }
+
+#[tokio::test]
+#[ignore = "needs a local Fylvo server, see the module comment"]
+async fn a_file_saved_by_replacement_stays_the_same_file_on_the_server() {
+    let server = Server::connect().await;
+    server.folder("Docs").await.unwrap();
+    let first = server.upload("Docs/Book.xlsx", "one", None).await.unwrap();
+    let before = server.info("Docs/Book.xlsx").await;
+
+    // Excel deleted and wrote the file again; the inventory row stayed, so the app uploads
+    // a new version that names the one it replaces.
+    let second = server
+        .upload("Docs/Book.xlsx", "two", first.as_deref())
+        .await
+        .unwrap();
+    let after = server.info("Docs/Book.xlsx").await;
+    assert_eq!(after.id, before.id, "same file: versions and shares stay with it");
+    assert_eq!(after.primary_entity, second);
+    assert_ne!(after.primary_entity, before.primary_entity);
+}

@@ -7,4 +7,4 @@ mod upload;
 
 pub use queue::{TaskQueue, TaskQueueConfig};
 pub use types::{TaskKind, TaskPayload, TaskProgress};
-pub(crate) use upload::failed_recently;
+pub(crate) use upload::{failed_recently, uploaded_recently};

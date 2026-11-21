@@ -83,6 +83,11 @@ impl IgnoreMatcher {
         builder.add(Glob::new("**/~*")?);
         builder.add(Glob::new("**/.~lock.*")?);
         builder.add(Glob::new("**/~*.tmp")?);
+        // Fylvo: Excel saves by renaming the workbook to 8 hex digits plus `.tmp` and putting
+        // the new file under its name. Ignored like Word's `~WRL*.tmp`, that rename stays local:
+        // the server file keeps its name, versions and shares and gets the new version.
+        let excel_temp = format!("**/{}.tmp", "[0-9A-Fa-f]".repeat(8));
+        builder.add(GlobBuilder::new(&excel_temp).case_insensitive(true).build()?);
 
         // Fylvo: what Windows may put at the root of a drive (the folder can also show as a
         // drive letter) never goes to the server.
@@ -209,6 +214,21 @@ mod tests {
     }
 
     #[test]
+    fn office_save_names_are_ignored() {
+        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let matcher = IgnoreMatcher::new(&[], sync_root).unwrap();
+        // Word, Excel and the download of this app move the old file to these names.
+        assert!(matcher.is_match("C:\\Users\\test\\sync\\Docs\\~WRL0001.tmp"));
+        assert!(matcher.is_match("C:\\Users\\test\\sync\\Docs\\E0F2A4B1.tmp"));
+        assert!(matcher.is_match("C:\\Users\\test\\sync\\Docs\\e0f2a4b1.TMP"));
+        assert!(matcher.is_match("C:\\Users\\test\\sync\\Docs\\~fylvo-backup-t1.tmp"));
+        // Other `.tmp` names are files like any other.
+        assert!(!matcher.is_match("C:\\Users\\test\\sync\\Docs\\notes.tmp"));
+        assert!(!matcher.is_match("C:\\Users\\test\\sync\\Docs\\E0F2A4B1X.tmp"));
+        assert!(!matcher.is_match("C:\\Users\\test\\sync\\Docs\\Book.xlsx"));
+    }
+
+    #[test]
     fn root_system_items_are_ignored_only_at_the_root() {
         let sync_root = PathBuf::from("C:\\Users\\test\\sync");
         let matcher = IgnoreMatcher::new(&[], sync_root).unwrap();
@@ -264,9 +284,9 @@ mod tests {
         ];
         let matcher = IgnoreMatcher::new(&patterns, sync_root.clone()).unwrap();
 
-        // Only *.tmp is added, next to the three built-in Office temp patterns and the
+        // Only *.tmp is added, next to the four built-in Office temp patterns and the
         // built-in root system items (two globs each).
-        assert_eq!(matcher.len(), 4 + 2 * ROOT_SYSTEM_ITEMS.len());
+        assert_eq!(matcher.len(), 5 + 2 * ROOT_SYSTEM_ITEMS.len());
         assert!(matcher.is_match("C:\\Users\\test\\sync\\file.tmp"));
     }
 

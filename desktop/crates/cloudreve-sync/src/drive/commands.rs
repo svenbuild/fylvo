@@ -12,7 +12,7 @@ use crate::{
         utils::{is_in_cloud_sync_root, local_path_to_cr_uri, notify_shell_change},
     },
     inventory::ConflictState,
-    tasks::TaskPayload,
+    tasks::{TaskPayload, uploaded_recently},
     utils::toast,
 };
 use anyhow::{Context, Result};
@@ -620,6 +620,11 @@ impl Mount {
     }
 
     pub async fn process_fs_events(&self, events: GroupedFsEvents) -> Result<()> {
+        // Fylvo: deletions first. A file deleted and written again in one batch (saved by
+        // replacement) must be seen as back before its upload marks it in sync; handled after
+        // that upload, the stale deletion would send the new version to the server's trash.
+        let mut events: Vec<_> = events.into_iter().collect();
+        events.sort_by_key(|(kind, _)| !matches!(kind, EventKind::Remove(_)));
         for (event_kind, events) in events {
             // Filter out events that were pre-registered by rename operations
             let filtered_events = self.event_blocker.filter_events(events, &event_kind);
@@ -629,7 +634,17 @@ impl Mount {
             let filtered_events: Vec<Event> = filtered_events
                 .into_iter()
                 .filter(|event| {
-                    let dominated_path = &event.paths[0];
+                    // Fylvo: a rename counts by its target. A file put in place from an
+                    // ignored name (Word's `~WRD*.tmp`, Excel's `XXXXXXXX.tmp`) is a change of
+                    // the target; a rename to an ignored name is skipped further on.
+                    let is_rename = matches!(
+                        event_kind,
+                        EventKind::Modify(ModifyKind::Name(RenameMode::Both))
+                    );
+                    let dominated_path = match event.paths.last() {
+                        Some(target) if is_rename => target,
+                        _ => &event.paths[0],
+                    };
                     let is_ignored = matcher.is_match(dominated_path);
                     if is_ignored {
                         tracing::trace!(
@@ -658,7 +673,8 @@ impl Mount {
 
             if path_uri_mappings.is_empty() {
                 tracing::warn!(target: "drive::commands", "No valid URIs to process");
-                return Ok(());
+                // Fylvo: the other groups of the batch still count.
+                continue;
             }
 
             match event_kind {
@@ -831,6 +847,11 @@ impl Mount {
         for event in events {
             if event.paths.len() != 2 {
                 tracing::error!(target: "drive::commands", count=event.paths.len(), "Invalid modify name event: not 2 paths");
+                continue;
+            }
+            // Fylvo: moved to an ignored name (Word's `~WRL*.tmp`, the download's backup):
+            // nothing to do here, and no task of the old name may be cancelled for it.
+            if self.ignore_matcher.read().await.is_match(&event.paths[1]) {
                 continue;
             }
 
@@ -1021,6 +1042,24 @@ impl Mount {
             .into_values()
             .filter(|path| *path != sync_path)
             .collect();
+        // Fylvo: saved by replacement. Many programs (Excel, PowerPoint and others) save by
+        // deleting the file and putting a new one under the same name. When the delayed event
+        // arrives, a file is at the path again: a new version of the same file, not a deletion.
+        // The inventory row stays, so the upload names the version it replaces, and the
+        // server keeps the file's versions and shares.
+        // A row that cannot be read now counts as a file row: in doubt nothing is deleted on
+        // the server (the upload then fails or makes a new version, the file stays).
+        // A synced placeholder back at the path counts too if this app uploaded it a moment ago
+        // (a sync pass uploaded the new version before the delayed delete event came in). Only
+        // a folder row turns a file back at the path into a deletion; without a row (not
+        // uploaded yet) the upload decides, so the server file is never trashed for a save.
+        let mut paths = self.upload_replaced(paths).await;
+        // A slow save puts the new file in place a little later: look once more before the
+        // server file goes to the trash.
+        if !paths.is_empty() {
+            tokio::time::sleep(REPLACEMENT_GRACE).await;
+            paths = self.upload_replaced(paths).await;
+        }
         if paths.is_empty() {
             return Ok(());
         }
@@ -1046,6 +1085,26 @@ impl Mount {
         }
 
         self.delete_on_server(paths).await.map(|_| ())
+    }
+
+    /// Fylvo: queue the upload of the deleted paths that were saved by replacement (see
+    /// `process_fs_delete_events`); returns the paths that stay deleted.
+    async fn upload_replaced(&self, paths: Vec<PathBuf>) -> Vec<PathBuf> {
+        let (replaced, paths): (Vec<PathBuf>, Vec<PathBuf>) =
+            paths.into_iter().partition(|path| {
+                (file_back_at(path) || (synced_file_at(path) && uploaded_recently(path)))
+                    && path.to_str().is_some_and(|p| match self.inventory.query_by_path(p) {
+                        Ok(row) => row.is_none_or(|row| !row.is_folder),
+                        Err(_) => true,
+                    })
+            });
+        for path in replaced {
+            tracing::info!(target: "drive::commands", path = %path.display(), "Deleted and written again, uploading as a new version");
+            if let Err(e) = self.enqueue_upload(TaskPayload::upload(path.clone())).await {
+                tracing::warn!(target: "drive::commands", path = %path.display(), error = %e, "Failed to enqueue upload task");
+            }
+        }
+        paths
     }
 
     /// Delete the given local paths on the server. They go to the server's trash. Returns the
@@ -1270,5 +1329,52 @@ impl Mount {
         }
 
         Ok(())
+    }
+}
+
+/// Fylvo: how long a deletion waits for a new file under the same name before it reaches the
+/// server, on top of the watcher's 2 s (slow saves of big files).
+const REPLACEMENT_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Fylvo: whether a file with new content is at `path` again, spelled exactly so. Not a synced
+/// placeholder in sync: that one the sync itself put back (a real deletion then stays one).
+/// Not under another upper/lower case spelling: that is a new name to the server (`case.rs`).
+fn file_back_at(path: &Path) -> bool {
+    file_at(path, |info| !(info.is_placeholder() && info.in_sync()))
+}
+
+/// Fylvo: whether a synced placeholder in sync is at `path`, spelled exactly so.
+fn synced_file_at(path: &Path) -> bool {
+    file_at(path, |info| info.is_placeholder() && info.in_sync())
+}
+
+/// Whether a file that `test` accepts is at `path`, spelled exactly so.
+fn file_at(path: &Path, test: impl Fn(&LocalFileInfo) -> bool) -> bool {
+    let file = LocalFileInfo::from_path(path)
+        .is_ok_and(|info| info.exists && !info.is_directory && test(&info));
+    file && LocalFileInfo::on_disk_path(path).as_deref() == Some(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_deleted_and_written_again_counts_as_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Book.xlsx");
+        // Excel: the original is deleted, a new file is renamed to its name.
+        std::fs::write(&path, "version 1").unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert!(!file_back_at(&path), "really deleted");
+        let temp = dir.path().join("Cedd4100");
+        std::fs::write(&temp, "version 2").unwrap();
+        std::fs::rename(&temp, &path).unwrap();
+        assert!(file_back_at(&path));
+        // Back under another spelling, or as a folder: a deletion of this name.
+        assert!(!file_back_at(&dir.path().join("book.xlsx")));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(!file_back_at(&path));
     }
 }

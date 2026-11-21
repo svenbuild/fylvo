@@ -475,10 +475,11 @@ impl TaskQueue {
                     );
                 }
             }
-            Ok(TaskRunState::UploadAgain(path)) => {
-                // Fylvo: the file changed during the upload. This task is done; a new one
-                // uploads the newer content, unless the task was cancelled meanwhile (the file
-                // was renamed, deleted or is downloaded: what happens to it is decided there).
+            Ok(TaskRunState::UploadAgain(path, delay)) => {
+                // Fylvo: the file changed during the upload (or a download kept a local
+                // change). This task is done; a new one uploads the newer content, unless the
+                // task was cancelled meanwhile (the file was renamed, deleted or is downloaded:
+                // what happens to it is decided there).
                 let completed = self.inventory.change_task_status_if(
                     &task.task_id,
                     TaskStatus::Running,
@@ -486,7 +487,7 @@ impl TaskQueue {
                 );
                 self.cleanup_task_entry(&task.task_id).await;
                 if matches!(completed, Ok(true)) {
-                    self.upload_later(path, crate::tasks::upload::upload_again_after(&task.payload.local_path));
+                    self.upload_later(path, delay);
                 }
                 return;
             }
@@ -631,7 +632,8 @@ impl TaskQueue {
 
                 task_executor.execute().await?;
                 if task_executor.changed_meanwhile() {
-                    return Ok(TaskRunState::UploadAgain(respelled.payload.local_path));
+                    let delay = crate::tasks::upload::upload_again_after(&task.payload.local_path);
+                    return Ok(TaskRunState::UploadAgain(respelled.payload.local_path, delay));
                 }
             }
             TaskKind::Download => {
@@ -646,6 +648,14 @@ impl TaskQueue {
                 );
 
                 task_executor.execute().await?;
+                // Fylvo: the local change it kept goes to the server (and meets the newer
+                // version there as a conflict).
+                if task_executor.kept_local_change() {
+                    return Ok(TaskRunState::UploadAgain(
+                        task.payload.local_path.clone(),
+                        Duration::ZERO,
+                    ));
+                }
             }
         }
 
@@ -836,8 +846,8 @@ impl TaskQueue {
 pub enum TaskRunState {
     Completed,
     Cancelled,
-    /// Fylvo: uploaded, but the file changed meanwhile: upload this path again.
-    UploadAgain(PathBuf),
+    /// Fylvo: the path holds content the server does not have yet: upload it after the delay.
+    UploadAgain(PathBuf, Duration),
 }
 
 enum QueueCommand {
