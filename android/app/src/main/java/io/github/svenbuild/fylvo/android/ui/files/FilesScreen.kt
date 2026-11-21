@@ -33,9 +33,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
@@ -47,7 +45,6 @@ import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -60,7 +57,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.pullToRefresh
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -72,11 +71,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.core.content.FileProvider
@@ -118,7 +119,8 @@ fun FilesScreen(
     var preview by remember { mutableStateOf<Pair<List<FileObject>, Int>?>(null) }
     var renameTarget by remember { mutableStateOf<FileObject?>(null) }
     var deleteTarget by remember { mutableStateOf<FileObject?>(null) }
-    var deleteSelectedOpen by remember { mutableStateOf(false) }
+    /** Fylvo: the selected paths to delete, taken when the question opens. */
+    var deleteSelectedTarget by remember { mutableStateOf<List<String>?>(null) }
     var deleteForeverTarget by remember { mutableStateOf<List<String>?>(null) }
     /** Paths to move/copy and whether it is a copy; non-null shows the folder picker. */
     var movePick by remember { mutableStateOf<Pair<List<String>, Boolean>?>(null) }
@@ -169,14 +171,15 @@ fun FilesScreen(
         val result = snackbar.showSnackbar(
             message = msg.text.resolve(context),
             actionLabel = msg.actionLabel?.resolve(context),
-            duration = if (msg.action != null) SnackbarDuration.Long else SnackbarDuration.Short,
+            duration = if (msg.action != null || msg.long) SnackbarDuration.Long else SnackbarDuration.Short,
         )
         viewModel.consumeSnackbar()
         if (result == SnackbarResult.ActionPerformed) msg.action?.invoke()
     }
 
-    // Infinite scroll: load the next page when the end comes into view.
-    LaunchedEffect(listState, gridState, state.effectiveMode) {
+    // Infinite scroll: load the next page when the end comes into view. Fylvo: checked again when a
+    // refresh ends, since no page is loaded while it runs.
+    LaunchedEffect(listState, gridState, state.effectiveMode, state.revalidating) {
         val lastVisible = if (state.effectiveMode == ViewMode.GRID) {
             snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
         } else {
@@ -230,21 +233,80 @@ fun FilesScreen(
     var detailsTarget by remember { mutableStateOf<FileObject?>(null) }
     fun shareLink(file: FileObject) { shareTarget = file }
 
+    val selectLabel = stringResource(R.string.select)
+    val deselectLabel = stringResource(R.string.deselect)
+    val optionsLabel = stringResource(R.string.options)
+
     fun actionsFor(file: FileObject): FileActions = FileActions(
         onOpen = {
             when {
-                state.selecting -> viewModel.toggleSelected(file)
+                // Fylvo: an unfinished upload joins a selection only by a long press.
+                state.selecting -> if (!file.isUploading || file.path in state.selected) viewModel.toggleSelected(file)
                 state.inTrash -> sheetTarget = file
                 file.isFolder -> viewModel.navigateTo(file)
                 else -> openFile(file)
             }
         },
+        // Fylvo: the list detects the real long press (and drag); this one is for TalkBack.
         onLongPress = {
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             viewModel.toggleSelected(file)
         },
-        onMore = { sheetTarget = file },
+        longPressLabel = if (file.path in state.selected) deselectLabel else selectLabel,
+        longPressOnRow = false,
     )
+
+    // ---- Fylvo: selection button and its menu ----------------------------------
+    var menuOpen by remember { mutableStateOf(false) }
+    /** Where the selection button is (window coordinates); the menu card grows out of it. */
+    var fabAnchor by remember { mutableStateOf<Rect?>(null) }
+    // The card closes with the selection.
+    LaunchedEffect(state.selecting) { if (!state.selecting) menuOpen = false }
+    /** The listed rows of the selection; paths not listed (a refresh in progress) have none. */
+    val selectedFiles = state.files.filter { it.path in state.selected }
+    val selectedOne = selectedFiles.singleOrNull()?.takeIf { state.selected.size == 1 }
+    val selection = selectionActions(
+        selected = selectedFiles,
+        count = state.selected.size,
+        ctx = SelectionContext(
+            inTrash = state.inTrash,
+            offlineMode = state.offlineMode,
+            virtual = state.virtual,
+            offlineShown = selectedOne != null && (state.offlineCovered(selectedOne) || state.offlineAllowed(selectedOne)),
+        ),
+    )
+    val listingBusy = state.loading || state.revalidating
+
+    fun selectionEnabled(action: SelectionAction): Boolean =
+        selectionActionEnabled(action, state.selected.size, busy = listingBusy, batchSaving = state.batchSaving)
+
+    /** Runs [action] on the selected rows as they are listed right now. */
+    fun onSelectionAction(action: SelectionAction) {
+        val targets = state.files.filter { it.path in state.selected }
+        val paths = targets.map { it.path }
+        val one = targets.singleOrNull()?.takeIf { state.selected.size == 1 }
+        menuOpen = false
+        when (action) {
+            SelectionAction.SELECT_ALL -> viewModel.selectAll()
+            SelectionAction.DETAILS -> one?.let { detailsTarget = it }
+            SelectionAction.SHOW_IN_FOLDER -> one?.let { viewModel.navigateTo(FileObject(type = 1, path = CrUri.parent(it.path))) }
+            SelectionAction.SHARE -> one?.let { shareLink(it) }
+            SelectionAction.DOWNLOAD -> when {
+                one != null -> viewModel.saveToDevice(context, one)
+                targets.isNotEmpty() -> viewModel.saveAllToDevice(context, targets)
+            }
+            SelectionAction.DELETE -> when {
+                one != null -> deleteTarget = one
+                paths.isNotEmpty() -> deleteSelectedTarget = paths
+            }
+            SelectionAction.MOVE -> if (paths.isNotEmpty()) movePick = paths to false
+            SelectionAction.COPY -> if (paths.isNotEmpty()) movePick = paths to true
+            SelectionAction.RENAME -> one?.let { renameTarget = it }
+            SelectionAction.OFFLINE -> one?.let { viewModel.toggleOffline(it) }
+            SelectionAction.RESTORE -> viewModel.restore(paths)
+            SelectionAction.DELETE_FOREVER -> if (paths.isNotEmpty()) deleteForeverTarget = paths
+        }
+    }
 
     /** Fylvo: which tab of the bottom bar the screen belongs to. */
     val currentTab = when {
@@ -258,6 +320,8 @@ fun FilesScreen(
         (state.category == null && CrUri.isRoot(state.currentUri) && !CrUri.isShare(state.currentUri))
 
     fun selectTab(tab: Tab) {
+        // Fylvo: a tab change ends a selection, also towards Account.
+        viewModel.clearSelection()
         accountOpen = tab == Tab.ACCOUNT
         offlineOpen = false
         when (tab) {
@@ -268,8 +332,9 @@ fun FilesScreen(
         }
     }
 
-    BackHandler(enabled = state.selecting || inSearch || !state.home) {
+    BackHandler(enabled = menuOpen || state.selecting || inSearch || !state.home) {
         when {
+            menuOpen -> menuOpen = false
             state.selecting -> viewModel.clearSelection()
             inSearch -> closeSearch()
             else -> viewModel.navigateUp()
@@ -277,6 +342,8 @@ fun FilesScreen(
     }
 
     Scaffold(
+        // Fylvo: while the selection menu is open, only it is reachable (also for TalkBack).
+        modifier = if (menuOpen) Modifier.clearAndSetSemantics {} else Modifier,
         topBar = {
             val barMode = when {
                 state.selecting -> "select"
@@ -291,16 +358,10 @@ fun FilesScreen(
             ) { mode -> when (mode) {
                 "select" -> SelectionTopBar(
                     count = state.selected.size,
-                    total = state.files.size,
-                    inTrash = state.inTrash,
-                    // Fylvo: move, copy and delete only when every picked file may be changed.
-                    canModify = state.files.filter { it.path in state.selected }.all(Permissions::canModifyFile),
-                    onClose = { viewModel.clearSelection() },
-                    onSelectAll = { viewModel.selectAll() },
-                    onMove = { movePick = state.selected.toList() to false },
-                    onCopy = { movePick = state.selected.toList() to true },
-                    onDelete = { if (state.inTrash) deleteForeverTarget = state.selected.toList() else deleteSelectedOpen = true },
-                    onRestore = { viewModel.restore(state.selected.toList()) },
+                    detail = selectionDetail(
+                        selectedFiles.takeIf { it.size == state.selected.size }.orEmpty(),
+                        folderLabel = stringResource(R.string.folder),
+                    ),
                 )
                 "search" -> SearchTopBar(
                     text = state.searchQuery.orEmpty(),
@@ -328,7 +389,6 @@ fun FilesScreen(
                     onSearch = { openSearch() },
                     onToggleView = { viewModel.toggleViewMode() },
                     onSort = { viewModel.sortBy(it) },
-                    onSelect = { state.files.firstOrNull()?.let { viewModel.toggleSelected(it) } },
                     onRefresh = { viewModel.refresh() },
                     onTrash = { viewModel.openCategory(Category.TRASH) },
                 )
@@ -336,39 +396,44 @@ fun FilesScreen(
         },
         floatingActionButton = {
             val scrollingDown = rememberScrollingDown(state.effectiveMode == ViewMode.GRID, listState, gridState)
-            AnimatedVisibility(
-                visible = state.canAddHere && !state.selecting && !inSearch && !scrollingDown,
-                enter = scaleIn() + fadeIn(),
-                exit = scaleOut() + fadeOut(),
-            ) {
-                // Brand primary, not M3's default tertiaryContainer purple —
-                // matches the web app's primary action colour.
-                FloatingActionButton(
-                    onClick = { addSheetOpen = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add))
-                }
-            }
+            // Fylvo: while selecting the button stays (also where "+" is not offered) and turns
+            // into the selection button with its quick actions.
+            FilesFab(
+                visible = state.selecting || (state.canAddHere && !inSearch && !scrollingDown),
+                count = state.selected.size,
+                quick = selection.quick,
+                menuOpen = menuOpen,
+                enabled = ::selectionEnabled,
+                onQuick = ::onSelectionAction,
+                onClick = { if (state.selecting) menuOpen = true else addSheetOpen = true },
+                onAnchor = { fabAnchor = it },
+            )
         },
         snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = { if (!state.selecting && !inSearch) BottomTabs(currentTab, ::selectTab) },
+        // Fylvo: the tabs stay while selecting; a tab ends the selection.
+        bottomBar = { if (!inSearch) BottomTabs(currentTab, ::selectTab) },
     ) { padding ->
         // Spin the pull indicator only for a pull the user made; initial and
         // background loads have their own, quieter indicators.
         var pulled by remember { mutableStateOf(false) }
         val busy = if (state.home) state.recentLoading else state.loading || state.revalidating
         LaunchedEffect(busy) { if (!busy) pulled = false }
-        PullToRefreshBox(
-            isRefreshing = pulled && busy,
-            onRefresh = {
-                pulled = true
-                if (state.home) viewModel.loadRecent() else viewModel.refresh()
-            },
-            modifier = Modifier
+        val pullState = rememberPullToRefreshState()
+        // Fylvo: a Box with pullToRefresh instead of PullToRefreshBox, which cannot be switched
+        // off; no pull to refresh while selecting.
+        Box(
+            Modifier
                 .fillMaxSize()
-                .padding(padding),
+                .padding(padding)
+                .pullToRefresh(
+                    isRefreshing = pulled && busy,
+                    state = pullState,
+                    enabled = !state.selecting,
+                    onRefresh = {
+                        pulled = true
+                        if (state.home) viewModel.loadRecent() else viewModel.refresh()
+                    },
+                ),
         ) {
             // Cached folder shown while the fresh listing arrives: a thin bar, no spinner.
             if (state.revalidating && !inSearch) {
@@ -415,8 +480,10 @@ fun FilesScreen(
                                     openFile(file)
                                 }
                             },
-                            onLongPress = {},
-                            onMore = { sheetTarget = file },
+                            // Fylvo: no selection in search; a long press opens the file's sheet.
+                            onLongPress = { sheetTarget = file },
+                            longPressLabel = optionsLabel,
+                            longPressOnRow = true,
                         )
                     },
                 )
@@ -451,8 +518,32 @@ fun FilesScreen(
                     }
                 }
             } }
+            PullToRefreshDefaults.Indicator(
+                state = pullState,
+                isRefreshing = pulled && busy,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
         }
     }
+
+    SelectionMenu(
+        open = menuOpen,
+        anchor = fabAnchor,
+        items = selection.menu,
+        offline = selectedOne?.let { OfflineSwitch(on = state.offlineOn(it), covered = state.offlineCovered(it), folder = it.isFolder) },
+        enabled = ::selectionEnabled,
+        onAction = ::onSelectionAction,
+        onClose = { menuOpen = false },
+    )
+
+    // Fylvo: the one-time hint about long press and drag, on a quiet folder screen with files.
+    val hintReady = !state.home && !inSearch && !state.inTrash && !state.offlineMode && !state.loading &&
+        state.error == null && state.files.isNotEmpty() && !state.selecting && !menuOpen && state.snackbar == null &&
+        !accountOpen && !offlineOpen && preview == null && movePick == null && sheetTarget == null && !addSheetOpen &&
+        !mkdirOpen && renameTarget == null && deleteTarget == null && deleteSelectedTarget == null &&
+        deleteForeverTarget == null && shareTarget == null && detailsTarget == null && pendingUpload == null &&
+        state.offlinePrompt == null
+    LaunchedEffect(hintReady) { if (hintReady) viewModel.showSelectionHint() }
 
     pendingUpload?.let { pending ->
         UploadConflictDialog(
@@ -529,9 +620,9 @@ fun FilesScreen(
         FileActionSheet(
             file = file,
             thumbUrl = rememberThumbUrl(viewModel, file),
-            offlineOn = state.offlineCoverage.rootAt(offlineUriOf(file)) != null,
-            offlineCovered = state.offlineCoverage.coveringFolder(offlineUriOf(file)) != null,
-            offlineAllowed = canKeepOffline(file) && !state.offlineMode,
+            offlineOn = state.offlineOn(file),
+            offlineCovered = state.offlineCovered(file),
+            offlineAllowed = state.offlineAllowed(file),
             onDismiss = { sheetTarget = null },
             onOpen = { sheetTarget = null; if (file.isFolder) viewModel.navigateTo(file) else openFile(file) },
             onShare = { sheetTarget = null; shareLink(file) },
@@ -539,7 +630,6 @@ fun FilesScreen(
             onToggleOffline = { sheetTarget = null; viewModel.toggleOffline(file) },
             onRename = { sheetTarget = null; renameTarget = file },
             onDelete = { sheetTarget = null; deleteTarget = file },
-            onSelect = { sheetTarget = null; viewModel.toggleSelected(file) },
             onMove = { sheetTarget = null; movePick = listOf(file.path) to false },
             onCopy = { sheetTarget = null; movePick = listOf(file.path) to true },
             onDetails = { sheetTarget = null; detailsTarget = file },
@@ -636,15 +726,15 @@ fun FilesScreen(
         )
     }
 
-    if (deleteSelectedOpen) {
-        val n = state.selected.size
+    deleteSelectedTarget?.let { paths ->
+        val n = paths.size
         ConfirmDeleteDialog(
             title = pluralStringResource(R.plurals.delete_items_title, n, n),
             onConfirm = {
-                viewModel.deleteSelected()
-                deleteSelectedOpen = false
+                viewModel.deletePaths(paths)
+                deleteSelectedTarget = null
             },
-            onDismiss = { deleteSelectedOpen = false },
+            onDismiss = { deleteSelectedTarget = null },
         )
     }
 

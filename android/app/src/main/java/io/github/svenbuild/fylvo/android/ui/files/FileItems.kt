@@ -7,6 +7,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,20 +22,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,12 +49,41 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import io.github.svenbuild.fylvo.android.api.FileObject
 
-/** Gestures a row or tile responds to. [onMore] is null for rows without a menu (search hits). */
+/**
+ * Gestures a row or tile responds to. Fylvo: no menu button on rows any more; a long press
+ * selects (folders) or opens the file's sheet (home, search).
+ */
 data class FileActions(
     val onOpen: () -> Unit,
     val onLongPress: () -> Unit,
-    val onMore: (() -> Unit)? = null,
+    /** What TalkBack calls the long press ("Select", "Deselect", "Options"). */
+    val longPressLabel: String,
+    /**
+     * True: the row itself detects the long press (home, search). False: the list detects it so
+     * a drag can select several (see dragSelect); the row offers it to accessibility only.
+     */
+    val longPressOnRow: Boolean,
 )
+
+/** Fylvo: tap and long press of a row or tile, and its selected state for TalkBack. */
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.fileClicks(actions: FileActions, selectionState: String?): Modifier =
+    if (actions.longPressOnRow) {
+        combinedClickable(onClick = actions.onOpen, onLongClick = actions.onLongPress, onLongClickLabel = actions.longPressLabel)
+    } else {
+        clickable(onClick = actions.onOpen).semantics {
+            onLongClick(label = actions.longPressLabel) { actions.onLongPress(); true }
+            if (selectionState != null) stateDescription = selectionState
+        }
+    }
+
+/** Fylvo: "Selected" / "Not selected" while selecting, read by TalkBack with the row. */
+@Composable
+private fun selectionState(selecting: Boolean, selected: Boolean): String? = when {
+    !selecting -> null
+    selected -> stringResource(R.string.state_selected)
+    else -> stringResource(R.string.state_not_selected)
+}
 
 @Composable
 fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
@@ -164,7 +194,7 @@ fun FileListItem(
             .padding(horizontal = 8.dp, vertical = 1.dp)
             .clip(shape)
             .background(background)
-            .combinedClickable(onClick = actions.onOpen, onLongClick = actions.onLongPress)
+            .fileClicks(actions, selectionState(selecting, selected))
             .padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -203,9 +233,10 @@ fun FileListItem(
             }
         }
         if (selecting) {
-            SelectionMark(selected, file.name, Modifier.padding(12.dp))
+            SelectionMark(selected, Modifier.padding(12.dp))
         } else {
-            FileMenuButton(actions, label = stringResource(R.string.more_options_for, file.name))
+            // Fylvo: keeps the row as high as with the selection mark (the menu button is gone).
+            Box(Modifier.size(width = 12.dp, height = 48.dp))
         }
     }
 }
@@ -233,7 +264,7 @@ fun FileGridItem(
             .background(background)
             // Gallery tiles render no text; give TalkBack the file name.
             .then(if (gallery) Modifier.semantics { contentDescription = file.name } else Modifier)
-            .combinedClickable(onClick = actions.onOpen, onLongClick = actions.onLongPress)
+            .fileClicks(actions, selectionState(selecting, selected))
             .padding(if (gallery) 0.dp else 6.dp),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
@@ -252,19 +283,9 @@ fun FileGridItem(
                         .size(if (gallery) 36.dp else 22.dp),
                 )
             }
-            // Menu and selection mark sit on the tile so the caption keeps its full width.
+            // The selection mark sits on the tile so the caption keeps its full width.
             if (selecting) {
-                SelectionMark(selected, file.name, Modifier.align(Alignment.TopEnd).padding(6.dp))
-            } else if (!gallery) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)),
-                ) {
-                    FileMenuButton(actions, compact = true, label = stringResource(R.string.more_options_for, file.name))
-                }
+                SelectionMark(selected, Modifier.align(Alignment.TopEnd).padding(6.dp))
             }
         }
         if (!gallery) Column(Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp, end = 4.dp)) {
@@ -297,33 +318,22 @@ fun FileGridItem(
     }
 }
 
+/** Fylvo: decorative; the row itself tells TalkBack whether it is selected. */
 @Composable
-private fun SelectionMark(selected: Boolean, fileName: String, modifier: Modifier = Modifier) {
+private fun SelectionMark(selected: Boolean, modifier: Modifier = Modifier) {
     if (selected) {
         Icon(
             Icons.Default.CheckCircle,
-            contentDescription = stringResource(R.string.selected_file, fileName),
+            contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = modifier.size(24.dp),
         )
     } else {
         Icon(
             Icons.Outlined.CheckBoxOutlineBlank,
-            contentDescription = stringResource(R.string.not_selected_file, fileName),
+            contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = modifier.size(24.dp),
-        )
-    }
-}
-
-@Composable
-private fun FileMenuButton(actions: FileActions, compact: Boolean = false, label: String = stringResource(R.string.more)) {
-    val onMore = actions.onMore ?: return
-    IconButton(onClick = onMore, modifier = if (compact) Modifier.size(36.dp) else Modifier) {
-        Icon(
-            Icons.Default.MoreVert, contentDescription = label,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            modifier = Modifier.size(20.dp),
         )
     }
 }

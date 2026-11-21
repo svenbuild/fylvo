@@ -1,6 +1,9 @@
 package io.github.svenbuild.fylvo.android.util
 
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.serializer
+import io.github.svenbuild.fylvo.android.api.decodeApiResponse
 import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.data.ApiException
 import org.junit.Assert.assertArrayEquals
@@ -43,6 +46,15 @@ class ErrorTextTest {
         assertEquals(R.string.error_too_many_items, idFor(40074))
         assertEquals(R.string.error_server, idFor(502))
         assertEquals(R.string.error_server, idFor(50001))
+    }
+
+    @Test
+    fun nameThatDiffersOnlyInCaseHasItsOwnText() {
+        // The server's answer (CodeNameCaseTaken in pkg/serializer/fylvo_codes.go), as the app reads it.
+        val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
+        val r = decodeApiResponse(json, serializer<Unit>(), """{"code":40905,"msg":"A file with the same name in different case already exists","data":null}""")
+        assertEquals(R.string.error_name_case_taken, idOf(ErrorText.of(ApiException(r.code, r.msg, r.innerCodes))))
+        assertEquals(R.string.error_name_case_taken, idFor(40081, inner = listOf(40905)))
     }
 
     @Test

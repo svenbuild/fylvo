@@ -13,6 +13,10 @@
     <string name="move_to">Move to</string>
     <string name="copy_to">Copy to</string>
     <string name="select">Select</string>
+    <string name="deselect">Deselect</string>
+    <string name="options">Options</string>
+    <string name="move">Move</string>
+    <string name="close">Close</string>
     <string name="download">Download</string>
     <string name="back">Back</string>
     <string name="up">Up</string>
@@ -85,6 +89,11 @@
     <string name="upload_failed_reason">Upload failed: %s</string>
     <string name="uploaded_some_failed">Uploaded %1$d, %2$d failed</string>
     <string name="saved_file">Saved %s</string>
+    <plurals name="saved_files">
+        <item quantity="one">Saved %d file</item>
+        <item quantity="other">Saved %d files</item>
+    </plurals>
+    <string name="saved_some_files">Saved %1$d of %2$d</string>
     <plurals name="copied_items">
         <item quantity="one">Copied %1$d item to %2$s</item>
         <item quantity="other">Copied %1$d items to %2$s</item>
@@ -153,10 +162,9 @@
 
     <!-- File rows and lists -->
     <string name="available_offline">Available offline</string>
-    <string name="more_options_for">More options for %s</string>
     <string name="video">Video</string>
-    <string name="selected_file">Selected %s</string>
-    <string name="not_selected_file">Not selected %s</string>
+    <string name="state_selected">Selected</string>
+    <string name="state_not_selected">Not selected</string>
     <string name="trash_row_subtitle">Deleted %1$s • from %2$s</string>
     <string name="unknown">unknown</string>
     <string name="clear_selection_for">Clear selection for %s</string>
@@ -176,9 +184,19 @@
     <string name="sort_created">Date created</string>
     <string name="ascending">Ascending</string>
     <string name="descending">Descending</string>
-    <string name="selected_count">%1$d of %2$d selected</string>
-    <string name="clear_selection">Clear selection</string>
     <string name="select_all">Select all</string>
+
+    <!-- Selection: info bar, selection button and its menu -->
+    <plurals name="n_selected">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="actions_for_selected">
+        <item quantity="one">Actions for %d selected item</item>
+        <item quantity="other">Actions for %d selected items</item>
+    </plurals>
+    <string name="selection_menu">Actions</string>
+    <string name="selection_hint">Long press to select. Drag your finger to select several.</string>
 
     <!-- Folder picker -->
     <string name="move_to_folder">Move to %s</string>
@@ -267,6 +285,7 @@
     <string name="error_locked_upload">This file is being uploaded or edited right now. Please try again later. Unfinished uploads are removed automatically after 48 hours.</string>
     <string name="error_not_found">This file or folder no longer exists. Please refresh the list.</string>
     <string name="error_exists">A file or folder with this name already exists here.</string>
+    <string name="error_name_case_taken">A file or folder with the same name in different upper and lower case already exists here.</string>
     <string name="error_quota">There is not enough storage space left.</string>
     <string name="error_permission">You don\'t have permission to do this.</string>
     <string name="error_login_required">Your session has expired. Please sign in again.</string>

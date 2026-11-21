@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -110,7 +109,13 @@ fun HomeScreen(
                     selecting = false,
                     selected = false,
                     offline = state.isOffline(file),
-                    actions = FileActions(onOpen = { onOpenFile(file) }, onLongPress = { onFileMore(file) }, onMore = { onFileMore(file) }),
+                    // Fylvo: no selection here; a long press opens the file's sheet.
+                    actions = FileActions(
+                        onOpen = { onOpenFile(file) },
+                        onLongPress = { onFileMore(file) },
+                        longPressLabel = stringResource(R.string.options),
+                        longPressOnRow = true,
+                    ),
                     subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                 )
             }
