@@ -99,3 +99,28 @@ func TestWalkAndSearchThroughALevelWithManyFolders(t *testing.T) {
 	}
 	require.Equal(t, map[string]int{"zuerst.txt": 1, "zuletzt.txt": 1}, found)
 }
+
+// Fylvo: a group of folders of the search is fixed by IDs. A folder deleted between two pages
+// does not move a folder of the next group into one that was read already.
+func TestFolderGroupIsFixedByIDs(t *testing.T) {
+	folders := make(map[int]*File)
+	for id := 1; id <= 25000; id++ {
+		folders[id] = &File{Model: &ent.File{ID: id}}
+	}
+
+	first, to := folderGroup(folders, 0, 0)
+	require.Len(t, first, maxParentsPerQuery)
+	require.Equal(t, 10001, to)
+	second, to2 := folderGroup(folders, to, 0)
+	require.Len(t, second, maxParentsPerQuery)
+	require.Equal(t, 20001, to2)
+	last, end := folderGroup(folders, to2, 0)
+	require.Len(t, last, 5000)
+	require.Zero(t, end)
+
+	delete(folders, 5)
+	again, sameTo := folderGroup(folders, 0, to)
+	require.Len(t, again, maxParentsPerQuery-1)
+	require.Equal(t, to, sameTo)
+	require.Equal(t, 10000, again[len(again)-1].ID)
+}

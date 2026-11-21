@@ -124,6 +124,21 @@ func folderChunks(folders map[int]*File) [][]*ent.File {
 	}), maxParentsPerQuery)
 }
 
+// folderGroup Fylvo: the folders a search reads in one group: those with from <= ID < to (to 0:
+// no end). With to 0, the group is the next maxParentsPerQuery folders from from on, and to
+// becomes the ID of the folder after them (0 if none). A group is fixed by IDs, not by its
+// number, so a folder deleted between two pages does not move folders into a group that was
+// read already.
+func folderGroup(folders map[int]*File, from, to int) ([]*ent.File, int) {
+	ids := lo.Filter(lo.Keys(folders), func(id int, _ int) bool { return id >= from && (to == 0 || id < to) })
+	slices.Sort(ids)
+	if to == 0 && len(ids) > maxParentsPerQuery {
+		to = ids[maxParentsPerQuery]
+		ids = ids[:maxParentsPerQuery]
+	}
+	return lo.Map(ids, func(id int, _ int) *ent.File { return folders[id].Model }), to
+}
+
 func init() {
 	boolset.Sets(map[NavigatorCapability]bool{
 		NavigatorCapabilityCreateFile:     true,
@@ -457,7 +472,7 @@ func (b *baseNavigator) search(ctx context.Context, parent *File, args *ListArgs
 	// Performs recursive search for all files under the given folder.
 	walkedFolder := 1
 	parents := []map[int]*File{{parent.Model.ID: parent}}
-	startLevel, startChunk, innerPageToken, err := parseSearchPageToken(args.Page.PageToken)
+	startLevel, groupFrom, groupTo, innerPageToken, err := parseSearchPageToken(args.Page.PageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -525,55 +540,51 @@ func (b *baseNavigator) search(ctx context.Context, parent *File, args *ListArgs
 	args.Page.UseCursorPagination = true
 	originalPageSize := args.Page.PageSize
 	stop := false
-	// Fylvo: the folders of a level are searched in groups (folderChunks); startChunk is the group.
-	var levelChunks [][]*ent.File
+	// Fylvo: the folders of a level are searched in groups (folderGroup), from groupFrom to groupTo.
 	for len(res) < originalPageSize && walkedFolder <= b.config.MaxRecursiveSearchedFolder {
-		if levelChunks == nil {
-			levelChunks = folderChunks(parents[startLevel])
-		}
-		if startChunk >= len(levelChunks) {
-			// The folders changed since the last page: nothing more to search.
-			stop = true
-			break
-		}
+		var group []*ent.File
+		group, groupTo = folderGroup(parents[startLevel], groupFrom, groupTo)
+		if len(group) == 0 {
+			// The folders of this group are gone since the last page.
+			args.Page.PageToken = ""
+		} else {
+			// Only requires minimum number of files
+			args.Page.PageSize = min(originalPageSize, originalPageSize-len(res))
+			searchRes, err := b.fileClient.GetChildFiles(ctx,
+				&inventory.ListFileParameters{
+					PaginationArgs: args.Page,
+					MixedType:      true,
+					Search:         args.Search,
+				},
+				parent.Model.OwnerID,
+				group...)
 
-		// Only requires minimum number of files
-		args.Page.PageSize = min(originalPageSize, originalPageSize-len(res))
-		searchRes, err := b.fileClient.GetChildFiles(ctx,
-			&inventory.ListFileParameters{
-				PaginationArgs: args.Page,
-				MixedType:      true,
-				Search:         args.Search,
-			},
-			parent.Model.OwnerID,
-			levelChunks[startChunk]...)
+			if err != nil {
+				return nil, serializer.NewError(serializer.CodeDBError, "Failed to search files", err)
+			}
 
-		if err != nil {
-			return nil, serializer.NewError(serializer.CodeDBError, "Failed to search files", err)
+			newRes := lo.FilterMap(searchRes.Files, func(model *ent.File, index int) (*File, bool) {
+				p := parents[startLevel][model.FileChildren]
+				f := newFile(p, model)
+				f.Path[pathIndexUser] = p.Uri(false).Join(model.Name)
+				return b.listFilter(ctx, f)
+			})
+			res = append(res, newRes...)
+			if args.StreamCallback != nil {
+				args.StreamCallback(newRes)
+			}
+
+			args.Page.PageToken = searchRes.NextPageToken
 		}
-
-		newRes := lo.FilterMap(searchRes.Files, func(model *ent.File, index int) (*File, bool) {
-			p := parents[startLevel][model.FileChildren]
-			f := newFile(p, model)
-			f.Path[pathIndexUser] = p.Uri(false).Join(model.Name)
-			return b.listFilter(ctx, f)
-		})
-		res = append(res, newRes...)
-		if args.StreamCallback != nil {
-			args.StreamCallback(newRes)
-		}
-
-		args.Page.PageToken = searchRes.NextPageToken
 		// If no more results in this group of folders, move to the next group
-		if args.Page.PageToken == "" && startChunk+1 < len(levelChunks) {
-			startChunk++
+		if args.Page.PageToken == "" && groupTo != 0 {
+			groupFrom, groupTo = groupTo, 0
 			continue
 		}
 
 		// If no more results under current level, move to next level
 		if args.Page.PageToken == "" {
-			startChunk = 0
-			levelChunks = nil
+			groupFrom, groupTo = 0, 0
 			if len(res) == originalPageSize {
 				// Current page is full, no need to search more
 				startLevel++
@@ -608,36 +619,34 @@ func (b *baseNavigator) search(ctx context.Context, parent *File, args *ListArgs
 	}
 
 	if walkedFolder <= b.config.MaxRecursiveSearchedFolder && !stop {
-		searchRes.Pagination.NextPageToken = fmt.Sprintf("%d%s%d%s%s", startLevel, searchTokenSeparator, startChunk,
-			searchTokenSeparator, args.Page.PageToken)
+		searchRes.Pagination.NextPageToken = strings.Join([]string{strconv.Itoa(startLevel), strconv.Itoa(groupFrom),
+			strconv.Itoa(groupTo), args.Page.PageToken}, searchTokenSeparator)
 	}
 
 	return searchRes, nil
 }
 
-// parseSearchPageToken reads "level|group|inner token" (Fylvo: with the group of folders, see
-// folderChunks).
-func parseSearchPageToken(token string) (int, int, string, error) {
+// parseSearchPageToken reads "level|from|to|inner token" (Fylvo: with the group of folders, see
+// folderGroup).
+func parseSearchPageToken(token string) (level, from, to int, inner string, err error) {
 	if token == "" {
-		return 0, 0, "", nil
+		return 0, 0, 0, "", nil
 	}
 
 	tokens := strings.Split(token, searchTokenSeparator)
-	if len(tokens) != 3 {
-		return 0, 0, "", fmt.Errorf("invalid page token")
+	if len(tokens) != 4 {
+		return 0, 0, 0, "", fmt.Errorf("invalid page token")
 	}
 
-	level, err := strconv.Atoi(tokens[0])
-	if err != nil || level < 0 {
-		return 0, 0, "", fmt.Errorf("invalid page token level")
+	numbers := make([]int, 3)
+	for i := range numbers {
+		numbers[i], err = strconv.Atoi(tokens[i])
+		if err != nil || numbers[i] < 0 {
+			return 0, 0, 0, "", fmt.Errorf("invalid page token")
+		}
 	}
 
-	chunk, err := strconv.Atoi(tokens[1])
-	if err != nil || chunk < 0 {
-		return 0, 0, "", fmt.Errorf("invalid page token group")
-	}
-
-	return level, chunk, tokens[2], nil
+	return numbers[0], numbers[1], numbers[2], tokens[3], nil
 }
 
 func newMyUri() *fs.URI {

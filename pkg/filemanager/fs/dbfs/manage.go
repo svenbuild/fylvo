@@ -1107,7 +1107,7 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 					indexToCopy = append(indexToCopy, fs.IndexDiffCopyDetails{
 						OriginalFileID: file.ID(),
 						FileID:         copiedFile.ID,
-						Uri:            *destination.Uri(false).Join(file.Name()),
+						Uri:            *destination.Uri(false).Join(copiedFile.Name),
 						EntityID:       copiedFile.PrimaryEntity,
 						OwnerID:        destination.OwnerID(),
 					})

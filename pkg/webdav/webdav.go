@@ -808,7 +808,10 @@ func performCopyMove(
 		}
 		renamedUri := srcUri.DirUri().Join(dstUri.Name())
 		if err := fm.MoveOrCopy(ctx, []*fs.URI{renamedUri}, dstFolderUri, false); err != nil {
-			_, _ = fm.Rename(ctx, renamedUri, srcUri.Name())
+			if _, renameErr := fm.Rename(ctx, renamedUri, srcUri.Name()); renameErr != nil {
+				logging.FromContext(ctx).Warning("WebDAV MOVE: %q could not be renamed back to %q: %s",
+					renamedUri.String(), srcUri.Name(), renameErr)
+			}
 			return purposeStatusCodeFromError(err), err
 		}
 	} else if renamed {
