@@ -59,6 +59,8 @@ pub struct CrPlaceholder {
 enum CrPlaceholderOptions {
     InvalidateAllRange = 1 << 0,
     MarkNoChildren = 1 << 1,
+    /// Fylvo: update only a placeholder that is still in sync (see `with_verify_in_sync`).
+    VerifyInSync = 1 << 2,
 }
 
 impl CrPlaceholder {
@@ -73,6 +75,13 @@ impl CrPlaceholder {
             local_file_info: LocalFileInfo::from_path(&local_path.clone())
                 .unwrap_or(LocalFileInfo::missing()),
         }
+    }
+
+    /// Fylvo: let Windows refuse the update if the file is no longer in sync, so a change made
+    /// after the sync looked at it is never marked in sync or dehydrated.
+    pub fn with_verify_in_sync(mut self) -> Self {
+        self.options |= CrPlaceholderOptions::VerifyInSync as u32;
+        self
     }
 
     pub fn with_invalidate_all_range(mut self, enable: bool) -> Self {
@@ -215,6 +224,9 @@ impl CrPlaceholder {
             if dehydrate_requested {
                 tracing::debug!(target: "drive::placeholder", local_path = %self.local_path.display(), "Invalidating all range");
                 upload_options = upload_options.dehydrate();
+            }
+            if self.options & CrPlaceholderOptions::VerifyInSync as u32 != 0 {
+                upload_options = upload_options.update_if_in_sync();
             }
             if self.options & CrPlaceholderOptions::MarkNoChildren as u32 != 0 {
                 tracing::debug!(target: "drive::placeholder", local_path = %self.local_path.display(), "Marking no children");

@@ -608,6 +608,16 @@ impl Mount {
         Ok(())
     }
 
+    /// Fylvo: the path changed here after it was planned: plan it again.
+    fn plan_again(&self, path: &PathBuf) {
+        tracing::info!(target: "drive::sync", id = %self.id, path = %path.display(), "Changed here meanwhile, planned again");
+        let _ = self.command_tx.send(MountCommand::Sync {
+            local_paths: vec![path.clone()],
+            mode: SyncMode::PathOnly,
+            user_initiated: false,
+        });
+    }
+
     async fn process_action(
         &self,
         action: &SyncAction,
@@ -624,12 +634,7 @@ impl Mount {
                 // after deleting the old one). Taking the server's entry for it would mark it in
                 // sync with the server's size; plan the path again instead.
                 if appeared_meanwhile(&cr_placeholder.local_file_info) {
-                    tracing::info!(target: "drive::sync", id = %self.id, path = %path.display(), "Appeared here meanwhile, planned again");
-                    let _ = self.command_tx.send(MountCommand::Sync {
-                        local_paths: vec![path.clone()],
-                        mode: SyncMode::PathOnly,
-                        user_initiated: false,
-                    });
+                    self.plan_again(path);
                     return;
                 }
                 if let Err(err) = cr_placeholder
@@ -651,8 +656,19 @@ impl Mount {
                 remote,
                 invalidate_all,
             } => {
-                let cr_placeholder =
+                let mut cr_placeholder =
                     CrPlaceholder::new(path.clone(), sync_root.clone(), drive_id.clone());
+                // Fylvo: planned for a file in sync. Changed here since (or replaced by a new
+                // file, as Excel saves), the server's version must not be taken for it: plan the
+                // path again. Windows also refuses the update itself if the file left the in-sync
+                // state in between.
+                if !remote.file_type.eq(&file_type::FOLDER) {
+                    if appeared_meanwhile(&cr_placeholder.local_file_info) {
+                        self.plan_again(path);
+                        return;
+                    }
+                    cr_placeholder = cr_placeholder.with_verify_in_sync();
+                }
                 if let Err(err) = cr_placeholder
                     .with_invalidate_all_range(*invalidate_all)
                     .with_remote_file(remote)
@@ -1416,8 +1432,9 @@ fn plan_entry_with_remote_and_local(
     }
 }
 
-/// Whether something with local content is at a path the sync planned to create from the
-/// server (only a synced placeholder in sync may be taken over).
+/// Whether something with local content is at a path the sync planned from a state without it:
+/// to create from the server (only a synced placeholder in sync may be taken over), or to update
+/// a file that was in sync.
 fn appeared_meanwhile(local: &LocalFileInfo) -> bool {
     local.exists && !(local.is_placeholder() && local.in_sync())
 }

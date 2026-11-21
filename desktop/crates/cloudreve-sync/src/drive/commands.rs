@@ -620,6 +620,11 @@ impl Mount {
     }
 
     pub async fn process_fs_events(&self, events: GroupedFsEvents) -> Result<()> {
+        // Fylvo: deletions first. A file deleted and written again in one batch (saved by
+        // replacement) must be seen as back before its upload marks it in sync; handled after
+        // that upload, the stale deletion would send the new version to the server's trash.
+        let mut events: Vec<_> = events.into_iter().collect();
+        events.sort_by_key(|(kind, _)| !matches!(kind, EventKind::Remove(_)));
         for (event_kind, events) in events {
             // Filter out events that were pre-registered by rename operations
             let filtered_events = self.event_blocker.filter_events(events, &event_kind);
@@ -831,6 +836,11 @@ impl Mount {
         for event in events {
             if event.paths.len() != 2 {
                 tracing::error!(target: "drive::commands", count=event.paths.len(), "Invalid modify name event: not 2 paths");
+                continue;
+            }
+            // Fylvo: moved to an ignored name (Word's `~WRL*.tmp`, the download's backup):
+            // nothing to do here, and no task of the old name may be cancelled for it.
+            if self.ignore_matcher.read().await.is_match(&event.paths[1]) {
                 continue;
             }
 
