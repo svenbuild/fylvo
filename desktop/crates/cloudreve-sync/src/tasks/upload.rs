@@ -485,13 +485,15 @@ impl<'a> UploadTask<'a> {
             return Ok(());
         }
 
+        // Fylvo: noted as just uploaded before it is marked in sync, so a delayed delete event
+        // handled in between never takes the in-sync file for one the sync put back.
+        forget_uploads(path);
         if let Err(err) = self.local_file.as_mut().unwrap().commit(self.inventory.clone()) {
             // Fylvo: the server has the new version either way. Without it in the inventory
             // the next upload would name the old one and conflict with this PC's own upload.
             let _ = self.local_file.as_ref().unwrap().commit_inventory_only(&self.inventory);
             return Err(err.context("failed to commit placeholder"));
         }
-        forget_uploads(path);
 
         self.local_file
             .as_mut()

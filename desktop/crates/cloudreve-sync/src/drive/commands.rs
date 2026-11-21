@@ -634,7 +634,17 @@ impl Mount {
             let filtered_events: Vec<Event> = filtered_events
                 .into_iter()
                 .filter(|event| {
-                    let dominated_path = &event.paths[0];
+                    // Fylvo: a rename counts by its target. A file put in place from an
+                    // ignored name (Word's `~WRD*.tmp`, Excel's `XXXXXXXX.tmp`) is a change of
+                    // the target; a rename to an ignored name is skipped further on.
+                    let is_rename = matches!(
+                        event_kind,
+                        EventKind::Modify(ModifyKind::Name(RenameMode::Both))
+                    );
+                    let dominated_path = match event.paths.last() {
+                        Some(target) if is_rename => target,
+                        _ => &event.paths[0],
+                    };
                     let is_ignored = matcher.is_match(dominated_path);
                     if is_ignored {
                         tracing::trace!(
