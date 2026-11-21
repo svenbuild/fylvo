@@ -64,7 +64,7 @@ class OfflineEdits(
         data object Done : SignOutResult()
         /** Working copies ([ids]) with changes not uploaded: ask first. */
         data class NeedsChoice(val ids: Set<String>) : SignOutResult()
-        data class Failed(val ids: Set<String>, val reason: NotUploaded) : SignOutResult()
+        data class Failed(val ids: Set<String>, val reason: NotUploaded, val code: Int = 0) : SignOutResult()
     }
 
     private suspend fun stores(): Pair<OfflineStore, EditStore>? =
@@ -136,6 +136,9 @@ class OfflineEdits(
                 stillSignedIn = { manager.store()?.accountKey == offline.accountKey },
                 publish = ::publish,
                 countStall = { !manager.settingChange.get() },
+                // An account move into this key that is not finished: its files are no orphans.
+                scanOrphans = !EditStore(context.filesDir, manager.emailKey()).let { it.accountKey != offline.accountKey && it.hasIndex() },
+                strayLabel = context.localized().getString(R.string.edit_stray_label),
             ).run(only)
         }
 
@@ -285,7 +288,8 @@ class OfflineEdits(
      * Null when every one is settled afterwards, else why not.
      */
     private suspend fun uploadLocked(offline: OfflineStore, store: EditStore, entries: List<EditEntry>): NotUploaded? {
-        fun open() = entries.mapNotNull { store.entry(it.id) }.filter { !isSettled(it, hashOf(store, it)) }
+        // Done also when the working copy is missing but nothing of it is unconfirmed any more.
+        fun open() = entries.mapNotNull { store.entry(it.id) }.filter { isUnsent(it, hashOf(store, it)) }
         val waiting = open()
         if (waiting.isEmpty()) return null
         // A missing working copy with a kept snapshot still has bytes to send: the pass goes first.
@@ -295,7 +299,7 @@ class OfflineEdits(
         val left = open()
         return when {
             left.isEmpty() -> null
-            left.any { it.problem == EditProblem.Refused } -> NotUploaded.Refused
+            left.any { it.problem == EditProblem.Refused || it.refusedSnapshots.isNotEmpty() } -> NotUploaded.Refused
             left.any { it.pending != null } -> NotUploaded.Pending
             left.any(::missing) -> NotUploaded.Missing
             else -> NotUploaded.Failed
@@ -387,7 +391,10 @@ class OfflineEdits(
                             SignOutChoice.Upload -> {
                                 open.forEach { revoke(store, it) }
                                 uploadLocked(offline, store, open)?.let { reason ->
-                                    return@withLock SignOutResult.Failed(blockers(store).mapTo(LinkedHashSet()) { it.id }, reason)
+                                    val left = blockers(store)
+                                    return@withLock SignOutResult.Failed(
+                                        left.mapTo(LinkedHashSet()) { it.id }, reason, left.map(::refusalCode).firstOrNull { it > 0 } ?: 0,
+                                    )
                                 }
                             }
                         }

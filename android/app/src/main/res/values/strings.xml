@@ -426,6 +426,7 @@
     <string name="edit_finished">Finished editing %s</string>
     <string name="edit_discard_failed">Could not discard the changes to %s</string>
     <string name="edit_unsent_lost">A version that was not uploaded is discarded with it.</string>
+    <string name="edit_stray_label">Phone copy</string>
     <string name="edit_discarded">Changes to %s discarded</string>
     <string name="edit_discard_title">Discard changes to \"%s\"?</string>
     <string name="edit_discard_text">Changes not uploaded yet are lost. This cannot be undone.</string>

@@ -77,6 +77,10 @@ internal class EditPass(
     private val clock: () -> Long = System::currentTimeMillis,
     /** False when the system stop of an upload was asked for by the app (a new network setting): no stall. */
     private val countStall: () -> Boolean = { true },
+    /** False while an account move into this key is not finished: no orphan scan. */
+    private val scanOrphans: Boolean = true,
+    /** Name of a kept file whose own name is unknown ("Handy-Kopie" and the time). */
+    private val strayLabel: String = "Handy-Kopie",
 ) {
     /** What the caller schedules afterwards. */
     class Result {
@@ -150,13 +154,21 @@ internal class EditPass(
                 !entry.retired && store.isOnlyInDone(entry) -> put(entry.copy(retiredAt = now))
             }
         }
+        // While an account move is not finished its files may show up here without their entries.
+        if (!scanOrphans) return
         // An editor wrote after a finish, or the index was lost: such files go up as conflict copies.
         for (orphan in store.orphans(store.load())) adopt(orphan, EditStore.safeName(orphan.name), null)
-        // A snapshot no marker points to (never deleted): a conflict copy next to its file, if known.
+        // A snapshot no marker points to: when its entry still has a working copy, those bytes are
+        // there or on the server and it goes; otherwise a conflict copy next to its file, if known.
         val index = store.load()
         for (stray in store.strayTmp(index)) {
             val owner = EditStore.ownerOf(stray)?.let { id -> index.entries.firstOrNull { it.id == id } }
-            adopt(stray, owner?.name ?: EditStore.safeName(stray.name), owner?.uri)
+            if (owner != null && store.fileOf(owner).isFile) {
+                stray.delete()
+                continue
+            }
+            val time = SimpleDateFormat("yyyy-MM-dd HH-mm", Locale.ROOT).format(Date(now))
+            adopt(stray, owner?.name ?: "$strayLabel $time", owner?.uri)
         }
     }
 
@@ -222,20 +234,35 @@ internal class EditPass(
 
     /**
      * The working copy moved on from a snapshot the server refused: that snapshot steps aside
-     * (refused-<id>, replacing an older refused one) and the newer state is planned normally. It
-     * goes once a newer upload is confirmed, or with a discard.
+     * (kept as refused-<id>-<hash>, with every other refused one) and the newer state is planned
+     * normally. Refused snapshots go only with an explicit discard.
      */
     private suspend fun park(entry: EditEntry) {
         val marker = entry.pending ?: return
-        store.refusedOf(entry).delete()
-        if (!store.snapshotOf(entry).renameTo(store.refusedOf(entry))) return
-        put(entry.copy(pending = null, refused = marker, state = EditState.Uploading, problem = null, errorCode = 0, attempts = 0))
+        val kept = marker.copy(refusedCode = entry.errorCode)
+        val dest = store.refusedOf(entry, kept)
+        // The same bytes were refused before: that copy is kept already.
+        if (dest.exists()) store.snapshotOf(entry).delete() else if (!store.snapshotOf(entry).renameTo(dest)) return
+        val list = entry.refusedSnapshots.filter { it.snapshot.sha256 != kept.snapshot.sha256 } + kept
+        put(entry.copy(pending = null, refusedSnapshots = list, state = EditState.Uploading, problem = null, errorCode = 0, attempts = 0))
         store.entry(entry.id)?.let { handle(it) }
     }
 
+    /**
+     * A fresh snapshot gets its marker (no session yet) before anything is asked of the server, so
+     * one that has to wait stays referenced and is sent later; one never marked goes.
+     */
     private suspend fun upload(entry: EditEntry) {
-        val snapshot = takeSnapshot(entry) ?: return later(entry)
-        sendSnapshot(entry, snapshot)
+        var marked = false
+        try {
+            val snapshot = takeSnapshot(entry) ?: return later(entry)
+            val kind = if (entry.retired || entry.baseEntity.isEmpty()) UploadKind.Conflict else UploadKind.Version
+            put(entry.copy(pending = EditMarker(kind, snapshot, target = entry.uri, at = clock()), state = EditState.Uploading, attempts = 0))
+            marked = true
+            store.entry(entry.id)?.let { sendSnapshot(it, snapshot) }
+        } finally {
+            if (!marked) store.snapshotOf(entry).delete()
+        }
     }
 
     /**
@@ -253,16 +280,10 @@ internal class EditPass(
             TargetPlan.PrivateConflict -> sendConflict(entry, snapshot, private = true)
             TargetPlan.WaitForSync -> {
                 result.syncWanted = true
-                waitWith(entry)
+                later(entry)
             }
-            TargetPlan.Later -> waitWith(entry)
+            TargetPlan.Later -> later(entry)
         }
-    }
-
-    /** Waits; a fresh snapshot no marker points to goes (the working copy has its bytes), a kept one stays. */
-    private fun waitWith(entry: EditEntry) {
-        if (store.entry(entry.id)?.pending == null) store.snapshotOf(entry).delete()
-        later(entry)
     }
 
     /**
@@ -406,7 +427,6 @@ internal class EditPass(
         // The index first: the snapshot goes only once nothing points to it any more.
         put(next.copy(state = if (changed) EditState.Uploading else EditState.Synced, seen = null))
         store.snapshotOf(entry).delete()
-        store.refusedOf(entry).delete()
         if (changed) result.again()
     }
 
@@ -499,7 +519,11 @@ internal class EditPass(
                     } catch (_: Exception) {
                         return keepOrCopy(entry, marker)
                     }
-                    if (file != null && isCurrentVersion(file, marker.entityId)) commit(entry, marker, file) else resend(entry, marker)
+                    if (file != null && isCurrentVersion(file, marker.entityId)) return commit(entry, marker, file)
+                    // Not in, and the session is gone: the snapshot goes again as a new upload.
+                    val fresh = marker.copy(sessionId = "", sessionUri = "", entityId = "")
+                    put(entry.copy(pending = fresh))
+                    store.entry(entry.id)?.let { resend(it, fresh) }
                 }
             }
         }

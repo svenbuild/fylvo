@@ -352,7 +352,7 @@ class EditPassTest {
         val entry = edited("big")
         pass().run()
         assertEquals(40049, store.entry(entry.id)!!.errorCode)
-        // The person saves something smaller: it goes up, the refused one steps aside first.
+        // The person saves something smaller: it goes up, the refused one steps aside.
         store.fileOf(entry).apply { writeText("small"); setLastModified(now - 10 * 60_000) }
         now += EDIT_RECOVERY_DELAY_MS
         commits("e2")
@@ -360,15 +360,26 @@ class EditPassTest {
         val after = store.entry(entry.id)!!
         assertEquals("small", server.sent.last().third)
         assertEquals("e2", after.baseEntity)
-        // Confirmed newer bytes: the refused snapshot is no longer kept.
-        assertNull(after.refused)
-        assertFalse(store.refusedOf(entry).exists())
         assertNull(after.pending)
+        // The refused bytes stay (only a discard removes them), and the entry still counts as not uploaded.
+        val kept = after.refusedSnapshots.single()
+        assertEquals(sha("big"), kept.snapshot.sha256)
+        assertEquals(40049, kept.refusedCode)
+        assertEquals("big", store.refusedOf(after, kept).readText())
+        assertTrue(isUnsent(after, sha("small")))
+        assertEquals(40049, refusalCode(after))
+        // Further passes keep it.
+        now += EDIT_RECOVERY_DELAY_MS
+        pass().run()
+        assertTrue(store.refusedOf(after, kept).exists())
+        store.deleteFiles(after)
+        assertFalse(store.refusedOf(after, kept).exists())
     }
 
-    @Test fun aSnapshotWithoutMarkerGoesUpAsAConflictCopy() = runBlocking {
+    @Test fun aSnapshotWithoutMarkerGoesUpAsAConflictCopyWhenItsWorkingCopyIsGone() = runBlocking {
         server.files[uri] = file("f1", uri, "e1")
         val entry = edited("v1")
+        store.fileOf(entry).delete()
         store.tmpFolder()
         store.snapshotOf(entry).writeText("lost")
         commitsConflict()
@@ -377,8 +388,52 @@ class EditPassTest {
         val sent = server.sent.single()
         assertEquals("", sent.second)
         assertEquals("lost", sent.third)
-        assertTrue(sent.first, sent.first.startsWith("cloudreve://my/Docs/"))
+        assertTrue(sent.first, sent.first.startsWith("cloudreve://my/Docs/a"))
         assertFalse(store.snapshotOf(entry).exists())
+    }
+
+    @Test fun aSnapshotWithoutMarkerGoesWhenItsWorkingCopyHasTheBytes() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        val entry = edited("v1")
+        store.tmpFolder()
+        store.snapshotOf(entry).writeText("old")
+        pass().run()
+        assertTrue(server.sent.isEmpty())
+        assertFalse(store.snapshotOf(entry).exists())
+    }
+
+    @Test fun aKeptFileOfNoEntryGetsAReadableName() = runBlocking {
+        commitsConflict()
+        File(store.tmpFolder(), "snap-unknown").writeText("x")
+        pass().run()
+        val name = CrUri.fileName(server.sent.single().first)
+        assertTrue(name, name.startsWith("Handy-Kopie "))
+        assertTrue(server.sent.single().first.startsWith("cloudreve://my/"))
+    }
+
+    @Test fun noOrphanScanWhileAnAccountMoveIsNotFinished() = runBlocking {
+        File(tmp.root, "offline-edit/files/acc/some-id/moved.txt").apply { parentFile!!.mkdirs(); writeText("m") }
+        EditPass(server, store, { null }, EditPhase.End, "L", { true }, {}, { now }, scanOrphans = false).run()
+        assertTrue(store.load().entries.isEmpty())
+        assertTrue(File(tmp.root, "offline-edit/files/acc/some-id/moved.txt").exists())
+    }
+
+    @Test fun aWaitingFreshSnapshotStaysWithItsMarker() = runBlocking {
+        server.files[uri] = file("other", uri, "e1")
+        val entry = edited()
+        val result = pass(EditPhase.Start).run()
+        val after = store.entry(entry.id)!!
+        assertNotNull(after.pending)
+        assertEquals(sha("v2"), after.pending!!.snapshot.sha256)
+        assertTrue(store.snapshotOf(entry).exists())
+        assertTrue(result.syncWanted)
+        assertTrue(server.sent.isEmpty())
+    }
+
+    @Test fun aConfirmedSnapshotOfAMissingWorkingCopyIsDone() {
+        val entry = edited().copy(confirmed = EditSnapshot(2, 0, sha("v2")))
+        assertFalse(isUnsent(entry, null))
+        assertTrue(isUnsent(entry.copy(pending = EditMarker(UploadKind.Version, entry.base, uri, at = 0)), null))
     }
 
     @Test fun aNewMarkerStartsWithoutAttempts() = runBlocking {

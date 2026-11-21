@@ -29,6 +29,7 @@ import io.github.svenbuild.fylvo.android.data.FileRepository
 import io.github.svenbuild.fylvo.android.data.offline.EditEntry
 import io.github.svenbuild.fylvo.android.data.offline.OfflineCoverage
 import io.github.svenbuild.fylvo.android.data.offline.OfflineEdits
+import io.github.svenbuild.fylvo.android.data.offline.refusalCode
 import io.github.svenbuild.fylvo.android.data.offline.OfflineManager
 import io.github.svenbuild.fylvo.android.data.offline.OfflineRootInfo
 import io.github.svenbuild.fylvo.android.data.offline.hasRoomFor
@@ -1226,7 +1227,11 @@ class FilesViewModel(
         viewModelScope.launch {
             // Why it did not work, or null when the root can go.
             val problem = if (upload) {
-                edits.upload(prompt.entries)?.let { UiText.Res(R.string.edit_upload_failed, notUploadedText(it)) }
+                edits.upload(prompt.entries)?.let { reason ->
+                    val ids = prompt.entries.mapTo(HashSet()) { it.id }
+                    val code = _state.value.editEntries.filter { it.id in ids }.map(::refusalCode).firstOrNull { it > 0 } ?: 0
+                    UiText.Res(R.string.edit_upload_failed, notUploadedText(reason, code))
+                }
             } else {
                 UiText.Res(R.string.edit_discard_failed, prompt.name).takeUnless { edits.discardAll(prompt.entries.mapTo(HashSet()) { it.id }) }
             }
@@ -1267,7 +1272,13 @@ class FilesViewModel(
                     _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_finished, entry.name))) }
                 is OfflineEdits.FinishResult.Failed -> _state.update { s ->
                     val now = s.editEntries.firstOrNull { it.id == entry.id }
-                    s.copy(editPrompt = EditPrompt(entry.id, entry.name, result.reason, now?.pending != null, now?.errorCode ?: 0))
+                    s.copy(
+                        editPrompt = EditPrompt(
+                            entry.id, entry.name, result.reason,
+                            unsent = now != null && (now.pending != null || now.refusedSnapshots.isNotEmpty()),
+                            code = now?.let(::refusalCode) ?: 0,
+                        ),
+                    )
                 }
             }
         }

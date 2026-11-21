@@ -423,6 +423,7 @@
     <string name="edit_finished">Bearbeitung von %s abgeschlossen</string>
     <string name="edit_discard_failed">Die Änderungen an %s konnten nicht verworfen werden</string>
     <string name="edit_unsent_lost">Ein nicht hochgeladener Stand wird verworfen.</string>
+    <string name="edit_stray_label">Handy-Kopie</string>
     <string name="edit_discarded">Änderungen an %s verworfen</string>
     <string name="edit_discard_title">Änderungen an \"%s\" verwerfen?</string>
     <string name="edit_discard_text">Noch nicht hochgeladene Änderungen gehen verloren. Das kann nicht rückgängig gemacht werden.</string>

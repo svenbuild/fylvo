@@ -77,6 +77,8 @@ data class EditMarker(
     val entityId: String = "",
     /** Written or last given up; a recovery waits [EDIT_RECOVERY_DELAY_MS] after it. */
     val at: Long,
+    /** The server's code when it refused these bytes (see EditEntry.refusedSnapshots). */
+    val refusedCode: Int = 0,
 )
 
 @Serializable
@@ -99,10 +101,11 @@ data class EditEntry(
     val confirmed: EditSnapshot? = null,
     val pending: EditMarker? = null,
     /**
-     * A snapshot the server clearly refused (kept in tmp/ as refused-<id>) while a newer state of
-     * the working copy goes up; it goes once a newer upload is confirmed, or with a discard.
+     * Snapshots the server clearly refused (each kept in tmp/ as refused-<id>-<hash>) while newer
+     * states of the working copy go up. They go only with an explicit discard; until then the
+     * entry counts as not uploaded.
      */
-    val refused: EditMarker? = null,
+    val refusedSnapshots: List<EditMarker> = emptyList(),
     val state: EditState = EditState.Creating,
     val problem: EditProblem? = null,
     val errorCode: Int = 0,
@@ -283,14 +286,19 @@ fun rebaseOnto(entry: EditEntry, copy: FileObject, marker: EditMarker): EditEntr
     settled(entry, marker).copy(fileId = copy.id, uri = copy.path, baseEntity = marker.entityId, conflict = marker.name)
 
 private fun settled(entry: EditEntry, marker: EditMarker) = entry.copy(
-    // A newer state is on the server: a refused older one is no longer needed.
-    confirmed = marker.snapshot, pending = null, refused = null, state = EditState.Synced, problem = null, errorCode = 0,
+    confirmed = marker.snapshot, pending = null, state = EditState.Synced, problem = null, errorCode = 0,
     outdated = false, stalls = 0, attempts = 0,
 )
 
+/**
+ * Bytes of this entry are not confirmed on the server: a kept snapshot (pending or refused), or a
+ * working copy ([sha256], null when missing) that differs from the last confirmed state.
+ */
+fun isUnsent(entry: EditEntry, sha256: String?): Boolean =
+    entry.pending != null || entry.refusedSnapshots.isNotEmpty() || (sha256 != null && sha256 != entry.reference.sha256)
+
 /** Nothing of the working copy waits for an upload: it can be finished (or the account signed out). */
-fun isSettled(entry: EditEntry, sha256: String?): Boolean =
-    sha256 != null && entry.pending == null && sha256 == entry.reference.sha256
+fun isSettled(entry: EditEntry, sha256: String?): Boolean = sha256 != null && !isUnsent(entry, sha256)
 
 /**
  * The working copies that must be uploaded or discarded before a sign-out: in use and not
@@ -298,12 +306,15 @@ fun isSettled(entry: EditEntry, sha256: String?): Boolean =
  * missing). A missing copy without one holds nothing to save; finished copies stay for the same account.
  */
 fun signOutBlockers(entries: List<Pair<EditEntry, String?>>): List<EditEntry> =
-    entries.filter { (entry, sha256) -> entry.active && (entry.pending != null || (sha256 != null && !isSettled(entry, sha256))) }
-        .map { it.first }
+    entries.filter { (entry, sha256) -> entry.active && isUnsent(entry, sha256) }.map { it.first }
+
+/** The server's code of the latest refusal of an entry (pending or kept aside), 0 when none. */
+fun refusalCode(entry: EditEntry): Int =
+    entry.errorCode.takeIf { entry.problem == EditProblem.Refused && it > 0 } ?: entry.refusedSnapshots.lastOrNull()?.refusedCode ?: 0
 
 /**
  * A pending upload the server clearly refused (a code no conflict copy avoids) that has nothing
- * sent yet: once the working copy holds other bytes, it steps aside ([EditEntry.refused]) so the
+ * sent yet: once the working copy holds other bytes, it steps aside ([EditEntry.refusedSnapshots]) so the
  * newer state is planned normally.
  */
 fun canPark(entry: EditEntry, sha256: String?): Boolean {

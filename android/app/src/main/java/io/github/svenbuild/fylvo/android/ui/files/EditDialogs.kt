@@ -68,7 +68,7 @@ internal fun DiscardEditDialog(entry: EditEntry, onConfirm: () -> Unit, onDismis
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.edit_discard_title, entry.name)) },
-        text = { Text(unsentNote(entry.pending != null, stringResource(R.string.edit_discard_text))) },
+        text = { Text(unsentNote(entry.pending != null || entry.refusedSnapshots.isNotEmpty(), stringResource(R.string.edit_discard_text))) },
         confirmButton = {
             TextButton(onClick = onConfirm) { Text(stringResource(R.string.edit_discard), color = MaterialTheme.colorScheme.error) }
         },

@@ -139,7 +139,7 @@ fun AccountScreen(
             editSignOut = when (val result = app.signOut(choice, editSignOut?.ids.orEmpty())) {
                 OfflineEdits.SignOutResult.Done -> null
                 is OfflineEdits.SignOutResult.NeedsChoice -> EditSignOut(result.ids)
-                is OfflineEdits.SignOutResult.Failed -> EditSignOut(result.ids, result.reason)
+                is OfflineEdits.SignOutResult.Failed -> EditSignOut(result.ids, result.reason, code = result.code)
             }
         }
     }
@@ -317,7 +317,7 @@ fun AccountScreen(
             title = pluralStringResource(R.plurals.edit_unuploaded_title, prompt.ids.size, prompt.ids.size),
             text = stringResource(R.string.edit_sign_out_text),
             busy = prompt.busy,
-            error = prompt.reason?.let { stringResource(R.string.edit_upload_failed, notUploadedText(it).asString()) },
+            error = prompt.reason?.let { stringResource(R.string.edit_upload_failed, notUploadedText(it, prompt.code).asString()) },
             onUpload = { signOut(OfflineEdits.SignOutChoice.Upload) },
             onDiscard = { signOut(OfflineEdits.SignOutChoice.Discard) },
             onDismiss = { editSignOut = null },
@@ -462,5 +462,7 @@ private fun formatDateTime(millis: Long): String =
 private data class EditSignOut(
     val ids: Set<String>,
     val reason: OfflineEdits.NotUploaded? = null,
+    /** The server's code of a refusal. */
+    val code: Int = 0,
     val busy: Boolean = false,
 )

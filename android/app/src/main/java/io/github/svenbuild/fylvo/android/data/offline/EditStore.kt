@@ -93,12 +93,15 @@ class EditStore(private val base: File, val accountKey: String) {
         File(filesDir, entry.id).deleteRecursively()
         File(doneDir, entry.id).deleteRecursively()
         snapshotOf(entry).delete()
-        refusedOf(entry).delete()
+        tmpDir.listFiles().orEmpty().filter { ownerOf(it) == entry.id }.forEach { it.delete() }
         creatingOf(entry).delete()
     }
 
-    /** Where a snapshot the server refused waits (see EditEntry.refused) while newer changes go up. */
-    fun refusedOf(entry: EditEntry): File = File(tmpDir, "refused-${entry.id}")
+    /** Where a snapshot the server refused is kept (see EditEntry.refusedSnapshots), one file per content. */
+    fun refusedOf(entry: EditEntry, marker: EditMarker): File = File(tmpDir, "refused-${entry.id}-${marker.snapshot.sha256.take(16)}")
+
+    /** True while this key's edit index exists (for the old key: an account move is not finished). */
+    fun hasIndex(): Boolean = indexFile.exists()
 
     /** Files in files/ or done/ that no entry of [index] points to (an editor wrote after a finish, a lost index). */
     fun orphans(index: EditIndex): List<File> {
@@ -129,7 +132,7 @@ class EditStore(private val base: File, val accountKey: String) {
         val keep = HashSet<File>()
         index.entries.forEach { entry ->
             if (entry.pending != null) keep += snapshotOf(entry)
-            if (entry.refused != null) keep += refusedOf(entry)
+            entry.refusedSnapshots.forEach { keep += refusedOf(entry, it) }
             if (entry.state == EditState.Creating) keep += creatingOf(entry)
         }
         val strays = ArrayList<File>()
@@ -150,9 +153,11 @@ class EditStore(private val base: File, val accountKey: String) {
         const val ROOT = "offline-edit"
         private const val CREATING = "creating-"
 
-        /** The entry id a file in tmp/ belongs to ("snap-<id>", "refused-<id>"), or null. */
-        fun ownerOf(tmpFile: File): String? =
-            tmpFile.name.substringAfter('-', "").takeIf { tmpFile.name.startsWith("snap-") || tmpFile.name.startsWith("refused-") }
+        /** The entry id (a UUID) a file in tmp/ belongs to ("snap-<id>", "refused-<id>-<hash>"), or null. */
+        fun ownerOf(tmpFile: File): String? {
+            val rest = listOf("snap-", "refused-").firstOrNull { tmpFile.name.startsWith(it) }?.let { tmpFile.name.removePrefix(it) } ?: return null
+            return rest.take(36).takeIf { it.length == 36 }
+        }
 
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
