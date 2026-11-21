@@ -167,22 +167,7 @@ impl<'a> UploadTask<'a> {
         match r {
             Ok(()) => Ok(()),
             Err(e) => {
-                // Check if the error is an ApiError with StaleVersion (40076)
-                // The error might be wrapped with anyhow context, so check the chain
-                let is_conflict_error = e.chain().any(|cause| {
-                    if let Some(api_err) = cause.downcast_ref::<ApiError>() {
-                        matches!(
-                            api_err,
-                            ApiError::ApiError { code, .. }
-                                if *code == ErrorCode::StaleVersion as i32
-                                || *code == ErrorCode::ObjectExisted as i32
-                        )
-                    } else {
-                        false
-                    }
-                });
-
-                if is_conflict_error {
+                if is_conflict_error(&e) {
                     warn!(
                         target: "tasks::upload",
                         task_id = %self.task.task_id,
@@ -215,6 +200,10 @@ impl<'a> UploadTask<'a> {
                             .unwrap_or(0),
                     )
                 }
+
+                // Fylvo: the server has the name in other upper/lower case. Tried again only
+                // when the file or the sync changes it, never in a loop.
+                crate::drive::case::report_name_case_taken(&self.task.payload.local_path, &e);
 
                 // Mark file as error state
                 if let Err(e) = self
@@ -327,19 +316,20 @@ impl<'a> UploadTask<'a> {
         );
 
         // Execute upload
-        uploader
+        let created = uploader
             .upload(params, progress)
             .await
             .context("failed to upload file")?;
 
         // Update local file placeholder status after successful upload
-        self.finalize_upload().await?;
+        self.finalize_upload(created).await?;
 
         Ok(())
     }
 
-    /// Finalize upload by updating local file placeholder
-    async fn finalize_upload(&mut self) -> Result<()> {
+    /// Finalize upload by updating local file placeholder. `created` is the version the upload
+    /// made, if the server named it.
+    async fn finalize_upload(&mut self, created: Option<String>) -> Result<()> {
         // Get file info from server to confirm upload
         let uri = local_path_to_cr_uri(
             self.task.payload.local_path.clone(),
@@ -359,6 +349,19 @@ impl<'a> UploadTask<'a> {
             })
             .await
             .context("failed to get file info after upload")?;
+
+        // Fylvo: another device may have saved a newer version right after this upload. Its
+        // version must not be taken for this file's content: that would mark the local file
+        // in sync with bytes it does not have. Handled as a conflict instead.
+        if !upload_is_current(created.as_deref(), &file_info) {
+            return Err(anyhow::Error::new(ApiError::ApiError {
+                code: ErrorCode::StaleVersion as i32,
+                message: "another version was saved right after this upload".to_string(),
+                error_detail: None,
+                correlation_id: None,
+                aggregated_errors: None,
+            }));
+        }
 
         self.file_uploaded(&file_info)
             .context("failed to commit uploaded file")?;
@@ -431,5 +434,42 @@ impl<'a> UploadTask<'a> {
             .update_sync_error_state(false)
             .context("failed to clear sync error state")?;
         Ok(())
+    }
+}
+
+/// Whether an upload failed because the server has another version than the one the file was
+/// changed from (40076), or the name is taken (40004). The error may be wrapped in context.
+pub(crate) fn is_conflict_error(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        matches!(cause.downcast_ref::<ApiError>(), Some(ApiError::ApiError { code, .. })
+            if *code == ErrorCode::StaleVersion as i32 || *code == ErrorCode::ObjectExisted as i32)
+    })
+}
+
+/// Whether the server's current version of a file is the one an upload created. Unknown when
+/// the server did not name the created version (older server): taken as current, as before.
+pub(crate) fn upload_is_current(created: Option<&str>, file: &FileResponse) -> bool {
+    created.is_none_or(|created| file.primary_entity.as_deref() == Some(created))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(primary: Option<&str>) -> FileResponse {
+        FileResponse {
+            primary_entity: primary.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_version_saved_right_after_the_upload_is_not_taken_for_it() {
+        assert!(upload_is_current(Some("e2"), &file(Some("e2"))));
+        // Another device saved e3 after this upload made e2.
+        assert!(!upload_is_current(Some("e2"), &file(Some("e3"))));
+        assert!(!upload_is_current(Some("e2"), &file(None)));
+        // An older server does not name the created version.
+        assert!(upload_is_current(None, &file(Some("e3"))));
     }
 }

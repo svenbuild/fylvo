@@ -5,7 +5,7 @@ use crate::{
         utility::WriteAt,
     },
     drive::{
-        case::{case_twins, ntfs_fold},
+        case::{case_twins, ntfs_fold, report_case_clash, report_name_case_taken},
         mounts::Mount,
         placeholder::CrPlaceholder,
         sync::{GroupedFsEvents, SyncMode, is_symbolic_link},
@@ -417,7 +417,7 @@ impl Mount {
                 .partition(|file| twins.contains(&ntfs_fold(&file.name)));
             placehodlers = kept;
             let left_out: Vec<PathBuf> = left_out.iter().map(|file| path.join(&file.name)).collect();
-            self.report_case_clash(&left_out, "caseClashMessage");
+            report_case_clash(&left_out, "caseClashMessage");
         }
 
         Ok(GetPlacehodlerResult {
@@ -577,7 +577,9 @@ impl Mount {
                 }
                 Err(e) => {
                     tracing::error!(target: "drive::commands", error = %e, "Failed to rename file");
-                    return Err(e.into());
+                    let e = e.into();
+                    report_name_case_taken(&target, &e);
+                    return Err(e);
                 }
             }
         }
@@ -610,7 +612,9 @@ impl Mount {
             }
             Err(e) => {
                 tracing::error!(target: "drive::commands", error = %e, "Failed to move file");
-                return Err(e.into());
+                let e = e.into();
+                report_name_case_taken(&target, &e);
+                return Err(e);
             }
         }
     }

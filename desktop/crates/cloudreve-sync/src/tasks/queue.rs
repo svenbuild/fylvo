@@ -1,3 +1,4 @@
+use crate::drive::guard::is_under_any_case;
 use crate::inventory::{InventoryDb, NewTaskRecord, TaskRecord, TaskStatus, TaskUpdate};
 use crate::tasks::download::DownloadTask;
 use crate::tasks::types::{TaskKind, TaskPayload, TaskProgress};
@@ -239,15 +240,12 @@ impl TaskQueue {
 
         let cancelled_count = cancelled_ids.len();
 
-        // 2. Abort running task handles that match the path
+        // 2. Abort running task handles that match the path (any upper/lower case spelling)
+        let roots = [path.as_ref().to_path_buf()];
         let tasks_to_abort: Vec<String> = self
             .task_paths
             .iter()
-            .filter(|entry| {
-                let task_path = entry.value();
-                task_path == &path_str
-                    || task_path.starts_with(&format!("{}{}", path_str, std::path::MAIN_SEPARATOR))
-            })
+            .filter(|entry| is_under_any_case(std::path::Path::new(entry.value()), &roots))
             .map(|entry| entry.key().clone())
             .collect();
 

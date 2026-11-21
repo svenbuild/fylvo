@@ -1,5 +1,7 @@
 mod download;
 mod queue;
+#[cfg(test)]
+mod server_e2e;
 mod types;
 mod upload;
 

@@ -51,6 +51,8 @@ pub enum ErrorCode {
     AnonymousAccessDenied = 40088,
     SessionExpired = 40089,
     PurchaseRequired = 40083,
+    /// Fylvo: the folder has the name already in other upper/lower case.
+    NameCaseTaken = 40905,
     LoginRequired = 401,
     PermissionDenied = 403,
     NotFound = 404,
@@ -70,6 +72,7 @@ impl ErrorCode {
             40088 => Some(Self::AnonymousAccessDenied),
             40089 => Some(Self::SessionExpired),
             40083 => Some(Self::PurchaseRequired),
+            40905 => Some(Self::NameCaseTaken),
             401 => Some(Self::LoginRequired),
             403 => Some(Self::PermissionDenied),
             404 => Some(Self::NotFound),

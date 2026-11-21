@@ -644,3 +644,6 @@ caseClashMessage:
 caseHeldMessage:
   en-US: "\"%{name}\" on this PC and on the server differ only in upper/lower case, and it is not sure they are the same file. Nothing is changed for this name until you rename one of them."
   de: "\"%{name}\" auf diesem PC und auf dem Server unterscheiden sich nur in Gross-/Kleinschreibung, und es ist nicht sicher, dass es dieselbe Datei ist. Für diesen Namen wird nichts geändert, bis Sie einen davon umbenennen."
+caseTakenMessage:
+  en-US: "\"%{name}\" could not be saved on the server: the folder there has this name already in other upper/lower case. If the name was just changed on the server, the app catches up by itself shortly; otherwise rename one of them."
+  de: "\"%{name}\" konnte nicht auf dem Server gespeichert werden: Im Ordner dort gibt es den Namen schon mit anderer Gross-/Kleinschreibung. Wurde der Name gerade am Server geändert, gleicht die App das gleich selbst ab; sonst benennen Sie einen davon um."

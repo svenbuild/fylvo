@@ -428,6 +428,9 @@ pub struct UploadCredential {
     pub upload_policy: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encrypt_metadata: Option<EncryptMetadata>,
+    /// Fylvo: the version (entity) this upload creates. Not sent by older servers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<String>,
 }
 
 /// Encryption metadata

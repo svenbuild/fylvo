@@ -122,11 +122,13 @@ impl Uploader {
     /// - Reporting progress
     /// - Persisting state for resumability
     /// - Completing the upload
+    ///
+    /// Returns the version (entity) the upload created, if the server names it.
     pub async fn upload<P: ProgressCallback + 'static>(
         &self,
         params: UploadParams,
         progress: P,
-    ) -> Result<()> {
+    ) -> Result<Option<String>> {
         info!(
             target: "uploader",
             local_path = %params.local_path.display(),
@@ -188,7 +190,7 @@ impl Uploader {
                     local_path = %params.local_path.display(),
                     "Upload completed successfully"
                 );
-                Ok(())
+                Ok(session.credential().entity_id.clone())
             }
             Err(e) => {
                 error!(
