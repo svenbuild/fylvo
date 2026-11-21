@@ -79,3 +79,10 @@ func thumbnailOriginals(p string) []string {
 
 // thumbPrefix is the random prefix util.UniqueThumbPath puts in front of a preview's name.
 var thumbPrefix = regexp.MustCompile(`^[0-9A-Za-z]{8}_`)
+
+// fileSources returns the paths on disk of the files (not folders) in a batch of the import.
+func fileSources(batch []fs.PhysicalObject) []string {
+	return lo.FilterMap(batch, func(o fs.PhysicalObject, _ int) (string, bool) {
+		return o.Source, !o.IsDir
+	})
+}

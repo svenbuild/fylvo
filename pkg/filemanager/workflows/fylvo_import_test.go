@@ -45,3 +45,11 @@ func TestImportListsCaseTwins(t *testing.T) {
 	require.Len(t, state.CaseTwins, maxListedCaseTwins)
 	require.Equal(t, "a/A.jpg", state.CaseTwins[0])
 }
+
+func TestImportLooksUpOnlyFiles(t *testing.T) {
+	batch := []fs.PhysicalObject{
+		{RelativePath: "Fotos", Source: "/data/import/Fotos", IsDir: true},
+		{RelativePath: "Fotos/a.jpg", Source: "/data/import/Fotos/a.jpg"},
+	}
+	require.Equal(t, []string{"/data/import/Fotos/a.jpg"}, fileSources(batch))
+}

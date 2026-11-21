@@ -353,8 +353,11 @@ func (b *baseNavigator) walk(ctx context.Context, levelFiles []*File, limit, dep
 		parents := lo.SliceToMap(folders, func(file *File) (int, *File) {
 			return file.Model.ID, file
 		})
+		// Fylvo: the page token must survive the loop. It was reset in each round, so a level
+		// with more entries than one page (about 32'700 on SQLite) read its first page again and
+		// again: entries came twice, and a walk without limit (deleting for good) did not end.
+		token := ""
 		for leftCredit > 0 {
-			token := ""
 			res, err := b.fileClient.GetChildFiles(ctx,
 				&inventory.ListFileParameters{
 					PaginationArgs: &inventory.PaginationArgs{

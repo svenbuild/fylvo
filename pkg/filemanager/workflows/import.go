@@ -189,7 +189,22 @@ func (m *ImportTask) processBatch(ctx context.Context, dep dependency.Dep, user 
 	defer fm.Recycle()
 
 	failed := 0
+	// Fylvo: a file on disk that a stored file already uses is not registered again, even if
+	// that file was renamed, moved or put in the trash since the last run.
+	imported, err := dep.FileClient().ImportedSources(ctx, m.state.PolicyID, fileSources(batch))
+	if err != nil {
+		m.l.Error("Failed to look up already imported files: %s, skipping the files of this batch", err)
+	}
 	for _, physicalFile := range batch {
+		if !physicalFile.IsDir && (err != nil || imported[physicalFile.Source]) {
+			atomic.AddInt64(&m.progress[ProgressTypeImported].Current, 1)
+			if err != nil {
+				failed++
+			} else {
+				m.l.Info("File %s is already in Fylvo (it may have been renamed, moved or put in the trash), skipping", physicalFile.RelativePath)
+			}
+			continue
+		}
 		if physicalFile.IsDir {
 			m.l.Info("Creating folder %s", physicalFile.RelativePath)
 			_, err := fm.Create(ctx, dst.Join(physicalFile.RelativePath), types.FileTypeFolder,

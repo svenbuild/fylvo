@@ -132,3 +132,22 @@ func TestNewContentOfImportedFileGetsTodaysDate(t *testing.T) {
 	require.WithinDuration(t, time.Now(), updated, time.Minute)
 	requireSameTime(t, diskDate, created, "creation date stays")
 }
+
+// A file on disk that an imported file uses stays known after a rename, a move or the trash, so
+// that a second import does not register it again (two files on one file on disk: deleting one
+// for good would delete the content of the other).
+func TestImportedSourceStaysKnownAfterRename(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	owner := e.as(e.owner)
+	require.NoError(t, e.importFile(owner, "cloudreve://my/Import/a.txt", 10, diskDate))
+	require.NoError(t, e.rename(e.as(e.owner), "cloudreve://my/Import/a.txt", "b.txt"))
+
+	used, err := e.fileClient.ImportedSources(e.ctx, 1, []string{"import/x", "import/other"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]bool{"import/x": true}, used)
+
+	// Another storage policy has its own files on disk.
+	used, err = e.fileClient.ImportedSources(e.ctx, 2, []string{"import/x"})
+	require.NoError(t, err)
+	require.Empty(t, used)
+}
