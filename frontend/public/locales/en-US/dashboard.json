@@ -1061,7 +1061,7 @@
     "allowedHosts": "Allowed hosts",
     "allowedHostsDes": "Hostnames or IP literals (one per line) that bypass the safety check on this node. The site URL host(s) are always allowed. Use this to whitelist a specific internal host you trust users to download from.",
     "allowedCIDRs": "Allowed IP ranges (CIDR)",
-    "allowedCIDRsDes": "CIDR blocks (one per line, IPv4 or IPv6) whose IPs are treated as safe even if they would normally be rejected. Use this to expose a LAN subnet — for example a NAS on 192.168.10.0/24 — without disabling the rest of the safety check.",
+    "allowedCIDRsDes": "CIDR blocks (one per line, IPv4 or IPv6) whose IPs are treated as safe even if they would normally be rejected. Use this to expose a LAN subnet, for example a NAS on 192.168.10.0/24, without disabling the rest of the safety check.",
     "webUIEndpoint": "Web UI endpoint",
     "webUIEndpointDes": "The endpoint of the qBittorrent Web UI, e.g. <0>http://127.0.0.1:8080/</0>.",
     "tempPath": "Temporary download directory",

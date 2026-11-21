@@ -11,3 +11,13 @@ func WithModifiedAt(t time.Time) Option {
 		}
 	})
 }
+
+// WithCopyName gives the copy of a single file or folder another name than its source.
+// Fylvo: a WebDAV COPY names its destination. Copying under the old name first and renaming
+// after failed whenever the destination folder already held that name, as in a copy within
+// the same folder.
+func WithCopyName(name string) Option {
+	return OptionFunc(func(o *FsOption) {
+		o.CopyName = name
+	})
+}

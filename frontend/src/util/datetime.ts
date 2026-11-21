@@ -81,7 +81,8 @@ export function formatDuration(duration: plugin.Duration): string {
   } else if (h < 24) {
     return duration.format(i18next.t("hours", { ns: "common" }));
   } else {
-    return i18next.t("days", { ns: "common", d: Math.round(duration.asDays()) });
+    const days = Math.round(duration.asDays());
+    return i18next.t("days", { ns: "common", d: days, count: days });
   }
 }
 

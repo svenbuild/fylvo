@@ -29,7 +29,7 @@ func TestBuiltinCLIOAuthMigration(t *testing.T) {
 	require.NoError(t, err)
 	cli, err := client.OAuthClient.Query().Where(oauthclient.GUID(OAuthClientCLIGUID)).Only(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "Cloudreve CLI", cli.Name)
+	require.Equal(t, OAuthClientCLIName, cli.Name)
 	require.Equal(t, OAuthClientCLISecret, cli.Secret)
 	require.Equal(t, []string{"http://127.0.0.1/callback"}, cli.RedirectUris)
 	require.Equal(t, desktop.Scopes, cli.Scopes)
@@ -232,7 +232,8 @@ func TestReplaceCloudreveOAuthClientIcons(t *testing.T) {
 
 	// Existing installations still point at the removed Cloudreve icon; an icon chosen by the
 	// administrator stays.
-	_, err = client.OAuthClient.UpdateOne(cli).SetProps(&types.OAuthClientProps{Icon: oauthClientCloudreveIcon, RefreshTokenTTL: 123}).Save(ctx)
+	_, err = client.OAuthClient.UpdateOne(cli).SetName(oauthClientCloudreveCLIName).
+		SetProps(&types.OAuthClientProps{Icon: oauthClientCloudreveIcon, RefreshTokenTTL: 123}).Save(ctx)
 	require.NoError(t, err)
 	custom, err := client.OAuthClient.Create().SetGUID("custom").SetSecret("s").SetName("Custom").
 		SetRedirectUris([]string{}).SetScopes([]string{}).
@@ -244,7 +245,17 @@ func TestReplaceCloudreveOAuthClientIcons(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, OAuthClientDefaultIcon, cli.Props.Icon)
 	require.Equal(t, int64(123), cli.Props.RefreshTokenTTL)
+	require.Equal(t, OAuthClientCLIName, cli.Name, "the Cloudreve name is replaced")
 	custom, err = client.OAuthClient.Get(ctx, custom.ID)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/app.png", custom.Props.Icon)
+	require.Equal(t, "Custom", custom.Name)
+
+	// A name the administrator chose stays.
+	_, err = client.OAuthClient.UpdateOne(cli).SetName("Mein Skript").Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, replaceCloudreveOAuthClientIcons(logger, client, ctx))
+	cli, err = client.OAuthClient.Get(ctx, cli.ID)
+	require.NoError(t, err)
+	require.Equal(t, "Mein Skript", cli.Name)
 }

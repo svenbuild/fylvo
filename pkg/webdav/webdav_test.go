@@ -15,6 +15,10 @@ type copyMoveOperationsStub struct {
 	moveErr    error
 	renameErr  error
 	moveIsCopy bool
+	// copyName is the name WithCopyName gave the last copy.
+	copyName string
+	// firstMoveErr is returned by the first move only.
+	firstMoveErr error
 }
 
 func (s *copyMoveOperationsStub) Delete(context.Context, []*fs.URI, ...fs.Option) error {
@@ -22,9 +26,18 @@ func (s *copyMoveOperationsStub) Delete(context.Context, []*fs.URI, ...fs.Option
 	return s.deleteErr
 }
 
-func (s *copyMoveOperationsStub) MoveOrCopy(_ context.Context, _ []*fs.URI, _ *fs.URI, isCopy bool) error {
+func (s *copyMoveOperationsStub) MoveOrCopy(_ context.Context, _ []*fs.URI, _ *fs.URI, isCopy bool, opts ...fs.Option) error {
 	s.calls = append(s.calls, "move")
 	s.moveIsCopy = isCopy
+	o := &fs.FsOption{}
+	for _, opt := range opts {
+		opt.Apply(o)
+	}
+	s.copyName = o.CopyName
+	if err := s.firstMoveErr; err != nil {
+		s.firstMoveErr = nil
+		return err
+	}
 	return s.moveErr
 }
 
@@ -94,11 +107,37 @@ func TestPerformCopyMove(t *testing.T) {
 		if err != nil || status != http.StatusCreated {
 			t.Fatalf("unexpected result: status=%d err=%v", status, err)
 		}
-		if got := operations.calls; len(got) != 2 || got[0] != "move" || got[1] != "rename" {
+		// Fylvo: the copy gets its name right away, no rename after.
+		if got := operations.calls; len(got) != 1 || got[0] != "move" {
 			t.Fatalf("unexpected operation order: %v", got)
 		}
 		if !operations.moveIsCopy {
 			t.Fatal("copy was executed as move")
+		}
+		if operations.copyName != "source.txt" {
+			t.Fatalf("unexpected copy name: %q", operations.copyName)
+		}
+	})
+
+	t.Run("copy under the same name", func(t *testing.T) {
+		operations := &copyMoveOperationsStub{}
+		other := mustWebDAVTestURI(t, "cloudreve://my/Ordner/source.temp")
+		status, err := performCopyMove(context.Background(), operations, src, other, other.DirUri(), true, true, false)
+		if err != nil || status != http.StatusCreated || operations.copyName != "" {
+			t.Fatalf("unexpected result: status=%d err=%v name=%q", status, err, operations.copyName)
+		}
+	})
+
+	// Fylvo: the destination folder holds the old name, so the move renames first.
+	t.Run("move into a folder that holds the old name", func(t *testing.T) {
+		other := mustWebDAVTestURI(t, "cloudreve://my/Ordner/neu.txt")
+		operations := &copyMoveOperationsStub{firstMoveErr: fs.ErrFileExisted}
+		status, err := performCopyMove(context.Background(), operations, src, other, other.DirUri(), false, true, false)
+		if err != nil || status != http.StatusCreated {
+			t.Fatalf("unexpected result: status=%d err=%v", status, err)
+		}
+		if got := operations.calls; len(got) != 3 || got[0] != "move" || got[1] != "rename" || got[2] != "move" {
+			t.Fatalf("unexpected operation order: %v", got)
 		}
 	})
 }

@@ -671,15 +671,14 @@ func (f *fileClient) Copy(ctx context.Context, args *CopyParameter) (map[int][]*
 	metadataStm := []*ent.MetadataCreate{}
 	entityStm := []*ent.EntityUpdate{}
 	newDstMap := make(map[int][]*ent.File, len(files))
+	newIDs := make([]int, 0, len(files))
 	sizeDiff := int64(0)
 	for index, stm := range copyFileStm {
 		newFile, err := stm.Save(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to copy file: %w", err)
 		}
-		if err := f.ensureNoCaseTwins(ctx, newFile.ID); err != nil { // Fylvo
-			return nil, nil, err
-		}
+		newIDs = append(newIDs, newFile.ID)
 
 		fileMetadata, err := files[index].Edges.MetadataOrErr()
 		if err != nil {
@@ -724,6 +723,10 @@ func (f *fileClient) Copy(ctx context.Context, args *CopyParameter) (map[int][]*
 		newAncestorChain := append(newDstMap[files[index].ID], newFile)
 		newAncestorChain[0], newAncestorChain[len(newAncestorChain)-1] = newAncestorChain[len(newAncestorChain)-1], newAncestorChain[0]
 		newDstMap[files[index].ID] = newAncestorChain
+	}
+	// Fylvo: names in other case, checked once for all copies (see ensureNoCaseTwins).
+	if err := f.ensureNoCaseTwins(ctx, newIDs...); err != nil {
+		return nil, nil, err
 	}
 
 	// 2. Copy metadata by group

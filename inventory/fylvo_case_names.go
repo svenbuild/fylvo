@@ -97,16 +97,40 @@ func (f *fileClient) ensureNoCaseTwins(ctx context.Context, ids ...int) error {
 			return fmt.Errorf("failed to read written files: %w", err)
 		}
 
-		for _, w := range written {
-			if w.FileChildren == 0 {
-				continue // a root folder or an entry in the trash
+		// A folder with one written entry is asked with LIKE. For a folder with several, as in
+		// a copy of a big folder, its names are read once: asking per entry read the whole
+		// folder each time, so copying 60'000 files into one folder took 6 minutes.
+		byParent := lo.GroupBy(lo.Filter(written, func(w *ent.File, _ int) bool {
+			return w.FileChildren != 0 // not a root folder or an entry in the trash
+		}), func(w *ent.File) int { return w.FileChildren })
+		for parent, entries := range byParent {
+			if len(entries) == 1 {
+				twins, err := f.CaseTwins(ctx, parent, entries[0].Name)
+				if err != nil {
+					return err
+				}
+				if len(twins) > 0 {
+					return ErrNameCaseTaken
+				}
+				continue
 			}
-			twins, err := f.CaseTwins(ctx, w.FileChildren, w.Name)
+
+			names, err := f.client.File.Query().Where(file.FileChildren(parent)).Select(file.FieldName).Strings(ctx)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to read the names of a folder: %w", err)
 			}
-			if len(twins) > 0 {
-				return ErrNameCaseTaken
+			spellings := make(map[string]map[string]struct{}, len(names))
+			for _, name := range names {
+				folded := FoldName(name)
+				if spellings[folded] == nil {
+					spellings[folded] = make(map[string]struct{}, 1)
+				}
+				spellings[folded][name] = struct{}{}
+			}
+			for _, w := range entries {
+				if len(spellings[FoldName(w.Name)]) > 1 {
+					return ErrNameCaseTaken
+				}
 			}
 		}
 	}

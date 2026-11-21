@@ -168,7 +168,7 @@ func migrateAdminGroup(l logging.Logger, client *ent.Client, ctx context.Context
 		SetSettings(&types.GroupSetting{
 			SourceBatchSize:  1000,
 			Aria2BatchSize:   50,
-			MaxWalkedFiles:   100000,
+			MaxWalkedFiles:   DefaultMaxWalkedFiles,
 			TrashRetention:   7 * 24 * 3600,
 			RedirectedSource: true,
 		}).
@@ -201,7 +201,7 @@ func migrateUserGroup(l logging.Logger, client *ent.Client, ctx context.Context)
 		SetSettings(&types.GroupSetting{
 			SourceBatchSize:  10,
 			Aria2BatchSize:   1,
-			MaxWalkedFiles:   100000,
+			MaxWalkedFiles:   DefaultMaxWalkedFiles,
 			TrashRetention:   7 * 24 * 3600,
 			RedirectedSource: true,
 		}).
@@ -228,7 +228,7 @@ func migrateAnonymousGroup(l logging.Logger, client *ent.Client, ctx context.Con
 		SetName("Anonymous").
 		SetPermissions(permissions).
 		SetSettings(&types.GroupSetting{
-			MaxWalkedFiles:   100000,
+			MaxWalkedFiles:   DefaultMaxWalkedFiles,
 			RedirectedSource: true,
 		}).
 		Save(ctx); err != nil {
@@ -286,10 +286,13 @@ const (
 	OAuthClientCloudreveDesktopGUID = "393a1839-f52e-498e-9972-e77cc2241eee"
 	OAuthClientCloudreveiOSGUID     = "220db97a-44a3-44f7-99b6-d767262b4daa"
 
-	OAuthClientCLIGUID        = "6326d2af-2fef-4a99-94da-1ee8ef0ca53f"
-	OAuthClientCLISecret      = "yoFiNgbxvSCzK2Nm92T3TNaREh4qBjq4"
-	OAuthClientCLIName        = "Cloudreve CLI"
-	OAuthClientCLIRedirectURI = "http://127.0.0.1/callback"
+	OAuthClientCLIGUID   = "6326d2af-2fef-4a99-94da-1ee8ef0ca53f"
+	OAuthClientCLISecret = "yoFiNgbxvSCzK2Nm92T3TNaREh4qBjq4"
+	// Fylvo: a translation key, like OAuthClientFylvoDesktopName. Installations that still carry
+	// oauthClientCloudreveCLIName get it on start (see replaceCloudreveOAuthClientIcons).
+	OAuthClientCLIName          = "application:oauth.cliApp"
+	oauthClientCloudreveCLIName = "Cloudreve CLI"
+	OAuthClientCLIRedirectURI   = "http://127.0.0.1/callback"
 
 	// Fylvo Desktop signs in with its own client; the web app sends it back to fylvo://.
 	OAuthClientFylvoDesktopGUID        = "512cd652-c028-4332-992e-d88a4406e5b2"
@@ -349,14 +352,21 @@ func removeRetiredOAuthClients(l logging.Logger, client *ent.Client, ctx context
 }
 
 // replaceCloudreveOAuthClientIcons points clients that still use the removed Cloudreve icon at
-// the Fylvo icon. Runs on every start, because the schema migration only runs when the version
-// changes. Icons an administrator chose are kept.
+// the Fylvo icon, and gives the CLI client its Fylvo name if it still has the Cloudreve one.
+// Runs on every start, because the schema migration only runs when the version changes. Icons
+// and names an administrator chose are kept.
 func replaceCloudreveOAuthClientIcons(l logging.Logger, client *ent.Client, ctx context.Context) error {
 	all, err := client.OAuthClient.Query().All(schema.SkipSoftDelete(ctx))
 	if err != nil {
 		return fmt.Errorf("failed to list OAuth clients: %w", err)
 	}
 	for _, c := range all {
+		if c.GUID == OAuthClientCLIGUID && c.Name == oauthClientCloudreveCLIName {
+			if err := client.OAuthClient.UpdateOneID(c.ID).SetName(OAuthClientCLIName).Exec(schema.SkipSoftDelete(ctx)); err != nil {
+				return fmt.Errorf("failed to rename OAuth client %s: %w", c.GUID, err)
+			}
+			l.Info("Renamed OAuth client %s from %q.", c.GUID, oauthClientCloudreveCLIName)
+		}
 		if c.Props == nil || c.Props.Icon != oauthClientCloudreveIcon {
 			continue
 		}

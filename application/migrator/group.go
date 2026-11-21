@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/cloudreve/Cloudreve/v4/application/migrator/model"
+	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/boolset"
 	"github.com/cloudreve/Cloudreve/v4/pkg/conf"
@@ -46,7 +47,7 @@ func (m *Migrator) migrateGroup() error {
 			SourceBatchSize:       opts.SourceBatchSize,
 			RedirectedSource:      opts.RedirectedSource,
 			Aria2BatchSize:        opts.Aria2BatchSize,
-			MaxWalkedFiles:        100000,
+			MaxWalkedFiles:        inventory.DefaultMaxWalkedFiles,
 			TrashRetention:        7 * 24 * 3600,
 		}
 

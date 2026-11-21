@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
+	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
@@ -64,6 +65,13 @@ func ViewerSessionValidation() gin.HandlerFunc {
 		if err := SetUserCtx(c, session.UserID); err != nil {
 			c.Status(http.StatusInternalServerError)
 			c.Header(wopi.ServerErrorHeader, "user not found")
+			c.Abort()
+			return
+		}
+		// Fylvo: the session ends with a new password, like a sign-in.
+		if !inventory.SessionStillValid(inventory.UserFromContext(c), session.PasswordFingerprint) {
+			c.Status(http.StatusUnauthorized)
+			c.Header(wopi.ServerErrorHeader, "session ended")
 			c.Abort()
 			return
 		}

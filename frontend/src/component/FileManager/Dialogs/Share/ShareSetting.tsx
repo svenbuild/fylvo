@@ -12,7 +12,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileResponse, FileType, ShareMember } from "../../../../api/explorer.ts";
 import { sizeToString } from "../../../../util";
@@ -177,6 +177,8 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
   };
 
   const setPassword = (password: string) => change({ password, is_private: password != "" });
+  // Fylvo: set when an input held a character a share password cannot have, until the field is left.
+  const [passwordCharsDropped, setPasswordCharsDropped] = useState(false);
 
   return (
     <Box>
@@ -213,15 +215,20 @@ const ShareSettingContent = ({ setting, file, editing, onSettingChange }: ShareS
             disabled={editing}
             placeholder={t("application:modals.noPassword")}
             value={setting.is_private ? setting.password ?? "" : ""}
-            // Only letters and digits. Other characters are dropped instead of refusing the whole input,
-            // so a pasted password still switches the protection on and the field shows what is used.
-            // Input with no usable character at all leaves the field as it was, so it never switches
-            // the protection off by surprise.
+            // Only letters and digits (the password is part of the link). Other characters are dropped
+            // instead of refusing the whole input, so a pasted password still switches the protection on
+            // and the field shows what is used. A note under the field says so. Input with no usable
+            // character at all leaves the field as it was, so it never switches the protection off by
+            // surprise.
             onChange={(e) => {
               const value = e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 32);
+              if (value != e.target.value) setPasswordCharsDropped(true);
               if (e.target.value != "" && value == "") return;
               setPassword(value);
             }}
+            onBlur={() => setPasswordCharsDropped(false)}
+            error={passwordCharsDropped}
+            helperText={passwordCharsDropped ? t("application:modals.passwordCharacters") : undefined}
             slotProps={{
               // No maxLength here: the browser would cut a pasted password before its separators are dropped.
               input: {

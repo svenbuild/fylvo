@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
@@ -30,6 +31,9 @@ type (
 		Token    string
 		// Fylvo: what the session was opened for. Only an edit session may write.
 		Action types.ViewerAction
+		// Fylvo: inventory.PasswordFingerprint of the user when the session was opened. A new
+		// password, or one the user has to change, ends the session.
+		PasswordFingerprint string
 	}
 	ViewerSessionCacheCtx struct{}
 	ViewerCtx             struct{}
@@ -75,6 +79,8 @@ func (m *manager) CreateViewerSession(ctx context.Context, uri *fs.URI, version 
 		Version:  version,
 		Token:    fmt.Sprintf("%s.%s", sessionID, token),
 		Action:   action,
+
+		PasswordFingerprint: inventory.PasswordFingerprint(m.user),
 	}
 	ttl := m.settings.ViewerSessionTTL(ctx)
 	if err := m.kv.Set(ViewerSessionCachePrefix+sessionID, *sessionCache, ttl); err != nil {

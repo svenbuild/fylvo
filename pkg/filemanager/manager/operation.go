@@ -144,8 +144,8 @@ func (m *manager) Rename(ctx context.Context, path *fs.URI, newName string) (fs.
 	return file, err
 }
 
-func (m *manager) MoveOrCopy(ctx context.Context, src []*fs.URI, dst *fs.URI, isCopy bool) error {
-	indexDiff, err := m.fs.MoveOrCopy(ctx, src, dst, isCopy)
+func (m *manager) MoveOrCopy(ctx context.Context, src []*fs.URI, dst *fs.URI, isCopy bool, opts ...fs.Option) error {
+	indexDiff, err := m.fs.MoveOrCopy(ctx, src, dst, isCopy, opts...)
 	if err != nil {
 		return err
 	}

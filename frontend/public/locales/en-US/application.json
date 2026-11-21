@@ -67,6 +67,7 @@
     "consentDescription": "You are authorizing <0>{{appName}}</0> to access information under account <1>{{userEmail}}</1>:",
     "deny": "Cancel",
     "fylvoDesktop": "Fylvo Desktop",
+    "cliApp": "Command line (CLI)",
     "scope": {
       "readonly": "Read-only",
       "readwrite": "Read & Write",
@@ -475,6 +476,7 @@
     "noPassword": "None",
     "passwordOption": "Password",
     "randomPassword": "Random password",
+    "passwordCharacters": "Only a to z, A to Z and 0 to 9, at most 32 characters",
     "allowUploadOption": "Visitors may upload",
     "uploadLimitOption": "Upload limit",
     "expiresOption": "Valid for",

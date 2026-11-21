@@ -3,6 +3,7 @@ package dbfs
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -105,7 +106,23 @@ const (
 	NavigatorCapabilityModifyProps
 
 	searchTokenSeparator = "|"
+
+	// maxParentsPerQuery Fylvo: the most folders whose children one query lists. Each folder is
+	// one SQL parameter, and SQLite takes at most 32'766 in one query.
+	maxParentsPerQuery = 10000
+	// walkPageSize Fylvo: the most entries a walk lists and passes on at once.
+	walkPageSize = 1000
 )
+
+// folderChunks Fylvo: the folders in groups of at most maxParentsPerQuery, sorted by ID, so a
+// search that continues on the next page finds the same groups again.
+func folderChunks(folders map[int]*File) [][]*ent.File {
+	ids := lo.Keys(folders)
+	slices.Sort(ids)
+	return lo.Chunk(lo.Map(ids, func(id int, _ int) *ent.File {
+		return folders[id].Model
+	}), maxParentsPerQuery)
+}
 
 func init() {
 	boolset.Sets(map[NavigatorCapability]bool{
@@ -311,85 +328,101 @@ func (b *baseNavigator) children(ctx context.Context, parent *File, args *ListAr
 	}, nil
 }
 
+// newWalkedFile Fylvo: a file as newFile makes it, but not kept in the Children of its parent.
+// Each file the walk passes would otherwise stay there: the whole tree below the start of the
+// walk was held in memory until the end of the request.
+func newWalkedFile(parent *File, model *ent.File) *File {
+	f := newFile(parent, model)
+	parent.mu.Lock()
+	if parent.Children[model.Name] == f {
+		delete(parent.Children, model.Name)
+	}
+	parent.mu.Unlock()
+	return f
+}
+
+// walk passes the files and everything below them to f, level by level, at most limit entries.
+// Fylvo: f gets the entries of a level one page at a time (at most walkPageSize), and only the
+// folders of a level are kept for the next one (see newWalkedFile). The whole tree used to be
+// held, so memory grew with the size of a folder: copying 20'000 files took 230 MB.
 func (b *baseNavigator) walk(ctx context.Context, levelFiles []*File, limit, depth int, f WalkFunc) error {
-	walked := 0
 	if len(levelFiles) == 0 {
 		return nil
 	}
 
 	owner := levelFiles[0].Owner()
-
-	level := 0
-	for walked <= limit && depth >= 0 {
-		if len(levelFiles) == 0 {
-			break
+	walked := 0
+	// emit passes files to f and returns the folders among them to walk into.
+	emit := func(files []*File, level int) ([]*File, error) {
+		if len(files) == 0 {
+			return nil, nil
 		}
-
 		stop := false
-		depth--
-		if len(levelFiles) > limit-walked {
-			levelFiles = levelFiles[:limit-walked]
+		if len(files) > limit-walked {
+			files = files[:limit-walked]
 			stop = true
 		}
-		if err := f(levelFiles, level); err != nil {
-			return err
+		if err := f(files, level); err != nil {
+			return nil, err
 		}
-
 		if stop {
-			return ErrFileCountLimitedReached
+			return nil, ErrFileCountLimitedReached
 		}
 
-		walked += len(levelFiles)
-		folders := lo.Filter(levelFiles, func(f *File, index int) bool {
+		walked += len(files)
+		return lo.Filter(files, func(f *File, index int) bool {
 			return f.Model.Type == int(types.FileTypeFolder) && !f.IsSymbolic()
-		})
+		}), nil
+	}
 
-		if walked >= limit || len(folders) == 0 {
-			break
-		}
+	folders, err := emit(levelFiles, 0)
+	if err != nil {
+		return err
+	}
 
-		levelFiles = levelFiles[:0]
-		leftCredit := limit - walked
+	for level := 1; level <= depth && len(folders) > 0 && walked < limit; level++ {
 		parents := lo.SliceToMap(folders, func(file *File) (int, *File) {
 			return file.Model.ID, file
 		})
-		// Fylvo: the page token must survive the loop. It was reset in each round, so a level
-		// with more entries than one page (about 32'700 on SQLite) read its first page again and
-		// again: entries came twice, and a walk without limit (deleting for good) did not end.
-		token := ""
-		for leftCredit > 0 {
-			res, err := b.fileClient.GetChildFiles(ctx,
-				&inventory.ListFileParameters{
-					PaginationArgs: &inventory.PaginationArgs{
-						UseCursorPagination: true,
-						PageToken:           token,
-						PageSize:            leftCredit,
+		folders = nil
+		// Fylvo: the children of at most maxParentsPerQuery folders per query, and the page token
+		// must survive the inner loop. It was reset in each round, so a level with more entries
+		// than one page (about 32'700 on SQLite) read its first page again and again: entries came
+		// twice, and a walk without limit (deleting for good) did not end.
+		for _, chunk := range folderChunks(parents) {
+			token := ""
+			for walked < limit {
+				res, err := b.fileClient.GetChildFiles(ctx,
+					&inventory.ListFileParameters{
+						PaginationArgs: &inventory.PaginationArgs{
+							UseCursorPagination: true,
+							PageToken:           token,
+							PageSize:            min(limit-walked, walkPageSize),
+						},
+						MixedType: true,
 					},
-					MixedType: true,
-				},
-				owner.ID,
-				lo.Map(folders, func(item *File, index int) *ent.File {
-					return item.Model
-				})...)
-			if err != nil {
-				return serializer.NewError(serializer.CodeDBError, "Failed to list children", err)
+					owner.ID,
+					chunk...)
+				if err != nil {
+					return serializer.NewError(serializer.CodeDBError, "Failed to list children", err)
+				}
+
+				found, err := emit(lo.Map(res.Files, func(model *ent.File, index int) *File {
+					return newWalkedFile(parents[model.FileChildren], model)
+				}), level)
+				if err != nil {
+					return err
+				}
+				folders = append(folders, found...)
+
+				// All files listed
+				if res.NextPageToken == "" {
+					break
+				}
+
+				token = res.NextPageToken
 			}
-
-			leftCredit -= len(res.Files)
-
-			levelFiles = append(levelFiles, lo.Map(res.Files, func(model *ent.File, index int) *File {
-				p := parents[model.FileChildren]
-				return newFile(p, model)
-			})...)
-
-			// All files listed
-			if res.NextPageToken == "" {
-				break
-			}
-
-			token = res.NextPageToken
 		}
-		level++
 	}
 
 	if walked >= limit {
@@ -424,59 +457,55 @@ func (b *baseNavigator) search(ctx context.Context, parent *File, args *ListArgs
 	// Performs recursive search for all files under the given folder.
 	walkedFolder := 1
 	parents := []map[int]*File{{parent.Model.ID: parent}}
-	startLevel, innerPageToken, err := parseSearchPageToken(args.Page.PageToken)
+	startLevel, startChunk, innerPageToken, err := parseSearchPageToken(args.Page.PageToken)
 	if err != nil {
 		return nil, err
 	}
 	args.Page.PageToken = innerPageToken
 
+	// Fylvo: the folders of the next level are listed for at most maxParentsPerQuery folders
+	// per query, and all their pages go into the one map of that level. A second page used to
+	// become a level of its own, and the folder count only grew by the first page.
 	stepLevel := func(level int) (bool, error) {
-		token := ""
 		// We don't need metadata in level search.
 		listCtx := context.WithValue(ctx, inventory.LoadFilePublicMetadata{}, nil)
-		for walkedFolder <= b.config.MaxRecursiveSearchedFolder {
-			// TODO: chunk parents into 30000 per group
-			res, err := b.fileClient.GetChildFiles(listCtx,
-				&inventory.ListFileParameters{
-					PaginationArgs: &inventory.PaginationArgs{
-						UseCursorPagination: true,
-						PageToken:           token,
+		next := make(map[int]*File)
+		for _, chunk := range folderChunks(parents[level]) {
+			token := ""
+			for walkedFolder <= b.config.MaxRecursiveSearchedFolder {
+				res, err := b.fileClient.GetChildFiles(listCtx,
+					&inventory.ListFileParameters{
+						PaginationArgs: &inventory.PaginationArgs{
+							UseCursorPagination: true,
+							PageToken:           token,
+						},
+						FolderOnly: true,
 					},
-					FolderOnly: true,
-				},
-				parent.Model.OwnerID,
-				lo.MapToSlice(parents[level], func(k int, f *File) *ent.File {
-					return f.Model
-				})...)
-			if err != nil {
-				return false, serializer.NewError(serializer.CodeDBError, "Failed to list children", err)
-			}
+					parent.Model.OwnerID,
+					chunk...)
+				if err != nil {
+					return false, serializer.NewError(serializer.CodeDBError, "Failed to list children", err)
+				}
 
-			parents = append(parents, lo.SliceToMap(
-				lo.FilterMap(res.Files, func(model *ent.File, index int) (*File, bool) {
+				for _, model := range res.Files {
 					p := parents[level][model.FileChildren]
 					f := newFile(p, model)
 					f.Path[pathIndexUser] = p.Uri(false).Join(model.Name)
-					return f, true
-				}),
-				func(f *File) (int, *File) {
-					return f.Model.ID, f
-				}))
+					next[model.ID] = f
+				}
 
-			walkedFolder += len(parents[level+1])
-			if res.NextPageToken == "" {
-				break
+				walkedFolder += len(res.Files)
+				if res.NextPageToken == "" {
+					break
+				}
+
+				token = res.NextPageToken
 			}
-
-			token = res.NextPageToken
 		}
 
-		if len(parents) <= level+1 || len(parents[level+1]) == 0 {
-			// All possible folders is searched
-			return true, nil
-		}
-
-		return false, nil
+		parents = append(parents, next)
+		// All possible folders is searched
+		return len(next) == 0, nil
 	}
 
 	// We need to walk from root folder to get the correct level.
@@ -496,7 +525,18 @@ func (b *baseNavigator) search(ctx context.Context, parent *File, args *ListArgs
 	args.Page.UseCursorPagination = true
 	originalPageSize := args.Page.PageSize
 	stop := false
+	// Fylvo: the folders of a level are searched in groups (folderChunks); startChunk is the group.
+	var levelChunks [][]*ent.File
 	for len(res) < originalPageSize && walkedFolder <= b.config.MaxRecursiveSearchedFolder {
+		if levelChunks == nil {
+			levelChunks = folderChunks(parents[startLevel])
+		}
+		if startChunk >= len(levelChunks) {
+			// The folders changed since the last page: nothing more to search.
+			stop = true
+			break
+		}
+
 		// Only requires minimum number of files
 		args.Page.PageSize = min(originalPageSize, originalPageSize-len(res))
 		searchRes, err := b.fileClient.GetChildFiles(ctx,
@@ -506,9 +546,7 @@ func (b *baseNavigator) search(ctx context.Context, parent *File, args *ListArgs
 				Search:         args.Search,
 			},
 			parent.Model.OwnerID,
-			lo.MapToSlice(parents[startLevel], func(k int, f *File) *ent.File {
-				return f.Model
-			})...)
+			levelChunks[startChunk]...)
 
 		if err != nil {
 			return nil, serializer.NewError(serializer.CodeDBError, "Failed to search files", err)
@@ -526,8 +564,16 @@ func (b *baseNavigator) search(ctx context.Context, parent *File, args *ListArgs
 		}
 
 		args.Page.PageToken = searchRes.NextPageToken
+		// If no more results in this group of folders, move to the next group
+		if args.Page.PageToken == "" && startChunk+1 < len(levelChunks) {
+			startChunk++
+			continue
+		}
+
 		// If no more results under current level, move to next level
 		if args.Page.PageToken == "" {
+			startChunk = 0
+			levelChunks = nil
 			if len(res) == originalPageSize {
 				// Current page is full, no need to search more
 				startLevel++
@@ -562,28 +608,36 @@ func (b *baseNavigator) search(ctx context.Context, parent *File, args *ListArgs
 	}
 
 	if walkedFolder <= b.config.MaxRecursiveSearchedFolder && !stop {
-		searchRes.Pagination.NextPageToken = fmt.Sprintf("%d%s%s", startLevel, searchTokenSeparator, args.Page.PageToken)
+		searchRes.Pagination.NextPageToken = fmt.Sprintf("%d%s%d%s%s", startLevel, searchTokenSeparator, startChunk,
+			searchTokenSeparator, args.Page.PageToken)
 	}
 
 	return searchRes, nil
 }
 
-func parseSearchPageToken(token string) (int, string, error) {
+// parseSearchPageToken reads "level|group|inner token" (Fylvo: with the group of folders, see
+// folderChunks).
+func parseSearchPageToken(token string) (int, int, string, error) {
 	if token == "" {
-		return 0, "", nil
+		return 0, 0, "", nil
 	}
 
 	tokens := strings.Split(token, searchTokenSeparator)
-	if len(tokens) != 2 {
-		return 0, "", fmt.Errorf("invalid page token")
+	if len(tokens) != 3 {
+		return 0, 0, "", fmt.Errorf("invalid page token")
 	}
 
 	level, err := strconv.Atoi(tokens[0])
 	if err != nil || level < 0 {
-		return 0, "", fmt.Errorf("invalid page token level")
+		return 0, 0, "", fmt.Errorf("invalid page token level")
 	}
 
-	return level, tokens[1], nil
+	chunk, err := strconv.Atoi(tokens[1])
+	if err != nil || chunk < 0 {
+		return 0, 0, "", fmt.Errorf("invalid page token group")
+	}
+
+	return level, chunk, tokens[2], nil
 }
 
 func newMyUri() *fs.URI {

@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { AppError, Code, Response } from "../../../api/request.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { navigateToPath, retrySharePassword } from "../../../redux/thunks/filemanager.ts";
-import { Filesystem } from "../../../util/uri.ts";
+import CrUri, { Filesystem } from "../../../util/uri.ts";
 import { FilledTextField, SecondaryButton } from "../../Common/StyledComponents.tsx";
 import ArrowLeft from "../../Icons/ArrowLeft.tsx";
 import LinkDismiss from "../../Icons/LinkDismiss.tsx";
@@ -21,25 +21,38 @@ const RetryPassword = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const fmIndex = useContext(FmIndexContext);
+  const path = useAppSelector((state) => state.fileManager[fmIndex].path);
   const [password, setPassword] = useState("");
+  // Fylvo: the address only carries a password after one was tried, so the one tried was wrong.
+  const wrongPassword = useMemo(() => !!path && new CrUri(path).password() != "", [path]);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password != "") {
+      dispatch(retrySharePassword(fmIndex, password));
+    }
+  };
 
   return (
     <Box sx={{ textAlign: "center" }} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
       <LockClosed sx={{ fontSize: 24 }} color={"action"} />
-      <Box sx={{ mt: 1, display: "flex", alignItems: "stretch", justifyContent: "center", gap: 1 }}>
+      <Box
+        component={"form"}
+        onSubmit={submit}
+        sx={{ mt: 1, display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 1 }}
+      >
         <FilledTextField
           variant={"filled"}
+          type={"password"}
+          autoComplete={"off"}
           autoFocus
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           label={t("application:share.enterPassword")}
+          error={wrongPassword}
+          helperText={wrongPassword ? t("application:share.incorrectPassword") : undefined}
         />
-        <Button
-          disabled={password == ""}
-          onClick={() => dispatch(retrySharePassword(fmIndex, password))}
-          variant={"contained"}
-          sx={{ minWidth: 44, px: 1 }}
-        >
+        <Button type={"submit"} disabled={password == ""} variant={"contained"} sx={{ minWidth: 44, px: 1, height: 56 }}>
           <ArrowLeft
             sx={{
               transform: "scaleX(-1)",

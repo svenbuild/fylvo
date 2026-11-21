@@ -44,3 +44,58 @@ func TestWalkSeesEachEntryOfABigLevelOnce(t *testing.T) {
 		require.Equal(t, 1, n, "entry %d seen %d times", id, n)
 	}
 }
+
+// Fylvo: a level with more folders than SQLite takes parameters in one query (32'766). Walking
+// into their children and searching below them listed the children of all of them at once.
+func TestWalkAndSearchThroughALevelWithManyFolders(t *testing.T) {
+	e := newSharedFolderEnv(t)
+	owner := e.as(e.owner)
+	e.mkdir(owner, "cloudreve://my/Big")
+	big, err := owner.Get(e.ctx, e.uri("cloudreve://my/Big"))
+	require.NoError(t, err)
+
+	const count = 33000
+	for start := 0; start < count; start += 1000 {
+		rows := make([]*ent.FileCreate, 0, 1000)
+		for i := start; i < start+1000; i++ {
+			rows = append(rows, e.client.File.Create().
+				SetType(int(types.FileTypeFolder)).
+				SetName(fmt.Sprintf("Ordner %05d", i)).
+				SetOwnerID(e.owner.ID).
+				SetFileChildren(big.ID()))
+		}
+		require.NoError(t, e.client.File.CreateBulk(rows...).Exec(e.ctx))
+	}
+	// One file in the first and one in the last folder, and a folder below the last one.
+	e.upload(owner, "cloudreve://my/Big/Ordner 00000/zuerst.txt", 1)
+	e.upload(owner, fmt.Sprintf("cloudreve://my/Big/Ordner %05d/zuletzt.txt", count-1), 1)
+	e.mkdir(owner, fmt.Sprintf("cloudreve://my/Big/Ordner %05d/tiefer", count-1))
+
+	seen := make(map[int]int)
+	err = e.as(e.owner).Walk(e.ctx, e.uri("cloudreve://my/Big"), 10, func(f fs.File, level int) error {
+		seen[f.ID()]++
+		return nil
+	})
+	require.NoError(t, err)
+	require.Len(t, seen, 1+count+3) // Big, its folders, the two files and "tiefer"
+	for id, n := range seen {
+		require.Equal(t, 1, n, "entry %d seen %d times", id, n)
+	}
+
+	// Searching below Big finds files under the first and the last folder, page by page.
+	found := map[string]int{}
+	token := ""
+	for {
+		_, res, err := e.as(e.owner).List(e.ctx, e.uri("cloudreve://my/Big?name=zu"),
+			fs.WithPageSize(1), WithCursorPagination(token))
+		require.NoError(t, err)
+		for _, f := range res.Files {
+			found[f.Name()]++
+		}
+		token = res.Pagination.NextPageToken
+		if token == "" {
+			break
+		}
+	}
+	require.Equal(t, map[string]int{"zuerst.txt": 1, "zuletzt.txt": 1}, found)
+}

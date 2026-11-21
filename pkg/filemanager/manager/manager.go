@@ -48,7 +48,7 @@ type (
 		// Restore restores a group of files
 		Restore(ctx context.Context, path ...*fs.URI) error
 		// MoveOrCopy moves or copies a group of files
-		MoveOrCopy(ctx context.Context, src []*fs.URI, dst *fs.URI, isCopy bool) error
+		MoveOrCopy(ctx context.Context, src []*fs.URI, dst *fs.URI, isCopy bool, opts ...fs.Option) error
 		// Update puts file content. If given file does not exist, it will create a new one.
 		Update(ctx context.Context, req *fs.UploadRequest, opts ...fs.Option) (fs.File, error)
 		// Walk walks through given path

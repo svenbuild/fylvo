@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 
@@ -30,6 +31,15 @@ func MustChangePassword(u *ent.User) bool {
 func PasswordFingerprint(u *ent.User) string {
 	sum := sha256.Sum256([]byte(u.Password))
 	return hex.EncodeToString(sum[:])
+}
+
+// SessionStillValid reports whether a session that was opened with fingerprint (see
+// PasswordFingerprint) may still act for u: the account must not have to set a new password,
+// and the password must still be the one from when the session was opened. Office and ZIP
+// download sessions therefore end like sign-ins. A session without fingerprint is not valid.
+func SessionStillValid(u *ent.User, fingerprint string) bool {
+	return u != nil && !MustChangePassword(u) && fingerprint != "" &&
+		subtle.ConstantTimeCompare([]byte(fingerprint), []byte(PasswordFingerprint(u))) == 1
 }
 
 // WithMustChangePassword returns a copy of settings (which may be nil) with the flag set to on.

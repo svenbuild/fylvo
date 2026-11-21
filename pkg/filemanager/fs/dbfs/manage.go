@@ -602,7 +602,15 @@ func (f *DBFS) Restore(ctx context.Context, path ...*fs.URI) error {
 
 }
 
-func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCopy bool) (*fs.IndexDiff, error) {
+func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCopy bool, opts ...fs.Option) (*fs.IndexDiff, error) {
+	o := newDbfsOption()
+	for _, opt := range opts {
+		o.apply(opt)
+	}
+	if o.CopyName != "" && (!isCopy || len(path) != 1) {
+		return nil, fs.ErrNotSupportedAction.WithError(fmt.Errorf("a name is only given to the copy of one file"))
+	}
+
 	targets := make([]*File, 0, len(path))
 	dstNavigator, err := f.getNavigator(ctx, dst, NavigatorCapabilityLockFile)
 	if err != nil {
@@ -669,6 +677,14 @@ func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCo
 			continue
 		}
 
+		// Fylvo: the name of the copy is checked as a rename would check it.
+		if o.CopyName != "" {
+			if err := f.validateCopyName(ctx, target, destination, o.CopyName); err != nil {
+				ae.Add(p.String(), err)
+				continue
+			}
+		}
+
 		targets = append(targets, target)
 		if isCopy {
 			if _, ok := fileNavGroup[navigator]; !ok {
@@ -688,7 +704,7 @@ func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCo
 		// Lock destination
 		dstBase := destination.Uri(true)
 		dstLockTargets := lo.Map(targets, func(value *File, key int) *LockByPath {
-			return &LockByPath{dstBase.Join(value.Name()), destination, value.Type(), ""}
+			return &LockByPath{dstBase.Join(lo.Ternary(o.CopyName != "", o.CopyName, value.Name())), destination, value.Type(), ""}
 		})
 		allLockTargets := make([]*LockByPath, 0, len(targets)*2)
 		if !isCopy {
@@ -728,7 +744,7 @@ func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCo
 			indexDiffBatch      *fs.IndexDiff
 		)
 		if isCopy {
-			copiedNewTargetsMap, storageDiff, indexDiffBatch, err = f.copyFiles(ctx, fileNavGroup, destination, fc)
+			copiedNewTargetsMap, storageDiff, indexDiffBatch, err = f.copyFiles(ctx, fileNavGroup, destination, fc, o.CopyName)
 		} else {
 			storageDiff, indexDiffBatch, err = f.moveFiles(ctx, targets, destination, fc, dstNavigator)
 		}
@@ -768,6 +784,29 @@ func (f *DBFS) MoveOrCopy(ctx context.Context, path []*fs.URI, dst *fs.URI, isCo
 	}
 
 	return indexDiff, ae.Aggregate()
+}
+
+// validateCopyName checks name as the name of a copy of target in destination, as Rename
+// checks a new name.
+func (f *DBFS) validateCopyName(ctx context.Context, target, destination *File, name string) error {
+	if err := validateFileName(name); err != nil {
+		return fs.ErrIllegalObjectName.WithError(err)
+	}
+	if target.Type() != types.FileTypeFile {
+		return nil
+	}
+
+	policy, err := f.getPreferredPolicy(ctx, destination)
+	if err != nil {
+		return err
+	}
+	if err := validateExtension(name, policy); err != nil {
+		return fs.ErrIllegalObjectName.WithError(err)
+	}
+	if err := validateFileNameRegexp(name, policy); err != nil {
+		return fs.ErrIllegalObjectName.WithError(err)
+	}
+	return nil
 }
 
 func (f *DBFS) GetFileFromDirectLink(ctx context.Context, dl *ent.DirectLink) (fs.File, error) {
@@ -924,35 +963,50 @@ func (f *DBFS) deleteFiles(ctx context.Context, targets map[Navigator][]*File, f
 
 		defer reset()
 
-		// List all files to be deleted
-		toBeDeletedFiles := make([]*File, 0, len(files))
+		remove := func(files []*ent.File) error {
+			staleEntities, diff, err := fc.Delete(ctx, files, opt)
+			if err != nil {
+				return fmt.Errorf("failed to delete files: %w", err)
+			}
+			storageDiff.Merge(diff)
+			allStaleEntities = append(allStaleEntities, lo.Map(staleEntities, func(item *ent.Entity, index int) fs.Entity {
+				return fs.NewEntity(item)
+			})...)
+			return nil
+		}
+
+		// Fylvo: files are deleted page by page as the walk passes them, so a big tree is not
+		// held in memory. Folders go last: the walk still lists their children.
+		folders := make([]*ent.File, 0)
 		if err := n.Walk(ctx, files, intsets.MaxInt, intsets.MaxInt, func(targets []*File, level int) error {
-			toBeDeletedFiles = append(toBeDeletedFiles, targets...)
 			indexToDelete = append(indexToDelete, lo.Map(targets, func(item *File, index int) int {
 				return item.ID()
 			})...)
-			return nil
+			leaves := make([]*ent.File, 0, len(targets))
+			for _, target := range targets {
+				if target.Type() == types.FileTypeFolder {
+					folders = append(folders, target.Model)
+				} else {
+					leaves = append(leaves, target.Model)
+				}
+			}
+			return remove(leaves)
 		}); err != nil {
 			return nil, nil, nil, fmt.Errorf("failed to walk files: %w", err)
 		}
 
-		// Delete files
-		staleEntities, diff, err := fc.Delete(ctx, lo.Map(toBeDeletedFiles, func(item *File, index int) *ent.File {
-			return item.Model
-		}), opt)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to delete files: %w", err)
+		if err := remove(folders); err != nil {
+			return nil, nil, nil, err
 		}
-		storageDiff.Merge(diff)
-		allStaleEntities = append(allStaleEntities, lo.Map(staleEntities, func(item *ent.Entity, index int) fs.Entity {
-			return fs.NewEntity(item)
-		})...)
 	}
 
 	return allStaleEntities, storageDiff, indexToDelete, nil
 }
 
-func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, destination *File, fc inventory.FileClient) (map[int]*ent.File, inventory.StorageDiff, *fs.IndexDiff, error) {
+// copyFiles copies the targets into destination. copyName, if not empty, is the name of the copy
+// of the one target.
+func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, destination *File, fc inventory.FileClient,
+	copyName string) (map[int]*ent.File, inventory.StorageDiff, *fs.IndexDiff, error) {
 	if f.user.Edges.Group == nil {
 		return nil, nil, nil, fmt.Errorf("user group not loaded")
 	}
@@ -981,14 +1035,15 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 	newTargetsMap := make(map[int]*ent.File)
 	storageDiff := make(inventory.StorageDiff)
 	indexToCopy := make([]fs.IndexDiffCopyDetails, 0)
-	var diff inventory.StorageDiff
 	for n, files := range targets {
-		initialDstMap := make(map[int][]*ent.File)
+		// Fylvo: the walk passes a level page by page. parentDst holds the copies of the folders
+		// of the level above, nextDst collects the copies of the folders of this level.
+		parentDst := make(map[int][]*ent.File)
 		for _, file := range files {
-			initialDstMap[file.Model.FileChildren] = dstAncestors
+			parentDst[file.Model.FileChildren] = dstAncestors
 		}
-
-		firstLayer := true
+		nextDst := make(map[int][]*ent.File)
+		dstLevel := 0
 		// Let navigator use tx
 		reset, err := n.FollowTx(ctx)
 		if err != nil {
@@ -1017,27 +1072,38 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 			}
 
 			limit -= len(targets)
-			initialDstMap, diff, err = fc.Copy(ctx, &inventory.CopyParameter{
+			if level != dstLevel {
+				parentDst, nextDst, dstLevel = nextDst, make(map[int][]*ent.File), level
+			}
+			copied, diff, err := fc.Copy(ctx, &inventory.CopyParameter{
 				Files: lo.Map(targets, func(item *File, index int) *ent.File {
+					if level == 0 && copyName != "" {
+						renamed := *item.Model
+						renamed.Name = copyName
+						return &renamed
+					}
 					return item.Model
 				}),
 				ExcludedMetadataKeys: excludedMetadata,
-				DstMap:               initialDstMap,
+				DstMap:               parentDst,
 			})
 			if err != nil {
 				return writeError(err, "Failed to copy files")
 			}
 
 			storageDiff.Merge(diff)
-			if firstLayer {
-				for k, v := range initialDstMap {
-					newTargetsMap[k] = v[0]
+			for _, file := range targets {
+				if level == 0 {
+					newTargetsMap[file.ID()] = copied[file.ID()][0]
+				}
+				if file.Type() == types.FileTypeFolder {
+					nextDst[file.ID()] = copied[file.ID()]
 				}
 			}
 
 			for _, file := range targets {
 				if _, ok := file.Metadata()[FullTextIndexKey]; ok {
-					copiedFile := newTargetsMap[file.ID()]
+					copiedFile := copied[file.ID()][0]
 					indexToCopy = append(indexToCopy, fs.IndexDiffCopyDetails{
 						OriginalFileID: file.ID(),
 						FileID:         copiedFile.ID,
@@ -1049,7 +1115,6 @@ func (f *DBFS) copyFiles(ctx context.Context, targets map[Navigator][]*File, des
 			}
 
 			capacity.Used += sizeTotal
-			firstLayer = false
 
 			return nil
 		}); err != nil {

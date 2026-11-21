@@ -78,7 +78,7 @@ type (
 		// Rename renames a file.
 		Rename(ctx context.Context, path *URI, newName string) (File, *IndexDiff, error)
 		// Move moves files to dst.
-		MoveOrCopy(ctx context.Context, path []*URI, dst *URI, isCopy bool) (*IndexDiff, error)
+		MoveOrCopy(ctx context.Context, path []*URI, dst *URI, isCopy bool, opts ...Option) (*IndexDiff, error)
 		// Delete performs hard-delete for given paths, return newly generated stale entities in this delete operation.
 		Delete(ctx context.Context, path []*URI, opts ...Option) ([]Entity, *IndexDiff, error)
 		// GetEntitiesFromFileID returns all entities of a given file.
@@ -344,6 +344,8 @@ type (
 		NoCache         bool
 		// Fylvo: date to give a new folder instead of now (see WithModifiedAt).
 		ModifiedAt *time.Time
+		// Fylvo: name of the copy (see WithCopyName).
+		CopyName string
 	}
 
 	// Option 发送请求的额外设置

@@ -742,7 +742,7 @@ func handleCopyMove(c *gin.Context, user *ent.User, fm manager.FileManager) (sta
 
 type copyMoveOperations interface {
 	Delete(ctx context.Context, path []*fs.URI, opts ...fs.Option) error
-	MoveOrCopy(ctx context.Context, src []*fs.URI, dst *fs.URI, isCopy bool) error
+	MoveOrCopy(ctx context.Context, src []*fs.URI, dst *fs.URI, isCopy bool, opts ...fs.Option) error
 	Rename(ctx context.Context, path *fs.URI, newName string) (fs.File, error)
 }
 
@@ -785,11 +785,33 @@ func performCopyMove(
 		}
 	}
 
-	if err := fm.MoveOrCopy(ctx, []*fs.URI{srcUri}, dstFolderUri, isCopy); err != nil {
-		return purposeStatusCodeFromError(err), err
-	}
+	// Fylvo: a copy gets its new name right away, and a move that finds the old name taken in
+	// the destination folder renames first. Moving or copying under the old name and renaming
+	// after failed whenever the destination folder held the old name, as in every copy within
+	// the same folder.
+	renamed := dstUri.Name() != srcUri.Name()
+	if isCopy {
+		var opts []fs.Option
+		if renamed {
+			opts = append(opts, fs.WithCopyName(dstUri.Name()))
+		}
+		if err := fm.MoveOrCopy(ctx, []*fs.URI{srcUri}, dstFolderUri, true, opts...); err != nil {
+			return purposeStatusCodeFromError(err), err
+		}
+	} else if err := fm.MoveOrCopy(ctx, []*fs.URI{srcUri}, dstFolderUri, false); err != nil {
+		if !renamed || purposeStatusCodeFromError(err) != http.StatusMethodNotAllowed {
+			return purposeStatusCodeFromError(err), err
+		}
 
-	if dstUri.Name() != srcUri.Name() {
+		if _, err := fm.Rename(ctx, srcUri, dstUri.Name()); err != nil {
+			return purposeStatusCodeFromError(err), err
+		}
+		renamedUri := srcUri.DirUri().Join(dstUri.Name())
+		if err := fm.MoveOrCopy(ctx, []*fs.URI{renamedUri}, dstFolderUri, false); err != nil {
+			_, _ = fm.Rename(ctx, renamedUri, srcUri.Name())
+			return purposeStatusCodeFromError(err), err
+		}
+	} else if renamed {
 		if _, err := fm.Rename(ctx, dstFolderUri.Join(srcUri.Name()), dstUri.Name()); err != nil {
 			return purposeStatusCodeFromError(err), err
 		}
@@ -868,6 +890,8 @@ func purposeStatusCodeFromError(err error) int {
 			return http.StatusMethodNotAllowed
 		case serializer.CodeNameCaseTaken: // Fylvo
 			return http.StatusConflict
+		case serializer.CodeIllegalObjectName: // Fylvo: a name the cloud does not take
+			return http.StatusBadRequest
 		}
 	}
 

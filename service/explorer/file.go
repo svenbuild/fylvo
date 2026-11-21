@@ -67,6 +67,10 @@ func (service *ArchiveService) DownloadArchived(c *gin.Context) error {
 	if err != nil {
 		return serializer.NewError(serializer.CodeNotFound, "Requester not found", err)
 	}
+	// Fylvo: the session ends with a new password, like a sign-in.
+	if !inventory.SessionStillValid(requester, archiveSession.PasswordFingerprint) {
+		return serializer.NewError(serializer.CodeNotFound, "Archive session not exist", nil)
+	}
 
 	util.WithValue(c, inventory.UserCtx{}, requester)
 
@@ -375,6 +379,8 @@ type (
 	ArchiveDownloadSession struct {
 		Uris        []*fs.URI `json:"uris"`
 		RequesterID int       `json:"requester_id"`
+		// Fylvo: inventory.PasswordFingerprint of the requester when the session was made.
+		PasswordFingerprint string `json:"password_fingerprint"`
 	}
 )
 
@@ -405,6 +411,8 @@ func (s *FileURLService) GetArchiveDownloadSession(c *gin.Context) (*FileURLResp
 	archiveSession := &ArchiveDownloadSession{
 		Uris:        uris,
 		RequesterID: user.ID,
+
+		PasswordFingerprint: inventory.PasswordFingerprint(user),
 	}
 	sessionId := uuid.Must(uuid.NewV4()).String()
 	ttl := settings.ArchiveDownloadSessionTTL(c)

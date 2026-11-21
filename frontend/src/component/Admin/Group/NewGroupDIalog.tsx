@@ -31,7 +31,7 @@ const defaultGroup: GroupEnt = {
   settings: {
     compress_size: 1024 << 20, // 1MB
     decompress_size: 1024 << 20, // 1MB
-    max_walked_files: 100000,
+    max_walked_files: 1000000,
     trash_retention: 7 * 24 * 3600,
     source_batch: 10,
     aria2_batch: 1,
