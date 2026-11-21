@@ -139,7 +139,6 @@ impl<'a> UploadTask<'a> {
         }
 
         let is_directory = placeholder_file.local_file_info.is_directory;
-        let file_size = placeholder_file.local_file_info.file_size.unwrap_or(0);
         self.local_file = Some(placeholder_file);
 
         // Get inventory meta
@@ -165,9 +164,18 @@ impl<'a> UploadTask<'a> {
             warn!(target: "tasks::upload", task_id = %self.task.task_id, local_path = %self.task.payload.local_path_display(), error = ?e, "Failed to clear sync error state");
         }
 
-        // Fylvo: read after the error state is cleared, right before the content is read.
+        // Fylvo: size and write time as the file has them now, read through a handle after the
+        // error state is cleared, right before the content is read. The upload sends exactly
+        // this size, and the change check in `file_uploaded` compares with it.
+        let mut file_size = 0;
         if !is_directory {
-            self.started = content_state(&self.task.payload.local_path);
+            let started = content_state(&self.task.payload.local_path)
+                .context("the file cannot be read right now")?;
+            file_size = started.0;
+            let info = &mut self.local_file.as_mut().unwrap().local_file_info;
+            info.file_size = Some(started.0);
+            info.last_modified = Some(started.1);
+            self.started = Some(started);
         }
 
         // Handle empty files and directories separately
@@ -189,6 +197,8 @@ impl<'a> UploadTask<'a> {
         let path = &self.task.payload.local_path;
         match r {
             Ok(()) => Ok(()),
+            // Fylvo: cancelled for a rename, a deletion or a download: not a failure.
+            Err(e) if self.cancel_token.is_cancelled() => Err(e),
             Err(e) => {
                 // Fylvo: a refused name (40905) can pass with a case rename any moment, any
                 // other failure waits before the sync tries the file again.
@@ -462,12 +472,11 @@ impl<'a> UploadTask<'a> {
                 .unwrap()
                 .commit_inventory_only(&self.inventory)
                 .context("failed to commit uploaded version")?;
-            self.changed_meanwhile = may_upload_again(path);
+            self.changed_meanwhile = true;
             info!(
                 target: "tasks::upload",
                 task_id = %self.task.task_id,
                 local_path = %self.task.payload.local_path_display(),
-                again = self.changed_meanwhile,
                 "File changed during the upload"
             );
             return Ok(());
@@ -506,11 +515,15 @@ const RETRY_FAILED_AFTER: Duration = Duration::from_secs(10 * 60);
 /// How often in a row a file changed during its upload is uploaded again at once.
 const MAX_UPLOADS_AGAIN: u32 = 3;
 
+/// How long an upload refused with 40905 waits before it is tried again.
+const NAME_TAKEN_RETRY: Duration = Duration::from_secs(90);
+
 /// Recent upload trouble of a path.
 #[derive(Default)]
 struct Recent {
     failed_at: Option<Instant>,
     uploads_again: u32,
+    name_retries: u32,
 }
 
 /// By path, folded as NTFS compares names (a file may be asked for in another spelling).
@@ -533,17 +546,28 @@ fn forget_uploads(path: &Path) {
     }
 }
 
-/// Whether a file changed during its upload may be uploaded again at once. Past the limit it
-/// counts as failed, so the sync tries it again later.
-fn may_upload_again(path: &Path) -> bool {
-    let again = with_recent(path, |recent| {
+/// When a file changed during its upload is uploaded again: at once a few times in a row,
+/// then after `RETRY_FAILED_AFTER` each time (a file written to all the time makes a version
+/// only that often).
+pub(crate) fn upload_again_after(path: &Path) -> Duration {
+    with_recent(path, |recent| {
         recent.uploads_again += 1;
-        recent.uploads_again <= MAX_UPLOADS_AGAIN
-    });
-    if !again {
-        note_failure(path);
-    }
-    again
+        if recent.uploads_again <= MAX_UPLOADS_AGAIN {
+            Duration::ZERO
+        } else {
+            RETRY_FAILED_AFTER
+        }
+    })
+}
+
+/// When an upload the server refused with 40905 is tried again: a case rename on its way
+/// resolves it (the app tries a waiting rename again after `case::RETRY_DELAY`). A few times
+/// only: a real clash of two names stays as it is, with its message.
+pub(crate) fn retry_name_taken_after(path: &Path) -> Option<Duration> {
+    with_recent(path, |recent| {
+        recent.name_retries += 1;
+        (recent.name_retries <= MAX_UPLOADS_AGAIN).then_some(NAME_TAKEN_RETRY)
+    })
 }
 
 /// Whether an upload of `path` failed less than `RETRY_FAILED_AFTER` ago. A sync pass does not
@@ -613,15 +637,24 @@ mod tests {
     }
 
     #[test]
-    fn a_file_changed_during_each_upload_is_uploaded_again_a_few_times_only() {
+    fn a_file_changed_during_each_upload_is_uploaded_again_at_once_a_few_times_only() {
         let path = Path::new(r"C:\S\busy.log");
         for _ in 0..MAX_UPLOADS_AGAIN {
-            assert!(may_upload_again(path));
+            assert_eq!(upload_again_after(path), Duration::ZERO);
         }
-        assert!(!may_upload_again(path));
-        assert!(failed_recently(path), "the sync tries it again later");
+        assert_eq!(upload_again_after(path), RETRY_FAILED_AFTER);
         forget_uploads(path);
-        assert!(may_upload_again(path));
+        assert_eq!(upload_again_after(path), Duration::ZERO);
+        forget_uploads(path);
+    }
+
+    #[test]
+    fn an_upload_refused_with_40905_is_tried_again_a_few_times_only() {
+        let path = Path::new(r"C:\S\docs\b.txt");
+        for _ in 0..MAX_UPLOADS_AGAIN {
+            assert_eq!(retry_name_taken_after(path), Some(NAME_TAKEN_RETRY));
+        }
+        assert_eq!(retry_name_taken_after(path), None);
         forget_uploads(path);
     }
 

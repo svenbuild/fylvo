@@ -9,6 +9,7 @@ use dashmap::DashMap;
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::sync::{
     Mutex, Notify, Semaphore,
@@ -472,11 +473,8 @@ impl TaskQueue {
                     TaskStatus::Completed,
                 );
                 self.cleanup_task_entry(&task.task_id).await;
-                if !matches!(completed, Ok(true)) {
-                    return;
-                }
-                if let Err(err) = self.enqueue(TaskPayload::upload(path)).await {
-                    warn!(target: "tasks::queue", drive = %self.drive_id, task_id = %task.task_id, error = %err, "Failed to queue the upload of the newer content");
+                if matches!(completed, Ok(true)) {
+                    self.upload_later(path, crate::tasks::upload::upload_again_after(&task.payload.local_path));
                 }
                 return;
             }
@@ -507,6 +505,21 @@ impl TaskQueue {
                     error = ?err,
                     "Task execution failed"
                 );
+                // Fylvo: refused with 40905 while a case rename may be on its way (see
+                // `drive/case.rs`): tried again a little later, a few times. Not after a cancel.
+                let cancelled = matches!(
+                    self.inventory.get_task_status(&task.task_id),
+                    Ok(Some(TaskStatus::Cancelled))
+                );
+                if task.payload.kind == TaskKind::Upload
+                    && !cancelled
+                    && crate::drive::case::is_name_case_taken(&err)
+                {
+                    let path = &task.payload.local_path;
+                    if let Some(delay) = crate::tasks::upload::retry_name_taken_after(path) {
+                        self.upload_later(path.clone(), delay);
+                    }
+                }
                 if let Err(update_err) = self.inventory.update_task(
                     &task.task_id,
                     TaskUpdate {
@@ -529,6 +542,20 @@ impl TaskQueue {
         }
 
         self.cleanup_task_entry(&task.task_id).await;
+    }
+
+    /// Fylvo: queue an upload of `path` after `delay` (at once for none). A task for the path
+    /// that is queued by then takes its place.
+    fn upload_later(self: &Arc<Self>, path: PathBuf, delay: Duration) {
+        let queue = Arc::clone(self);
+        tokio::spawn(async move {
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
+            if let Err(err) = queue.enqueue(TaskPayload::upload(path.clone())).await {
+                warn!(target: "tasks::queue", drive = %queue.drive_id, path = %path.display(), error = %err, "Failed to queue the upload again");
+            }
+        });
     }
 
     async fn run_placeholder_task(&self, task: &QueuedTask) -> Result<TaskRunState> {
@@ -731,8 +758,9 @@ impl TaskQueue {
     }
 
     async fn cancel_running_tasks(&self) {
+        // Fylvo: every spawned task, also one that has not registered its progress yet.
         let running: Vec<String> = self
-            .progress
+            .task_handles
             .iter()
             .map(|entry| entry.key().clone())
             .collect();

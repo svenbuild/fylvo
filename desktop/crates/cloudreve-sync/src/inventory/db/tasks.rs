@@ -1,5 +1,8 @@
 use super::InventoryDb;
-use crate::drive::{case::same_on_ntfs, guard::is_under_any_case};
+use crate::drive::{
+    case::{ntfs_like_pattern, same_on_ntfs},
+    guard::is_under_any_case,
+};
 use crate::inventory::{NewTaskRecord, TaskRecord, TaskStatus, TaskUpdate};
 use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
@@ -23,6 +26,11 @@ impl InventoryDb {
             .filter(task_queue_dsl::drive_id.eq(&task.drive_id))
             .filter(task_queue_dsl::task_type.eq(&task.task_type))
             .filter(task_queue_dsl::status.eq_any(&active_statuses))
+            .filter(
+                task_queue_dsl::local_path
+                    .like(ntfs_like_pattern(&task.local_path))
+                    .escape('!'),
+            )
             .select(task_queue_dsl::local_path)
             .load(&mut conn)
             .context("Failed to check for existing task")?;
@@ -133,9 +141,18 @@ impl InventoryDb {
         ];
 
         let roots = [std::path::PathBuf::from(path)];
+        let pattern = ntfs_like_pattern(path);
         let matching_tasks: Vec<TaskRow> = task_queue_dsl::task_queue
             .filter(task_queue_dsl::drive_id.eq(drive_id))
             .filter(task_queue_dsl::status.eq_any(&active_statuses))
+            .filter(
+                task_queue_dsl::local_path
+                    .like(pattern.clone())
+                    .escape('!')
+                    .or(task_queue_dsl::local_path
+                        .like(format!("{pattern}{}%", std::path::MAIN_SEPARATOR))
+                        .escape('!')),
+            )
             .load::<TaskRow>(&mut conn)
             .context("Failed to query tasks by path")?
             .into_iter()
@@ -431,6 +448,10 @@ mod tests {
         assert!(db.insert_task_if_not_exist(&task("t3", r"C:\S\reports.txt")).unwrap());
         // The same file in another spelling is queued already.
         assert!(!db.insert_task_if_not_exist(&task("t4", r"C:\S\Report.TXT")).unwrap());
+        // Letters outside ASCII, `%` and `_` in names.
+        assert!(db.insert_task_if_not_exist(&task("t5", r"C:\S\Ünd_100%.txt")).unwrap());
+        assert!(!db.insert_task_if_not_exist(&task("t6", r"C:\S\ünd_100%.TXT")).unwrap());
+        assert!(db.insert_task_if_not_exist(&task("t7", r"C:\S\Undx100x.txt")).unwrap());
         let mut cancelled = db.cancel_tasks_by_path("d", r"C:\S\Report.txt").unwrap();
         cancelled.extend(db.cancel_tasks_by_path("d", r"C:\S\Docs").unwrap());
         cancelled.sort();

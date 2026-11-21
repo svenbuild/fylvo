@@ -62,6 +62,25 @@ pub fn ntfs_fold(name: &str) -> String {
     String::from_utf16_lossy(&upper[..written as usize])
 }
 
+/// A SQL `LIKE` pattern (escape character `!`) that matches every spelling of `text` that may be
+/// the same on NTFS, and some more: SQLite's `LIKE` ignores the case of ASCII letters only, so
+/// every other character, and `i` and `s` (`ı` and `ſ` are upper case `I` and `S`), match any one
+/// character. Check the hits with `same_on_ntfs`.
+pub(crate) fn ntfs_like_pattern(text: &str) -> String {
+    let mut pattern = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '%' | '_' | '!' => {
+                pattern.push('!');
+                pattern.push(c);
+            }
+            c if !c.is_ascii() || "iIsS".contains(c) => pattern.push('_'),
+            c => pattern.push(c),
+        }
+    }
+    pattern
+}
+
 /// Whether two paths are the same file on NTFS.
 pub fn same_on_ntfs(a: &Path, b: &Path) -> bool {
     ntfs_fold(&a.to_string_lossy()) == ntfs_fold(&b.to_string_lossy())
