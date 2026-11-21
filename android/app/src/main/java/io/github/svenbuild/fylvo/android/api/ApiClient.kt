@@ -1,6 +1,7 @@
 package io.github.svenbuild.fylvo.android.api
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -41,6 +42,10 @@ class ApiClient(private val session: SessionManager) {
     private enum class Kind { NORMAL, AUTH, EDIT }
 
     suspend fun serverBase(): String = session.serverUrlNow()
+
+    /** Fylvo: the server and account requests are made for, to keep caches of accounts apart. */
+    suspend fun accountTag(): String =
+        session.serverUrlNow() + "|" + session.userId.first() + "|" + session.userEmail.first()
 
     suspend fun service(): ApiService = cached(Kind.NORMAL)
 

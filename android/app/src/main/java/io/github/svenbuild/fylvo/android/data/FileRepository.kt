@@ -185,6 +185,8 @@ class FileRepository(private val api: ApiClient) {
     /** Resolved preview URLs with fetch time, by file id and version (a new version has a new preview). */
     private val thumbCache = ConcurrentHashMap<String, Pair<String, Long>>()
     private val noThumb = ConcurrentHashMap.newKeySet<String>()
+    /** The account [thumbCache] and [noThumb] belong to; another one starts them afresh. */
+    @Volatile private var thumbAccount = ""
 
     /**
      * Resolves a thumbnail URL for the file, or null when the server says there is none.
@@ -194,7 +196,8 @@ class FileRepository(private val api: ApiClient) {
      * twice, and the losing one deleted the winner's preview file.
      */
     suspend fun thumbUrl(uri: String): String? {
-        val key = CrUri.canonical(uri)
+        // Per account: the same address of another account is another file.
+        val key = api.accountTag() + "|" + CrUri.canonical(uri)
         val request = thumbInFlight.computeIfAbsent(key) {
             thumbScope.async(start = CoroutineStart.LAZY) {
                 try {
@@ -217,6 +220,11 @@ class FileRepository(private val api: ApiClient) {
      * server's clear "no preview" is remembered for good; a failure gives null and is asked again.
      */
     suspend fun cachedThumbUrl(file: FileObject): String? {
+        val account = api.accountTag()
+        if (account != thumbAccount) {
+            forgetThumbs()
+            thumbAccount = account
+        }
         if (hasNoThumb(file)) return null
         val key = thumbKey(file)
         thumbCache[key]?.let { (url, fetchedAt) ->
@@ -390,8 +398,8 @@ class FileRepository(private val api: ApiClient) {
      * none (40016). Every other answer (network trouble, a non-JSON page, another code) throws,
      * so nothing is ever deleted on unclear data.
      */
-    suspend fun lookup(uri: String, extended: Boolean = false): FileObject? {
-        val resp = api.service().fileInfo(uri, extended = if (extended) true else null)
+    suspend fun lookup(uri: String): FileObject? {
+        val resp = api.service().fileInfo(uri)
         // Fylvo: refusals carry their code, so an edit upload can tell "no access" from trouble.
         if (!resp.isSuccessful) throw ApiException(resp.code(), "server answered ${resp.code()}")
         val body = resp.body() ?: throw java.io.IOException("no answer from the server")

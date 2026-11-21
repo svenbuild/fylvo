@@ -91,8 +91,6 @@ data class FileObject(
     val owned: Boolean? = null,
     /** Fylvo: id of the file's current version (entity); changes with every new version. */
     @SerialName("primary_entity") val primaryEntity: String = "",
-    /** Fylvo: only with `file/info?extended=true`; the versions (entities) of the file. */
-    @SerialName("extended_info") val extendedInfo: ExtendedInfo? = null,
 ) {
     val isFolder: Boolean get() = type == 1
 
@@ -124,19 +122,6 @@ data class FileObject(
         const val METADATA_UPLOAD_SESSION_ID = "sys:upload_session_id"
     }
 }
-
-/** Fylvo: the part of `extended_info` the app reads. */
-@Serializable
-data class ExtendedInfo(
-    val entities: List<EntityInfo> = emptyList(),
-)
-
-@Serializable
-data class EntityInfo(
-    val id: String = "",
-    val size: Long = 0,
-    val type: Int = 0,
-)
 
 @Serializable
 data class Pagination(
