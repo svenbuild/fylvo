@@ -46,6 +46,7 @@ class OfflineSyncEngine(
         // Fylvo: edits first, so a run the system stops after a while has still uploaded them.
         edits.pass(store, EditPhase.Start)
         val done = HashSet<String>()
+        var failure: Exception? = null
         try {
             // Roots switched on during the run are taken too.
             while (!storageFull.get()) {
@@ -63,11 +64,17 @@ class OfflineSyncEngine(
                 }
             }
             dropCoveredRoots(store)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Fylvo: a local failure of the roots still lets the edits go up (below), then it counts.
+            failure = e
         } finally {
             manager.setSyncing(null)
         }
         // Fylvo: after the listings (renames seen), whatever happened to the roots.
         edits.pass(store, EditPhase.End)
+        failure?.let { throw it }
     }
 
     private suspend fun syncRoot(store: OfflineStore, initial: OfflineIndex) {

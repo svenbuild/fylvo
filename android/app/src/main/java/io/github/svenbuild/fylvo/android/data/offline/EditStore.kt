@@ -165,10 +165,10 @@ class EditStore(private val base: File, val accountKey: String) {
             if (fromKey == toKey) return
             val from = EditStore(base, fromKey)
             val to = EditStore(base, toKey)
-            // An index that cannot be read stays where it is (its copies are moved; they go up as orphans).
-            val moving = runCatching { from.load() }.getOrNull()
-            val target = runCatching { to.load() }.getOrNull()
-            if (from.indexFile.exists() && moving != null && target != null) {
+            // An index that cannot be read (either one): everything stays under the old key.
+            val moving = runCatching { from.load() }.getOrNull() ?: return
+            val target = runCatching { to.load() }.getOrNull() ?: return
+            if (from.indexFile.exists()) {
                 val known = target.entries.mapTo(HashSet()) { it.id }
                 to.save(EditIndex(target.entries + moving.entries.filter { it.id !in known }))
                 from.indexFile.delete()

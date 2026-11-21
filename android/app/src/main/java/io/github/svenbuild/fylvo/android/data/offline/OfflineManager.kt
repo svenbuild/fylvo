@@ -65,6 +65,12 @@ class OfflineManager(
      */
     val editLock = Mutex()
 
+    /**
+     * Fylvo: set when a new network setting stops running work; the upload stopped by it is no
+     * stall (see EditPass). Cleared when the next pass starts.
+     */
+    val settingChange = AtomicBoolean(false)
+
     /** Short sections that write copies or an index; switching a root off takes it too. */
     private val writeLock = Mutex()
 
@@ -87,6 +93,7 @@ class OfflineManager(
         context.offlineSettingsStore.edit { it[mobileDataKey] = on }
         val edits = store()?.let { hasEdits(it) } == true
         // Fylvo: edit checks still waiting get the new setting too.
+        settingChange.set(true)
         if (edits) withContext(Dispatchers.IO) { OfflineEditWorker.replaceWaiting(context, on) }
         if (_roots.value.isNotEmpty() || edits) {
             OfflineSyncWorker.apply(context, on)

@@ -94,7 +94,13 @@ data class OfflinePrompt(
 }
 
 /** Fylvo: "Bearbeitung abschliessen" could not upload the changes of [name]: ask what to do. */
-data class EditPrompt(val entryId: String, val name: String, val reason: OfflineEdits.NotUploaded)
+data class EditPrompt(
+    val entryId: String,
+    val name: String,
+    val reason: OfflineEdits.NotUploaded,
+    /** A kept snapshot (bytes not confirmed on the server) goes too when it is discarded. */
+    val unsent: Boolean = false,
+)
 
 /** Fylvo: switching root [rootId] off while [entries] hold changes the server does not have. */
 data class RootEditPrompt(val rootId: String, val name: String, val entries: List<EditEntry>, val busy: Boolean = false)
@@ -1257,8 +1263,10 @@ class FilesViewModel(
             when (val result = edits.finish(entry.id)) {
                 OfflineEdits.FinishResult.Done ->
                     _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_finished, entry.name))) }
-                is OfflineEdits.FinishResult.Failed ->
-                    _state.update { it.copy(editPrompt = EditPrompt(entry.id, entry.name, result.reason)) }
+                is OfflineEdits.FinishResult.Failed -> _state.update { s ->
+                    val unsent = s.editEntries.firstOrNull { it.id == entry.id }?.pending != null
+                    s.copy(editPrompt = EditPrompt(entry.id, entry.name, result.reason, unsent))
+                }
             }
         }
     }

@@ -55,13 +55,18 @@ fun notUploadedText(reason: OfflineEdits.NotUploaded): Int = when (reason) {
     OfflineEdits.NotUploaded.Failed -> R.string.edit_reason_failed
 }
 
+/** Fylvo: [text], and when [unsent] that a stand not on the server goes with a discard. */
+@Composable
+private fun unsentNote(unsent: Boolean, text: String): String =
+    if (unsent) text + " " + stringResource(R.string.edit_unsent_lost) else text
+
 /** Fylvo: "Änderungen an X verwerfen?" before a working copy goes. */
 @Composable
 internal fun DiscardEditDialog(entry: EditEntry, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.edit_discard_title, entry.name)) },
-        text = { Text(stringResource(R.string.edit_discard_text)) },
+        text = { Text(unsentNote(entry.pending != null, stringResource(R.string.edit_discard_text))) },
         confirmButton = {
             TextButton(onClick = onConfirm) { Text(stringResource(R.string.edit_discard), color = MaterialTheme.colorScheme.error) }
         },
@@ -75,7 +80,9 @@ internal fun NotUploadedDialog(prompt: EditPrompt, onRetryLater: () -> Unit, onD
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.edit_not_uploaded_title)) },
-        text = { Text(stringResource(R.string.edit_not_uploaded_text, prompt.name, stringResource(notUploadedText(prompt.reason)))) },
+        text = {
+            Text(unsentNote(prompt.unsent, stringResource(R.string.edit_not_uploaded_text, prompt.name, stringResource(notUploadedText(prompt.reason)))))
+        },
         confirmButton = { TextButton(onClick = onRetryLater) { Text(stringResource(R.string.edit_retry_later)) } },
         dismissButton = {
             Row {

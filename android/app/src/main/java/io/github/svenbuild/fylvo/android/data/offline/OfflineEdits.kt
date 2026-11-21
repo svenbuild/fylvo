@@ -127,11 +127,13 @@ class OfflineEdits(
     /** Runs a pass; the caller holds the lock. */
     private suspend fun runPass(offline: OfflineStore, store: EditStore, phase: EditPhase, only: Set<String>? = null): EditPass.Result =
         withContext(Dispatchers.IO) {
+            manager.settingChange.set(false)
             EditPass(
                 RepoEditServer(repo), store, { manager.syncedUri(offline, it) }, phase,
                 conflictLabel = context.localized().getString(R.string.edit_conflict_label),
                 stillSignedIn = { manager.store()?.accountKey == offline.accountKey },
                 publish = ::publish,
+                countStall = { !manager.settingChange.get() },
             ).run(only)
         }
 
@@ -284,13 +286,15 @@ class OfflineEdits(
         fun open() = entries.mapNotNull { store.entry(it.id) }.filter { !isSettled(it, hashOf(store, it)) }
         val waiting = open()
         if (waiting.isEmpty()) return null
-        if (waiting.any { !store.fileOf(it).isFile }) return NotUploaded.Missing
-        if (!networkAllows()) return NotUploaded.Offline
+        // A missing working copy with a kept snapshot still has bytes to send: the pass goes first.
+        fun missing(e: EditEntry) = !store.fileOf(e).isFile && e.pending == null
+        if (!networkAllows()) return if (waiting.any(::missing)) NotUploaded.Missing else NotUploaded.Offline
         runPass(offline, store, EditPhase.Explicit, waiting.mapTo(HashSet()) { it.id })
         val left = open()
         return when {
             left.isEmpty() -> null
             left.any { it.pending != null } -> NotUploaded.Pending
+            left.any(::missing) -> NotUploaded.Missing
             else -> NotUploaded.Failed
         }
     }

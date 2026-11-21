@@ -129,6 +129,8 @@ const val EDIT_RETIRED_KEEP_MS = 7 * 24 * 60 * 60_000L
 /** After an editor got access, the edit check keeps looking this long. */
 const val EDIT_WATCH_MS = 60 * 60_000L
 const val EDIT_MAX_STALLS = 3
+/** Unclear answers while clearing up an upload whose file is still there; then a conflict copy. */
+const val EDIT_MAX_UNCLEAR = 5
 const val CONFLICT_MAX_TRIES = 20
 const val NAME_MAX_BYTES = 255
 

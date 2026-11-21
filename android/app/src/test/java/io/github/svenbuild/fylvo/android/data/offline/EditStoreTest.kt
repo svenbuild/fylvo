@@ -189,6 +189,18 @@ class EditStoreTest {
         assertEquals("old", from.fileOf(a).readText())
     }
 
+    @Test fun adoptionLeavesEverythingWhenAnIndexCannotBeRead() {
+        val from = EditStore(tmp.root, "email")
+        val to = EditStore(tmp.root, "id")
+        val a = entry()
+        from.put(a)
+        from.write(a, "A")
+        File(tmp.root, "offline-edit/index/id.json").apply { parentFile!!.mkdirs(); writeText("{broken") }
+        EditStore.adoptAccount(tmp.root, "email", "id")
+        assertEquals("A", from.fileOf(a).readText())
+        assertEquals(listOf(a), from.load().entries)
+    }
+
     @Test fun hashAndCopy() {
         val f = tmp.newFile("x").apply { writeText("abc") }
         assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", EditStore.sha256(f))

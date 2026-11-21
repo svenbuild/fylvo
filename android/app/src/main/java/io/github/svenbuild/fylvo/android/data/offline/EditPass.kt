@@ -75,6 +75,8 @@ internal class EditPass(
     private val stillSignedIn: suspend () -> Boolean,
     private val publish: (EditIndex) -> Unit,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** False when the system stop of an upload was asked for by the app (a new network setting): no stall. */
+    private val countStall: () -> Boolean = { true },
 ) {
     /** What the caller schedules afterwards. */
     class Result {
@@ -209,16 +211,28 @@ internal class EditPass(
     }
 
     private suspend fun upload(entry: EditEntry) {
+        val snapshot = takeSnapshot(entry) ?: return later(entry)
+        sendSnapshot(entry, snapshot)
+    }
+
+    /**
+     * Sends [snapshot] the way the server's file allows. A version only when the address still
+     * holds the working copy's file (same id, a file): a copy with the same version at the old
+     * address never receives the edit. This guard runs before every version upload, also when a
+     * kept snapshot is sent again.
+     */
+    private suspend fun sendSnapshot(entry: EditEntry, snapshot: EditSnapshot) {
         val plan = if (entry.retired || entry.baseEntity.isEmpty()) TargetPlan.Conflict
         else planTarget(entry, preflight(entry.uri), phase.decideGone)
-        if (plan == TargetPlan.Later || plan == TargetPlan.WaitForSync) {
-            if (plan == TargetPlan.WaitForSync) result.syncWanted = true
-            return later(entry)
-        }
-        val snapshot = takeSnapshot(entry) ?: return later(entry)
         when (plan) {
             TargetPlan.Version -> sendVersion(entry, snapshot)
-            else -> sendConflict(entry, snapshot, private = plan == TargetPlan.PrivateConflict)
+            TargetPlan.Conflict -> sendConflict(entry, snapshot, private = false)
+            TargetPlan.PrivateConflict -> sendConflict(entry, snapshot, private = true)
+            TargetPlan.WaitForSync -> {
+                result.syncWanted = true
+                later(entry)
+            }
+            TargetPlan.Later -> later(entry)
         }
     }
 
@@ -232,7 +246,10 @@ internal class EditPass(
         val snap = store.snapshotOf(entry)
         store.tmpFolder()
         val before = statOf(src) ?: return null
-        val hash = src.inputStream().use { input -> snap.outputStream().use { EditStore.copyHashing(input, it) } }
+        // On the disk before a marker points to it (a power loss must not leave a damaged snapshot behind a marker).
+        val hash = src.inputStream().use { input ->
+            java.io.FileOutputStream(snap).use { out -> EditStore.copyHashing(input, out).also { out.fd.sync() } }
+        }
         if (statOf(src) != before || EditStore.sha256(src) != hash) {
             snap.delete()
             return null
@@ -259,7 +276,7 @@ internal class EditPass(
             UploadOutcome.PrivateConflict -> sendConflict(current, snapshot, private = true)
             UploadOutcome.Later, UploadOutcome.Replan -> later(current)
             UploadOutcome.ServerFull -> later(current, EditProblem.ServerFull)
-            UploadOutcome.Error -> refused(current.copy(pending = null), sent.code)
+            UploadOutcome.Error -> refused(current, sent.code)
         }
     }
 
@@ -294,15 +311,21 @@ internal class EditPass(
                 else -> when (classifyRefusal(sent.code)) {
                     UploadOutcome.Later, UploadOutcome.Replan -> return later(current)
                     UploadOutcome.ServerFull -> return later(current, EditProblem.ServerFull)
-                    else -> return refused(current.copy(pending = null), sent.code)
+                    else -> return refused(current, sent.code)
                 }
             }
         }
-        store.entry(entry.id)?.let { refused(it.copy(pending = null), ApiException.CODE_OBJECT_EXISTS) }
+        store.entry(entry.id)?.let { refused(it, ApiException.CODE_OBJECT_EXISTS) }
     }
 
+    /**
+     * A clear refusal the app cannot get around: the entry shows it with the code. Its marker and
+     * snapshot stay (from the store, so the snapshot is never left without a marker) until the bytes
+     * are on the server or the person discards them; periodic runs and "Sync now" try again.
+     */
     private fun refused(entry: EditEntry, code: Int) {
-        put(entry.copy(state = EditState.Error, problem = EditProblem.Refused, errorCode = code))
+        val current = store.entry(entry.id) ?: return
+        put(current.copy(state = EditState.Error, problem = EditProblem.Refused, errorCode = code, pending = current.pending?.copy(at = clock())))
     }
 
     /** Records the session in the marker before any byte is sent. */
@@ -365,7 +388,7 @@ internal class EditPass(
     /** The system stopped the upload (time limit, constraints): three times in a row ends in [EditProblem.Stalled]. */
     private fun stalled(id: String) {
         val e = store.entry(id) ?: return
-        val stalls = e.stalls + 1
+        val stalls = if (countStall()) e.stalls + 1 else e.stalls
         val stuck = stalls >= EDIT_MAX_STALLS
         put(
             e.copy(
@@ -382,6 +405,27 @@ internal class EditPass(
     }
 
     /**
+     * Like [keep] while the file is still there with its id; after [EDIT_MAX_UNCLEAR] unclear
+     * answers the snapshot goes up as a conflict copy (a duplicate at worst), so later edits are
+     * not held up for ever.
+     */
+    private suspend fun keepOrCopy(entry: EditEntry, marker: EditMarker) {
+        if (entry.attempts + 1 >= EDIT_MAX_UNCLEAR) sendConflict(entry, marker.snapshot, private = false) else keep(entry)
+    }
+
+    /**
+     * The kept snapshot still has the bytes its marker names. If not (damaged, a power loss): it is
+     * dropped and the working copy is planned anew; never sent under a hash it does not have.
+     */
+    private suspend fun intact(entry: EditEntry, marker: EditMarker): Boolean {
+        if (EditStore.sha256(store.snapshotOf(entry)) == marker.snapshot.sha256) return true
+        store.snapshotOf(entry).delete()
+        put(entry.copy(pending = null))
+        store.entry(entry.id)?.let { handle(it) }
+        return false
+    }
+
+    /**
      * An upload of an earlier run without a final answer. With a session: the session is cancelled
      * first (a finished one is not affected), then the file tells whether our version got in: only
      * when it is the file's current version (an unfinished upload is listed among the versions
@@ -395,9 +439,11 @@ internal class EditPass(
             put(entry.copy(pending = null))
             return store.entry(entry.id)?.let { handle(it) } ?: Unit
         }
+        if (!intact(entry, marker)) return
         // Nothing reached the server: the same snapshot goes again.
         if (marker.sessionId.isEmpty()) return resend(entry, marker)
-        // A version belongs to the working copy's file (found by id); a conflict copy to its session's address.
+        // A version belongs to the working copy's file at its address now (found by id, renames
+        // followed); a conflict copy to its session's address. The cancel goes there too.
         val target = if (marker.kind == UploadKind.Version) entry.uri else marker.sessionUri
         val found = preflight(target)
         val ours = found is Preflight.Found && !found.folder && (marker.kind == UploadKind.Conflict || found.id == entry.fileId)
@@ -411,8 +457,8 @@ internal class EditPass(
             }
             // Our version cannot be on that file: the snapshot goes up as a conflict copy.
             !ours -> sendConflict(entry, marker.snapshot, private = false)
-            else -> when (classifyCancel(server.cancel(marker.sessionId, marker.sessionUri))) {
-                CancelOutcome.Keep -> keep(entry)
+            else -> when (classifyCancel(server.cancel(marker.sessionId, target))) {
+                CancelOutcome.Keep -> keepOrCopy(entry, marker)
                 CancelOutcome.PrivateConflict -> sendConflict(entry, marker.snapshot, private = true)
                 CancelOutcome.Check -> {
                     val file = try {
@@ -420,7 +466,7 @@ internal class EditPass(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
-                        return keep(entry)
+                        return keepOrCopy(entry, marker)
                     }
                     if (file != null && isCurrentVersion(file, marker.entityId)) commit(entry, marker, file) else resend(entry, marker)
                 }
@@ -429,11 +475,11 @@ internal class EditPass(
     }
 
     /**
-     * Sends the kept snapshot of [marker] again: as a version (a newer version on the server turns
-     * it into a conflict copy), or as a conflict copy.
+     * Sends the kept snapshot of [marker] again: as a version only through the guard of
+     * [sendSnapshot] (a newer version on the server makes it a conflict copy), or as a conflict copy.
      */
     private suspend fun resend(entry: EditEntry, marker: EditMarker) = when (marker.kind) {
-        UploadKind.Version -> sendVersion(entry, marker.snapshot)
+        UploadKind.Version -> sendSnapshot(entry, marker.snapshot)
         UploadKind.Conflict -> sendConflict(entry, marker.snapshot, private = marker.target == CrUri.MY_PREFIX)
     }
 

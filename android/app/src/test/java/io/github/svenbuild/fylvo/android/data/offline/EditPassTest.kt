@@ -30,6 +30,8 @@ class EditPassTest {
         var onUpload: (target: String, previous: String, session: (String, String, String) -> Unit) -> Unit = { _, _, _ -> }
         var cancelCode: Int? = 0
         var cancels = 0
+        /** Where cancels went; a cancel at an address without a file answers 40016. */
+        val cancelledAt = ArrayList<String>()
 
         override suspend fun lookup(uri: String): FileObject? = files[uri]
 
@@ -41,7 +43,8 @@ class EditPassTest {
 
         override suspend fun cancel(sessionId: String, uri: String): Int? {
             cancels++
-            return cancelCode
+            cancelledAt += uri
+            return if (uri in files) cancelCode else 40016
         }
     }
 
@@ -162,12 +165,12 @@ class EditPassTest {
         assertEquals(sha("v2"), store.entry(entry.id)!!.confirmed?.sha256)
     }
 
-    private fun recovering(): EditEntry {
+    private fun recovering(sessionId: String = "s1", sessionUri: String = uri, attempts: Int = 0): EditEntry {
         val marker = EditMarker(
             UploadKind.Version, EditSnapshot(2, now - 10 * 60_000, sha("v2")), target = uri,
-            sessionId = "s1", sessionUri = uri, entityId = "e2", at = now - EDIT_RECOVERY_DELAY_MS,
+            sessionId = sessionId, sessionUri = sessionUri, entityId = "e2", at = now - EDIT_RECOVERY_DELAY_MS,
         )
-        val entry = edited(pending = marker)
+        val entry = edited(pending = marker).copy(attempts = attempts).also { store.put(it) }
         store.tmpFolder()
         store.snapshotOf(entry).writeText("v2")
         return entry
@@ -249,5 +252,94 @@ class EditPassTest {
         edited()
         EditPass(server, store, { null }, EditPhase.End, "L", { false }, {}, { now }).run()
         assertTrue(server.sent.isEmpty())
+    }
+
+    /** Conflict copies (no previous) are finished as file f9; versions as [version]. */
+    private fun commitsConflict(version: (String, String, (String, String, String) -> Unit) -> Unit = { _, _, _ -> throw ApiException(40076, "stale") }) {
+        server.onUpload = { target, previous, session ->
+            if (previous.isNotEmpty()) version(target, previous, session)
+            else {
+                session("s9", target, "c1")
+                server.files[target] = file("f9", target, "c1")
+            }
+        }
+    }
+
+    @Test fun aKeptSnapshotSentAgainNeverGoesToAnotherFileAtTheAddress() = runBlocking {
+        // Another file with the same version took the address meanwhile.
+        server.files[uri] = file("other", uri, "e1")
+        commitsConflict { _, _, _ -> error("must not be a version") }
+        val entry = recovering(sessionId = "")
+        pass().run()
+        assertTrue(server.sent.none { it.second.isNotEmpty() })
+        assertEquals("v2", server.sent.single().third)
+        assertEquals("f9", store.entry(entry.id)!!.fileId)
+    }
+
+    @Test fun aClearRefusalKeepsMarkerAndSnapshotUntilDiscarded() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        server.onUpload = { _, _, _ -> throw ApiException(40049, "too large") }
+        val entry = edited()
+        pass().run()
+        val after = store.entry(entry.id)!!
+        assertEquals(EditState.Error, after.state)
+        assertEquals(EditProblem.Refused, after.problem)
+        assertEquals(40049, after.errorCode)
+        assertNotNull(after.pending)
+        // The next pass (with its tmp clean-up) keeps the snapshot.
+        pass(EditPhase.Check).run()
+        assertTrue(store.snapshotOf(entry).exists())
+        assertNotNull(store.entry(entry.id)!!.pending)
+    }
+
+    @Test fun aRenamedFileIsCancelledAndCheckedAtItsNewAddress() = runBlocking {
+        val renamed = "cloudreve://my/Docs/b.txt"
+        server.files[renamed] = file("f1", renamed, "e2")
+        val entry = recovering(sessionUri = uri)
+        EditPass(server, store, { id -> renamed.takeIf { id == "f1" } }, EditPhase.End, "L", { true }, {}, { now }).run()
+        assertEquals(listOf(renamed), server.cancelledAt)
+        val after = store.entry(entry.id)!!
+        assertEquals(renamed, after.uri)
+        assertEquals("e2", after.baseEntity)
+        assertNull(after.pending)
+    }
+
+    @Test fun aDamagedSnapshotIsDroppedAndTheWorkingCopyPlannedAnew() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        val entry = recovering()
+        store.snapshotOf(entry).writeText("vX")
+        commits("e3")
+        pass().run()
+        assertEquals(0, server.cancels)
+        assertEquals("v2", server.sent.single().third)
+        // Only the hash of what was sent counts as confirmed.
+        assertEquals(sha("v2"), store.entry(entry.id)!!.confirmed?.sha256)
+    }
+
+    @Test fun afterFiveUnclearAnswersTheSnapshotGoesUpAsAConflictCopy() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        server.cancelCode = null
+        commitsConflict()
+        val entry = recovering(attempts = EDIT_MAX_UNCLEAR - 1)
+        pass().run()
+        assertEquals("", server.sent.single().second)
+        assertEquals("f9", store.entry(entry.id)!!.fileId)
+    }
+
+    @Test fun aStopAskedForByANewNetworkSettingIsNoStall() = runBlocking {
+        server.files[uri] = file("f1", uri, "e1")
+        server.onUpload = { target, _, session ->
+            session("s1", target, "e2")
+            throw kotlinx.coroutines.CancellationException("stopped")
+        }
+        val counted = edited()
+        runCatching { pass().run(only = setOf(counted.id)) }
+        assertEquals(1, store.entry(counted.id)!!.stalls)
+        val notCounted = edited()
+        runCatching {
+            EditPass(server, store, { null }, EditPhase.End, "L", { true }, {}, { now }, countStall = { false }).run(only = setOf(notCounted.id))
+        }
+        assertEquals(0, store.entry(notCounted.id)!!.stalls)
+        assertNotNull(store.entry(notCounted.id)!!.pending)
     }
 }
