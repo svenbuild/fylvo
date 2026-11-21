@@ -51,6 +51,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import kotlinx.coroutines.launch
 import io.github.svenbuild.fylvo.android.FylvoApp
+import io.github.svenbuild.fylvo.android.data.offline.OfflineEdits
+import io.github.svenbuild.fylvo.android.ui.files.EditChoiceDialog
+import io.github.svenbuild.fylvo.android.ui.files.notUploadedText
+import androidx.compose.ui.res.pluralStringResource
 import io.github.svenbuild.fylvo.android.BuildConfig
 import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.data.AppUpdater
@@ -77,7 +81,6 @@ fun AccountScreen(
     offlineCount: Int,
     onOpenOffline: () -> Unit,
     onBack: () -> Unit,
-    onSignOut: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -125,6 +128,20 @@ fun AccountScreen(
     BackHandler { persistFolders(); onBack() }
 
     var confirmSignOut by remember { mutableStateOf(false) }
+    /** Fylvo: edited files with changes not on the server yet ask before the sign-out. */
+    var editSignOut by remember { mutableStateOf<EditSignOut?>(null) }
+
+    /** Fylvo: signs out with [choice]; asks (again) when working copies still hold changes. */
+    fun signOut(choice: OfflineEdits.SignOutChoice) {
+        editSignOut = editSignOut?.copy(busy = true)
+        scope.launch {
+            editSignOut = when (val result = app.signOut(choice)) {
+                OfflineEdits.SignOutResult.Done -> null
+                is OfflineEdits.SignOutResult.NeedsChoice -> EditSignOut(result.count)
+                is OfflineEdits.SignOutResult.Failed -> EditSignOut(result.count, result.reason)
+            }
+        }
+    }
     var chooseLanguage by remember { mutableStateOf(false) }
     // A change usually restarts the screen; kept as state for when the shown language stays the same.
     var appLanguage by remember { mutableStateOf(AppLanguage.current()) }
@@ -284,13 +301,25 @@ fun AccountScreen(
             title = { Text(stringResource(R.string.sign_out_title)) },
             text = { Text(stringResource(R.string.sign_out_text)) },
             confirmButton = {
-                TextButton(onClick = { confirmSignOut = false; onSignOut() }) {
+                TextButton(onClick = { confirmSignOut = false; signOut(OfflineEdits.SignOutChoice.None) }) {
                     Text(stringResource(R.string.sign_out), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { confirmSignOut = false }) { Text(stringResource(R.string.cancel)) }
             },
+        )
+    }
+
+    editSignOut?.let { prompt ->
+        EditChoiceDialog(
+            title = pluralStringResource(R.plurals.edit_unuploaded_title, prompt.count, prompt.count),
+            text = stringResource(R.string.edit_sign_out_text),
+            busy = prompt.busy,
+            error = prompt.reason?.let { stringResource(R.string.edit_upload_failed, stringResource(notUploadedText(it))) },
+            onUpload = { signOut(OfflineEdits.SignOutChoice.Upload) },
+            onDiscard = { signOut(OfflineEdits.SignOutChoice.Discard) },
+            onDismiss = { editSignOut = null },
         )
     }
 
@@ -427,3 +456,10 @@ private fun FolderField(label: String, value: String, onChange: (String) -> Unit
 private fun formatDateTime(millis: Long): String =
     DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(millis))
 
+
+/** Fylvo: the question before a sign-out with [count] edited files not uploaded; [reason] after a failed upload. */
+private data class EditSignOut(
+    val count: Int,
+    val reason: OfflineEdits.NotUploaded? = null,
+    val busy: Boolean = false,
+)

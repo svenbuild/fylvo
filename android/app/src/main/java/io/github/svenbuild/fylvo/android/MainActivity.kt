@@ -22,7 +22,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -47,6 +46,13 @@ class MainActivity : AppCompatActivity() {
         val fromHistory = intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
         if (savedInstanceState == null && !fromHistory) handleShareIntent(intent)
         setContent { App() }
+    }
+
+    /** Fylvo: back in the app: edited files that wait get their check soon. */
+    override fun onResume() {
+        super.onResume()
+        val app = application as FylvoApp
+        lifecycleScope.launch { runCatching { app.offlineEdits.start() } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -85,6 +91,7 @@ private class AppViewModelFactory(private val app: FylvoApp) : ViewModelProvider
             FilesViewModel(
                 app.fileRepository,
                 app.offlineManager,
+                app.offlineEdits,
                 app.viewSettings,
                 androidx.work.WorkManager.getInstance(app),
                 onSessionExpired = { app.endSession(expired = true) },
@@ -99,9 +106,6 @@ fun App() {
     val app = context.applicationContext as FylvoApp
     val factory = remember { AppViewModelFactory(app) }
     val loggedIn by app.sessionManager.isLoggedIn.collectAsState(initial = null)
-    val scope = rememberCoroutineScope()
-
-    val signOut: () -> Unit = { scope.launch { app.endSession() } }
 
     // Fylvo: when a session ends (sign-out or expired) start the screen afresh in a new task,
     // so no listing, recent file or thumbnail URL of the old account survives in a view model.
@@ -143,7 +147,7 @@ fun App() {
             // Signing in flips loggedIn, which swaps in the files screen by itself.
             false -> LoginScreen(viewModel = viewModel(factory = factory), onLoggedIn = {})
             true -> {
-                FilesScreen(viewModel = viewModel(factory = factory), onSignOut = signOut)
+                FilesScreen(viewModel = viewModel(factory = factory))
             }
         }
     }

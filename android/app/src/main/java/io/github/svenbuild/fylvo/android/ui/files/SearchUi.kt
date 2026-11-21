@@ -152,6 +152,7 @@ fun SearchResults(
                         selected = false,
                         subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                         actions = actionsFor(file),
+                        edit = state.editOf(file),
                     )
                 }
                 if (state.searchLoadingMore) {

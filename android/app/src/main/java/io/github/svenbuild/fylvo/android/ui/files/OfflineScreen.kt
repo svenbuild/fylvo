@@ -54,6 +54,12 @@ import io.github.svenbuild.fylvo.android.FylvoApp
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.offline.OfflineRoot
 import io.github.svenbuild.fylvo.android.data.offline.OfflineRootInfo
+import io.github.svenbuild.fylvo.android.data.offline.EditEntry
+import io.github.svenbuild.fylvo.android.data.offline.EditProblem
+import io.github.svenbuild.fylvo.android.data.offline.EditState
+import androidx.compose.material.icons.outlined.EditOff
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.TaskAlt
 import io.github.svenbuild.fylvo.android.data.offline.OfflineState
 import java.text.DateFormat
 import java.util.Date
@@ -72,6 +78,12 @@ fun OfflineScreen(
     onSyncNow: () -> Unit,
     onRemove: (OfflineRoot) -> Unit,
     bottomBar: @Composable () -> Unit,
+    /** Fylvo: edited files that need a look (see needsAttention). */
+    edits: List<EditEntry> = emptyList(),
+    onEditOpen: (EditEntry) -> Unit = {},
+    onEditFinish: (EditEntry) -> Unit = {},
+    onEditDiscard: (EditEntry) -> Unit = {},
+    onEditDismissNotice: (EditEntry) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val app = LocalContext.current.applicationContext as FylvoApp
@@ -96,7 +108,7 @@ fun OfflineScreen(
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back)) }
                     },
                     actions = {
-                        if (roots.isNotEmpty()) {
+                        if (roots.isNotEmpty() || edits.isNotEmpty()) {
                             IconButton(onClick = onSyncNow) { Icon(Icons.Default.Sync, contentDescription = stringResource(R.string.sync_now)) }
                         }
                     },
@@ -104,7 +116,7 @@ fun OfflineScreen(
             },
             bottomBar = bottomBar,
         ) { padding ->
-            if (roots.isEmpty()) {
+            if (roots.isEmpty() && edits.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(padding)) {
                     EmptyState(
                         icon = Icons.Outlined.OfflinePin,
@@ -114,6 +126,22 @@ fun OfflineScreen(
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 24.dp)) {
+                    if (edits.isNotEmpty()) {
+                        item(key = "edits") {
+                            Text(
+                                stringResource(R.string.edit_section),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 4.dp),
+                            )
+                        }
+                        items(edits, key = { "edit-" + it.id }) { entry ->
+                            EditRow(
+                                entry, { onEditOpen(entry) }, onSyncNow, { onEditFinish(entry) },
+                                { onEditDiscard(entry) }, { onEditDismissNotice(entry) },
+                            )
+                        }
+                    }
                     items(roots, key = { it.root.id }) { info ->
                         OfflineRow(info, syncing == info.root.id, mobileData, { onOpen(info.root) }, onSyncNow, { onRemove(info.root) })
                     }
@@ -198,6 +226,86 @@ private fun OfflineRow(
                     text = { Text(stringResource(R.string.remove_from_device)) },
                     leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
                     onClick = { menuOpen = false; onRemove() },
+                )
+            }
+        }
+    }
+}
+
+/** Fylvo: an edited file that needs a look, with what is the matter and what can be done. */
+@Composable
+private fun EditRow(
+    entry: EditEntry,
+    onOpen: () -> Unit,
+    onRetry: () -> Unit,
+    onFinish: () -> Unit,
+    onDiscard: () -> Unit,
+    onDismissNotice: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val asFile = FileObject(type = 0, name = entry.name)
+    val error = entry.state == EditState.Error || entry.problem != null
+    val detail = when {
+        entry.problem == EditProblem.Missing -> stringResource(R.string.edit_problem_missing)
+        entry.problem == EditProblem.ServerFull -> stringResource(R.string.edit_problem_server_full)
+        entry.problem == EditProblem.Stalled -> stringResource(R.string.edit_problem_stalled)
+        entry.problem == EditProblem.Refused -> stringResource(R.string.edit_problem_refused, entry.errorCode)
+        entry.retired -> stringResource(R.string.edit_retired_waiting)
+        entry.conflict.isNotEmpty() -> stringResource(R.string.edit_conflict_notice, entry.conflict)
+        else -> stringResource(R.string.edit_waiting)
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = if (entry.retired) ({ menuOpen = true }) else onOpen)
+            .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(fileIconOf(asFile), contentDescription = null, tint = fileIconTint(asFile), modifier = Modifier.size(24.dp))
+        }
+        Column(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+            Text(entry.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Box {
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.more), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                if (entry.problem != EditProblem.Missing) DropdownMenuItem(
+                    text = { Text(stringResource(R.string.edit_retry_now)) },
+                    leadingIcon = { Icon(Icons.Default.Sync, null) },
+                    onClick = { menuOpen = false; onRetry() },
+                )
+                if (!entry.retired && entry.problem != EditProblem.Missing) DropdownMenuItem(
+                    text = { Text(stringResource(R.string.edit_finish)) },
+                    leadingIcon = { Icon(Icons.Outlined.TaskAlt, null) },
+                    onClick = { menuOpen = false; onFinish() },
+                )
+                if (!entry.retired && entry.conflict.isNotEmpty()) DropdownMenuItem(
+                    text = { Text(stringResource(R.string.edit_dismiss_notice)) },
+                    leadingIcon = { Icon(Icons.Outlined.Info, null) },
+                    onClick = { menuOpen = false; onDismissNotice() },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.edit_discard)) },
+                    leadingIcon = { Icon(Icons.Outlined.EditOff, null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = { menuOpen = false; onDiscard() },
                 )
             }
         }
