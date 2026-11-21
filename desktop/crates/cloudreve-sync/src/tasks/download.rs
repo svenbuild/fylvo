@@ -23,7 +23,7 @@ use dashmap::DashMap;
 use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::{
@@ -176,6 +176,8 @@ pub struct DownloadTask<'a> {
     remote_file_info: Option<cloudreve_api::models::explorer::FileResponse>,
     /// Fylvo: size and write time of the local file when the download started.
     started: Option<ContentState>,
+    /// Fylvo: the file was changed here, the download left it as it is.
+    kept_local_change: bool,
     cancel_token: CancellationToken,
     progress_map: Arc<DashMap<String, TaskProgress>>,
 }
@@ -198,12 +200,18 @@ impl<'a> DownloadTask<'a> {
             inventory_meta: None,
             remote_file_info: None,
             started: None,
+            kept_local_change: false,
             task,
             sync_path,
             remote_base,
             cancel_token: CancellationToken::new(),
             progress_map,
         }
+    }
+
+    /// Whether the file was changed here and the download left it as it is.
+    pub fn kept_local_change(&self) -> bool {
+        self.kept_local_change
     }
 
     /// Set the cancellation token
@@ -277,7 +285,8 @@ impl<'a> DownloadTask<'a> {
         }
 
         // Fylvo: changed here since the sync decided on this download: the upload of the change
-        // meets the server's newer version and becomes a conflict, nothing is overwritten.
+        // meets the server's newer version and becomes a conflict, nothing is overwritten. The
+        // queue uploads it (queueing this download cancelled an upload of the path).
         if !local_file_info.in_sync() {
             info!(
                 target: "tasks::download",
@@ -285,10 +294,14 @@ impl<'a> DownloadTask<'a> {
                 local_path = %self.task.payload.local_path_display(),
                 "File changed here, skipping download"
             );
+            self.kept_local_change = true;
             return Ok(());
         }
         // Fylvo: size and write time now, compared again right before the content is replaced.
-        self.started = content_state(&self.task.payload.local_path);
+        self.started = Some(
+            content_state(&self.task.payload.local_path)
+                .context("the file cannot be read right now")?,
+        );
 
         self.local_file_info = Some(local_file_info);
 
@@ -378,10 +391,12 @@ impl<'a> DownloadTask<'a> {
             "Got download URL"
         );
 
-        // Create temp file for download
-        let temp_dir = std::env::temp_dir();
-        let temp_file_name = format!("cloudreve_download_{}", self.task.task_id);
-        let temp_path = temp_dir.join(&temp_file_name);
+        // Fylvo: the temp file lies next to the file, so `ReplaceFileW` works on any drive (it
+        // cannot move across volumes). Its name starts with `~`, which the sync ignores.
+        let temp_path = local_path
+            .parent()
+            .context("file without a parent folder")?
+            .join(format!("~fylvo-download-{}.tmp", self.task.task_id));
 
         // Clean up any existing temp file
         if temp_path.exists() {
@@ -515,6 +530,7 @@ impl<'a> DownloadTask<'a> {
                 local_path = %local_path.display(),
                 "File changed during the download, keeping the local change"
             );
+            self.kept_local_change = true;
             return Ok(());
         }
 
@@ -550,17 +566,10 @@ impl<'a> DownloadTask<'a> {
                 )
             };
 
-            if let Err(e) = result {
-                // If ReplaceFileW fails, fall back to copy + delete
-                warn!(
-                    target: "tasks::download",
-                    task_id = %self.task.task_id,
-                    error = ?e,
-                    "ReplaceFileW failed, falling back to copy"
-                );
-                std::fs::copy(temp_path, local_path)
-                    .context("failed to copy temp file to local path")?;
-            }
+            // Fylvo: no copy over the file as a fallback. `ReplaceFileW` fails when another
+            // program has the file open; a copy would write over what that program saves.
+            // The sync downloads it again later.
+            result.context("failed to replace the local file")?;
         }
 
         #[cfg(not(windows))]

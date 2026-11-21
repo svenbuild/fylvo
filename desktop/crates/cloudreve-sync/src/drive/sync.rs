@@ -6,6 +6,7 @@ use crate::{
     },
     drive::{
         case::{FILE_ID_KEY, case_mismatched_ancestor, ntfs_fold},
+        commands::MountCommand,
         guard::DeletionSide,
         mounts::Mount,
         placeholder::CrPlaceholder,
@@ -618,6 +619,19 @@ impl Mount {
             SyncAction::CreatePlaceholderAndInventory { path, remote } => {
                 let cr_placeholder =
                     CrPlaceholder::new(path.clone(), sync_root.clone(), drive_id.clone());
+                // Fylvo: planned while nothing (or only a synced placeholder) was here. Something
+                // with local content appeared since (Excel puts the new file in place a moment
+                // after deleting the old one). Taking the server's entry for it would mark it in
+                // sync with the server's size; plan the path again instead.
+                if appeared_meanwhile(&cr_placeholder.local_file_info) {
+                    tracing::info!(target: "drive::sync", id = %self.id, path = %path.display(), "Appeared here meanwhile, planned again");
+                    let _ = self.command_tx.send(MountCommand::Sync {
+                        local_paths: vec![path.clone()],
+                        mode: SyncMode::PathOnly,
+                        user_initiated: false,
+                    });
+                    return;
+                }
                 if let Err(err) = cr_placeholder
                     .with_remote_file(remote)
                     .commit(self.inventory.clone())
@@ -1402,6 +1416,12 @@ fn plan_entry_with_remote_and_local(
     }
 }
 
+/// Whether something with local content is at a path the sync planned to create from the
+/// server (only a synced placeholder in sync may be taken over).
+fn appeared_meanwhile(local: &LocalFileInfo) -> bool {
+    local.exists && !(local.is_placeholder() && local.in_sync())
+}
+
 /// Whether a local file with an inventory row holds a change that is not on the server: it is
 /// no synced placeholder or not in sync. Not an online-only placeholder (no local bytes, so no
 /// local change), not in a read-only drive (nothing can be uploaded there) and not while a
@@ -1823,6 +1843,18 @@ mod tests {
         let mut waiting = inventory("e1");
         waiting.conflict_state = Some(ConflictState::Pending);
         assert!(plan_one(Some(&server), &modified(), Some(&waiting), false).actions.is_empty());
+    }
+
+    #[test]
+    fn a_file_that_appeared_after_planning_is_not_taken_for_the_servers() {
+        // Excel put its new file in place after the sync saw the path empty.
+        assert!(appeared_meanwhile(&normal(false)));
+        assert!(appeared_meanwhile(&modified()));
+        assert!(appeared_meanwhile(&normal(true)));
+        // Still empty, or a placeholder the sync itself put there: created as planned.
+        assert!(!appeared_meanwhile(&LocalFileInfo::missing()));
+        assert!(!appeared_meanwhile(&hydrated_in_sync(false)));
+        assert!(!appeared_meanwhile(&online_only(false)));
     }
 
     #[test]

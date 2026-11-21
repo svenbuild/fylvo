@@ -1026,15 +1026,14 @@ impl Mount {
         // arrives, a file is at the path again: a new version of the same file, not a deletion.
         // The inventory row stays, so the upload names the version it replaces, and the
         // server keeps the file's versions and shares.
+        // A row that cannot be read now counts as a file row: in doubt nothing is deleted on
+        // the server (the upload then fails or makes a new version, the file stays).
         let (replaced, paths): (Vec<PathBuf>, Vec<PathBuf>) =
             paths.into_iter().partition(|path| {
                 file_back_at(path)
-                    && path.to_str().is_some_and(|p| {
-                        self.inventory
-                            .query_by_path(p)
-                            .ok()
-                            .flatten()
-                            .is_some_and(|row| !row.is_folder)
+                    && path.to_str().is_some_and(|p| match self.inventory.query_by_path(p) {
+                        Ok(row) => row.is_some_and(|row| !row.is_folder),
+                        Err(_) => true,
                     })
             });
         for path in replaced {
@@ -1295,11 +1294,14 @@ impl Mount {
     }
 }
 
-/// Fylvo: whether a file is at `path` again, spelled exactly so (a file put back under another
-/// upper/lower case spelling is a new name to the server, see `case.rs`).
+/// Fylvo: whether a file with new content is at `path` again, spelled exactly so. Not a synced
+/// placeholder in sync: that one the sync itself put back (a real deletion then stays one).
+/// Not under another upper/lower case spelling: that is a new name to the server (`case.rs`).
 fn file_back_at(path: &Path) -> bool {
-    let is_file = LocalFileInfo::from_path(path).is_ok_and(|info| info.exists && !info.is_directory);
-    is_file && LocalFileInfo::on_disk_path(path).as_deref() == Some(path)
+    let changed_file = LocalFileInfo::from_path(path).is_ok_and(|info| {
+        info.exists && !info.is_directory && !(info.is_placeholder() && info.in_sync())
+    });
+    changed_file && LocalFileInfo::on_disk_path(path).as_deref() == Some(path)
 }
 
 #[cfg(test)]
