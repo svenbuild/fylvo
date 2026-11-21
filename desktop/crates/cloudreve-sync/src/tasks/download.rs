@@ -580,11 +580,12 @@ fn replace_with_backup(local: &Path, temp: &Path, task_id: &str) -> Result<()> {
         )
     };
     if let Err(err) = result {
+        // Never over a file saved there meanwhile: then that file stays, and so does the backup.
         if !local.exists() && backup.0.exists() {
-            if let Err(back) = std::fs::rename(&backup.0, local) {
+            if let Err(back) = crate::drive::utils::move_no_replace(&backup.0, local) {
                 // The backup is the only local copy now: it stays (under its `~` name).
                 std::mem::forget(backup);
-                return Err(back).context("failed to put the local file back after a failed replace");
+                return Err(back.context("failed to put the local file back after a failed replace"));
             }
         }
         return Err(err).context("failed to replace the local file");

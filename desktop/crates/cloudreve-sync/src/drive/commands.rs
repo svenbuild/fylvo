@@ -1053,19 +1053,12 @@ impl Mount {
         // (a sync pass uploaded the new version before the delayed delete event came in). Only
         // a folder row turns a file back at the path into a deletion; without a row (not
         // uploaded yet) the upload decides, so the server file is never trashed for a save.
-        let (replaced, paths): (Vec<PathBuf>, Vec<PathBuf>) =
-            paths.into_iter().partition(|path| {
-                (file_back_at(path) || (synced_file_at(path) && uploaded_recently(path)))
-                    && path.to_str().is_some_and(|p| match self.inventory.query_by_path(p) {
-                        Ok(row) => row.is_none_or(|row| !row.is_folder),
-                        Err(_) => true,
-                    })
-            });
-        for path in replaced {
-            tracing::info!(target: "drive::commands", path = %path.display(), "Deleted and written again, uploading as a new version");
-            if let Err(e) = self.enqueue_upload(TaskPayload::upload(path.clone())).await {
-                tracing::warn!(target: "drive::commands", path = %path.display(), error = %e, "Failed to enqueue upload task");
-            }
+        let mut paths = self.upload_replaced(paths).await;
+        // A slow save puts the new file in place a little later: look once more before the
+        // server file goes to the trash.
+        if !paths.is_empty() {
+            tokio::time::sleep(REPLACEMENT_GRACE).await;
+            paths = self.upload_replaced(paths).await;
         }
         if paths.is_empty() {
             return Ok(());
@@ -1092,6 +1085,26 @@ impl Mount {
         }
 
         self.delete_on_server(paths).await.map(|_| ())
+    }
+
+    /// Fylvo: queue the upload of the deleted paths that were saved by replacement (see
+    /// `process_fs_delete_events`); returns the paths that stay deleted.
+    async fn upload_replaced(&self, paths: Vec<PathBuf>) -> Vec<PathBuf> {
+        let (replaced, paths): (Vec<PathBuf>, Vec<PathBuf>) =
+            paths.into_iter().partition(|path| {
+                (file_back_at(path) || (synced_file_at(path) && uploaded_recently(path)))
+                    && path.to_str().is_some_and(|p| match self.inventory.query_by_path(p) {
+                        Ok(row) => row.is_none_or(|row| !row.is_folder),
+                        Err(_) => true,
+                    })
+            });
+        for path in replaced {
+            tracing::info!(target: "drive::commands", path = %path.display(), "Deleted and written again, uploading as a new version");
+            if let Err(e) = self.enqueue_upload(TaskPayload::upload(path.clone())).await {
+                tracing::warn!(target: "drive::commands", path = %path.display(), error = %e, "Failed to enqueue upload task");
+            }
+        }
+        paths
     }
 
     /// Delete the given local paths on the server. They go to the server's trash. Returns the
@@ -1318,6 +1331,10 @@ impl Mount {
         Ok(())
     }
 }
+
+/// Fylvo: how long a deletion waits for a new file under the same name before it reaches the
+/// server, on top of the watcher's 2 s (slow saves of big files).
+const REPLACEMENT_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Fylvo: whether a file with new content is at `path` again, spelled exactly so. Not a synced
 /// placeholder in sync: that one the sync itself put back (a real deletion then stays one).
