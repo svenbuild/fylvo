@@ -15,6 +15,7 @@ use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender},
 };
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -47,6 +48,9 @@ pub struct TaskQueue {
     task_handles: DashMap<String, JoinHandle<()>>,
     /// Maps task_id to local_path for running tasks, used for path-based cancellation
     task_paths: DashMap<String, String>,
+    /// Fylvo: cancels a running upload including its chunk workers, which aborting the task
+    /// handle alone does not stop.
+    cancel_tokens: DashMap<String, CancellationToken>,
 }
 
 impl TaskQueue {
@@ -80,6 +84,7 @@ impl TaskQueue {
             progress: Arc::new(DashMap::new()),
             task_handles: DashMap::new(),
             task_paths: DashMap::new(),
+            cancel_tokens: DashMap::new(),
         });
 
         queue.spawn_dispatcher(command_rx).await;
@@ -102,7 +107,8 @@ impl TaskQueue {
         &self.drive_id
     }
 
-    pub async fn enqueue(&self, payload: TaskPayload) -> Result<String> {
+    /// Queue a task, unless one of the same kind is pending or running for the path already.
+    pub async fn enqueue(&self, payload: TaskPayload) -> Result<()> {
         if self.shutting_down.load(Ordering::SeqCst) {
             return Err(anyhow!("task queue is shutting down"));
         }
@@ -143,16 +149,19 @@ impl TaskQueue {
             .with_context(|| format!("Failed to persist task {}", task_id))?;
 
         if !inserted {
-            return Err(anyhow!(
-                "Task already exists for {} with type {}",
-                payload.local_path_display(),
-                payload.kind.as_str()
-            ));
+            // Fylvo: queued or running already; that task takes the file as it is then.
+            debug!(
+                target: "tasks::queue",
+                drive = %self.drive_id,
+                path = %payload.local_path_display(),
+                kind = payload.kind.as_str(),
+                "Task already queued"
+            );
+            return Ok(());
         }
 
         let payload = payload.with_task_id(task_id.clone());
-        self.dispatch_task(task_id.clone(), payload)?;
-        Ok(task_id)
+        self.dispatch_task(task_id, payload)
     }
 
     pub fn list_active_tasks(&self) -> Result<Vec<TaskRecord>> {
@@ -250,6 +259,9 @@ impl TaskQueue {
             .collect();
 
         for task_id in tasks_to_abort {
+            if let Some((_, token)) = self.cancel_tokens.remove(&task_id) {
+                token.cancel();
+            }
             if let Some((_, handle)) = self.task_handles.remove(&task_id) {
                 handle.abort();
                 debug!(
@@ -448,6 +460,24 @@ impl TaskQueue {
                     );
                 }
             }
+            Ok(TaskRunState::UploadAgain(path)) => {
+                // Fylvo: the file changed during the upload. This task is done; a new one
+                // uploads the newer content.
+                if let Err(err) = self.inventory.update_task(
+                    &task.task_id,
+                    TaskUpdate {
+                        status: Some(TaskStatus::Completed),
+                        ..Default::default()
+                    },
+                ) {
+                    warn!(target: "tasks::queue", drive = %self.drive_id, task_id = %task.task_id, error = %err, "Failed to mark task as completed");
+                }
+                self.cleanup_task_entry(&task.task_id).await;
+                if let Err(err) = self.enqueue(TaskPayload::upload(path)).await {
+                    warn!(target: "tasks::queue", drive = %self.drive_id, task_id = %task.task_id, error = %err, "Failed to queue the upload of the newer content");
+                }
+                return;
+            }
             Ok(TaskRunState::Cancelled) => {
                 if let Err(err) = self.inventory.update_task(
                     &task.task_id,
@@ -530,6 +560,8 @@ impl TaskQueue {
                     );
                     respelled.payload.local_path = spelled;
                 }
+                let token = CancellationToken::new();
+                self.cancel_tokens.insert(task.task_id.clone(), token.clone());
                 let mut task_executor = UploadTask::new(
                     self.inventory.clone(),
                     self.cr_client.clone(),
@@ -538,9 +570,13 @@ impl TaskQueue {
                     self.sync_path.clone(),
                     self.remote_base.clone(),
                     Arc::clone(&self.progress),
-                );
+                )
+                .with_cancel_token(token);
 
                 task_executor.execute().await?;
+                if task_executor.changed_meanwhile() {
+                    return Ok(TaskRunState::UploadAgain(respelled.payload.local_path));
+                }
             }
             TaskKind::Download => {
                 let mut task_executor = DownloadTask::new(
@@ -618,6 +654,7 @@ impl TaskQueue {
     async fn cleanup_task_entry(&self, task_id: &str) {
         self.progress.remove(task_id);
         self.task_paths.remove(task_id);
+        self.cancel_tokens.remove(task_id);
     }
 
     async fn resume_incomplete_tasks(self: &Arc<Self>) -> Result<()> {
@@ -699,6 +736,9 @@ impl TaskQueue {
             .collect();
 
         for task_id in running {
+            if let Some((_, token)) = self.cancel_tokens.remove(&task_id) {
+                token.cancel();
+            }
             if let Some((_, handle)) = self.task_handles.remove(&task_id) {
                 handle.abort();
             }
@@ -734,6 +774,8 @@ impl TaskQueue {
 pub enum TaskRunState {
     Completed,
     Cancelled,
+    /// Fylvo: uploaded, but the file changed meanwhile: upload this path again.
+    UploadAgain(PathBuf),
 }
 
 enum QueueCommand {

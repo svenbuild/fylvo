@@ -141,6 +141,16 @@ impl CrPlaceholder {
         Ok(())
     }
 
+    /// Fylvo: store the remote file in the inventory only, without touching the local file
+    /// (it changed since the upload started and is not in sync with the remote file).
+    pub fn commit_inventory_only(&self, inventory: &InventoryDb) -> Result<()> {
+        let file_meta = self.file_meta.as_ref().context("File metadata is not set")?;
+        inventory
+            .upsert(&MetadataEntry::from(file_meta))
+            .context("failed to upsert inventory")?;
+        Ok(())
+    }
+
     // Commit changes to file system and inventory
     pub fn commit(&mut self, inventory: Arc<InventoryDb>) -> Result<()> {
         if self.file_meta.is_none() {

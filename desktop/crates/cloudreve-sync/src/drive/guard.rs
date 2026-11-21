@@ -731,7 +731,7 @@ impl Mount {
             self.refuse_read_only_change(&payload.local_path).await;
             return Ok(());
         }
-        self.task_queue.enqueue(payload).await.map(|_| ())
+        self.task_queue.enqueue(payload).await
     }
 
     /// A local change in a read-only drive: mark the file and tell the user once per run.

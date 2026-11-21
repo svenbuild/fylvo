@@ -554,8 +554,7 @@ impl Mount {
                 TaskKind::Download => self
                     .task_queue
                     .enqueue(TaskPayload::download(path.clone()))
-                    .await
-                    .map(|_| ()),
+                    .await,
             };
             if let Err(err) = result {
                 tracing::warn!(target: "drive::case", id = %self.id, path = %path.display(), error = ?err, "Could not queue a stopped task again");
