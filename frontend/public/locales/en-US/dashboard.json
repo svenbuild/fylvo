@@ -1091,6 +1091,7 @@
     "countUser": "Count",
     "anonymous": "Anonymous user group",
     "sysGroup": "System user group",
+    "sysGroupNoDelete": "The three built-in groups cannot be deleted.",
     "adminGroup": "Admin user group",
     "#": "#",
     "name": "Name",

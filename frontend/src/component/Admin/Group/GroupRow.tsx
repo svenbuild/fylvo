@@ -168,9 +168,15 @@ const GroupRow = ({ group, loading, onDelete }: GroupRowProps) => {
       </NoWrapTableCell>
       <NoWrapTableCell>{sizeToString(group?.max_storage ?? 0)}</NoWrapTableCell>
       <NoWrapTableCell>
-        <IconButton size="small" onClick={onDeleteClick} disabled={deleteLoading || (group?.id ?? 0) <= 3}>
-          <Delete fontSize="small" />
-        </IconButton>
+        {/* Fylvo: the three built-in groups cannot be deleted; the tip says so (a disabled button
+            shows no tip, hence the span). */}
+        <Tooltip title={(group?.id ?? 0) <= 3 ? t("group.sysGroupNoDelete") : ""}>
+          <span>
+            <IconButton size="small" onClick={onDeleteClick} disabled={deleteLoading || (group?.id ?? 0) <= 3}>
+              <Delete fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
       </NoWrapTableCell>
     </TableRow>
   );
