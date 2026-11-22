@@ -66,53 +66,27 @@ pub fn forget_own_move(from: &Path, to: &Path) {
     own_moves().retain(|m| !(m.from == from && m.to == to));
 }
 
-/// Which part of a move an event reports.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Half {
-    From,
-    To,
-    Both,
-}
-
-/// Whether an event is (part of) a registered own move; consumes what it matches.
-fn is_own(half: Half, from: Option<&Path>, to: Option<&Path>) -> bool {
+/// Whether a rename `from` -> `to` is a registered own move (also two own moves joined by the
+/// debouncer, a -> b and b -> c reported as a -> c); consumes what it matches.
+fn is_own(from: &Path, to: &Path) -> bool {
     let mut moves = own_moves();
-    // The debouncer joins quick moves of the same file: a -> b and b -> c come as a -> c.
-    if half == Half::Both {
-        let first = moves.iter().position(|m| Some(m.from.as_path()) == from);
-        if let Some(first) = first {
-            let middle = moves[first].to.clone();
-            let second = moves
-                .iter()
-                .position(|m| m.from == middle && Some(m.to.as_path()) == to);
-            if let Some(second) = second {
-                for index in [first, second] {
-                    moves[index].from_seen = true;
-                    moves[index].to_seen = true;
-                }
-                return true;
+    if let Some(index) = moves.iter().position(|m| m.from == from && m.to == to) {
+        moves[index].from_seen = true;
+        moves[index].to_seen = true;
+        return true;
+    }
+    let first = moves.iter().position(|m| m.from == from);
+    if let Some(first) = first {
+        let middle = moves[first].to.clone();
+        if let Some(second) = moves.iter().position(|m| m.from == middle && m.to == to) {
+            for index in [first, second] {
+                moves[index].from_seen = true;
+                moves[index].to_seen = true;
             }
+            return true;
         }
     }
-    let found = moves.iter_mut().find(|m| match half {
-        Half::Both => Some(m.from.as_path()) == from && Some(m.to.as_path()) == to,
-        Half::From => !m.from_seen && Some(m.from.as_path()) == from,
-        Half::To => !m.to_seen && Some(m.to.as_path()) == to,
-    });
-    match found {
-        Some(m) => {
-            match half {
-                Half::Both => {
-                    m.from_seen = true;
-                    m.to_seen = true;
-                }
-                Half::From => m.from_seen = true,
-                Half::To => m.to_seen = true,
-            }
-            true
-        }
-        None => false,
-    }
+    false
 }
 
 /// Drop the app's own moves and turn bare halves of moves into deletions and creations.
@@ -121,20 +95,17 @@ pub(crate) fn prepare_events(events: Vec<DebouncedEvent>) -> Vec<DebouncedEvent>
     for mut event in events {
         match event.kind {
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)) if event.paths.len() == 2 => {
-                if is_own(Half::Both, Some(&event.paths[0]), Some(&event.paths[1])) {
+                if is_own(&event.paths[0], &event.paths[1]) {
                     continue;
                 }
             }
+            // A lone half of a move is always the user's: one inotify instance watches all sync
+            // folders, so the app's own moves arrive whole. (Matching halves could swallow a
+            // later "Move to Trash" of the same path.)
             EventKind::Modify(ModifyKind::Name(RenameMode::From)) if event.paths.len() == 1 => {
-                if is_own(Half::From, Some(&event.paths[0]), None) {
-                    continue;
-                }
                 event.event.kind = EventKind::Remove(RemoveKind::Any);
             }
             EventKind::Modify(ModifyKind::Name(RenameMode::To)) if event.paths.len() == 1 => {
-                if is_own(Half::To, None, Some(&event.paths[0])) {
-                    continue;
-                }
                 event.event.kind = EventKind::Create(CreateKind::Any);
             }
             _ => {}
@@ -148,13 +119,50 @@ pub(crate) fn prepare_events(events: Vec<DebouncedEvent>) -> Vec<DebouncedEvent>
 /// has not reported yet (it reports after 2 seconds).
 const RENAME_SETTLE: Duration = Duration::from_secs(5);
 
+/// How long a rename the server could not be asked about waits before it is tried again.
+const RENAME_RETRY: Duration = Duration::from_secs(60);
+
+/// Renames waiting for the server (network): both names are left alone by sync passes.
+static PENDING_RENAMES: Mutex<Vec<(PathBuf, PathBuf)>> = Mutex::new(Vec::new());
+
+fn finish_pending_rename(from: &Path, to: &Path) {
+    PENDING_RENAMES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(f, t)| !(f == from && t == to));
+}
+
+fn in_pending_rename(path: &Path) -> bool {
+    PENDING_RENAMES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .any(|(from, to)| path.starts_with(from) || path.starts_with(to))
+}
+
+/// Paths put off by `rename_settled`, synced again together a moment later (one sync for many
+/// new files, not one each).
+static RESYNC: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
 /// Paths a sync pass found as a possible half of a rename, with when it first saw them.
 static UNSETTLED: Mutex<Vec<(PathBuf, Instant)>> = Mutex::new(Vec::new());
 
 /// Whether a sync pass may act now on `path`, which may be half of a rename: "on the server,
 /// missing here, row present" or "here, no row". The first time it is not; the path is planned
 /// again a little later, after the watcher had its say.
-pub(crate) fn rename_settled(path: &Path, commands: &UnboundedSender<MountCommand>) -> bool {
+pub(crate) fn rename_settled(
+    path: &Path,
+    parent_tracked: bool,
+    commands: &UnboundedSender<MountCommand>,
+) -> bool {
+    if in_pending_rename(path) {
+        return false;
+    }
+    // In a folder the sync does not know yet, nothing can be the other half of a rename of a
+    // synced file.
+    if !parent_tracked {
+        return true;
+    }
     let mut unsettled = UNSETTLED.lock().unwrap_or_else(|e| e.into_inner());
     unsettled.retain(|(_, at)| at.elapsed() < RENAME_SETTLE * 6);
     if let Some(index) = unsettled.iter().position(|(known, _)| known == path) {
@@ -165,17 +173,78 @@ pub(crate) fn rename_settled(path: &Path, commands: &UnboundedSender<MountComman
         return false;
     }
     unsettled.push((path.to_path_buf(), Instant::now()));
-    let commands = commands.clone();
-    let path = path.to_path_buf();
-    tokio::spawn(async move {
-        tokio::time::sleep(RENAME_SETTLE).await;
-        let _ = commands.send(MountCommand::Sync {
-            local_paths: vec![path],
-            mode: SyncMode::PathOnly,
-            user_initiated: false,
+    let mut resync = RESYNC.lock().unwrap_or_else(|e| e.into_inner());
+    let first = resync.is_empty();
+    resync.push(path.to_path_buf());
+    if first {
+        let commands = commands.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(RENAME_SETTLE).await;
+            let paths = std::mem::take(&mut *RESYNC.lock().unwrap_or_else(|e| e.into_inner()));
+            let _ = commands.send(MountCommand::Sync {
+                local_paths: paths,
+                mode: SyncMode::PathOnly,
+                user_initiated: false,
+            });
         });
-    });
+    }
     false
+}
+
+/// Folders created in the sync folders a moment ago. A move into a folder made just before is
+/// reported by inotify only as a deletion (the new folder was not watched yet).
+static RECENT_FOLDERS: Mutex<Vec<(PathBuf, Instant)>> = Mutex::new(Vec::new());
+const RECENT_FOLDER_TTL: Duration = Duration::from_secs(60);
+/// At most this many entries are looked at per search.
+const MOVE_SEARCH_LIMIT: usize = 20_000;
+
+fn note_new_folders(events: &[DebouncedEvent]) {
+    let mut recent = RECENT_FOLDERS.lock().unwrap_or_else(|e| e.into_inner());
+    recent.retain(|(_, at)| at.elapsed() < RECENT_FOLDER_TTL);
+    for event in events {
+        if matches!(event.kind, EventKind::Create(_)) {
+            if let Some(path) = event.paths.first() {
+                if std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
+                    recent.push((path.clone(), Instant::now()));
+                }
+            }
+        }
+    }
+}
+
+/// Where the file or folder with `inode` is now, if it lies in a folder created a moment ago.
+fn find_in_new_folders(inode: u64) -> Option<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    let folders: Vec<PathBuf> = {
+        let recent = RECENT_FOLDERS.lock().unwrap_or_else(|e| e.into_inner());
+        recent.iter().map(|(path, _)| path.clone()).collect()
+    };
+    let mut seen = 0;
+    let mut stack = folders;
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            seen += 1;
+            if seen > MOVE_SEARCH_LIMIT {
+                return None;
+            }
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.ino() == inode {
+                return Some(entry.path());
+            }
+            if meta.is_dir() {
+                stack.push(entry.path());
+            }
+        }
+    }
+    None
 }
 
 /// A sync folder the shared watcher reports to.
@@ -214,6 +283,7 @@ fn dispatch(result: DebounceEventResult) {
     };
     let rescan = events.iter().any(|e| e.need_rescan());
     let events = prepare_events(events);
+    note_new_folders(&events);
     let routes = ROUTES.lock().unwrap_or_else(|e| e.into_inner());
     let mut batches: Vec<Vec<DebouncedEvent>> = routes.iter().map(|_| Vec::new()).collect();
     for event in events {
@@ -266,11 +336,17 @@ pub fn watch(root: &Path, commands: UnboundedSender<MountCommand>) -> Result<()>
             root: root.to_path_buf(),
             commands,
         });
-    watcher
+    let watched = watcher
         .as_mut()
         .expect("watcher was just created")
-        .watch(root, RecursiveMode::Recursive)
-        .with_context(|| format!("failed to watch {}", root.display()))
+        .watch(root, RecursiveMode::Recursive);
+    if watched.is_err() {
+        ROUTES
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|route| route.root != root);
+    }
+    watched.with_context(|| format!("failed to watch {}", root.display()))
 }
 
 /// Stop watching `root`.
@@ -313,6 +389,38 @@ fn classify(error: anyhow::Error) -> ServerAnswer {
 }
 
 impl Mount {
+    /// Fylvo: deleted paths that are really moves into a folder made a moment ago (see
+    /// `RECENT_FOLDERS`) are handled as renames; the rest is returned.
+    pub(crate) async fn resolve_hidden_moves(&self, paths: Vec<PathBuf>) -> Vec<PathBuf> {
+        let mut rest = Vec::with_capacity(paths.len());
+        for path in paths {
+            let moved = self
+                .row_at(&path)
+                .and_then(|row| crate::drive::local_linux::stored_stamp(&row))
+                .and_then(|stamp| find_in_new_folders(stamp.inode));
+            match moved {
+                Some(to) if to != path => {
+                    tracing::info!(target: "drive::watch", from = %path.display(), to = %to.display(), "A deletion is a move into a new folder");
+                    if let Err(e) = self.process_rename_linux(path.clone(), to).await {
+                        tracing::warn!(target: "drive::watch", path = %path.display(), error = ?e, "Failed to handle the move");
+                    }
+                }
+                _ => rest.push(path),
+            }
+        }
+        rest
+    }
+
+    /// Fylvo: the old path of a synced file that is now at `path` (same inode, the old path is
+    /// gone), if any. A file found there is a moved one, not a new one.
+    pub(crate) fn moved_from(&self, path: &Path) -> Option<PathBuf> {
+        let stamp = crate::drive::local_linux::LocalStamp::of_path(path)?;
+        let rows = self.inventory.query_by_local_inode(&self.id, stamp.inode).ok()?;
+        rows.into_iter()
+            .map(|row| PathBuf::from(row.local_path))
+            .find(|old| old != path && std::fs::symlink_metadata(old).is_err())
+    }
+
     /// The row at `path`, if any.
     fn row_at(&self, path: &Path) -> Option<FileMetadata> {
         self.inventory.query_by_path(path.to_str()?).ok().flatten()
@@ -320,16 +428,17 @@ impl Mount {
 
     /// Whether the server still has the file this row was synced from at `path` (same file
     /// ID). A file another device replaced meanwhile is not renamed, moved or deleted.
-    pub(crate) async fn server_has_row_file(&self, path: &Path, row: &FileMetadata) -> bool {
+    /// `None`: the server could not be asked (network); `Some(false)`: another file is there.
+    pub(crate) async fn server_has_row_file(&self, path: &Path, row: &FileMetadata) -> Option<bool> {
         let Some(id) = row.metadata.get(crate::drive::case::FILE_ID_KEY) else {
-            return false;
+            return Some(false);
         };
         let (root, base) = {
             let config = self.config.read().await;
             (config.sync_path.clone(), config.remote_path.clone())
         };
         let Ok(uri) = local_path_to_cr_uri(path.to_path_buf(), root, base) else {
-            return false;
+            return Some(false);
         };
         match self
             .cr_client
@@ -341,8 +450,11 @@ impl Mount {
             })
             .await
         {
-            Ok(file) => !id.is_empty() && file.id == *id,
-            Err(_) => false,
+            Ok(file) => Some(!id.is_empty() && file.id == *id),
+            Err(err) => match classify(err.into()) {
+                ServerAnswer::Failed(_) => None,
+                _ => Some(false),
+            },
         }
     }
 
@@ -368,14 +480,30 @@ impl Mount {
             let (Ok(source), Ok(target)) = (uri(from), uri(to_parent)) else {
                 return ServerAnswer::Failed(anyhow::anyhow!("path outside the sync folder"));
             };
-            let moved = self
-                .cr_client
-                .move_files(&MoveFileService {
-                    uris: vec![source],
-                    dst: target,
-                    copy: None,
-                })
-                .await;
+            let request = MoveFileService {
+                uris: vec![source],
+                dst: target.clone(),
+                copy: None,
+            };
+            let mut moved = self.cr_client.move_files(&request).await;
+            // The target folder is new here and not on the server yet (a folder made for a
+            // selection): created there, then moved.
+            if let Err(ApiError::ApiError { code, .. }) = &moved {
+                if *code == ErrorCode::ParentNotExist as i32 || *code == ErrorCode::NotFound as i32 {
+                    let created = self
+                        .cr_client
+                        .create_file(&cloudreve_api::models::explorer::CreateFileService {
+                            uri: target,
+                            file_type: "folder".to_string(),
+                            err_on_conflict: Some(false),
+                            metadata: None,
+                        })
+                        .await;
+                    if created.is_ok() {
+                        moved = self.cr_client.move_files(&request).await;
+                    }
+                }
+            }
             if let Err(err) = moved {
                 return classify(err.into());
             }
@@ -396,14 +524,16 @@ impl Mount {
                 if current != from {
                     // Moved, but not renamed: the local file takes the name the server has.
                     register_own_move(to, &current);
-                    if move_no_replace(to, &current).is_ok() {
-                        let _ = self.inventory.rename_path(
-                            from.to_str().unwrap_or_default(),
-                            current.to_str().unwrap_or_default(),
-                        );
-                    } else {
+                    if move_no_replace(to, &current).is_err() {
                         forget_own_move(to, &current);
+                        return ServerAnswer::Failed(anyhow::anyhow!(
+                            "moved on the server, but neither renamed there nor here"
+                        ));
                     }
+                    let _ = self.inventory.rename_path(
+                        from.to_str().unwrap_or_default(),
+                        current.to_str().unwrap_or_default(),
+                    );
                     crate::drive::case::report_name_case_taken(to, &err.into());
                     return ServerAnswer::Done;
                 }
@@ -411,6 +541,29 @@ impl Mount {
             }
         }
         ServerAnswer::Done
+    }
+
+    /// Keep a rename the server could not be asked about (network): the sync passes leave both
+    /// names alone meanwhile (`rename_settled`), and the rename is handled again in a minute.
+    fn retry_rename_later(&self, from: PathBuf, to: PathBuf) {
+        {
+            let mut pending = PENDING_RENAMES.lock().unwrap_or_else(|e| e.into_inner());
+            if !pending.iter().any(|(f, t)| *f == from && *t == to) {
+                pending.push((from.clone(), to.clone()));
+            }
+        }
+        let commands = self.command_tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(RENAME_RETRY).await;
+            let event = notify_debouncer_full::notify::Event::new(EventKind::Modify(
+                ModifyKind::Name(RenameMode::Both),
+            ))
+            .add_path(from)
+            .add_path(to);
+            let _ = commands.send(MountCommand::ProcessFsEvents {
+                events: group_fs_events(vec![DebouncedEvent::new(event, Instant::now())]),
+            });
+        });
     }
 
     /// Undo a local rename the server refused (the Windows app refuses it before it happens).
@@ -483,12 +636,21 @@ impl Mount {
             self.move_back(&from, &to);
             return Ok(());
         }
-        if !self.server_has_row_file(&from, &from_row).await {
-            // Replaced on the server meanwhile: keep its file, this one is new.
-            self.upload_path(&to).await;
-            return Ok(());
+        match self.server_has_row_file(&from, &from_row).await {
+            Some(true) => {}
+            Some(false) => {
+                // Replaced on the server meanwhile: keep its file, this one is new.
+                self.upload_path(&to).await;
+                return Ok(());
+            }
+            None => {
+                self.retry_rename_later(from, to);
+                return Ok(());
+            }
         }
-        match self.rename_on_server(&from, &to).await {
+        let answer = self.rename_on_server(&from, &to).await;
+        finish_pending_rename(&from, &to);
+        match answer {
             ServerAnswer::Done => {
                 if self.row_at(&from).is_some() {
                     self.inventory
@@ -529,12 +691,8 @@ impl Mount {
                 }
             }
             ServerAnswer::Failed(err) => {
-                tracing::warn!(target: "drive::watch", from = %from.display(), to = %to.display(), error = ?err, "Rename not sent, syncing both names later");
-                let _ = self.command_tx.send(MountCommand::Sync {
-                    local_paths: vec![from.clone(), to.clone()],
-                    mode: SyncMode::PathOnly,
-                    user_initiated: false,
-                });
+                tracing::warn!(target: "drive::watch", from = %from.display(), to = %to.display(), error = ?err, "Rename not sent, trying again later");
+                self.retry_rename_later(from, to);
             }
         }
         Ok(())
@@ -583,7 +741,7 @@ mod tests {
     }
 
     #[test]
-    fn own_moves_are_dropped_also_in_halves_and_only_once() {
+    fn own_moves_are_dropped_whole_and_only_once() {
         register_own_move(Path::new("/t2/S/a"), Path::new("/t2/S/~fylvo-backup-a.tmp"));
         register_own_move(Path::new("/t2/S/x"), Path::new("/t2/S/y"));
         let rename = || {
@@ -596,9 +754,9 @@ mod tests {
         // Used up: the same rename again is the user's.
         assert_eq!(prepare_events(vec![rename()]).len(), 1);
 
+        // A lone half is the user's even if a registered move names the path.
         let from = event(EventKind::Modify(ModifyKind::Name(RenameMode::From)), &["/t2/S/x"]);
-        let to = event(EventKind::Modify(ModifyKind::Name(RenameMode::To)), &["/t2/S/y"]);
-        assert!(prepare_events(vec![from, to]).is_empty());
+        assert_eq!(kinds(&prepare_events(vec![from])), [EventKind::Remove(RemoveKind::Any)]);
     }
 
     #[test]

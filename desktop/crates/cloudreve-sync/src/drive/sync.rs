@@ -630,6 +630,16 @@ impl Mount {
     }
 
     /// Fylvo: the path changed here after it was planned: plan it again.
+    /// Fylvo: whether the folder of `path` is the sync folder or has a row.
+    #[cfg(target_os = "linux")]
+    fn parent_tracked(&self, path: &Path) -> bool {
+        let Some(parent) = path.parent() else {
+            return true;
+        };
+        crate::drive::local_linux::sync_root_of(path).is_some_and(|root| root == parent)
+            || self.has_row(parent)
+    }
+
     /// Fylvo: whether the inventory has a row at exactly `path`.
     #[cfg(target_os = "linux")]
     fn has_row(&self, path: &Path) -> bool {
@@ -661,7 +671,7 @@ impl Mount {
                 // reported yet. Wait for it before the old name comes back from the server.
                 #[cfg(target_os = "linux")]
                 if self.has_row(path)
-                    && !crate::drive::watch_linux::rename_settled(path, &self.command_tx)
+                    && !crate::drive::watch_linux::rename_settled(path, self.parent_tracked(path), &self.command_tx)
                 {
                     return;
                 }
@@ -753,11 +763,17 @@ impl Mount {
                 // A new file here: maybe the new name of a rename the watcher has not reported
                 // yet. Wait for it before the file goes up a second time.
                 #[cfg(target_os = "linux")]
-                if matches!(reason, UploadReason::RemoteMissing)
-                    && !self.has_row(path)
-                    && !crate::drive::watch_linux::rename_settled(path, &self.command_tx)
-                {
-                    return;
+                if matches!(reason, UploadReason::RemoteMissing) && !self.has_row(path) {
+                    // A synced file moved here (its old name is gone): a move, not a new file.
+                    if let Some(old) = self.moved_from(path) {
+                        if let Err(e) = self.process_rename_linux(old, path.clone()).await {
+                            tracing::warn!(target: "drive::sync", path = %path.display(), error = ?e, "Failed to handle the move");
+                        }
+                        return;
+                    }
+                    if !crate::drive::watch_linux::rename_settled(path, self.parent_tracked(path), &self.command_tx) {
+                        return;
+                    }
                 }
                 if matches!(reason, UploadReason::NotUploaded)
                     && crate::tasks::failed_recently(&path)
@@ -864,7 +880,7 @@ impl Mount {
                 }
                 #[cfg(target_os = "linux")]
                 if !self.has_row(path)
-                    && !crate::drive::watch_linux::rename_settled(path, &self.command_tx)
+                    && !crate::drive::watch_linux::rename_settled(path, self.parent_tracked(path), &self.command_tx)
                 {
                     return;
                 }

@@ -274,6 +274,15 @@ async fn linux_folder_to_server() {
     wait_server(&s, "Docs/moved.txt", None).await;
     wait_exists(&s, "both.txt").await;
     assert_eq!(file_id("both.txt").await, notes_id);
+    // A move into a folder made a moment ago (not on the server yet) is still a move.
+    std::fs::create_dir(s.sync.join("Fresh")).unwrap();
+    std::fs::rename(s.sync.join("both.txt"), s.sync.join("Fresh/both.txt")).unwrap();
+    wait_server(&s, "both.txt", None).await;
+    wait_exists(&s, "Fresh/both.txt").await;
+    assert_eq!(file_id("Fresh/both.txt").await, notes_id);
+    std::fs::rename(s.sync.join("Fresh/both.txt"), s.sync.join("both.txt")).unwrap();
+    wait_exists(&s, "both.txt").await;
+
     // A folder rename takes its content along.
     std::fs::rename(s.sync.join("Docs/Old"), s.sync.join("Docs/New")).unwrap();
     wait_server(&s, "Docs/Old", None).await;

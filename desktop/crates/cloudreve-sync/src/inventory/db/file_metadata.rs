@@ -78,6 +78,33 @@ impl InventoryDb {
             .context("Failed to upsert inventory metadata")
     }
 
+    /// Fylvo (Linux): the rows of a drive synced with the file or folder of this inode (the
+    /// `fylvo:local` key starts with it). Finds a synced file that was moved while its move was
+    /// not reported as such.
+    #[cfg(target_os = "linux")]
+    pub fn query_by_local_inode(&self, drive_id: &str, inode: u64) -> Result<Vec<FileMetadata>> {
+        let mut conn = self.connection()?;
+        let rows = file_metadata_dsl::file_metadata
+            .filter(file_metadata_dsl::drive_id.eq(drive_id))
+            .filter(
+                file_metadata_dsl::metadata
+                    .like(format!("%\"fylvo:local\":\"{inode}:%"))
+                    .or(file_metadata_dsl::metadata.like(format!("%\"fylvo:local\":\"{inode}\"%"))),
+            )
+            .load::<FileMetadataRow>(&mut conn)
+            .context("Failed to query inventory metadata by inode")?;
+        let rows: Vec<FileMetadata> = rows
+            .into_iter()
+            .map(FileMetadata::try_from)
+            .collect::<Result<_>>()?;
+        Ok(rows
+            .into_iter()
+            .filter(|row| {
+                crate::drive::local_linux::stored_stamp(row).is_some_and(|s| s.inode == inode)
+            })
+            .collect())
+    }
+
     /// Query file metadata by local path
     pub fn query_by_path(&self, path: &str) -> Result<Option<FileMetadata>> {
         let mut conn = self.connection()?;

@@ -660,6 +660,15 @@ impl Mount {
         // that upload, the stale deletion would send the new version to the server's trash.
         let mut events: Vec<_> = events.into_iter().collect();
         events.sort_by_key(|(kind, _)| !matches!(kind, EventKind::Remove(_)));
+        // Fylvo (Linux): renames right after the deletions, before creations. A folder made
+        // for a selection and the moves into it come in one batch; handled first, the moves
+        // keep their server files, and the folder's sync then finds them synced.
+        #[cfg(target_os = "linux")]
+        events.sort_by_key(|(kind, _)| match kind {
+            EventKind::Remove(_) => 0,
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => 1,
+            _ => 2,
+        });
         for (event_kind, events) in events {
             // Filter out events that were pre-registered by rename operations
             let filtered_events = self.event_blocker.filter_events(events, &event_kind);
@@ -1133,6 +1142,9 @@ impl Mount {
             tokio::time::sleep(REPLACEMENT_GRACE).await;
             paths = self.upload_replaced(paths).await;
         }
+        // Fylvo (Linux): moved into a folder made just before (reported as a deletion only).
+        #[cfg(target_os = "linux")]
+        let paths = self.resolve_hidden_moves(paths).await;
         if paths.is_empty() {
             return Ok(());
         }
@@ -1171,7 +1183,7 @@ impl Mount {
             let Some(row) = path.to_str().and_then(|p| self.inventory.query_by_path(p).ok().flatten()) else {
                 continue;
             };
-            if self.server_has_row_file(&path, &row).await {
+            if self.server_has_row_file(&path, &row).await == Some(true) {
                 keep.push(path);
             } else {
                 again.push(path);
@@ -1202,9 +1214,9 @@ impl Mount {
                     .map(|uri| (uri.to_string(), path))
             })
             .collect();
-        if let Err(e) = self
-            .process_fs_delete_events(mappings, sync_path, remote_base)
-            .await
+        // Boxed: a deletion can turn out to be a move, whose handling can delete again.
+        if let Err(e) =
+            Box::pin(self.process_fs_delete_events(mappings, sync_path, remote_base)).await
         {
             tracing::error!(target: "drive::commands", error = ?e, "Failed to handle deletion");
         }
