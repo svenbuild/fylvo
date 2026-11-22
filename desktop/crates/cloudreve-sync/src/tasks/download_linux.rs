@@ -55,7 +55,9 @@ impl DownloadTask<'_> {
             // A new file: row first, then the file (see the module comment).
             let old_row = self.inventory.query_by_path(&path_text)?;
             placeholder().commit_downloaded(&self.inventory)?;
+            own_move(temp, &local);
             if let Err(err) = move_no_replace(temp, &local) {
+                forget(temp, &local);
                 match old_row {
                     Some(row) => {
                         self.inventory.upsert(&MetadataEntry::from(&row))?;
@@ -84,9 +86,17 @@ impl DownloadTask<'_> {
             let _ = std::fs::set_permissions(temp, meta.permissions());
         }
         let backup = backup_path(&local);
-        move_no_replace(&local, &backup).context("failed to move the local file aside")?;
+        own_move(&local, &backup);
+        if let Err(err) = move_no_replace(&local, &backup) {
+            forget(&local, &backup);
+            return Err(err).context("failed to move the local file aside");
+        }
+        own_move(temp, &local);
         if let Err(err) = move_no_replace(temp, &local) {
+            forget(temp, &local);
+            own_move(&backup, &local);
             if let Err(back) = move_no_replace(&backup, &local) {
+                forget(&backup, &local);
                 return Err(back.context("failed to put the local file back after a failed replace"));
             }
             return Err(err).context("failed to replace the local file");
@@ -102,6 +112,14 @@ impl DownloadTask<'_> {
 /// Longest file name a backup may carry the original name in (Linux allows 255 bytes; the
 /// prefix and suffix need 18 more).
 const MAX_NAME_IN_BACKUP: usize = 230;
+
+fn own_move(from: &Path, to: &Path) {
+    crate::drive::watch_linux::register_own_move(from, to);
+}
+
+fn forget(from: &Path, to: &Path) {
+    crate::drive::watch_linux::forget_own_move(from, to);
+}
 
 /// The backup name of `local`, in the same folder. A very long name does not fit: then the
 /// backup gets a short unique name and, if a crash leaves it, it is kept as a conflict copy.
@@ -162,7 +180,8 @@ fn settle_backup(backup: &Path, local: &Path, synced: Option<LocalStamp>) {
 }
 
 /// Give a backup a conflict name next to `local` (never under the ignored backup name, so it is
-/// uploaded like any new file).
+/// uploaded like any new file). Deliberately not an own move: the watcher sees a file put in
+/// place from an ignored name and uploads it.
 pub(crate) fn keep_as_conflict_copy(backup: &Path, local: &Path) {
     let copy = crate::drive::sync::generate_conflict_path(local);
     match move_no_replace(backup, &copy) {

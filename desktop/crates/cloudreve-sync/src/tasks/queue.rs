@@ -571,11 +571,7 @@ impl TaskQueue {
         }
         // One waiting upload per file, however many uploads ask for one meanwhile (on Windows
         // all spellings of a name are one file).
-        let key = if cfg!(windows) {
-            crate::drive::case::ntfs_fold(&path.to_string_lossy())
-        } else {
-            path.to_string_lossy().to_string()
-        };
+        let key = crate::drive::case::disk_key(&path.to_string_lossy());
         if !delay.is_zero() && self.later.insert(key.clone(), ()).is_some() {
             return;
         }

@@ -3,7 +3,7 @@ use crate::cfapi::{metadata::Metadata, placeholder_file::PlaceholderFile};
 use crate::{
     drive::{
         local::{LocalFileInfo, PinState},
-        case::{FILE_ID_KEY, case_mismatched_ancestor, ntfs_fold},
+        case::{FILE_ID_KEY, case_mismatched_ancestor, disk_key},
         commands::MountCommand,
         guard::DeletionSide,
         mounts::Mount,
@@ -630,6 +630,13 @@ impl Mount {
     }
 
     /// Fylvo: the path changed here after it was planned: plan it again.
+    /// Fylvo: whether the inventory has a row at exactly `path`.
+    #[cfg(target_os = "linux")]
+    fn has_row(&self, path: &Path) -> bool {
+        path.to_str()
+            .is_some_and(|text| self.inventory.query_by_path(text).ok().flatten().is_some())
+    }
+
     fn plan_again(&self, path: &PathBuf) {
         tracing::info!(target: "drive::sync", id = %self.id, path = %path.display(), "Changed here meanwhile, planned again");
         let _ = self.command_tx.send(MountCommand::Sync {
@@ -650,6 +657,14 @@ impl Mount {
             SyncAction::CreatePlaceholderAndInventory { path, remote } => {
                 // Fylvo: Linux keeps every file local; a new file comes by its download, which
                 // writes it and its row (`tasks/download.rs`). Folders are created below.
+                // A row without a file: maybe the old name of a rename the watcher has not
+                // reported yet. Wait for it before the old name comes back from the server.
+                #[cfg(target_os = "linux")]
+                if self.has_row(path)
+                    && !crate::drive::watch_linux::rename_settled(path, &self.command_tx)
+                {
+                    return;
+                }
                 #[cfg(target_os = "linux")]
                 if remote.file_type != file_type::FOLDER {
                     if let Err(err) = self
@@ -735,6 +750,15 @@ impl Mount {
                 }
             }
             SyncAction::QueueUpload { path, reason } => {
+                // A new file here: maybe the new name of a rename the watcher has not reported
+                // yet. Wait for it before the file goes up a second time.
+                #[cfg(target_os = "linux")]
+                if matches!(reason, UploadReason::RemoteMissing)
+                    && !self.has_row(path)
+                    && !crate::drive::watch_linux::rename_settled(path, &self.command_tx)
+                {
+                    return;
+                }
                 if matches!(reason, UploadReason::NotUploaded)
                     && crate::tasks::failed_recently(&path)
                 {
@@ -838,6 +862,12 @@ impl Mount {
                 if !path.exists() {
                     return;
                 }
+                #[cfg(target_os = "linux")]
+                if !self.has_row(path)
+                    && !crate::drive::watch_linux::rename_settled(path, &self.command_tx)
+                {
+                    return;
+                }
                 tracing::info!(
                     target: "drive::sync",
                     id = %self.id,
@@ -868,7 +898,21 @@ impl Mount {
                 _ = self.task_queue.cancel_by_path(original.clone()).await;
 
                 // Fylvo: never replaces another file (an older conflict copy).
-                if let Err(err) = crate::drive::utils::move_no_replace(original, renamed) {
+                #[cfg(target_os = "linux")]
+                crate::drive::watch_linux::register_own_move(original, renamed);
+                let moved = crate::drive::utils::move_no_replace(original, renamed);
+                #[cfg(target_os = "linux")]
+                match &moved {
+                    Err(_) => crate::drive::watch_linux::forget_own_move(original, renamed),
+                    // The copy is a new file of this folder (on Windows its rename event does
+                    // this); a read-only drive refuses it with its notice.
+                    Ok(()) => {
+                        if let Err(e) = self.enqueue_upload(TaskPayload::upload(renamed.clone())).await {
+                            tracing::warn!(target: "drive::sync", path = %renamed.display(), error = ?e, "Failed to enqueue upload of the conflict copy");
+                        }
+                    }
+                }
+                if let Err(err) = moved {
                     tracing::error!(
                         target: "drive::sync",
                         id = %self.id,
@@ -920,7 +964,7 @@ impl Mount {
         let wanted: HashSet<String> = paths
             .iter()
             .filter_map(|path| path.file_name())
-            .map(|name| ntfs_fold(&name.to_string_lossy()))
+            .map(|name| disk_key(&name.to_string_lossy()))
             .collect();
 
         let parent_remote_uri =
@@ -978,7 +1022,7 @@ impl Mount {
 
             // The whole folder is read: a second spelling of a name may come on a later page.
             for file in &response.res.files {
-                if wanted.contains(&ntfs_fold(&file.name)) {
+                if wanted.contains(&disk_key(&file.name)) {
                     remote_entries.insert(parent.join(&file.name), file.clone());
                 }
             }
@@ -1010,7 +1054,7 @@ impl Mount {
             let parent_uri =
                 local_path_to_cr_uri(parent.to_path_buf(), sync_root.clone(), remote_base.clone())?
                     .to_string();
-            let name = ntfs_fold(&name.to_string_lossy());
+            let name = disk_key(&name.to_string_lossy());
             let mut previous_response = None;
             loop {
                 let response = match self
@@ -1026,7 +1070,7 @@ impl Mount {
                     }
                     Err(err) => return Err(err.into()),
                 };
-                if response.res.files.iter().any(|file| ntfs_fold(&file.name) == name) {
+                if response.res.files.iter().any(|file| disk_key(&file.name) == name) {
                     return Ok(true);
                 }
                 if !response.more {

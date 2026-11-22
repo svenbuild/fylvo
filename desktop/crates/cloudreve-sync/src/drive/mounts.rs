@@ -11,6 +11,7 @@ use crate::drive::event_blocker::EventBlocker;
 use crate::drive::guard::DeletionGuardState;
 use std::sync::atomic::AtomicBool;
 use crate::drive::ignore::IgnoreMatcher;
+#[cfg(not(target_os = "linux"))]
 use crate::drive::sync::group_fs_events;
 #[cfg(windows)]
 use crate::drive::utils::recycle_bin_url;
@@ -21,8 +22,12 @@ use ::serde::{Deserialize, Serialize};
 use anyhow::{Context, Result};
 use cloudreve_api::api::user::UserApi;
 use cloudreve_api::{Client, ClientConfig, models::user::Token};
-use notify_debouncer_full::notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
+use notify_debouncer_full::notify::RecommendedWatcher;
+#[cfg(not(target_os = "linux"))]
+use notify_debouncer_full::notify::RecursiveMode;
+use notify_debouncer_full::{Debouncer, RecommendedCache};
+#[cfg(not(target_os = "linux"))]
+use notify_debouncer_full::{DebounceEventResult, new_debouncer};
 #[cfg(windows)]
 use sha2::{Digest, Sha256};
 use std::time::Duration;
@@ -418,7 +423,12 @@ impl Mount {
     pub async fn start(&mut self) -> Result<()> {
         let sync_path = self.config.read().await.sync_path.clone();
         crate::drive::local_linux::check_file_system(&sync_path)?;
-        crate::tasks::download::linux::clean_leftovers(&sync_path);
+        // A walk of the whole folder: not on an async worker.
+        let folder = sync_path.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            crate::tasks::download::linux::clean_leftovers(&folder)
+        })
+        .await;
         crate::drive::local_linux::register_sync_root(&sync_path);
         self.start_fs_watcher().await?;
         Ok(())
@@ -499,6 +509,14 @@ impl Mount {
         Ok(())
     }
 
+    /// Fylvo: on Linux one watcher serves all sync folders (`watch_linux.rs`).
+    #[cfg(target_os = "linux")]
+    pub async fn start_fs_watcher(&self) -> Result<()> {
+        let root = self.config.read().await.sync_path.clone();
+        crate::drive::watch_linux::watch(&root, self.command_tx.clone())
+    }
+
+    #[cfg(not(target_os = "linux"))]
     pub async fn start_fs_watcher(&self) -> Result<()> {
         let command_tx = self.command_tx.clone();
         let mut debouncer = new_debouncer(
@@ -724,6 +742,8 @@ impl Mount {
             tracing::debug!(target: "drive::mounts", id=%self.id, "Stopping FS watcher");
             drop(fs_watcher);
         }
+        #[cfg(target_os = "linux")]
+        crate::drive::watch_linux::unwatch(&self.config.read().await.sync_path);
 
         // Close the command channel to signal the processor task to stop
         drop(self.command_tx.clone());

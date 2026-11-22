@@ -43,6 +43,28 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
+async fn add_drive(manager: &DriveManager, server: &Server, sync: &Path) {
+    let far = "2099-01-01T00:00:00Z".to_string();
+    let (access_token, refresh_token) = server.desktop_tokens().await;
+    let config = DriveConfig {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: "e2e".into(),
+        instance_url: server.url.clone(),
+        remote_path: server.root.clone(),
+        credentials: Credentials {
+            access_token: Some(access_token),
+            refresh_token,
+            refresh_expires: far.clone(),
+            access_expires: Some(far),
+        },
+        sync_path: sync.to_path_buf(),
+        enabled: true,
+        user_id: "e2e".into(),
+        ..Default::default()
+    };
+    manager.add_drive(config).await.expect("add drive");
+}
+
 struct Setup {
     server: Server,
     sync: PathBuf,
@@ -64,25 +86,7 @@ async fn start() -> Setup {
     std::fs::create_dir(&sync).unwrap();
 
     let manager = Arc::new(DriveManager::new(Arc::new(EventBroadcaster::new(64))).unwrap());
-    let far = "2099-01-01T00:00:00Z".to_string();
-    let (access_token, refresh_token) = server.desktop_tokens().await;
-    let config = DriveConfig {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: "e2e".into(),
-        instance_url: server.url.clone(),
-        remote_path: server.root.clone(),
-        credentials: Credentials {
-            access_token: Some(access_token),
-            refresh_token,
-            refresh_expires: far.clone(),
-            access_expires: Some(far),
-        },
-        sync_path: sync.clone(),
-        enabled: true,
-        user_id: "e2e".into(),
-        ..Default::default()
-    };
-    manager.add_drive(config).await.expect("add drive");
+    add_drive(&manager, &server, &sync).await;
     Setup {
         server,
         sync,
@@ -112,8 +116,16 @@ async fn server_to_linux_folder() {
     })
     .await;
     for path in [&a, &b, &c, &s.sync.join("sub")] {
-        let info = LocalFileInfo::from_path(path).unwrap();
-        assert!(info.is_placeholder() && info.in_sync(), "{} tracked and in sync", path.display());
+        wait_for("tracked and in sync", || {
+            let info = LocalFileInfo::from_path(path).unwrap();
+            let ok = info.is_placeholder() && info.in_sync();
+            if !ok {
+                let row = s._manager.get_inventory().query_by_path(path.to_str().unwrap()).unwrap();
+                eprintln!("NOT IN SYNC {} now={:?} row={:?}", path.display(), LocalStamp::of_path(path), row.map(|r| r.metadata));
+            }
+            ok
+        })
+        .await;
     }
     // No temp files or backups are left.
     assert_eq!(names(&s.sync), ["a.txt", "sub"]);
@@ -154,18 +166,184 @@ async fn server_to_linux_folder() {
     let trash = s.home.path().join(".local/share/Trash/files");
     assert!(names(&trash).iter().any(|n| n.starts_with("a")), "{:?}", names(&trash));
 
-    // A file created here is not sent to the server in this stage.
-    std::fs::write(s.sync.join("local-only.txt"), "mine").unwrap();
-    tokio::time::sleep(Duration::from_secs(4)).await;
-    let listing = s
-        .server
-        .client
-        .get_file_info(&cloudreve_api::models::explorer::GetFileInfoService {
-            uri: Some(s.server.uri("local-only.txt")),
-            id: None,
-            extended: None,
-            folder_summary: None,
+    // The server deletion did not come back as an upload, the trash move did not go back to
+    // the server as a deletion of something else.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    assert!(!s.server.exists("a.txt").await);
+    assert!(s.server.exists("sub/b2.txt").await);
+}
+
+impl Server {
+    /// Whether the server has `relative` (a missing file is an error answer).
+    async fn exists(&self, relative: &str) -> bool {
+        self.client
+            .get_file_info(&cloudreve_api::models::explorer::GetFileInfoService {
+                uri: Some(self.uri(relative)),
+                id: None,
+                extended: None,
+                folder_summary: None,
+            })
+            .await
+            .is_ok()
+    }
+
+    async fn content(&self, relative: &str) -> Option<String> {
+        let mut request = cloudreve_api::models::explorer::FileURLService::default();
+        request.uris.push(self.uri(relative));
+        let urls = self.client.get_file_url(&request).await.ok()?;
+        let url = &urls.urls.first()?.url;
+        reqwest::get(url).await.ok()?.text().await.ok()
+    }
+}
+
+/// Waits until the server has `relative` (any content).
+async fn wait_exists(s: &Setup, relative: &str) {
+    for _ in 0..120 {
+        if s.server.exists(relative).await {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    panic!("timed out waiting for the server to have {relative}");
+}
+
+/// Waits until the server has `relative` with `content` (or is gone for `None`).
+async fn wait_server(s: &Setup, relative: &str, content: Option<&str>) {
+    for _ in 0..120 {
+        let now = match content {
+            Some(_) => s.server.content(relative).await,
+            None => (!s.server.exists(relative).await).then(String::new),
+        };
+        let done = match content {
+            Some(want) => now.as_deref() == Some(want),
+            None => now.is_some(),
+        };
+        if done {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    panic!("timed out waiting for the server: {relative} = {content:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs a local Fylvo server, see the module comment"]
+async fn linux_folder_to_server() {
+    let s = start().await;
+    let file_id = |relative: &'static str| {
+        let server = &s.server;
+        async move { server.info(relative).await.id }
+    };
+
+    // A new file and a new folder with content go up.
+    std::fs::write(s.sync.join("notes.txt"), "one").unwrap();
+    std::fs::create_dir_all(s.sync.join("Docs/Old")).unwrap();
+    std::fs::write(s.sync.join("Docs/Old/x.txt"), "x").unwrap();
+    wait_server(&s, "notes.txt", Some("one")).await;
+    wait_server(&s, "Docs/Old/x.txt", Some("x")).await;
+    wait_for("tracked", || {
+        LocalFileInfo::from_path(&s.sync.join("notes.txt")).is_ok_and(|i| i.in_sync())
+    })
+    .await;
+    let notes_id = file_id("notes.txt").await;
+
+    // An edit in place is a new version of the same file.
+    std::fs::write(s.sync.join("notes.txt"), "one, two").unwrap();
+    wait_server(&s, "notes.txt", Some("one, two")).await;
+    assert_eq!(file_id("notes.txt").await, notes_id);
+
+    // A save as gedit does it (temp file renamed over the file) is a new version as well.
+    let temp = s.sync.join(".goutputstream-ABC123");
+    std::fs::write(&temp, "one, two, three").unwrap();
+    std::fs::rename(&temp, s.sync.join("notes.txt")).unwrap();
+    wait_server(&s, "notes.txt", Some("one, two, three")).await;
+    assert_eq!(file_id("notes.txt").await, notes_id);
+    assert!(!s.server.exists(".goutputstream-ABC123").await);
+
+    // A rename and a move keep the server file (same ID), no copy is left behind.
+    std::fs::rename(s.sync.join("notes.txt"), s.sync.join("renamed.txt")).unwrap();
+    wait_server(&s, "notes.txt", None).await;
+    wait_exists(&s, "renamed.txt").await;
+    assert_eq!(file_id("renamed.txt").await, notes_id);
+    std::fs::rename(s.sync.join("renamed.txt"), s.sync.join("Docs/moved.txt")).unwrap();
+    wait_server(&s, "renamed.txt", None).await;
+    wait_exists(&s, "Docs/moved.txt").await;
+    assert_eq!(file_id("Docs/moved.txt").await, notes_id);
+    // Moved and renamed in one step.
+    std::fs::rename(s.sync.join("Docs/moved.txt"), s.sync.join("both.txt")).unwrap();
+    wait_server(&s, "Docs/moved.txt", None).await;
+    wait_exists(&s, "both.txt").await;
+    assert_eq!(file_id("both.txt").await, notes_id);
+    // A folder rename takes its content along.
+    std::fs::rename(s.sync.join("Docs/Old"), s.sync.join("Docs/New")).unwrap();
+    wait_server(&s, "Docs/Old", None).await;
+    wait_server(&s, "Docs/New/x.txt", Some("x")).await;
+
+    // A deletion and a "Move to Trash" (a move out of the folder) go to the server's trash.
+    std::fs::remove_file(s.sync.join("Docs/New/x.txt")).unwrap();
+    wait_server(&s, "Docs/New/x.txt", None).await;
+    let trash = s.home.path().join("trash-of-the-desktop");
+    std::fs::create_dir(&trash).unwrap();
+    std::fs::rename(s.sync.join("both.txt"), trash.join("both.txt")).unwrap();
+    wait_server(&s, "both.txt", None).await;
+
+    // A folder moved in from outside goes up with its content.
+    let outside = s.home.path().join("Outside");
+    std::fs::create_dir_all(outside.join("inner")).unwrap();
+    std::fs::write(outside.join("inner/y.txt"), "y").unwrap();
+    std::fs::rename(&outside, s.sync.join("Outside")).unwrap();
+    wait_server(&s, "Outside/inner/y.txt", Some("y")).await;
+
+    // A symlink to a folder outside is never followed or uploaded.
+    let secret = s.home.path().join("Secret");
+    std::fs::create_dir(&secret).unwrap();
+    std::fs::write(secret.join("pw.txt"), "secret").unwrap();
+    std::os::unix::fs::symlink(&secret, s.sync.join("link")).unwrap();
+
+    // Two names that differ only in case: the server takes one, the other stays here.
+    std::fs::write(s.sync.join("case.txt"), "lower").unwrap();
+    wait_server(&s, "case.txt", Some("lower")).await;
+    std::fs::write(s.sync.join("CASE.txt"), "upper").unwrap();
+
+    tokio::time::sleep(Duration::from_secs(8)).await;
+    assert!(!s.server.exists("link").await);
+    assert!(!s.server.exists("link/pw.txt").await);
+    assert_eq!(s.server.content("case.txt").await.as_deref(), Some("lower"));
+    assert!(s.sync.join("CASE.txt").exists());
+
+    // Many deletions at once wait for the user.
+    std::fs::create_dir(s.sync.join("Many")).unwrap();
+    for i in 0..15 {
+        std::fs::write(s.sync.join(format!("Many/{i}.txt")), format!("{i}")).unwrap();
+    }
+    wait_server(&s, "Many/14.txt", Some("14")).await;
+    wait_for("all tracked", || {
+        (0..15).all(|i| {
+            LocalFileInfo::from_path(&s.sync.join(format!("Many/{i}.txt"))).is_ok_and(|f| f.in_sync())
         })
-        .await;
-    assert!(listing.is_err(), "nothing is uploaded yet");
+    })
+    .await;
+    for i in 0..15 {
+        std::fs::remove_file(s.sync.join(format!("Many/{i}.txt"))).unwrap();
+    }
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    assert!(s.server.exists("Many/0.txt").await, "a mass deletion is held");
+
+    // A move into a second sync folder is undone, as Windows refuses it; copying works.
+    let other = Server::connect().await;
+    other.folder("").await.unwrap();
+    let second = s.home.path().join("Fylvo2");
+    std::fs::create_dir(&second).unwrap();
+    add_drive(&s._manager, &other, &second).await;
+    std::fs::write(s.sync.join("stay.txt"), "stay").unwrap();
+    wait_server(&s, "stay.txt", Some("stay")).await;
+    wait_for("stay tracked", || {
+        LocalFileInfo::from_path(&s.sync.join("stay.txt")).is_ok_and(|i| i.in_sync())
+    })
+    .await;
+    std::fs::rename(s.sync.join("stay.txt"), second.join("stay.txt")).unwrap();
+    wait_for("moved back", || s.sync.join("stay.txt").exists() && !second.join("stay.txt").exists()).await;
+    tokio::time::sleep(Duration::from_secs(6)).await;
+    assert_eq!(s.server.content("stay.txt").await.as_deref(), Some("stay"));
+    assert!(!other.exists("stay.txt").await);
 }

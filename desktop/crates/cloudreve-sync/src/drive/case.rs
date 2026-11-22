@@ -87,6 +87,16 @@ pub fn ntfs_fold(name: &str) -> String {
     String::from_utf16_lossy(&upper[..written as usize])
 }
 
+/// Fylvo: the key under which two names are the same file on this computer's disk: folded on
+/// Windows (NTFS ignores case), the name itself on Linux.
+pub fn disk_key(name: &str) -> String {
+    if cfg!(windows) {
+        ntfs_fold(name)
+    } else {
+        name.to_string()
+    }
+}
+
 /// A SQL `LIKE` pattern (escape character `!`) that matches every spelling of `text` that may be
 /// the same on NTFS, and some more: SQLite's `LIKE` ignores the case of ASCII letters only, so
 /// every other character, and `i` and `s` (`ı` and `ſ` are upper case `I` and `S`), match any one
@@ -334,6 +344,8 @@ pub struct OwnRenames(Arc<Mutex<Vec<(PathBuf, PathBuf, Instant)>>>);
 
 impl OwnRenames {
     pub fn register(&self, from: &Path, to: &Path) {
+        #[cfg(target_os = "linux")]
+        crate::drive::watch_linux::register_own_move(from, to);
         let mut renames = self.0.lock().unwrap();
         renames.retain(|(_, _, at)| at.elapsed() < OWN_RENAME_TTL);
         renames.push((from.to_path_buf(), to.to_path_buf(), Instant::now()));
@@ -352,6 +364,9 @@ impl OwnRenames {
         match found {
             Some(index) if consume => {
                 renames.remove(index);
+                // Consumed here only when the rename failed (Linux has no rename callbacks).
+                #[cfg(target_os = "linux")]
+                crate::drive::watch_linux::forget_own_move(source, target);
                 true
             }
             Some(_) => true,

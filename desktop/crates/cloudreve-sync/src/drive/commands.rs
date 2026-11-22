@@ -57,9 +57,9 @@ use windows::Win32::UI::Shell::SHCNE_ATTRIBUTES;
 #[cfg(windows)]
 const PAGE_SIZE: i32 = 1000;
 
-/// Fylvo: whether local changes go to the server. Linux syncs from the server only until its
-/// own handling of renames and moves is in place (see `desktop/docs/linux-plan.md`, stage 4).
-pub(crate) const LOCAL_CHANGES_TO_SERVER: bool = cfg!(windows);
+/// Fylvo: whether local changes go to the server. Was off on Linux while only the server side
+/// existed (stage 3 of `desktop/docs/linux-plan.md`); kept as a switch for tests.
+pub(crate) const LOCAL_CHANGES_TO_SERVER: bool = true;
 
 /// Generate a unique filename by appending a counter suffix before the extension.
 /// For example: "document.txt" -> "document (1).txt", "document (2).txt", etc.
@@ -722,6 +722,16 @@ impl Mount {
                         .await?
                 }
                 EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                    // Fylvo: Linux sees renames after the fact and sends them to the server here.
+                    #[cfg(target_os = "linux")]
+                    for event in filtered_events {
+                        if let [from, to] = event.paths.as_slice() {
+                            if let Err(e) = self.process_rename_linux(from.clone(), to.clone()).await {
+                                tracing::error!(target: "drive::commands", from = %from.display(), to = %to.display(), error = ?e, "Failed to handle rename");
+                            }
+                        }
+                    }
+                    #[cfg(not(target_os = "linux"))]
                     self.process_fs_modify_name_event(filtered_events).await?
                 }
                 EventKind::Modify(_) => {
@@ -877,6 +887,7 @@ impl Mount {
         Ok(())
     }
 
+    #[cfg(not(target_os = "linux"))]
     async fn process_fs_modify_name_event(&self, events: Vec<Event>) -> Result<()> {
         tracing::trace!(target: "drive::commands", count=events.len(), "Processing filesystem modify name event");
         for event in events {
@@ -1046,6 +1057,13 @@ impl Mount {
         );
 
         for (_remote_uri, path) in path_uri_mappings {
+            // Fylvo (Linux): a folder moved in from outside arrives as one creation; its whole
+            // content goes up (Windows learns about it from the rename callback).
+            #[cfg(target_os = "linux")]
+            if path.is_dir() {
+                self.upload_path(&path).await;
+                continue;
+            }
             // Fylvo: one failing path no longer stops the others.
             if let Err(e) = self.enqueue_upload(TaskPayload::upload(path.clone())).await {
                 tracing::warn!(target: "drive::commands", path = %path.display(), error = %e, "Failed to enqueue upload task");
@@ -1081,6 +1099,8 @@ impl Mount {
             .into_values()
             .filter(|path| *path != sync_path)
             .collect();
+        #[cfg(target_os = "linux")]
+        let paths = self.synced_paths_still_on_server(paths).await;
         // Fylvo: saved by replacement. Many programs (Excel, PowerPoint and others) save by
         // deleting the file and putting a new one under the same name. When the delayed event
         // arrives, a file is at the path again: a new version of the same file, not a deletion.
@@ -1124,6 +1144,56 @@ impl Mount {
         }
 
         self.delete_on_server(paths).await.map(|_| ())
+    }
+
+    /// Fylvo (Linux): the deleted paths that were synced (a row) and whose server file is still
+    /// the synced one. Moving out a file that was never uploaded deletes nothing on the server;
+    /// a file another device replaced meanwhile is synced again instead.
+    #[cfg(target_os = "linux")]
+    async fn synced_paths_still_on_server(&self, paths: Vec<PathBuf>) -> Vec<PathBuf> {
+        let mut keep = Vec::with_capacity(paths.len());
+        let mut again = Vec::new();
+        for path in paths {
+            let Some(row) = path.to_str().and_then(|p| self.inventory.query_by_path(p).ok().flatten()) else {
+                continue;
+            };
+            if self.server_has_row_file(&path, &row).await {
+                keep.push(path);
+            } else {
+                again.push(path);
+            }
+        }
+        if !again.is_empty() {
+            let _ = self.command_tx.send(MountCommand::Sync {
+                local_paths: again,
+                mode: SyncMode::PathOnly,
+                user_initiated: false,
+            });
+        }
+        keep
+    }
+
+    /// Fylvo (Linux): handle `paths` as deleted here (guards, server trash).
+    #[cfg(target_os = "linux")]
+    pub(crate) async fn remove_paths(&self, paths: Vec<PathBuf>) {
+        let (sync_path, remote_base) = {
+            let config = self.config.read().await;
+            (config.sync_path.clone(), config.remote_path.to_string())
+        };
+        let mappings: HashMap<String, PathBuf> = paths
+            .into_iter()
+            .filter_map(|path| {
+                local_path_to_cr_uri(path.clone(), sync_path.clone(), remote_base.clone())
+                    .ok()
+                    .map(|uri| (uri.to_string(), path))
+            })
+            .collect();
+        if let Err(e) = self
+            .process_fs_delete_events(mappings, sync_path, remote_base)
+            .await
+        {
+            tracing::error!(target: "drive::commands", error = ?e, "Failed to handle deletion");
+        }
     }
 
     /// Fylvo: queue the upload of the deleted paths that were saved by replacement (see

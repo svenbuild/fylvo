@@ -19,3 +19,5 @@ pub mod placeholder;
 pub mod remote_events;
 pub mod sync;
 pub mod utils;
+#[cfg(target_os = "linux")]
+pub mod watch_linux;

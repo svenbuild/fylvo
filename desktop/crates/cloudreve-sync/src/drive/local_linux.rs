@@ -11,17 +11,17 @@ use crate::inventory::{FileMetadata, InventoryDb};
 use anyhow::{Context, Result};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Inventory metadata key with the local state a row was synced with.
 pub const LOCAL_STATE_KEY: &str = "fylvo:local";
 
-static INVENTORY: OnceLock<Arc<InventoryDb>> = OnceLock::new();
+static INVENTORY: RwLock<Option<Arc<InventoryDb>>> = RwLock::new(None);
 
-/// Set once at start, before any drive is mounted.
+/// Set at start, before any drive is mounted (again by a new drive manager, as in tests).
 pub fn set_inventory(inventory: Arc<InventoryDb>) {
-    let _ = INVENTORY.set(inventory);
+    *INVENTORY.write().unwrap_or_else(|e| e.into_inner()) = Some(inventory);
 }
 
 /// The sync folders of the mounted drives (Linux has no system-wide registry of sync folders).
@@ -70,8 +70,23 @@ pub fn check_file_system(folder: &Path) -> Result<()> {
     anyhow::bail!("{}", t!("linuxFileSystemNotSupported", "folder" => folder.display()))
 }
 
-/// Mount points listed by the kernel (also bind mounts on the same device).
+/// Mount points listed by the kernel (also bind mounts on the same device), read at most every
+/// few seconds (a walk asks for every folder).
 fn mount_points() -> Vec<PathBuf> {
+    static CACHE: std::sync::Mutex<Option<(std::time::Instant, Vec<PathBuf>)>> =
+        std::sync::Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, points)) = cache.as_ref() {
+        if at.elapsed() < Duration::from_secs(5) {
+            return points.clone();
+        }
+    }
+    let points = read_mount_points();
+    *cache = Some((std::time::Instant::now(), points.clone()));
+    points
+}
+
+fn read_mount_points() -> Vec<PathBuf> {
     let Ok(text) = std::fs::read_to_string("/proc/self/mountinfo") else {
         return Vec::new();
     };
@@ -226,7 +241,8 @@ impl LocalFileInfo {
         let Some(now) = LocalStamp::of_path(path) else {
             return Ok(Self::missing());
         };
-        let row = match (INVENTORY.get(), path.to_str()) {
+        let inventory = INVENTORY.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let row = match (inventory, path.to_str()) {
             (Some(inventory), Some(text)) => inventory.query_by_path(text)?,
             _ => None,
         };

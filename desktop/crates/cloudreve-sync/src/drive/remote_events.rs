@@ -330,6 +330,19 @@ impl Mount {
         {
             return false;
         }
+        if self.is_ignored(to).await || self.is_ignored(from).await {
+            return false;
+        }
+        // Only an unchanged synced file or a synced folder, and no rows under the new name:
+        // anything else is left to the sync of both names (no notice needed).
+        let info = crate::drive::local::LocalFileInfo::from_path(from).unwrap_or_else(|_| crate::drive::local::LocalFileInfo::missing());
+        let synced = info.is_placeholder() && (info.is_directory || info.in_sync());
+        let rows_at_target = to
+            .to_str()
+            .is_some_and(|text| self.inventory.has_rows_at_or_under(text).unwrap_or(true));
+        if !synced || rows_at_target {
+            return false;
+        }
         let target_free = std::fs::symlink_metadata(to).is_err();
         let parent_here = to.parent().is_some_and(|parent| parent.is_dir());
         if !same_file || !target_free || !parent_here {

@@ -67,6 +67,10 @@ pub struct UploadTask<'a> {
     progress_map: Arc<DashMap<String, TaskProgress>>,
     /// Fylvo: size and last write time of the file when its upload started.
     started: Option<ContentState>,
+    /// Fylvo (Linux): the file's state when its upload started, with the inode. It becomes the
+    /// local state of the row when the upload is done and the file did not change meanwhile.
+    #[cfg(target_os = "linux")]
+    started_stamp: Option<crate::drive::local_linux::LocalStamp>,
     /// Fylvo: the file changed while it was uploaded; it needs another upload.
     changed_meanwhile: bool,
 }
@@ -93,6 +97,8 @@ impl<'a> UploadTask<'a> {
             cancel_token: CancellationToken::new(),
             progress_map,
             started: None,
+            #[cfg(target_os = "linux")]
+            started_stamp: None,
             changed_meanwhile: false,
         }
     }
@@ -178,6 +184,11 @@ impl<'a> UploadTask<'a> {
             info.file_size = Some(started.0);
             info.last_modified = Some(started.1);
             self.started = Some(started);
+            #[cfg(target_os = "linux")]
+            {
+                self.started_stamp =
+                    crate::drive::local_linux::LocalStamp::of_path(&self.task.payload.local_path);
+            }
         }
 
         // Handle empty files and directories separately
@@ -469,7 +480,14 @@ impl<'a> UploadTask<'a> {
         // times in a row at most (a file written to all the time would else make versions
         // without end; after that the sync tries it again later).
         let path = &self.task.payload.local_path;
-        if self.started.is_some() && content_state(path) != self.started {
+        // Fylvo (Linux): also replaced by another file with the same size and time (a new
+        // inode) counts as changed.
+        #[cfg(target_os = "linux")]
+        let replaced = self.started.is_some()
+            && crate::drive::local_linux::LocalStamp::of_path(path) != self.started_stamp;
+        #[cfg(not(target_os = "linux"))]
+        let replaced = false;
+        if self.started.is_some() && (content_state(path) != self.started || replaced) {
             self.local_file
                 .as_ref()
                 .unwrap()
@@ -488,6 +506,12 @@ impl<'a> UploadTask<'a> {
         // Fylvo: noted as just uploaded before it is marked in sync, so a delayed delete event
         // handled in between never takes the in-sync file for one the sync put back.
         forget_uploads(path);
+        // Fylvo (Linux): the uploaded content is the file as it was at the start.
+        #[cfg(target_os = "linux")]
+        if let Some(stamp) = self.started_stamp {
+            let placeholder = self.local_file.take().unwrap().with_local_stamp(stamp);
+            self.local_file = Some(placeholder);
+        }
         if let Err(err) = self.local_file.as_mut().unwrap().commit(self.inventory.clone()) {
             // Fylvo: the server has the new version either way. Without it in the inventory
             // the next upload would name the old one and conflict with this PC's own upload.
@@ -537,7 +561,7 @@ static RECENT: Mutex<Option<HashMap<String, Recent>>> = Mutex::new(None);
 
 fn with_recent<T>(path: &Path, f: impl FnOnce(&mut Recent) -> T) -> T {
     let mut recent = RECENT.lock().unwrap();
-    let key = crate::drive::case::ntfs_fold(&path.to_string_lossy());
+    let key = crate::drive::case::disk_key(&path.to_string_lossy());
     f(recent.get_or_insert_with(HashMap::new).entry(key).or_default())
 }
 
@@ -557,7 +581,7 @@ fn forget_uploads(path: &Path) {
             || entry.uploaded_at.is_some_and(|at| at.elapsed() < UPLOADED_RECENTLY)
     });
     recent.insert(
-        crate::drive::case::ntfs_fold(&path.to_string_lossy()),
+        crate::drive::case::disk_key(&path.to_string_lossy()),
         Recent {
             uploaded_at: Some(Instant::now()),
             ..Default::default()
@@ -665,8 +689,8 @@ mod tests {
         assert!(!failed_recently(path));
         note_failure(path);
         assert!(failed_recently(path));
-        // The sync may ask with the server's spelling.
-        assert!(failed_recently(Path::new(r"C:\S\Failed.TXT")));
+        // The sync may ask with the server's spelling (one file on Windows, another on Linux).
+        assert_eq!(failed_recently(Path::new(r"C:\S\Failed.TXT")), cfg!(windows));
         forget_uploads(path);
         assert!(!failed_recently(path));
     }
@@ -677,7 +701,7 @@ mod tests {
         assert!(!uploaded_recently(path));
         forget_uploads(path);
         assert!(uploaded_recently(path));
-        assert!(uploaded_recently(Path::new(r"C:\S\book.XLSX")));
+        assert_eq!(uploaded_recently(Path::new(r"C:\S\book.XLSX")), cfg!(windows));
     }
 
     #[test]
