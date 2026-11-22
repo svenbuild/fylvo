@@ -13,10 +13,6 @@ official page.
 
 ## Before you start
 
-- The Fylvo server finds rclone (version 1.74.3 or newer): it uses `rclone` from `PATH`, or
-  the program named in the environment variable `FYLVO_RCLONE_PATH`. Without it, the admin
-  panel shows connected storage as not available. If you limit the memory of the container,
-  allow 640 MB instead of 512 MB: rclone needs about 65 to 130 MB while it is in use.
 - A Google account that may create Google Cloud projects. A private account always may; a
   school or company account only if its admin allows it.
 - Your Fylvo runs with https under a public domain name, for example `https://cloud.example.com`.
@@ -40,6 +36,13 @@ official page.
 needed. Google plans to charge for use above its free
 [limits](https://developers.google.com/workspace/drive/api/guides/limits) from later in 2026,
 with at least 90 days notice.
+
+## rclone on the server
+
+Fylvo reaches connected storage through rclone (version 1.74.3 or newer). It uses `rclone`
+from `PATH`, or the program named in the environment variable `FYLVO_RCLONE_PATH`. Without
+it, the admin panel shows connected storage as not available. If you limit the memory of the
+container, allow 640 MB instead of 512 MB: rclone needs about 65 to 130 MB while it is in use.
 
 ## 1. Create a project
 
@@ -123,7 +126,9 @@ secret** (starts with `GOCSPX-`). Copy both now: Google shows the secret only th
 1. Sign in to Fylvo as admin, open the admin panel, section **Connected storage**.
 2. Under **Google Drive**, paste the client ID and the client secret, and save.
 
-To test, open your own settings, tab **Connected storage**, and connect a Google account.
+To test, open your own settings, tab **Connected storage**, and click to connect. Sign in
+at Google and allow access. Back in Fylvo, confirm the connection: the drive appears as
+a folder next to your own files.
 
 ## The warning page
 

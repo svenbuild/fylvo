@@ -20,10 +20,6 @@ on an official page.
   ```
 
   Fylvo also shows it in the admin panel, ready to copy.
-- The Fylvo server finds rclone (version 1.74.3 or newer): it uses `rclone` from `PATH`, or
-  the program named in the environment variable `FYLVO_RCLONE_PATH`. Without it, the admin
-  panel shows connected storage as not available. If you limit the memory of the container,
-  allow 640 MB instead of 512 MB: rclone needs about 65 to 130 MB while it is in use.
 - A Microsoft directory (Entra ID tenant). Since June 2024, Microsoft only accepts new app
   registrations inside a directory; a plain personal Microsoft account is not enough. If you
   have none, step 1 creates one.
@@ -34,6 +30,13 @@ number, an address and a credit card. Microsoft books a temporary authorization 
 After 30 days the Azure services of the trial switch off. The directory and the app
 registration are not Azure services and should keep working. *Not confirmed on an official
 page.* Microsoft may block directories that stay unused for a long time.
+
+## rclone on the server
+
+Fylvo reaches connected storage through rclone (version 1.74.3 or newer). It uses `rclone`
+from `PATH`, or the program named in the environment variable `FYLVO_RCLONE_PATH`. Without
+it, the admin panel shows connected storage as not available. If you limit the memory of the
+container, allow 640 MB instead of 512 MB: rclone needs about 65 to 130 MB while it is in use.
 
 ## 1. Get a directory
 
@@ -105,7 +108,9 @@ Microsoft's default settings let only an admin approve them.
 1. Sign in to Fylvo as admin, open the admin panel, section **Connected storage**.
 2. Under **OneDrive**, paste the client ID (step 2) and the secret value (step 4), and save.
 
-To test, open your own settings, tab **Connected storage**, and connect a Microsoft account.
+To test, open your own settings, tab **Connected storage**, and click to connect. Sign in
+at Microsoft and allow access. Back in Fylvo, confirm the connection: the drive appears as
+a folder next to your own files.
 
 ## What users see
 
