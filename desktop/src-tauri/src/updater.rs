@@ -227,37 +227,57 @@ async fn run(
         s.target = Some(short(release.version));
     });
     let mut release = release;
-    let mut path = None;
-    // A release replaced between the check and the download: ask once more.
-    for _ in 0..2 {
-        match fylvo_update::download(&http, &server, &platform, &release, &updater.dir).await? {
-            Downloaded::File(p) => {
-                path = Some(p);
-                break;
-            }
-            Downloaded::Gone => match fylvo_update::latest(&http, &server, &platform).await? {
-                Some(r) if fylvo_update::is_newer(r.version, running) => release = r,
-                _ => {
-                    set_status(|s| s.phase = "up_to_date");
-                    return Ok(());
-                }
-            },
+    let path = match download_release(&http, &server, &platform, &mut release, running, &updater.dir).await {
+        Ok(Some(path)) => path,
+        Ok(None) => {
+            set_status(|s| s.phase = "up_to_date");
+            return Ok(());
         }
-    }
-    let path = path.ok_or_else(|| anyhow::anyhow!("the release changed during the download"))?;
+        Err(e) => {
+            report_failure(&updater.dir, release.version, &e);
+            return Err(e);
+        }
+    };
 
     let result = install(app, updater, drives, running, &release, path, manual).await;
     if let Err(e) = &result {
-        // Not tried again for a day, unless the user asks.
-        let mut state = State::load(&updater.dir);
-        state.failed = Some(fylvo_update::state::Failed { version: release.version, at: now() });
-        let _ = state.save(&updater.dir);
-        cloudreve_sync::utils::toast::send_warning_toast(
-            &t!("updateFailedTitle"),
-            &t!("updateFailedMessage", version = short(release.version), reason = e.to_string()),
-        );
+        report_failure(&updater.dir, release.version, e);
     }
     result
+}
+
+/// Downloads the release; a release replaced between the check and the download is asked for
+/// once more. `None`: nothing newer is published any more.
+async fn download_release(
+    http: &reqwest::Client,
+    server: &Server,
+    platform: &Platform,
+    release: &mut Release,
+    running: Version,
+    dir: &std::path::Path,
+) -> anyhow::Result<Option<PathBuf>> {
+    for _ in 0..2 {
+        match fylvo_update::download(http, server, platform, release, dir).await? {
+            Downloaded::File(path) => return Ok(Some(path)),
+            Downloaded::Gone => match fylvo_update::latest(http, server, platform).await? {
+                Some(r) if fylvo_update::is_newer(r.version, running) => *release = r,
+                _ => return Ok(None),
+            },
+        }
+    }
+    anyhow::bail!("the release changed during the download")
+}
+
+/// A found update did not install: one notification, and not tried again for a day unless the
+/// user asks.
+fn report_failure(dir: &std::path::Path, version: Version, error: &anyhow::Error) {
+    let mut state = State::load(dir);
+    state.failed = Some(fylvo_update::state::Failed { version, at: now() });
+    let _ = state.save(dir);
+    cloudreve_sync::utils::toast::send_warning_toast(
+        &t!("updateFailedTitle"),
+        &t!("updateFailedMessage", version = short(version), reason = format!("{error:#}")),
+    );
 }
 
 /// The first signed-in drive whose server has a release for this platform.
@@ -395,7 +415,7 @@ async fn install(
         tracing::error!(target: "updater", error = %e, "Registering the update failed");
         let mut state = State::load(&updater.dir);
         if let Some(installing) = state.installing.as_mut() {
-            installing.error = Some(e.to_string());
+            installing.error = Some(format!("{e:#}"));
             let _ = state.save(&updater.dir);
         }
     }

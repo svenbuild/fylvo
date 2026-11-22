@@ -12,7 +12,8 @@
 #   <platform>/<sha256>.pkg   the package, named after its checksum, never changed afterwards
 #   <platform>/release.json   {"version","sha256","size","file_name"}, replaced last in one step
 # Older packages of the platform are removed afterwards. A copy of every published package is
-# kept on the PC (FYLVO_DESKTOP_KEEP), for a manual repair with an older good version.
+# kept on the PC afterwards (FYLVO_DESKTOP_KEEP), for a manual repair with an older good
+# version.
 #
 # One-time setup on the NAS (the data folder belongs to root), with the ssh user as owner:
 #   sudo install -d -o core -g admin -m 755 /srv/fylvo/data/desktop
@@ -116,10 +117,6 @@ if [ -n "$OLD" ] && [ "$(newer "$VERSION" "$OLD")" != "1" ]; then
 fi
 echo "Published so far: ${OLD:-nothing}"
 
-# Keep a copy on the PC first.
-mkdir -p "$KEEP"
-cp -f "$FILE" "$KEEP/$NAME_OUT"
-
 # Copy, check, then switch over in one step.
 remote "mkdir -p '$DIR' 2>/dev/null; [ -d '$DIR' ] && [ -w '$DIR' ]" ||
   fail "$DIR is missing or not writable, see the one-time setup at the top of this script"
@@ -147,4 +144,7 @@ remote "set -e; cd '$DIR'
   mv -f .release.json.tmp release.json
   for f in *.pkg; do [ \"\$f\" = '$SHA.pkg' ] || rm -f -- \"\$f\"; done
   ls -l"
+# Keep a copy on the PC, only of what was really published.
+mkdir -p "$KEEP"
+cp -f "$FILE" "$KEEP/$NAME_OUT"
 echo "Published $VERSION for $PLATFORM (copy in $KEEP/$NAME_OUT)."
