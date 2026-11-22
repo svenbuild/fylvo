@@ -1,9 +1,8 @@
 # Fylvo: Anpassung (Seitenleiste, Favoriten, Tags, Startseite, Ansicht, Aussehen)
 
-Stand 2026-11-22 (Fassung 4, nach Plan-Review Runde 3). Auftrag des Betreibers: mehr Anpassung auf Web
-und Handy. Ideenkatalog mit dem Betreiber abgestimmt, alle vier Bündel gewählt.
+Stand 2026-11-22. Ziel: mehr Anpassung auf Web und Handy.
 
-## Entscheide des Betreibers (2026-11-22)
+## Entscheide (2026-11-22)
 
 1. Gebaut wird: Seitenleiste frei zusammenstellen, Favoriten (Stern), Farben und Tags sichtbar
    machen, Startseite, Ansicht (Dichte, Standard-Ansicht und Sortierung), Aussehen (hell, dunkel,
@@ -12,7 +11,7 @@ und Handy. Ideenkatalog mit dem Betreiber abgestimmt, alle vier Bündel gewählt
    Bildschirm abhängt (Breite der Seitenleiste, Ordnerbaum auf- und zugeklappt) bleibt pro Gerät.
 3. Tags und Ordnerfarben bleiben wie heute an der Datei und für Freigabe-Empfänger sichtbar.
    Favoriten sind privat.
-4. Handy (eigener Thread, baut auf dieser Schnittstelle): Reiter unten wählbar und sortierbar,
+4. Handy (wird separat gebaut, auf dieser Schnittstelle): Reiter unten wählbar und sortierbar,
    Wischgesten belegbar, Schnellzugriffe am App-Symbol und Widget, Teilen in Fylvo mit Zielordner.
 
 ## Grundsätze
@@ -87,14 +86,15 @@ angehefteten Ordner):
     `hidden` bei allen ausser `link` und `heading` (die werden gelöscht).
     Feste Typen höchstens einmal, `category` einmal pro Kategorie. `favorites` und `tags` zeigen die
     Apps nur, wenn es welche gibt. Neu gespeichert: höchstens 100 Einträge, Name höchstens 64
-    Zeichen; alte angeheftete Einträge werden ohne diese Grenzen übernommen. Links: jede gültige
+    Zeichen. Die Grenzen gelten nur für neue oder umbenannte Einträge: ein Link, der unverändert
+    schon in `pined` steht, darf sie überschreiten, damit Verschieben und Ausblenden immer gehen. Links: jede gültige
     Fylvo-Adresse (wie heute beim Anheften), normalisiert wie dort (`uri.String()`), jede Adresse
     nur einmal; eine Verknüpfung gibt keinen Zugriff, sie wird beim Öffnen normal geprüft.
-  - Verbundene Speicher (Thread `fylvo/connected-storage`, kommt später): der Server bekommt eine
-    Stelle, die die verbundenen Speicher des Kontos liefert (heute leer). Beim Lesen gleicht er die
-    Seitenleiste damit ab: neue Speicher kommen sichtbar ans Ende, entfernte fallen weg, sonst
-    bleiben Reihenfolge und `hidden` wie gespeichert. Dasselbe gilt für Reiter und Startseite am
-    Handy, sobald sie solche Einträge kennen.
+  - Verbundene Speicher (kommen später): der Server bekommt eine Stelle, die die verbundenen
+    Speicher des Kontos liefert (heute leer). Beim Lesen gleicht er die Seitenleiste damit ab: neue
+    Speicher kommen sichtbar ans Ende, entfernte fallen weg, sonst bleiben Reihenfolge und `hidden`
+    wie gespeichert. Beim Speichern fallen `connected`-Einträge mit unbekannter `id` still weg.
+    Reiter und Startseite am Handy gleicht die Handy-App selbst ab (der Server liest `mobile` nicht).
   - `home.widgets[].type`: `recent`, `favorites`, `links` (Verknüpfungen der Seitenleiste), `tags`,
     `storage`; je höchstens einmal, `hidden` erlaubt.
   - `start_page`: `""` (Standard: jede App wie heute, Web in "Meine Dateien", Handy auf "Home"),
@@ -102,18 +102,19 @@ angehefteten Ordner):
   - `view.density`: `compact` (heute), `normal`, `comfortable`; gespeichert in `fylvo_prefs`, gilt
     nur in den Apps, das einzige schreibbare Feld von `view`. `view.layout` (`list|grid|gallery`),
     `view.sort_by` (`name|size|updated_at|created_at`), `view.sort_direction` (`asc|desc`): nur
-    lesen, siehe "Ansicht" unten.
+    lesen (im `PATCH`: Fehler `40001`), siehe "Ansicht" unten.
   - `appearance.mode`: `system|light|dark`, gespeichert in `fylvo_prefs`.
     `appearance.accent`: ein Schlüssel aus den Farbthemen der Seite (`themes` in `site/basic`,
     Einstellung `theme_options`), gespeichert nur im bestehenden Feld `preferred_theme`. Ist dort
     nichts oder ein unbekannter Schlüssel, liefert `GET` den Standard der Seite. Beide Felder sind
     unabhängig: wer nur die Farbe ändert, speichert keinen Modus.
   - `mobile`: freies JSON-Objekt für die Handy-App (Reiter, Wischgesten), höchstens 8 KB. Der Server
-    prüft nur, dass es ein Objekt ist, und die Grösse. Das Format legt der Handy-Thread fest.
+    prüft nur, dass es ein Objekt ist, und die Grösse. Das Format legt die Handy-App fest.
   - `favorites`: nur lesen, Hash-IDs der Favoriten (wie `id` in Datei-Antworten), neuester zuerst.
     Damit zeigen die Apps den Stern, ohne die Liste aufzulösen.
   - `customized`: nur lesen, Namen der gespeicherten Teile (`sidebar`, `home`, `start_page`,
-    `density`, `mode`, `mobile`). Die Web-App nimmt hell/dunkel nur dann vom Konto, wenn `mode`
+    `density`, `mode`, `mobile`, und `view`, wenn die Wurzel "Meine Dateien" eine eigene Ansicht
+    hat). Die Web-App nimmt hell/dunkel nur dann vom Konto, wenn `mode`
     darin steht, sonst wie heute aus dem Browser.
 - Standard ohne gespeicherte Seitenleiste: wie heute (Meine Dateien, vier Kategorien, Geteilt mit
   mir, Papierkorb), dazu `home` (aus), `favorites`, `tags`, und alle bestehenden angehefteten
@@ -189,12 +190,15 @@ Kein neuer Mechanismus: Ordner erben ihre Ansicht schon heute vom nächsten übe
 mit eigener Ansicht, sonst gilt die feste Standard-Ansicht (`getDefaultView`, Raster). Die
 "Standard-Ansicht" in `prefs.view` ist darum die Ansicht der Wurzel "Meine Dateien" (`Props.View`
 des Wurzelordners): `GET` liest sie (fehlt sie, die feste), `PATCH` schreibt sie über den
-bestehenden Weg: `PATCH /file/view` auf `cloudreve://my` mit der ganzen Ansicht (wie die Web-App
-es heute schon tut). `prefs` schreibt die Ansicht nicht selbst, damit es nur einen Schreiber gibt.
-Ordner mit eigener Ansicht behalten sie. Hat das Konto `disable_view_sync` an, gibt es keine
-Konto-Ansicht; die Einstellungsseite zeigt die Auswahl dann nicht. Am Handy (Android-Thread): die App
-schickt heute ihre eigene Sortierung mit; will sie der Konto-Ansicht folgen, lässt sie diese weg und
-liest `view` aus der Antwort der Liste.
+bestehenden Weg: `PATCH /file/view` auf `cloudreve://my`. Dafür holt die App zuerst die ganze
+Ansicht aus einer Liste von `cloudreve://my`, ändert nur Darstellung und Sortierung, füllt fehlende
+Felder mit den heutigen Standardwerten der Web-App (`order_direction` `asc`, `page_size` 100,
+`gallery_width` 110, `thumbnail` an) und schickt das ganze Objekt. `prefs` schreibt die Ansicht
+nicht selbst, damit es nur einen Schreiber gibt. Ordner mit eigener Ansicht behalten sie. Hat das
+Konto `disable_view_sync` an, enthält `view` nur `density`, `view` steht nicht in `customized`, und
+die Einstellungsseite zeigt die Auswahl nicht. Am Handy: die App behält ihre heutige Ansicht und
+Sortierung, solange `view` nicht in `customized` steht; sonst lässt sie ihre Sortierung in der
+Liste weg und folgt dem `view` aus der Antwort der Liste.
 
 ### Akzentfarben
 
@@ -204,7 +208,7 @@ je mit passender helleren Variante für den hellen Modus und sonst den heutigen 
 Bestehende Installationen: beim Start wird `theme_options` nur dann ersetzt, wenn der gespeicherte
 Wert als JSON gleich einem bekannten alten Fylvo-Standard ist (der heutige und der erste
 "navy"-Entwurf vor Commit `869204a3`); selbst geänderte Werte bleiben. Wenn das bei einer Instanz
-nicht greift, zeigt die Auswahl einfach weiter eine Farbe (kein Fehler); der Haupt-Thread kann den
+nicht greift, zeigt die Auswahl einfach weiter eine Farbe (kein Fehler); der Betreiber kann den
 Wert dann in der Verwaltung ersetzen.
 
 ### Gleichzeitige Änderungen
@@ -213,7 +217,8 @@ Eine Sperre im Prozess für das Feld `settings` (ein Server, SQLite). Neue Funkt
 `UpdateSettings(ctx, uid, change func(*types.UserSetting) error)`: Sperre, Zeile frisch lesen, nur
 die gewünschte Änderung anwenden, schreiben. Darüber laufen Anheften, Ansicht der Bereiche
 Papierkorb und Geteilt (`operation.go`), `PATCH /user/setting` und die neuen Routen. Die Sperre ist
-eine für alle Benutzer (einfach, die Schreibvorgänge sind kurz).
+eine für alle Benutzer (einfach, die Schreibvorgänge sind kurz). Langsame Prüfungen (z. B. die
+Adressen beim Markieren von Favoriten) laufen vor der Sperre; in der Sperre wird nur angehängt.
 Die zwei Stellen, die Passwort und Einstellungen in einer Anweisung schreiben, nehmen dieselbe Sperre
 und lesen die Einstellungen darin frisch: `SetOwnPassword` (Bedingung "altes Passwort" bleibt) und
 die Admin-Änderung (`Upsert` mit `passwordChangeSettings`; sie übernimmt alles ausser den Feldern, die
@@ -233,8 +238,10 @@ Knopf "Anpassen" öffnet einen Dialog: Einträge ziehen, Auge zum Ausblenden, Ve
 Seiten-Links darunter (Freigaben, Aufgaben, Verbinden, Verwaltung) bleiben.
 
 Etappe 3, Favoriten und Tags: Stern im Rechtsklick und in der Mehrfachauswahl, kleiner Stern neben
-dem Namen in der Liste. Kein Stern an Einträgen, die nicht gehen (Verknüpfungen auf öffentliche
-Links in "Geteilt mit mir", Papierkorb, Suchergebnisse aus Freigabe-Links). Seite `/favorites` als schlichte Liste (Klick: Ordner öffnen oder Datei im
+dem Namen in der Liste. Kein Stern in der Liste "Geteilt mit mir" (ihre Einträge haben teils eine
+andere ID als der Ordner, auf den sie zeigen), im Papierkorb und in öffentlichen Freigabe-Links.
+Einen gemeinsamen Ordner selbst markiert man in ihm über das Menü des aktuellen Ordners; darin
+funktioniert der Stern normal. Seite `/favorites` als schlichte Liste (Klick: Ordner öffnen oder Datei im
 Ordner zeigen). Tags in der Seitenleiste mit Farbe und Anzahl, Klick öffnet die Suche. "Farbe" als
 eigener Eintrag im Rechtsklick für Ordner (heute unter "Organisieren").
 
@@ -258,7 +265,7 @@ Jede Etappe ist für sich nutzbar und wird einzeln committet.
   Fylvo-Datenbank. In verbundenen Speichern gibt es sie nicht, und `/fylvo/tags` zählt sie nicht.
 - Seitenleiste, Startseite, Ansicht, Aussehen: hängen am Konto, gehen überall.
 
-## Handy (Grundlage für den Android-Thread)
+## Handy (Grundlage für die Handy-App)
 
 Liest `GET /fylvo/prefs` und benutzt `sidebar` (als Liste von Orten), `home`, `start_page` (leer:
 wie heute auf "Home"), `view` (siehe "Ansicht"), `appearance`, `favorites`.
@@ -283,7 +290,7 @@ setzen über `PATCH /file/metadata`. Akzentfarben aus `site/basic` `themes`.
   ausdrücklich (die Wurzel wird beim Öffnen der Freigabe geladen, vor der Option). Tag-Suche aus der
   Seitenleiste immer ab `cloudreve://my`, auch wenn gerade der Papierkorb offen ist; die Suche kann
   bei sehr vielen Ordnern an die eingestellte Grenze stossen und weniger zeigen als die Anzahl.
-- Review mit `rat`.
+- Code-Review.
 
 ## Nicht dabei
 
