@@ -85,70 +85,72 @@ const TreeNavigation = React.memo(
                     <TreeFiles level={0} path={base} elements={elements} />
                   </Collapse>
                 )}
-                {isLogin && index == FileManagerIndex.main && sidebarItems && (
-                  <CustomSidebar
-                    items={sidebarItems}
-                    elements={elements}
-                    currentFs={currentFs}
-                    pathRoot={base}
-                    disableSharedWithMe={disableSharedWithMe}
-                    disableTrash={disableTrash}
-                  />
-                )}
-                {isLogin && !(index == FileManagerIndex.main && sidebarItems) && (
-                  <>
-                    <TreeFiles
-                      canDrop
-                      level={0}
-                      path={defaultPath}
-                      key={defaultPath}
-                      elements={currentFs == Filesystem.my ? elements : undefined}
-                    />
-                    {index == FileManagerIndex.main && (
-                      <>
-                        <TreeFiles
-                          flatten
-                          level={0}
-                          path={"cloudreve://my/?category=image"}
-                          key={"cloudreve://my/?category=image"}
-                        />
-                        <TreeFiles
-                          flatten
-                          level={0}
-                          path={"cloudreve://my/?category=video"}
-                          key={"cloudreve://my/?category=video"}
-                        />
-                        <TreeFiles
-                          flatten
-                          level={0}
-                          path={"cloudreve://my/?category=audio"}
-                          key={"cloudreve://my/?category=audio"}
-                        />
-                        <TreeFiles
-                          flatten
-                          level={0}
-                          path={"cloudreve://my/?category=document"}
-                          key={"cloudreve://my/?category=document"}
-                        />
-                      </>
-                    )}
-                    {!disableSharedWithMe && (
-                      <TreeFiles level={0} path={defaultSharedWithMePath} key={defaultSharedWithMePath} />
-                    )}
-                    {!disableTrash && (
-                      <TreeFiles
-                        level={0}
-                        flatten
-                        canDrop
-                        key={defaultTrashPath}
-                        path={defaultTrashPath}
-                        elements={currentFs == Filesystem.trash ? elements : undefined}
-                      />
-                    )}
-                    <Pinned />
-                  </>
-                )}
               </TransitionGroup>
+              {/* Fylvo: outside the TransitionGroup, which would keep the old sidebar mounted when
+                  the account's arrangement arrives. */}
+              {isLogin && index == FileManagerIndex.main && sidebarItems && (
+                <CustomSidebar
+                  items={sidebarItems}
+                  elements={elements}
+                  currentFs={currentFs}
+                  pathRoot={base}
+                  disableSharedWithMe={disableSharedWithMe}
+                  disableTrash={disableTrash}
+                />
+              )}
+              {isLogin && !(index == FileManagerIndex.main && sidebarItems) && (
+                <>
+                  <TreeFiles
+                    canDrop
+                    level={0}
+                    path={defaultPath}
+                    key={defaultPath}
+                    elements={currentFs == Filesystem.my ? elements : undefined}
+                  />
+                  {index == FileManagerIndex.main && (
+                    <>
+                      <TreeFiles
+                        flatten
+                        level={0}
+                        path={"cloudreve://my/?category=image"}
+                        key={"cloudreve://my/?category=image"}
+                      />
+                      <TreeFiles
+                        flatten
+                        level={0}
+                        path={"cloudreve://my/?category=video"}
+                        key={"cloudreve://my/?category=video"}
+                      />
+                      <TreeFiles
+                        flatten
+                        level={0}
+                        path={"cloudreve://my/?category=audio"}
+                        key={"cloudreve://my/?category=audio"}
+                      />
+                      <TreeFiles
+                        flatten
+                        level={0}
+                        path={"cloudreve://my/?category=document"}
+                        key={"cloudreve://my/?category=document"}
+                      />
+                    </>
+                  )}
+                  {!disableSharedWithMe && (
+                    <TreeFiles level={0} path={defaultSharedWithMePath} key={defaultSharedWithMePath} />
+                  )}
+                  {!disableTrash && (
+                    <TreeFiles
+                      level={0}
+                      flatten
+                      canDrop
+                      key={defaultTrashPath}
+                      path={defaultTrashPath}
+                      elements={currentFs == Filesystem.trash ? elements : undefined}
+                    />
+                  )}
+                  <Pinned />
+                </>
+              )}
             </TreeView>
           </Fade>
         </Box>

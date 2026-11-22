@@ -146,8 +146,8 @@ func PatchPrefs(c *gin.Context, body map[string]json.RawMessage) (*PrefsResponse
 	return buildPrefs(c, dep, u, settings)
 }
 
-// ResetPrefs drops all saved parts except the phone's own (mobile) and the accent color. Links
-// stay, they are always kept in settings.pined; favorites and folder views stay as well.
+// ResetPrefs drops all saved parts except the phone's own (mobile) and clears the accent color.
+// Links stay, they are always kept in settings.pined; favorites and folder views stay as well.
 func ResetPrefs(c *gin.Context) (*PrefsResponse, error) {
 	dep := dependency.FromContext(c)
 	u := inventory.UserFromContext(c)
@@ -173,11 +173,17 @@ func ResetPrefs(c *gin.Context) (*PrefsResponse, error) {
 func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key string, raw json.RawMessage) (func(*types.UserSetting) error, error) {
 	switch key {
 	case "sidebar":
-		var sidebar SidebarPrefs
-		if err := strictUnmarshal(raw, &sidebar); err != nil {
-			return nil, paramError("invalid sidebar: %s", err)
+		// null drops the saved arrangement (back to the default); the links stay in pined.
+		if string(raw) == "null" {
+			return func(s *types.UserSetting) error { s.FylvoPrefs.Sidebar = nil; return nil }, nil
 		}
-		for _, item := range sidebar.Items {
+		var sidebar struct {
+			Items *[]types.FylvoSidebarItem `json:"items"`
+		}
+		if err := strictUnmarshal(raw, &sidebar); err != nil || sidebar.Items == nil {
+			return nil, paramError("sidebar needs a list of items")
+		}
+		for _, item := range *sidebar.Items {
 			if item.Type != SidebarLink {
 				continue
 			}
@@ -189,7 +195,8 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 		}
 		allowed := connectedSet(ConnectedStorages(ctx, dep, u))
 		return func(s *types.UserSetting) error {
-			items, err := checkSidebar(sidebar.Items, s.Pined, allowed)
+			previous := len(effectiveSidebar(s.FylvoPrefs.Sidebar, s.Pined, nil))
+			items, err := checkSidebar(*sidebar.Items, s.Pined, allowed, previous)
 			if err != nil {
 				return err
 			}
@@ -199,11 +206,16 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 		}, nil
 
 	case "home":
-		var home HomePrefs
-		if err := strictUnmarshal(raw, &home); err != nil {
-			return nil, paramError("invalid home: %s", err)
+		if string(raw) == "null" {
+			return func(s *types.UserSetting) error { s.FylvoPrefs.Home = nil; return nil }, nil
 		}
-		widgets, err := checkHome(home.Widgets)
+		var home struct {
+			Widgets *[]types.FylvoHomeWidget `json:"widgets"`
+		}
+		if err := strictUnmarshal(raw, &home); err != nil || home.Widgets == nil {
+			return nil, paramError("home needs a list of widgets")
+		}
+		widgets, err := checkHome(*home.Widgets)
 		if err != nil {
 			return nil, err
 		}
@@ -279,9 +291,11 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 	return nil, paramError("unknown or read-only field %q", key)
 }
 
-// checkSidebar validates a sidebar sent by an app and normalizes its links. Links that are
-// already pinned unchanged may break the limits, so old pins never block a change.
-func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, connected map[string]bool) ([]types.FylvoSidebarItem, error) {
+// checkSidebar validates a sidebar sent by an app and normalizes its links. Old pins may break
+// the limits (a long name, more entries than allowed), so they never block a change; a sidebar
+// may only not grow beyond the limit or beyond what it had.
+func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, connected map[string]bool,
+	previous int) ([]types.FylvoSidebarItem, error) {
 	legacy := make(map[types.PinedFile]bool, len(pined))
 	for _, p := range pined {
 		legacy[p] = true
@@ -289,7 +303,6 @@ func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, conne
 
 	result := make([]types.FylvoSidebarItem, 0, len(items))
 	seen := make(map[string]bool)
-	newCount := 0
 	for _, item := range items {
 		key := item.Type
 		switch item.Type {
@@ -309,7 +322,6 @@ func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, conne
 			item = types.FylvoSidebarItem{Type: item.Type, Uri: uri.String(), Name: item.Name}
 			key += ":" + item.Uri
 			if !legacy[types.PinedFile{Uri: item.Uri, Name: item.Name}] {
-				newCount++
 				if utf8.RuneCountInString(item.Name) > nameMaxLength {
 					return nil, paramError("link name is longer than %d characters", nameMaxLength)
 				}
@@ -320,7 +332,6 @@ func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, conne
 			}
 			item = types.FylvoSidebarItem{Type: item.Type, Name: item.Name}
 			key = ""
-			newCount++
 		case SidebarConnected:
 			if !connected[item.ID] {
 				continue // a storage that is gone (or not there yet) is dropped
@@ -340,7 +351,7 @@ func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, conne
 		result = append(result, item)
 	}
 
-	if newCount > sidebarMaxItems || len(result) > sidebarMaxItems+len(pined) {
+	if len(result) > max(sidebarMaxItems, previous) {
 		return nil, paramError("the sidebar can have at most %d entries", sidebarMaxItems)
 	}
 
@@ -508,7 +519,6 @@ func buildPrefs(ctx context.Context, dep dependency.Dep, u *ent.User, s *types.U
 		View:       ViewPrefs{Density: "compact"},
 		Appearance: AppearancePrefs{Mode: "system"},
 		Mobile:     json.RawMessage("{}"),
-		Favorites:  []string{},
 		Customized: []string{},
 	}
 
@@ -564,12 +574,17 @@ func buildPrefs(ctx context.Context, dep dependency.Dep, u *ent.User, s *types.U
 		}
 	}
 
-	hasher := dep.HashIDEncoder()
-	for i := len(s.FylvoFavorites) - 1; i >= 0; i-- {
-		res.Favorites = append(res.Favorites, hashid.EncodeFileID(hasher, s.FylvoFavorites[i].FileID))
-	}
-
+	res.Favorites = favoriteIDs(dep, s)
 	return res, nil
+}
+
+// favoriteIDs returns the hash IDs of the favorites, newest first.
+func favoriteIDs(dep dependency.Dep, s *types.UserSetting) []string {
+	ids := make([]string, 0, len(s.FylvoFavorites))
+	for i := len(s.FylvoFavorites) - 1; i >= 0; i-- {
+		ids = append(ids, hashid.EncodeFileID(dep.HashIDEncoder(), s.FylvoFavorites[i].FileID))
+	}
+	return ids
 }
 
 func strictUnmarshal(raw json.RawMessage, v any) error {

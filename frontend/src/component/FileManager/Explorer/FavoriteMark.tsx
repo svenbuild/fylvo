@@ -3,11 +3,14 @@ import { useTranslation } from "react-i18next";
 import { FileResponse } from "../../../api/explorer.ts";
 import { useAppSelector } from "../../../redux/hooks.ts";
 import StarFilled from "../../Icons/StarFilled.tsx";
+import { canBeFavorite } from "../../../redux/thunks/fylvo.ts";
 
 // Fylvo: a small star next to the name of a favorite.
 const FavoriteMark = ({ file }: { file: FileResponse }) => {
   const { t } = useTranslation("application");
-  const favorite = useAppSelector((state) => !!state.fylvo.prefs?.favorites.includes(file.id));
+  const shareInfo = useAppSelector((state) => state.globalState.shareInfo);
+  const favorite =
+    useAppSelector((state) => !!state.fylvo.prefs?.favorites.includes(file.id)) && canBeFavorite(file, shareInfo);
   if (!favorite) {
     return null;
   }

@@ -30,8 +30,9 @@ type (
 
 	// FylvoPrefs holds only the parts the person saved; a nil field falls back to the default.
 	FylvoPrefs struct {
-		Sidebar   []FylvoSidebarItem `json:"sidebar,omitempty"`
-		Home      []FylvoHomeWidget  `json:"home,omitempty"`
+		// No omitempty: an empty list someone saved stays an empty list (nil is stored as null).
+		Sidebar   []FylvoSidebarItem `json:"sidebar"`
+		Home      []FylvoHomeWidget  `json:"home"`
 		StartPage *string            `json:"start_page,omitempty"`
 		Density   string             `json:"density,omitempty"`
 		Mode      string             `json:"mode,omitempty"`

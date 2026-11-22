@@ -1,12 +1,12 @@
-import { DragIndicator } from "@mui/icons-material";
+import { ArrowDownward, ArrowUpward, DragIndicator } from "@mui/icons-material";
 import { Box, DialogContent, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SidebarItem } from "../../../api/fylvo.ts";
 import { raisedHoverSurface } from "../../../fylvoTheme.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { selectPath } from "../../../redux/thunks/dialog.ts";
-import { loadTags, resetPrefs, savePrefs } from "../../../redux/thunks/fylvo.ts";
+import { loadTags, savePrefs } from "../../../redux/thunks/fylvo.ts";
 import { FilledTextField, SecondaryButton } from "../../Common/StyledComponents.tsx";
 import DraggableDialog from "../../Dialogs/DraggableDialog.tsx";
 import Dismiss from "../../Icons/Dismiss.tsx";
@@ -61,7 +61,11 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
   const label = useSidebarLabel();
   const prefs = useAppSelector((state) => state.fylvo.prefs);
   const tags = useAppSelector((state) => state.fylvo.tags);
-  const [items, setItems] = useState<SidebarItem[]>([]);
+  // Each row keeps its own key, so editing a name or moving a row does not remount it.
+  const [rows, setRows] = useState<{ key: number; item: SidebarItem }[]>([]);
+  const nextKey = useRef(0);
+  const toRows = (list: SidebarItem[]) => list.map((item) => ({ key: nextKey.current++, item }));
+  const items = rows.map((r) => r.item);
   const [dragging, setDragging] = useState<number | undefined>();
   const [heading, setHeading] = useState("");
   const [tagMenu, setTagMenu] = useState<HTMLElement | null>(null);
@@ -69,14 +73,14 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
 
   useEffect(() => {
     if (open && prefs) {
-      setItems(prefs.sidebar.items);
+      setRows(toRows(prefs.sidebar.items));
       dispatch(loadTags());
     }
   }, [open]);
 
   const move = (from: number, to: number) => {
-    if (from == to) return;
-    setItems((current) => {
+    if (from == to || to < 0 || to >= rows.length) return;
+    setRows((current) => {
       const next = [...current];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
@@ -85,12 +89,17 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
   };
 
   const update = (index: number, change: Partial<SidebarItem>) =>
-    setItems((current) => current.map((item, i) => (i == index ? { ...item, ...change } : item)));
+    setRows((current) => current.map((r, i) => (i == index ? { ...r, item: { ...r.item, ...change } } : r)));
 
-  const remove = (index: number) => setItems((current) => current.filter((_, i) => i != index));
+  const remove = (index: number) => setRows((current) => current.filter((_, i) => i != index));
 
-  const addLink = (item: SidebarItem) =>
-    setItems((current) => (current.some((i) => i.type == "link" && i.uri == item.uri) ? current : [...current, item]));
+  const add = (item: SidebarItem) => setRows((current) => [...current, { key: nextKey.current++, item }]);
+
+  const addLink = (item: SidebarItem) => {
+    if (!items.some((i) => i.type == "link" && i.uri == item.uri)) {
+      add(item);
+    }
+  };
 
   const addFolder = async () => {
     try {
@@ -101,7 +110,7 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
 
   const addHeading = () => {
     if (heading.trim()) {
-      setItems((current) => [...current, { type: "heading", name: heading.trim() }]);
+      add({ type: "heading", name: heading.trim() });
       setHeading("");
     }
   };
@@ -117,11 +126,12 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
     }
   };
 
+  // Only the sidebar goes back to the default (the links stay); it is saved at once.
   const reset = async () => {
     setLoading(true);
     try {
-      const prefs = await dispatch(resetPrefs());
-      setItems(prefs.sidebar.items);
+      const prefs = await dispatch(savePrefs({ sidebar: null }));
+      setRows(toRows(prefs.sidebar.items));
     } catch (e) {
     } finally {
       setLoading(false);
@@ -148,11 +158,11 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
           {t("customize.editSidebarHint")}
         </Typography>
         <Stack spacing={0.25}>
-          {items.map((item, index) => {
+          {rows.map(({ key, item }, index) => {
             const removable = item.type == "link" || item.type == "heading";
             return (
               <Box
-                key={index + item.type + (item.uri ?? item.category ?? item.name ?? "")}
+                key={key}
                 draggable
                 onDragStart={() => setDragging(index)}
                 onDragOver={(e) => {
@@ -184,6 +194,7 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
                     value={item.name ?? ""}
                     placeholder={item.type == "link" ? item.uri : ""}
                     onChange={(e) => update(index, { name: e.target.value })}
+                    inputProps={{ maxLength: 64 }}
                     sx={{ flexGrow: 1, "& input": { py: "4px", fontWeight: item.type == "heading" ? 600 : 400 } }}
                   />
                 ) : (
@@ -191,6 +202,12 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
                     {label(item)}
                   </Typography>
                 )}
+                <IconButton size="small" disabled={index == 0} onClick={() => move(index, index - 1)}>
+                  <ArrowUpward sx={{ fontSize: 16 }} />
+                </IconButton>
+                <IconButton size="small" disabled={index == rows.length - 1} onClick={() => move(index, index + 1)}>
+                  <ArrowDownward sx={{ fontSize: 16 }} />
+                </IconButton>
                 {removable ? (
                   <Tooltip title={t("customize.remove")}>
                     <IconButton size="small" onClick={() => remove(index)}>

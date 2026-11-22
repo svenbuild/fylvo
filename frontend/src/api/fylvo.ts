@@ -47,8 +47,9 @@ export interface Prefs {
 }
 
 export interface PrefsPatch {
-  sidebar?: { items: SidebarItem[] };
-  home?: { widgets: HomeWidget[] };
+  // null drops the saved part, back to the default.
+  sidebar?: { items: SidebarItem[] } | null;
+  home?: { widgets: HomeWidget[] } | null;
   start_page?: StartPage;
   view?: { density: Density };
   appearance?: { mode?: AppearanceMode; accent?: string };
@@ -84,11 +85,15 @@ export function getFavorites(): ThunkResponse<FavoritesResponse> {
   return async (dispatch) => dispatch(send("/fylvo/favorites", { method: "GET" }, defaultOpts));
 }
 
-export function sendAddFavorites(uris: string[]): ThunkResponse<Prefs> {
+export interface FavoriteIds {
+  favorites: string[];
+}
+
+export function sendAddFavorites(uris: string[]): ThunkResponse<FavoriteIds> {
   return async (dispatch) => dispatch(send("/fylvo/favorites", { method: "PUT", data: { uris } }, defaultOpts));
 }
 
-export function sendRemoveFavorites(ids: string[]): ThunkResponse<Prefs> {
+export function sendRemoveFavorites(ids: string[]): ThunkResponse<FavoriteIds> {
   return async (dispatch) => dispatch(send("/fylvo/favorites", { method: "DELETE", data: { ids } }, defaultOpts));
 }
 

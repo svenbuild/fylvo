@@ -30,6 +30,11 @@ const favoritesMax = 200
 var errFavoriteUnavailable = errors.New("favorite is not available")
 
 type (
+	// FavoriteIDsResponse is what a change of the favorites returns: the starred IDs, newest first.
+	FavoriteIDsResponse struct {
+		Favorites []string `json:"favorites"`
+	}
+
 	FavoritesResponse struct {
 		Files       []explorer.FileResponse `json:"files"`
 		Unavailable int                     `json:"unavailable"`
@@ -87,6 +92,25 @@ func (r *favoriteResolver) memberShares(ctx context.Context) (map[int]*ent.Share
 		}
 	}
 	return r.shares, nil
+}
+
+// isMemberShare tells whether the share with the given hash ID is a member-only share the user
+// belongs to.
+func (r *favoriteResolver) isMemberShare(ctx context.Context, hashID string) (bool, error) {
+	id, err := r.dep.HashIDEncoder().Decode(hashID, hashid.ShareID)
+	if err != nil {
+		return false, nil
+	}
+	shares, err := r.memberShares(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, share := range shares {
+		if share.ID == id {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // uri returns the address under which the user can open the file, or errFavoriteUnavailable.
@@ -198,7 +222,7 @@ func favoritesOf(u *ent.User) []types.FylvoFavorite {
 }
 
 // Add stars the given files. Every address must be one the user can open as owner or member.
-func (s *FavoritesAddService) Add(c *gin.Context) (*PrefsResponse, error) {
+func (s *FavoritesAddService) Add(c *gin.Context) (*FavoriteIDsResponse, error) {
 	dep := dependency.FromContext(c)
 	u := inventory.UserFromContext(c)
 	fm := manager.NewFileManager(dep, u)
@@ -215,6 +239,17 @@ func (s *FavoritesAddService) Add(c *gin.Context) (*PrefsResponse, error) {
 		fsType := uri.FileSystem()
 		if (fsType != constants.FileSystemMy && fsType != constants.FileSystemShare) || uri.SearchParameters() != nil {
 			return nil, paramError("this address cannot be a favorite: %q", raw)
+		}
+		// Through a share only when it is a shared folder the person is a member of, never a
+		// public link (even one to a file they could reach otherwise).
+		if fsType == constants.FileSystemShare {
+			member, err := r.isMemberShare(c, uri.ID(""))
+			if err != nil {
+				return nil, serializer.NewError(serializer.CodeDBError, "Failed to read shares", err)
+			}
+			if !member {
+				return nil, paramError("only files in shared folders you are a member of can be favorites: %q", raw)
+			}
 		}
 
 		f, err := fm.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityInfo))
@@ -248,7 +283,7 @@ func (s *FavoritesAddService) Add(c *gin.Context) (*PrefsResponse, error) {
 }
 
 // Remove unstars the given files (hash IDs as in prefs.favorites). Unknown IDs are ignored.
-func (s *FavoritesRemoveService) Remove(c *gin.Context) (*PrefsResponse, error) {
+func (s *FavoritesRemoveService) Remove(c *gin.Context) (*FavoriteIDsResponse, error) {
 	dep := dependency.FromContext(c)
 	u := inventory.UserFromContext(c)
 
@@ -269,7 +304,7 @@ func (s *FavoritesRemoveService) Remove(c *gin.Context) (*PrefsResponse, error) 
 // saveFavorites changes the stored list under the settings lock. Favorites of files that no
 // longer exist at all are dropped on the way.
 func saveFavorites(c *gin.Context, dep dependency.Dep, u *ent.User,
-	change func([]types.FylvoFavorite) ([]types.FylvoFavorite, error)) (*PrefsResponse, error) {
+	change func([]types.FylvoFavorite) ([]types.FylvoFavorite, error)) (*FavoriteIDsResponse, error) {
 	ids := make([]int, 0, len(favoritesOf(u)))
 	for _, f := range favoritesOf(u) {
 		ids = append(ids, f.FileID)
@@ -303,5 +338,5 @@ func saveFavorites(c *gin.Context, dep dependency.Dep, u *ent.User,
 	}
 
 	u.Settings = settings
-	return buildPrefs(c, dep, u, settings)
+	return &FavoriteIDsResponse{Favorites: favoriteIDs(dep, settings)}, nil
 }

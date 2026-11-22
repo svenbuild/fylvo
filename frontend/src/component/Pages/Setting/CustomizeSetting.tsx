@@ -32,12 +32,20 @@ const Choice = <T extends string>({
   value,
   options,
   onChange,
+  disabled,
 }: {
   value: T;
   options: [T, string][];
   onChange: (value: T) => void;
+  disabled?: boolean;
 }) => (
-  <ToggleButtonGroup size="small" exclusive value={value} onChange={(_e, v) => v !== null && onChange(v)}>
+  <ToggleButtonGroup
+    size="small"
+    exclusive
+    disabled={disabled}
+    value={value}
+    onChange={(_e, v) => v !== null && onChange(v)}
+  >
     {options.map(([v, label]) => (
       <ToggleButton key={v} value={v}>
         {label}
@@ -52,6 +60,9 @@ const CustomizeSetting = () => {
   const prefs = useAppSelector((state) => state.fylvo.prefs);
   const { themes } = useAppSelector((s) => s.siteConfig.basic.config);
   const [rootView, setRootView] = useState<ExplorerView | undefined>();
+  // The view of "My files" was read; until then (or if that failed) nothing is written over it.
+  const [rootViewRead, setRootViewRead] = useState(false);
+  const [savingView, setSavingView] = useState(false);
   const viewSync = !prefs || prefs.view.layout !== undefined;
 
   const themeKeys = useMemo(() => {
@@ -66,7 +77,10 @@ const CustomizeSetting = () => {
     dispatch(loadPrefs());
     // The stored view of "My files" (without page size or sort in the request, so nothing overrides it).
     dispatch(getFileList({ uri: defaultPath }))
-      .then((res) => setRootView(res.view))
+      .then((res) => {
+        setRootView(res.view);
+        setRootViewRead(true);
+      })
       .catch(() => {});
   }, []);
 
@@ -87,6 +101,8 @@ const CustomizeSetting = () => {
   // Writes the view of "My files", which every folder without its own view follows. Only layout
   // and sort change; missing fields are read the way the file list reads them.
   const saveView = async (change: Partial<ExplorerView>) => {
+    if (!rootViewRead || savingView) return;
+    setSavingView(true);
     const base = rootView ?? { page_size: 0 };
     const view: ExplorerView = {
       page_size: base.page_size || SessionManager.getWithFallback(UserSettings.PageSize),
@@ -101,8 +117,11 @@ const CustomizeSetting = () => {
     try {
       await dispatch(sendPatchViewSync({ uri: defaultPath, view }));
       setRootView(view);
-      dispatch(loadPrefs());
-    } catch (e) {}
+      await dispatch(loadPrefs());
+    } catch (e) {
+    } finally {
+      setSavingView(false);
+    }
   };
 
   return (
@@ -176,12 +195,14 @@ const CustomizeSetting = () => {
                 ["gallery", t("customize.layoutGallery")],
               ]}
               onChange={(layout) => saveView({ view: layout })}
+              disabled={!rootViewRead || savingView}
             />
             <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", rowGap: 1 }}>
               <Choice<string>
                 value={prefs.view.sort_by ?? "created_at"}
                 options={sortOptions.map((o) => [o, t(`customize.sort_${o}`)] as [string, string])}
                 onChange={(order) => saveView({ order })}
+                disabled={!rootViewRead || savingView}
               />
               <Choice<string>
                 value={prefs.view.sort_direction ?? "asc"}
@@ -190,6 +211,7 @@ const CustomizeSetting = () => {
                   ["desc", t("customize.descending")],
                 ]}
                 onChange={(order_direction) => saveView({ order_direction })}
+                disabled={!rootViewRead || savingView}
               />
             </Stack>
             <Typography variant="caption" color="text.secondary">

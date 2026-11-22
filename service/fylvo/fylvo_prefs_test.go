@@ -127,6 +127,8 @@ func TestPrefsPatchRefusesInvalidValues(t *testing.T) {
 		`{"sidebar":{"items":[{"type":"link","uri":"cloudreve://my/a"},{"type":"link","uri":"cloudreve://my/a"}]}}`,
 		`{"home":{"widgets":[{"type":"weather"}]}}`,
 		`{"sidebar":{"items":[{"type":"link","uri":"cloudreve://abc@connected/Docs"}]}}`,
+		`{"sidebar":{}}`,
+		`{"home":{}}`,
 		// One valid and one invalid part: nothing is saved.
 		`{"start_page":"home","view":{"density":"huge"}}`,
 	} {
@@ -181,6 +183,22 @@ func TestPrefsSidebarKeepsPinsInStep(t *testing.T) {
 	require.NotContains(t, got, "link:cloudreve://my/A")
 	require.Equal(t, "link:cloudreve://my/C", got[len(got)-1])
 	require.Equal(t, "my_files", got[0])
+
+	// An empty list stays empty after a reload.
+	_, err = e.patch(e.member, `{"home":{"widgets":[]}}`)
+	require.NoError(t, err)
+	member, err := GetPrefs(e.as(e.reload(e.member)))
+	require.NoError(t, err)
+	require.Contains(t, member.Customized, "home")
+	for _, w := range member.Home.Widgets {
+		require.True(t, w.Hidden, w.Type)
+	}
+
+	// null drops the saved sidebar, the links stay.
+	res, err = e.patch(e.owner, `{"sidebar":null}`)
+	require.NoError(t, err)
+	require.NotContains(t, res.Customized, "sidebar")
+	require.Len(t, e.reload(e.owner).Settings.Pined, 2)
 
 	// Reset: the links stay, the rest is the default again.
 	res, err = ResetPrefs(e.as(e.reload(e.owner)))
@@ -281,7 +299,7 @@ func favoriteNames(res *FavoritesResponse) []string {
 	return out
 }
 
-func (e *activityEnv) star(u *ent.User, uris ...string) (*PrefsResponse, error) {
+func (e *activityEnv) star(u *ent.User, uris ...string) (*FavoriteIDsResponse, error) {
 	return (&FavoritesAddService{Uris: uris}).Add(e.as(e.reload(u)))
 }
 
@@ -338,9 +356,8 @@ func TestFavoritesOfAMember(t *testing.T) {
 	require.Equal(t, e.memberShare+"/doc.txt", paths[1])
 
 	// Not through a public link, not the owner's private files, not "shared with me" entries.
-	// (Through the public link the member gets the same file it already has as member: allowed,
-	// stored as the file, listed under the member address.)
-	for _, uri := range []string{"cloudreve://my/Private", "cloudreve://shared_with_me/x",
+	// Not through a public link, even to a file the member can reach as member.
+	for _, uri := range []string{e.link + "/doc.txt", "cloudreve://my/Private", "cloudreve://shared_with_me/x",
 		"cloudreve://my?name=doc", "cloudreve://my"} {
 		_, err := e.star(e.member, uri)
 		require.Error(t, err, uri)

@@ -51,6 +51,12 @@ export const fylvoSlice = createSlice({
     setTags: (state, action: PayloadAction<TagInfo[] | undefined>) => {
       state.tags = action.payload;
     },
+    setFavoriteIds: (state, action: PayloadAction<string[]>) => {
+      if (state.prefs) {
+        state.prefs.favorites = action.payload;
+        writeCachedPrefs(state.prefs);
+      }
+    },
     increaseFavoritesGeneration: (state) => {
       state.favoritesGeneration += 1;
     },
@@ -58,4 +64,4 @@ export const fylvoSlice = createSlice({
 });
 
 export default fylvoSlice.reducer;
-export const { setPrefs, setTags, increaseFavoritesGeneration } = fylvoSlice.actions;
+export const { setPrefs, setTags, setFavoriteIds, increaseFavoritesGeneration } = fylvoSlice.actions;
