@@ -1,6 +1,6 @@
 # Fylvo: Anpassung (Seitenleiste, Favoriten, Tags, Startseite, Ansicht, Aussehen)
 
-Stand 2026-11-22 (Fassung 2, nach Plan-Review Runde 1). Auftrag von Sven: mehr Anpassung auf Web
+Stand 2026-11-22 (Fassung 3, nach Plan-Review Runde 2). Auftrag von Sven: mehr Anpassung auf Web
 und Handy. Ideenkatalog mit Sven abgestimmt, alle vier Bündel gewählt.
 
 ## Entscheide von Sven (2026-11-22)
@@ -33,9 +33,11 @@ und Handy. Ideenkatalog mit Sven abgestimmt, alle vier Bündel gewählt.
 
 ## Schnittstelle am Server (neu, unter `/api/v4/fylvo`)
 
-Alle Routen: angemeldet. Lesen von `prefs` braucht `UserInfo.Read`, Ändern `UserInfo.Write`.
-`favorites` und `tags` lesen braucht zusätzlich `Files.Read`, Favoriten ändern `Files.Write`.
-(`prefs` enthält Datei-IDs und Adressen, darum beim Lesen auch `Files.Read`.)
+Alle Routen: angemeldet und `Files.Read` (alle Antworten enthalten Datei-IDs oder Adressen).
+Dazu: `prefs` lesen `UserInfo.Read`, ändern `UserInfo.Write`; Favoriten ändern `Files.Write`.
+Die Verwaltung (Admin) sieht die neuen Felder nicht: `fylvo_prefs` und `fylvo_favorites` werden aus
+den Benutzer-Antworten der Verwaltung entfernt (wie Passwörter). Der Admin kann aber wie heute alle
+Dateien sehen.
 
 ### Einstellungen
 
@@ -68,7 +70,7 @@ angehefteten Ordner):
       { "type": "storage" }
     ]
   },
-  "start_page": "my_files",
+  "start_page": "",
   "view": { "density": "compact", "layout": "grid", "sort_by": "created_at", "sort_direction": "asc" },
   "appearance": { "mode": "system", "accent": "#7484F4" },
   "mobile": {},
@@ -88,43 +90,47 @@ angehefteten Ordner):
     Öffnen normal geprüft.
   - `home.widgets[].type`: `recent`, `favorites`, `links` (Verknüpfungen der Seitenleiste), `tags`,
     `storage`; je höchstens einmal, `hidden` erlaubt.
-  - `start_page`: `home` oder `my_files`.
-  - `view.density`: `compact` (heute), `normal`, `comfortable`. `view.layout`: `list|grid|gallery`.
-    `view.sort_by`: `name|size|updated_at|created_at`. `view.sort_direction`: `asc|desc`.
-    Das ist die Ansicht für Ordner ohne eigene Ansicht (siehe "Ansicht" unten).
-  - `appearance.mode`: `system|light|dark`. `appearance.accent`: ein Schlüssel aus den Farbthemen
-    der Seite (`themes` in `site/basic`, Einstellung `theme_options`). Gespeichert wird die
-    Akzentfarbe weiter im bestehenden Feld `preferred_theme`; `prefs` liest und schreibt dieses
-    Feld, es gibt keine zweite Stelle.
+  - `start_page`: `""` (Standard: jede App wie heute, Web in "Meine Dateien", Handy auf "Home"),
+    `home` oder `my_files`.
+  - `view.density`: `compact` (heute), `normal`, `comfortable`; gespeichert in `fylvo_prefs`, gilt
+    nur in den Apps. `view.layout` (`list|grid|gallery`), `view.sort_by`
+    (`name|size|updated_at|created_at`), `view.sort_direction` (`asc|desc`): siehe "Ansicht" unten.
+  - `appearance.mode`: `system|light|dark`, gespeichert in `fylvo_prefs`.
+    `appearance.accent`: ein Schlüssel aus den Farbthemen der Seite (`themes` in `site/basic`,
+    Einstellung `theme_options`), gespeichert nur im bestehenden Feld `preferred_theme`. Ist dort
+    nichts oder ein unbekannter Schlüssel, liefert `GET` den Standard der Seite. Beide Felder sind
+    unabhängig: wer nur die Farbe ändert, speichert keinen Modus.
   - `mobile`: freies JSON-Objekt für die Handy-App (Reiter, Wischgesten), höchstens 8 KB. Der Server
     prüft nur, dass es ein Objekt ist, und die Grösse. Das Format legt der Handy-Thread fest.
   - `favorites`: nur lesen, Hash-IDs der Favoriten (wie `id` in Datei-Antworten), neuester zuerst.
     Damit zeigen die Apps den Stern, ohne die Liste aufzulösen.
-  - `customized`: nur lesen, Namen der gespeicherten Teile (`sidebar`, `home`, `start_page`, `view`,
-    `appearance`, `mobile`).
+  - `customized`: nur lesen, Namen der gespeicherten Teile (`sidebar`, `home`, `start_page`,
+    `density`, `mode`, `mobile`). Die Web-App nimmt hell/dunkel nur dann vom Konto, wenn `mode`
+    darin steht, sonst wie heute aus dem Browser.
 - Standard ohne gespeicherte Seitenleiste: wie heute (Meine Dateien, vier Kategorien, Geteilt mit
   mir, Papierkorb), dazu `home` (aus), `favorites`, `tags`, und alle bestehenden angehefteten
   Einträge (`settings.pined`) als `link`. Eine gespeicherte Seitenleiste ergänzt der Server um feste
   Einträge, die darin fehlen (z. B. in einer späteren Version neu), am Schluss und versteckt.
 
 `PATCH /api/v4/fylvo/prefs` mit einem Teil der obersten Felder, z. B. `{"sidebar": {...}}` oder
-`{"appearance": {"mode": "dark"}}`. Jeder mitgeschickte Teil ersetzt den gespeicherten Teil ganz;
-bei `view` und `appearance` werden fehlende Unterfelder mit dem wirksamen Wert gefüllt. `favorites`
-und `customized` sind nicht schreibbar. Ungültige Werte: Fehler `40001`, nichts wird gespeichert.
+`{"appearance": {"mode": "dark"}}`. `sidebar`, `home`, `start_page`, `mobile` ersetzen den
+gespeicherten Teil ganz. Bei `view` und `appearance` wird nur geschrieben, was mitgeschickt ist
+(jedes Unterfeld einzeln). `favorites` und `customized` sind nicht schreibbar. Ungültige Werte: Fehler `40001`, nichts wird gespeichert.
 Antwort wie `GET`. Zwei Geräte, die verschiedene Teile ändern, überschreiben sich nicht.
 
-`DELETE /api/v4/fylvo/prefs` (Zurücksetzen) löscht alle gespeicherten Teile ausser `mobile`.
-Verknüpfungen in der Seitenleiste bleiben dabei erhalten (sie wandern in die Standard-Seitenleiste),
-Favoriten auch. Die Akzentfarbe geht auf den Standard der Seite zurück.
+`DELETE /api/v4/fylvo/prefs` (Zurücksetzen) löscht alle in `fylvo_prefs` gespeicherten Teile ausser
+`mobile` und leert `preferred_theme`. Verknüpfungen bleiben (sie stehen immer auch in `pined`, siehe
+unten), Favoriten und die Ansicht der Ordner auch.
 
 ### Anheften (bestehend)
 
-`settings.pined` wird nicht mehr geschrieben und nicht gelöscht (bei einem Zurückspielen einer alten
-Version sind die alten Einträge noch da). Ist eine Seitenleiste gespeichert, ist sie massgebend.
-`PUT/DELETE /file/pin` bleiben und ändern die `link`-Einträge der Seitenleiste (beim ersten Mal wird
-die Standard-Seitenleiste mit den alten Einträgen gespeichert). `pined` in den Antworten von
-`site/basic` und `user/setting` wird aus den wirksamen `link`-Einträgen gebildet, damit ältere
-Aufrufer weiter stimmen.
+`settings.pined` bleibt die Liste der Verknüpfungen und ist immer aktuell: jedes Speichern der
+Seitenleiste schreibt die `link`-Einträge (in ihrer Reihenfolge) auch nach `pined`. So stimmen alte
+Aufrufer (`BuildUser`: Anmeldung, `user/me`, `site/basic`), ein Zurückspielen einer alten Version
+und das Zurücksetzen. Beim Lesen einer gespeicherten Seitenleiste gleicht der Server mit `pined` ab:
+Links, die in `pined` fehlen, fallen weg, neue aus `pined` kommen ans Ende.
+`PUT/DELETE /file/pin` bleiben, wie sie sind (ändern `pined`, Scope `Files.Write`), und wirken damit
+auch auf die Seitenleiste.
 
 ### Favoriten
 
@@ -139,10 +145,12 @@ Datei-ID zu Adresse (beim Lesen, eine Funktion im `dbfs`):
    (`ListForMember`, einmal pro Anfrage geladen). Gefunden: `cloudreve://<share>@share/<Pfad ab
    dort>`. Sonst: nicht verfügbar. (Die Wurzel des Besitzers muss dabei seine normale Wurzel sein,
    sonst liegt die Freigabe im Papierkorb.)
-4. Die Adresse über `fm.Get` als Benutzer laden (mit "Info"-Fähigkeit) und prüfen, dass die
-   geladene Datei dieselbe ID hat. Sonst: nicht verfügbar.
+4. Die Adresse über `fm.Get` als Benutzer laden (öffentliche Metadaten, Fähigkeit "Info", die
+   Wurzel einer Freigabe erlaubt) und prüfen, dass die geladene Datei dieselbe ID hat. Sonst: nicht
+   verfügbar.
 
-Ein Administrator bekommt dabei keine Sonderrechte (nicht `TraverseFile` benutzen).
+Ein Administrator bekommt dabei keine Sonderrechte (nicht `TraverseFile` benutzen). Bereits geprüfte
+Ordner merkt sich eine Anfrage, damit 200 Favoriten nicht 200 Mal denselben Weg hochgehen.
 
 - `GET /api/v4/fylvo/favorites` liefert `{"files": [Datei-Antwort wie bei GET /file],
   "unavailable": 2}`, neuester zuerst. Der GET schreibt nichts; nicht verfügbare werden nur
@@ -150,28 +158,32 @@ Ein Administrator bekommt dabei keine Sonderrechte (nicht `TraverseFile` benutze
 - `PUT /api/v4/fylvo/favorites` mit `{"uris": [...]}`. Angenommen:
   - `cloudreve://my/...` (keine Suche, nicht die Wurzel),
   - `cloudreve://<share>@share/...` einer Mitglieder-Freigabe, in der man Mitglied ist (auch ihre Wurzel),
-  - Einträge aus "Geteilt mit mir" (`cloudreve://shared_with_me/<id>`): werden über ihr Ziel
-    (`sys:shared_redirect`) aufgelöst; zeigt das auf einen öffentlichen Link, wird abgelehnt.
-  - Abgelehnt (`40001`): Papierkorb, Suchen, öffentliche Freigabe-Links, alles, was nicht über die
-    vier Schritte oben wieder zur selben Datei führt.
+  - Abgelehnt (`40001`): `shared_with_me`-Adressen (die Apps schicken für Einträge aus "Geteilt
+    mit mir" deren Ziel aus `metadata["sys:shared_redirect"]`), Papierkorb, Suchen, öffentliche
+    Freigabe-Links, alles, was nicht über die vier Schritte oben wieder zur selben Datei führt.
   Bereits markierte bleiben. Über 200: Fehler.
-- `DELETE /api/v4/fylvo/favorites` mit `{"ids": [...]}`. Unbekannte IDs werden ignoriert.
+- `DELETE /api/v4/fylvo/favorites` mit `{"ids": [...]}`: Hash-IDs wie in `prefs.favorites`.
+  Unbekannte werden ignoriert.
 
 ### Tags
 
 `GET /api/v4/fylvo/tags` liefert `[{"name": "Wichtig", "color": "#e5484d", "count": 12}]` nach Name.
 Gezählt werden eigene Dateien, deren Wurzel die normale Wurzel ist (also auch nicht in einem Ordner
 im Papierkorb). Die Prüfung der Wurzel merkt sich bereits geprüfte Ordner. `color` ist die häufigste
-Farbe, leer wenn keine. Klick öffnet die bestehende Tag-Suche (gleiche Adresse wie beim Klick auf
-einen Tag in der Dateiliste heute). Setzen bleibt `PATCH /file/metadata`.
+Farbe, leer wenn keine. Klick öffnet eine Suche nur nach dem Namen ab "Meine Dateien" (ohne Farbe,
+mit dem bestehenden Such-Helfer der Web-App), damit Anzahl und Ergebnis zusammenpassen. Setzen
+bleibt `PATCH /file/metadata`.
 
 ### Ansicht
 
-Ordner ohne eigene Ansicht (auch nicht von einem übergeordneten Ordner geerbt) bekommen heute vom
-Server eine feste Standard-Ansicht (`getDefaultView`, Raster). Neu: hat der Besitzer `view`
-gespeichert, nimmt der Server dessen Werte statt der festen. Ohne gespeicherte `view` bleibt alles
-wie heute. In einem gemeinsamen Ordner gilt (wie bei der Ansicht pro Ordner) die des Besitzers.
-Die Dichte gilt nur in den Apps und immer die eigene.
+Kein neuer Mechanismus: Ordner erben ihre Ansicht schon heute vom nächsten übergeordneten Ordner
+mit eigener Ansicht, sonst gilt die feste Standard-Ansicht (`getDefaultView`, Raster). Die
+"Standard-Ansicht" in `prefs.view` ist darum die Ansicht der Wurzel "Meine Dateien" (`Props.View`
+des Wurzelordners): `GET` liest sie (fehlt sie, die feste), `PATCH` schreibt sie über den
+bestehenden Weg `PatchView` (immer ein neues Objekt; `PageSize`, `Thumbnail`, Spalten und
+Galeriebreite bleiben). Ordner mit eigener Ansicht behalten sie. Am Handy (Android-Thread): die App
+schickt heute ihre eigene Sortierung mit; will sie der Konto-Ansicht folgen, lässt sie diese weg und
+liest `view` aus der Antwort der Liste.
 
 ### Akzentfarben
 
@@ -179,21 +191,24 @@ Die Dichte gilt nur in den Apps und immer die eigene.
 `#7484F4` (Standard, wie heute), `#2EC4B6`, `#4CC38A`, `#F5A524`, `#F2735B`, `#A78BFA`,
 je mit passender helleren Variante für den hellen Modus und sonst den heutigen Fylvo-Flächen.
 Bestehende Installationen: beim Start wird `theme_options` nur dann ersetzt, wenn der gespeicherte
-Wert genau der heutige (eine Farbe) ist; selbst geänderte Werte bleiben.
+Wert als JSON gleich dem heutigen (eine Farbe) ist; selbst geänderte Werte bleiben.
 
 ### Gleichzeitige Änderungen
 
-Neue Funktion `UpdateSettings(ctx, uid, change func(*types.UserSetting) error)` im `inventory`: eine
-Sperre im Prozess (ein Server, SQLite), Zeile frisch lesen, nur die gewünschte Änderung anwenden,
-schreiben. Alle Schreiber des Felds laufen darüber: Anheften, Ansicht (`operation.go`),
-`PATCH /user/setting`, Passwortwechsel (bestehende Bedingung bleibt), Admin-Änderung eines Benutzers
-(übernimmt Fylvo-Felder aus der frischen Zeile), die neuen Routen. Test: Einstellung speichern
-während Admin das Passwort zurücksetzt, beides bleibt.
+Eine Sperre im Prozess für das Feld `settings` (ein Server, SQLite). Neue Funktion
+`UpdateSettings(ctx, uid, change func(*types.UserSetting) error)`: Sperre, Zeile frisch lesen, nur
+die gewünschte Änderung anwenden, schreiben. Darüber laufen Anheften, Ansicht der Bereiche
+Papierkorb und Geteilt (`operation.go`), `PATCH /user/setting` und die neuen Routen.
+Die zwei Stellen, die Passwort und Einstellungen in einer Anweisung schreiben, nehmen dieselbe Sperre
+und lesen die Einstellungen darin frisch: `SetOwnPassword` (Bedingung "altes Passwort" bleibt) und
+die Admin-Änderung (`Upsert` mit `passwordChangeSettings`; sie übernimmt alles ausser den Feldern, die
+der Admin ändert, aus der frischen Zeile, also auch `fylvo_prefs`, `fylvo_favorites`, `pined`).
+Test: Einstellung speichern während Admin das Passwort zurücksetzt, beides bleibt.
 
 ## Web-App
 
 Etappe 1, Grundlage: `prefs` laden (nach Anmeldung und beim Start, im Redux, Kopie im Browser nur
-gegen Flackern). Hell/dunkel aus `prefs`, wenn `appearance` gespeichert ist, sonst wie heute aus dem
+gegen Flackern). Hell/dunkel aus `prefs`, wenn `mode` in `customized` steht, sonst wie heute aus dem
 Browser; die Umschaltung speichert ab jetzt am Konto. Akzentfarbe: bestehende Auswahl in den
 Einstellungen zeigt nun sechs Farben.
 
@@ -218,8 +233,8 @@ Jede Etappe ist für sich nutzbar und wird einzeln committet.
 
 ## Handy (Grundlage für den Android-Thread)
 
-Liest `GET /fylvo/prefs` und benutzt `sidebar` (als Liste von Orten), `home`, `start_page`, `view`
-(Dichte; Ansicht und Sortierung kommen pro Ordner schon vom Server), `appearance`, `favorites`.
+Liest `GET /fylvo/prefs` und benutzt `sidebar` (als Liste von Orten), `home`, `start_page` (leer:
+wie heute auf "Home"), `view` (siehe "Ansicht"), `appearance`, `favorites`.
 Legt Reiter und Wischgesten in `mobile` ab. Favoriten über `/fylvo/favorites`, Tags über
 `/fylvo/tags`, Ordnerfarben und Tags aus `metadata` der Datei (`customize:icon_color`, `tag:*`),
 setzen über `PATCH /file/metadata`. Akzentfarben aus `site/basic` `themes`.
