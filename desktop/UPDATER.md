@@ -76,7 +76,7 @@ Linux adds its own check function (other thread).
   valid until 2056. PFX in `<your signing folder>\fylvo-desktop.pfx`,
   public `.cer` in `desktop/package/fylvo-desktop.cer`, thumbprint
   `16A089077B5D78CCAA8996BD51EE523CF0264D79`.
-- The password lives only in the password manager (and in the session that signs), never on the NAS or
+- The password lives only in a password manager (and in the session that signs), never on the NAS or
   in the repo.
 - `build-msix.ps1 -Sign`: reads the password from a file given by path
   (`-PasswordFile`), imports the PFX into `CurrentUser\My` for the moment of signing,

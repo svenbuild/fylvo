@@ -2,4 +2,3 @@
 *.sh text eol=lf
 .build/* text eol=lf
 Dockerfile* text eol=lf
-deploy/* text eol=lf

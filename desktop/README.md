@@ -17,8 +17,8 @@ app (see below).
 | Sync root provider ID | `cloudreve<hash>` | `fylvo<hash>` |
 | COM class IDs (shell extensions, toasts) | original | new, see `package/AppxManifest.xml` |
 
-The app does not contact any server except the Fylvo server you connect it to (no update check,
-no telemetry, no crash reports).
+The app does not contact any server except the Fylvo server you connect it to (no telemetry, no
+crash reports). Updates also come from that server, see UPDATER.md.
 
 ## Sign-in and the web app
 
