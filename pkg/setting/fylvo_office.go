@@ -10,7 +10,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 )
 
-// Fylvo: office editing in the browser through a Collabora server (see deploy/docker-compose.yml).
+// Fylvo: office editing in the browser through a Collabora server (see docker-compose.yml).
 //
 // EnvOfficeURL holds the address under which browsers reach Collabora, for example
 // https://office.example.com. When it is set, the office viewers are added to the viewers

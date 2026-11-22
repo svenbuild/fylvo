@@ -73,6 +73,11 @@ func NewEnvOverrideStore(next SettingStoreAdapter, l logging.Logger) SettingStor
 			l.Info("Override setting %q from environment", key)
 		}
 	}
+	if addSiteURLFromEnv(defaults) {
+		l.Info("Override setting %q from environment", "siteURL")
+	} else if _, set := defaults["siteURL"]; !set && strings.TrimSpace(os.Getenv(EnvSiteURL)) != "" {
+		l.Warning("%s is not an http or https address with a host name, it is ignored", EnvSiteURL)
+	}
 
 	return &staticSettingStore{
 		settings: defaults,

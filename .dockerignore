@@ -1,0 +1,5 @@
+# Only what the Dockerfile copies.
+*
+!.build/aria2.supervisor.conf
+!.build/entrypoint.sh
+!release/fylvo-linux-*

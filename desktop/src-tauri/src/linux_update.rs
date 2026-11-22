@@ -4,7 +4,7 @@
 //! - AppImage: the new file is put next to the running one, made executable and renamed over
 //!   it (one step on the same file system); the new version is started after this one ends.
 //! - rpm/deb: the package manager installs the file. `pkexec` lets the system ask for the
-//!   admin password (Sven's choice: the app installs these updates itself).
+//!   admin password (the app installs these updates itself).
 
 use fylvo_update::LinuxFormat;
 use std::path::{Path, PathBuf};

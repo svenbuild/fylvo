@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.svenbuild.fylvo.android"
         minSdk = 28
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.3.0"
+        versionCode = 10
+        versionName = "1.4.0"
     }
 
     // Fylvo ships English and German only; keep libraries from adding other languages.
