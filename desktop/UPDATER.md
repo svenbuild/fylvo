@@ -1,6 +1,7 @@
 # Fylvo Desktop: updates from the app (plan)
 
-Status: plan, 2026-11-22. Branch `fylvo/desktop-update`.
+Status: built and tested on the PC, 2026-11-22. Branch `fylvo/desktop-update`. The plan below
+was reviewed by two reviewers (9/10 each); "Results" at the end says what was tested.
 
 ## Decisions by Sven (2026-11-22)
 
@@ -204,3 +205,24 @@ off when the app runs without package identity (`cargo tauri dev`).
 2. Server and publish script.
 3. App crate, settings, texts.
 4. Tests, real run, rat on the code.
+
+## Results (2026-11-22, on the PC, local server on port 5290)
+
+- Move from Developer Mode: `install.ps1` replaced a dev registration of 0.2.0 with the signed
+  0.2.1; a drive with a placeholder (not downloaded) and a new local file kept working, the
+  old folder was removed.
+- Self update, twice: 0.2.1.1 -> 0.2.2 and 0.2.3 -> 0.2.6: found, downloaded, identity checked,
+  staged, sync stopped, registered; Windows restarted the app about a second later by itself,
+  sync went on, the drive settings were saved.
+- Refused, the running version kept going: a broken package (not a valid package), an
+  unsigned one (refused by the app before anything happens; with Developer Mode on, Windows
+  would stage it and then quietly not register it), a package of another app signed with the
+  Fylvo key (other family), each blocked for a day afterwards.
+- Note: Windows takes unchanged blocks from the installed version, so a byte changed in a
+  file that did not change between versions is never read: the installed content is still
+  exactly the signed one.
+- Not tested for real: registration failing after Windows closed the app, killing the app in
+  the middle of an update (the download part is covered by tests: nothing is left behind).
+- Found on the way: `DriveManager::list_drives()` of the original always returns an empty
+  list; the updater uses the new `mounts()`.
+
