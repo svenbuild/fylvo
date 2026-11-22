@@ -1,6 +1,7 @@
 # Fylvo Desktop for Linux: plan
 
 Status: revision 6 (final after 5 rat rounds), 2026-11-22. Branch `fylvo/desktop-linux`.
+Built: stages 1 to 7 (see "As built" at the end); user guide in `desktop/LINUX.md`.
 
 ## Decisions (Sven, 2026-11-22)
 
@@ -118,3 +119,29 @@ Built on the shared crate `desktop/crates/fylvo-update` and server API from the 
 6. **Packages:** AppImage, rpm, deb. Early checks: blank WebKit window on new Mesa (`WEBKIT_DISABLE_DMABUF_RENDERER=1`), libfuse2 for the AppImage runtime. Install test on Fedora 44 and Ubuntu.
 7. **Updates**, after the Windows thread's crate is in `main`. rat review.
 8. **Manual test pass** and report with install guide and manual tests for Sven.
+
+
+## As built (2026-11-22)
+
+Deviations from the plan, decided while building and in the code reviews:
+
+- **Move between two sync folders** is always undone with the Windows notice (Windows parity),
+  also for the same account; no server move across drives.
+- **App's own moves** are matched only as whole renames (one inotify instance never splits them),
+  also as a chain the debouncer joins (file -> backup -> conflict copy).
+- **Hidden moves:** inotify reports a move into a folder made a moment ago only as a deletion.
+  Files are recognized by inode plus size and time (in the deletion pipeline and when a sync pass
+  finds the file first). Folders are not (an inode alone proves nothing): they fall back to server
+  trash plus upload.
+- **Renames the server could not be asked about** (network) are retried every minute; sync passes
+  leave both names alone meanwhile.
+- **Updates (stage 7):** platforms `linux-{x64,arm64}-{appimage,rpm,deb}`, ed25519 release
+  signature required (public key in `fylvo-update`, private key with Sven, without password at
+  `Documents\Projects\Fylvo-Signing\fylvo-desktop-linux-release.pem`). AppImage: staged next to
+  itself, renamed over it, restarted. rpm/deb: `pkexec` runs a root step that copies the package
+  into a root-only folder, checks its sha256 there and installs it with dnf/apt-get.
+- **Ignore names** `4913`, `lu*.tmp`, `*.part` count for files only.
+
+Tests: 80 Linux unit tests, 6 app tests, 11 update tests; 5 end-to-end tests against a local Fylvo
+server (`tasks/server_e2e_linux.rs`, the real drive manager and watcher); on Fedora 44 the rpm
+installs and the AppImage updated itself from 0.3.0 to 0.3.1 against a local server.
