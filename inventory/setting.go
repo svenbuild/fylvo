@@ -497,7 +497,7 @@ var DefaultSettings = map[string]string{
 	"default_group":                              `2`,
 	"fromName":                                   `Fylvo`,
 	"mail_keepalive":                             `30`,
-	"fromAdress":                                 `no-reply@example.com`, // Fylvo: mail goes out through the mail provider with implicit TLS
+	"fromAdress":                                 `no-reply@example.com`, // Fylvo: placeholder, set the real sender in the admin panel
 	"smtpHost":                                   `smtp.example.com`,
 	"smtpPort":                                   `465`,
 	"replyTo":                                    `no-reply@example.com`,

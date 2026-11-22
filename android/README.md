@@ -21,14 +21,14 @@ Neither project is affiliated with or endorses Fylvo.
   icon and colors, the Inter font of the web app (SIL Open Font License, see
   [FONT-LICENSE-Inter.txt](FONT-LICENSE-Inter.txt)), a floating bottom bar
   with Home, Files, Shared and Account (like Google Drive, OneDrive and
-  Dropbox; no photo tab, photos stay in Immich). Offline files sit under
+  Dropbox; no photo tab). Offline files sit under
   Account and carry a pin in the lists.
 - Access and refresh tokens are encrypted with a key held in the Android
   Keystore. Backups and device transfers exclude all app data.
 - No plain `http://`. Release builds only connect over https with the
   system certificate authorities. Debug builds allow plain http to two test
   addresses only, see `app/src/debug/res/xml/network_security_config.xml`.
-- No photo backup and no photo or media permissions. Photos stay in Immich.
+- No photo backup and no photo or media permissions.
 - No Google Play update check, no browser (OAuth) sign-in, no
   `cloudreve://` links from other apps. The app talks only to the server
   address the user enters.

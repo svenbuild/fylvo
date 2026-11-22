@@ -87,7 +87,7 @@ func (s *SummaryService) Summary(c *gin.Context) (*HomepageSummary, error) {
 	kv := dep.KV()
 	res := &HomepageSummary{
 		Version: &Version{
-			Version: constants.BackendVersion,
+			Version: constants.FylvoVersion,
 			Pro:     constants.IsProBool,
 			Commit:  constants.LastCommit,
 		},

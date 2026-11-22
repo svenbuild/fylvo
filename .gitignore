@@ -36,7 +36,7 @@ dist/
 data/
 tmp/
 .devcontainer/
-cloudreve
+/fylvo
 .DS_Store
 # Screenshots taken while working on the UI
 .shots/

@@ -3,17 +3,17 @@
 Status: revision 6 (final after 5 rat rounds), 2026-11-22. Branch `fylvo/desktop-linux`.
 Built: stages 1 to 7 (see "As built" at the end); user guide in `desktop/LINUX.md`.
 
-## Decisions (Sven, 2026-11-22)
+## Decisions (2026-11-22)
 
 - Target: Fedora first, but as many distributions as possible. Desktop unknown: support GNOME and KDE.
 - Files: **all local**. A sync folder is a normal folder with full copies (like Nextcloud on Linux). No FUSE, no files on demand.
 - Packages: **AppImage** (updates itself silently) plus **.rpm** and **.deb**; for these the app installs updates itself after the system asks for the admin password (pkexec). Built on Ubuntu 22.04 (glibc 2.35).
 - File manager: a right-click entry "open online", **no status emblems**. Status is shown by the tray icon and the app window.
-- Tests on a real desktop: allowed (VM on D:). Hyper-V is not enabled on the PC and enabling it needs a reboot, so the desktop runs inside an own Fedora WSL distro (GNOME and KDE sessions on a virtual display, screenshots for checking).
+- Tests on a real desktop: allowed (in a VM). Hyper-V is not enabled on the PC and enabling it needs a reboot, so the desktop runs inside an own Fedora WSL distro (GNOME and KDE sessions on a virtual display, screenshots for checking).
 
 ## Why not the upstream `feat/linux` branch
 
-It implements FUSE (files on demand), which Sven did not choose, is untested, and predates all Fylvo changes to the core. No code is taken.
+It implements FUSE (files on demand), which was not chosen, is untested, and predates all Fylvo changes to the core. No code is taken.
 
 ## Core idea: same planner, local state from the inventory
 
@@ -88,7 +88,7 @@ A move between two sync folders on different filesystems is a copy plus delete i
 
 **Ignore list**, Linux only: `.Trash-*`, `.goutputstream-*`, `*~`, `.*.sw?`, `4913`, `*.kate-swp`, `.#*`, `.directory`, `.nfs*`, `.fuse_hidden*`, `lu*.tmp` and `*.part` after checking what LibreOffice and KIO really write, `.~lock.*#`.
 
-**App not running.** A rename while off: new path uploaded, old path comes back from the server (a duplicate, nothing lost). A deletion while off comes back, as on Windows. Both noted for Sven.
+**App not running.** A rename while off: new path uploaded, old path comes back from the server (a duplicate, nothing lost). A deletion while off comes back, as on Windows. Both are documented.
 
 **Known limit, as on Windows.** A program that rewrites a file in place and keeps its size and modification time is not noticed (Windows has the same note in the checklist).
 
@@ -111,14 +111,14 @@ Built on the shared crate `desktop/crates/fylvo-update` and server API from the 
 
 ## Stages (each runnable and tested on its own)
 
-1. **Build setup** (done): own WSL distro `FylvoBuild` (Ubuntu 22.04) on `D:\FylvoLinux`, Rust, Node, Tauri dependencies. Windows baseline 83 tests green.
+1. **Build setup** (done): own WSL distro (Ubuntu 22.04), Rust, Node, Tauri dependencies. Windows baseline 83 tests green.
 2. **Shared `LocalFileInfo` and cfg gating; compiles and tests on Linux.** No Linux sync yet. Windows 83 tests green; the planner tests run on both.
 3. **Linux sync, server to PC only.** No server writes at all (no uploads, no watcher deletes or renames). Mount start, write rules, new-file download, update with backup, server rename, server deletion to trash, case lookup, symlinks, ignore list, overflow rescan, filesystem and free space checks. Tests against a local Fylvo server in WSL (own data dir, port 5290, ext4). rat review.
 4. **Linux sync, both ways.** Shared watcher, rename table above, uploads with inode, mass deletion both ways, read-only, conflicts, 40905 twins. Tests: server update of an existing file while the watcher runs (no server deletion, no mass deletion prompt), rename and folder move during a sync pass, refused rename, Move to Trash, folder moved in, move between two sync folders (writable and read-only), case twins, symlink, gedit and LibreOffice save, update while the file is open, restart. rat review.
 5. **App on Linux:** tray, window, autostart, deep link, notifications, file manager entry, Windows-only settings hidden. Checked in a Fedora WSL distro with GNOME and KDE sessions.
 6. **Packages:** AppImage, rpm, deb. Early checks: blank WebKit window on new Mesa (`WEBKIT_DISABLE_DMABUF_RENDERER=1`), libfuse2 for the AppImage runtime. Install test on Fedora 44 and Ubuntu.
 7. **Updates**, after the Windows thread's crate is in `main`. rat review.
-8. **Manual test pass** and report with install guide and manual tests for Sven.
+8. **Manual test pass** and report with install guide and manual tests.
 
 
 ## As built (2026-11-22)
@@ -136,8 +136,8 @@ Deviations from the plan, decided while building and in the code reviews:
 - **Renames the server could not be asked about** (network) are retried every minute; sync passes
   leave both names alone meanwhile.
 - **Updates (stage 7):** platforms `linux-{x64,arm64}-{appimage,rpm,deb}`, ed25519 release
-  signature required (public key in `fylvo-update`, private key with Sven, without password at
-  `Documents\Projects\Fylvo-Signing\fylvo-desktop-linux-release.pem`). AppImage: staged next to
+  signature required (public key in `fylvo-update`, private key with the maintainer, outside the
+  repository). AppImage: staged next to
   itself, renamed over it, restarted. rpm/deb: `pkexec` runs a root step that copies the package
   into a root-only folder, checks its sha256 there and installs it with dnf/apt-get.
 - **Ignore names** `4913`, `lu*.tmp`, `*.part` count for files only.

@@ -1,22 +1,22 @@
-# Fylvo Desktop unter Linux
+# Fylvo Desktop on Linux (preview)
 
-Fylvo Desktop gleicht Ordner auf dem Linux-Rechner mit deinem Fylvo-Server ab. Anders als unter
-Windows liegen alle Dateien ganz auf dem Rechner (ein normaler Ordner), damit jedes Programm sie
-öffnen kann, auch ohne Netz. Technischer Plan: `docs/linux-plan.md`.
+Fylvo Desktop keeps folders on your Linux computer in sync with your Fylvo server. Unlike on
+Windows, all files are fully on the computer (a normal folder), so every program can open them,
+also offline. Technical design: [docs/linux-plan.md](docs/linux-plan.md).
 
-## Welches Paket?
+## Which package?
 
-| Paket | Für | Updates |
+| Package | For | Updates |
 | --- | --- | --- |
-| `Fylvo Desktop_<Version>_amd64.AppImage` | jedes Linux (eine einzelne Datei) | still, die App ersetzt sich selbst |
-| `Fylvo Desktop-<Version>-1.x86_64.rpm` | Fedora, openSUSE | die App installiert, das System fragt nach dem Admin-Passwort |
-| `Fylvo Desktop_<Version>_amd64.deb` | Ubuntu, Debian, Mint | wie rpm |
+| `Fylvo Desktop_<version>_amd64.AppImage` | any Linux (a single file) | silent, the app replaces itself |
+| `Fylvo Desktop-<version>-1.x86_64.rpm` | Fedora, openSUSE | the app installs it, the system asks for the admin password |
+| `Fylvo Desktop_<version>_amd64.deb` | Ubuntu, Debian, Mint | as rpm |
 
-Empfehlung für Fedora: das **.rpm** (erscheint im Startmenü, `fylvo://`-Links gehen sofort).
+On Fedora, the `.rpm` is the best choice (shows up in the app menu, `fylvo://` links work right away).
 
-## Installieren
+## Install
 
-**rpm (Fedora):** Terminal öffnen und
+**rpm (Fedora):**
 ```
 sudo dnf install "./Fylvo Desktop-0.3.0-1.x86_64.rpm"
 ```
@@ -24,57 +24,52 @@ sudo dnf install "./Fylvo Desktop-0.3.0-1.x86_64.rpm"
 ```
 sudo apt install "./Fylvo Desktop_0.3.0_amd64.deb"
 ```
-**AppImage:** Datei z.B. nach `~/Programme` legen, ausführbar machen (`chmod +x`, oder im
-Dateimanager unter Eigenschaften), doppelklicken. Auf Ubuntu braucht ein AppImage einmalig
-`sudo apt install libfuse2`. Die Datei muss in einem Ordner liegen, in den du schreiben darfst
-(sonst gehen Updates nicht).
+**AppImage:** put the file into a folder you can write to (for example `~/Applications`, otherwise
+updates fail), make it executable (`chmod +x`, or in the file manager's properties) and start it.
+Ubuntu needs `sudo apt install libfuse2` once for AppImages.
 
-Danach Fylvo Desktop starten, "Laufwerk hinzufügen", im Browser bei Fylvo anmelden, einen
-**leeren** Ordner wählen (z.B. `~/Fylvo`) und den Cloud-Ordner, der dort hin soll.
+Then start Fylvo Desktop, "Add drive", sign in to Fylvo in the browser, choose an **empty** local
+folder (for example `~/Fylvo`) and the cloud folder that goes there.
 
-## Gut zu wissen
+## Good to know
 
-- **Tray-Symbol unter GNOME (Fedora):** GNOME zeigt ohne Erweiterung keine Tray-Symbole.
-  Erweiterung "AppIndicator and KStatusNotifierItem Support" installieren
-  (`sudo dnf install gnome-shell-extension-appindicator`, abmelden, anmelden). Ohne sie öffnet ein
-  erneuter Start von Fylvo Desktop aus dem Startmenü das Fenster.
-- **Rechtsklick "Fylvo: Online ansehen":** in GNOME Files unter "Skripte", in Dolphin direkt im
-  Menü. Die App legt die Einträge beim Start an.
-- **Autostart:** in den Einstellungen der App (legt `~/.config/autostart/fylvo-desktop.desktop` an).
-- **Erlaubte Laufwerke:** ext4, btrfs, xfs, f2fs. USB-Sticks mit FAT/exFAT und Netzwerkfreigaben
-  werden abgelehnt (dort bleiben die Merkmale nicht stabil, an denen die App Änderungen erkennt).
-- **Sehr viele Unterordner:** Linux erlaubt einem Programm nur eine bestimmte Zahl beobachteter
-  Ordner. Meldet die App "Nicht alle Änderungen werden bemerkt":
+- **Tray icon on GNOME:** GNOME shows no tray icons without an extension. Install
+  "AppIndicator and KStatusNotifierItem Support" (`sudo dnf install gnome-shell-extension-appindicator`,
+  sign out and in). Without it, starting Fylvo Desktop again from the menu opens its window.
+- **Right-click "Fylvo: View online":** under "Scripts" in GNOME Files, directly in the menu in
+  Dolphin. The app adds the entries when it starts.
+- **Autostart:** in the app's settings (creates `~/.config/autostart/fylvo-desktop.desktop`).
+- **Supported file systems:** ext4, btrfs, xfs, f2fs. USB sticks with FAT/exFAT and network shares
+  are refused (the properties the app uses to detect changes are not stable there).
+- **Very many folders:** Linux limits how many folders a program can watch. If the app says "Not
+  all changes are noticed":
   `echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-fylvo.conf && sudo sysctl --system`
-- **Symlinks** und eingebundene Laufwerke im Sync-Ordner werden nie abgeglichen.
-- **Papierkorb:** vom Server Gelöschtes landet im Linux-Papierkorb, hier Gelöschtes im
-  Papierkorb des Servers. Ab 50 Löschungen (oder 10, wenn es 30 % sind) fragt die App nach.
-- **Verschieben zwischen zwei Sync-Ordnern** wird rückgängig gemacht (wie unter Windows). Kopieren
-  geht.
+- **Symlinks** and mounted drives inside a sync folder are never synced.
+- **Trash:** what is deleted on the server goes to the Linux trash, what you delete here goes to
+  the server's trash. From 50 deletions (or 10 when that is 30 % of the drive) the app asks first.
+- **Moving between two sync folders** is undone (as on Windows). Copying works.
 
-## Bekannte Grenzen
+## Known limits
 
-- Läuft die App nicht, während du eine Datei löschst oder umbenennst, kommt beim nächsten Start
-  die alte Datei vom Server zurück (Umbenennen: dann gibt es beide Namen). Wie unter Windows.
-- Ein Programm, das eine Datei an Ort und Stelle überschreibt und dabei Grösse und Änderungszeit
-  gleich lässt, wird nicht bemerkt. Wie unter Windows.
-- Ein ganzer Ordner, der in einen eben erst angelegten Ordner verschoben wird, wird am Server
-  gelöscht (Papierkorb) und neu hochgeladen; Freigaben und Versionen bleiben beim alten. Bei
-  einzelnen Dateien wird die Verschiebung erkannt.
-- Zwischen der Prüfung "ist es noch dieselbe Datei am Server" und dem Löschen am Server liegen
-  Millisekunden; der Server kennt kein bedingtes Löschen.
+- If the app is not running while you delete or rename a file, the old file comes back from the
+  server at the next start (after a rename you have both names). Same as on Windows.
+- A program that overwrites a file in place and keeps its size and modification time is not
+  noticed. Same as on Windows.
+- A whole folder moved into a folder that was just created is deleted on the server (trash) and
+  uploaded again; shares and versions stay with the old one. Moves of single files are detected.
+- Between the check "is it still the same file on the server" and the deletion on the server
+  there are milliseconds; the server has no conditional delete.
 
-## Updates veröffentlichen (vom PC)
+## Publishing updates (maintainer)
 
-Pakete bauen in der WSL-Distribution `FylvoBuild` (`~/fylvo/desktop/src-tauri`, `cargo tauri build`).
-Veröffentlichen mit Signatur (Schlüssel ohne Passwort unter
-`Documents\Projects\Fylvo-Signing\fylvo-desktop-linux-release.pem`, gehört nie ins Repo):
+Build the packages on Linux (`desktop/src-tauri`, `cargo tauri build`). Publish them with a
+signature; the private ed25519 key has no password and never goes into the repository
+(`FYLVO_LINUX_KEY` points to it):
 ```
 scripts/publish-desktop.sh "Fylvo Desktop_0.3.1_amd64.AppImage" linux-x64-appimage
 scripts/publish-desktop.sh "Fylvo Desktop-0.3.1-1.x86_64.rpm" linux-x64-rpm
 scripts/publish-desktop.sh "Fylvo Desktop_0.3.1_amd64.deb" linux-x64-deb
 ```
-Das Skript läuft unter Linux oder Git Bash (braucht `openssl` 3); `FYLVO_LINUX_KEY` zeigt auf den
-Schlüssel. Die Version steht in `src-tauri/tauri.conf.json`. Die App fragt 2 Minuten nach dem
-Start und dann alle 6 Stunden, installiert nur, wenn kein Abgleich läuft, und meldet sich nach
-dem Neustart mit "Aktualisiert".
+The script runs on Linux or in Git Bash (needs `openssl` 3). The version is in
+`src-tauri/tauri.conf.json`. The app checks 2 minutes after the start and then every 6 hours,
+installs only when nothing syncs, and says "Updated" after the restart.

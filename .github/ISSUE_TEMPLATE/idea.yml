@@ -1,0 +1,9 @@
+name: Idea
+description: A feature or a change you would like
+body:
+  - type: textarea
+    attributes:
+      label: What you would like
+      description: What should Fylvo do, and what for?
+    validations:
+      required: true

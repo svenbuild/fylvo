@@ -134,7 +134,7 @@ func (s *UpsertOAuthClientService) Create(c *gin.Context) (*GetOAuthClientRespon
 		return nil, serializer.NewError(serializer.CodeParamErr, "ID must be 0 for creating new OAuth client", nil)
 	}
 	if inventory.IsRetiredOAuthClient(s.Client.GUID) {
-		return nil, serializer.NewError(serializer.CodeParamErr, "This client ID belongs to an unsupported Cloudreve app", nil)
+		return nil, serializer.NewError(serializer.CodeParamErr, "This client ID belongs to an unsupported app", nil)
 	}
 
 	client, err := oauthClient.Create(c, s.Client.toEnt())
@@ -165,7 +165,7 @@ func (s *UpsertOAuthClientService) Update(c *gin.Context) (*GetOAuthClientRespon
 		s.Client.GUID = existing.GUID
 	}
 	if inventory.IsRetiredOAuthClient(s.Client.GUID) {
-		return nil, serializer.NewError(serializer.CodeParamErr, "This client ID belongs to an unsupported Cloudreve app", nil)
+		return nil, serializer.NewError(serializer.CodeParamErr, "This client ID belongs to an unsupported app", nil)
 	}
 
 	_, err = oauthClient.Update(c, s.Client.toEnt())
