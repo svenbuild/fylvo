@@ -1,18 +1,24 @@
-use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use cloudreve_api::models::uri::CrUri;
 use url::Url;
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+#[cfg(windows)]
 use widestring::U16CString;
+#[cfg(windows)]
 use windows::Win32::Storage::CloudFilters::{
     CF_SYNC_ROOT_BASIC_INFO, CF_SYNC_ROOT_INFO_BASIC, CfGetSyncRootInfoByPath,
 };
+#[cfg(windows)]
 use windows::Win32::Storage::FileSystem::{MOVE_FILE_FLAGS, MoveFileExW};
+#[cfg(windows)]
 use windows::Win32::UI::Shell::{
     FO_DELETE, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_SILENT, FOF_WANTNUKEWARNING,
     SHCNE_ID, SHCNF_PATHW, SHChangeNotify, SHFILEOPSTRUCTW, SHFileOperationW,
 };
+#[cfg(windows)]
 use windows::core::PCWSTR;
 
 use crate::drive::mounts::DriveConfig;
@@ -27,7 +33,10 @@ pub fn local_path_to_cr_uri(path: PathBuf, root: PathBuf, remote_base: String) -
     let relative_str = relative
         .to_str()
         .context("Path contains invalid UTF-8")?
-        .replace("\\", "/");
+        .to_string();
+    // Fylvo: on Linux a backslash is a normal character of a name.
+    #[cfg(windows)]
+    let relative_str = relative_str.replace("\\", "/");
 
     // Join the relative path to the base URI if not empty
     if !relative_str.is_empty() {
@@ -102,6 +111,7 @@ pub fn recycle_bin_url(config: &DriveConfig) -> Result<String> {
 }
 
 /// Fylvo: whether `path` lies in a cloud sync folder (Fylvo or another provider).
+#[cfg(windows)]
 pub fn is_in_cloud_sync_root(path: &Path) -> bool {
     let Ok(wide) = U16CString::from_os_str(path.as_os_str()) else {
         return false;
@@ -122,6 +132,7 @@ pub fn is_in_cloud_sync_root(path: &Path) -> bool {
 /// Fylvo: move a file or folder to the Windows recycle bin. Fails rather than deleting for
 /// good: if Windows cannot recycle it (too big for the bin, drive without a bin), it asks
 /// the user, and a "no" leaves the file in place and returns an error.
+#[cfg(windows)]
 pub fn move_to_recycle_bin(path: &Path) -> Result<()> {
     // The list of paths ends with two zeros.
     let mut from: Vec<u16> = path.as_os_str().encode_wide().collect();
@@ -147,6 +158,7 @@ pub fn move_to_recycle_bin(path: &Path) -> Result<()> {
 
 /// Fylvo: rename `from` to `to` without ever replacing another file (`std::fs::rename`
 /// replaces). A rename that only changes upper and lower case of the same file works.
+#[cfg(windows)]
 pub fn move_no_replace(from: &Path, to: &Path) -> Result<()> {
     let from_w = U16CString::from_os_str(from.as_os_str())?;
     let to_w = U16CString::from_os_str(to.as_os_str())?;
@@ -161,6 +173,7 @@ pub fn move_no_replace(from: &Path, to: &Path) -> Result<()> {
 }
 
 // notify_shell_change notify the shell to refresh the file or directory
+#[cfg(windows)]
 pub fn notify_shell_change(path: &PathBuf, event: SHCNE_ID) -> Result<()> {
     let utf16_path = U16CString::from_os_str(path.as_path())?;
     unsafe {
@@ -170,6 +183,45 @@ pub fn notify_shell_change(path: &PathBuf, event: SHCNE_ID) -> Result<()> {
             Some(utf16_path.as_ptr() as *const _),
             None,
         );
+    }
+    Ok(())
+}
+
+/// Fylvo: whether `path` lies in a Fylvo sync folder of this app (Linux has no system-wide
+/// registry of sync folders like Windows).
+#[cfg(target_os = "linux")]
+pub fn is_in_cloud_sync_root(path: &Path) -> bool {
+    crate::drive::local_linux::sync_root_of(path).is_some()
+}
+
+/// Fylvo: move a file or folder to the freedesktop trash (also on other mounts, via their
+/// `.Trash-<uid>`). Fails rather than deleting for good.
+#[cfg(target_os = "linux")]
+pub fn move_to_recycle_bin(path: &Path) -> Result<()> {
+    trash::delete(path)
+        .with_context(|| format!("could not move {} to the trash", path.display()))
+}
+
+/// Fylvo: rename `from` to `to` without ever replacing another file (`renameat2` with
+/// `RENAME_NOREPLACE`).
+#[cfg(target_os = "linux")]
+pub fn move_no_replace(from: &Path, to: &Path) -> Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let from_c = CString::new(from.as_os_str().as_bytes())?;
+    let to_c = CString::new(to.as_os_str().as_bytes())?;
+    let result = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            from_c.as_ptr(),
+            libc::AT_FDCWD,
+            to_c.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error())
+            .with_context(|| format!("could not rename {} to {}", from.display(), to.display()));
     }
     Ok(())
 }
@@ -187,6 +239,7 @@ mod tests {
     /// Puts a small temp file into the Windows recycle bin of the PC running the tests, so it
     /// only runs when asked: `cargo test -p cloudreve-sync -- --ignored recycle`.
     #[test]
+    #[cfg(windows)]
     fn move_no_replace_changes_case_but_never_replaces() {
         let dir = tempfile::tempdir().unwrap();
         let lower = dir.path().join("foto.jpg");
@@ -202,6 +255,20 @@ mod tests {
         std::fs::write(&other, b"two").unwrap();
         assert!(move_no_replace(&other, &dir.path().join("FOTO.jpg")).is_err());
         assert_eq!(std::fs::read(dir.path().join("Foto.jpg")).unwrap(), b"one");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn move_no_replace_never_replaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.txt");
+        let b = dir.path().join("b.txt");
+        std::fs::write(&a, b"one").unwrap();
+        std::fs::write(&b, b"two").unwrap();
+        assert!(move_no_replace(&a, &b).is_err());
+        assert_eq!(std::fs::read(&b).unwrap(), b"two");
+        move_no_replace(&a, &dir.path().join("A.txt")).unwrap();
+        assert!(!a.exists());
     }
 
     #[test]

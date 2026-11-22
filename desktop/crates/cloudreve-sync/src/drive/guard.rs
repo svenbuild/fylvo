@@ -294,6 +294,13 @@ enum Decision {
 }
 
 /// Fylvo: like `is_under`, in any upper/lower case spelling (one file on NTFS).
+/// On Linux names are case sensitive: the same as `is_under`.
+#[cfg(not(windows))]
+pub fn is_under_any_case(path: &Path, roots: &[PathBuf]) -> bool {
+    is_under(path, roots)
+}
+
+#[cfg(windows)]
 pub fn is_under_any_case(path: &Path, roots: &[PathBuf]) -> bool {
     let fold = |p: &Path| crate::drive::case::ntfs_fold(&p.to_string_lossy());
     let path = fold(path);
@@ -758,6 +765,7 @@ impl Mount {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native;
     use base64::{Engine, engine::general_purpose::STANDARD};
 
     #[test]
@@ -800,29 +808,40 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn touches_finds_holds_and_kept_paths_in_any_case() {
         let mut state = DeletionGuardState::default();
-        assert!(!state.touches(Path::new(r"C:\S\Photos")));
-        state.add(DeletionSide::Server, vec![PathBuf::from(r"C:\S\Photos\a.jpg")]);
-        state.keep(&[PathBuf::from(r"C:\S\Docs")]);
+        assert!(!state.touches(Path::new(native(r"C:\S\Photos"))));
+        state.add(DeletionSide::Server, vec![PathBuf::from(native(r"C:\S\Photos\a.jpg"))]);
+        state.keep(&[PathBuf::from(native(r"C:\S\Docs"))]);
         // A held child, the folder itself spelled otherwise, a path inside a kept folder.
-        assert!(state.touches(Path::new(r"C:\S\photos")));
-        assert!(state.touches(Path::new(r"C:\S\PHOTOS\a.jpg")));
+        assert!(state.touches(Path::new(native(r"C:\S\photos"))));
+        assert!(state.touches(Path::new(native(r"C:\S\PHOTOS\a.jpg"))));
         // Siblings with a common start are not related.
-        assert!(!state.touches(Path::new(r"C:\S\Photos2")));
-        assert!(!state.touches(Path::new(r"C:\S\Doc")));
+        assert!(!state.touches(Path::new(native(r"C:\S\Photos2"))));
+        assert!(!state.touches(Path::new(native(r"C:\S\Doc"))));
         // A held or kept path stays so when the server spells it differently.
-        assert!(state.is_held(DeletionSide::Server, Path::new(r"C:\S\photos\A.JPG")));
-        assert!(!state.is_held(DeletionSide::Server, Path::new(r"C:\S\photos\b.jpg")));
-        assert!(state.is_kept(Path::new(r"C:\S\DOCS\x.txt")));
+        assert!(state.is_held(DeletionSide::Server, Path::new(native(r"C:\S\photos\A.JPG"))));
+        assert!(!state.is_held(DeletionSide::Server, Path::new(native(r"C:\S\photos\b.jpg"))));
+        assert!(state.is_kept(Path::new(native(r"C:\S\DOCS\x.txt"))));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn linux_paths_are_case_sensitive() {
+        let mut state = DeletionGuardState::default();
+        state.add(DeletionSide::Server, vec![PathBuf::from("/S/Photos/a.jpg")]);
+        assert!(state.touches(Path::new("/S/Photos")));
+        assert!(!state.touches(Path::new("/S/photos")));
+        assert!(!state.is_held(DeletionSide::Server, Path::new("/S/Photos/A.JPG")));
     }
 
     #[test]
     fn is_under_matches_whole_components() {
-        let roots = vec![PathBuf::from(r"C:\S\a")];
-        assert!(is_under(Path::new(r"C:\S\a"), &roots));
-        assert!(is_under(Path::new(r"C:\S\a\b.txt"), &roots));
-        assert!(!is_under(Path::new(r"C:\S\ab.txt"), &roots));
+        let roots = vec![PathBuf::from(native(r"C:\S\a"))];
+        assert!(is_under(Path::new(native(r"C:\S\a")), &roots));
+        assert!(is_under(Path::new(native(r"C:\S\a\b.txt")), &roots));
+        assert!(!is_under(Path::new(native(r"C:\S\ab.txt")), &roots));
     }
 
     fn paths(list: &[&str]) -> Vec<PathBuf> {
@@ -832,7 +851,7 @@ mod tests {
     #[test]
     fn hold_grows_and_changes_version() {
         let mut state = DeletionGuardState::default();
-        let (started, merged) = state.add(DeletionSide::Server, paths(&[r"C:\S\a"])).unwrap();
+        let (started, merged) = state.add(DeletionSide::Server, paths(&[native(r"C:\S\a")])).unwrap();
         assert!(started);
         // Not answerable before the count is set.
         let unpublished = state.server.as_ref().unwrap().version;
@@ -841,13 +860,13 @@ mod tests {
         let first = state.server.as_ref().unwrap().version;
 
         // A path inside a held folder is held already.
-        assert!(state.add(DeletionSide::Server, paths(&[r"C:\S\a\x.txt"])).is_none());
+        assert!(state.add(DeletionSide::Server, paths(&[native(r"C:\S\a\x.txt")])).is_none());
 
         // The same path again changes nothing.
-        assert!(state.add(DeletionSide::Server, paths(&[r"C:\S\a"])).is_none());
+        assert!(state.add(DeletionSide::Server, paths(&[native(r"C:\S\a")])).is_none());
 
         // A new path joins the hold, no new notification, new version.
-        let (started, merged) = state.add(DeletionSide::Server, paths(&[r"C:\S\b"])).unwrap();
+        let (started, merged) = state.add(DeletionSide::Server, paths(&[native(r"C:\S\b")])).unwrap();
         assert!(!started);
         assert_eq!(merged.len(), 2);
         state.set_count(DeletionSide::Server, &merged, 2);
@@ -861,16 +880,16 @@ mod tests {
     #[test]
     fn release_keeps_paths_added_meanwhile() {
         let mut state = DeletionGuardState::default();
-        let (_, merged) = state.add(DeletionSide::Local, paths(&[r"C:\S\a"])).unwrap();
+        let (_, merged) = state.add(DeletionSide::Local, paths(&[native(r"C:\S\a")])).unwrap();
         state.set_count(DeletionSide::Local, &merged, 1);
         let version = state.local.as_ref().unwrap().version;
         let answered = state.answered(DeletionSide::Local, version).unwrap().unwrap();
         // A second answer while the first one runs is refused.
         assert!(state.answered(DeletionSide::Local, version).is_err());
         // While the confirmed deletion runs, another path is held.
-        state.add(DeletionSide::Local, paths(&[r"C:\S\b"]));
+        state.add(DeletionSide::Local, paths(&[native(r"C:\S\b")]));
         let remaining = state.release(DeletionSide::Local, &answered.paths).unwrap();
-        assert_eq!(remaining, paths(&[r"C:\S\b"]));
+        assert_eq!(remaining, paths(&[native(r"C:\S\b")]));
         // The rest needs a new count before it can be answered.
         let version = state.local.as_ref().unwrap().version;
         assert!(state.answered(DeletionSide::Local, version).is_err());
@@ -883,7 +902,7 @@ mod tests {
     fn deletions_in_small_parts_add_up() {
         let mut state = DeletionGuardState::default();
         let now = Instant::now();
-        let part = |i: u64| paths(&[&format!(r"C:\S\folder{i}")]);
+        let part = |i: u64| paths(&[native(&format!(r"C:\S\folder{i}"))]);
         let held = |state: &mut DeletionGuardState, side, i: u64, at: Instant| {
             let p = part(i);
             matches!(state.decide(side, &p, p.clone(), 5, 10_000, at), Decision::Hold(_))
@@ -895,7 +914,7 @@ mod tests {
         // The tenth part reaches 50 within the window and is held, right away.
         let at = now + Duration::from_secs(9);
         assert!(held(&mut state, DeletionSide::Local, 9, at));
-        assert!(state.is_held(DeletionSide::Local, Path::new(r"C:\S\folder9")));
+        assert!(state.is_held(DeletionSide::Local, Path::new(native(r"C:\S\folder9"))));
         // While it is held, the next one is held too.
         assert!(held(&mut state, DeletionSide::Local, 10, at));
         // The other side counts on its own; after the window, small deletions pass again.
@@ -908,8 +927,8 @@ mod tests {
     fn a_held_side_holds_every_further_deletion() {
         let mut state = DeletionGuardState::default();
         let now = Instant::now();
-        state.add(DeletionSide::Server, paths(&[r"C:\S\a"]));
-        let b = paths(&[r"C:\S\b"]);
+        state.add(DeletionSide::Server, paths(&[native(r"C:\S\a")]));
+        let b = paths(&[native(r"C:\S\b")]);
         // The new path joins the hold (a changed hold, not a new one).
         assert!(matches!(
             state.decide(DeletionSide::Server, &b, b.clone(), 1, 10_000, now),
@@ -920,7 +939,7 @@ mod tests {
             Decision::Pass
         ));
         // A path counted with a folder whose deletion passed is not added to the hold.
-        let child = paths(&[r"C:\S\b\x.txt"]);
+        let child = paths(&[native(r"C:\S\b\x.txt")]);
         assert!(matches!(
             state.decide(DeletionSide::Server, &child, Vec::new(), 0, 10_000, now),
             Decision::Pass
@@ -932,16 +951,16 @@ mod tests {
         let mut state = DeletionGuardState::default();
         let now = Instant::now();
         // Folder A with 30 entries passed (drive of 10000).
-        let a = paths(&[r"C:\S\A"]);
+        let a = paths(&[native(r"C:\S\A")]);
         assert!(matches!(
             state.decide(DeletionSide::Local, &a, a.clone(), 31, 10_000, now),
             Decision::Pass
         ));
         // The walk into A finds its children: already counted.
-        let children = paths(&[r"C:\S\A\1.txt", r"C:\S\A\B"]);
+        let children = paths(&[native(r"C:\S\A\1.txt"), native(r"C:\S\A\B")]);
         assert!(state.fresh_paths(DeletionSide::Local, &children, now).is_empty());
         // A sibling is new.
-        let sibling = paths(&[r"C:\S\AB"]);
+        let sibling = paths(&[native(r"C:\S\AB")]);
         assert_eq!(state.fresh_paths(DeletionSide::Local, &sibling, now), sibling);
         // Only within the window.
         let later = now + RECENT_WINDOW + Duration::from_secs(1);
@@ -951,18 +970,18 @@ mod tests {
     #[test]
     fn uncounted_entries_last_until_released() {
         let mut state = DeletionGuardState::default();
-        state.uncounted.push((PathBuf::from(r"C:\S\Photos\2020"), 9_000));
-        assert_eq!(state.uncounted_entries(&paths(&[r"C:\S\Photos\2020"])), 9_000);
+        state.uncounted.push((PathBuf::from(native(r"C:\S\Photos\2020")), 9_000));
+        assert_eq!(state.uncounted_entries(&paths(&[native(r"C:\S\Photos\2020")])), 9_000);
         // Also when held together with its parent folder, not for a sibling.
-        assert_eq!(state.uncounted_entries(&paths(&[r"C:\S\Photos"])), 9_000);
-        assert_eq!(state.uncounted_entries(&paths(&[r"C:\S\Photos2"])), 0);
+        assert_eq!(state.uncounted_entries(&paths(&[native(r"C:\S\Photos")])), 9_000);
+        assert_eq!(state.uncounted_entries(&paths(&[native(r"C:\S\Photos2")])), 0);
         // Resolving the parent folder ends it.
-        let (_, merged) = state.add(DeletionSide::Server, paths(&[r"C:\S\Photos"])).unwrap();
+        let (_, merged) = state.add(DeletionSide::Server, paths(&[native(r"C:\S\Photos")])).unwrap();
         state.set_count(DeletionSide::Server, &merged, 9_004);
         let version = state.server.as_ref().unwrap().version;
         state.answered(DeletionSide::Server, version).unwrap();
         state.release(DeletionSide::Server, &merged);
-        assert_eq!(state.uncounted_entries(&paths(&[r"C:\S\Photos"])), 0);
+        assert_eq!(state.uncounted_entries(&paths(&[native(r"C:\S\Photos")])), 0);
     }
 
     #[test]
@@ -984,26 +1003,26 @@ mod tests {
     fn held_path_stays_held_when_fewer_entries_are_left() {
         // The planner asks is_held before the threshold; a held path stays held.
         let mut state = DeletionGuardState::default();
-        state.add(DeletionSide::Local, paths(&[r"C:\S\a", r"C:\S\b"]));
-        assert!(state.is_held(DeletionSide::Local, Path::new(r"C:\S\a\file.txt")));
-        assert!(!state.is_held(DeletionSide::Server, Path::new(r"C:\S\a")));
-        assert!(!state.is_held(DeletionSide::Local, Path::new(r"C:\S\c")));
+        state.add(DeletionSide::Local, paths(&[native(r"C:\S\a"), native(r"C:\S\b")]));
+        assert!(state.is_held(DeletionSide::Local, Path::new(native(r"C:\S\a\file.txt"))));
+        assert!(!state.is_held(DeletionSide::Server, Path::new(native(r"C:\S\a"))));
+        assert!(!state.is_held(DeletionSide::Local, Path::new(native(r"C:\S\c"))));
     }
 
     #[test]
     fn confirmation_is_not_used_up_and_expires() {
         let mut state = DeletionGuardState::default();
         let now = Instant::now();
-        state.keep(&paths(&[r"C:\S\a"]));
-        state.allow(paths(&[r"C:\S\a"]), now);
+        state.keep(&paths(&[native(r"C:\S\a")]));
+        state.allow(paths(&[native(r"C:\S\a")]), now);
         // A confirmation ends "keep" for that path.
-        assert!(!state.is_kept(Path::new(r"C:\S\a")));
+        assert!(!state.is_kept(Path::new(native(r"C:\S\a"))));
         // Any number of passes may check it (an unrelated pass does not use it up).
-        assert!(state.is_confirmed(&paths(&[r"C:\S\a\x.txt"]), now));
-        assert!(state.is_confirmed(&paths(&[r"C:\S\a"]), now));
-        assert!(!state.is_confirmed(&paths(&[r"C:\S\a", r"C:\S\b"]), now));
+        assert!(state.is_confirmed(&paths(&[native(r"C:\S\a\x.txt")]), now));
+        assert!(state.is_confirmed(&paths(&[native(r"C:\S\a")]), now));
+        assert!(!state.is_confirmed(&paths(&[native(r"C:\S\a"), native(r"C:\S\b")]), now));
         // After the time limit it is gone.
         let later = now + CONFIRMATION_VALID_FOR + Duration::from_secs(1);
-        assert!(!state.is_confirmed(&paths(&[r"C:\S\a"]), later));
+        assert!(!state.is_confirmed(&paths(&[native(r"C:\S\a")]), later));
     }
 }

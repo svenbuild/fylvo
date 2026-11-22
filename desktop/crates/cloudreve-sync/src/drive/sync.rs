@@ -1,10 +1,8 @@
+#[cfg(windows)]
+use crate::cfapi::{metadata::Metadata, placeholder_file::PlaceholderFile};
 use crate::{
-    cfapi::{
-        metadata::Metadata,
-        placeholder::{LocalFileInfo, PinState},
-        placeholder_file::PlaceholderFile,
-    },
     drive::{
+        local::{LocalFileInfo, PinState},
         case::{FILE_ID_KEY, case_mismatched_ancestor, ntfs_fold},
         commands::MountCommand,
         guard::DeletionSide,
@@ -30,10 +28,12 @@ use notify_debouncer_full::notify::event::{
     AccessKind, CreateKind, EventKind, ModifyKind, RemoveKind, RenameMode,
 };
 use notify_debouncer_full::{DebouncedEvent, notify::Event};
+#[cfg(windows)]
 use nt_time::FileTime;
+#[cfg(windows)]
+use std::ffi::OsString;
 use std::{
     collections::{HashMap, HashSet},
-    ffi::OsString,
     fmt, fs, io,
     path::{Path, PathBuf},
     time::SystemTime,
@@ -41,6 +41,7 @@ use std::{
 use tokio::task;
 use uuid::Uuid;
 
+#[cfg(windows)]
 pub fn cloud_file_to_placeholder(
     file: &FileResponse,
     _local_path: &PathBuf,
@@ -1675,23 +1676,27 @@ impl SyncAction {
 mod tests {
     //! Fylvo: tests of the sync decisions (no Windows sync root needed).
     use super::*;
-    use crate::cfapi::placeholder::PlaceholderState;
-    use windows::Win32::Storage::CloudFilters::{
-        CF_PLACEHOLDER_STATE, CF_PLACEHOLDER_STATE_IN_SYNC, CF_PLACEHOLDER_STATE_PARTIALLY_ON_DISK,
-        CF_PLACEHOLDER_STATE_PLACEHOLDER,
-    };
+    use crate::drive::local::SyncState;
 
     const UPDATED: &str = "2026-11-19T10:00:00Z";
 
-    fn local(is_directory: bool, state: Option<CF_PLACEHOLDER_STATE>) -> LocalFileInfo {
+    fn local(is_directory: bool, state: Option<SyncState>) -> LocalFileInfo {
         LocalFileInfo {
             exists: true,
             is_directory,
             file_size: Some(10),
             last_modified: None,
-            placeholder_state: state.map(PlaceholderState::from_flags),
+            sync_state: state,
             pin_state: PinState::Unspecified,
         }
+    }
+
+    fn state(in_sync: bool, partial_on_disk: bool) -> Option<SyncState> {
+        Some(SyncState {
+            is_placeholder: true,
+            in_sync,
+            partial_on_disk,
+        })
     }
 
     /// A normal file or folder, not a placeholder (created on this PC, not uploaded yet).
@@ -1700,25 +1705,15 @@ mod tests {
     }
     /// A synced placeholder whose content is on this PC.
     fn hydrated_in_sync(is_directory: bool) -> LocalFileInfo {
-        local(
-            is_directory,
-            Some(CF_PLACEHOLDER_STATE_PLACEHOLDER | CF_PLACEHOLDER_STATE_IN_SYNC),
-        )
+        local(is_directory, state(true, false))
     }
     /// A synced placeholder that is online only (file) or never opened (folder).
     fn online_only(is_directory: bool) -> LocalFileInfo {
-        local(
-            is_directory,
-            Some(
-                CF_PLACEHOLDER_STATE_PLACEHOLDER
-                    | CF_PLACEHOLDER_STATE_IN_SYNC
-                    | CF_PLACEHOLDER_STATE_PARTIALLY_ON_DISK,
-            ),
-        )
+        local(is_directory, state(true, true))
     }
     /// A placeholder changed on this PC.
     fn modified() -> LocalFileInfo {
-        local(false, Some(CF_PLACEHOLDER_STATE_PLACEHOLDER))
+        local(false, state(false, false))
     }
 
     fn remote(is_folder: bool, etag: &str) -> FileResponse {
@@ -1855,10 +1850,7 @@ mod tests {
             ["upload"]
         );
         // Not an online-only file (no local bytes: only its metadata changed).
-        let online_only_changed = local(
-            false,
-            Some(CF_PLACEHOLDER_STATE_PLACEHOLDER | CF_PLACEHOLDER_STATE_PARTIALLY_ON_DISK),
-        );
+        let online_only_changed = local(false, state(false, true));
         assert!(plan_one(Some(&server), &online_only_changed, Some(&known), false)
             .actions
             .is_empty());

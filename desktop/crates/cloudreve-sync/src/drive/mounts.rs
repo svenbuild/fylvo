@@ -1,7 +1,9 @@
+#[cfg(windows)]
 use crate::cfapi::root::{
     Connection, HydrationType, PopulationType, SecurityId, Session, SyncRootId, SyncRootIdBuilder,
     SyncRootInfo,
 };
+#[cfg(windows)]
 use crate::drive::callback::CallbackHandler;
 use crate::drive::commands::ManagerCommand;
 use crate::drive::commands::MountCommand;
@@ -10,6 +12,7 @@ use crate::drive::guard::DeletionGuardState;
 use std::sync::atomic::AtomicBool;
 use crate::drive::ignore::IgnoreMatcher;
 use crate::drive::sync::group_fs_events;
+#[cfg(windows)]
 use crate::drive::utils::recycle_bin_url;
 use crate::inventory::{DrivePropsUpdate, InventoryDb, TaskRecord};
 use crate::tasks::{TaskProgress, TaskQueue, TaskQueueConfig};
@@ -20,6 +23,7 @@ use cloudreve_api::api::user::UserApi;
 use cloudreve_api::{Client, ClientConfig, models::user::Token};
 use notify_debouncer_full::notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
+#[cfg(windows)]
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 use std::{
@@ -30,7 +34,9 @@ use std::{
 use tokio::spawn;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::JoinHandle;
+#[cfg(windows)]
 use url::Url;
+#[cfg(windows)]
 use windows::Storage::Provider::StorageProviderSyncRootManager;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DriveConfig {
@@ -47,6 +53,7 @@ pub struct DriveConfig {
     pub user_id: String,
 
     // Windows CFAPI
+    #[cfg(windows)]
     pub sync_root_id: Option<SyncRootId>,
 
     /// List of gitignore-style patterns for files/directories to ignore during sync
@@ -134,6 +141,7 @@ type FsWatcher = Debouncer<RecommendedWatcher, RecommendedCache>;
 
 pub struct Mount {
     pub config: Arc<RwLock<DriveConfig>>,
+    #[cfg(windows)]
     connection: Option<Connection<CallbackHandler>>,
     pub command_tx: mpsc::UnboundedSender<MountCommand>,
     command_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<MountCommand>>>>,
@@ -157,10 +165,14 @@ pub struct Mount {
     /// Fylvo: the user may only read this drive (shared folder with "Lesen").
     pub(crate) read_only: AtomicBool,
     pub(crate) read_only_notified: AtomicBool,
-    /// Fylvo: the drive letter, see `drive_letter.rs`.
+    /// Fylvo: the drive letter, see `drive_letter.rs` (Windows only).
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) drive_letter_state: std::sync::Mutex<crate::drive::drive_letter::LetterState>,
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) drive_letter_notified: AtomicBool,
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) drive_letter_handle: Mutex<Option<JoinHandle<()>>>,
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) drive_letter_closed: AtomicBool,
     /// Fylvo: local renames the app makes itself, not sent to the server (see `case.rs`).
     pub(crate) own_renames: crate::drive::case::OwnRenames,
@@ -260,6 +272,7 @@ impl Mount {
 
         Self {
             config: Arc::new(RwLock::new(config)),
+            #[cfg(windows)]
             connection: None,
             command_tx,
             command_rx: Arc::new(tokio::sync::Mutex::new(Some(command_rx))),
@@ -399,6 +412,17 @@ impl Mount {
         self.task_queue.ongoing_progress().await
     }
 
+    /// Fylvo: on Linux the sync folder is a normal folder; there is nothing to register with the
+    /// system. The app's own list of sync folders replaces the Windows registry.
+    #[cfg(target_os = "linux")]
+    pub async fn start(&mut self) -> Result<()> {
+        let sync_path = self.config.read().await.sync_path.clone();
+        crate::drive::local_linux::register_sync_root(&sync_path);
+        self.start_fs_watcher().await?;
+        Ok(())
+    }
+
+    #[cfg(windows)]
     pub async fn start(&mut self) -> Result<()> {
         if !StorageProviderSyncRootManager::IsSupported()
             .context("Cloud Filter API is not supported")?
@@ -577,6 +601,7 @@ impl Mount {
                         }
                     });
                 }
+                #[cfg(windows)]
                 MountCommand::FetchPlaceholders { path, response } => {
                     let s_clone = s.clone();
                     let mount_id_clone = mount_id.clone();
@@ -612,6 +637,7 @@ impl Mount {
                     tracing::warn!(target: "drive::mounts", id = %mount_id, "Credential invalid, marking as expired");
                     s.set_credential_expired(true).await;
                 }
+                #[cfg(windows)]
                 MountCommand::FetchData {
                     path,
                     ticket,
@@ -659,16 +685,20 @@ impl Mount {
 
     pub async fn delete(&self) -> Result<()> {
         self.shutdown().await;
+        #[cfg(windows)]
         if let Some(ref connection) = self.connection {
             connection.disconnect().context("faield to disconnect sync root")?;
         }
         self.task_queue.shutdown().await;
+        #[cfg(windows)]
         if let Some(sync_root_id) = self.config.read().await.sync_root_id.as_ref() {
             if let Err(e) = sync_root_id.unregister() {
                 tracing::warn!(target: "drive::mounts", id=%self.id, error=%e, "Failed to unregister sync root");
                 return Err(anyhow::anyhow!("Failed to unregister sync root: {}", e));
             }
         }
+        #[cfg(target_os = "linux")]
+        crate::drive::local_linux::unregister_sync_root(&self.config.read().await.sync_path);
         if let Err(e) = self.inventory.nuke_drive(&self.id) {
             tracing::error!(target: "drive::mounts", id=%self.id, error=%e, "Failed to nuke drive");
         }
@@ -797,6 +827,7 @@ impl Mount {
     }
 }
 
+#[cfg(windows)]
 fn generate_sync_root_id(
     instance_url: &str,
     _account_name: &str,

@@ -1,15 +1,32 @@
+#[cfg(windows)]
+use crate::cfapi::{
+    filter::ticket,
+    placeholder::{OpenOptions, PinState},
+    utility::WriteAt,
+};
+#[cfg(windows)]
+use crate::drive::{
+    case::{case_twins, ntfs_fold, report_case_clash},
+    sync::is_symbolic_link,
+    utils::notify_shell_change,
+};
+#[cfg(windows)]
+use cloudreve_api::models::{
+    explorer::{FileResponse, FileURLService},
+    uri::CrUri,
+};
+#[cfg(windows)]
+use cloudreve_api::api::explorer::ExplorerApiExt;
+#[cfg(windows)]
+use std::ops::Range;
 use crate::{
-    cfapi::{
-        filter::ticket,
-        placeholder::{LocalFileInfo, OpenOptions, PinState},
-        utility::WriteAt,
-    },
     drive::{
-        case::{case_twins, ntfs_fold, report_case_clash, report_name_case_taken},
+        case::report_name_case_taken,
+        local::LocalFileInfo,
         mounts::Mount,
         placeholder::CrPlaceholder,
-        sync::{GroupedFsEvents, SyncMode, is_symbolic_link},
-        utils::{is_in_cloud_sync_root, local_path_to_cr_uri, notify_shell_change},
+        sync::{GroupedFsEvents, SyncMode},
+        utils::{is_in_cloud_sync_root, local_path_to_cr_uri},
     },
     inventory::ConflictState,
     tasks::{TaskPayload, uploaded_recently},
@@ -19,13 +36,9 @@ use anyhow::{Context, Result};
 use bytes::Bytes;
 use cloudreve_api::{
     ApiError,
-    api::{ExplorerApi, explorer::ExplorerApiExt},
+    api::ExplorerApi,
     models::{
-        explorer::{
-            DeleteFileService, FileResponse, FileURLService, MoveFileService, RenameFileService,
-            metadata,
-        },
-        uri::CrUri,
+        explorer::{DeleteFileService, MoveFileService, RenameFileService, metadata},
         user::Token,
     },
 };
@@ -35,12 +48,13 @@ use notify_debouncer_full::notify::{
 };
 use std::{
     collections::HashMap,
-    ops::Range,
     path::{Path, PathBuf},
 };
 use tokio::sync::oneshot::Sender;
 use uuid::Uuid;
+#[cfg(windows)]
 use windows::Win32::UI::Shell::SHCNE_ATTRIBUTES;
+#[cfg(windows)]
 const PAGE_SIZE: i32 = 1000;
 
 /// Generate a unique filename by appending a counter suffix before the extension.
@@ -82,6 +96,7 @@ fn generate_unique_filename(original_path: &Path) -> PathBuf {
 }
 
 #[derive(Debug, Clone)]
+#[cfg(windows)]
 pub struct GetPlacehodlerResult {
     pub files: Vec<FileResponse>,
     pub local_path: PathBuf,
@@ -96,6 +111,7 @@ pub struct GetPlacehodlerResult {
 /// during the callback's lifetime.
 #[derive(Debug)]
 pub enum MountCommand {
+    #[cfg(windows)]
     FetchPlaceholders {
         path: PathBuf,
         response: Sender<Result<GetPlacehodlerResult>>,
@@ -105,6 +121,7 @@ pub enum MountCommand {
     },
     /// Credential has become invalid (401, 40020, 40089 errors)
     CredentialInvalid,
+    #[cfg(windows)]
     FetchData {
         path: PathBuf,
         ticket: ticket::FetchData,
@@ -199,7 +216,15 @@ impl ConflictAction {
     }
 }
 
+/// Fylvo: on Linux a renamed file keeps its row (moved by `rename_path`) and with it its local
+/// state, so there is nothing to mark.
+#[cfg(not(windows))]
+pub(crate) async fn mark_path_in_sync(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
 /// Mark a placeholder as in sync with the server (after a rename).
+#[cfg(windows)]
 pub(crate) async fn mark_path_in_sync(path: &Path) -> Result<()> {
     tracing::trace!(target: "drive::commands", path = %path.display(), "Marking file as in-sync: OPEN");
     match OpenOptions::new()
@@ -225,6 +250,7 @@ pub(crate) async fn mark_path_in_sync(path: &Path) -> Result<()> {
 }
 
 impl Mount {
+    #[cfg(windows)]
     pub async fn fetch_data(
         &self,
         path: PathBuf,
@@ -353,6 +379,7 @@ impl Mount {
 
         Ok(())
     }
+    #[cfg(windows)]
     pub async fn fetch_placeholders(&self, path: PathBuf) -> Result<GetPlacehodlerResult> {
         let config = self.config.read().await;
         let remote_base = config.remote_path.clone();
@@ -920,6 +947,9 @@ impl Mount {
                 continue;
             }
 
+            // Fylvo: pin states exist only for Windows placeholders.
+            #[cfg(windows)]
+            {
             // For pinned file but not on disk, hydrate it
             let pin_state = placeholder_info.pinned();
             if pin_state == PinState::Pinned && placeholder_info.partial_on_disk() {
@@ -972,6 +1002,7 @@ impl Mount {
                     }
                 }
                 continue;
+            }
             }
 
             // General modification, quque a upload task if not exist

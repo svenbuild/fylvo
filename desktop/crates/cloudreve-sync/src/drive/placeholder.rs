@@ -1,23 +1,30 @@
+#[cfg(windows)]
 use crate::{
     cfapi::{
         metadata::Metadata,
-        placeholder::{ConvertOptions, LocalFileInfo, OpenOptions, UpdateOptions},
+        placeholder::{ConvertOptions, OpenOptions, UpdateOptions},
         placeholder_file::PlaceholderFile,
     },
     drive::utils::{move_to_recycle_bin, notify_shell_change},
+};
+use crate::{
+    drive::local::LocalFileInfo,
     inventory::{FileMetadata, InventoryDb, MetadataEntry},
 };
 use anyhow::{Context, Result};
 use chrono::DateTime;
 use cloudreve_api::models::explorer::{FileResponse, file_type};
+#[cfg(windows)]
 use nt_time::FileTime;
-use std::{
-    ffi::OsString,
-    path::PathBuf,
-    sync::Arc,
-};
+#[cfg(windows)]
+use std::ffi::OsString;
+use std::path::PathBuf;
+#[cfg(windows)]
+use std::sync::Arc;
 use uuid::Uuid;
+#[cfg(windows)]
 use widestring::U16CString;
+#[cfg(windows)]
 use windows::{
     Win32::{
         Foundation::E_FAIL,
@@ -34,9 +41,17 @@ use windows::{
     },
     core::PCWSTR,
 };
+#[cfg(windows)]
 use windows_core::PROPVARIANT;
 
+/// Fylvo: the Linux side of `commit` and `delete_placeholder` (normal folders and files, local
+/// state in the inventory row).
+#[cfg(target_os = "linux")]
+#[path = "placeholder_linux.rs"]
+mod linux;
+
 /// Fylvo: turn a fully hydrated placeholder into a normal file.
+#[cfg(windows)]
 fn revert_placeholder(path: &std::path::Path) -> Result<()> {
     let mut placeholder = OpenOptions::new()
         .write_access()
@@ -50,10 +65,15 @@ pub struct CrPlaceholder {
     pub local_file_info: LocalFileInfo,
 
     local_path: PathBuf,
+    #[cfg_attr(not(windows), allow(dead_code))]
     sync_root: PathBuf,
     drive_id: Uuid,
     file_meta: Option<FileMetadata>,
     options: u32,
+    /// Fylvo (Linux): the local state known to equal the server's content (download temp file,
+    /// upload start), see `with_local_stamp`.
+    #[cfg(target_os = "linux")]
+    local_stamp: Option<crate::drive::local_linux::LocalStamp>,
 }
 
 enum CrPlaceholderOptions {
@@ -72,6 +92,8 @@ impl CrPlaceholder {
             drive_id,
             file_meta: None,
             options: 0,
+            #[cfg(target_os = "linux")]
+            local_stamp: None,
             local_file_info: LocalFileInfo::from_path(&local_path.clone())
                 .unwrap_or(LocalFileInfo::missing()),
         }
@@ -115,6 +137,7 @@ impl CrPlaceholder {
     /// is first turned back into a normal file so it can be restored from there; if that fails,
     /// the file is kept. A folder is removed only when it is empty on disk (a folder that was
     /// never opened has nothing on disk).
+    #[cfg(windows)]
     pub fn delete_placeholder(&self, inventory: Arc<InventoryDb>) -> Result<()> {
         let info = &self.local_file_info;
         if info.exists {
@@ -161,6 +184,7 @@ impl CrPlaceholder {
     }
 
     // Commit changes to file system and inventory
+    #[cfg(windows)]
     pub fn commit(&mut self, inventory: Arc<InventoryDb>) -> Result<()> {
         if self.file_meta.is_none() {
             return Err(anyhow::anyhow!("File metadata is not set"));
@@ -341,6 +365,7 @@ impl CrPlaceholder {
     /// // Clear error state
     /// update_sync_error_state(Path::new("C:\\MyFolder\\file.txt"), false)?;
     /// ```
+    #[cfg(windows)]
     pub fn update_sync_error_state(&self, set_error: bool) -> Result<()> {
         if !self.local_file_info.is_placeholder() {
             // Skip non-placeholder file

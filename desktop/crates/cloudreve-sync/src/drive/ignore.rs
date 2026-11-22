@@ -201,81 +201,82 @@ impl IgnoreMatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native;
 
     #[test]
     fn test_simple_pattern() {
-        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
         let patterns = vec!["*.log".to_string()];
         let matcher = IgnoreMatcher::new(&patterns, sync_root.clone()).unwrap();
 
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\debug.log"));
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\subdir\\error.log"));
-        assert!(!matcher.is_match("C:\\Users\\test\\sync\\readme.txt"));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\debug.log")));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\subdir\\error.log")));
+        assert!(!matcher.is_match(native("C:\\Users\\test\\sync\\readme.txt")));
     }
 
     #[test]
     fn office_save_names_are_ignored() {
-        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
         let matcher = IgnoreMatcher::new(&[], sync_root).unwrap();
         // Word, Excel and the download of this app move the old file to these names.
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\Docs\\~WRL0001.tmp"));
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\Docs\\E0F2A4B1.tmp"));
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\Docs\\e0f2a4b1.TMP"));
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\Docs\\~fylvo-backup-t1.tmp"));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\Docs\\~WRL0001.tmp")));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\Docs\\E0F2A4B1.tmp")));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\Docs\\e0f2a4b1.TMP")));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\Docs\\~fylvo-backup-t1.tmp")));
         // Other `.tmp` names are files like any other.
-        assert!(!matcher.is_match("C:\\Users\\test\\sync\\Docs\\notes.tmp"));
-        assert!(!matcher.is_match("C:\\Users\\test\\sync\\Docs\\E0F2A4B1X.tmp"));
-        assert!(!matcher.is_match("C:\\Users\\test\\sync\\Docs\\Book.xlsx"));
+        assert!(!matcher.is_match(native("C:\\Users\\test\\sync\\Docs\\notes.tmp")));
+        assert!(!matcher.is_match(native("C:\\Users\\test\\sync\\Docs\\E0F2A4B1X.tmp")));
+        assert!(!matcher.is_match(native("C:\\Users\\test\\sync\\Docs\\Book.xlsx")));
     }
 
     #[test]
     fn root_system_items_are_ignored_only_at_the_root() {
-        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
         let matcher = IgnoreMatcher::new(&[], sync_root).unwrap();
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\$Recycle.Bin"));
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\$RECYCLE.BIN\\S-1-5-21\\$R1.txt"));
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\System Volume Information"));
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\desktop.ini"));
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\Autorun.inf"));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\$Recycle.Bin")));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\$RECYCLE.BIN\\S-1-5-21\\$R1.txt")));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\System Volume Information")));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\desktop.ini")));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\Autorun.inf")));
         // The same names in a subfolder are normal files.
-        assert!(!matcher.is_match("C:\\Users\\test\\sync\\Fotos\\desktop.ini"));
-        assert!(!matcher.is_match("C:\\Users\\test\\sync\\Docs\\autorun.inf"));
+        assert!(!matcher.is_match(native("C:\\Users\\test\\sync\\Fotos\\desktop.ini")));
+        assert!(!matcher.is_match(native("C:\\Users\\test\\sync\\Docs\\autorun.inf")));
     }
 
     #[test]
     fn test_anchored_pattern() {
-        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
         let patterns = vec!["/build".to_string()];
         let matcher = IgnoreMatcher::new(&patterns, sync_root.clone()).unwrap();
 
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\build"));
-        assert!(!matcher.is_match("C:\\Users\\test\\sync\\src\\build"));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\build")));
+        assert!(!matcher.is_match(native("C:\\Users\\test\\sync\\src\\build")));
     }
 
     #[test]
     fn test_directory_pattern() {
-        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
         let patterns = vec!["node_modules".to_string()];
         let matcher = IgnoreMatcher::new(&patterns, sync_root.clone()).unwrap();
 
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\node_modules"));
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\project\\node_modules"));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\node_modules")));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\project\\node_modules")));
     }
 
     #[test]
     fn test_path_pattern() {
-        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
         let patterns = vec!["docs/*.md".to_string()];
         let matcher = IgnoreMatcher::new(&patterns, sync_root.clone()).unwrap();
 
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\docs\\readme.md"));
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\project\\docs\\api.md"));
-        assert!(!matcher.is_match("C:\\Users\\test\\sync\\readme.md"));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\docs\\readme.md")));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\project\\docs\\api.md")));
+        assert!(!matcher.is_match(native("C:\\Users\\test\\sync\\readme.md")));
     }
 
     #[test]
     fn test_comment_and_empty_lines() {
-        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
         let patterns = vec![
             "# This is a comment".to_string(),
             "".to_string(),
@@ -287,22 +288,22 @@ mod tests {
         // Only *.tmp is added, next to the four built-in Office temp patterns and the
         // built-in root system items (two globs each).
         assert_eq!(matcher.len(), 5 + 2 * ROOT_SYSTEM_ITEMS.len());
-        assert!(matcher.is_match("C:\\Users\\test\\sync\\file.tmp"));
+        assert!(matcher.is_match(native("C:\\Users\\test\\sync\\file.tmp")));
     }
 
     #[test]
     fn test_path_outside_sync_root() {
-        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
         let patterns = vec!["*.log".to_string()];
         let matcher = IgnoreMatcher::new(&patterns, sync_root.clone()).unwrap();
 
         // Path outside sync root should never match
-        assert!(!matcher.is_match("C:\\Other\\path\\debug.log"));
+        assert!(!matcher.is_match(native("C:\\Other\\path\\debug.log")));
     }
 
     #[test]
     fn test_relative_path_matching() {
-        let sync_root = PathBuf::from("C:\\Users\\test\\sync");
+        let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
         let patterns = vec!["*.log".to_string(), "/build".to_string()];
         let matcher = IgnoreMatcher::new(&patterns, sync_root).unwrap();
 

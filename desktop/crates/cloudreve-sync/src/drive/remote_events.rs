@@ -1,6 +1,5 @@
 use crate::{
-    cfapi::placeholder::LocalFileInfo,
-    drive::{case::same_on_ntfs, commands::MountCommand, mounts::Mount, sync::SyncMode},
+    drive::{local::LocalFileInfo, case::same_on_ntfs, commands::MountCommand, mounts::Mount, sync::SyncMode},
 };
 use anyhow::{Context, Result};
 use cloudreve_api::{

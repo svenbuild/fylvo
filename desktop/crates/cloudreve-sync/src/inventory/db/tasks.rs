@@ -411,6 +411,7 @@ impl TaskChangeset {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native;
 
     #[test]
     fn status_changes_only_from_the_expected_status() {
@@ -420,7 +421,7 @@ mod tests {
             id: "t1".into(),
             drive_id: "d".into(),
             task_type: "upload".into(),
-            local_path: r"C:\S\a.txt".into(),
+            local_path: native(r"C:\S\a.txt").into(),
             status: TaskStatus::Pending,
             progress: 0.0,
             total_bytes: 0,
@@ -443,21 +444,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn cancel_by_path_finds_tasks_in_any_case_spelling() {
         let dir = tempfile::tempdir().unwrap();
         let db = InventoryDb::with_path(dir.path().join("meta.db")).unwrap();
         // Queued as `report.txt`, it runs as `Report.txt` after a case rename on the server.
-        assert!(db.insert_task_if_not_exist(&task("t1", r"C:\S\report.txt")).unwrap());
-        assert!(db.insert_task_if_not_exist(&task("t2", r"C:\S\docs\b.txt")).unwrap());
-        assert!(db.insert_task_if_not_exist(&task("t3", r"C:\S\reports.txt")).unwrap());
+        assert!(db.insert_task_if_not_exist(&task("t1", native(r"C:\S\report.txt"))).unwrap());
+        assert!(db.insert_task_if_not_exist(&task("t2", native(r"C:\S\docs\b.txt"))).unwrap());
+        assert!(db.insert_task_if_not_exist(&task("t3", native(r"C:\S\reports.txt"))).unwrap());
         // The same file in another spelling is queued already.
-        assert!(!db.insert_task_if_not_exist(&task("t4", r"C:\S\Report.TXT")).unwrap());
+        assert!(!db.insert_task_if_not_exist(&task("t4", native(r"C:\S\Report.TXT"))).unwrap());
         // Letters outside ASCII, `%` and `_` in names.
-        assert!(db.insert_task_if_not_exist(&task("t5", r"C:\S\Ünd_100%.txt")).unwrap());
-        assert!(!db.insert_task_if_not_exist(&task("t6", r"C:\S\ünd_100%.TXT")).unwrap());
-        assert!(db.insert_task_if_not_exist(&task("t7", r"C:\S\Undx100x.txt")).unwrap());
-        let mut cancelled = db.cancel_tasks_by_path("d", r"C:\S\Report.txt").unwrap();
-        cancelled.extend(db.cancel_tasks_by_path("d", r"C:\S\Docs").unwrap());
+        assert!(db.insert_task_if_not_exist(&task("t5", native(r"C:\S\Ünd_100%.txt"))).unwrap());
+        assert!(!db.insert_task_if_not_exist(&task("t6", native(r"C:\S\ünd_100%.TXT"))).unwrap());
+        assert!(db.insert_task_if_not_exist(&task("t7", native(r"C:\S\Undx100x.txt"))).unwrap());
+        let mut cancelled = db.cancel_tasks_by_path("d", native(r"C:\S\Report.txt")).unwrap();
+        cancelled.extend(db.cancel_tasks_by_path("d", native(r"C:\S\Docs")).unwrap());
         cancelled.sort();
         assert_eq!(cancelled, ["t1", "t2"]);
         assert_eq!(db.get_task_status("t3").unwrap(), Some(TaskStatus::Pending));

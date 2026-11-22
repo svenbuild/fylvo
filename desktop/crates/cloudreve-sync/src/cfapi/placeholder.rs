@@ -434,25 +434,9 @@ impl Default for OpenOptions {
     }
 }
 
-/// The pin state of a placeholder.
-///
-/// [Read more
-/// here](https://docs.microsoft.com/en-us/windows/win32/api/cfapi/ne-cfapi-cf_pin_state#remarks)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PinState {
-    /// The platform could decide freely.
-    Unspecified,
-    /// [SyncFilter::fetch_data][crate::filter::SyncFilter::fetch_data] will be called to hydrate the rest
-    /// of the placeholder's data. Any dehydration requests will fail automatically.
-    Pinned,
-    /// [SyncFilter::dehydrate][crate::filter::SyncFilter::dehydrate] will be called to dehydrate the rest
-    /// of the placeholder's data.
-    Unpinned,
-    /// The placeholder will never sync to the cloud.
-    Excluded,
-    /// The placeholder will inherit the parent placeholder's pin state.
-    Inherit,
-}
+// Fylvo: `PinState` and `LocalFileInfo` are shared with Linux (`drive/local.rs`); this module
+// only fills them from the Cloud Files state.
+pub use crate::drive::local::{LocalFileInfo, PinState, SyncState};
 
 impl From<PinState> for CF_PIN_STATE {
     fn from(state: PinState) -> Self {
@@ -609,12 +593,6 @@ impl PlaceholderState {
         }
     }
 
-    /// Fylvo: a state built from flags, for tests of the sync decisions.
-    #[cfg(test)]
-    pub fn from_flags(state: CF_PLACEHOLDER_STATE) -> Self {
-        Self { state }
-    }
-
     // The file or directory whose FileAttributes and ReparseTag examined by the API is a placeholder.
     pub fn is_placeholder(&self) -> bool {
         (self.state & CloudFilters::CF_PLACEHOLDER_STATE_PLACEHOLDER).0 != 0
@@ -644,28 +622,18 @@ impl PlaceholderState {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LocalFileInfo {
-    pub exists: bool,
-    pub is_directory: bool,
-    pub file_size: Option<u64>,
-    pub last_modified: Option<SystemTime>,
-    pub placeholder_state: Option<PlaceholderState>,
-    pub pin_state: PinState,
-}
-
-impl LocalFileInfo {
-    pub fn missing() -> Self {
+impl From<&PlaceholderState> for SyncState {
+    fn from(state: &PlaceholderState) -> Self {
         Self {
-            exists: false,
-            is_directory: false,
-            file_size: None,
-            last_modified: None,
-            placeholder_state: None,
-            pin_state: PinState::Unspecified,
+            is_placeholder: state.is_placeholder(),
+            in_sync: state.in_sync(),
+            partial_on_disk: state.partial_on_disk(),
         }
     }
+}
 
+/// Fylvo: the Windows side of the shared `LocalFileInfo`, read from the Cloud Files state.
+impl LocalFileInfo {
     fn find(path: &Path) -> Option<WIN32_FIND_DATAW> {
         let mut find_data = unsafe { std::mem::zeroed::<WIN32_FIND_DATAW>() };
         let u16_path = U16CString::from_os_str(path).ok()?;
@@ -729,42 +697,9 @@ impl LocalFileInfo {
             is_directory,
             file_size,
             last_modified,
-            placeholder_state: Some(placeholder_state),
+            sync_state: Some(SyncState::from(&placeholder_state)),
             pin_state: pin_state,
         })
-    }
-
-    pub fn in_sync(&self) -> bool {
-        self.placeholder_state
-            .as_ref()
-            .map(|state| state.in_sync())
-            .unwrap_or(false)
-    }
-
-    pub fn is_placeholder(&self) -> bool {
-        self.placeholder_state
-            .as_ref()
-            .map(|state: &PlaceholderState| state.is_placeholder())
-            .unwrap_or(false)
-    }
-
-    pub fn partial_on_disk(&self) -> bool {
-        self.placeholder_state
-            .as_ref()
-            .map(|state: &PlaceholderState| state.partial_on_disk())
-            .unwrap_or(false)
-    }
-
-    pub fn pinned(&self) -> PinState {
-        self.pin_state.clone()
-    }
-
-    pub fn is_directory(&self) -> bool {
-        self.is_directory
-    }
-
-    pub fn is_folder_populated(&self) -> bool {
-        self.is_placeholder() && self.is_directory && !self.partial_on_disk()
     }
 }
 

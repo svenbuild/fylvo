@@ -168,11 +168,16 @@ impl InventoryDb {
         let mut total = 0;
         for path in outermost_paths(paths) {
             let prefix = descendant_prefix(path);
-            let row: CountRow = diesel::sql_query(
+            // Fylvo: Windows ignores case in paths, Linux does not.
+            let query = if cfg!(windows) {
                 "SELECT COUNT(*) AS n FROM file_metadata WHERE drive_id = ? \
                  AND (local_path = ? COLLATE NOCASE \
-                 OR substr(local_path, 1, length(?)) = ? COLLATE NOCASE)",
-            )
+                 OR substr(local_path, 1, length(?)) = ? COLLATE NOCASE)"
+            } else {
+                "SELECT COUNT(*) AS n FROM file_metadata WHERE drive_id = ? \
+                 AND (local_path = ? OR substr(local_path, 1, length(?)) = ?)"
+            };
+            let row: CountRow = diesel::sql_query(query)
             .bind::<Text, _>(drive_id)
             .bind::<Text, _>(path)
             .bind::<Text, _>(&prefix)
@@ -443,6 +448,7 @@ fn outermost_paths<'a>(paths: &[&'a str]) -> Vec<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native;
 
     fn db() -> (tempfile::TempDir, InventoryDb) {
         let dir = tempfile::tempdir().unwrap();
@@ -460,68 +466,69 @@ mod tests {
         let drive = Uuid::new_v4();
         let other = Uuid::new_v4();
         for path in [
-            r"C:\S\a",
-            r"C:\S\a\1.txt",
-            r"C:\S\a\b\2.txt",
-            r"C:\S\ab.txt",
-            r"C:\S\a_x\3.txt",
+            native(r"C:\S\a"),
+            native(r"C:\S\a\1.txt"),
+            native(r"C:\S\a\b\2.txt"),
+            native(r"C:\S\ab.txt"),
+            native(r"C:\S\a_x\3.txt"),
         ] {
             add(&db, drive, path);
         }
-        add(&db, other, r"C:\T\a\1.txt");
+        add(&db, other, native(r"C:\T\a\1.txt"));
         let id = drive.to_string();
 
         assert_eq!(db.count_for_drive(&id).unwrap(), 5);
         // "a" and its two children; "ab.txt" and "a_x" are siblings, not children.
-        assert_eq!(db.count_under_paths(&id, &[r"C:\S\a"]).unwrap(), 3);
+        assert_eq!(db.count_under_paths(&id, &[native(r"C:\S\a")]).unwrap(), 3);
         // A nested path is not counted twice.
         assert_eq!(
-            db.count_under_paths(&id, &[r"C:\S\a", r"C:\S\a\1.txt"]).unwrap(),
+            db.count_under_paths(&id, &[native(r"C:\S\a"), native(r"C:\S\a\1.txt")]).unwrap(),
             3
         );
-        // Windows ignores case in paths, so does the count.
-        assert_eq!(db.count_under_paths(&id, &[r"C:\s\A"]).unwrap(), 3);
+        // Windows ignores case in paths, so does the count. Linux does not.
+        let other_case = db.count_under_paths(&id, &[native(r"C:\s\A")]).unwrap();
+        assert_eq!(other_case, if cfg!(windows) { 3 } else { 1 });
         // A path without entry counts as one.
-        assert_eq!(db.count_under_paths(&id, &[r"C:\S\new.txt"]).unwrap(), 1);
+        assert_eq!(db.count_under_paths(&id, &[native(r"C:\S\new.txt")]).unwrap(), 1);
     }
 
     #[test]
     fn case_only_rename_moves_descendants_and_refuses_existing_rows() {
         let (_dir, db) = db();
         let drive = Uuid::new_v4();
-        for path in [r"C:\S\Fotos", r"C:\S\Fotos\a.jpg", r"C:\S\Fotos\b\c.jpg"] {
+        for path in [native(r"C:\S\Fotos"), native(r"C:\S\Fotos\a.jpg"), native(r"C:\S\Fotos\b\c.jpg")] {
             add(&db, drive, path);
         }
 
-        db.rename_path(r"C:\S\Fotos", r"C:\S\fotos").unwrap();
-        assert!(db.query_by_path(r"C:\S\fotos\b\c.jpg").unwrap().is_some());
-        assert!(db.query_by_path(r"C:\S\Fotos\a.jpg").unwrap().is_none());
+        db.rename_path(native(r"C:\S\Fotos"), native(r"C:\S\fotos")).unwrap();
+        assert!(db.query_by_path(native(r"C:\S\fotos\b\c.jpg")).unwrap().is_some());
+        assert!(db.query_by_path(native(r"C:\S\Fotos\a.jpg")).unwrap().is_none());
 
-        assert!(db.has_rows_at_or_under(r"C:\S\fotos").unwrap());
-        assert!(!db.has_rows_at_or_under(r"C:\S\Fotos").unwrap());
+        assert!(db.has_rows_at_or_under(native(r"C:\S\fotos")).unwrap());
+        assert!(!db.has_rows_at_or_under(native(r"C:\S\Fotos")).unwrap());
 
         // Rows under the new spelling exist already: refused as a whole, nothing moved.
-        add(&db, drive, r"C:\S\Fotos\a.jpg");
-        assert!(db.has_rows_at_or_under(r"C:\S\Fotos").unwrap());
-        assert!(!db.has_rows_at_or_under(r"C:\S\Foto").unwrap());
-        assert!(db.rename_path(r"C:\S\fotos", r"C:\S\Fotos").is_err());
-        assert!(db.query_by_path(r"C:\S\fotos\b\c.jpg").unwrap().is_some());
+        add(&db, drive, native(r"C:\S\Fotos\a.jpg"));
+        assert!(db.has_rows_at_or_under(native(r"C:\S\Fotos")).unwrap());
+        assert!(!db.has_rows_at_or_under(native(r"C:\S\Foto")).unwrap());
+        assert!(db.rename_path(native(r"C:\S\fotos"), native(r"C:\S\Fotos")).is_err());
+        assert!(db.query_by_path(native(r"C:\S\fotos\b\c.jpg")).unwrap().is_some());
     }
 
     #[test]
     fn batch_delete_and_rename_use_literal_windows_prefixes() {
         let (_dir, db) = db();
         let drive = Uuid::new_v4();
-        for path in [r"C:\S\a_b", r"C:\S\a_b\1.txt", r"C:\S\axb\2.txt"] {
+        for path in [native(r"C:\S\a_b"), native(r"C:\S\a_b\1.txt"), native(r"C:\S\axb\2.txt")] {
             add(&db, drive, path);
         }
 
-        db.rename_path(r"C:\S\a_b", r"C:\S\c").unwrap();
-        assert!(db.query_by_path(r"C:\S\c\1.txt").unwrap().is_some());
-        assert!(db.query_by_path(r"C:\S\axb\2.txt").unwrap().is_some());
+        db.rename_path(native(r"C:\S\a_b"), native(r"C:\S\c")).unwrap();
+        assert!(db.query_by_path(native(r"C:\S\c\1.txt")).unwrap().is_some());
+        assert!(db.query_by_path(native(r"C:\S\axb\2.txt")).unwrap().is_some());
 
-        db.batch_delete_by_path(vec![r"C:\S\c"]).unwrap();
-        assert!(db.query_by_path(r"C:\S\c\1.txt").unwrap().is_none());
-        assert!(db.query_by_path(r"C:\S\axb\2.txt").unwrap().is_some());
+        db.batch_delete_by_path(vec![native(r"C:\S\c")]).unwrap();
+        assert!(db.query_by_path(native(r"C:\S\c\1.txt")).unwrap().is_none());
+        assert!(db.query_by_path(native(r"C:\S\axb\2.txt")).unwrap().is_some());
     }
 }

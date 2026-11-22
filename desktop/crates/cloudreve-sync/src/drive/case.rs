@@ -9,9 +9,11 @@
 //! Unicode forms (composed `ü` and `u` + combining mark) are not touched: NTFS keeps them apart
 //! as two names, and so does the client.
 
+#[cfg(windows)]
+use crate::cfapi::placeholder::OpenOptions;
 use crate::{
-    cfapi::placeholder::{LocalFileInfo, OpenOptions},
     drive::{
+        local::LocalFileInfo,
         commands::MountCommand, guard::is_under_any_case, mounts::Mount, sync::SyncMode,
         utils::move_no_replace,
     },
@@ -31,13 +33,36 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+#[cfg(windows)]
 use windows::Win32::{
     Foundation::LPARAM,
     Globalization::{LCMAP_UPPERCASE, LCMapStringEx, LOCALE_NAME_INVARIANT},
 };
 
+/// Fylvo: the same fold without Windows, used on Linux only to predict which names the server
+/// refuses as case twins (40905). One character to one: the upper case if it is one character,
+/// else the lower case if that is one character (`ᾈ` and `ᾀ` meet there), else unchanged
+/// (`ß` stays `ß`).
+#[cfg(not(windows))]
+pub fn ntfs_fold(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            let mut upper = c.to_uppercase();
+            if let (Some(u), None) = (upper.next(), upper.next()) {
+                return u;
+            }
+            let mut lower = c.to_lowercase();
+            match (lower.next(), lower.next()) {
+                (Some(l), None) => l,
+                _ => c,
+            }
+        })
+        .collect()
+}
+
 /// A name as Windows compares file names: upper case with the system's invariant table (one
 /// UTF-16 unit to one, so `ü` = `Ü` but `ß` stays `ß`, not `SS`). No Unicode normalisation.
+#[cfg(windows)]
 pub fn ntfs_fold(name: &str) -> String {
     let wide: Vec<u16> = name.encode_utf16().collect();
     if wide.is_empty() {
@@ -82,8 +107,16 @@ pub(crate) fn ntfs_like_pattern(text: &str) -> String {
 }
 
 /// Whether two paths are the same file on NTFS.
+#[cfg(windows)]
 pub fn same_on_ntfs(a: &Path, b: &Path) -> bool {
     ntfs_fold(&a.to_string_lossy()) == ntfs_fold(&b.to_string_lossy())
+}
+
+/// Fylvo: Linux file names are case sensitive, so only the same spelling is the same file on
+/// disk. Which names the server takes as twins is `case_twins` (folded on every platform).
+#[cfg(not(windows))]
+pub fn same_on_ntfs(a: &Path, b: &Path) -> bool {
+    a == b
 }
 
 /// Folded names that occur more than once among `names` (server entries of one folder).
@@ -318,8 +351,15 @@ impl OwnRenames {
     }
 }
 
+/// Fylvo: Linux has no online-only files, so there is never a file without bytes on disk.
+#[cfg(not(windows))]
+async fn mark_in_sync_if_empty(_path: &Path) -> Result<bool> {
+    Ok(false)
+}
+
 /// Mark a placeholder in sync if none of its bytes is on disk. Checked and marked through one
 /// exclusive handle, so no write can come in between.
+#[cfg(windows)]
 async fn mark_in_sync_if_empty(path: &Path) -> Result<bool> {
     let mut handle = OpenOptions::new()
         .write_access()
@@ -632,6 +672,7 @@ pub fn report_name_case_taken(path: &Path, error: &anyhow::Error) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native;
 
     const CREATED: &str = "2026-11-19T10:00:00Z";
     const CREATED_TS: i64 = 1_795_082_400;
@@ -648,7 +689,7 @@ mod tests {
     }
 
     fn p(name: &str) -> PathBuf {
-        PathBuf::from(r"C:\S").join(name)
+        PathBuf::from(native(r"C:\S")).join(name)
     }
 
     fn server(names: &[&str]) -> HashMap<PathBuf, FileResponse> {
@@ -717,6 +758,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn fold_matches_the_real_file_system() {
         // The test PC's NTFS decides: a second spelling must open the same file.
         let dir = tempfile::tempdir().unwrap();
@@ -733,6 +775,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn transfers_see_other_spellings_on_the_real_disk() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -763,6 +806,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn server_case_rename_event_renames_locally() {
         // The event syncs only the new name; the disk still has the old one.
         let plan = plan_case(
@@ -945,6 +989,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn local_only_requested_twice_is_planned_once() {
         let plan = plan_case(
             &[p("neu.txt"), p("Neu.txt")],
@@ -962,8 +1007,9 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn ancestor_spelled_differently_on_disk_is_found() {
-        let root = PathBuf::from(r"C:\S");
+        let root = PathBuf::from(native(r"C:\S"));
         // Disk: `C:\S\Photos\2025`. A sync under the server's `photos` must not run. Like
         // `on_disk_path`, the lookup returns the disk's spelling of the last name only.
         let on_disk = |path: &Path| {
@@ -986,6 +1032,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn own_renames_match_once_and_only_their_target() {
         let renames = OwnRenames::default();
         renames.register(&p("foto.jpg"), &p("Foto.jpg"));

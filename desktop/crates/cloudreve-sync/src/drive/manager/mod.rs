@@ -551,9 +551,13 @@ impl DriveManager {
         let read_guard = self.drives.read().await;
 
         // Find the drive with matching sync root ID
+        #[cfg_attr(not(windows), allow(unused_mut))]
         let mut found_mount: Option<&Arc<Mount>> = None;
         for mount in read_guard.values() {
+            #[cfg_attr(not(windows), allow(unused_variables))]
             let config = mount.config.read().await;
+            // Fylvo: the Explorer status UI asks by Windows sync root ID; Linux has none.
+            #[cfg(windows)]
             if let Some(ref sync_root) = config.sync_root_id {
                 let sync_root_str = sync_root.to_os_string().to_string_lossy().to_string();
                 if sync_root_str == syncroot_id {

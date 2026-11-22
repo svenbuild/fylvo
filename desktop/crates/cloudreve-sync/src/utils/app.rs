@@ -1,8 +1,10 @@
 use std::sync::{Arc, OnceLock};
+#[cfg(windows)]
 use windows::ApplicationModel;
 
 static APP_ROOT: OnceLock<Arc<String>> = OnceLock::new();
 
+#[cfg(windows)]
 pub fn init_app_root() {
     let path = ApplicationModel::Package::Current()
         .and_then(|p| p.InstalledLocation())
@@ -11,6 +13,12 @@ pub fn init_app_root() {
         .unwrap_or_else(|_| String::new());
 
     APP_ROOT.set(Arc::new(path)).ok();
+}
+
+/// Fylvo: Linux has no package folder with Explorer images; nothing uses them there.
+#[cfg(not(windows))]
+pub fn init_app_root() {
+    APP_ROOT.set(Arc::new(String::new())).ok();
 }
 
 pub fn get_app_root() -> AppRoot {

@@ -1,9 +1,11 @@
+#[cfg(windows)]
 pub mod cfapi;
 pub mod config;
 pub mod drive;
 pub mod events;
 pub mod inventory;
 pub mod logging;
+#[cfg(windows)]
 pub mod shellext;
 pub mod tasks;
 pub mod uploader;
@@ -25,6 +27,17 @@ pub const DATA_DIR: &str = ".fylvo";
 
 #[macro_use]
 extern crate rust_i18n;
+
+/// Fylvo: a Windows path of a test (`C:\\S\\a.txt`) as a path of the platform the tests run
+/// on (`/S/a.txt` on Linux), so the same tests check both.
+#[cfg(test)]
+pub(crate) fn native(path: &str) -> &'static str {
+    if cfg!(windows) {
+        return Box::leak(path.to_string().into_boxed_str());
+    }
+    let unix = path.strip_prefix("C:").unwrap_or(path).replace('\\', "/");
+    Box::leak(unix.into_boxed_str())
+}
 
 i18n!("../../locales", fallback = "en-US");
 

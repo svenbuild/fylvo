@@ -27,8 +27,7 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::{
-    cfapi::placeholder::LocalFileInfo,
-    drive::{placeholder::CrPlaceholder, utils::local_path_to_cr_uri},
+    drive::{local::LocalFileInfo, placeholder::CrPlaceholder, utils::local_path_to_cr_uri},
     inventory::{FileMetadata, InventoryDb},
     tasks::{
         queue::QueuedTask,
@@ -557,6 +556,7 @@ impl<'a> DownloadTask<'a> {
 /// would write over what that program saves (the sync downloads it again later). If Windows
 /// moved the old file to the backup name but could not put the new one in place, the old one
 /// goes back.
+#[cfg(windows)]
 fn replace_with_backup(local: &Path, temp: &Path, task_id: &str) -> Result<()> {
     use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
     use windows::{
@@ -590,6 +590,25 @@ fn replace_with_backup(local: &Path, temp: &Path, task_id: &str) -> Result<()> {
         }
         return Err(err).context("failed to replace the local file");
     }
+    Ok(())
+}
+
+/// Fylvo: the Linux order of the same step. The old file is moved aside under the ignored
+/// backup name, the new one is put in place without replacing anything that appeared in
+/// between, and the old one comes back if that fails. The full rules for the backup (kept while
+/// a program may still write to it) come with the Linux download stage.
+#[cfg(target_os = "linux")]
+fn replace_with_backup(local: &Path, temp: &Path, task_id: &str) -> Result<()> {
+    use crate::drive::utils::move_no_replace;
+    let backup = temp.with_file_name(format!("~fylvo-backup-{task_id}.tmp"));
+    move_no_replace(local, &backup).context("failed to move the local file aside")?;
+    if let Err(err) = move_no_replace(temp, local) {
+        if let Err(back) = move_no_replace(&backup, local) {
+            return Err(back.context("failed to put the local file back after a failed replace"));
+        }
+        return Err(err).context("failed to replace the local file");
+    }
+    let _ = std::fs::remove_file(&backup);
     Ok(())
 }
 
@@ -647,6 +666,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn a_failed_replace_keeps_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let local = dir.path().join("Book.xlsx");
