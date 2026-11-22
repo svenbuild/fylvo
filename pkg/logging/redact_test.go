@@ -40,6 +40,11 @@ func TestRedactURL(t *testing.T) {
 		{"/x#access_token=hunter2", "/x#***"},
 		// Upload callback key.
 		{"/api/v4/callback/s3/sess-1/k3y", "/api/v4/callback/s3/sess-1/***"},
+		// Fylvo connected storages: the grant in the path and the code that completes a sign-in.
+		{"/api/v4/fylvo/connected/content/AbC-123_xyz/report.pdf", "/api/v4/fylvo/connected/content/***/report.pdf"},
+		{"https://cloud.example.com/api/v4/fylvo/connected/thumb/AbC-123_xyz/a.jpg", "https://cloud.example.com/api/v4/fylvo/connected/thumb/***/a.jpg"},
+		{"/settings?tab=connected&finish=abc", "/settings?tab=connected&finish=***"},
+		{"/api/v4/fylvo/connected/callback?state=abc&code=def", "/api/v4/fylvo/connected/callback?state=***&code=***"},
 		// Outgoing S3 link.
 		{"https://s3.example/b/o?X-Amz-Credential=AK%2F2026&X-Amz-Signature=ff00&X-Amz-Expires=3600",
 			"https://s3.example/b/o?X-Amz-Credential=***&X-Amz-Signature=***&X-Amz-Expires=3600"},

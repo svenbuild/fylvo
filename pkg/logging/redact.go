@@ -23,6 +23,8 @@ var secretParams = map[string]bool{
 	"authorization": true, "credential": true, "session_id": true, "tempauth": true,
 	"x-amz-signature": true, "x-amz-credential": true, "x-amz-security-token": true,
 	"q-signature": true, "ossaccesskeyid": true, "security-token": true, "_upt": true,
+	// Fylvo: the code that completes connecting a storage.
+	"finish": true,
 }
 
 // minTokenLength is the length from which an unknown value that looks like a token is replaced.
@@ -41,6 +43,9 @@ var (
 		regexp.MustCompile(`^((?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*)?/s/[^/]+/)[^/]+`),
 		// Upload callback with its key: /api/v4/callback/<policy>/<session>/<key>
 		regexp.MustCompile(`^((?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*)?/api/v4/callback/[^/]+/[^/]+/)[^/]+`),
+		// Content and thumbnail of a connected storage: the segment after the kind is the
+		// grant, which opens the file while it is valid.
+		regexp.MustCompile(`^((?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*)?/api/v4/fylvo/connected/(?:content|thumb)/)[^/]+`),
 	}
 	// urlInText finds addresses in a text; it stops before trailing punctuation and quotes.
 	urlInText = regexp.MustCompile(`(?i)https?://[^\s"<>]*[^\s"'<>.,;:)]`)

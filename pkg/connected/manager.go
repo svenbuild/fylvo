@@ -22,10 +22,6 @@ import (
 )
 
 const (
-	// SettingPrefix starts the names of the settings that hold the OAuth clients of the
-	// installation. The generic settings API neither returns nor writes them.
-	SettingPrefix = "fylvo_connected_"
-
 	// maxPerUser is the most storages one account can connect.
 	maxPerUser = 10
 	maxNameLen = 64
@@ -128,17 +124,12 @@ func NewManager(o ManagerOptions) *Manager {
 	}
 }
 
-func clientIDSetting(provider string) string     { return SettingPrefix + provider + "_client_id" }
-func clientSecretSetting(provider string) string { return SettingPrefix + provider + "_client_secret" }
+func clientIDSetting(provider string) string {
+	return inventory.ConnectedClientIDSetting(provider)
+}
 
-// SettingNames lists the settings of all providers, so they can be created at start.
-func SettingNames() []string {
-	names := make([]string, 0, 4)
-	for provider := range Specs() {
-		names = append(names, clientIDSetting(provider), clientSecretSetting(provider))
-	}
-	sort.Strings(names)
-	return names
+func clientSecretSetting(provider string) string {
+	return inventory.ConnectedClientSecretSetting(provider)
 }
 
 func (m *Manager) providerTypes() []string {

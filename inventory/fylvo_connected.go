@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	entsqlschema "entgo.io/ent/dialect/sql/schema"
@@ -23,9 +24,37 @@ const (
 	ConnectedStatusOK        = "ok"
 	ConnectedStatusReconnect = "reconnect"
 
+	// ConnectedSettingPrefix starts the names of the settings of connected storages: the
+	// OAuth clients of the installation at the providers. The generic settings API neither
+	// returns nor writes them, see IsProtectedSetting.
+	ConnectedSettingPrefix = "fylvo_connected_"
+
 	// connectedGroupsSetting marks that existing groups got the permission once.
-	connectedGroupsSetting = "fylvo_connected_groups_set"
+	connectedGroupsSetting = ConnectedSettingPrefix + "groups_set"
 )
+
+// ConnectedProviders are the providers a storage can be connected from.
+var ConnectedProviders = []string{"drive", "onedrive"}
+
+// ConnectedClientIDSetting names the setting with the client id of a provider.
+func ConnectedClientIDSetting(provider string) string {
+	return ConnectedSettingPrefix + provider + "_client_id"
+}
+
+// ConnectedClientSecretSetting names the setting with the sealed client secret of a provider.
+func ConnectedClientSecretSetting(provider string) string {
+	return ConnectedSettingPrefix + provider + "_client_secret"
+}
+
+// IsProtectedSetting tells whether a setting is kept away from the generic settings API of
+// the admin area: it is neither returned nor written there.
+func IsProtectedSetting(name string) bool {
+	name = strings.ToLower(name)
+	if _, ok := RedactedSettings[name]; ok {
+		return true
+	}
+	return strings.HasPrefix(name, ConnectedSettingPrefix)
+}
 
 type (
 	ConnectedStorageClient interface {
@@ -200,6 +229,21 @@ func (c *connectedStorageClient) CountByAccount(ctx context.Context, provider, a
 func ensureConnectedStorages(l logging.Logger, client *ent.Client, ctx context.Context) error {
 	if err := entmigrate.Create(ctx, client.Schema, []*entsqlschema.Table{entmigrate.ConnectedStoragesTable}); err != nil {
 		return fmt.Errorf("failed to create the table of connected storages: %w", err)
+	}
+
+	// The settings of the providers start empty. They exist as rows so they can be updated.
+	for _, provider := range ConnectedProviders {
+		for _, name := range []string{ConnectedClientIDSetting(provider), ConnectedClientSecretSetting(provider)} {
+			n, err := client.Setting.Query().Where(setting.Name(name)).Count(schema.SkipSoftDelete(ctx))
+			if err != nil {
+				return fmt.Errorf("failed to query setting %q: %w", name, err)
+			}
+			if n == 0 {
+				if err := client.Setting.Create().SetName(name).SetValue("").Exec(ctx); err != nil {
+					return fmt.Errorf("failed to add setting %q: %w", name, err)
+				}
+			}
+		}
 	}
 
 	// A soft-deleted row still takes the name (unique index): it counts as present.

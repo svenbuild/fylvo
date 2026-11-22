@@ -194,8 +194,8 @@ type (
 func (s *GetSettingService) GetSetting(c *gin.Context) (map[string]string, error) {
 	dep := dependency.FromContext(c)
 	res, err := dep.SettingClient().Gets(c, lo.Filter(s.Keys, func(item string, index int) bool {
-		_, ok := inventory.RedactedSettings[strings.ToLower(item)]
-		return !ok
+		// Fylvo: also the settings of connected storages.
+		return !inventory.IsProtectedSetting(item)
 	}))
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to get settings", err)
@@ -281,6 +281,14 @@ func (s *SetSettingService) SetSetting(c *gin.Context) (map[string]string, error
 	dep := dependency.FromContext(c)
 	kv := dep.KV()
 	settingClient := dep.SettingClient()
+
+	// Fylvo: the settings of connected storages hold sealed secrets. They are written only
+	// through their own route, which seals them.
+	for k := range s.Settings {
+		if strings.HasPrefix(strings.ToLower(k), inventory.ConnectedSettingPrefix) {
+			return nil, serializer.NewError(serializer.CodeParamErr, "This setting cannot be changed here", nil)
+		}
+	}
 
 	// Preprocess settings
 	allPreprocessors := make(map[string]SettingPreProcessor)

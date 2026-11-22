@@ -1,0 +1,67 @@
+package controllers
+
+import (
+	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
+	"github.com/cloudreve/Cloudreve/v4/service/fylvo"
+	"github.com/gin-gonic/gin"
+)
+
+// Fylvo connected storages.
+
+func fylvoAnswer(c *gin.Context, data any, err error) {
+	if err != nil {
+		c.JSON(200, serializer.Err(c, err))
+		return
+	}
+	c.JSON(200, serializer.Response{Data: data})
+}
+
+// FylvoConnectedList returns the connected storages of the current account.
+func FylvoConnectedList(c *gin.Context) {
+	res, err := fylvo.ConnectedList(c)
+	fylvoAnswer(c, res, err)
+}
+
+// FylvoConnectedAuthorize starts connecting a storage.
+func FylvoConnectedAuthorize(c *gin.Context) {
+	service := ParametersFromContext[*fylvo.ConnectedAuthorizeService](c, fylvo.ConnectedAuthorizeParamCtx{})
+	res, err := service.Authorize(c)
+	fylvoAnswer(c, res, err)
+}
+
+// FylvoConnectedCallback receives the browser coming back from the provider.
+func FylvoConnectedCallback(c *gin.Context) {
+	fylvo.ConnectedCallback(c)
+}
+
+// FylvoConnectedFinish completes connecting a storage.
+func FylvoConnectedFinish(c *gin.Context) {
+	service := ParametersFromContext[*fylvo.ConnectedFinishService](c, fylvo.ConnectedFinishParamCtx{})
+	res, err := service.Finish(c)
+	fylvoAnswer(c, res, err)
+}
+
+// FylvoConnectedRename renames a connected storage.
+func FylvoConnectedRename(c *gin.Context) {
+	service := ParametersFromContext[*fylvo.ConnectedRenameService](c, fylvo.ConnectedRenameParamCtx{})
+	res, err := service.Rename(c, c.Param("id"))
+	fylvoAnswer(c, res, err)
+}
+
+// FylvoConnectedDisconnect disconnects a storage.
+func FylvoConnectedDisconnect(c *gin.Context) {
+	fylvoAnswer(c, nil, fylvo.ConnectedDisconnect(c, c.Param("id")))
+}
+
+// FylvoConnectedAdmin returns the setup of the providers.
+func FylvoConnectedAdmin(c *gin.Context) {
+	res, err := fylvo.ConnectedAdmin(c)
+	fylvoAnswer(c, res, err)
+}
+
+// FylvoConnectedAdminSet stores the OAuth client of a provider.
+func FylvoConnectedAdminSet(c *gin.Context) {
+	service := ParametersFromContext[*fylvo.ConnectedAdminService](c, fylvo.ConnectedAdminParamCtx{})
+	res, err := service.Set(c)
+	fylvoAnswer(c, res, err)
+}

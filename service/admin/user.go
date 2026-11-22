@@ -10,6 +10,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -251,6 +252,13 @@ func (s *BatchUserService) Delete(c *gin.Context) error {
 		deleted, err := userClient.GetByID(c, id)
 		if err != nil {
 			ae.Add(strconv.Itoa(id), serializer.NewError(serializer.CodeNotFound, "User not found", err))
+			continue
+		}
+
+		// Fylvo: the storages the account connected go first, tokens included. Should the
+		// rest fail, the account is still there and can connect them again.
+		if err := connected.For(dep).DisconnectUser(c, id); err != nil {
+			ae.Add(strconv.Itoa(id), err)
 			continue
 		}
 

@@ -474,6 +474,10 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			}
 		}
 
+		// Fylvo: the browser comes back here from the provider of a storage that is being
+		// connected. It carries no sign-in; a cookie ties it to the browser that started.
+		v4.GET("fylvo/connected/callback", controllers.FylvoConnectedCallback)
+
 		// 回调接口
 		callback := v4.Group("callback")
 		{
@@ -879,6 +883,30 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 		auth := v4.Group("")
 		auth.Use(middleware.LoginRequired())
 		{
+			// Fylvo: connected storages of the account. Browsing them needs the file scope,
+			// connecting and disconnecting the scope for the security of the account.
+			fylvoConnected := auth.Group("fylvo/connected")
+			{
+				fylvoConnected.GET("",
+					middleware.RequiredScopes(types.ScopeFilesRead),
+					controllers.FylvoConnectedList,
+				)
+				manage := fylvoConnected.Group("", middleware.RequiredScopes(types.ScopeUserSecurityInfoWrite))
+				manage.POST("authorize",
+					controllers.FromJSON[fylvosvc.ConnectedAuthorizeService](fylvosvc.ConnectedAuthorizeParamCtx{}),
+					controllers.FylvoConnectedAuthorize,
+				)
+				manage.POST("finish",
+					controllers.FromJSON[fylvosvc.ConnectedFinishService](fylvosvc.ConnectedFinishParamCtx{}),
+					controllers.FylvoConnectedFinish,
+				)
+				manage.PATCH(":id",
+					controllers.FromJSON[fylvosvc.ConnectedRenameService](fylvosvc.ConnectedRenameParamCtx{}),
+					controllers.FylvoConnectedRename,
+				)
+				manage.DELETE(":id", controllers.FylvoConnectedDisconnect)
+			}
+
 			// Fylvo: in-app updates of the Android app, for signed-in users only.
 			fylvoAndroid := auth.Group("fylvo/android")
 			{
@@ -904,6 +932,13 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				admin.GET("activity",
 					controllers.FromQuery[fylvosvc.AdminActivityService](fylvosvc.AdminActivityParamCtx{}),
 					controllers.FylvoAdminActivity,
+				)
+				// Fylvo: the OAuth clients of the installation for connected storages
+				admin.GET("fylvo/connected", controllers.FylvoConnectedAdmin)
+				admin.PUT("fylvo/connected",
+					middleware.RequiredScopes(types.ScopeAdminWrite),
+					controllers.FromJSON[fylvosvc.ConnectedAdminService](fylvosvc.ConnectedAdminParamCtx{}),
+					controllers.FylvoConnectedAdminSet,
 				)
 
 				settings := admin.Group("settings")
