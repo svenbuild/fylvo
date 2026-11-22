@@ -41,6 +41,8 @@ var (
 	ErrInsufficientCapacity = serializer.NewError(serializer.CodeInsufficientCapacity, "Insufficient capacity", nil)
 	ErrStaleVersion         = serializer.NewError(serializer.CodeStaleVersion, "File is updated during your edit", nil)
 	ErrOwnerOnly            = serializer.NewError(serializer.CodeOwnerOnly, "Only owner or administrator can perform this action", nil)
+	// ErrConnectedUnsupported Fylvo: the action does not exist for files of a connected storage.
+	ErrConnectedUnsupported = serializer.NewError(serializer.CodeConnectedUnsupported, "Not supported in a connected storage", nil)
 	ErrArchiveSrcSizeTooBig = ErrFileSizeTooBig.WithError(fmt.Errorf("total size of to-be compressed file exceed group limit (%w)", queue.CriticalErr))
 )
 

@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/cloudreve/Cloudreve/v4/ent/activity"
+	"github.com/cloudreve/Cloudreve/v4/ent/connectedstorage"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/directlink"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
@@ -44,23 +45,24 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeActivity      = "Activity"
-	TypeDavAccount    = "DavAccount"
-	TypeDirectLink    = "DirectLink"
-	TypeEntity        = "Entity"
-	TypeFile          = "File"
-	TypeFsEvent       = "FsEvent"
-	TypeGroup         = "Group"
-	TypeMetadata      = "Metadata"
-	TypeNode          = "Node"
-	TypeOAuthClient   = "OAuthClient"
-	TypeOAuthGrant    = "OAuthGrant"
-	TypePasskey       = "Passkey"
-	TypeSetting       = "Setting"
-	TypeShare         = "Share"
-	TypeStoragePolicy = "StoragePolicy"
-	TypeTask          = "Task"
-	TypeUser          = "User"
+	TypeActivity         = "Activity"
+	TypeConnectedStorage = "ConnectedStorage"
+	TypeDavAccount       = "DavAccount"
+	TypeDirectLink       = "DirectLink"
+	TypeEntity           = "Entity"
+	TypeFile             = "File"
+	TypeFsEvent          = "FsEvent"
+	TypeGroup            = "Group"
+	TypeMetadata         = "Metadata"
+	TypeNode             = "Node"
+	TypeOAuthClient      = "OAuthClient"
+	TypeOAuthGrant       = "OAuthGrant"
+	TypePasskey          = "Passkey"
+	TypeSetting          = "Setting"
+	TypeShare            = "Share"
+	TypeStoragePolicy    = "StoragePolicy"
+	TypeTask             = "Task"
+	TypeUser             = "User"
 )
 
 // ActivityMutation represents an operation that mutates the Activity nodes in the graph.
@@ -1414,6 +1416,1163 @@ func (m *ActivityMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ActivityMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Activity edge %s", name)
+}
+
+// ConnectedStorageMutation represents an operation that mutates the ConnectedStorage nodes in the graph.
+type ConnectedStorageMutation struct {
+	config
+	op             Op
+	typ            string
+	id             *int
+	created_at     *time.Time
+	updated_at     *time.Time
+	user_id        *int
+	adduser_id     *int
+	public_id      *string
+	provider       *string
+	name           *string
+	account        *string
+	account_key    *string
+	secret         *[]byte
+	props          **types.ConnectedStorageProps
+	generation     *int
+	addgeneration  *int
+	status         *string
+	status_message *string
+	last_used_at   *time.Time
+	clearedFields  map[string]struct{}
+	done           bool
+	oldValue       func(context.Context) (*ConnectedStorage, error)
+	predicates     []predicate.ConnectedStorage
+}
+
+var _ ent.Mutation = (*ConnectedStorageMutation)(nil)
+
+// connectedstorageOption allows management of the mutation configuration using functional options.
+type connectedstorageOption func(*ConnectedStorageMutation)
+
+// newConnectedStorageMutation creates new mutation for the ConnectedStorage entity.
+func newConnectedStorageMutation(c config, op Op, opts ...connectedstorageOption) *ConnectedStorageMutation {
+	m := &ConnectedStorageMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeConnectedStorage,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withConnectedStorageID sets the ID field of the mutation.
+func withConnectedStorageID(id int) connectedstorageOption {
+	return func(m *ConnectedStorageMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ConnectedStorage
+		)
+		m.oldValue = func(ctx context.Context) (*ConnectedStorage, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ConnectedStorage.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withConnectedStorage sets the old ConnectedStorage of the mutation.
+func withConnectedStorage(node *ConnectedStorage) connectedstorageOption {
+	return func(m *ConnectedStorageMutation) {
+		m.oldValue = func(context.Context) (*ConnectedStorage, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ConnectedStorageMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ConnectedStorageMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ConnectedStorageMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ConnectedStorageMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ConnectedStorage.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ConnectedStorageMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ConnectedStorageMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ConnectedStorageMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *ConnectedStorageMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *ConnectedStorageMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *ConnectedStorageMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *ConnectedStorageMutation) SetUserID(i int) {
+	m.user_id = &i
+	m.adduser_id = nil
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *ConnectedStorageMutation) UserID() (r int, exists bool) {
+	v := m.user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldUserID(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// AddUserID adds i to the "user_id" field.
+func (m *ConnectedStorageMutation) AddUserID(i int) {
+	if m.adduser_id != nil {
+		*m.adduser_id += i
+	} else {
+		m.adduser_id = &i
+	}
+}
+
+// AddedUserID returns the value that was added to the "user_id" field in this mutation.
+func (m *ConnectedStorageMutation) AddedUserID() (r int, exists bool) {
+	v := m.adduser_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *ConnectedStorageMutation) ResetUserID() {
+	m.user_id = nil
+	m.adduser_id = nil
+}
+
+// SetPublicID sets the "public_id" field.
+func (m *ConnectedStorageMutation) SetPublicID(s string) {
+	m.public_id = &s
+}
+
+// PublicID returns the value of the "public_id" field in the mutation.
+func (m *ConnectedStorageMutation) PublicID() (r string, exists bool) {
+	v := m.public_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicID returns the old "public_id" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldPublicID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicID: %w", err)
+	}
+	return oldValue.PublicID, nil
+}
+
+// ResetPublicID resets all changes to the "public_id" field.
+func (m *ConnectedStorageMutation) ResetPublicID() {
+	m.public_id = nil
+}
+
+// SetProvider sets the "provider" field.
+func (m *ConnectedStorageMutation) SetProvider(s string) {
+	m.provider = &s
+}
+
+// Provider returns the value of the "provider" field in the mutation.
+func (m *ConnectedStorageMutation) Provider() (r string, exists bool) {
+	v := m.provider
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProvider returns the old "provider" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldProvider(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProvider requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProvider: %w", err)
+	}
+	return oldValue.Provider, nil
+}
+
+// ResetProvider resets all changes to the "provider" field.
+func (m *ConnectedStorageMutation) ResetProvider() {
+	m.provider = nil
+}
+
+// SetName sets the "name" field.
+func (m *ConnectedStorageMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *ConnectedStorageMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *ConnectedStorageMutation) ResetName() {
+	m.name = nil
+}
+
+// SetAccount sets the "account" field.
+func (m *ConnectedStorageMutation) SetAccount(s string) {
+	m.account = &s
+}
+
+// Account returns the value of the "account" field in the mutation.
+func (m *ConnectedStorageMutation) Account() (r string, exists bool) {
+	v := m.account
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccount returns the old "account" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldAccount(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccount: %w", err)
+	}
+	return oldValue.Account, nil
+}
+
+// ResetAccount resets all changes to the "account" field.
+func (m *ConnectedStorageMutation) ResetAccount() {
+	m.account = nil
+}
+
+// SetAccountKey sets the "account_key" field.
+func (m *ConnectedStorageMutation) SetAccountKey(s string) {
+	m.account_key = &s
+}
+
+// AccountKey returns the value of the "account_key" field in the mutation.
+func (m *ConnectedStorageMutation) AccountKey() (r string, exists bool) {
+	v := m.account_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountKey returns the old "account_key" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldAccountKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountKey: %w", err)
+	}
+	return oldValue.AccountKey, nil
+}
+
+// ResetAccountKey resets all changes to the "account_key" field.
+func (m *ConnectedStorageMutation) ResetAccountKey() {
+	m.account_key = nil
+}
+
+// SetSecret sets the "secret" field.
+func (m *ConnectedStorageMutation) SetSecret(b []byte) {
+	m.secret = &b
+}
+
+// Secret returns the value of the "secret" field in the mutation.
+func (m *ConnectedStorageMutation) Secret() (r []byte, exists bool) {
+	v := m.secret
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSecret returns the old "secret" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldSecret(ctx context.Context) (v []byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSecret is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSecret requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSecret: %w", err)
+	}
+	return oldValue.Secret, nil
+}
+
+// ResetSecret resets all changes to the "secret" field.
+func (m *ConnectedStorageMutation) ResetSecret() {
+	m.secret = nil
+}
+
+// SetProps sets the "props" field.
+func (m *ConnectedStorageMutation) SetProps(tsp *types.ConnectedStorageProps) {
+	m.props = &tsp
+}
+
+// Props returns the value of the "props" field in the mutation.
+func (m *ConnectedStorageMutation) Props() (r *types.ConnectedStorageProps, exists bool) {
+	v := m.props
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProps returns the old "props" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldProps(ctx context.Context) (v *types.ConnectedStorageProps, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProps is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProps requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProps: %w", err)
+	}
+	return oldValue.Props, nil
+}
+
+// ClearProps clears the value of the "props" field.
+func (m *ConnectedStorageMutation) ClearProps() {
+	m.props = nil
+	m.clearedFields[connectedstorage.FieldProps] = struct{}{}
+}
+
+// PropsCleared returns if the "props" field was cleared in this mutation.
+func (m *ConnectedStorageMutation) PropsCleared() bool {
+	_, ok := m.clearedFields[connectedstorage.FieldProps]
+	return ok
+}
+
+// ResetProps resets all changes to the "props" field.
+func (m *ConnectedStorageMutation) ResetProps() {
+	m.props = nil
+	delete(m.clearedFields, connectedstorage.FieldProps)
+}
+
+// SetGeneration sets the "generation" field.
+func (m *ConnectedStorageMutation) SetGeneration(i int) {
+	m.generation = &i
+	m.addgeneration = nil
+}
+
+// Generation returns the value of the "generation" field in the mutation.
+func (m *ConnectedStorageMutation) Generation() (r int, exists bool) {
+	v := m.generation
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGeneration returns the old "generation" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldGeneration(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGeneration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGeneration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGeneration: %w", err)
+	}
+	return oldValue.Generation, nil
+}
+
+// AddGeneration adds i to the "generation" field.
+func (m *ConnectedStorageMutation) AddGeneration(i int) {
+	if m.addgeneration != nil {
+		*m.addgeneration += i
+	} else {
+		m.addgeneration = &i
+	}
+}
+
+// AddedGeneration returns the value that was added to the "generation" field in this mutation.
+func (m *ConnectedStorageMutation) AddedGeneration() (r int, exists bool) {
+	v := m.addgeneration
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetGeneration resets all changes to the "generation" field.
+func (m *ConnectedStorageMutation) ResetGeneration() {
+	m.generation = nil
+	m.addgeneration = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *ConnectedStorageMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *ConnectedStorageMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *ConnectedStorageMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetStatusMessage sets the "status_message" field.
+func (m *ConnectedStorageMutation) SetStatusMessage(s string) {
+	m.status_message = &s
+}
+
+// StatusMessage returns the value of the "status_message" field in the mutation.
+func (m *ConnectedStorageMutation) StatusMessage() (r string, exists bool) {
+	v := m.status_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatusMessage returns the old "status_message" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldStatusMessage(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatusMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatusMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatusMessage: %w", err)
+	}
+	return oldValue.StatusMessage, nil
+}
+
+// ClearStatusMessage clears the value of the "status_message" field.
+func (m *ConnectedStorageMutation) ClearStatusMessage() {
+	m.status_message = nil
+	m.clearedFields[connectedstorage.FieldStatusMessage] = struct{}{}
+}
+
+// StatusMessageCleared returns if the "status_message" field was cleared in this mutation.
+func (m *ConnectedStorageMutation) StatusMessageCleared() bool {
+	_, ok := m.clearedFields[connectedstorage.FieldStatusMessage]
+	return ok
+}
+
+// ResetStatusMessage resets all changes to the "status_message" field.
+func (m *ConnectedStorageMutation) ResetStatusMessage() {
+	m.status_message = nil
+	delete(m.clearedFields, connectedstorage.FieldStatusMessage)
+}
+
+// SetLastUsedAt sets the "last_used_at" field.
+func (m *ConnectedStorageMutation) SetLastUsedAt(t time.Time) {
+	m.last_used_at = &t
+}
+
+// LastUsedAt returns the value of the "last_used_at" field in the mutation.
+func (m *ConnectedStorageMutation) LastUsedAt() (r time.Time, exists bool) {
+	v := m.last_used_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastUsedAt returns the old "last_used_at" field's value of the ConnectedStorage entity.
+// If the ConnectedStorage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ConnectedStorageMutation) OldLastUsedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastUsedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastUsedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastUsedAt: %w", err)
+	}
+	return oldValue.LastUsedAt, nil
+}
+
+// ClearLastUsedAt clears the value of the "last_used_at" field.
+func (m *ConnectedStorageMutation) ClearLastUsedAt() {
+	m.last_used_at = nil
+	m.clearedFields[connectedstorage.FieldLastUsedAt] = struct{}{}
+}
+
+// LastUsedAtCleared returns if the "last_used_at" field was cleared in this mutation.
+func (m *ConnectedStorageMutation) LastUsedAtCleared() bool {
+	_, ok := m.clearedFields[connectedstorage.FieldLastUsedAt]
+	return ok
+}
+
+// ResetLastUsedAt resets all changes to the "last_used_at" field.
+func (m *ConnectedStorageMutation) ResetLastUsedAt() {
+	m.last_used_at = nil
+	delete(m.clearedFields, connectedstorage.FieldLastUsedAt)
+}
+
+// Where appends a list predicates to the ConnectedStorageMutation builder.
+func (m *ConnectedStorageMutation) Where(ps ...predicate.ConnectedStorage) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ConnectedStorageMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ConnectedStorageMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ConnectedStorage, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ConnectedStorageMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ConnectedStorageMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ConnectedStorage).
+func (m *ConnectedStorageMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ConnectedStorageMutation) Fields() []string {
+	fields := make([]string, 0, 14)
+	if m.created_at != nil {
+		fields = append(fields, connectedstorage.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, connectedstorage.FieldUpdatedAt)
+	}
+	if m.user_id != nil {
+		fields = append(fields, connectedstorage.FieldUserID)
+	}
+	if m.public_id != nil {
+		fields = append(fields, connectedstorage.FieldPublicID)
+	}
+	if m.provider != nil {
+		fields = append(fields, connectedstorage.FieldProvider)
+	}
+	if m.name != nil {
+		fields = append(fields, connectedstorage.FieldName)
+	}
+	if m.account != nil {
+		fields = append(fields, connectedstorage.FieldAccount)
+	}
+	if m.account_key != nil {
+		fields = append(fields, connectedstorage.FieldAccountKey)
+	}
+	if m.secret != nil {
+		fields = append(fields, connectedstorage.FieldSecret)
+	}
+	if m.props != nil {
+		fields = append(fields, connectedstorage.FieldProps)
+	}
+	if m.generation != nil {
+		fields = append(fields, connectedstorage.FieldGeneration)
+	}
+	if m.status != nil {
+		fields = append(fields, connectedstorage.FieldStatus)
+	}
+	if m.status_message != nil {
+		fields = append(fields, connectedstorage.FieldStatusMessage)
+	}
+	if m.last_used_at != nil {
+		fields = append(fields, connectedstorage.FieldLastUsedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ConnectedStorageMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case connectedstorage.FieldCreatedAt:
+		return m.CreatedAt()
+	case connectedstorage.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case connectedstorage.FieldUserID:
+		return m.UserID()
+	case connectedstorage.FieldPublicID:
+		return m.PublicID()
+	case connectedstorage.FieldProvider:
+		return m.Provider()
+	case connectedstorage.FieldName:
+		return m.Name()
+	case connectedstorage.FieldAccount:
+		return m.Account()
+	case connectedstorage.FieldAccountKey:
+		return m.AccountKey()
+	case connectedstorage.FieldSecret:
+		return m.Secret()
+	case connectedstorage.FieldProps:
+		return m.Props()
+	case connectedstorage.FieldGeneration:
+		return m.Generation()
+	case connectedstorage.FieldStatus:
+		return m.Status()
+	case connectedstorage.FieldStatusMessage:
+		return m.StatusMessage()
+	case connectedstorage.FieldLastUsedAt:
+		return m.LastUsedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ConnectedStorageMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case connectedstorage.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case connectedstorage.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case connectedstorage.FieldUserID:
+		return m.OldUserID(ctx)
+	case connectedstorage.FieldPublicID:
+		return m.OldPublicID(ctx)
+	case connectedstorage.FieldProvider:
+		return m.OldProvider(ctx)
+	case connectedstorage.FieldName:
+		return m.OldName(ctx)
+	case connectedstorage.FieldAccount:
+		return m.OldAccount(ctx)
+	case connectedstorage.FieldAccountKey:
+		return m.OldAccountKey(ctx)
+	case connectedstorage.FieldSecret:
+		return m.OldSecret(ctx)
+	case connectedstorage.FieldProps:
+		return m.OldProps(ctx)
+	case connectedstorage.FieldGeneration:
+		return m.OldGeneration(ctx)
+	case connectedstorage.FieldStatus:
+		return m.OldStatus(ctx)
+	case connectedstorage.FieldStatusMessage:
+		return m.OldStatusMessage(ctx)
+	case connectedstorage.FieldLastUsedAt:
+		return m.OldLastUsedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown ConnectedStorage field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ConnectedStorageMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case connectedstorage.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case connectedstorage.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case connectedstorage.FieldUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case connectedstorage.FieldPublicID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicID(v)
+		return nil
+	case connectedstorage.FieldProvider:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProvider(v)
+		return nil
+	case connectedstorage.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case connectedstorage.FieldAccount:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccount(v)
+		return nil
+	case connectedstorage.FieldAccountKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountKey(v)
+		return nil
+	case connectedstorage.FieldSecret:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSecret(v)
+		return nil
+	case connectedstorage.FieldProps:
+		v, ok := value.(*types.ConnectedStorageProps)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProps(v)
+		return nil
+	case connectedstorage.FieldGeneration:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGeneration(v)
+		return nil
+	case connectedstorage.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case connectedstorage.FieldStatusMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatusMessage(v)
+		return nil
+	case connectedstorage.FieldLastUsedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastUsedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ConnectedStorage field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ConnectedStorageMutation) AddedFields() []string {
+	var fields []string
+	if m.adduser_id != nil {
+		fields = append(fields, connectedstorage.FieldUserID)
+	}
+	if m.addgeneration != nil {
+		fields = append(fields, connectedstorage.FieldGeneration)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ConnectedStorageMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case connectedstorage.FieldUserID:
+		return m.AddedUserID()
+	case connectedstorage.FieldGeneration:
+		return m.AddedGeneration()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ConnectedStorageMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case connectedstorage.FieldUserID:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUserID(v)
+		return nil
+	case connectedstorage.FieldGeneration:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGeneration(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ConnectedStorage numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ConnectedStorageMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(connectedstorage.FieldProps) {
+		fields = append(fields, connectedstorage.FieldProps)
+	}
+	if m.FieldCleared(connectedstorage.FieldStatusMessage) {
+		fields = append(fields, connectedstorage.FieldStatusMessage)
+	}
+	if m.FieldCleared(connectedstorage.FieldLastUsedAt) {
+		fields = append(fields, connectedstorage.FieldLastUsedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ConnectedStorageMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ConnectedStorageMutation) ClearField(name string) error {
+	switch name {
+	case connectedstorage.FieldProps:
+		m.ClearProps()
+		return nil
+	case connectedstorage.FieldStatusMessage:
+		m.ClearStatusMessage()
+		return nil
+	case connectedstorage.FieldLastUsedAt:
+		m.ClearLastUsedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ConnectedStorage nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ConnectedStorageMutation) ResetField(name string) error {
+	switch name {
+	case connectedstorage.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case connectedstorage.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case connectedstorage.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case connectedstorage.FieldPublicID:
+		m.ResetPublicID()
+		return nil
+	case connectedstorage.FieldProvider:
+		m.ResetProvider()
+		return nil
+	case connectedstorage.FieldName:
+		m.ResetName()
+		return nil
+	case connectedstorage.FieldAccount:
+		m.ResetAccount()
+		return nil
+	case connectedstorage.FieldAccountKey:
+		m.ResetAccountKey()
+		return nil
+	case connectedstorage.FieldSecret:
+		m.ResetSecret()
+		return nil
+	case connectedstorage.FieldProps:
+		m.ResetProps()
+		return nil
+	case connectedstorage.FieldGeneration:
+		m.ResetGeneration()
+		return nil
+	case connectedstorage.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case connectedstorage.FieldStatusMessage:
+		m.ResetStatusMessage()
+		return nil
+	case connectedstorage.FieldLastUsedAt:
+		m.ResetLastUsedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ConnectedStorage field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ConnectedStorageMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ConnectedStorageMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ConnectedStorageMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ConnectedStorageMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ConnectedStorageMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ConnectedStorageMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ConnectedStorageMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown ConnectedStorage unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ConnectedStorageMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown ConnectedStorage edge %s", name)
 }
 
 // DavAccountMutation represents an operation that mutates the DavAccount nodes in the graph.

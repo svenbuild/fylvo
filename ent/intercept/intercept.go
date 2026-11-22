@@ -9,6 +9,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/activity"
+	"github.com/cloudreve/Cloudreve/v4/ent/connectedstorage"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/directlink"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
@@ -109,6 +110,33 @@ func (f TraverseActivity) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.ActivityQuery", q)
+}
+
+// The ConnectedStorageFunc type is an adapter to allow the use of ordinary function as a Querier.
+type ConnectedStorageFunc func(context.Context, *ent.ConnectedStorageQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f ConnectedStorageFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.ConnectedStorageQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.ConnectedStorageQuery", q)
+}
+
+// The TraverseConnectedStorage type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseConnectedStorage func(context.Context, *ent.ConnectedStorageQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseConnectedStorage) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseConnectedStorage) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.ConnectedStorageQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.ConnectedStorageQuery", q)
 }
 
 // The DavAccountFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -548,6 +576,8 @@ func NewQuery(q ent.Query) (Query, error) {
 	switch q := q.(type) {
 	case *ent.ActivityQuery:
 		return &query[*ent.ActivityQuery, predicate.Activity, activity.OrderOption]{typ: ent.TypeActivity, tq: q}, nil
+	case *ent.ConnectedStorageQuery:
+		return &query[*ent.ConnectedStorageQuery, predicate.ConnectedStorage, connectedstorage.OrderOption]{typ: ent.TypeConnectedStorage, tq: q}, nil
 	case *ent.DavAccountQuery:
 		return &query[*ent.DavAccountQuery, predicate.DavAccount, davaccount.OrderOption]{typ: ent.TypeDavAccount, tq: q}, nil
 	case *ent.DirectLinkQuery:

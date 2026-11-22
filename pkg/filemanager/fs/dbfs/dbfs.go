@@ -735,6 +735,9 @@ func (f *DBFS) getNavigator(ctx context.Context, path *fs.URI, requiredCapabilit
 			n = NewTrashNavigator(f.user, f.fileClient, f.l, config, f.hasher)
 		case constants.FileSystemSharedWithMe:
 			n = NewSharedWithMeNavigator(f.user, f.fileClient, f.shareClient, f.l, config, f.hasher)
+		case constants.FileSystemConnected:
+			// Fylvo: connected storages are served by service/connected, never from here.
+			return nil, fs.ErrConnectedUnsupported
 		default:
 			return nil, fmt.Errorf("unknown file system %q", pathFs)
 		}

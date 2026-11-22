@@ -18,4 +18,25 @@ const (
 	// CodeNameCaseTaken the folder holds a file or folder whose name differs from the given
 	// one only in upper and lower case; Windows cannot hold both
 	CodeNameCaseTaken = 40905
+
+	// 40920 to 40929: connected storages (pkg/connected).
+
+	// CodeConnectedUnsupported the action does not exist in a connected storage
+	CodeConnectedUnsupported = 40920
+	// CodeConnectedReconnect the provider no longer accepts the stored access; the account
+	// has to connect the storage again
+	CodeConnectedReconnect = 40921
+	// CodeConnectedUnavailable connected storages cannot be used: the provider is not set
+	// up, refuses the installation's client, or the group of the account may not use them
+	CodeConnectedUnavailable = 40922
+	// CodeConnectedBusy the provider limits requests or did not answer in time
+	CodeConnectedBusy = 40923
+	// CodeConnectedFull the storage at the provider is full
+	CodeConnectedFull = 40924
+	// CodeConnectedItem this item cannot be used; data holds the reason
+	CodeConnectedItem = 40925
+	// CodeConnectedListingGone the listing a page token belongs to is no longer kept
+	CodeConnectedListingGone = 40926
+	// CodeConnectedOutcomeUnknown a save was sent but the provider did not confirm it
+	CodeConnectedOutcomeUnknown = 40927
 )

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/ent/activity"
+	"github.com/cloudreve/Cloudreve/v4/ent/connectedstorage"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/directlink"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
@@ -36,6 +37,26 @@ func init() {
 	activityDescCreatedAt := activityFields[0].Descriptor()
 	// activity.DefaultCreatedAt holds the default value on creation for the created_at field.
 	activity.DefaultCreatedAt = activityDescCreatedAt.Default.(func() time.Time)
+	connectedstorageFields := schema.ConnectedStorage{}.Fields()
+	_ = connectedstorageFields
+	// connectedstorageDescCreatedAt is the schema descriptor for created_at field.
+	connectedstorageDescCreatedAt := connectedstorageFields[0].Descriptor()
+	// connectedstorage.DefaultCreatedAt holds the default value on creation for the created_at field.
+	connectedstorage.DefaultCreatedAt = connectedstorageDescCreatedAt.Default.(func() time.Time)
+	// connectedstorageDescUpdatedAt is the schema descriptor for updated_at field.
+	connectedstorageDescUpdatedAt := connectedstorageFields[1].Descriptor()
+	// connectedstorage.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	connectedstorage.DefaultUpdatedAt = connectedstorageDescUpdatedAt.Default.(func() time.Time)
+	// connectedstorage.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	connectedstorage.UpdateDefaultUpdatedAt = connectedstorageDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// connectedstorageDescGeneration is the schema descriptor for generation field.
+	connectedstorageDescGeneration := connectedstorageFields[10].Descriptor()
+	// connectedstorage.DefaultGeneration holds the default value on creation for the generation field.
+	connectedstorage.DefaultGeneration = connectedstorageDescGeneration.Default.(int)
+	// connectedstorageDescStatus is the schema descriptor for status field.
+	connectedstorageDescStatus := connectedstorageFields[11].Descriptor()
+	// connectedstorage.DefaultStatus holds the default value on creation for the status field.
+	connectedstorage.DefaultStatus = connectedstorageDescStatus.Default.(string)
 	davaccountMixin := schema.DavAccount{}.Mixin()
 	davaccountMixinHooks0 := davaccountMixin[0].Hooks()
 	davaccount.Hooks[0] = davaccountMixinHooks0[0]

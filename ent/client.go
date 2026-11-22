@@ -16,6 +16,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/cloudreve/Cloudreve/v4/ent/activity"
+	"github.com/cloudreve/Cloudreve/v4/ent/connectedstorage"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/directlink"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
@@ -43,6 +44,8 @@ type Client struct {
 	Schema *migrate.Schema
 	// Activity is the client for interacting with the Activity builders.
 	Activity *ActivityClient
+	// ConnectedStorage is the client for interacting with the ConnectedStorage builders.
+	ConnectedStorage *ConnectedStorageClient
 	// DavAccount is the client for interacting with the DavAccount builders.
 	DavAccount *DavAccountClient
 	// DirectLink is the client for interacting with the DirectLink builders.
@@ -87,6 +90,7 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.Activity = NewActivityClient(c.config)
+	c.ConnectedStorage = NewConnectedStorageClient(c.config)
 	c.DavAccount = NewDavAccountClient(c.config)
 	c.DirectLink = NewDirectLinkClient(c.config)
 	c.Entity = NewEntityClient(c.config)
@@ -193,25 +197,26 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:           ctx,
-		config:        cfg,
-		Activity:      NewActivityClient(cfg),
-		DavAccount:    NewDavAccountClient(cfg),
-		DirectLink:    NewDirectLinkClient(cfg),
-		Entity:        NewEntityClient(cfg),
-		File:          NewFileClient(cfg),
-		FsEvent:       NewFsEventClient(cfg),
-		Group:         NewGroupClient(cfg),
-		Metadata:      NewMetadataClient(cfg),
-		Node:          NewNodeClient(cfg),
-		OAuthClient:   NewOAuthClientClient(cfg),
-		OAuthGrant:    NewOAuthGrantClient(cfg),
-		Passkey:       NewPasskeyClient(cfg),
-		Setting:       NewSettingClient(cfg),
-		Share:         NewShareClient(cfg),
-		StoragePolicy: NewStoragePolicyClient(cfg),
-		Task:          NewTaskClient(cfg),
-		User:          NewUserClient(cfg),
+		ctx:              ctx,
+		config:           cfg,
+		Activity:         NewActivityClient(cfg),
+		ConnectedStorage: NewConnectedStorageClient(cfg),
+		DavAccount:       NewDavAccountClient(cfg),
+		DirectLink:       NewDirectLinkClient(cfg),
+		Entity:           NewEntityClient(cfg),
+		File:             NewFileClient(cfg),
+		FsEvent:          NewFsEventClient(cfg),
+		Group:            NewGroupClient(cfg),
+		Metadata:         NewMetadataClient(cfg),
+		Node:             NewNodeClient(cfg),
+		OAuthClient:      NewOAuthClientClient(cfg),
+		OAuthGrant:       NewOAuthGrantClient(cfg),
+		Passkey:          NewPasskeyClient(cfg),
+		Setting:          NewSettingClient(cfg),
+		Share:            NewShareClient(cfg),
+		StoragePolicy:    NewStoragePolicyClient(cfg),
+		Task:             NewTaskClient(cfg),
+		User:             NewUserClient(cfg),
 	}, nil
 }
 
@@ -229,25 +234,26 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:           ctx,
-		config:        cfg,
-		Activity:      NewActivityClient(cfg),
-		DavAccount:    NewDavAccountClient(cfg),
-		DirectLink:    NewDirectLinkClient(cfg),
-		Entity:        NewEntityClient(cfg),
-		File:          NewFileClient(cfg),
-		FsEvent:       NewFsEventClient(cfg),
-		Group:         NewGroupClient(cfg),
-		Metadata:      NewMetadataClient(cfg),
-		Node:          NewNodeClient(cfg),
-		OAuthClient:   NewOAuthClientClient(cfg),
-		OAuthGrant:    NewOAuthGrantClient(cfg),
-		Passkey:       NewPasskeyClient(cfg),
-		Setting:       NewSettingClient(cfg),
-		Share:         NewShareClient(cfg),
-		StoragePolicy: NewStoragePolicyClient(cfg),
-		Task:          NewTaskClient(cfg),
-		User:          NewUserClient(cfg),
+		ctx:              ctx,
+		config:           cfg,
+		Activity:         NewActivityClient(cfg),
+		ConnectedStorage: NewConnectedStorageClient(cfg),
+		DavAccount:       NewDavAccountClient(cfg),
+		DirectLink:       NewDirectLinkClient(cfg),
+		Entity:           NewEntityClient(cfg),
+		File:             NewFileClient(cfg),
+		FsEvent:          NewFsEventClient(cfg),
+		Group:            NewGroupClient(cfg),
+		Metadata:         NewMetadataClient(cfg),
+		Node:             NewNodeClient(cfg),
+		OAuthClient:      NewOAuthClientClient(cfg),
+		OAuthGrant:       NewOAuthGrantClient(cfg),
+		Passkey:          NewPasskeyClient(cfg),
+		Setting:          NewSettingClient(cfg),
+		Share:            NewShareClient(cfg),
+		StoragePolicy:    NewStoragePolicyClient(cfg),
+		Task:             NewTaskClient(cfg),
+		User:             NewUserClient(cfg),
 	}, nil
 }
 
@@ -277,9 +283,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.Activity, c.DavAccount, c.DirectLink, c.Entity, c.File, c.FsEvent, c.Group,
-		c.Metadata, c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey, c.Setting, c.Share,
-		c.StoragePolicy, c.Task, c.User,
+		c.Activity, c.ConnectedStorage, c.DavAccount, c.DirectLink, c.Entity, c.File,
+		c.FsEvent, c.Group, c.Metadata, c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey,
+		c.Setting, c.Share, c.StoragePolicy, c.Task, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -289,9 +295,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.Activity, c.DavAccount, c.DirectLink, c.Entity, c.File, c.FsEvent, c.Group,
-		c.Metadata, c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey, c.Setting, c.Share,
-		c.StoragePolicy, c.Task, c.User,
+		c.Activity, c.ConnectedStorage, c.DavAccount, c.DirectLink, c.Entity, c.File,
+		c.FsEvent, c.Group, c.Metadata, c.Node, c.OAuthClient, c.OAuthGrant, c.Passkey,
+		c.Setting, c.Share, c.StoragePolicy, c.Task, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -302,6 +308,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *ActivityMutation:
 		return c.Activity.mutate(ctx, m)
+	case *ConnectedStorageMutation:
+		return c.ConnectedStorage.mutate(ctx, m)
 	case *DavAccountMutation:
 		return c.DavAccount.mutate(ctx, m)
 	case *DirectLinkMutation:
@@ -469,6 +477,139 @@ func (c *ActivityClient) mutate(ctx context.Context, m *ActivityMutation) (Value
 		return (&ActivityDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Activity mutation op: %q", m.Op())
+	}
+}
+
+// ConnectedStorageClient is a client for the ConnectedStorage schema.
+type ConnectedStorageClient struct {
+	config
+}
+
+// NewConnectedStorageClient returns a client for the ConnectedStorage from the given config.
+func NewConnectedStorageClient(c config) *ConnectedStorageClient {
+	return &ConnectedStorageClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `connectedstorage.Hooks(f(g(h())))`.
+func (c *ConnectedStorageClient) Use(hooks ...Hook) {
+	c.hooks.ConnectedStorage = append(c.hooks.ConnectedStorage, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `connectedstorage.Intercept(f(g(h())))`.
+func (c *ConnectedStorageClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ConnectedStorage = append(c.inters.ConnectedStorage, interceptors...)
+}
+
+// Create returns a builder for creating a ConnectedStorage entity.
+func (c *ConnectedStorageClient) Create() *ConnectedStorageCreate {
+	mutation := newConnectedStorageMutation(c.config, OpCreate)
+	return &ConnectedStorageCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ConnectedStorage entities.
+func (c *ConnectedStorageClient) CreateBulk(builders ...*ConnectedStorageCreate) *ConnectedStorageCreateBulk {
+	return &ConnectedStorageCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ConnectedStorageClient) MapCreateBulk(slice any, setFunc func(*ConnectedStorageCreate, int)) *ConnectedStorageCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ConnectedStorageCreateBulk{err: fmt.Errorf("calling to ConnectedStorageClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ConnectedStorageCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ConnectedStorageCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ConnectedStorage.
+func (c *ConnectedStorageClient) Update() *ConnectedStorageUpdate {
+	mutation := newConnectedStorageMutation(c.config, OpUpdate)
+	return &ConnectedStorageUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ConnectedStorageClient) UpdateOne(cs *ConnectedStorage) *ConnectedStorageUpdateOne {
+	mutation := newConnectedStorageMutation(c.config, OpUpdateOne, withConnectedStorage(cs))
+	return &ConnectedStorageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ConnectedStorageClient) UpdateOneID(id int) *ConnectedStorageUpdateOne {
+	mutation := newConnectedStorageMutation(c.config, OpUpdateOne, withConnectedStorageID(id))
+	return &ConnectedStorageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ConnectedStorage.
+func (c *ConnectedStorageClient) Delete() *ConnectedStorageDelete {
+	mutation := newConnectedStorageMutation(c.config, OpDelete)
+	return &ConnectedStorageDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ConnectedStorageClient) DeleteOne(cs *ConnectedStorage) *ConnectedStorageDeleteOne {
+	return c.DeleteOneID(cs.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ConnectedStorageClient) DeleteOneID(id int) *ConnectedStorageDeleteOne {
+	builder := c.Delete().Where(connectedstorage.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ConnectedStorageDeleteOne{builder}
+}
+
+// Query returns a query builder for ConnectedStorage.
+func (c *ConnectedStorageClient) Query() *ConnectedStorageQuery {
+	return &ConnectedStorageQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeConnectedStorage},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ConnectedStorage entity by its id.
+func (c *ConnectedStorageClient) Get(ctx context.Context, id int) (*ConnectedStorage, error) {
+	return c.Query().Where(connectedstorage.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ConnectedStorageClient) GetX(ctx context.Context, id int) *ConnectedStorage {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ConnectedStorageClient) Hooks() []Hook {
+	return c.hooks.ConnectedStorage
+}
+
+// Interceptors returns the client interceptors.
+func (c *ConnectedStorageClient) Interceptors() []Interceptor {
+	return c.inters.ConnectedStorage
+}
+
+func (c *ConnectedStorageClient) mutate(ctx context.Context, m *ConnectedStorageMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ConnectedStorageCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ConnectedStorageUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ConnectedStorageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ConnectedStorageDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ConnectedStorage mutation op: %q", m.Op())
 	}
 }
 
@@ -3241,14 +3382,14 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Activity, DavAccount, DirectLink, Entity, File, FsEvent, Group, Metadata, Node,
-		OAuthClient, OAuthGrant, Passkey, Setting, Share, StoragePolicy, Task,
-		User []ent.Hook
+		Activity, ConnectedStorage, DavAccount, DirectLink, Entity, File, FsEvent,
+		Group, Metadata, Node, OAuthClient, OAuthGrant, Passkey, Setting, Share,
+		StoragePolicy, Task, User []ent.Hook
 	}
 	inters struct {
-		Activity, DavAccount, DirectLink, Entity, File, FsEvent, Group, Metadata, Node,
-		OAuthClient, OAuthGrant, Passkey, Setting, Share, StoragePolicy, Task,
-		User []ent.Interceptor
+		Activity, ConnectedStorage, DavAccount, DirectLink, Entity, File, FsEvent,
+		Group, Metadata, Node, OAuthClient, OAuthGrant, Passkey, Setting, Share,
+		StoragePolicy, Task, User []ent.Interceptor
 	}
 )
 

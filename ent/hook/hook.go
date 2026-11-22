@@ -21,6 +21,18 @@ func (f ActivityFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ActivityMutation", m)
 }
 
+// The ConnectedStorageFunc type is an adapter to allow the use of ordinary
+// function as ConnectedStorage mutator.
+type ConnectedStorageFunc func(context.Context, *ent.ConnectedStorageMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ConnectedStorageFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ConnectedStorageMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ConnectedStorageMutation", m)
+}
+
 // The DavAccountFunc type is an adapter to allow the use of ordinary
 // function as DavAccount mutator.
 type DavAccountFunc func(context.Context, *ent.DavAccountMutation) (ent.Value, error)

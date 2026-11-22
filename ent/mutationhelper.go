@@ -10,6 +10,12 @@ func (m *ActivityMutation) SetRawID(t int) {
 
 // SetUpdatedAt sets the "updated_at" field.
 
+func (m *ConnectedStorageMutation) SetRawID(t int) {
+	m.id = &t
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+
 func (m *DavAccountMutation) SetRawID(t int) {
 	m.id = &t
 }

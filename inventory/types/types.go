@@ -287,6 +287,10 @@ const (
 	GroupPermissionUniqueRedirectDirectLink
 )
 
+// GroupPermissionConnectedStorage Fylvo: members may connect storages at other providers.
+// The number leaves room for permissions the original project may still add.
+const GroupPermissionConnectedStorage = GroupPermission(40)
+
 const (
 	NodeCapabilityNone NodeCapability = iota
 	NodeCapabilityCreateArchive
@@ -415,6 +419,19 @@ const (
 const (
 	CipherAES256CTR Cipher = "aes-256-ctr"
 )
+
+// ConnectedStorageProps Fylvo: what is kept about a connected storage besides its token.
+type ConnectedStorageProps struct {
+	// DriveID and DriveType name the drive of a OneDrive account.
+	DriveID   string `json:"drive_id,omitempty"`
+	DriveType string `json:"drive_type,omitempty"`
+	// Scopes as granted by the provider.
+	Scopes string `json:"scopes,omitempty"`
+	// View is the view setting of the storage in the file list.
+	View *ExplorerView `json:"view,omitempty"`
+	// StatusFailures counts refused tokens in a row, see pkg/connected.
+	StatusFailures int `json:"status_failures,omitempty"`
+}
 
 const (
 	ScopeProfile               = "profile"

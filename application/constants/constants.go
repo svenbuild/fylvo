@@ -30,5 +30,8 @@ const (
 	FileSystemShare        = FileSystemType("share")
 	FileSystemTrash        = FileSystemType("trash")
 	FileSystemSharedWithMe = FileSystemType("shared_with_me")
-	FileSystemUnknown      = FileSystemType("unknown")
+	// FileSystemConnected Fylvo: a storage at another provider that an account connected.
+	// Its files have no rows in the database; see pkg/connected.
+	FileSystemConnected = FileSystemType("connected")
+	FileSystemUnknown   = FileSystemType("unknown")
 )

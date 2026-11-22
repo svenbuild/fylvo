@@ -52,6 +52,9 @@ func InitializeDBClient(l logging.Logger,
 	if err := ensureActivityLog(l, client, ctx); err != nil {
 		return nil, err
 	}
+	if err := ensureConnectedStorages(l, client, ctx); err != nil {
+		return nil, err
+	}
 	if err := raiseWalkLimit(l, client, ctx); err != nil {
 		return nil, err
 	}
