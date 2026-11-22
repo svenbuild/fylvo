@@ -97,27 +97,30 @@ consistent; it takes as long as copying your files.
 ```bash
 cd ~/fylvo
 docker compose stop fylvo
-sudo sh -c "umask 077 && tar -czf $HOME/fylvo-backup-$(date +%F).tar.gz -C $HOME fylvo"
+B=$HOME/fylvo-backup-$(date +%F-%H%M).tar.gz
+sudo sh -c "umask 077 && tar -czf $B.part -C $HOME fylvo && mv $B.part $B"
 docker compose start fylvo
 ```
 
-The archive holds all your files and settings, so only root may read it (`umask 077`); copy it
-with `sudo`.
+Each run makes a new file with date and time; a failed run leaves only a `.part` file. The archive
+holds all your files and settings, so only root may read it (`umask 077`); copy it with `sudo`.
 
 Keep the backup on another disk or machine. For large amounts of data, a tool that copies only
 changes (`rsync`, `restic`, `borg`) is faster: stop Fylvo, copy the folder, start it again.
 
-Restore a backup:
+Restore a backup: unpack it next to the current folder first, then swap the two.
 
 ```bash
+B=$HOME/fylvo-backup-<date>.tar.gz
+mkdir ~/fylvo-restore && sudo tar -xzf $B -C ~/fylvo-restore
 cd ~/fylvo && docker compose --profile office down
-cd ~ && sudo mv fylvo fylvo-old
-sudo tar -xzf ~/fylvo-backup-<date>.tar.gz -C ~
+cd ~ && sudo mv fylvo fylvo-old && sudo mv fylvo-restore/fylvo fylvo && rmdir fylvo-restore
 cd ~/fylvo && docker compose up -d
 ```
 
-`--profile office` stops office too, if you use it; without office it changes nothing. With office,
-start with `docker compose --profile office up -d` in the last line.
+If `tar` reports an error, stop there: your current Fylvo is untouched. `--profile office` stops
+office too, if you use it; with office, start with `docker compose --profile office up -d` in the
+last line.
 
 Sign in and open a few files. Delete `~/fylvo-old` when everything is there. A backup from an
 older Fylvo version starts with the current image too; Fylvo updates the database by itself.

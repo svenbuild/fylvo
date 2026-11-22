@@ -1,11 +1,17 @@
 name: Promote
 
-# When a release is published (not a pre-release), its image also becomes :1.2, :1 and :latest.
-# Until then only :1.2.3 exists (release.yml), so "docker compose pull" never gets a draft.
+# When a release is published (not a pre-release), its image also becomes :1.2, :1 and :latest,
+# each only if it is the newest published release in that range: a later fix for an older version
+# never moves users back. Until then only :1.2.3 exists (release.yml), so "docker compose pull"
+# never gets a draft.
 
 on:
   release:
     types: [published]
+
+concurrency:
+  group: promote
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -16,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      contents: read    # the list of releases
       packages: write
     steps:
       - name: Version from the tag
@@ -41,11 +48,24 @@ jobs:
 
       - name: Move the tags
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           IMAGE: ${{ steps.version.outputs.image }}
           VERSION: ${{ steps.version.outputs.version }}
           MINOR: ${{ steps.version.outputs.minor }}
           MAJOR: ${{ steps.version.outputs.major }}
         run: |
-          docker buildx imagetools create \
-            -t "$IMAGE:$MINOR" -t "$IMAGE:$MAJOR" -t "$IMAGE:latest" \
-            "$IMAGE:$VERSION"
+          set -euo pipefail
+          stable="$(gh release list --exclude-drafts --exclude-pre-releases --limit 1000 --json tagName --jq '.[].tagName' \
+            | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true)"
+          # The newest published version that starts with the given text ("" for all).
+          newest() { printf '%s\n' "$stable" | awk -v p="$1" 'index($0, p) == 1' | sort -V | tail -n 1; }
+          tags=()
+          if [ "$(newest "$MINOR.")" = "$VERSION" ]; then tags+=(-t "$IMAGE:$MINOR"); fi
+          if [ "$(newest "$MAJOR.")" = "$VERSION" ]; then tags+=(-t "$IMAGE:$MAJOR"); fi
+          if [ "$(newest "")" = "$VERSION" ]; then tags+=(-t "$IMAGE:latest"); fi
+          if [ "${#tags[@]}" -eq 0 ]; then
+            echo "Newer releases hold :$MINOR, :$MAJOR and :latest; nothing to move."
+            exit 0
+          fi
+          docker buildx imagetools create "${tags[@]}" "$IMAGE:$VERSION"

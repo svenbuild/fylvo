@@ -17,14 +17,15 @@ ENV TZ=UTC \
     CR_SETTING_DEFAULT_media_meta_ffprobe=1 \
     CR_SETTING_DEFAULT_thumb_libraw_enabled=1
 
-# Set by docker buildx; the default is for a plain "docker build".
-ARG TARGETARCH=amd64
+# Set by BuildKit for the platform being built (docker build and docker buildx).
+ARG TARGETARCH
 COPY .build/aria2.supervisor.conf .build/entrypoint.sh ./
 COPY release/fylvo-linux-${TARGETARCH} ./fylvo
 
 # Installations from before the rename stored absolute paths /cloudreve/data/... in the database
 # (storage policy, files, thumbnails). The link keeps them working.
-RUN chmod +x ./fylvo ./entrypoint.sh     && ln -s /fylvo /cloudreve
+RUN chmod +x ./fylvo ./entrypoint.sh \
+    && ln -s /fylvo /cloudreve
 
 EXPOSE 5212 6888 6888/udp
 

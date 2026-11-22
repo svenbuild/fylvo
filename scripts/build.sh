@@ -16,7 +16,10 @@ COMMIT="$(git rev-parse --short HEAD)"
 MODULE="github.com/cloudreve/Cloudreve/v4"
 
 export NODE_OPTIONS="--max-old-space-size=8192"
-trap 'git checkout -- frontend/package.json' EXIT
+# yarn version rewrites frontend/package.json; put back exactly what was there before.
+PACKAGE_COPY="$(mktemp)"
+cp frontend/package.json "$PACKAGE_COPY"
+trap 'cp "$PACKAGE_COPY" frontend/package.json; rm -f "$PACKAGE_COPY"' EXIT
 (
   cd frontend
   rm -rf build
@@ -38,7 +41,10 @@ mv "$STAGE/assets.zip" application/statics/assets.zip
 rm -rf "$STAGE"
 
 mkdir -p release
+LDFLAGS="-s -w -X '$MODULE/application/constants.BackendVersion=$VERSION'"
+LDFLAGS="$LDFLAGS -X '$MODULE/application/constants.FylvoVersion=$FYLVO_VERSION'"
+LDFLAGS="$LDFLAGS -X '$MODULE/application/constants.LastCommit=$COMMIT'"
 for ARCH in $ARCHES; do
-  CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath     -ldflags "-s -w -X '$MODULE/application/constants.BackendVersion=$VERSION' -X '$MODULE/application/constants.FylvoVersion=$FYLVO_VERSION' -X '$MODULE/application/constants.LastCommit=$COMMIT'"     -o "release/fylvo-linux-$ARCH" .
+  CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath -ldflags "$LDFLAGS" -o "release/fylvo-linux-$ARCH" .
   echo "Built release/fylvo-linux-$ARCH (Fylvo $FYLVO_VERSION, commit $COMMIT)"
 done
