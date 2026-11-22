@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -26,6 +27,13 @@ type fakeProvider struct {
 	tokenAnswer func(w http.ResponseWriter) bool
 	account     string
 	bearerSeen  []string
+	// refreshes counts the refresh grants; refreshed lists the refresh tokens they named.
+	refreshes int
+	refreshed []string
+	// rotate makes every refresh hand out a new refresh token, as Microsoft does.
+	rotate bool
+	// refuse makes a refresh fail with this OAuth error.
+	refuse string
 }
 
 func newFakeProvider(t *testing.T) *fakeProvider {
@@ -37,6 +45,21 @@ func newFakeProvider(t *testing.T) *fakeProvider {
 		p.exchanges++
 		_ = r.ParseForm()
 		if p.tokenAnswer != nil && p.tokenAnswer(w) {
+			return
+		}
+		if r.PostForm.Get("grant_type") == "refresh_token" {
+			p.refreshes++
+			p.refreshed = append(p.refreshed, r.PostForm.Get("refresh_token"))
+			if p.refuse != "" {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": p.refuse, "error_description": "secret detail"})
+				return
+			}
+			answer := map[string]any{"access_token": fmt.Sprintf("access-r%d", p.refreshes), "token_type": "Bearer", "expires_in": 3600}
+			if p.rotate {
+				answer["refresh_token"] = fmt.Sprintf("refresh-r%d", p.refreshes)
+			}
+			_ = json.NewEncoder(w).Encode(answer)
 			return
 		}
 		challenge, ok := p.codes[r.PostForm.Get("code")]

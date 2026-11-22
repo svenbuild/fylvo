@@ -18,6 +18,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 )
 
@@ -85,7 +86,7 @@ type ManagerOptions struct {
 	Sealer   *Sealer
 	// Specs are the providers; nil takes Specs().
 	Specs map[string]*Spec
-	// HTTP talks to the providers; nil takes a client with a timeout.
+	// HTTP talks to the providers; nil takes provider.NewHTTPClient().
 	HTTP  *http.Client
 	Hooks Hooks
 }
@@ -102,8 +103,14 @@ type Manager struct {
 	hooks    Hooks
 
 	// mu orders the steps that decide over tokens of a provider account: storing the
-	// result of a sign-in, disconnecting and revoking.
-	mu sync.Mutex
+	// result of a sign-in, disconnecting and revoking hold it exclusively. Requests that
+	// use a connection hold it shared while they are admitted (see Use).
+	mu sync.RWMutex
+	// live holds, per connection, what is open in memory while it is in use.
+	liveMu sync.Mutex
+	live   map[string]*liveConn
+	// tree reads the folders of all connections.
+	tree *Tree
 	// leaving counts, per account, the deletions of that account that are under way.
 	leaving map[int]int
 }
@@ -113,7 +120,7 @@ func NewManager(o ManagerOptions) *Manager {
 		o.Specs = Specs()
 	}
 	if o.HTTP == nil {
-		o.HTTP = &http.Client{Timeout: 30 * time.Second}
+		o.HTTP = provider.NewHTTPClient()
 	}
 	return &Manager{
 		storages: o.Storages,
@@ -124,8 +131,13 @@ func NewManager(o ManagerOptions) *Manager {
 		flow:     NewFlow(o.Specs, o.HTTP),
 		hooks:    o.Hooks,
 		leaving:  map[int]int{},
+		live:     map[string]*liveConn{},
+		tree:     NewTree(),
 	}
 }
+
+// Tree returns what reads the folders of the connections.
+func (m *Manager) Tree() *Tree { return m.tree }
 
 // Leaving marks an account as being deleted until the returned function is called. In
 // between nothing new is stored for it: a sign-in that completes meanwhile is refused, so
@@ -455,6 +467,8 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 			// Connected again meanwhile, by another sign-in.
 			return nil, flowError(ErrFlowExpired)
 		}
+		// What ran with the old token ends here.
+		m.closeLive(row.PublicID)
 		if m.hooks.Closed != nil {
 			m.hooks.Closed(row.PublicID, granted.Reconnect.Generation)
 		}
@@ -547,6 +561,7 @@ func (m *Manager) DisconnectUser(ctx context.Context, userID int) error {
 
 // afterDelete cleans up after a row was deleted. The caller holds m.mu.
 func (m *Manager) afterDelete(ctx context.Context, row *ent.ConnectedStorage) {
+	m.closeLive(row.PublicID)
 	if m.hooks.Closed != nil {
 		m.hooks.Closed(row.PublicID, row.Generation)
 	}
