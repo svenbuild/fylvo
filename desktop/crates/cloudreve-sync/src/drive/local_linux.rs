@@ -8,7 +8,7 @@
 
 use crate::drive::local::{LocalFileInfo, PinState, SyncState};
 use crate::inventory::{FileMetadata, InventoryDb};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -43,6 +43,72 @@ pub fn unregister_sync_root(root: &Path) {
 pub fn sync_root_of(path: &Path) -> Option<PathBuf> {
     let roots = SYNC_ROOTS.read().unwrap_or_else(|e| e.into_inner());
     roots.iter().find(|root| path.starts_with(root)).cloned()
+}
+
+/// Fylvo: the file systems a sync folder may be on: only those whose inode numbers stay the
+/// same (the local state in the inventory is keyed by them). FAT, exFAT, NTFS through FUSE and
+/// network shares are refused.
+pub fn check_file_system(folder: &Path) -> Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    const SUPPORTED: &[(i64, &str)] = &[
+        (0xEF53, "ext4"),
+        (0x9123683E, "btrfs"),
+        (0x58465342, "xfs"),
+        (0xF2F52010, "f2fs"),
+    ];
+    let path = CString::new(folder.as_os_str().as_bytes())?;
+    let mut stat: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statfs(path.as_ptr(), &mut stat) } != 0 {
+        return Err(std::io::Error::last_os_error())
+            .with_context(|| format!("cannot read the file system of {}", folder.display()));
+    }
+    let kind = stat.f_type as i64;
+    if SUPPORTED.iter().any(|(magic, _)| *magic == kind) {
+        return Ok(());
+    }
+    anyhow::bail!("{}", t!("linuxFileSystemNotSupported", "folder" => folder.display()))
+}
+
+/// Mount points listed by the kernel (also bind mounts on the same device).
+fn mount_points() -> Vec<PathBuf> {
+    let Ok(text) = std::fs::read_to_string("/proc/self/mountinfo") else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| line.split(' ').nth(4))
+        // Spaces and other special characters are written as octal escapes.
+        .map(|field| PathBuf::from(field.replace("\\040", " ").replace("\\011", "\t")))
+        .collect()
+}
+
+/// Fylvo: whether the sync must leave `path` alone: a symlink (never followed, so nothing
+/// outside the sync folder is read or changed) or another file system mounted inside the
+/// folder (its inode numbers are not comparable). Logged once per path.
+pub fn is_foreign(path: &Path) -> bool {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    let foreign = if meta.file_type().is_symlink() {
+        true
+    } else if meta.is_dir() {
+        let other_device = path
+            .parent()
+            .and_then(|parent| std::fs::symlink_metadata(parent).ok())
+            .is_some_and(|parent| parent.dev() != meta.dev());
+        other_device || mount_points().iter().any(|mount| mount == path)
+    } else {
+        false
+    };
+    if foreign {
+        static LOGGED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+        let mut logged = LOGGED.lock().unwrap_or_else(|e| e.into_inner());
+        if !logged.iter().any(|known| known == path) {
+            tracing::warn!(target: "drive::local", path = %path.display(), "Symlink or mount point in the sync folder, not synced");
+            logged.push(path.to_path_buf());
+        }
+    }
+    foreign
 }
 
 /// The local state of a file or folder as stored in `fylvo:local`.

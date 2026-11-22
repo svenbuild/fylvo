@@ -7,9 +7,10 @@
 //! - Uses CrPlaceholder to convert and mark the file as in-sync
 //! - Only operates on hydrated placeholder files
 
+#[cfg(windows)]
+use std::{path::Path, str::FromStr};
 use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -24,10 +25,11 @@ use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
+#[cfg(windows)]
 use uuid::Uuid;
 
 use crate::{
-    drive::{local::LocalFileInfo, placeholder::CrPlaceholder, utils::local_path_to_cr_uri},
+    drive::{local::LocalFileInfo, utils::local_path_to_cr_uri},
     inventory::{FileMetadata, InventoryDb},
     tasks::{
         queue::QueuedTask,
@@ -36,6 +38,13 @@ use crate::{
 };
 
 use super::types::TaskProgress;
+#[cfg(windows)]
+use crate::drive::placeholder::CrPlaceholder;
+
+/// Fylvo: the Linux end of a download (new files and updates of normal local files).
+#[cfg(target_os = "linux")]
+#[path = "download_linux.rs"]
+pub(crate) mod linux;
 
 /// Progress tracker for download operations.
 /// Uses atomic counters for thread-safe byte tracking and sliding window for speed calculation.
@@ -177,6 +186,9 @@ pub struct DownloadTask<'a> {
     started: Option<ContentState>,
     /// Fylvo: the file was changed here, the download left it as it is.
     kept_local_change: bool,
+    /// Fylvo (Linux): the local state when the download started (with the inode).
+    #[cfg(target_os = "linux")]
+    started_stamp: Option<crate::drive::local_linux::LocalStamp>,
     cancel_token: CancellationToken,
     progress_map: Arc<DashMap<String, TaskProgress>>,
 }
@@ -200,6 +212,8 @@ impl<'a> DownloadTask<'a> {
             remote_file_info: None,
             started: None,
             kept_local_change: false,
+            #[cfg(target_os = "linux")]
+            started_stamp: None,
             task,
             sync_path,
             remote_base,
@@ -227,13 +241,22 @@ impl<'a> DownloadTask<'a> {
             .context("failed to get local file info")?;
 
         if !local_file_info.exists {
-            info!(
-                target: "tasks::download",
-                task_id = %self.task.task_id,
-                local_path = %self.task.payload.local_path_display(),
-                "Local file does not exist, skipping download"
-            );
-            return Ok(());
+            // Fylvo: Linux keeps every file local: a file the server has and this folder not is
+            // downloaded here (Windows creates an online-only placeholder instead).
+            #[cfg(target_os = "linux")]
+            {
+                return self.download_and_replace().await;
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                info!(
+                    target: "tasks::download",
+                    task_id = %self.task.task_id,
+                    local_path = %self.task.payload.local_path_display(),
+                    "Local file does not exist, skipping download"
+                );
+                return Ok(());
+            }
         }
         // Fylvo: renamed meanwhile to another upper/lower case spelling; the sync decides
         // about it under the new spelling (see `drive/case.rs`).
@@ -304,6 +327,11 @@ impl<'a> DownloadTask<'a> {
             content_state(&self.task.payload.local_path)
                 .context("the file cannot be read right now")?,
         );
+        #[cfg(target_os = "linux")]
+        {
+            self.started_stamp =
+                crate::drive::local_linux::LocalStamp::of_path(&self.task.payload.local_path);
+        }
 
         self.local_file_info = Some(local_file_info);
 
@@ -420,8 +448,12 @@ impl<'a> DownloadTask<'a> {
         reporter.on_progress(&final_update);
 
         // Replace placeholder file with downloaded content and commit
+        #[cfg(windows)]
         self.replace_and_commit_placeholder(temp_path)
             .context("failed to replace and commit placeholder")?;
+        #[cfg(target_os = "linux")]
+        self.place_download(temp_path)
+            .context("failed to put the downloaded file in place")?;
 
         info!(
             target: "tasks::download",
@@ -491,6 +523,7 @@ impl<'a> DownloadTask<'a> {
     }
 
     /// Replace the placeholder file content with the downloaded file and commit using CrPlaceholder
+    #[cfg(windows)]
     fn replace_and_commit_placeholder(&mut self, temp_path: &PathBuf) -> Result<()> {
         let local_path = &self.task.payload.local_path;
         let remote_file_info = self
@@ -593,25 +626,6 @@ fn replace_with_backup(local: &Path, temp: &Path, task_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Fylvo: the Linux order of the same step. The old file is moved aside under the ignored
-/// backup name, the new one is put in place without replacing anything that appeared in
-/// between, and the old one comes back if that fails. The full rules for the backup (kept while
-/// a program may still write to it) come with the Linux download stage.
-#[cfg(target_os = "linux")]
-fn replace_with_backup(local: &Path, temp: &Path, task_id: &str) -> Result<()> {
-    use crate::drive::utils::move_no_replace;
-    let backup = temp.with_file_name(format!("~fylvo-backup-{task_id}.tmp"));
-    move_no_replace(local, &backup).context("failed to move the local file aside")?;
-    if let Err(err) = move_no_replace(temp, local) {
-        if let Err(back) = move_no_replace(&backup, local) {
-            return Err(back.context("failed to put the local file back after a failed replace"));
-        }
-        return Err(err).context("failed to replace the local file");
-    }
-    let _ = std::fs::remove_file(&backup);
-    Ok(())
-}
-
 /// Fylvo: a file of the task itself, removed when the task ends in any way.
 struct RemoveOnDrop(PathBuf);
 
@@ -623,15 +637,18 @@ impl Drop for RemoveOnDrop {
 
 /// Whether a file still has the size and write time it had at `started` (read through a
 /// handle). Unknown counts as changed.
+#[cfg(windows)]
 fn unchanged_since(started: Option<ContentState>, path: &Path) -> bool {
     started.is_some() && content_state(path) == started
 }
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 
     #[test]
+    #[cfg(windows)]
     fn a_file_changed_during_the_download_is_not_replaced() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("kept.docx");
@@ -648,6 +665,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn the_replace_leaves_no_file_with_a_random_name_behind() {
         let dir = tempfile::tempdir().unwrap();
         let local = dir.path().join("Book.xlsx");

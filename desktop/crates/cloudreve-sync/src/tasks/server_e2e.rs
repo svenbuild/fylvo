@@ -25,15 +25,18 @@ impl ProgressCallback for NoProgress {
     fn on_progress(&self, _update: ProgressUpdate) {}
 }
 
-struct Server {
-    client: Arc<Client>,
+pub(super) struct Server {
+    pub(super) client: Arc<Client>,
     inventory: Arc<InventoryDb>,
     dir: tempfile::TempDir,
-    root: String,
+    pub(super) root: String,
+    pub(super) url: String,
+    pub(super) access_token: String,
+    pub(super) refresh_token: String,
 }
 
 impl Server {
-    async fn connect() -> Self {
+    pub(super) async fn connect() -> Self {
         let var = |name| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
         // A password sign-in as the web app does it (the app itself signs in through the
         // browser, `fylvo://`).
@@ -51,12 +54,11 @@ impl Server {
             .await
             .expect("login answer");
         let token = &login["data"]["token"];
-        let client = Client::new(ClientConfig::new(url));
+        let access_token = token["access_token"].as_str().expect("access token").to_string();
+        let refresh_token = token["refresh_token"].as_str().expect("refresh token").to_string();
+        let client = Client::new(ClientConfig::new(url.clone()));
         client
-            .set_tokens(
-                token["access_token"].as_str().expect("access token").to_string(),
-                token["refresh_token"].as_str().expect("refresh token").to_string(),
-            )
+            .set_tokens(access_token.clone(), refresh_token.clone())
             .await;
         let dir = tempfile::tempdir().unwrap();
         let inventory = Arc::new(InventoryDb::with_path(dir.path().join("meta.db")).unwrap());
@@ -66,14 +68,76 @@ impl Server {
             inventory,
             dir,
             root,
+            url,
+            access_token,
+            refresh_token,
         }
     }
 
-    fn uri(&self, relative: &str) -> String {
+    /// Tokens as Fylvo Desktop gets them: the web app's consent for the desktop client (with
+    /// PKCE), then the code exchange. Password tokens carry no scopes, the app refuses them.
+    pub(super) async fn desktop_tokens(&self) -> (String, String) {
+        use base64::Engine;
+        use sha2::Digest;
+        const CLIENT_ID: &str = "512cd652-c028-4332-992e-d88a4406e5b2";
+        const CLIENT_SECRET: &str = "ZO3QjjTTSLiRjaw8ixyryEdJmTnmhtCj";
+        const SCOPES: &str = "profile email openid offline_access UserInfo.Write Workflow.Write Files.Write Shares.Write";
+        const CALLBACK: &str = "/callback/fylvo-desktop";
+        let verifier = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+        let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(sha2::Sha256::digest(verifier.as_bytes()));
+        let http = reqwest::Client::new();
+        let consent: serde_json::Value = http
+            .post(format!("{}/api/v4/session/oauth/consent", self.url))
+            .bearer_auth(&self.access_token)
+            .json(&serde_json::json!({
+                "client_id": CLIENT_ID,
+                "response_type": "code",
+                "redirect_uri": CALLBACK,
+                "state": "e2e",
+                "scope": SCOPES,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            }))
+            .send()
+            .await
+            .expect("consent")
+            .json()
+            .await
+            .expect("consent answer");
+        let code = consent["data"]["code"]
+            .as_str()
+            .unwrap_or_else(|| panic!("no code in {consent}"))
+            .to_string();
+        let token: serde_json::Value = http
+            .post(format!("{}/api/v4/session/oauth/token", self.url))
+            .form(&[
+                ("grant_type", "authorization_code"),
+                ("client_id", CLIENT_ID),
+                ("client_secret", CLIENT_SECRET),
+                ("code", code.as_str()),
+                ("redirect_uri", CALLBACK),
+                ("code_verifier", verifier.as_str()),
+            ])
+            .send()
+            .await
+            .expect("token")
+            .json()
+            .await
+            .expect("token answer");
+        let access = token["access_token"]
+            .as_str()
+            .unwrap_or_else(|| panic!("no access token in {token}"))
+            .to_string();
+        let refresh = token["refresh_token"].as_str().unwrap_or_default().to_string();
+        (access, refresh)
+    }
+
+    pub(super) fn uri(&self, relative: &str) -> String {
         format!("{}/{}", self.root, relative)
     }
 
-    async fn folder(&self, relative: &str) -> Result<FileResponse> {
+    pub(super) async fn folder(&self, relative: &str) -> Result<FileResponse> {
         Ok(self
             .client
             .create_file(&CreateFileService {
@@ -87,7 +151,7 @@ impl Server {
 
     /// Upload `content` as the sync does: a known file names the version it was changed from
     /// (`previous`) and makes a new version of it. Returns the version the upload created.
-    async fn upload(
+    pub(super) async fn upload(
         &self,
         relative: &str,
         content: &str,
@@ -114,7 +178,7 @@ impl Server {
         uploader.upload(params, NoProgress).await
     }
 
-    async fn info(&self, relative: &str) -> FileResponse {
+    pub(super) async fn info(&self, relative: &str) -> FileResponse {
         self.client
             .get_file_info(&GetFileInfoService {
                 uri: Some(self.uri(relative)),
@@ -126,7 +190,7 @@ impl Server {
             .expect("file info")
     }
 
-    async fn rename(&self, relative: &str, new_name: &str) -> Result<()> {
+    pub(super) async fn rename(&self, relative: &str, new_name: &str) -> Result<()> {
         self.client
             .rename_file(&RenameFileService {
                 uri: self.uri(relative),

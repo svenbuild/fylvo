@@ -39,11 +39,15 @@ impl DriveManager {
         }
 
         let (command_tx, command_rx) = mpsc::unbounded_channel();
+        let inventory = Arc::new(InventoryDb::new().context("Failed to create inventory database")?);
+        // Fylvo: on Linux the local state of synced files is read from the inventory.
+        #[cfg(target_os = "linux")]
+        crate::drive::local_linux::set_inventory(inventory.clone());
 
         Ok(Self {
             config_dir,
             drives: Arc::new(RwLock::new(HashMap::new())),
-            inventory: Arc::new(InventoryDb::new().context("Failed to create inventory database")?),
+            inventory,
             command_tx,
             command_rx: Arc::new(Mutex::new(Some(command_rx))),
             processor_handle: Arc::new(Mutex::new(None)),

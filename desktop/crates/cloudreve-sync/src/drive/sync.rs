@@ -375,7 +375,7 @@ fn system_time_to_unix_secs(time: SystemTime) -> Option<i64> {
     }
 }
 
-fn generate_conflict_path(path: &Path) -> PathBuf {
+pub(crate) fn generate_conflict_path(path: &Path) -> PathBuf {
     let timestamp = Utc::now().format("%Y%m%d%H%M%S");
     let stem = path
         .file_stem()
@@ -628,6 +628,20 @@ impl Mount {
     ) {
         match action {
             SyncAction::CreatePlaceholderAndInventory { path, remote } => {
+                // Fylvo: Linux keeps every file local; a new file comes by its download, which
+                // writes it and its row (`tasks/download.rs`). Folders are created below.
+                #[cfg(target_os = "linux")]
+                if remote.file_type != file_type::FOLDER {
+                    if let Err(err) = self
+                        .task_queue
+                        .enqueue(TaskPayload::download(path.clone()))
+                        .await
+                    {
+                        tracing::error!(target: "drive::sync", id = %self.id, path = %path.display(), error = ?err, "Failed to enqueue download task");
+                        aggregate_error.push(path.clone(), anyhow::Error::from(err));
+                    }
+                    return;
+                }
                 let cr_placeholder =
                     CrPlaceholder::new(path.clone(), sync_root.clone(), drive_id.clone());
                 // Fylvo: planned while nothing (or only a synced placeholder) was here. Something
@@ -650,6 +664,14 @@ impl Mount {
                         "Failed to create placeholder and inventory"
                     );
                     aggregate_error.push(path.clone(), err);
+                } else if cfg!(target_os = "linux") && remote.file_type == file_type::FOLDER {
+                    // Fylvo: Linux keeps everything local, so a new folder gets its content at
+                    // once (Windows fills a placeholder folder when it is opened).
+                    let _ = self.command_tx.send(MountCommand::Sync {
+                        local_paths: vec![path.clone()],
+                        mode: SyncMode::FullHierarchy,
+                        user_initiated: false,
+                    });
                 }
             }
             SyncAction::UpdateInventoryFromRemote {
@@ -1191,6 +1213,12 @@ impl Mount {
         let matcher = self.ignore_matcher.read().await;
         let mut dedup: HashSet<PathBuf> = HashSet::new();
         for child in children.into_iter().chain(remote_children.into_iter()) {
+            // Fylvo: a symlink or another file system here is never followed or synced, also not
+            // a server entry of the same name (it would replace the link).
+            #[cfg(target_os = "linux")]
+            if crate::drive::local_linux::is_foreign(&child) {
+                continue;
+            }
             if matcher.is_match(&child) {
                 tracing::trace!(
                     target: "drive::sync",
@@ -1332,6 +1360,11 @@ impl Mount {
 }
 
 /// Fylvo: the decisions of a sync pass, kept free of I/O so they can be tested.
+/// Fylvo: on Linux every file is local and a download replaces the whole file, so a server
+/// change of the date alone (same content, same etag) only updates the row. Windows keeps its
+/// behavior (a pinned file is downloaded again).
+const ONLY_DATE_CHANGED_IS_ROW_UPDATE: bool = cfg!(target_os = "linux");
+
 fn plan_entry_actions(
     path: &PathBuf,
     mode: SyncMode,
@@ -1427,7 +1460,13 @@ fn plan_entry_with_remote_and_local(
         return;
     }
 
-    if !etag_match || !modify_date_match {
+    if etag_match && !modify_date_match && ONLY_DATE_CHANGED_IS_ROW_UPDATE && local.in_sync() {
+        plan.actions.push(SyncAction::UpdateInventoryFromRemote {
+            path: path.clone(),
+            remote: remote.clone(),
+            invalidate_all: false,
+        });
+    } else if !etag_match || !modify_date_match {
         plan_file_actions(path, remote, local, inventory, read_only, plan);
     } else if local_change_not_uploaded(local, inventory, read_only) {
         // Fylvo: the server has the version this file was changed from, so the change is

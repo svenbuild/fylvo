@@ -232,16 +232,25 @@ pub(crate) fn plan_case(
         requested: Vec<PathBuf>,
         remote: Vec<PathBuf>,
     }
+    // Fylvo: on Linux two spellings are two files on disk, so every name is its own group and
+    // is planned under its own path (the server refuses the second one with 40905).
+    let group_key = |path: &Path| {
+        if cfg!(windows) {
+            ntfs_fold(&path.to_string_lossy())
+        } else {
+            path.to_string_lossy().to_string()
+        }
+    };
     let mut groups: BTreeMap<String, Group> = BTreeMap::new();
     for path in requested {
-        let group = groups.entry(ntfs_fold(&path.to_string_lossy())).or_default();
+        let group = groups.entry(group_key(path)).or_default();
         if !group.requested.contains(path) {
             group.requested.push(path.clone());
         }
     }
     for path in remote.keys() {
         groups
-            .entry(ntfs_fold(&path.to_string_lossy()))
+            .entry(group_key(path))
             .or_default()
             .remote
             .push(path.clone());
@@ -447,7 +456,7 @@ impl Mount {
 
     /// Rename a local file or folder to the server's spelling of the same name, with its
     /// inventory rows. Never replaces another file.
-    async fn rename_local_case(&self, from: &Path, to: &Path) -> Result<()> {
+    pub(crate) async fn rename_local_case(&self, from: &Path, to: &Path) -> Result<()> {
         let from_str = from.to_str().context("path is not UTF-8")?;
         let to_str = to.to_str().context("path is not UTF-8")?;
         // Inventory rows under both spellings: unclear which is right, leave it.
@@ -792,6 +801,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn server_case_rename_full_sync_renames_locally() {
         // Disk `foto.jpg` (synced), server renamed it to `Foto.jpg`. The full sync sees both.
         let plan = plan_case(
@@ -820,6 +830,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn server_case_rename_of_folder_renames_locally() {
         let plan = plan_case(
             &[p("Fotos"), p("fotos")],
@@ -843,6 +854,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn local_case_rename_while_off_takes_the_server_name() {
         // The user renamed `foto.jpg` to `Foto.jpg` while the app was closed. The server name
         // wins, like for any rename made while the app was off, but nothing is deleted.
@@ -857,6 +869,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn unknown_local_file_with_other_case_is_held() {
         // A new local `Foto.jpg` next to a server `foto.jpg` from elsewhere: maybe two different
         // files. Nothing is renamed, uploaded or deleted.
@@ -871,6 +884,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn other_object_with_other_case_is_held() {
         // Local `a.jpg` was server `a.jpg`; that was deleted and a different `A.jpg` remains.
         let plan_with = |remote: HashMap<PathBuf, FileResponse>, known: KnownEntry| {
@@ -900,6 +914,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn rows_under_both_spellings_are_held() {
         let plan = plan_case(
             &[p("foto.jpg")],
@@ -911,6 +926,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn two_server_names_new_folder_keeps_the_first() {
         let plan = plan_case(&[], &server(&["a.jpg", "A.jpg"]), disk(&[]), nothing_known);
         assert_eq!(plan.paths, [p("A.jpg")]);
@@ -918,6 +934,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn two_server_names_keep_the_one_on_disk() {
         let plan = plan_case(
             &[p("a.jpg")],
@@ -931,6 +948,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn two_server_names_none_on_disk_spelling_is_held() {
         let plan = plan_case(
             &[p("FOTO.jpg")],
@@ -943,6 +961,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn server_deletes_the_hidden_twin_keeps_local_file() {
         // Server had `a.jpg` (on disk) and `A.jpg` (hidden). `A.jpg` is deleted; its delete
         // event asks for `A.jpg`, which NTFS finds as `a.jpg`. Before, that deleted `a.jpg`.
@@ -954,6 +973,20 @@ mod tests {
         );
         assert_eq!(plan.paths, [p("a.jpg")]);
         assert!(plan.renames.is_empty() && plan.held.is_empty());
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn linux_plans_every_spelling_on_its_own() {
+        let requested = vec![PathBuf::from("/S/a.txt"), PathBuf::from("/S/A.txt")];
+        let mut remote = HashMap::new();
+        remote.insert(PathBuf::from("/S/a.txt"), FileResponse::default());
+        let disk = |path: &Path| Some(path.to_path_buf());
+        let plan = plan_case(&requested, &remote, disk, |_| None);
+        let mut paths = plan.paths.clone();
+        paths.sort();
+        assert_eq!(paths, [PathBuf::from("/S/A.txt"), PathBuf::from("/S/a.txt")]);
+        assert!(plan.renames.is_empty() && plan.hidden.is_empty() && plan.held.is_empty());
     }
 
     #[test]

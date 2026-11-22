@@ -29,6 +29,23 @@ pub struct IgnoreMatcher {
     sync_root: PathBuf,
 }
 
+/// Fylvo: see `IgnoreMatcher::new`.
+#[cfg(target_os = "linux")]
+const LINUX_TEMP_NAMES: &[&str] = &[
+    ".Trash-*",
+    ".goutputstream-*",
+    "*~",
+    ".*.sw[a-z]",
+    "4913",
+    "*.kate-swp",
+    ".#*",
+    ".directory",
+    ".nfs*",
+    ".fuse_hidden*",
+    "lu*.tmp",
+    "*.part",
+];
+
 impl IgnoreMatcher {
     /// Build an IgnoreMatcher from a list of gitignore-style patterns.
     ///
@@ -88,6 +105,15 @@ impl IgnoreMatcher {
         // the server file keeps its name, versions and shares and gets the new version.
         let excel_temp = format!("**/{}.tmp", "[0-9A-Fa-f]".repeat(8));
         builder.add(GlobBuilder::new(&excel_temp).case_insensitive(true).build()?);
+
+        // Fylvo: temp and backup names of Linux editors and file managers (gedit, vim, emacs,
+        // Kate, LibreOffice, Dolphin copies), the trash of a mount whose top is the sync folder,
+        // NFS and FUSE leftovers. Only on Linux, Windows keeps its list.
+        #[cfg(target_os = "linux")]
+        for pattern in LINUX_TEMP_NAMES {
+            builder.add(Glob::new(&format!("**/{pattern}"))?);
+            builder.add(Glob::new(&format!("**/{pattern}/**"))?);
+        }
 
         // Fylvo: what Windows may put at the root of a drive (the folder can also show as a
         // drive letter) never goes to the server.
@@ -215,6 +241,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
+    fn linux_temp_names_are_ignored() {
+        let matcher = IgnoreMatcher::new(&[], PathBuf::from("/home/u/Fylvo")).unwrap();
+        for name in [
+            ".goutputstream-X1Y2Z3", "notes.txt~", ".notes.txt.swp", "4913", "a.txt.kate-swp",
+            ".#notes.txt", ".directory", ".nfs000001", ".fuse_hidden0001", "lu12345.tmp",
+            "Film.mkv.part", ".Trash-1000/files/a.txt", ".~lock.Book.ods#",
+        ] {
+            assert!(matcher.is_match(format!("/home/u/Fylvo/Docs/{name}")), "{name}");
+        }
+        for name in ["notes.txt", "Book.ods", "swap.txt", "lunch.txt", "4913.txt"] {
+            assert!(!matcher.is_match(format!("/home/u/Fylvo/Docs/{name}")), "{name}");
+        }
+    }
+
+    #[test]
     fn office_save_names_are_ignored() {
         let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
         let matcher = IgnoreMatcher::new(&[], sync_root).unwrap();
@@ -287,7 +329,11 @@ mod tests {
 
         // Only *.tmp is added, next to the four built-in Office temp patterns and the
         // built-in root system items (two globs each).
-        assert_eq!(matcher.len(), 5 + 2 * ROOT_SYSTEM_ITEMS.len());
+        #[cfg(target_os = "linux")]
+        let linux = 2 * LINUX_TEMP_NAMES.len();
+        #[cfg(not(target_os = "linux"))]
+        let linux = 0;
+        assert_eq!(matcher.len(), 5 + 2 * ROOT_SYSTEM_ITEMS.len() + linux);
         assert!(matcher.is_match(native("C:\\Users\\test\\sync\\file.tmp")));
     }
 

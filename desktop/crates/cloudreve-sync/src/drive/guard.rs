@@ -734,6 +734,10 @@ impl Mount {
 
     /// The one way to queue an upload. A read-only drive gets none.
     pub(crate) async fn enqueue_upload(&self, payload: TaskPayload) -> Result<()> {
+        if !crate::drive::commands::LOCAL_CHANGES_TO_SERVER {
+            tracing::debug!(target: "drive::guard", id = %self.id, path = %payload.local_path.display(), "Upload skipped, local changes are not sent to the server on this platform yet");
+            return Ok(());
+        }
         if self.is_read_only() {
             self.refuse_read_only_change(&payload.local_path).await;
             return Ok(());

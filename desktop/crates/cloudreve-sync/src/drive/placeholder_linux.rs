@@ -72,6 +72,25 @@ impl CrPlaceholder {
         Ok(())
     }
 
+    /// Store the row of a downloaded file that is not in place yet (the download renames it in
+    /// right after). The key is the state of the downloaded file (`with_local_stamp`).
+    pub fn commit_downloaded(&self, inventory: &InventoryDb) -> Result<()> {
+        let mut file_meta = self
+            .file_meta
+            .clone()
+            .context("File metadata is not set")?;
+        let stamp = self
+            .local_stamp
+            .context("the downloaded file's state is not set")?;
+        file_meta
+            .metadata
+            .insert(LOCAL_STATE_KEY.to_string(), stamp.encode());
+        inventory
+            .upsert(&MetadataEntry::from(&file_meta))
+            .context("failed to upsert inventory")?;
+        Ok(())
+    }
+
     /// Remove the local file or folder and its inventory entry. Nothing is deleted for good: a
     /// file goes to the freedesktop trash, a folder is removed only when it is empty. The row
     /// goes first (a file restored from the trash is then a new file) and comes back if the
@@ -90,6 +109,12 @@ impl CrPlaceholder {
 
         let info = &self.local_file_info;
         if !info.exists {
+            return Ok(());
+        }
+        // Changed here since the sync planned the deletion: kept, without its row, so it counts
+        // as a new local file (uploaded again) instead of going to the trash.
+        if !info.is_directory && !(info.is_placeholder() && info.in_sync()) {
+            tracing::info!(target: "drive::placeholder", path = %self.local_path.display(), "Changed here, kept instead of moving it to the trash");
             return Ok(());
         }
         let removed = if info.is_directory {

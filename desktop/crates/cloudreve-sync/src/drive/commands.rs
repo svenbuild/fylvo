@@ -57,6 +57,10 @@ use windows::Win32::UI::Shell::SHCNE_ATTRIBUTES;
 #[cfg(windows)]
 const PAGE_SIZE: i32 = 1000;
 
+/// Fylvo: whether local changes go to the server. Linux syncs from the server only until its
+/// own handling of renames and moves is in place (see `desktop/docs/linux-plan.md`, stage 4).
+pub(crate) const LOCAL_CHANGES_TO_SERVER: bool = cfg!(windows);
+
 /// Generate a unique filename by appending a counter suffix before the extension.
 /// For example: "document.txt" -> "document (1).txt", "document (2).txt", etc.
 /// For files without extension: "README" -> "README (1)", "README (2)", etc.
@@ -647,6 +651,10 @@ impl Mount {
     }
 
     pub async fn process_fs_events(&self, events: GroupedFsEvents) -> Result<()> {
+        if !LOCAL_CHANGES_TO_SERVER {
+            tracing::debug!(target: "drive::commands", "Local changes are not sent to the server on this platform yet");
+            return Ok(());
+        }
         // Fylvo: deletions first. A file deleted and written again in one batch (saved by
         // replacement) must be seen as back before its upload marks it in sync; handled after
         // that upload, the stale deletion would send the new version to the server's trash.

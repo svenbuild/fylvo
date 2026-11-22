@@ -220,6 +220,22 @@ impl Mount {
             let to_relative: PathBuf = event.to.trim_start_matches('/').split('/').collect();
             let local_to_path = sync_root.join(&to_relative);
 
+            // Fylvo: Linux keeps every file local; a rename on the server moves the local file
+            // or folder along instead of trashing it and downloading it again.
+            #[cfg(target_os = "linux")]
+            if self
+                .follow_server_rename(&local_from_path, &local_to_path, &event.file_id)
+                .await
+            {
+                if let Some(parent) = local_to_path.parent() {
+                    to_grouped_by_parent
+                        .entry(parent.to_path_buf())
+                        .or_default()
+                        .push(local_to_path);
+                }
+                continue;
+            }
+
             // Fylvo: only upper/lower case changed: on this PC both names are the same file.
             // Syncing the new name renames it here (see `case.rs`); the old name must not be
             // handled as a deletion.
@@ -289,6 +305,37 @@ impl Mount {
         }
 
         Ok(())
+    }
+
+    /// Fylvo (Linux): move `from` to `to` here after the same rename on the server. Only for the
+    /// file the server renamed (the row at `from` carries its file ID), only into a free name in
+    /// an existing folder, with the checks of the case rename (`rename_local_case`: synced item,
+    /// no held deletion, transfers stopped and queued again). Returns whether it moved.
+    #[cfg(target_os = "linux")]
+    async fn follow_server_rename(&self, from: &Path, to: &Path, file_id: &str) -> bool {
+        let Some(from_text) = from.to_str() else {
+            return false;
+        };
+        let row = match self.inventory.query_by_path(from_text) {
+            Ok(Some(row)) => row,
+            _ => return false,
+        };
+        let same_file = row
+            .metadata
+            .get(crate::drive::case::FILE_ID_KEY)
+            .is_some_and(|id| !id.is_empty() && id == file_id);
+        let target_free = std::fs::symlink_metadata(to).is_err();
+        let parent_here = to.parent().is_some_and(|parent| parent.is_dir());
+        if !same_file || !target_free || !parent_here {
+            return false;
+        }
+        match self.rename_local_case(from, to).await {
+            Ok(()) => true,
+            Err(err) => {
+                tracing::info!(target: "drive::remote_events", from = %from.display(), to = %to.display(), error = ?err, "Server rename not followed here, syncing both names");
+                false
+            }
+        }
     }
 
     async fn handle_delete_events(

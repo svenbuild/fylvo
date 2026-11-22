@@ -417,6 +417,8 @@ impl Mount {
     #[cfg(target_os = "linux")]
     pub async fn start(&mut self) -> Result<()> {
         let sync_path = self.config.read().await.sync_path.clone();
+        crate::drive::local_linux::check_file_system(&sync_path)?;
+        crate::tasks::download::linux::clean_leftovers(&sync_path);
         crate::drive::local_linux::register_sync_root(&sync_path);
         self.start_fs_watcher().await?;
         Ok(())

@@ -563,6 +563,9 @@ moveBetweenDrivesMessage:
   ru: "Нельзя перемещать файлы между папками синхронизации. Скопируйте их и затем удалите оригинал."
   pl: "Nie można przenosić plików między folderami synchronizacji. Skopiuj je, a potem usuń oryginał."
   it: "Non è possibile spostare file tra cartelle sincronizzate. Copiali e poi elimina l'originale."
+linuxFileSystemNotSupported:
+  en-US: "The folder %{folder} is on a drive that cannot be synced (for example a USB stick with FAT or exFAT, or a network share). Choose a folder in your home folder or on a drive with ext4, btrfs or xfs."
+  de: "Der Ordner %{folder} liegt auf einem Laufwerk, das sich nicht abgleichen lässt (zum Beispiel ein USB-Stick mit FAT oder exFAT oder eine Netzwerkfreigabe). Wähle einen Ordner in deinem Benutzerordner oder auf einem Laufwerk mit ext4, btrfs oder xfs."
 heldDeletionBusy:
   en-US: "This deletion is being handled already."
   zh-CN: "此删除正在处理中。"
