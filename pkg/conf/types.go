@@ -104,7 +104,7 @@ var RedisConfig = &Redis{
 // DatabaseConfig 数据库配置
 var DatabaseConfig = &Database{
 	Charset:     "utf8mb4",
-	DBFile:      util.DataPath("cloudreve.db"),
+	DBFile:      defaultDBFile(),
 	Port:        3306,
 	UnixSocket:  false,
 	DatabaseURL: "",
@@ -147,3 +147,15 @@ var UnixConfig = &Unix{
 }
 
 var OptionOverwrite = map[string]interface{}{}
+
+// Fylvo: new installations keep their database in fylvo.db. Installations from before the rename
+// have cloudreve.db and keep using it, as long as there is no fylvo.db next to it.
+func defaultDBFile() string {
+	current := util.DataPath("fylvo.db")
+	legacy := util.DataPath("cloudreve.db")
+	if !util.Exists(current) && util.Exists(legacy) {
+		return legacy
+	}
+
+	return current
+}

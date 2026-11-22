@@ -3,7 +3,7 @@
 Status: built and tested on the PC, 2026-11-22. Branch `fylvo/desktop-update`. The plan below
 was reviewed by two reviewers (9/10 each); "Results" at the end says what was tested.
 
-## Decisions by Sven (2026-11-22)
+## Decisions by the maintainer (2026-11-22)
 
 1. The Windows package is **signed** with an own certificate (subject `CN=Fylvo`, the
    publisher in `AppxManifest.xml`, so the package family stays the same). Each PC trusts the
@@ -64,7 +64,7 @@ older packages. Package check per platform in its own function; Windows:
   certificate) and the signer thumbprint must equal the Fylvo certificate (pinned in the
   script). Anything else stops.
 - Version strictly higher than the published one (four parts).
-- A copy of every published MSIX goes to `C:\Users\alex\Documents\Projects\Fylvo-Desktop\`,
+- A copy of every published MSIX goes to `<your release folder>\`,
   for a manual repair (the NAS keeps only the newest).
 
 Linux adds its own check function (other thread).
@@ -73,7 +73,7 @@ Linux adds its own check function (other thread).
 
 - Certificate made 2026-11-22 with `New-SelfSignedCertificate -Type Custom -KeyUsage
   DigitalSignature`, EKU code signing, basic constraints "not a CA", `CN=Fylvo`, RSA 3072,
-  valid until 2056. PFX in `C:\Users\alex\Documents\Projects\Fylvo-Signing\fylvo-desktop.pfx`,
+  valid until 2056. PFX in `<your signing folder>\fylvo-desktop.pfx`,
   public `.cer` in `desktop/package/fylvo-desktop.cer`, thumbprint
   `16A089077B5D78CCAA8996BD51EE523CF0264D79`.
 - The password lives only in the password manager (and in the session that signs), never on the NAS or

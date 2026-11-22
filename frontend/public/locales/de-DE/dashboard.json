@@ -1089,7 +1089,7 @@
     "storeFiles": "Dateien speichern",
     "storeFilesDes": "Verwenden Sie diesen Knoten zum Speichern von Benutzerdateien.",
     "storeFilesHint": "Wenn Sie diesen Knoten für Speicherrichtlinien verwenden möchten, erstellen Sie bitte eine Slave-Speicherrichtlinie und wählen Sie diesen Knoten aus.",
-    "runCrWithConfig": "Speichern Sie die obige Datei als <0>config.ini</0>-Datei und starten Sie Fylvo mit dieser Datei: <0>./cloudreve -c config.ini</0>. Eine Slave-Fylvo-Instanz kann mehrere Fylvo-Master-Knoten bedienen; fügen Sie einfach diesen Slave-Knoten zu allen Master-Knoten hinzu und halten Sie das Geheimnis gleich.",
+    "runCrWithConfig": "Speichern Sie die obige Datei als <0>config.ini</0>-Datei und starten Sie Fylvo mit dieser Datei: <0>./fylvo -c config.ini</0>. Eine Slave-Fylvo-Instanz kann mehrere Fylvo-Master-Knoten bedienen; fügen Sie einfach diesen Slave-Knoten zu allen Master-Knoten hinzu und halten Sie das Geheimnis gleich.",
     "inputServer": "Geben Sie den Knoten-Endpoint ein:",
     "testButton": "Sie können auf die Schaltfläche unten klicken, um zu testen, ob die Kommunikation erfolgreich ist.",
     "hostHeaderHint": "Wenn ein Signatur-Fehler auftritt, überprüfen Sie bitte, ob der Reverse-Proxy vor dem Knoten den <0>Host</0>-Header weitergibt.",

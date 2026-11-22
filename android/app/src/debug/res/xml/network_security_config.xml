@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- TEST ONLY, debug builds only. Allows plain http to two test addresses:
-     the NAS on the home network and 10.0.2.2, the emulator's address of the PC
-     (a Fylvo server on http://127.0.0.1:5212 there).
+<!-- TEST ONLY, debug builds only. Allows plain http to the emulator host
+     10.0.2.2 (a Fylvo server on http://127.0.0.1:5212 of the PC) and to localhost.
+     To test against a server in your LAN, add its address as another <domain> line below,
+     e.g. <domain includeSubdomains="false">192.168.1.50</domain>.
      Release builds use src/main/res/xml/network_security_config.xml, which blocks all plain
      http. To switch the exception off for debug builds too, delete this file. -->
 <network-security-config>
@@ -11,7 +12,7 @@
         </trust-anchors>
     </base-config>
     <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">192.168.1.112</domain>
+        <domain includeSubdomains="false">localhost</domain>
         <domain includeSubdomains="false">10.0.2.2</domain>
     </domain-config>
 </network-security-config>

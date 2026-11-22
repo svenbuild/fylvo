@@ -35,13 +35,13 @@ jobs:
           cache: yarn
           cache-dependency-path: frontend/yarn.lock
 
-      # Builds the frontend, embeds it (application/statics/assets.zip) and builds release/cloudreve.
+      # Builds the web app, embeds it (application/statics/assets.zip) and builds release/fylvo-linux-amd64.
       # Must run before the tests: the server packages embed assets.zip and do not compile without it.
       - name: Build release
         run: scripts/build.sh
 
       - name: Go tests
-        run: go test ./pkg/activity/ ./middleware/ ./pkg/attempts/ ./pkg/filemanager/... ./pkg/webdav/ ./pkg/setting/ ./pkg/balancer/ ./pkg/util/ ./pkg/searcher/... ./pkg/request/ssrftest/ ./pkg/wopi/ ./inventory/... ./service/... ./routers/...
+        run: go test ./pkg/activity/ ./pkg/conf/ ./middleware/ ./pkg/attempts/ ./pkg/filemanager/... ./pkg/webdav/ ./pkg/setting/ ./pkg/balancer/ ./pkg/util/ ./pkg/searcher/... ./pkg/request/ssrftest/ ./pkg/wopi/ ./inventory/... ./service/... ./routers/...
 
       - name: Short commit
         id: commit
@@ -50,6 +50,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: fylvo-${{ steps.commit.outputs.short }}
-          path: release/cloudreve
+          path: release/fylvo-linux-amd64
           if-no-files-found: error
           retention-days: 30

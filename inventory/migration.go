@@ -375,7 +375,7 @@ func replaceCloudreveOAuthClientIcons(l logging.Logger, client *ent.Client, ctx 
 		if err := client.OAuthClient.UpdateOneID(c.ID).SetProps(&props).Exec(schema.SkipSoftDelete(ctx)); err != nil {
 			return fmt.Errorf("failed to update icon of OAuth client %s: %w", c.GUID, err)
 		}
-		l.Info("Replaced the Cloudreve icon of OAuth client %s with the Fylvo icon.", c.GUID)
+		l.Info("Replaced the old icon of OAuth client %s with the Fylvo icon.", c.GUID)
 	}
 	return nil
 }
@@ -401,7 +401,7 @@ func removeOAuthClient(l logging.Logger, client *ent.Client, ctx context.Context
 		return fmt.Errorf("failed to remove OAuth client %s: %w", guid, err)
 	}
 	if grants > 0 || clients > 0 {
-		l.Info("Removed the OAuth client of an unsupported Cloudreve app (GUID=%s) and %d grant(s).", guid, grants)
+		l.Info("Removed the OAuth client of an unsupported app (GUID=%s) and %d grant(s).", guid, grants)
 	}
 	return nil
 }

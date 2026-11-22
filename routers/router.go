@@ -196,7 +196,7 @@ func initCORS(l logging.Logger, config conf.ConfigProvider, router *gin.Engine) 
 
 	// slave模式下未启动跨域的警告
 	if config.System().Mode == conf.SlaveMode {
-		l.Warning("You are running Cloudreve as slave node, if you are using slave storage policy, please enable CORS feature in config file, otherwise file cannot be uploaded from Master basic.")
+		l.Warning("You are running Fylvo as slave node, if you are using slave storage policy, please enable CORS feature in config file, otherwise file cannot be uploaded from Master basic.")
 	}
 }
 

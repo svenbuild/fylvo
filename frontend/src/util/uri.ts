@@ -60,7 +60,7 @@ export default class CrUri {
   private url: URL;
   constructor(u: string) {
     if (!u.startsWith(CrUriPrefix)) {
-      throw new Error("Invalid cloudreve uri");
+      throw new Error("Invalid Fylvo URI");
     }
 
     // replacing prefix with standard HTTP for compatibility

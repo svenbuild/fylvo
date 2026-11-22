@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Builds the Fylvo server for the NAS (linux/amd64) with the web frontend embedded.
-# Result: release/cloudreve
-# Usage: scripts/build.sh [version]
+# Builds the Fylvo server for Linux with the web app embedded.
+# Result: release/fylvo-linux-<arch> for each architecture in FYLVO_ARCH (default: amd64),
+# for example FYLVO_ARCH="amd64 arm64". FYLVO_VERSION is the Fylvo release (default: dev).
+# Usage: scripts/build.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Server and frontend must report the same version, otherwise the server
-# rejects the embedded frontend at startup.
-VERSION="${1:-4.19.1}"
+# Server and web app must report the same base version, otherwise the server rejects the embedded
+# web app at startup. It is the version of the Cloudreve base, which the database migration and the
+# apps compare against; the Fylvo release is FYLVO_VERSION.
+VERSION="4.19.1"
+FYLVO_VERSION="${FYLVO_VERSION:-dev}"
+ARCHES="${FYLVO_ARCH:-amd64}"
 COMMIT="$(git rev-parse --short HEAD)"
 MODULE="github.com/cloudreve/Cloudreve/v4"
 
