@@ -680,7 +680,13 @@ impl Mount {
                         Some(target) if is_rename => target,
                         _ => &event.paths[0],
                     };
-                    let is_ignored = matcher.is_match(dominated_path);
+                    // Fylvo (Linux): a rename to an ignored name may be a deletion (vim's
+                    // `file~`), the Linux rename handler decides.
+                    let is_ignored = if cfg!(target_os = "linux") && is_rename {
+                        event.paths.iter().all(|path| matcher.is_match(path))
+                    } else {
+                        matcher.is_match(dominated_path)
+                    };
                     if is_ignored {
                         tracing::trace!(
                             target: "drive::commands",
@@ -1099,8 +1105,16 @@ impl Mount {
             .into_values()
             .filter(|path| *path != sync_path)
             .collect();
+        // Fylvo (Linux): only paths that were synced (the server check of their file ID comes
+        // right before the deletion, in `delete_on_server`).
         #[cfg(target_os = "linux")]
-        let paths = self.synced_paths_still_on_server(paths).await;
+        let paths: Vec<PathBuf> = paths
+            .into_iter()
+            .filter(|path| {
+                path.to_str()
+                    .is_some_and(|p| self.inventory.query_by_path(p).ok().flatten().is_some())
+            })
+            .collect();
         // Fylvo: saved by replacement. Many programs (Excel, PowerPoint and others) save by
         // deleting the file and putting a new one under the same name. When the delayed event
         // arrives, a file is at the path again: a new version of the same file, not a deletion.
@@ -1219,6 +1233,9 @@ impl Mount {
     /// Delete the given local paths on the server. They go to the server's trash. Returns the
     /// paths that were not deleted (for those the server refused, a re-sync is requested).
     pub(crate) async fn delete_on_server(&self, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
+        // Fylvo (Linux): a file another device replaced meanwhile is not deleted.
+        #[cfg(target_os = "linux")]
+        let paths = self.synced_paths_still_on_server(paths).await;
         if paths.is_empty() {
             return Ok(Vec::new());
         }

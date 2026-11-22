@@ -77,6 +77,23 @@ enum Half {
 /// Whether an event is (part of) a registered own move; consumes what it matches.
 fn is_own(half: Half, from: Option<&Path>, to: Option<&Path>) -> bool {
     let mut moves = own_moves();
+    // The debouncer joins quick moves of the same file: a -> b and b -> c come as a -> c.
+    if half == Half::Both {
+        let first = moves.iter().position(|m| Some(m.from.as_path()) == from);
+        if let Some(first) = first {
+            let middle = moves[first].to.clone();
+            let second = moves
+                .iter()
+                .position(|m| m.from == middle && Some(m.to.as_path()) == to);
+            if let Some(second) = second {
+                for index in [first, second] {
+                    moves[index].from_seen = true;
+                    moves[index].to_seen = true;
+                }
+                return true;
+            }
+        }
+    }
     let found = moves.iter_mut().find(|m| match half {
         Half::Both => Some(m.from.as_path()) == from && Some(m.to.as_path()) == to,
         Half::From => !m.from_seen && Some(m.from.as_path()) == from,
@@ -201,6 +218,15 @@ fn dispatch(result: DebounceEventResult) {
     let mut batches: Vec<Vec<DebouncedEvent>> = routes.iter().map(|_| Vec::new()).collect();
     for event in events {
         if let Some(index) = event.paths.first().and_then(|path| route_of(&routes, path)) {
+            // Behind a symlink or in another file system inside the folder: not synced.
+            let root = &routes[index].root;
+            if event
+                .paths
+                .iter()
+                .any(|path| crate::drive::local_linux::is_foreign_below(path, root))
+            {
+                continue;
+            }
             batches[index].push(event);
         }
     }
@@ -225,10 +251,12 @@ fn dispatch(result: DebounceEventResult) {
 pub fn watch(root: &Path, commands: UnboundedSender<MountCommand>) -> Result<()> {
     let mut watcher = WATCHER.lock().unwrap_or_else(|e| e.into_inner());
     if watcher.is_none() {
-        *watcher = Some(notify_debouncer_full::new_debouncer(
+        *watcher = Some(notify_debouncer_full::new_debouncer_opt(
             Duration::from_secs(2),
             None,
             dispatch,
+            RecommendedCache::new(),
+            notify_debouncer_full::notify::Config::default().with_follow_symlinks(false),
         )?);
     }
     ROUTES
@@ -480,8 +508,15 @@ impl Mount {
             }
             ServerAnswer::Gone => self.upload_path(&to).await,
             ServerAnswer::NameTaken => {
-                self.upload_path(&to).await;
-                self.remove_paths(vec![from]).await;
+                // The server has another file under the new name: undone here, the server's
+                // file comes down with the next sync.
+                self.move_back(&from, &to);
+                toast::send_warning_toast(&t!("renameRefusedTitle"), &t!("renameRefusedMessage"));
+                let _ = self.command_tx.send(MountCommand::Sync {
+                    local_paths: vec![to.clone()],
+                    mode: SyncMode::PathOnly,
+                    user_initiated: false,
+                });
             }
             ServerAnswer::Refused(err) => {
                 tracing::info!(target: "drive::watch", from = %from.display(), to = %to.display(), error = ?err, "Server refused the rename, undoing it here");
@@ -564,6 +599,17 @@ mod tests {
         let from = event(EventKind::Modify(ModifyKind::Name(RenameMode::From)), &["/t2/S/x"]);
         let to = event(EventKind::Modify(ModifyKind::Name(RenameMode::To)), &["/t2/S/y"]);
         assert!(prepare_events(vec![from, to]).is_empty());
+    }
+
+    #[test]
+    fn a_joined_chain_of_own_moves_is_dropped() {
+        register_own_move(Path::new("/t4/S/a"), Path::new("/t4/S/~fylvo-backup-a.tmp"));
+        register_own_move(Path::new("/t4/S/~fylvo-backup-a.tmp"), Path::new("/t4/S/__conflict__a"));
+        let joined = event(
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            &["/t4/S/a", "/t4/S/__conflict__a"],
+        );
+        assert!(prepare_events(vec![joined]).is_empty());
     }
 
     #[test]

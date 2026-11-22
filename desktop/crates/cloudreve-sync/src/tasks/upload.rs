@@ -116,6 +116,12 @@ impl<'a> UploadTask<'a> {
 
     // Upload a local file/folder to cloud
     pub async fn execute(&mut self) -> Result<()> {
+        // Fylvo (Linux): nothing behind a symlink or in another file system is uploaded.
+        #[cfg(target_os = "linux")]
+        if crate::drive::local_linux::is_foreign_below(&self.task.payload.local_path, &self.sync_path) {
+            info!(target: "tasks::upload", local_path = %self.task.payload.local_path_display(), "Behind a symlink or mount point, not uploaded");
+            return Ok(());
+        }
         // Get local file info
         let placeholder_file = CrPlaceholder::new(
             &self.task.payload.local_path,

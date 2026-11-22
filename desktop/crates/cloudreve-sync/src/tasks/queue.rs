@@ -665,6 +665,12 @@ impl TaskQueue {
                         Duration::ZERO,
                     ));
                 }
+                // Fylvo (Linux): a replaced version a program could still write to was kept as
+                // a conflict copy; it goes to the server as a new file.
+                #[cfg(target_os = "linux")]
+                if let Some(copy) = task_executor.conflict_copy() {
+                    return Ok(TaskRunState::UploadAgain(copy, Duration::ZERO));
+                }
             }
         }
 

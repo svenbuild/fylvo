@@ -189,6 +189,9 @@ pub struct DownloadTask<'a> {
     /// Fylvo (Linux): the local state when the download started (with the inode).
     #[cfg(target_os = "linux")]
     started_stamp: Option<crate::drive::local_linux::LocalStamp>,
+    /// Fylvo (Linux): the replaced version kept as a conflict copy (to be uploaded).
+    #[cfg(target_os = "linux")]
+    conflict_copy: Option<PathBuf>,
     cancel_token: CancellationToken,
     progress_map: Arc<DashMap<String, TaskProgress>>,
 }
@@ -214,6 +217,8 @@ impl<'a> DownloadTask<'a> {
             kept_local_change: false,
             #[cfg(target_os = "linux")]
             started_stamp: None,
+            #[cfg(target_os = "linux")]
+            conflict_copy: None,
             task,
             sync_path,
             remote_base,
@@ -225,6 +230,12 @@ impl<'a> DownloadTask<'a> {
     /// Whether the file was changed here and the download left it as it is.
     pub fn kept_local_change(&self) -> bool {
         self.kept_local_change
+    }
+
+    /// Fylvo (Linux): the replaced version kept as a conflict copy, to be uploaded.
+    #[cfg(target_os = "linux")]
+    pub fn conflict_copy(&self) -> Option<PathBuf> {
+        self.conflict_copy.clone()
     }
 
     /// Set the cancellation token

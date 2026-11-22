@@ -104,7 +104,7 @@ impl DownloadTask<'_> {
         placeholder()
             .commit(self.inventory.clone())
             .context("failed to commit the downloaded file")?;
-        settle_backup(&backup, &local, self.started_stamp);
+        self.conflict_copy = settle_backup(&backup, &local, self.started_stamp);
         Ok(())
     }
 }
@@ -168,25 +168,35 @@ pub(crate) fn original_of_backup(backup: &Path) -> Option<PathBuf> {
 }
 
 /// Remove the backup if nothing can still change it, else keep it as a conflict copy.
-fn settle_backup(backup: &Path, local: &Path, synced: Option<LocalStamp>) {
+/// Remove the backup if nothing can still change it, else keep it as a conflict copy (returned,
+/// its upload is asked for by the caller).
+fn settle_backup(backup: &Path, local: &Path, synced: Option<LocalStamp>) -> Option<PathBuf> {
     let unchanged = || LocalStamp::of_path(backup) == synced && synced.is_some();
     if unchanged() && !may_be_written(backup) && unchanged() {
         if let Err(err) = std::fs::remove_file(backup) {
             tracing::warn!(target: "tasks::download", path = %backup.display(), error = ?err, "Failed to remove the backup");
         }
-        return;
+        return None;
     }
-    keep_as_conflict_copy(backup, local);
+    keep_as_conflict_copy(backup, local)
 }
 
 /// Give a backup a conflict name next to `local` (never under the ignored backup name, so it is
-/// uploaded like any new file). Deliberately not an own move: the watcher sees a file put in
-/// place from an ignored name and uploads it.
-pub(crate) fn keep_as_conflict_copy(backup: &Path, local: &Path) {
+/// uploaded like any new file). An own move: the watcher may merge it with the move to the
+/// backup name, so the upload is asked for explicitly (or by the first sync at start).
+pub(crate) fn keep_as_conflict_copy(backup: &Path, local: &Path) -> Option<PathBuf> {
     let copy = crate::drive::sync::generate_conflict_path(local);
+    own_move(backup, &copy);
     match move_no_replace(backup, &copy) {
-        Ok(()) => info!(target: "tasks::download", path = %copy.display(), "Kept the replaced local file as a conflict copy"),
-        Err(err) => tracing::warn!(target: "tasks::download", path = %backup.display(), error = ?err, "Failed to keep the backup as a conflict copy, it stays under its backup name"),
+        Ok(()) => {
+            info!(target: "tasks::download", path = %copy.display(), "Kept the replaced local file as a conflict copy");
+            Some(copy)
+        }
+        Err(err) => {
+            forget(backup, &copy);
+            tracing::warn!(target: "tasks::download", path = %backup.display(), error = ?err, "Failed to keep the backup as a conflict copy, it stays under its backup name");
+            None
+        }
     }
 }
 
@@ -283,10 +293,12 @@ pub(crate) fn clean_leftovers(folder: &Path) {
             match original_of_backup(&path) {
                 Some(original) => {
                     if move_no_replace(&path, &original).is_err() {
-                        keep_as_conflict_copy(&path, &original);
+                        let _ = keep_as_conflict_copy(&path, &original);
                     }
                 }
-                None => keep_as_conflict_copy(&path, &path),
+                None => {
+                    let _ = keep_as_conflict_copy(&path, &path);
+                }
             }
         }
     }
