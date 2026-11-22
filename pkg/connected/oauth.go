@@ -129,7 +129,9 @@ func revokeGoogle(ctx context.Context, client *http.Client, address, refreshToke
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	res, err := client.Do(req)
+	fixed := *client
+	fixed.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	res, err := fixed.Do(req)
 	if err != nil {
 		return errors.New("the provider did not answer")
 	}
@@ -242,8 +244,12 @@ type Flow struct {
 }
 
 func NewFlow(specs map[string]*Spec, client *http.Client) *Flow {
+	// Calls to a provider's token endpoint and API go to the address they name and
+	// nowhere else: no redirect is followed, so no code, secret or token travels on.
+	fixed := *client
+	fixed.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Flow{
-		specs: specs, http: client, now: time.Now,
+		specs: specs, http: &fixed, now: time.Now,
 		states: map[string]*flowState{}, granted: map[string]*Granted{}, exchanging: map[string]int{},
 	}
 }
@@ -410,8 +416,7 @@ func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError 
 // apiCall returns a function that reads JSON from the provider with the token.
 // The token goes only to the address asked for; redirects are not followed.
 func (f *Flow) apiCall(accessToken string) APICall {
-	client := *f.http
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client := f.http
 	return func(ctx context.Context, address string, out any) error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 		if err != nil {

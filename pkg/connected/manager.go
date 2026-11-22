@@ -104,6 +104,8 @@ type Manager struct {
 	// mu orders the steps that decide over tokens of a provider account: storing the
 	// result of a sign-in, disconnecting and revoking.
 	mu sync.Mutex
+	// leaving counts, per account, the deletions of that account that are under way.
+	leaving map[int]int
 }
 
 func NewManager(o ManagerOptions) *Manager {
@@ -121,6 +123,28 @@ func NewManager(o ManagerOptions) *Manager {
 		http:     o.HTTP,
 		flow:     NewFlow(o.Specs, o.HTTP),
 		hooks:    o.Hooks,
+		leaving:  map[int]int{},
+	}
+}
+
+// Leaving marks an account as being deleted until the returned function is called. In
+// between nothing new is stored for it: a sign-in that completes meanwhile is refused, so
+// no token can outlive the account. The caller removes the account's connections with
+// DisconnectUser and calls the function when the account is gone, or was kept after all.
+func (m *Manager) Leaving(userID int) (done func()) {
+	m.mu.Lock()
+	m.leaving[userID]++
+	m.mu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			m.mu.Lock()
+			if m.leaving[userID]--; m.leaving[userID] <= 0 {
+				delete(m.leaving, userID)
+			}
+			m.mu.Unlock()
+		})
 	}
 }
 
@@ -387,6 +411,11 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.leaving[userID] > 0 {
+		// The account is being deleted. The result of the sign-in is left to expire.
+		return nil, flowError(ErrFlowExpired)
+	}
+
 	granted, err := m.flow.Finish(userID, code)
 	if err != nil {
 		return nil, flowError(err)
@@ -486,13 +515,15 @@ func (m *Manager) Rename(ctx context.Context, userID int, publicID, name string)
 // Disconnect ends a connection. The row with its token is deleted first; what follows is
 // clean-up that cannot bring it back.
 func (m *Manager) Disconnect(ctx context.Context, userID int, publicID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Read under the lock: a sign-in that renews the connection at the same moment has
+	// either stored its token before, and that generation ends here, or finds no row.
 	row, err := m.row(ctx, userID, publicID)
 	if err != nil {
 		return err
 	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if err := m.storages.Delete(ctx, row.ID); err != nil {
 		return serializer.NewError(serializer.CodeDBError, "Failed to delete the connected storage", err)
 	}

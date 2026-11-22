@@ -357,3 +357,36 @@ func TestLimitPerUser(t *testing.T) {
 	_, _, err := f.Authorize(ctx, 7, ProviderDrive, "", testRedirect)
 	require.Equal(t, serializer.CodeParamErr, codeOf(err))
 }
+
+// While an account is being deleted nothing new is stored for it: a sign-in that completes
+// in that moment must not leave a token behind for an account that is gone.
+func TestNothingStoredForAnAccountBeingDeleted(t *testing.T) {
+	f := newManagerFixture(t)
+	ctx := context.Background()
+	secret := "client-secret"
+	require.NoError(t, f.SetProvider(ctx, ProviderDrive, "client-id", &secret))
+
+	address, cookie, err := f.Authorize(ctx, 7, ProviderDrive, "", testRedirect)
+	require.NoError(t, err)
+	state, code := f.provider.consent(t, address)
+	finish, err := f.Callback(ctx, state, cookie, code, "")
+	require.NoError(t, err)
+
+	gone := f.Leaving(7)
+	require.NoError(t, f.DisconnectUser(ctx, 7))
+	_, err = f.Finish(ctx, 7, finish)
+	require.Error(t, err)
+	list, err := f.List(ctx, 7)
+	require.NoError(t, err)
+	require.Empty(t, list)
+
+	// Another account is not held up.
+	_, err = f.connect(t, 8, "")
+	require.NoError(t, err)
+
+	// The deletion was called off: the account can connect again.
+	gone()
+	gone()
+	_, err = f.connect(t, 7, "")
+	require.NoError(t, err)
+}
