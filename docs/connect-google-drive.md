@@ -15,7 +15,8 @@ official page.
 
 - A Google account that may create Google Cloud projects. A private account always may; a
   school or company account only if its admin allows it.
-- Your Fylvo runs with https under a public domain name, for example `https://cloud.example.com`.
+- Your Fylvo runs with https under a public domain name, for example `https://cloud.example.com`
+  (see [self-hosting, step 1](self-hosting.md#1-https-with-a-reverse-proxy)).
   Google accepts no plain `http`, no IP address such as `192.168.1.10` and no internal name
   such as `nas.local`.
 - A public web page on your domain, readable without signing in, that says what your Fylvo is
@@ -42,7 +43,7 @@ with at least 90 days notice.
 Fylvo reaches connected storage through rclone (version 1.74.3 or newer). It uses `rclone`
 from `PATH`, or the program named in the environment variable `FYLVO_RCLONE_PATH`. Without
 it, the admin panel shows connected storage as not available. If you limit the memory of the
-container, allow 640 MB instead of 512 MB: rclone needs about 65 to 130 MB while it is in use.
+container, allow at least 640 MB: rclone needs about 65 to 130 MB while it is in use.
 
 ## 1. Create a project
 

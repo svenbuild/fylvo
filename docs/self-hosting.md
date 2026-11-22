@@ -165,3 +165,10 @@ rm fylvo-app-updates-1.0.0.tar.gz
 Signed-in apps find the update within a few hours and install it after asking (Android) or when
 nothing syncs (Windows, Linux). The apps only accept packages signed with the same key as the
 installed app.
+
+## 6. Google Drive and OneDrive
+
+Optional. Users can connect their own Google Drive or OneDrive and see it as a folder next to
+their files in Fylvo. For this, you register Fylvo once at each provider and enter the ID and
+secret in the admin panel: [Google Drive](connect-google-drive.md),
+[OneDrive](connect-onedrive.md). Both need Fylvo with https under a domain name (step 1).

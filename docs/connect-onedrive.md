@@ -10,7 +10,8 @@ on an official page.
 
 ## Before you start
 
-- Your Fylvo runs with https under a domain name, for example `https://cloud.example.com`.
+- Your Fylvo runs with https under a domain name, for example `https://cloud.example.com`
+  (see [self-hosting, step 1](self-hosting.md#1-https-with-a-reverse-proxy)).
   Microsoft accepts plain `http` only for `localhost`.
 - Your return address (redirect URI). It is your Fylvo address followed by
   `/api/v4/fylvo/connected/callback`:
@@ -36,7 +37,7 @@ page.* Microsoft may block directories that stay unused for a long time.
 Fylvo reaches connected storage through rclone (version 1.74.3 or newer). It uses `rclone`
 from `PATH`, or the program named in the environment variable `FYLVO_RCLONE_PATH`. Without
 it, the admin panel shows connected storage as not available. If you limit the memory of the
-container, allow 640 MB instead of 512 MB: rclone needs about 65 to 130 MB while it is in use.
+container, allow at least 640 MB: rclone needs about 65 to 130 MB while it is in use.
 
 ## 1. Get a directory
 
