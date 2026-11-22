@@ -447,6 +447,19 @@ impl<'a> DownloadTask<'a> {
         let final_update = tracker.create_update();
         reporter.on_progress(&final_update);
 
+        // Fylvo (Linux): deleted or renamed on the server meanwhile: the fetched version is not
+        // put here, the next sync decides about the path.
+        #[cfg(target_os = "linux")]
+        if !self.still_on_server(&uri).await {
+            info!(
+                target: "tasks::download",
+                task_id = %self.task.task_id,
+                local_path = %self.task.payload.local_path_display(),
+                "Changed on the server during the download, not put in place"
+            );
+            return Ok(());
+        }
+
         // Replace placeholder file with downloaded content and commit
         #[cfg(windows)]
         self.replace_and_commit_placeholder(temp_path)

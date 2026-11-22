@@ -100,6 +100,17 @@ impl CrPlaceholder {
             .local_path
             .to_str()
             .context("failed to convert path to string")?;
+        let info = &self.local_file_info;
+        // A folder: removed only when empty, and its rows (the folder and anything under it)
+        // go only after that.
+        if info.exists && info.is_directory {
+            std::fs::remove_dir(&self.local_path)
+                .context("local folder is not empty, it was kept")?;
+            inventory
+                .batch_delete_by_path(vec![path_text])
+                .context("failed to delete from inventory")?;
+            return Ok(());
+        }
         let old_row = inventory
             .query_by_path(path_text)
             .context("failed to read inventory row")?;
@@ -107,7 +118,6 @@ impl CrPlaceholder {
             .batch_delete_by_path(vec![path_text])
             .context("failed to delete from inventory")?;
 
-        let info = &self.local_file_info;
         if !info.exists {
             return Ok(());
         }
@@ -117,12 +127,7 @@ impl CrPlaceholder {
             tracing::info!(target: "drive::placeholder", path = %self.local_path.display(), "Changed here, kept instead of moving it to the trash");
             return Ok(());
         }
-        let removed = if info.is_directory {
-            std::fs::remove_dir(&self.local_path).context("local folder is not empty, it was kept")
-        } else {
-            move_to_recycle_bin(&self.local_path)
-        };
-        if let Err(err) = removed {
+        if let Err(err) = move_to_recycle_bin(&self.local_path) {
             if let Some(row) = old_row {
                 if let Err(e) = inventory.upsert(&MetadataEntry::from(&row)) {
                     tracing::error!(target: "drive::placeholder", path = %self.local_path.display(), error = %e, "Failed to restore inventory row");

@@ -324,6 +324,12 @@ impl Mount {
             .metadata
             .get(crate::drive::case::FILE_ID_KEY)
             .is_some_and(|id| !id.is_empty() && id == file_id);
+        let root = self.config.read().await.sync_path.clone();
+        if crate::drive::local_linux::is_foreign_below(from, &root)
+            || crate::drive::local_linux::is_foreign_below(to, &root)
+        {
+            return false;
+        }
         let target_free = std::fs::symlink_metadata(to).is_err();
         let parent_here = to.parent().is_some_and(|parent| parent.is_dir());
         if !same_file || !target_free || !parent_here {

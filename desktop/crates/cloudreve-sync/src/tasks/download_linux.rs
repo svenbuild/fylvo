@@ -79,6 +79,10 @@ impl DownloadTask<'_> {
             self.kept_local_change = true;
             return Ok(());
         }
+        // The new version keeps the access rights of the file it replaces.
+        if let Ok(meta) = std::fs::metadata(&local) {
+            let _ = std::fs::set_permissions(temp, meta.permissions());
+        }
         let backup = backup_path(&local);
         move_no_replace(&local, &backup).context("failed to move the local file aside")?;
         if let Err(err) = move_no_replace(temp, &local) {
@@ -95,20 +99,54 @@ impl DownloadTask<'_> {
     }
 }
 
-/// The backup name of `local`, in the same folder.
+/// Longest file name a backup may carry the original name in (Linux allows 255 bytes; the
+/// prefix and suffix need 18 more).
+const MAX_NAME_IN_BACKUP: usize = 230;
+
+/// The backup name of `local`, in the same folder. A very long name does not fit: then the
+/// backup gets a short unique name and, if a crash leaves it, it is kept as a conflict copy.
 fn backup_path(local: &Path) -> PathBuf {
     let name = local
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_default();
+    if name.len() > MAX_NAME_IN_BACKUP {
+        let unique = uuid::Uuid::new_v4().simple().to_string();
+        return local.with_file_name(format!("{BACKUP_PREFIX}#{unique}.tmp"));
+    }
     local.with_file_name(format!("{BACKUP_PREFIX}{name}.tmp"))
+}
+
+impl DownloadTask<'_> {
+    /// Whether the server still has the file this download fetched (same file ID, same
+    /// version). A file deleted or renamed on the server while it downloaded is not put here.
+    pub(super) async fn still_on_server(&self, uri: &str) -> bool {
+        use cloudreve_api::api::ExplorerApi;
+        let Some(fetched) = self.remote_file_info.as_ref() else {
+            return false;
+        };
+        match self
+            .cr_client
+            .get_file_info(&cloudreve_api::models::explorer::GetFileInfoService {
+                uri: Some(uri.to_string()),
+                id: None,
+                extended: None,
+                folder_summary: None,
+            })
+            .await
+        {
+            Ok(now) => now.id == fetched.id && now.primary_entity == fetched.primary_entity,
+            Err(_) => false,
+        }
+    }
 }
 
 /// The original path of a backup name, if it is one.
 pub(crate) fn original_of_backup(backup: &Path) -> Option<PathBuf> {
     let name = backup.file_name()?.to_str()?;
     let original = name.strip_prefix(BACKUP_PREFIX)?.strip_suffix(".tmp")?;
-    (!original.is_empty()).then(|| backup.with_file_name(original))
+    // `#…`: the original name was too long to keep (see `backup_path`).
+    (!original.is_empty() && !original.starts_with('#')).then(|| backup.with_file_name(original))
 }
 
 /// Remove the backup if nothing can still change it, else keep it as a conflict copy.
@@ -219,10 +257,17 @@ pub(crate) fn clean_leftovers(folder: &Path) {
         }
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with("~fylvo-download-") && name.ends_with(".tmp") {
-            let _ = std::fs::remove_file(&path);
-        } else if let Some(original) = original_of_backup(&path) {
-            if move_no_replace(&path, &original).is_err() {
-                keep_as_conflict_copy(&path, &original);
+            // An unfinished download; the name alone does not prove it, so to the trash, not
+            // deleted for good.
+            let _ = crate::drive::utils::move_to_recycle_bin(&path);
+        } else if name.starts_with(BACKUP_PREFIX) && name.ends_with(".tmp") {
+            match original_of_backup(&path) {
+                Some(original) => {
+                    if move_no_replace(&path, &original).is_err() {
+                        keep_as_conflict_copy(&path, &original);
+                    }
+                }
+                None => keep_as_conflict_copy(&path, &path),
             }
         }
     }
@@ -239,6 +284,10 @@ mod tests {
         assert_eq!(backup, Path::new("/S/Docs/~fylvo-backup-Book.xlsx.tmp"));
         assert_eq!(original_of_backup(&backup).as_deref(), Some(local));
         assert_eq!(original_of_backup(Path::new("/S/x.tmp")), None);
+        let long = format!("/S/{}.txt", "n".repeat(240));
+        let backup = backup_path(Path::new(&long));
+        assert!(backup.file_name().unwrap().len() < 100);
+        assert_eq!(original_of_backup(&backup), None);
     }
 
     #[test]
@@ -262,6 +311,8 @@ mod tests {
         let sub = dir.path().join("sub");
         std::fs::create_dir(&sub).unwrap();
         std::fs::write(sub.join("~fylvo-download-t1.tmp"), b"half").unwrap();
+        // SAFETY: tests of this module touch no other environment variable.
+        unsafe { std::env::set_var("XDG_DATA_HOME", dir.path().join("data")) };
         std::fs::write(sub.join("~fylvo-backup-free.txt.tmp"), b"old").unwrap();
         std::fs::write(sub.join("~fylvo-backup-taken.txt.tmp"), b"old").unwrap();
         std::fs::write(sub.join("taken.txt"), b"new").unwrap();

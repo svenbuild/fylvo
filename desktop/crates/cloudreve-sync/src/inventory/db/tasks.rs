@@ -439,6 +439,7 @@ mod tests {
         assert_eq!(db.get_task_status("t1").unwrap(), Some(TaskStatus::Cancelled));
     }
 
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn task(id: &str, path: &str) -> NewTaskRecord {
         NewTaskRecord::new(id, "d", "upload", path)
     }

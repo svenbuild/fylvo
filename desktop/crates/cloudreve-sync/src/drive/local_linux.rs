@@ -111,6 +111,15 @@ pub fn is_foreign(path: &Path) -> bool {
     foreign
 }
 
+/// Fylvo: whether `path` or a folder on the way to it (below `root`) is a symlink or another
+/// file system. Paths from the server or from events are checked with this before anything is
+/// read or written there, so the sync never reaches outside the sync folder.
+pub fn is_foreign_below(path: &Path, root: &Path) -> bool {
+    path.ancestors()
+        .take_while(|ancestor| *ancestor != root && ancestor.starts_with(root))
+        .any(is_foreign)
+}
+
 /// The local state of a file or folder as stored in `fylvo:local`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LocalStamp {
@@ -326,6 +335,20 @@ mod tests {
         let info = LocalFileInfo::from_stamp(&now, Some(&row_with(Some(&synced))));
         assert!(info.is_directory && info.is_placeholder() && info.in_sync());
         assert!(info.is_folder_populated());
+    }
+
+    #[test]
+    fn a_symlink_on_the_way_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("root");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(root.join("real")).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+        assert!(is_foreign_below(&root.join("link/sub/a.txt"), &root));
+        assert!(is_foreign_below(&root.join("link"), &root));
+        assert!(!is_foreign_below(&root.join("real/sub/a.txt"), &root));
+        assert!(!is_foreign_below(&root, &root));
     }
 
     #[test]

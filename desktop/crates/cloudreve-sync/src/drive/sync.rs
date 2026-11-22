@@ -503,10 +503,30 @@ impl Mount {
             return Ok(());
         }
 
+        // Fylvo: nothing behind a symlink or in another file system inside the folder is synced.
+        #[cfg(target_os = "linux")]
+        let paths: &[PathBuf] = {
+            use crate::drive::local_linux::is_foreign_below;
+            if is_foreign_below(parent, &sync_root) {
+                return Ok(());
+            }
+            &paths
+                .iter()
+                .filter(|path| !is_foreign_below(path, &sync_root))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+
         let remote_files = match prefetched_remote_files {
             Some(files) => files,
             None => self.fetch_remote_file_infos(parent, paths).await?,
         };
+        // Fylvo: a skipped path must not come back through the server's list.
+        #[cfg(target_os = "linux")]
+        let remote_files: HashMap<PathBuf, FileResponse> = remote_files
+            .into_iter()
+            .filter(|(path, _)| !crate::drive::local_linux::is_foreign_below(path, &sync_root))
+            .collect();
         tracing::debug!(
             target: "drive::sync",
             id = %self.id,

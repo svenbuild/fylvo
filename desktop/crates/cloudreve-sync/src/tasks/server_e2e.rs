@@ -32,6 +32,7 @@ pub(super) struct Server {
     pub(super) root: String,
     pub(super) url: String,
     pub(super) access_token: String,
+    #[allow(dead_code)]
     pub(super) refresh_token: String,
 }
 

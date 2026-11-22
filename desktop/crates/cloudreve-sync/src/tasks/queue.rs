@@ -565,8 +565,17 @@ impl TaskQueue {
     /// Fylvo: queue an upload of `path` after `delay` (at once for none). A task for the path
     /// that is queued by then takes its place.
     fn upload_later(self: &Arc<Self>, path: PathBuf, delay: Duration) {
-        // One waiting upload per file, however many uploads ask for one meanwhile.
-        let key = crate::drive::case::ntfs_fold(&path.to_string_lossy());
+        if !crate::drive::commands::LOCAL_CHANGES_TO_SERVER {
+            info!(target: "tasks::queue", drive = %self.drive_id, path = %path.display(), "Upload skipped, local changes are not sent to the server on this platform yet");
+            return;
+        }
+        // One waiting upload per file, however many uploads ask for one meanwhile (on Windows
+        // all spellings of a name are one file).
+        let key = if cfg!(windows) {
+            crate::drive::case::ntfs_fold(&path.to_string_lossy())
+        } else {
+            path.to_string_lossy().to_string()
+        };
         if !delay.is_zero() && self.later.insert(key.clone(), ()).is_some() {
             return;
         }
