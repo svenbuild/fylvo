@@ -23,12 +23,18 @@
 #   FYLVO_DESKTOP_DIR   folder on the NAS, default /srv/fylvo/data/desktop
 #   FYLVO_DESKTOP_KEEP  folder for the copies on the PC, default ~/Documents/Projects/Fylvo-Desktop
 #   FYLVO_PUBLISH_LOCAL a local folder instead of the NAS (tests with a local server)
+#   FYLVO_LINUX_KEY     private ed25519 key for Linux releases (PEM, no password), default
+#                       ~/Documents/Projects/Fylvo-Signing/fylvo-desktop-linux-release.pem
 set -euo pipefail
 
 NAS="${FYLVO_NAS:-user@192.168.1.10}"
 BASE="${FYLVO_DESKTOP_DIR:-/srv/fylvo/data/desktop}"
 KEEP="${FYLVO_DESKTOP_KEEP:-$HOME/Documents/Projects/Fylvo-Desktop}"
 LOCAL="${FYLVO_PUBLISH_LOCAL:-}"
+LINUX_KEY="${FYLVO_LINUX_KEY:-$HOME/Documents/Projects/Fylvo-Signing/fylvo-desktop-linux-release.pem}"
+# The public key built into the app (fylvo_update::LINUX_RELEASE_KEY), as hex.
+LINUX_PUBLIC="ef41a2fcf247e1961e57108e532b965fb512c4742313c8bfe718d5c4b95743b7"
+SIGNATURE=""
 
 fail() { echo "publish-desktop: $*" >&2; exit 1; }
 
@@ -75,12 +81,52 @@ check_windows() {
   EXT="msix"
 }
 
-# Linux: the Linux app adds its package check here, and an ed25519 signature (base64) written
-# as "signature" into release.json. It covers the lines "fylvo-desktop-release", the platform,
-# the version as a.b.c.d, the sha256 and the size, each ending in LF (release_message in
-# desktop/crates/fylvo-update).
+# Linux: a package as `cargo tauri build` names it ("Fylvo Desktop_<version>_amd64.AppImage",
+# "..._amd64.deb", "Fylvo Desktop-<version>-1.x86_64.rpm"), of the right format (checked by its
+# first bytes) and architecture. Sets VERSION and EXT; the signature is made below, once the
+# checksum is known. The real proof of origin is the signature: only the holder of the private
+# key can publish a Linux update the app accepts.
 check_linux() {
-  fail "Linux packages are not supported yet (the Linux app adds its check here)"
+  local name arch format magic
+  name="$(basename "$FILE")"
+  format="${PLATFORM##*-}"
+  arch="${PLATFORM#linux-}"; arch="${arch%%-*}"
+  case "$format:$arch" in
+    appimage:x64) [[ "$name" =~ ^Fylvo\ Desktop_([0-9.]+)_amd64\.AppImage$ ]] ;;
+    appimage:arm64) [[ "$name" =~ ^Fylvo\ Desktop_([0-9.]+)_aarch64\.AppImage$ ]] ;;
+    deb:x64) [[ "$name" =~ ^Fylvo\ Desktop_([0-9.]+)_amd64\.deb$ ]] ;;
+    deb:arm64) [[ "$name" =~ ^Fylvo\ Desktop_([0-9.]+)_arm64\.deb$ ]] ;;
+    rpm:x64) [[ "$name" =~ ^Fylvo\ Desktop-([0-9.]+)-1\.x86_64\.rpm$ ]] ;;
+    rpm:arm64) [[ "$name" =~ ^Fylvo\ Desktop-([0-9.]+)-1\.aarch64\.rpm$ ]] ;;
+    *) false ;;
+  esac || fail "'$name' is not a Fylvo Desktop $format package for $arch (name as cargo tauri build makes it)"
+  VERSION="${BASH_REMATCH[1]}"
+  magic="$(head -c 16 "$FILE" | od -An -tx1 | tr -d ' \n')"
+  case "$format" in
+    # ELF, then "AI" and type 2 at offset 8.
+    appimage) [[ "$magic" == 7f454c46*414902* ]] || fail "not an AppImage (type 2)"; EXT="AppImage" ;;
+    # rpm lead.
+    rpm) [[ "$magic" == edabeedb* ]] || fail "not an rpm"; EXT="rpm" ;;
+    # ar archive whose first member is debian-binary.
+    deb) [[ "$(head -c 21 "$FILE")" == $'!<arch>\ndebian-binary' ]] || fail "not a deb"; EXT="deb" ;;
+  esac
+  [ -f "$LINUX_KEY" ] || fail "no Linux release key at $LINUX_KEY (FYLVO_LINUX_KEY)"
+  [ "$(openssl pkey -in "$LINUX_KEY" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n')" = "$LINUX_PUBLIC" ] ||
+    fail "the key at $LINUX_KEY is not the one the app trusts"
+}
+
+# Signs the release (Linux): ed25519 over the lines "fylvo-desktop-release", the platform, the
+# version as a.b.c.d, the sha256 and the size, each ending in LF (release_message in
+# desktop/crates/fylvo-update). Written base64 as "signature" into release.json.
+sign_linux() {
+  local four msg
+  four="$(awk -v v="$VERSION" 'BEGIN { n = split(v, p, "."); for (i = n + 1; i <= 4; i++) p[i] = 0;
+    printf "%d.%d.%d.%d", p[1], p[2], p[3], p[4] }')"
+  msg="$(mktemp)"
+  printf 'fylvo-desktop-release\n%s\n%s\n%s\n%s\n' "$PLATFORM" "$four" "$SHA" "$SIZE" > "$msg"
+  SIGNATURE="$(openssl pkeyutl -sign -inkey "$LINUX_KEY" -rawin -in "$msg" | base64 | tr -d '\n')"
+  rm -f "$msg"
+  [ "${#SIGNATURE}" = 88 ] || fail "signing failed"
 }
 
 case "$PLATFORM" in
@@ -103,6 +149,7 @@ SIZE="$(wc -c < "$FILE" | tr -d ' ')"
 ARCH_OUT="${PLATFORM#*-}"
 NAME_OUT="Fylvo-Desktop-$VERSION-${ARCH_OUT%%-*}.$EXT"
 echo "Package: Fylvo Desktop $VERSION for $PLATFORM, $SIZE bytes, sha256 $SHA"
+case "$PLATFORM" in linux-*) sign_linux ;; esac
 
 # Run a command on the NAS, or locally for tests.
 remote() {
@@ -139,7 +186,11 @@ remote "set -e; cd '$DIR'
   [ \"\$(sha256sum '$UP' | cut -c1-64)\" = '$SHA' ] || { rm -f '$UP'; echo 'checksum differs after the copy' >&2; exit 1; }
   chmod 644 '$UP'
   mv -f '$UP' $SHA.pkg
-  printf '{\"version\":\"%s\",\"sha256\":\"%s\",\"size\":%s,\"file_name\":\"%s\"}\n' '$VERSION' '$SHA' '$SIZE' '$NAME_OUT' > .release.json.tmp
+  if [ -n '$SIGNATURE' ]; then
+    printf '{\"version\":\"%s\",\"sha256\":\"%s\",\"size\":%s,\"file_name\":\"%s\",\"signature\":\"%s\"}\n' '$VERSION' '$SHA' '$SIZE' '$NAME_OUT' '$SIGNATURE' > .release.json.tmp
+  else
+    printf '{\"version\":\"%s\",\"sha256\":\"%s\",\"size\":%s,\"file_name\":\"%s\"}\n' '$VERSION' '$SHA' '$SIZE' '$NAME_OUT' > .release.json.tmp
+  fi
   chmod 644 .release.json.tmp
   mv -f .release.json.tmp release.json
   for f in *.pkg; do [ \"\$f\" = '$SHA.pkg' ] || rm -f -- \"\$f\"; done

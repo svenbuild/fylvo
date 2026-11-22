@@ -278,28 +278,6 @@ fn find_in_new_folders(inode: u64, root: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Deletions the rename handler decided on (a move to an ignored name, a move it could not
-/// undo): handled as deletions without looking for a hidden move again (that would loop).
-static DECIDED_DELETIONS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
-
-pub(crate) fn note_decided_deletions(paths: &[PathBuf]) {
-    DECIDED_DELETIONS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .extend(paths.iter().cloned());
-}
-
-fn take_decided_deletion(path: &Path) -> bool {
-    let mut decided = DECIDED_DELETIONS.lock().unwrap_or_else(|e| e.into_inner());
-    match decided.iter().position(|known| known == path) {
-        Some(index) => {
-            decided.remove(index);
-            true
-        }
-        None => false,
-    }
-}
-
 /// A sync folder the shared watcher reports to.
 struct Route {
     root: PathBuf,
@@ -404,6 +382,10 @@ pub fn watch(root: &Path, commands: UnboundedSender<MountCommand>) -> Result<()>
 
 /// Stop watching `root`.
 pub fn unwatch(root: &Path) {
+    PENDING_RENAMES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(from, _, _)| !from.starts_with(root));
     ROUTES
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -422,8 +404,11 @@ enum ServerAnswer {
     NameTaken,
     /// Refused (read-only, rights, 40905): the local rename is undone.
     Refused(anyhow::Error),
-    /// Not answered (network): the next sync sorts it out.
+    /// Not answered (network): tried again later.
     Failed(anyhow::Error),
+    /// Moved on the server, but its rename could not be sent (network): the server has the file
+    /// under the old name in the new folder.
+    MovedNotRenamed(PathBuf),
 }
 
 fn classify(error: anyhow::Error) -> ServerAnswer {
@@ -448,13 +433,12 @@ impl Mount {
         let root = self.config.read().await.sync_path.clone();
         let mut rest = Vec::with_capacity(paths.len());
         for path in paths {
-            if take_decided_deletion(&path) {
-                rest.push(path);
-                continue;
-            }
             let moved = self
                 .row_at(&path)
                 .and_then(|row| crate::drive::local_linux::stored_stamp(&row))
+                // Only files: a folder's stamp is its inode alone, which a new folder can get
+                // right after an old one was deleted. Folders fall back to delete plus upload.
+                .filter(|stamp| stamp.content.is_some())
                 .and_then(|stamp| {
                     find_in_new_folders(stamp.inode, &root).filter(|found| {
                         crate::drive::local_linux::LocalStamp::of_path(found)
@@ -479,6 +463,7 @@ impl Mount {
     pub(crate) fn moved_from(&self, path: &Path) -> Option<PathBuf> {
         let stamp = crate::drive::local_linux::LocalStamp::of_path(path)?;
         let rows = self.inventory.query_by_local_inode(&self.id, stamp.inode).ok()?;
+        stamp.content?;
         rows.into_iter()
             .filter(|row| {
                 crate::drive::local_linux::stored_stamp(row).is_some_and(|s| s.content == stamp.content)
@@ -587,6 +572,12 @@ impl Mount {
                 })
                 .await;
             if let Err(err) = renamed {
+                let err: anyhow::Error = err.into();
+                // Not an answer of the server (network): see `classify`.
+                let unanswered = !matches!(err.downcast_ref::<ApiError>(), Some(ApiError::ApiError { .. }));
+                if current != from && unanswered {
+                    return ServerAnswer::MovedNotRenamed(current);
+                }
                 if current != from {
                     // Moved, but not renamed: the local file takes the name the server has.
                     register_own_move(to, &current);
@@ -600,10 +591,10 @@ impl Mount {
                         from.to_str().unwrap_or_default(),
                         current.to_str().unwrap_or_default(),
                     );
-                    crate::drive::case::report_name_case_taken(to, &err.into());
+                    crate::drive::case::report_name_case_taken(to, &err);
                     return ServerAnswer::Done;
                 }
-                return classify(err.into());
+                return classify(err);
             }
         }
         ServerAnswer::Done
@@ -641,6 +632,11 @@ impl Mount {
             Err(err) => {
                 forget_own_move(to, from);
                 tracing::warn!(target: "drive::watch", from = %to.display(), to = %from.display(), error = ?err, "Could not undo the rename");
+                let _ = self.command_tx.send(MountCommand::Sync {
+                    local_paths: vec![from.to_path_buf(), to.to_path_buf()],
+                    mode: SyncMode::PathOnly,
+                    user_initiated: false,
+                });
                 false
             }
         }
@@ -772,6 +768,16 @@ impl Mount {
             ServerAnswer::Failed(err) => {
                 tracing::warn!(target: "drive::watch", from = %from.display(), to = %to.display(), error = ?err, "Rename not sent, trying again later");
                 self.retry_rename_later(from, to);
+            }
+            ServerAnswer::MovedNotRenamed(current) => {
+                tracing::warn!(target: "drive::watch", from = %from.display(), to = %to.display(), "Moved on the server, its rename is tried again later");
+                self.inventory
+                    .rename_path(
+                        from.to_str().context("path is not UTF-8")?,
+                        current.to_str().context("path is not UTF-8")?,
+                    )
+                    .context("failed to rename in inventory")?;
+                self.retry_rename_later(current, to);
             }
         }
         Ok(())

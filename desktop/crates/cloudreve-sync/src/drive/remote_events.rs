@@ -210,6 +210,11 @@ impl Mount {
         sync_root: PathBuf,
         events: Vec<FileEventData>,
     ) -> Result<()> {
+        // Fylvo: a server path with `.` or `..` parts could leave the sync folder.
+        let events: Vec<FileEventData> = events
+            .into_iter()
+            .filter(|event| safe_server_path(&event.from) && safe_server_path(&event.to))
+            .collect();
         // Handle rename as a combination of delete (from) and create (to)
         // Group by parent for both from paths (if they exist) and to paths
         let mut from_grouped_by_parent: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
@@ -553,4 +558,12 @@ impl Mount {
             }
         }
     }
+}
+
+/// Fylvo: whether a server path has no empty, `.` or `..` parts (it then stays inside the sync
+/// folder when joined to it).
+fn safe_server_path(path: &str) -> bool {
+    path.trim_start_matches('/')
+        .split('/')
+        .all(|part| !matches!(part, "." | ".."))
 }

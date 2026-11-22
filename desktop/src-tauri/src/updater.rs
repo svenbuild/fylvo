@@ -311,9 +311,16 @@ async fn find_release(
     }
 }
 
-/// The package format this app was installed as (Linux adds its own).
+/// The package format this app was installed as.
+#[cfg(not(target_os = "linux"))]
 fn current_platform() -> Option<Platform> {
     fylvo_update::windows_platform()
+}
+
+/// Linux: an AppImage knows itself (`APPIMAGE`); else the package manager that owns the program.
+#[cfg(target_os = "linux")]
+fn current_platform() -> Option<Platform> {
+    fylvo_update::linux_platform(crate::linux_update::format()?)
 }
 
 #[cfg(windows)]
@@ -321,9 +328,54 @@ fn current_version() -> Option<Version> {
     fylvo_update::windows::current().map(|id| id.version)
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn current_version() -> Option<Version> {
+    // A build from source (no package) has no update path.
+    crate::linux_update::format()?;
+    Version::parse(env!("CARGO_PKG_VERSION"))
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 fn current_version() -> Option<Version> {
     None
+}
+
+/// Waits until no sync work runs; then the gate holds new work back. `false`: automatic updates
+/// were switched off meanwhile (an automatic update does not install then, a manual one does).
+/// `min_uptime`: Windows restarts an app after an update only if it ran that long.
+async fn wait_until_idle(
+    updater: &Updater,
+    drives: &Arc<DriveManager>,
+    manual: bool,
+    min_uptime: Duration,
+) -> anyhow::Result<bool> {
+    set_status(|s| s.phase = "waiting");
+    let waiting_since = Instant::now();
+    loop {
+        if !manual && !auto_update_on() {
+            tracing::info!(target: "updater", "Automatic updates were switched off, not installing");
+            set_status(|s| s.phase = "idle");
+            return Ok(false);
+        }
+        if updater.started.elapsed() >= min_uptime && activity::close_if_idle(|| drives.has_pending_work()) {
+            // Work that was on its way when the gate closed (a save in the 2 s file event
+            // delay, a command in a channel) shows up at the gate within this pause.
+            tokio::time::sleep(SETTLE).await;
+            if !manual && !auto_update_on() {
+                activity::reopen();
+                continue;
+            }
+            if activity::still_idle() && !drives.has_pending_work() {
+                return Ok(true);
+            }
+            activity::reopen();
+        }
+        if waiting_since.elapsed() >= BUSY_GIVE_UP_AFTER {
+            anyhow::bail!("sync was busy for a whole day");
+        }
+        let pause = if updater.started.elapsed() < min_uptime { Duration::from_secs(5) } else { BUSY_RETRY_EVERY };
+        tokio::time::sleep(pause).await;
+    }
 }
 
 /// Windows: check the package, let Windows stage it, wait until idle, stop sync, register.
@@ -351,34 +403,8 @@ async fn install(
     }
     tracing::info!(target: "updater", package = %package.full_name, "Update staged");
 
-    // Wait until no sync work runs; then the gate holds new work back.
-    set_status(|s| s.phase = "waiting");
-    let waiting_since = Instant::now();
-    loop {
-        // Switched off meanwhile: an automatic update does not install (a manual one does).
-        if !manual && !auto_update_on() {
-            tracing::info!(target: "updater", "Automatic updates were switched off, not installing");
-            set_status(|s| s.phase = "idle");
-            return Ok(());
-        }
-        if updater.started.elapsed() >= MIN_UPTIME && activity::close_if_idle(|| drives.has_pending_work()) {
-            // Work that was on its way when the gate closed (a save in the 2 s file event
-            // delay, a command in a channel) shows up at the gate within this pause.
-            tokio::time::sleep(SETTLE).await;
-            if !manual && !auto_update_on() {
-                activity::reopen();
-                continue;
-            }
-            if activity::still_idle() && !drives.has_pending_work() {
-                break;
-            }
-            activity::reopen();
-        }
-        if waiting_since.elapsed() >= BUSY_GIVE_UP_AFTER {
-            anyhow::bail!("sync was busy for a whole day");
-        }
-        let pause = if updater.started.elapsed() < MIN_UPTIME { Duration::from_secs(5) } else { BUSY_RETRY_EVERY };
-        tokio::time::sleep(pause).await;
+    if !wait_until_idle(updater, drives, manual, MIN_UPTIME).await? {
+        return Ok(());
     }
 
     set_status(|s| s.phase = "installing");
@@ -423,7 +449,71 @@ async fn install(
     Ok(())
 }
 
-#[cfg(not(windows))]
+/// Linux: wait until idle, stop sync, put the new version in place (AppImage: the file itself;
+/// rpm/deb: the package manager, after the system asked for the admin password), start it.
+#[cfg(target_os = "linux")]
+async fn install(
+    app: &AppHandle,
+    updater: &Updater,
+    drives: &Arc<DriveManager>,
+    running: Version,
+    release: &Release,
+    path: PathBuf,
+    manual: bool,
+) -> anyhow::Result<()> {
+    use crate::linux_update as lin;
+    let format = lin::format().ok_or_else(|| anyhow::anyhow!("not installed as a package"))?;
+    // The AppImage is prepared next to the running one before anything stops.
+    let prepared = match format {
+        fylvo_update::LinuxFormat::AppImage => Some(lin::prepare_appimage(&path)?),
+        _ => None,
+    };
+    if !wait_until_idle(updater, drives, manual, Duration::ZERO).await? {
+        if let Some(prepared) = &prepared {
+            let _ = std::fs::remove_file(prepared);
+        }
+        return Ok(());
+    }
+    set_status(|s| s.phase = "installing");
+    let mut state = State::load(&updater.dir);
+    state.installing = Some(Installing { version: release.version, from: running, error: None });
+    if let Err(e) = state.save(&updater.dir) {
+        activity::reopen();
+        anyhow::bail!("failed to save the update state: {e}");
+    }
+    tracing::info!(target: "updater", "Stopping sync for the update");
+    if let Err(e) = crate::shutdown_sync().await {
+        tracing::error!(target: "updater", error = %e, "Failed to save drive settings, not installing");
+        let mut state = State::load(&updater.dir);
+        state.installing = None;
+        let _ = state.save(&updater.dir);
+        lin::restart(app);
+        anyhow::bail!("failed to save drive settings: {e}");
+    }
+    let result = match (format, prepared) {
+        (fylvo_update::LinuxFormat::AppImage, Some(prepared)) => lin::replace_appimage(&prepared),
+        (other, _) => {
+            let path = path.clone();
+            tokio::task::spawn_blocking(move || lin::install_package(other, &path))
+                .await
+                .map_err(|e| anyhow::anyhow!(e))
+                .and_then(|r| r)
+        }
+    };
+    if let Err(e) = &result {
+        // The next start tells the failure (the state still says "installing").
+        tracing::error!(target: "updater", error = %e, "Installing the update failed");
+        let mut state = State::load(&updater.dir);
+        if let Some(installing) = state.installing.as_mut() {
+            installing.error = Some(format!("{e:#}"));
+            let _ = state.save(&updater.dir);
+        }
+    }
+    lin::restart(app);
+    Ok(())
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 async fn install(
     _app: &AppHandle,
     _updater: &Updater,

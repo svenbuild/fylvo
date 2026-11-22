@@ -240,6 +240,17 @@ impl Mount {
         let cr_client_arc = Arc::new(cr_client);
         let id = config.id.clone();
         let queue_config = resolve_task_queue_config(&config);
+        // Fylvo (Linux): leftovers of a crash are put right before the queue can start a
+        // persisted download (which would open a new temp file of the same kind). A walk of the
+        // whole folder: not on an async worker.
+        #[cfg(target_os = "linux")]
+        {
+            let folder = config.sync_path.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                crate::tasks::download::linux::clean_leftovers(&folder)
+            })
+            .await;
+        }
         let task_queue = TaskQueue::new(
             id.clone(),
             cr_client_arc.clone(),
@@ -423,12 +434,6 @@ impl Mount {
     pub async fn start(&mut self) -> Result<()> {
         let sync_path = self.config.read().await.sync_path.clone();
         crate::drive::local_linux::check_file_system(&sync_path)?;
-        // A walk of the whole folder: not on an async worker.
-        let folder = sync_path.clone();
-        let _ = tokio::task::spawn_blocking(move || {
-            crate::tasks::download::linux::clean_leftovers(&folder)
-        })
-        .await;
         crate::drive::local_linux::register_sync_root(&sync_path);
         self.start_fs_watcher().await?;
         Ok(())

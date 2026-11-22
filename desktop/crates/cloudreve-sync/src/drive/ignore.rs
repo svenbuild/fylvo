@@ -23,6 +23,8 @@ const ROOT_SYSTEM_ITEMS: [&str; 4] = [
 #[derive(Debug, Clone)]
 pub struct IgnoreMatcher {
     globset: GlobSet,
+    /// Fylvo: patterns that match files only (see `LINUX_TEMP_FILE_NAMES`).
+    files_only: GlobSet,
     /// Original patterns for debugging/logging
     patterns: Vec<String>,
     /// The sync root path - patterns are relative to this path
@@ -36,15 +38,17 @@ const LINUX_TEMP_NAMES: &[&str] = &[
     ".goutputstream-*",
     "*~",
     ".*.sw[a-z]",
-    "4913",
     "*.kate-swp",
     ".#*",
     ".directory",
     ".nfs*",
     ".fuse_hidden*",
-    "lu*.tmp",
-    "*.part",
 ];
+
+/// Fylvo: names that are temp files of Linux programs only as files (vim's write test `4913`,
+/// LibreOffice's `lu*.tmp`, unfinished copies `*.part`); a folder of that name is synced.
+#[cfg(target_os = "linux")]
+const LINUX_TEMP_FILE_NAMES: &[&str] = &["4913", "lu*.tmp", "*.part"];
 
 impl IgnoreMatcher {
     /// Build an IgnoreMatcher from a list of gitignore-style patterns.
@@ -126,9 +130,19 @@ impl IgnoreMatcher {
         let globset = builder
             .build()
             .context("Failed to build ignore pattern matcher")?;
+        #[allow(unused_mut)]
+        let mut files_only = GlobSetBuilder::new();
+        #[cfg(target_os = "linux")]
+        for pattern in LINUX_TEMP_FILE_NAMES {
+            files_only.add(Glob::new(&format!("**/{pattern}"))?);
+        }
+        let files_only = files_only
+            .build()
+            .context("Failed to build ignore pattern matcher")?;
 
         Ok(Self {
             globset,
+            files_only,
             patterns: patterns.to_vec(),
             sync_root,
         })
@@ -141,6 +155,7 @@ impl IgnoreMatcher {
     pub fn empty(sync_root: PathBuf) -> Self {
         Self {
             globset: GlobSet::empty(),
+            files_only: GlobSet::empty(),
             patterns: Vec::new(),
             sync_root,
         }
@@ -171,7 +186,11 @@ impl IgnoreMatcher {
         // Convert to forward slashes for consistent matching across platforms
         let normalized = relative_path.to_string_lossy().replace('\\', "/");
 
+        // Fylvo: file-only names match a path that is no folder now (a deleted one counts as a
+        // file).
         self.globset.is_match(&normalized)
+            || (self.files_only.is_match(&normalized)
+                && !std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()))
     }
 
     /// Check if a path (given as relative path from sync root) matches any patterns.
@@ -254,6 +273,16 @@ mod tests {
         for name in ["notes.txt", "Book.ods", "swap.txt", "lunch.txt", "4913.txt"] {
             assert!(!matcher.is_match(format!("/home/u/Fylvo/Docs/{name}")), "{name}");
         }
+        // A folder named like a temp file is a normal folder, with its content.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let matcher = IgnoreMatcher::new(&[], root.clone()).unwrap();
+        std::fs::create_dir_all(root.join("4913/inner")).unwrap();
+        std::fs::create_dir_all(root.join("Film.part")).unwrap();
+        assert!(!matcher.is_match(root.join("4913")));
+        assert!(!matcher.is_match(root.join("4913/inner")));
+        assert!(!matcher.is_match(root.join("Film.part")));
+        assert!(matcher.is_match(root.join("Docs/4913")));
     }
 
     #[test]

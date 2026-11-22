@@ -75,6 +75,11 @@ impl DownloadProgressTracker {
     }
 
     /// Get current downloaded bytes
+    /// Fylvo: the size the server announced.
+    pub fn total(&self) -> u64 {
+        self.total_size
+    }
+
     pub fn downloaded(&self) -> u64 {
         self.downloaded_bytes.load(Ordering::SeqCst)
     }
@@ -517,9 +522,24 @@ impl<'a> DownloadTask<'a> {
         // Create temp file
         // Fylvo: created at once, not in the background: a cancel that removes the temp file
         // must not come before the file exists.
-        let mut file = tokio::fs::File::from_std(
-            std::fs::File::create(temp_path).context("failed to create temp file")?,
-        );
+        // Fylvo (Linux): the folder may have become a symlink or mount point meanwhile, and the
+        // temp file is private while it fills (the final rights are set before it is put in place).
+        #[cfg(target_os = "linux")]
+        if crate::drive::local_linux::is_foreign_below(temp_path, &self.sync_path) {
+            anyhow::bail!("the folder is behind a symlink or mount point now");
+        }
+        #[cfg(target_os = "linux")]
+        let created = {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(temp_path)
+        };
+        #[cfg(not(target_os = "linux"))]
+        let created = std::fs::File::create(temp_path);
+        let mut file = tokio::fs::File::from_std(created.context("failed to create temp file")?);
 
         // Stream download with progress tracking
         let mut stream = response.bytes_stream();
@@ -548,6 +568,16 @@ impl<'a> DownloadTask<'a> {
         }
 
         file.flush().await.context("failed to flush temp file")?;
+
+        // Fylvo (Linux): a response that ended early is no version of the file.
+        #[cfg(target_os = "linux")]
+        if tracker.downloaded() != tracker.total() {
+            anyhow::bail!(
+                "the download ended after {} of {} bytes",
+                tracker.downloaded(),
+                tracker.total()
+            );
+        }
 
         Ok(())
     }

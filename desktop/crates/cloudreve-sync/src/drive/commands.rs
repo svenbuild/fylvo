@@ -1100,7 +1100,20 @@ impl Mount {
         &self,
         path_uri_mappings: HashMap<String, PathBuf>,
         sync_path: PathBuf,
+        remote_base: String,
+    ) -> Result<()> {
+        self.delete_paths(path_uri_mappings, sync_path, remote_base, true)
+            .await
+    }
+
+    /// Fylvo: the deletion pipeline; `find_moves` (Linux) looks for deletions that are hidden
+    /// moves first.
+    async fn delete_paths(
+        &self,
+        path_uri_mappings: HashMap<String, PathBuf>,
+        sync_path: PathBuf,
         _remote_base: String,
+        #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] find_moves: bool,
     ) -> Result<()> {
         tracing::debug!(
             target: "drive::commands",
@@ -1144,7 +1157,11 @@ impl Mount {
         }
         // Fylvo (Linux): moved into a folder made just before (reported as a deletion only).
         #[cfg(target_os = "linux")]
-        let paths = self.resolve_hidden_moves(paths).await;
+        let paths = if find_moves {
+            self.resolve_hidden_moves(paths).await
+        } else {
+            paths
+        };
         if paths.is_empty() {
             return Ok(());
         }
@@ -1202,7 +1219,6 @@ impl Mount {
     /// Fylvo (Linux): handle `paths` as deleted here (guards, server trash).
     #[cfg(target_os = "linux")]
     pub(crate) async fn remove_paths(&self, paths: Vec<PathBuf>) {
-        crate::drive::watch_linux::note_decided_deletions(&paths);
         let (sync_path, remote_base) = {
             let config = self.config.read().await;
             (config.sync_path.clone(), config.remote_path.to_string())
@@ -1215,9 +1231,10 @@ impl Mount {
                     .map(|uri| (uri.to_string(), path))
             })
             .collect();
+        // Decided already: no search for a hidden move (that would find the same file and loop).
         // Boxed: a deletion can turn out to be a move, whose handling can delete again.
         if let Err(e) =
-            Box::pin(self.process_fs_delete_events(mappings, sync_path, remote_base)).await
+            Box::pin(self.delete_paths(mappings, sync_path, remote_base, false)).await
         {
             tracing::error!(target: "drive::commands", error = ?e, "Failed to handle deletion");
         }

@@ -104,16 +104,15 @@ pub fn is_foreign(path: &Path) -> bool {
     let Ok(meta) = std::fs::symlink_metadata(path) else {
         return false;
     };
-    let foreign = if meta.file_type().is_symlink() {
+    let foreign = if !meta.is_file() && !meta.is_dir() {
+        // Symlinks and special files (FIFO, socket, device).
         true
-    } else if meta.is_dir() {
+    } else {
         let other_device = path
             .parent()
             .and_then(|parent| std::fs::symlink_metadata(parent).ok())
             .is_some_and(|parent| parent.dev() != meta.dev());
         other_device || mount_points().iter().any(|mount| mount == path)
-    } else {
-        false
     };
     if foreign {
         static LOGGED: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
@@ -152,7 +151,9 @@ impl LocalStamp {
     }
 
     pub fn of_metadata(meta: &std::fs::Metadata) -> Option<Self> {
-        if meta.file_type().is_symlink() {
+        // Only regular files and folders: a symlink, FIFO, socket or device file is no file the
+        // sync reads or writes (an empty FIFO would else empty a server file).
+        if !meta.is_file() && !meta.is_dir() {
             return None;
         }
         let content = (!meta.is_dir()).then(|| {
@@ -365,6 +366,17 @@ mod tests {
         assert!(is_foreign_below(&root.join("link"), &root));
         assert!(!is_foreign_below(&root.join("real/sub/a.txt"), &root));
         assert!(!is_foreign_below(&root, &root));
+    }
+
+    #[test]
+    fn special_files_count_as_missing_and_foreign() {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("pipe");
+        let c = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+        assert_eq!(LocalStamp::of_path(&fifo), None);
+        assert!(!LocalFileInfo::from_path(&fifo).unwrap().exists);
+        assert!(is_foreign(&fifo));
     }
 
     #[test]

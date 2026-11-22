@@ -20,6 +20,8 @@ mod event_handler;
 mod updater;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod linux_update;
 
 #[macro_use]
 extern crate rust_i18n;

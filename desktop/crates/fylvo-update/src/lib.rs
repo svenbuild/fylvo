@@ -41,6 +41,40 @@ pub struct Platform {
 pub const WINDOWS_X64: Platform = Platform { key: "windows-x64", ext: "msix", release_key: None };
 pub const WINDOWS_ARM64: Platform = Platform { key: "windows-arm64", ext: "msix", release_key: None };
 
+/// Public ed25519 key of the Linux releases (the private key stays with Sven, see
+/// `scripts/publish-desktop.sh`). Linux has no system check like Windows' signed MSIX.
+pub const LINUX_RELEASE_KEY: [u8; 32] = [
+    0xef, 0x41, 0xa2, 0xfc, 0xf2, 0x47, 0xe1, 0x96, 0x1e, 0x57, 0x10, 0x8e, 0x53, 0x2b, 0x96, 0x5f,
+    0xb5, 0x12, 0xc4, 0x74, 0x23, 0x13, 0xc8, 0xbf, 0xe7, 0x18, 0xd5, 0xc4, 0xb9, 0x57, 0x43, 0xb7,
+];
+
+/// How the Linux app was installed: the format decides how an update is installed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinuxFormat {
+    AppImage,
+    Rpm,
+    Deb,
+}
+
+/// The update platform of a Linux app of this processor in this format.
+pub fn linux_platform(format: LinuxFormat) -> Option<Platform> {
+    let key = match (cfg!(target_arch = "x86_64"), cfg!(target_arch = "aarch64"), format) {
+        (true, _, LinuxFormat::AppImage) => "linux-x64-appimage",
+        (true, _, LinuxFormat::Rpm) => "linux-x64-rpm",
+        (true, _, LinuxFormat::Deb) => "linux-x64-deb",
+        (_, true, LinuxFormat::AppImage) => "linux-arm64-appimage",
+        (_, true, LinuxFormat::Rpm) => "linux-arm64-rpm",
+        (_, true, LinuxFormat::Deb) => "linux-arm64-deb",
+        _ => return None,
+    };
+    let ext = match format {
+        LinuxFormat::AppImage => "AppImage",
+        LinuxFormat::Rpm => "rpm",
+        LinuxFormat::Deb => "deb",
+    };
+    Some(Platform { key, ext, release_key: Some(&LINUX_RELEASE_KEY) })
+}
+
 /// The platform of this Windows build; `None` elsewhere (Linux picks its format at run time).
 pub fn windows_platform() -> Option<Platform> {
     if cfg!(all(windows, target_arch = "x86_64")) {

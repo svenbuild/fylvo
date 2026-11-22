@@ -30,6 +30,9 @@ impl DownloadTask<'_> {
     /// Linux: put the downloaded `temp` at the task's path (new file or update) and write the row.
     pub(super) fn place_download(&mut self, temp: &Path) -> Result<()> {
         let local = self.task.payload.local_path.clone();
+        if crate::drive::local_linux::is_foreign_below(&local, &self.sync_path) {
+            anyhow::bail!("the folder is behind a symlink or mount point now");
+        }
         let remote = self
             .remote_file_info
             .clone()
@@ -52,6 +55,14 @@ impl DownloadTask<'_> {
         let path_text = local.to_str().context("path is not UTF-8")?.to_string();
 
         if self.started.is_none() {
+            use std::os::unix::fs::PermissionsExt;
+            let umask = unsafe {
+                let old = libc::umask(0o022);
+                libc::umask(old);
+                old
+            };
+            std::fs::set_permissions(temp, std::fs::Permissions::from_mode(0o666 & !(umask as u32)))
+                .context("failed to set the access rights")?;
             // A new file: row first, then the file (see the module comment).
             let old_row = self.inventory.query_by_path(&path_text)?;
             placeholder().commit_downloaded(&self.inventory)?;
@@ -82,9 +93,10 @@ impl DownloadTask<'_> {
             return Ok(());
         }
         // The new version keeps the access rights of the file it replaces.
-        if let Ok(meta) = std::fs::metadata(&local) {
-            let _ = std::fs::set_permissions(temp, meta.permissions());
-        }
+        let rights = std::fs::symlink_metadata(&local)
+            .context("the local file is gone")?
+            .permissions();
+        std::fs::set_permissions(temp, rights).context("failed to keep the access rights")?;
         let backup = backup_path(&local);
         own_move(&local, &backup);
         if let Err(err) = move_no_replace(&local, &backup) {
@@ -185,7 +197,17 @@ fn settle_backup(backup: &Path, local: &Path, synced: Option<LocalStamp>) -> Opt
 /// uploaded like any new file). An own move: the watcher may merge it with the move to the
 /// backup name, so the upload is asked for explicitly (or by the first sync at start).
 pub(crate) fn keep_as_conflict_copy(backup: &Path, local: &Path) -> Option<PathBuf> {
-    let copy = crate::drive::sync::generate_conflict_path(local);
+    let mut copy = crate::drive::sync::generate_conflict_path(local);
+    if copy.file_name().is_some_and(|name| name.len() > 255) {
+        // Too long for Linux (255 bytes): a short conflict name with the extension.
+        let ext = local
+            .extension()
+            .map(|e| format!(".{}", e.to_string_lossy()))
+            .filter(|e| e.len() < 32)
+            .unwrap_or_default();
+        let short = uuid::Uuid::new_v4().simple().to_string();
+        copy = local.with_file_name(format!("__conflict__{}{ext}", &short[..12]));
+    }
     own_move(backup, &copy);
     match move_no_replace(backup, &copy) {
         Ok(()) => {
