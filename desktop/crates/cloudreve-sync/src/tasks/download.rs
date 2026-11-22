@@ -76,6 +76,7 @@ impl DownloadProgressTracker {
 
     /// Get current downloaded bytes
     /// Fylvo: the size the server announced.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn total(&self) -> u64 {
         self.total_size
     }
