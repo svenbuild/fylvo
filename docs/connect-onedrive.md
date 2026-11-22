@@ -24,12 +24,12 @@ on an official page.
   registrations inside a directory; a plain personal Microsoft account is not enough. If you
   have none, step 1 creates one.
 
-**Cost:** nothing. The app registration is free. The Azure sign-up in step 1 asks for a phone
-number and a credit card; Microsoft may book a small test amount and gives it back, and charges
-nothing unless you switch to pay-as-you-go yourself. After the 30-day trial the Azure services
-switch off. The directory and the app registration are not part of it and keep working.
-*Not confirmed on an official page; to be safe, sign in at [entra.microsoft.com](https://entra.microsoft.com)
-now and then.*
+**Cost:** the app registration is free. The Azure free account in step 1 asks for a phone
+number, an address and a credit card. Microsoft books a temporary authorization of about
+1 USD that is given back, and charges nothing unless you upgrade to pay-as-you-go yourself.
+After 30 days the Azure services of the trial switch off. The directory and the app
+registration are not Azure services and should keep working. *Not confirmed on an official
+page.* Microsoft may block directories that stay unused for a long time.
 
 ## 1. Get a directory
 
@@ -39,7 +39,8 @@ for business) and may register apps in it.
 1. Open [azure.microsoft.com/free](https://azure.microsoft.com/free) and click **Try Azure for
    free** (the button name changes now and then).
 2. Sign in with a Microsoft account, or create one (for example `user@example.com`).
-3. Enter your phone number, confirm it, enter a credit card, accept the terms, finish.
+3. Enter and confirm your phone number, enter your address and a credit card, accept the
+   terms, finish.
 
 Azure creates a directory named **Default Directory** for you, with you as its admin.
 
@@ -55,16 +56,15 @@ Azure creates a directory named **Default Directory** for you, with you as its a
    In older wording: "Accounts in any organizational directory (Any Microsoft Entra ID tenant -
    Multitenant) and personal Microsoft accounts". This is the only choice that lets both
    private OneDrive accounts and work or school accounts connect.
-5. If the form shows **Redirect URI**: platform **Web**, and your return address. Otherwise
-   you add it in step 3.
-6. Click **Register**.
+5. Click **Register**.
 
 You see the app's **Overview**. Copy the **Application (client) ID**: this is the client ID for
 Fylvo.
 
 ## 3. Add the return address
 
-1. In the app: **Manage** > **Authentication**.
+1. In the app: **Manage** > **Authentication**. If your return address is already listed
+   under **Web**, go on with step 4.
 2. Tab **Redirect URI configuration** > **Add Redirect URI** > tile **Web**.
 3. **Redirect URI:** your return address, exactly as above. Click **Configure**.
 
@@ -74,8 +74,8 @@ The address is listed under **Web**. Leave "Allow public client flows" and the i
 ## 4. Create the secret
 
 1. **Manage** > **Certificates & secrets** > tab **Client secrets** > **New client secret**.
-2. **Description:** `Fylvo`. **Expires:** the longest choice, 24 months (or **Custom** up to
-   24 months).
+2. **Description:** `Fylvo`. **Expires:** at most 24 months. Microsoft recommends less than
+   12; a longer time means renewing less often.
 3. Click **Add**.
 4. Copy the **Value** at once. Not the **Secret ID** next to it. Microsoft shows the value only
    now; after leaving the page you see just its first characters.
@@ -90,10 +90,10 @@ Note the expiry date shown in the list in your calendar, a few weeks earlier. Se
 3. Search and tick `Files.ReadWrite` and `offline_access`. Click **Add permissions**.
 
 The list now shows `Files.ReadWrite`, `offline_access` and `User.Read`, all of type
-**Delegated**, with "Admin consent required: No". You do not need **Grant admin consent**;
-each user agrees for themselves when connecting. Do not add the `.All` permissions such as
-`Files.ReadWrite.All`: Fylvo does not need them, and in most companies only an admin may
-approve them.
+**Delegated**. You do not need **Grant admin consent**: each user approves these permissions
+when connecting, as far as their organisation allows it (see below). Do not add the `.All`
+permissions such as `Files.ReadWrite.All`: Fylvo does not need them, and since 2025
+Microsoft's default settings let only an admin approve them.
 
 ## 6. Enter it in Fylvo
 
@@ -104,25 +104,26 @@ To test, open your own settings, tab **Connected storage**, and connect a Micros
 
 ## What users see
 
-A Microsoft sign-in page, then a list of what Fylvo may do ("Read your profile", "Have full
-access to your files", "Maintain access to data you have given it access to") with **Accept**.
-The app is marked as unverified: Microsoft only verifies publishers who are members of its
-partner program, which a private operator is not. *The exact texts are not confirmed.*
+A Microsoft sign-in page, then a list of what Fylvo may do: sign in and read the profile, full
+access to the user's files, and keep this access. The user clicks **Accept**. The app is marked
+as unverified: Microsoft only verifies publishers who are members of its partner program,
+which a private operator is not.
 
-- **Personal accounts** (outlook.com, hotmail.com, live.com) can connect without limits.
+- **Personal accounts** (outlook.com, hotmail.com, live.com) are supported.
 - **Work or school accounts** of other organisations: many organisations let users approve
   only verified apps, or none at all. Then the user sees "Need admin approval" and must ask
   their IT. There is nothing you can change in Fylvo for this.
 
-A connection ends by itself after 90 days without any use; the user then reconnects.
+A connection ends after 90 days without any use (each use renews it); the user then
+reconnects.
 
 ## Renew the secret
 
-The secret runs out after at most 24 months. Then every OneDrive connection stops working until
-a new secret is in Fylvo. Renew it before:
+The secret runs out after the time you chose, at most 24 months. Then every OneDrive
+connection stops working until a new secret is in Fylvo. Renew it before:
 
 1. **Certificates & secrets** > **New client secret**, as in step 4. Copy the new value.
-2. Enter it in Fylvo (step 6).
+2. Enter it in Fylvo (step 6) and check that a connection still opens.
 3. Back at Microsoft, delete the old secret (bin icon in its row).
 
 Existing connections keep working, users do not need to reconnect.
@@ -132,9 +133,10 @@ Existing connections keep working, users do not need to reconnect.
 - **One user** disconnects in Fylvo. Microsoft has no way for Fylvo to remove its access
   there, so the user also removes it in their account:
   - personal account: [account.microsoft.com/privacy/app-access](https://account.microsoft.com/privacy/app-access)
-    > Fylvo > **Remove these permissions**. *Labels not confirmed.*
-  - work or school account: [myapps.microsoft.com](https://myapps.microsoft.com) > Fylvo >
-    **Manage your application** > **Revoke permissions**. *Labels not confirmed.*
+    > Fylvo > **Edit** > **Remove these permissions**. *Labels not confirmed.*
+  - work or school account: [myapplications.microsoft.com](https://myapplications.microsoft.com)
+    > point at the Fylvo tile > **...** > **Manage your application** > **Revoke Permissions**.
+    If an admin approved Fylvo for the organisation, only the admin can remove it.
 - **The whole access:** remove the values in Fylvo, then at Microsoft **App registrations** >
   Fylvo > **Delete**. For 30 days you can still restore it under the tab **Deleted
   applications**.
@@ -146,10 +148,11 @@ Existing connections keep working, users do not need to reconnect.
 | What you see | Cause | Fix |
 | --- | --- | --- |
 | `AADSTS50011` "The redirect URI ... does not match" | The return address at Microsoft differs from the one Fylvo uses, even by `http`/`https`, `www` or a trailing `/` | Copy the address from the Fylvo admin panel into **Authentication** (step 3) |
-| `AADSTS50020`, `AADSTS50194` or "not enabled for consumers" | Wrong account type: the app accepts only accounts of your own directory | Register a new app with **Any Entra ID Tenant + Personal Microsoft accounts** (step 2) and enter its values |
+| `AADSTS50194` | The app accepts only accounts of your own directory | Register a new app with **Any Entra ID Tenant + Personal Microsoft accounts** (step 2) and enter its values |
+| `AADSTS50020` | The browser signed in with another account than intended, or the account type is wrong | Try again in a private window with the right account. If that fails, see `AADSTS50194`. |
 | `AADSTS7000215` "Invalid client secret" | The **Secret ID** was entered instead of the **Value**, or a typo | Create a new secret and enter its value (step 4) |
 | `AADSTS7000222` "client secret keys ... are expired" | Secret older than its expiry date | [Renew the secret](#renew-the-secret) |
-| `AADSTS65001` or Fylvo cannot list files | A permission is missing | Add the permissions of step 5, then reconnect |
+| `AADSTS65001` | The user has not approved Fylvo, or their organisation requires an admin | Reconnect and click **Accept**; for work accounts the IT may have to approve |
 | "Need admin approval" | Work account whose organisation blocks user approval | The user's IT has to approve Fylvo, or the user connects a personal account |
-| `AADSTS700016` "Application ... was not found" | Client ID wrong, or app deleted | Copy the **Application (client) ID** again |
-| `AADSTS70008` or `invalid_grant` when Fylvo uses a connection | Unused for 90 days, password changed, or access removed | Reconnect in Fylvo |
+| `AADSTS700016` "Application ... was not found" | Client ID wrong, or app deleted | Copy the **Application (client) ID** again, or restore the app |
+| `AADSTS70008`, `AADSTS700082` or `invalid_grant` when Fylvo uses a connection | Unused for 90 days, sessions revoked by the user or an admin, or access removed | Reconnect in Fylvo |
