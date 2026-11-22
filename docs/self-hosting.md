@@ -1,0 +1,155 @@
+# Self-hosting Fylvo
+
+This guide starts where the [quick start](../README.md#quick-start) ends: Fylvo runs from a folder
+(here `~/fylvo`) with `docker-compose.yml`, and you created the admin account. The examples use
+`cloud.example.com` for Fylvo and `office.example.com` for office; use your own names.
+
+Settings go into a file `.env` next to `docker-compose.yml`. Start from the template:
+
+```bash
+cd ~/fylvo
+curl -fsSL -o .env https://raw.githubusercontent.com/svenbuild/fylvo/main/.env.example
+```
+
+After changing `.env`, apply it with `docker compose up -d`.
+
+## 1. https with a reverse proxy
+
+Open Fylvo to the internet only through https. The simplest way is [Caddy](https://caddyserver.com/docs/install),
+which gets and renews the certificate by itself. Point the DNS name to your server and open the
+ports 80 and 443.
+
+`/etc/caddy/Caddyfile`:
+
+```caddy
+cloud.example.com {
+	reverse_proxy 127.0.0.1:5212
+}
+```
+
+`.env`:
+
+```bash
+FYLVO_URL=https://cloud.example.com
+FYLVO_BIND=127.0.0.1:5212
+FYLVO_TRUSTED_PROXIES=172.16.0.0/12
+```
+
+```bash
+docker compose up -d && sudo systemctl reload caddy
+```
+
+- `FYLVO_BIND` keeps port 5212 closed to the outside, only the proxy reaches it.
+- `FYLVO_TRUSTED_PROXIES` lets Fylvo see the real address of each visitor (the proxy reaches the
+  container from the Docker network). Without it every visitor looks like the proxy, and wrong
+  passwords from a stranger also lock you out for a while.
+- With another proxy (nginx, Traefik): forward to `127.0.0.1:5212`, pass `Host`,
+  `X-Forwarded-For` and `X-Forwarded-Proto`, allow WebSockets, and do not limit the size of
+  request bodies (uploads come in chunks, but WebDAV clients send whole files).
+
+## 2. Office in the browser
+
+Optional. [Collabora Online](https://www.collabora.com/) opens Word, Excel and PowerPoint files
+in the browser. It runs as a second container and needs its own address, which browsers reach
+directly. It uses about 500 MB of memory once a document was opened.
+
+Caddyfile, next to the block for Fylvo:
+
+```caddy
+office.example.com {
+	# Collabora converts any file posted to these paths. Close them to the outside.
+	@tools path_regexp (?i)/(cool|lool)/+(convert-to|extract-link-targets|extract-document-structure|transform-document-structure|get-thumbnail|render-search-result)
+	respond @tools 403
+	reverse_proxy 127.0.0.1:9980
+}
+```
+
+`.env`, in addition to the lines from step 1:
+
+```bash
+FYLVO_OFFICE_URL=https://office.example.com
+OFFICE_BIND=127.0.0.1:9980
+OFFICE_BEHIND_HTTPS=true
+```
+
+```bash
+docker compose --profile office up -d && sudo systemctl reload caddy
+```
+
+Open a `.docx` file in Fylvo: it opens in the editor. From now on, use `--profile office` with
+every `docker compose` command that should include office (`up`, `pull`).
+
+Collabora must reach `FYLVO_URL` from inside its container, so the address has to resolve and be
+reachable from the server itself. Without a proxy, in a home network, use the address of the
+server for both: `FYLVO_URL=http://192.168.1.10:5212`, `FYLVO_OFFICE_URL=http://192.168.1.10:9980`
+and `OFFICE_BEHIND_HTTPS=false`.
+
+## 3. Backup and restore
+
+Everything Fylvo keeps is in the folder `~/fylvo`: your files and the database in `data/`, the
+settings in `.env`. Back up the whole folder. Stop Fylvo for the copy, so the database is
+consistent; it takes as long as copying your files.
+
+```bash
+cd ~/fylvo
+docker compose stop fylvo
+sudo tar -czf ~/fylvo-backup-$(date +%F).tar.gz -C ~ fylvo
+docker compose start fylvo
+```
+
+Keep the backup on another disk or machine. For large amounts of data, a tool that copies only
+changes (`rsync`, `restic`, `borg`) is faster: stop Fylvo, copy the folder, start it again.
+
+Restore a backup:
+
+```bash
+cd ~/fylvo && docker compose down
+cd ~ && sudo mv fylvo fylvo-old
+sudo tar -xzf ~/fylvo-backup-2026-01-31.tar.gz -C ~
+cd ~/fylvo && docker compose up -d
+```
+
+Sign in and open a few files. Delete `~/fylvo-old` when everything is there.
+
+## 4. Update
+
+Make a backup first (step 3), then:
+
+```bash
+cd ~/fylvo
+docker compose pull
+docker compose up -d
+```
+
+The image tag `1` in `docker-compose.yml` follows all 1.x releases. A new major version (2.x) is
+announced in the [release notes](https://github.com/svenbuild/fylvo/releases) with the steps it
+needs; you switch to it by changing the tag. With office, add `--profile office` to both commands.
+
+## 5. Connect the apps
+
+Download the apps from the [releases](https://github.com/svenbuild/fylvo/releases). When you sign
+in, type the address of your server (`https://cloud.example.com`). The Android app only connects
+over https.
+
+| App | Install |
+| --- | --- |
+| Android | Open `Fylvo-Android-<version>.apk` on the phone and allow the installation. Android shows a warning because the app is not from the Play Store. |
+| Windows | Unpack `Fylvo-Desktop-<version>-windows-x64.zip`, right-click `install.ps1`, "Run with PowerShell". The first time it asks for admin rights once, to trust the certificate the package is signed with. Then "Add drive" and sign in in the browser. |
+| Linux (preview) | AppImage: make it executable and start it. `.deb`: `sudo apt install ./<file>.deb`. `.rpm`: `sudo dnf install ./<file>.rpm`. Then "Add drive". |
+
+WebDAV works with any client: address `https://cloud.example.com/dav`, your email as user name and
+a WebDAV account you create under "Connect & Mount" in the web app.
+
+**App updates from your server.** The apps ask your server for new versions. Each release has a
+file `fylvo-app-updates-<version>.tar.gz` with the new app packages in the layout Fylvo expects.
+Unpack it into the data folder:
+
+```bash
+cd ~/fylvo
+curl -fsSLO https://github.com/svenbuild/fylvo/releases/download/v1.0.0/fylvo-app-updates-1.0.0.tar.gz
+sudo tar -xzf fylvo-app-updates-1.0.0.tar.gz -C data
+```
+
+Signed-in apps find the update within a few hours and install it after asking (Android) or when
+nothing syncs (Windows, Linux). The apps only accept packages signed with the same key as the
+installed app.

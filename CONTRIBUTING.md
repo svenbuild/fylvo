@@ -1,26 +1,40 @@
-# Contributing to Cloudreve
+# Contributing
 
-Thank you for your interest in contributing to Cloudreve!
+Fylvo is a hobby project. Bug reports and ideas are welcome as
+[issues](https://github.com/svenbuild/fylvo/issues). For a larger change, open an issue first so
+we can agree on it before you spend time on a pull request.
 
-The full contributing guide — including project structure, development environment
-setup, how to pick a task, how to submit a PR, and our AIGC (AI-generated code)
-policy — is maintained in our documentation site:
+## Layout
 
-**👉 https://docs.cloudreve.org/api/contributing**
+| Folder | What it is | Built with |
+| --- | --- | --- |
+| `/` | Server (Go) | Go, see `go.mod` |
+| `frontend/` | Web app (React, TypeScript, Vite), embedded into the server | Node.js 22, Yarn 1 |
+| `desktop/` | Windows and Linux app (Tauri, Rust, React) | see [desktop/README.md](desktop/README.md) |
+| `android/` | Android app (Kotlin, Jetpack Compose) | see [android/README.md](android/README.md) |
+| `docs/` | Guides and README images | |
 
-A few key points to keep in mind before you open a PR:
+## Server and web app
 
-- Cloudreve is dual-licensed. We only accept contributions to the **community
-  edition**, and all contributors must sign the
-  [CLA](https://cla-assistant.io/cloudreve/cloudreve) before a PR can be merged.
-- **PRs must be linked to an issue labeled with `Backlog`.** We do not accept
-  new features proposed directly through a PR. If you have a new idea, please
-  open an issue first and wait for it to be triaged and labeled.
-- **Each PR should correspond to a single change.** Please split large features
-  or refactors into multiple smaller PRs whenever possible.
-- If you use AI tools to help write code, please read the
-  [AIGC Guidelines](https://docs.cloudreve.org/api/contributing#aigc-guidelines)
-  first. We are not against AI, but we do not accept pure "vibe-coded" PRs.
+```bash
+scripts/build.sh                             # web app + release/fylvo-linux-amd64
+FYLVO_ARCH="amd64 arm64" scripts/build.sh    # several architectures
+go test ./...                                # tests (the CI runs the list in .github/workflows/build.yml)
+cd frontend && yarn install && yarn dev      # web app with hot reload against a server on :5212
+```
 
-For discussion and support, join the `development` channel on our
-[Discord community](https://discord.com/channels/1343585183047094367/1343585679585579018).
+Run a build with `./release/fylvo-linux-amd64`; it creates `data/` next to the binary. The first
+account you register becomes the admin.
+
+The Docker image is built from the binaries in `release/`:
+
+```bash
+FYLVO_ARCH="amd64 arm64" scripts/build.sh
+docker buildx build --platform linux/amd64,linux/arm64 -t fylvo:dev .
+```
+
+## Pull requests
+
+- One change per pull request, with a short description of what and why.
+- Tests for new logic; `go test` and `npx tsc --noEmit` in `frontend/` pass.
+- Code and comments in English, simple and short.

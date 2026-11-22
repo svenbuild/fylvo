@@ -3,7 +3,9 @@ name: Build
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md']
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
 
 concurrency:
@@ -41,7 +43,7 @@ jobs:
         run: scripts/build.sh
 
       - name: Go tests
-        run: go test ./pkg/activity/ ./pkg/conf/ ./middleware/ ./pkg/attempts/ ./pkg/filemanager/... ./pkg/webdav/ ./pkg/setting/ ./pkg/balancer/ ./pkg/util/ ./pkg/searcher/... ./pkg/request/ssrftest/ ./pkg/wopi/ ./inventory/... ./service/... ./routers/...
+        run: scripts/test.sh
 
       - name: Short commit
         id: commit

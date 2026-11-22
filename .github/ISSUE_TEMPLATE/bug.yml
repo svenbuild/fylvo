@@ -1,0 +1,19 @@
+name: Bug
+description: Something does not work as it should
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Version
+      description: Fylvo version (admin panel, Summary) and the app version if an app is involved
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Setup and logs
+      description: How Fylvo runs (Docker, reverse proxy), and the log lines around the problem (docker compose logs fylvo). Remove addresses and names you do not want to share.

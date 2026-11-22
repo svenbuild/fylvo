@@ -15,19 +15,19 @@
 # kept on the PC afterwards (FYLVO_DESKTOP_KEEP), for a manual repair with an older good
 # version.
 #
-# One-time setup on the NAS (the data folder belongs to root), with the ssh user as owner:
-#   sudo install -d -o core -g admin -m 755 /srv/fylvo/data/desktop
+# One-time setup on the server (the data folder belongs to root), with the ssh user as owner:
+#   sudo install -d -o <ssh user> -m 755 <fylvo folder>/data/desktop
 #
 # Settings (environment):
-#   FYLVO_NAS           ssh target, default user@192.168.1.10
-#   FYLVO_DESKTOP_DIR   folder on the NAS, default /srv/fylvo/data/desktop
+#   FYLVO_NAS           ssh target, for example user@server
+#   FYLVO_DESKTOP_DIR   folder on the server, for example /srv/fylvo/data/desktop
 #   FYLVO_DESKTOP_KEEP  folder for the copies on the PC, default ~/Documents/Projects/Fylvo-Desktop
 #   FYLVO_PUBLISH_LOCAL a local folder instead of the NAS (tests with a local server)
 #   FYLVO_LINUX_KEY     private ed25519 key for Linux releases (PEM, no password), default
 #                       ~/Documents/Projects/Fylvo-Signing/fylvo-desktop-linux-release.pem
 set -euo pipefail
 
-NAS="${FYLVO_NAS:-user@192.168.1.10}"
+NAS="${FYLVO_NAS:-}"
 BASE="${FYLVO_DESKTOP_DIR:-/srv/fylvo/data/desktop}"
 KEEP="${FYLVO_DESKTOP_KEEP:-$HOME/Documents/Projects/Fylvo-Desktop}"
 LOCAL="${FYLVO_PUBLISH_LOCAL:-}"
@@ -37,6 +37,7 @@ LINUX_PUBLIC="ef41a2fcf247e1961e57108e532b965fb512c4742313c8bfe718d5c4b95743b7"
 SIGNATURE=""
 
 fail() { echo "publish-desktop: $*" >&2; exit 1; }
+[ -n "$LOCAL" ] || [ -n "$NAS" ] || fail "set FYLVO_NAS (and FYLVO_DESKTOP_DIR), or FYLVO_PUBLISH_LOCAL"
 
 FILE="${1:?usage: publish-desktop.sh path/to/package platform}"
 PLATFORM="${2:?usage: publish-desktop.sh path/to/package platform}"
