@@ -38,8 +38,7 @@ mv "$STAGE/assets.zip" application/statics/assets.zip
 rm -rf "$STAGE"
 
 mkdir -p release
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-  -ldflags "-s -w -X '$MODULE/application/constants.BackendVersion=$VERSION' -X '$MODULE/application/constants.LastCommit=$COMMIT'" \
-  -o release/cloudreve .
-
-echo "Built release/cloudreve (version $VERSION, commit $COMMIT)"
+for ARCH in $ARCHES; do
+  CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" go build -trimpath     -ldflags "-s -w -X '$MODULE/application/constants.BackendVersion=$VERSION' -X '$MODULE/application/constants.FylvoVersion=$FYLVO_VERSION' -X '$MODULE/application/constants.LastCommit=$COMMIT'"     -o "release/fylvo-linux-$ARCH" .
+  echo "Built release/fylvo-linux-$ARCH (Fylvo $FYLVO_VERSION, commit $COMMIT)"
+done
