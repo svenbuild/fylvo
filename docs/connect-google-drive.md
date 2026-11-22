@@ -13,6 +13,10 @@ official page.
 
 ## Before you start
 
+- The Fylvo server finds rclone (version 1.74.3 or newer): it uses `rclone` from `PATH`, or
+  the program named in the environment variable `FYLVO_RCLONE_PATH`. Without it, the admin
+  panel shows connected storage as not available. If you limit the memory of the container,
+  allow 640 MB instead of 512 MB: rclone needs about 65 to 130 MB while it is in use.
 - A Google account that may create Google Cloud projects. A private account always may; a
   school or company account only if its admin allows it.
 - Your Fylvo runs with https under a public domain name, for example `https://cloud.example.com`.
@@ -132,8 +136,9 @@ Limits of an unverified app:
 
 - At most **100 users** in total, for the life of the project. Users who disconnect still
   count; the number cannot be reset. **Audience** shows how many are used.
-- Connections do not expire after a fixed time. They end when the user removes the access,
-  after 6 months without use, or when a Workspace admin limits it.
+- Connections do not end after 7 days as in **Testing**. They still end when the user removes
+  the access at Google, after 6 months without use, or when a Workspace admin limits it; the
+  user then reconnects in Fylvo.
 - School and company accounts can be blocked by their admin, and accounts with Google's
   Advanced Protection cannot connect at all.
 
@@ -154,8 +159,9 @@ Existing connections keep working.
 
 ## Remove the access again
 
-- **One user** disconnects in Fylvo. This also removes the access at Google. A user can
-  also remove it in their Google account:
+- **One user** disconnects in Fylvo. Fylvo deletes its key at once and also removes the
+  access at Google, unless another Fylvo account has the same Google account connected. A
+  user can also remove it in their Google account:
   [myaccount.google.com/linkedapps](https://myaccount.google.com/linkedapps) > **Access to
   your Google Account** > Fylvo > **See details** > **Remove access** > **Confirm**.
 - **The whole access:** remove the values in Fylvo, then at Google **Clients** > tick the

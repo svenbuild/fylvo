@@ -20,6 +20,10 @@ on an official page.
   ```
 
   Fylvo also shows it in the admin panel, ready to copy.
+- The Fylvo server finds rclone (version 1.74.3 or newer): it uses `rclone` from `PATH`, or
+  the program named in the environment variable `FYLVO_RCLONE_PATH`. Without it, the admin
+  panel shows connected storage as not available. If you limit the memory of the container,
+  allow 640 MB instead of 512 MB: rclone needs about 65 to 130 MB while it is in use.
 - A Microsoft directory (Entra ID tenant). Since June 2024, Microsoft only accepts new app
   registrations inside a directory; a plain personal Microsoft account is not enough. If you
   have none, step 1 creates one.
@@ -133,8 +137,9 @@ Existing connections keep working, users do not need to reconnect.
 
 ## Remove the access again
 
-- **One user** disconnects in Fylvo. Microsoft has no way for Fylvo to remove its access
-  there, so the user also removes it in their account:
+- **One user** disconnects in Fylvo. Fylvo deletes its key at once, but Microsoft has no way
+  for Fylvo to remove its access there: Fylvo stays listed in the user's account until the
+  user removes it:
   - personal account: [account.microsoft.com/privacy/app-access](https://account.microsoft.com/privacy/app-access)
     > Fylvo > **Edit** > **Remove these permissions** (on newer pages **Details** > **Don't
     allow**). *Labels not confirmed.*
