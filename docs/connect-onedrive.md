@@ -48,7 +48,8 @@ Azure creates a directory named **Default Directory** for you, with you as its a
 ## 2. Register the app
 
 1. Open [entra.microsoft.com](https://entra.microsoft.com) and sign in with the same account.
-   If you have several directories, pick the right one with the **Settings** icon (gear) at the
+   Microsoft asks for a second sign-in factor here (for example the Microsoft Authenticator
+   app); set it up when asked. If you have several directories, pick the right one with the **Settings** icon (gear) at the
    top.
 2. Menu on the left: **Entra ID** > **App registrations** > **New registration**.
    (In the Azure portal: **Microsoft Entra ID** > **App registrations**.)
@@ -143,7 +144,8 @@ Existing connections keep working, users do not need to reconnect.
     admin can remove it.
 - **The whole access:** remove the values in Fylvo, then at Microsoft **App registrations** >
   Fylvo > **Delete**. For 30 days you can still restore it under the tab **Deleted
-  applications**.
+  applications**. Organisations whose admin approved Fylvo keep an entry for it in their own
+  directory; only their admin can remove it.
 
 ## Common errors
 

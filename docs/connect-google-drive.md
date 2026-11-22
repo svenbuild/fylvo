@@ -18,10 +18,11 @@ official page.
 - Your Fylvo runs with https under a public domain name, for example `https://cloud.example.com`.
   Google accepts no plain `http`, no IP address such as `192.168.1.10` and no internal name
   such as `nas.local`.
-- A public web page with a privacy policy. Google requires a link to one for every app in
-  production. For a private installation a short page is enough that says what Fylvo does
-  with the Drive data: it reads and changes files only for the signed-in user and passes
-  nothing on.
+- A public web page on your domain, readable without signing in, that says what your Fylvo is
+  and how it handles Drive data: it reads, changes and stores files only for the signed-in
+  user and passes nothing on. Put your privacy policy on it, or link it from there. Google
+  requires a home page and a privacy policy for every app in production; the Fylvo sign-in
+  page alone does not count.
 - Your return address (redirect URI). It is your Fylvo address followed by
   `/api/v4/fylvo/connected/callback`:
 
@@ -73,8 +74,8 @@ You see the Google Auth Platform overview with the sections **Branding**, **Audi
 2. **Authorized domains** > **Add domain**: the registered domain of your Fylvo address, and
    of your privacy page if it is elsewhere. For `cloud.example.com` that is `example.com`.
    For a name under a shared suffix such as `name.duckdns.org`, enter the whole name.
-3. **Application home page:** your Fylvo address, `https://cloud.example.com`.
-   **Application privacy policy link:** your privacy page.
+3. **Application home page:** your public page, for example `https://example.com/fylvo`.
+   **Application privacy policy link:** your privacy policy.
 4. Click **Save**.
 
 Without the domain, Google refuses the return address in step 7. Without the links, Google
