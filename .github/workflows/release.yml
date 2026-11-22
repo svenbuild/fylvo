@@ -70,6 +70,9 @@ jobs:
         id: meta
         with:
           images: ${{ steps.version.outputs.image }}
+          # Only the version; promote.yml moves the other tags (no automatic "latest" here).
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
           labels: |
@@ -85,6 +88,26 @@ jobs:
           provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # Each architecture of the pushed image must hold the binary of that architecture, and it
+      # must start (QEMU runs arm64 here).
+      - name: Check the image
+        env:
+          IMAGE: ${{ steps.version.outputs.image }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          declare -A machine=([amd64]="X86-64" [arm64]="AArch64")
+          for arch in amd64 arm64; do
+            docker pull -q --platform "linux/$arch" "$IMAGE:$VERSION"
+            id="$(docker create --platform "linux/$arch" "$IMAGE:$VERSION")"
+            docker cp "$id:/fylvo/fylvo" "fylvo-$arch"
+            docker rm "$id" > /dev/null
+            readelf -h "fylvo-$arch" | grep -q "Machine:.*${machine[$arch]}" || { echo "linux/$arch holds a binary of another architecture" >&2; exit 1; }
+            docker run --rm --platform "linux/$arch" --entrypoint /fylvo/fylvo "$IMAGE:$VERSION" --help > /dev/null
+            rm "fylvo-$arch"
+            echo "linux/$arch is fine"
+          done
 
       - name: Server archives and checksums
         env:

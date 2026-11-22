@@ -19,6 +19,12 @@ publish the release, [Promote](../.github/workflows/promote.yml) also tags that 
 and `:latest`, the tags people pull. A tag like `v1.1.0-rc.1` becomes a pre-release and is never
 promoted.
 
+Publish one release at a time and wait until Promote has finished before the next one: GitHub keeps
+only one waiting run of it.
+
+The very first time, try the pipeline with a pre-release tag (`v1.0.0-rc.1`, never promoted) while
+the repository is still private, then delete that release and its image version.
+
 Only the first time: GitHub creates the image as private. Open the package `fylvo` under the
 profile's "Packages", "Package settings", set the visibility to public and link it to the
 repository.
@@ -29,10 +35,11 @@ Build the signed apps as described in [android/README.md](../android/README.md) 
 [desktop/README.md](../desktop/README.md). Then put them into one folder per release, here
 `~/fylvo-release/1.0.0`:
 
-| File in the release | From |
+| Put into `~/fylvo-release/1.0.0` | From |
 | --- | --- |
-| `Fylvo-Android-<version>.apk` | `android/app/build/outputs/apk/release/app-release.apk` |
-| `Fylvo-Desktop-<version>-windows-x64.zip` | `desktop/dist/Fylvo.x64.msix`, `desktop/install.ps1`, `desktop/package/fylvo-desktop.cer` |
+| `Fylvo-Android-1.4.0.apk` | `android/app/build/outputs/apk/release/app-release.apk`, renamed |
+| `Fylvo.x64.msix` | `desktop/dist/Fylvo.x64.msix` |
+| `Fylvo-Desktop-0.3.0-windows-x64.zip` | a zip of `Fylvo.x64.msix`, `desktop/install.ps1` and `desktop/package/fylvo-desktop.cer` |
 | AppImage, `.deb`, `.rpm` | `desktop/target/release/bundle/` of the Linux build |
 
 The update bundle for self-hosted servers uses the same checks as publishing to a server. Run it
@@ -48,14 +55,15 @@ FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo.x64.msi
 FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop_0.3.0_amd64.AppImage" linux-x64-appimage
 FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop_0.3.0_amd64.deb" linux-x64-deb
 FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop-0.3.0-1.x86_64.rpm" linux-x64-rpm
-tar -C "$B" -czf "$R/fylvo-app-updates-1.0.0.tar.gz" android desktop
+tar -C "$B" --exclude=.publish.lock -czf "$R/fylvo-app-updates-1.0.0.tar.gz" android desktop
 ```
 
 ## 3. Publish
 
 ```bash
 cd ~/fylvo-release/1.0.0
-gh release upload v1.0.0 Fylvo-Android-*.apk Fylvo-Desktop-*.zip *.AppImage *.deb *.rpm fylvo-app-updates-*.tar.gz
+gh release upload v1.0.0 --repo svenbuild/fylvo Fylvo-Android-*.apk Fylvo-Desktop-*.zip *.AppImage *.deb *.rpm fylvo-app-updates-*.tar.gz
 ```
 
-Open the draft on GitHub, fill in "Changes" and the app versions, then "Publish release".
+Open the draft on GitHub, fill in "Changes" and the app versions, then "Publish release". Then
+check that a plain `docker pull ghcr.io/svenbuild/fylvo:1` works without being logged in.

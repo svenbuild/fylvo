@@ -26,7 +26,7 @@ Other desktop clients cannot sign in to a Fylvo server; the server only knows th
 
 ## Requirements
 
-- Windows 10 1903 or later
+- Windows 10 2004 (build 19041) or later
 - Rust (rustup), Node.js 20.19+ and Yarn 1
 - Visual Studio Build Tools with the C++ workload, Windows 10/11 SDK (for `makeappx.exe`)
 - Tauri CLI: `cargo install tauri-cli --version "^2" --locked`
