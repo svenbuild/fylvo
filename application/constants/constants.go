@@ -5,6 +5,11 @@ package constants
 // BackendVersion 当前后端版本号
 var BackendVersion = "4.14.0"
 
+// FylvoVersion is the Fylvo release (the git tag without "v"), shown in the admin panel and the
+// startup line. BackendVersion stays the version of the Cloudreve base: the database migration,
+// the embedded web app and the apps compare against it.
+var FylvoVersion = "dev"
+
 // IsPro 是否为Pro版本
 var IsPro = "false"
 

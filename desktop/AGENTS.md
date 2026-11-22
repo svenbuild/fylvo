@@ -4,7 +4,7 @@ This file provides guidance to coding agents when working with code in this repo
 
 ## Project Overview
 
-Fylvo Desktop (fork of Cloudreve Desktop) is a Tauri-based Windows desktop application that synchronizes files with a Cloudreve cloud drive server using the Windows Cloud Files API (cfapi). It provides:
+Fylvo Desktop is a Tauri-based desktop application (Windows, and Linux, see LINUX.md) that synchronizes files with a Fylvo server using the Windows Cloud Files API (cfapi). It provides:
 - Real-time bidirectional file synchronization
 - On-demand file hydration (files appear locally but are downloaded only when accessed)
 - Windows Explorer shell integration (context menus, thumbnails, custom states)
@@ -42,7 +42,7 @@ cargo tauri build              # Production build
 ├── src-tauri/           # Tauri application shell
 ├── crates/
 │   ├── cloudreve-sync/  # Core sync service (main logic)
-│   ├── cloudreve-api/   # Async REST client for Cloudreve server
+│   ├── cloudreve-api/   # Async REST client for the server (crate name from upstream)
 │   └── win32_notif/     # Windows notification utilities
 └── ui/                  # React frontend (Vite + MUI)
 ```

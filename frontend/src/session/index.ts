@@ -36,6 +36,19 @@ export enum UserSettings {
   FolderClickAction = "folder_click_action",
 }
 
+// Fylvo: the default time zone is the one of the browser.
+function browserTimeZone(): string {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (zone && zone != "Etc/Unknown") {
+      return zone;
+    }
+  } catch (e) {
+    // Old browsers without time zone support.
+  }
+  return "UTC";
+}
+
 export const UserSettingsDefault: { [key: string]: any } = {
   [UserSettings.DrawerWidth]: 240,
   [UserSettings.PageSize]: 100,
@@ -62,7 +75,7 @@ export const UserSettingsDefault: { [key: string]: any } = {
   ],
   [UserSettings.GalleryWidth]: 220,
   [UserSettings.UploadOverwrite]: false,
-  [UserSettings.TimeZone]: "Europe/Zurich",
+  [UserSettings.TimeZone]: browserTimeZone(),
   [UserSettings.TreeViewAutoExpand]: true,
   [UserSettings.FolderClickAction]: "open",
 };

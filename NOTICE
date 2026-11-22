@@ -1,15 +1,21 @@
 Fylvo
 =====
 
-Fylvo is a private, modified version of Cloudreve.
+Fylvo is a modified version of Cloudreve, licensed under GPL-3.0 (see LICENSE).
 
-  Cloudreve server    https://github.com/cloudreve/cloudreve   GPL-3.0
-  Cloudreve frontend  https://github.com/cloudreve/frontend    (frontend/)
-  Cloudreve Desktop   https://github.com/cloudreve/desktop     MIT (desktop/)
+  Server (root)       based on https://github.com/cloudreve/cloudreve         GPL-3.0
+  Web app (frontend/) based on https://github.com/cloudreve/frontend          GPL-3.0
+  Desktop (desktop/)  based on https://github.com/cloudreve/desktop           MIT, desktop/LICENSE
+  Android (android/)  started from a fork by Dvorinka of the Cloudreve app    GPL-3.0, android/LICENSE
 
-All original work is by the Cloudreve authors (https://cloudreve.org).
-Their copyright and license notices are kept in the source tree.
-Fylvo is not affiliated with or endorsed by the Cloudreve authors.
+The original work is by the Cloudreve authors (https://cloudreve.org). Their copyright and license
+notices are kept in the source tree. Fylvo is not affiliated with or endorsed by them. No code
+from the proprietary Cloudreve Pro edition is used.
 
-Fylvo as a whole is licensed under GPL-3.0, see LICENSE.
-No code from the proprietary Cloudreve Pro edition is used.
+Other parts:
+  Inter font          SIL Open Font License 1.1, android/FONT-LICENSE-Inter.txt and the
+                      @fontsource-variable/inter package
+  PDF.js fonts/maps   frontend/public/assets/pdfjs/ (licenses next to the files)
+  react-photo-view    MIT, frontend/src/component/Viewers/ImageViewer/react-photo-view/LICENSE.txt
+  Collabora Online    not part of this repository; the optional office container runs the
+                      official collabora/code image under its own license (MPL-2.0)

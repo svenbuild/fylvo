@@ -1,47 +1,38 @@
+# Fylvo: your files, your cloud.
+#
+#   docker compose up -d
+#
+# Then open http://localhost:5212 on this machine and create the first account: it becomes the
+# admin. Fylvo listens only on this machine until you set FYLVO_BIND (see docs/self-hosting.md).
+# Optional settings go into a file named .env next to this one (see .env.example and
+# docs/self-hosting.md). Your files and the database live in ./data.
+
 services:
-  cloudreve:
-    image: cloudreve/cloudreve:latest
-    container_name: cloudreve-backend
-    depends_on:
-      - postgresql
-      - redis
+  fylvo:
+    image: ghcr.io/svenbuild/fylvo:1
     restart: unless-stopped
     ports:
-      - 5212:5212
-      - 6888:6888
-      - 6888:6888/udp
+      - "${FYLVO_BIND:-127.0.0.1:5212}:5212"
     environment:
-      - CR_CONF_Database.Type=postgres
-      - CR_CONF_Database.Host=postgresql
-      - CR_CONF_Database.User=cloudreve
-      - CR_CONF_Database.Name=cloudreve
-      - CR_CONF_Database.Port=5432
-      - CR_CONF_Redis.Server=redis:6379
+      TZ: "${TZ:-UTC}"
+      FYLVO_URL: "${FYLVO_URL:-}"
+      FYLVO_OFFICE_URL: "${FYLVO_OFFICE_URL:-}"
+      FYLVO_TRUSTED_PROXIES: "${FYLVO_TRUSTED_PROXIES:-}"
     volumes:
-      - backend_data:/cloudreve/data
+      - ./data:/fylvo/data
 
-  postgresql:
-    # Best practice: Pin to major version. 
-    # NOTE: For major version jumps:
-    # backup & consult https://www.postgresql.org/docs/current/pgupgrade.html 
-    image: postgres:17    
-    container_name: postgresql
+  # Office documents in the browser (Collabora Online). Only started with:
+  #   docker compose --profile office up -d
+  office:
+    image: collabora/code:latest
+    profiles: [office]
     restart: unless-stopped
+    ports:
+      - "${OFFICE_BIND:-127.0.0.1:9980}:9980"
     environment:
-      - POSTGRES_USER=cloudreve
-      - POSTGRES_DB=cloudreve
-      - POSTGRES_HOST_AUTH_METHOD=trust
-    volumes:
-      - database_postgres:/var/lib/postgresql/data
-
-  redis:
-    image: redis:latest
-    container_name: redis
-    restart: unless-stopped
-    volumes:
-      - redis_data:/data
-
-volumes:
-  backend_data:
-  database_postgres:
-  redis_data:
+      # Only this Fylvo may open documents here.
+      aliasgroup1: "${FYLVO_URL:-}"
+      dictionaries: "en_US en_GB de_DE fr_FR es_ES it_IT pt_BR nl"
+      extra_params: "--o:ssl.enable=false --o:ssl.termination=${OFFICE_BEHIND_HTTPS:-false} --o:home_mode.enable=true --o:allow_update_popup=false --o:admin_console.enable=false --o:net.proto=IPv4"
+    cap_add:
+      - MKNOD

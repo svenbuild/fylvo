@@ -34,7 +34,7 @@ try {
 }
 
 if (!userTimezone || userTimezone == "Etc/Unknown") {
-  userTimezone = "Europe/Zurich";
+  userTimezone = "UTC";
 }
 
 const preferTimeZone: string | undefined = SessionManager.get(UserSettings.TimeZone);
