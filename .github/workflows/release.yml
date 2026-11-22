@@ -1,8 +1,9 @@
 name: Release
 
 # A version tag (v1.2.3, or v1.2.3-rc.1 for a pre-release) builds and tests the server, pushes the
-# Docker image for amd64 and arm64 to ghcr.io and creates a DRAFT release with the server
-# binaries. The signed app files are added by hand before publishing (docs/releasing.md).
+# Docker image for amd64 and arm64 to ghcr.io as :1.2.3 only and creates a DRAFT release with the
+# server binaries. The signed app files are added by hand before publishing (docs/releasing.md).
+# The tags people pull (:1.2, :1, :latest) move only when the release is published (promote.yml).
 
 on:
   push:
@@ -65,16 +66,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 1.2.3 always; 1.2, 1 and latest only for a normal release, not for a pre-release.
       - uses: docker/metadata-action@v5
         id: meta
         with:
           images: ${{ steps.version.outputs.image }}
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.version.outputs.prerelease == 'false' }}
-            type=semver,pattern={{major}},enable=${{ steps.version.outputs.prerelease == 'false' }}
-            type=raw,value=latest,enable=${{ steps.version.outputs.prerelease == 'false' }}
           labels: |
             org.opencontainers.image.title=Fylvo
             org.opencontainers.image.description=Your files. Your cloud. A lean, private cloud for your own server.

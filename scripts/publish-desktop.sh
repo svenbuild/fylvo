@@ -28,7 +28,7 @@
 set -euo pipefail
 
 NAS="${FYLVO_NAS:-}"
-BASE="${FYLVO_DESKTOP_DIR:-/srv/fylvo/data/desktop}"
+BASE="${FYLVO_DESKTOP_DIR:-}"
 KEEP="${FYLVO_DESKTOP_KEEP:-$HOME/Documents/Projects/Fylvo-Desktop}"
 LOCAL="${FYLVO_PUBLISH_LOCAL:-}"
 LINUX_KEY="${FYLVO_LINUX_KEY:-$HOME/Documents/Projects/Fylvo-Signing/fylvo-desktop-linux-release.pem}"
@@ -37,7 +37,7 @@ LINUX_PUBLIC="ef41a2fcf247e1961e57108e532b965fb512c4742313c8bfe718d5c4b95743b7"
 SIGNATURE=""
 
 fail() { echo "publish-desktop: $*" >&2; exit 1; }
-[ -n "$LOCAL" ] || [ -n "$NAS" ] || fail "set FYLVO_NAS (and FYLVO_DESKTOP_DIR), or FYLVO_PUBLISH_LOCAL"
+[ -n "$LOCAL" ] || { [ -n "$NAS" ] && [ -n "$BASE" ]; } || fail "set FYLVO_NAS and FYLVO_DESKTOP_DIR, or FYLVO_PUBLISH_LOCAL"
 
 FILE="${1:?usage: publish-desktop.sh path/to/package platform}"
 PLATFORM="${2:?usage: publish-desktop.sh path/to/package platform}"
@@ -47,8 +47,8 @@ case "$PLATFORM" in
   linux-x64-appimage|linux-x64-rpm|linux-x64-deb|linux-arm64-appimage|linux-arm64-rpm|linux-arm64-deb) ;;
   *) fail "unknown platform $PLATFORM" ;;
 esac
-case "$BASE" in /*) ;; *) fail "FYLVO_DESKTOP_DIR must be an absolute path" ;; esac
-case "$BASE" in *[!A-Za-z0-9/._-]*) fail "FYLVO_DESKTOP_DIR has unexpected characters" ;; esac
+[ -n "$LOCAL" ] || case "$BASE" in /*) ;; *) fail "FYLVO_DESKTOP_DIR must be an absolute path" ;; esac
+[ -n "$LOCAL" ] || case "$BASE" in *[!A-Za-z0-9/._-]*) fail "FYLVO_DESKTOP_DIR has unexpected characters" ;; esac
 DIR="$BASE/$PLATFORM"
 
 # Windows: the signed MSIX of Fylvo Desktop. Sets VERSION and EXT.

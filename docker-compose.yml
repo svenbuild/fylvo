@@ -2,7 +2,8 @@
 #
 #   docker compose up -d
 #
-# Then open http://<this machine>:5212 and create the first account: it becomes the admin.
+# Then open http://localhost:5212 on this machine and create the first account: it becomes the
+# admin. Fylvo listens only on this machine until you set FYLVO_BIND (see docs/self-hosting.md).
 # Optional settings go into a file named .env next to this one (see .env.example and
 # docs/self-hosting.md). Your files and the database live in ./data.
 
@@ -11,7 +12,7 @@ services:
     image: ghcr.io/svenbuild/fylvo:1
     restart: unless-stopped
     ports:
-      - "${FYLVO_BIND:-5212}:5212"
+      - "${FYLVO_BIND:-127.0.0.1:5212}:5212"
     environment:
       TZ: "${TZ:-UTC}"
       FYLVO_URL: "${FYLVO_URL:-}"
@@ -27,7 +28,7 @@ services:
     profiles: [office]
     restart: unless-stopped
     ports:
-      - "${OFFICE_BIND:-9980}:9980"
+      - "${OFFICE_BIND:-127.0.0.1:9980}:9980"
     environment:
       # Only this Fylvo may open documents here.
       aliasgroup1: "${FYLVO_URL:-}"

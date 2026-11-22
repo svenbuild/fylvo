@@ -1,21 +1,17 @@
 # Fylvo Desktop
 
-Windows sync client for Fylvo. It is a fork of the official
-[Cloudreve Desktop](https://github.com/cloudreve/desktop) client (MIT License, see `LICENSE`),
-built with Tauri and React, and uses the Windows Cloud Files API (placeholders, files on demand).
+Sync client for Fylvo on Windows (files on demand through the Windows Cloud Files API) and Linux
+(see [LINUX.md](LINUX.md)), built with Tauri and React. Based on an MIT-licensed desktop client,
+see `LICENSE` and the [NOTICE](../NOTICE) of the repository.
 
-Fylvo Desktop is independent of the Cloudreve app from the Microsoft Store and shares nothing
-with it, even if both are installed on the same PC. A Fylvo server does not accept the Cloudreve
-app (see below).
-
-| | Cloudreve (Store) | Fylvo Desktop |
-| --- | --- | --- |
-| Package name | `2106abslant.Cloudreve` | `Fylvo.Desktop` |
-| Executable | `cloudreve-desktop.exe` | `fylvo-desktop.exe` |
-| Data folder (config, database, logs) | `%USERPROFILE%\.cloudreve` | `%USERPROFILE%\.fylvo` |
-| Deep link | `cloudreve://` | `fylvo://` |
-| Sync root provider ID | `cloudreve<hash>` | `fylvo<hash>` |
-| COM class IDs (shell extensions, toasts) | original | new, see `package/AppxManifest.xml` |
+| | |
+| --- | --- |
+| Package name | `Fylvo.Desktop` |
+| Executable | `fylvo-desktop.exe` |
+| Data folder (config, database, logs) | `%USERPROFILE%\.fylvo` |
+| Deep link | `fylvo://` |
+| Sync root provider ID | `fylvo<hash>` |
+| COM class IDs (shell extensions, toasts) | see `package/AppxManifest.xml` |
 
 The app does not contact any server except the Fylvo server you connect it to (no telemetry, no
 crash reports). Updates also come from that server, see UPDATER.md.
@@ -26,10 +22,7 @@ Fylvo Desktop signs in with its own OAuth client on the Fylvo server ("Fylvo Des
 GUID in `ui/src/utils/constants.ts`, created by the server on start, PKCE required). Its redirect
 page `/callback/fylvo-desktop` in the web app hands the result to `fylvo://mount?...`.
 
-The server has no client for the Cloudreve desktop app and removes the one an upstream
-installation created. That app can neither sign in nor refresh its tokens against a Fylvo server.
-Builds of Fylvo Desktop from before this change used that client too: update the app, then use
-"Reauthorize" on drives added with such a build.
+Other desktop clients cannot sign in to a Fylvo server; the server only knows this one.
 
 ## Requirements
 

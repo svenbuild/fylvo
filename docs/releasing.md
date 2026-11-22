@@ -14,8 +14,10 @@ git push origin v1.0.0
 ```
 
 The workflow [Release](../.github/workflows/release.yml) builds and tests the server, pushes
-`ghcr.io/svenbuild/fylvo:1.0.0`, `:1.0`, `:1` and `:latest` (a tag like `v1.1.0-rc.1` only gets its
-own version tag and a pre-release) and creates a **draft** release with the server archives.
+`ghcr.io/svenbuild/fylvo:1.0.0` and creates a **draft** release with the server archives. When you
+publish the release, [Promote](../.github/workflows/promote.yml) also tags that image `:1.0`, `:1`
+and `:latest`, the tags people pull. A tag like `v1.1.0-rc.1` becomes a pre-release and is never
+promoted.
 
 Only the first time: GitHub creates the image as private. Open the package `fylvo` under the
 profile's "Packages", "Package settings", set the visibility to public and link it to the
@@ -33,16 +35,20 @@ Build the signed apps as described in [android/README.md](../android/README.md) 
 | `Fylvo-Desktop-<version>-windows-x64.zip` | `desktop/dist/Fylvo.x64.msix`, `desktop/install.ps1`, `desktop/package/fylvo-desktop.cer` |
 | AppImage, `.deb`, `.rpm` | `desktop/target/release/bundle/` of the Linux build |
 
-The update bundle for self-hosted servers uses the same checks as publishing to a server:
+The update bundle for self-hosted servers uses the same checks as publishing to a server. Run it
+in Git Bash on Windows (the MSIX check needs Windows PowerShell and a PC that trusts the Fylvo
+certificate), from the repository folder, with `ANDROID_HOME` set and `FYLVO_LINUX_KEY` pointing to
+the Linux release key:
 
 ```bash
-B=~/fylvo-release/1.0.0/bundle
-FYLVO_PUBLISH_LOCAL=$B/android scripts/publish-android.sh Fylvo-Android-1.4.0.apk
-FYLVO_PUBLISH_LOCAL=$B/desktop scripts/publish-desktop.sh Fylvo.x64.msix windows-x64
-FYLVO_PUBLISH_LOCAL=$B/desktop scripts/publish-desktop.sh "Fylvo Desktop_0.3.0_amd64.AppImage" linux-x64-appimage
-FYLVO_PUBLISH_LOCAL=$B/desktop scripts/publish-desktop.sh "Fylvo Desktop_0.3.0_amd64.deb" linux-x64-deb
-FYLVO_PUBLISH_LOCAL=$B/desktop scripts/publish-desktop.sh "Fylvo Desktop-0.3.0-1.x86_64.rpm" linux-x64-rpm
-tar -C "$B" -czf ~/fylvo-release/1.0.0/fylvo-app-updates-1.0.0.tar.gz android desktop
+R=~/fylvo-release/1.0.0
+B=$R/bundle
+FYLVO_PUBLISH_LOCAL=$B/android bash scripts/publish-android.sh "$R/Fylvo-Android-1.4.0.apk"
+FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo.x64.msix" windows-x64
+FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop_0.3.0_amd64.AppImage" linux-x64-appimage
+FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop_0.3.0_amd64.deb" linux-x64-deb
+FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop-0.3.0-1.x86_64.rpm" linux-x64-rpm
+tar -C "$B" -czf "$R/fylvo-app-updates-1.0.0.tar.gz" android desktop
 ```
 
 ## 3. Publish

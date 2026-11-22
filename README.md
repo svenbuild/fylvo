@@ -53,12 +53,16 @@
 You need a Linux machine with [Docker](https://docs.docker.com/engine/install/).
 
 ```bash
-mkdir fylvo && cd fylvo
+mkdir ~/fylvo && cd ~/fylvo
 curl -fsSLO https://raw.githubusercontent.com/svenbuild/fylvo/main/docker-compose.yml
 docker compose up -d
 ```
 
-Open `http://<your server>:5212` and create an account. The first account becomes the admin; after it, registration is closed.
+Open `http://localhost:5212` and create an account. The first account becomes the admin; after it,
+registration is closed. (Use `sudo docker compose` if your user is not in the `docker` group.)
+Until then Fylvo only listens on the server itself, so nobody else can
+take the admin account. On a remote server, reach it through ssh from your computer:
+`ssh -L 5212:localhost:5212 <your server>`, then open `http://localhost:5212` there.
 
 Next steps, in this order, are in the **[self-hosting guide](docs/self-hosting.md)**:
 

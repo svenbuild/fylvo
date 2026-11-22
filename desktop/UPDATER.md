@@ -1,7 +1,6 @@
 # Fylvo Desktop: updates from the app (plan)
 
-Status: built and tested on the PC, 2026-11-22. Branch `fylvo/desktop-update`. The plan below
-was reviewed by two reviewers (9/10 each); "Results" at the end says what was tested.
+Status: built and tested, 2026-11-22. "Results" at the end says what was tested.
 
 ## Decisions by the maintainer (2026-11-22)
 

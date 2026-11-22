@@ -12,6 +12,11 @@ func TestAddSiteURLFromEnv(t *testing.T) {
 	require.False(t, addSiteURLFromEnv(settings))
 	require.Empty(t, settings)
 
+	for _, bad := range []string{"cloud.example.com", "ftp://cloud.example.com", "https://"} {
+		t.Setenv(EnvSiteURL, bad)
+		require.False(t, addSiteURLFromEnv(settings), bad)
+	}
+
 	t.Setenv(EnvSiteURL, " https://cloud.example.com/ ")
 	require.True(t, addSiteURLFromEnv(settings))
 	require.Equal(t, "https://cloud.example.com", settings["siteURL"])

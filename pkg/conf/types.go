@@ -149,13 +149,13 @@ var UnixConfig = &Unix{
 var OptionOverwrite = map[string]interface{}{}
 
 // Fylvo: new installations keep their database in fylvo.db. Installations from before the rename
-// have cloudreve.db and keep using it, as long as there is no fylvo.db next to it.
+// have cloudreve.db and keep using it, also when a fylvo.db appeared next to it (for example from a
+// start while cloudreve.db was missing during a restore): the old file holds the real data.
 func defaultDBFile() string {
-	current := util.DataPath("fylvo.db")
 	legacy := util.DataPath("cloudreve.db")
-	if !util.Exists(current) && util.Exists(legacy) {
+	if util.Exists(legacy) {
 		return legacy
 	}
 
-	return current
+	return util.DataPath("fylvo.db")
 }

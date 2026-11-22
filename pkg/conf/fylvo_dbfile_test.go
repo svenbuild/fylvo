@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Fylvo: new installations use fylvo.db, installations from before the rename keep cloudreve.db.
+// Fylvo: new installations use fylvo.db, installations from before the rename always keep cloudreve.db.
 func TestDefaultDBFile(t *testing.T) {
 	dir := t.TempDir()
 	old, _ := os.Getwd()
@@ -27,7 +27,7 @@ func TestDefaultDBFile(t *testing.T) {
 	touch("cloudreve.db")
 	require.Equal(t, filepath.Join("data", "cloudreve.db"), defaultDBFile())
 
-	// Both: fylvo.db wins.
+	// Both: cloudreve.db has the real data.
 	touch("fylvo.db")
-	require.Equal(t, filepath.Join("data", "fylvo.db"), defaultDBFile())
+	require.Equal(t, filepath.Join("data", "cloudreve.db"), defaultDBFile())
 }

@@ -19,7 +19,7 @@ we can agree on it before you spend time on a pull request.
 ```bash
 scripts/build.sh                             # web app + release/fylvo-linux-amd64
 FYLVO_ARCH="amd64 arm64" scripts/build.sh    # several architectures
-go test ./...                                # tests (the CI runs the list in .github/workflows/build.yml)
+scripts/test.sh                              # the Go tests the CI runs
 cd frontend && yarn install && yarn dev      # web app with hot reload against a server on :5212
 ```
 
@@ -29,8 +29,15 @@ account you register becomes the admin.
 The Docker image is built from the binaries in `release/`:
 
 ```bash
+scripts/build.sh
+docker build -t fylvo:dev .
+```
+
+For both architectures at once, as the release workflow does:
+
+```bash
 FYLVO_ARCH="amd64 arm64" scripts/build.sh
-docker buildx build --platform linux/amd64,linux/arm64 -t fylvo:dev .
+docker buildx build --platform linux/amd64,linux/arm64 -t <registry>/fylvo:dev --push .
 ```
 
 ## Pull requests
