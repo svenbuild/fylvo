@@ -14,12 +14,20 @@ use tauri::{
 use tauri_plugin_frame::WebviewWindowExt;
 use tauri_plugin_positioner::{Position, WindowExt};
 use uuid::Uuid;
+#[cfg(windows)]
 use windows::ApplicationModel::{StartupTask, StartupTaskState};
 
 /// Result type for Tauri commands
 type CommandResult<T> = Result<T, String>;
 
+/// Fylvo: on Linux the whole file system root cannot be a sync folder either.
+#[cfg(not(windows))]
+fn is_root_drive(path: &str) -> bool {
+    path.trim().trim_end_matches('/').is_empty()
+}
+
 /// Check if a path is a root drive (e.g., "C:\", "D:\", "E:\")
+#[cfg(windows)]
 fn is_root_drive(path: &str) -> bool {
     let path = path.trim();
     let chars: Vec<char> = path.chars().collect();
@@ -149,6 +157,7 @@ pub async fn add_drive(
         raw_icon_path: None,
         enabled: true,
         user_id: config.user_id,
+        #[cfg(windows)]
         sync_root_id: None,
         ignore_patterns: Vec::new(),
         drive_letter: None,
@@ -377,7 +386,13 @@ pub async fn get_file_icon(path: String, size: Option<u16>) -> CommandResult<Fil
 
 /// Show or create the main window (positioned at tray center)
 pub fn show_main_window(app: &AppHandle) {
-    show_main_window_at_position(app, Position::TrayCenter);
+    // Fylvo: Linux tray icons (AppIndicator) report no position; the window opens centered.
+    let position = if cfg!(target_os = "linux") {
+        Position::Center
+    } else {
+        Position::TrayCenter
+    };
+    show_main_window_at_position(app, position);
 }
 
 /// Show or create the main window (positioned at bottom right)
@@ -585,10 +600,26 @@ pub fn show_settings_window_impl(app: &AppHandle) {
     }
 }
 
+/// Fylvo: on Linux the app starts with the session through `~/.config/autostart`.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub async fn get_auto_start_enabled() -> CommandResult<bool> {
+    Ok(crate::linux::autostart_enabled())
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub async fn set_auto_start(enabled: bool) -> CommandResult<bool> {
+    crate::linux::set_autostart(enabled).map_err(|e| e.to_string())?;
+    Ok(crate::linux::autostart_enabled())
+}
+
 /// The TaskId defined in AppxManifest.xml for the startup task
+#[cfg(windows)]
 const STARTUP_TASK_ID: &str = "fylvo";
 
 /// Get whether auto-start is enabled using Windows StartupTask API
+#[cfg(windows)]
 #[tauri::command]
 pub async fn get_auto_start_enabled() -> CommandResult<bool> {
     tokio::task::spawn_blocking(|| {
@@ -612,6 +643,7 @@ pub async fn get_auto_start_enabled() -> CommandResult<bool> {
 }
 
 /// Set auto-start configuration using Windows StartupTask API
+#[cfg(windows)]
 #[tauri::command]
 pub async fn set_auto_start(enabled: bool) -> CommandResult<bool> {
     tokio::task::spawn_blocking(move || {

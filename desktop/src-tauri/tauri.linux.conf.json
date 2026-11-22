@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "mainBinaryName": "fylvo-desktop",
+  "build": {
+    "beforeBuildCommand": {
+      "script": "yarn run build",
+      "cwd": "../ui"
+    }
+  },
+  "bundle": {
+    "targets": ["appimage", "deb", "rpm"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png"
+    ],
+    "category": "Utility",
+    "shortDescription": "Sync folders with your Fylvo cloud",
+    "longDescription": "Fylvo Desktop keeps folders on this computer in sync with your own Fylvo server.",
+    "publisher": "Fylvo",
+    "linux": {
+      "deb": {
+        "depends": ["libayatana-appindicator3-1"]
+      },
+      "rpm": {
+        "depends": ["libayatana-appindicator-gtk3"]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["fylvo"]
+      }
+    }
+  }
+}

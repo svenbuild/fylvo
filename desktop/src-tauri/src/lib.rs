@@ -1,6 +1,10 @@
 use anyhow::Context;
-use cloudreve_sync::{ConfigManager, DriveManager, EventBroadcaster, LogConfig, LogGuard, shellext::shell_service::ServiceHandle};
-use std::sync::{Arc, Mutex};
+use cloudreve_sync::{ConfigManager, DriveManager, EventBroadcaster, LogConfig, LogGuard};
+#[cfg(windows)]
+use cloudreve_sync::shellext::shell_service::ServiceHandle;
+use std::sync::Arc;
+#[cfg(windows)]
+use std::sync::Mutex;
 use tauri::{
     async_runtime::spawn,
     menu::{Menu, MenuItem},
@@ -14,6 +18,8 @@ use crate::commands::{show_add_drive_window_impl, show_main_window, show_setting
 mod commands;
 mod event_handler;
 mod updater;
+#[cfg(target_os = "linux")]
+mod linux;
 
 #[macro_use]
 extern crate rust_i18n;
@@ -72,6 +78,7 @@ pub struct AppState {
     #[allow(dead_code)]
     log_guard: LogGuard,
     // Keep the shell service handle alive for the entire application lifetime
+    #[cfg(windows)]
     #[allow(dead_code)]
     shell_service: Mutex<ServiceHandle>,
 }
@@ -114,16 +121,23 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
         .context("Failed to load drive configurations")?;
 
     // Initialize and start the shell services (context menu handler) in a separate thread
+    #[cfg(windows)]
     let mut shell_service =
         cloudreve_sync::shellext::shell_service::init_and_start_service_task(drive_manager.clone());
 
     // Wait for shell services to initialize
+    #[cfg(windows)]
     if let Err(e) = shell_service.wait_for_init() {
         tracing::error!(target: "main", "Warning: Failed to initialize shell services: {:?}", e);
         tracing::info!(target: "main", "Continuing without context menu handler...");
     } else {
         tracing::info!(target: "main", "Shell services initialized successfully!");
     }
+
+    // Fylvo: on Linux the file manager entries and the autostart entry are files in the home
+    // folder, written with the path of the running program.
+    #[cfg(target_os = "linux")]
+    linux::install_desktop_integration(&format!("Fylvo: {}", t!("viewOnline")));
 
     // Broadcast initial connection status
     event_broadcaster.connection_status_changed(true);
@@ -133,6 +147,7 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
         drive_manager,
         event_broadcaster: event_broadcaster.clone(),
         log_guard,
+        #[cfg(windows)]
         shell_service: Mutex::new(shell_service),
     };
 
@@ -148,9 +163,35 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
     // Store in Tauri's managed state as well for commands
     app.manage(AppStateHandle);
 
+    // Fylvo: started by a file manager entry while the app was not running.
+    #[cfg(target_os = "linux")]
+    {
+        let argv: Vec<String> = std::env::args().collect();
+        handle_view_online(&argv);
+    }
+
     tracing::info!(target: "main", "Tauri application setup complete");
 
     Ok(())
+}
+
+/// Fylvo (Linux): "Open online" from a file manager entry (`--view-online <path>`).
+/// Returns whether the command line asked for it.
+#[cfg(target_os = "linux")]
+fn handle_view_online(argv: &[String]) -> bool {
+    let Some(path) = linux::view_online_path(argv) else {
+        return false;
+    };
+    match APP_STATE.get() {
+        Some(state) => {
+            let _ = state
+                .drive_manager
+                .get_command_sender()
+                .send(cloudreve_sync::drive::commands::ManagerCommand::ViewOnline { path });
+        }
+        None => tracing::warn!(target: "main", "View online asked before the app was ready"),
+    }
+    true
 }
 
 /// Marker struct for Tauri state that provides access to APP_STATE
@@ -299,9 +340,18 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             tracing::info!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
+            // Fylvo (Linux): the file manager entries start the program again with the path.
+            #[cfg(target_os = "linux")]
+            if handle_view_online(&argv) {
+                return;
+            }
             if argv.len() > 1 {
                 let _ = app.emit("deeplink", argv[1].clone());
                 show_add_drive_window_impl(app);
+            } else if cfg!(target_os = "linux") {
+                // Fylvo: GNOME shows no tray icon without an extension; starting the app from
+                // the menu again opens its window.
+                show_main_window(app);
             }
             // when defining deep link schemes at runtime, you must also check `argv` here
         }))

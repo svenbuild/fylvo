@@ -34,6 +34,10 @@ import type { DriveInfo, HeldDeletion } from "./types";
 import {  SecondaryButton, SecondaryErrorButton } from "../../common/StyledComponent";
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import DriveLetterRow from "./DriveLetterRow";
+import { platform } from "@tauri-apps/plugin-os";
+
+// Fylvo: drive letters exist only on Windows.
+const hasDriveLetters = platform() === "windows";
 
 interface DriveInfoResponse {
   id: string;
@@ -438,7 +442,7 @@ export default function DrivesSection() {
                   </Box>
                 </Box>
 
-                <DriveLetterRow drive={drive} onChanged={fetchDrives} />
+                {hasDriveLetters && <DriveLetterRow drive={drive} onChanged={fetchDrives} />}
 
                 {/* Fylvo: held mass deletions */}
                 {drive.held_deletions?.map((held) => (
