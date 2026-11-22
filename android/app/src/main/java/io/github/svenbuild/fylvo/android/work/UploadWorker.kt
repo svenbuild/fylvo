@@ -324,7 +324,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             app.fileRepository.uploadFile(
                 tmp, parentUri, remoteName = item.name, overwrite = overwrite, mimeType = mime,
                 lastModified = lastModifiedOf(uri) ?: tmp.lastModified(),
-                onSession = { sessionId, target -> onSession(sessionId, target, tmp.length()) }, onProgress = onProgress,
+                onSession = { sessionId, target, _ -> onSession(sessionId, target, tmp.length()) }, onProgress = onProgress,
             )
             Outcome.Done
         } catch (e: CancellationException) {

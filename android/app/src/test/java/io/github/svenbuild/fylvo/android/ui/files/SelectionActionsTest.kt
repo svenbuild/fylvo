@@ -164,4 +164,36 @@ class SelectionActionsTest {
         assertEquals("3 kB", selectionDetail(listOf(own("a").copy(size = 1024), own("b").copy(size = 2048), folder), folderLabel = "Folder"))
         assertNull(selectionDetail(listOf(own("a"), folder), folderLabel = "Folder"))
     }
+
+    // ---- Fylvo: editing offline files ----------------------------------------
+
+    @Test
+    fun editIsOfferedForOneEditableFile() {
+        val a = selectionActions(listOf(own("a")), SelectionContext(offlineShown = true, editable = true))
+        assertEquals(listOf(SELECT_ALL, DETAILS, RENAME, COPY, MOVE, OFFLINE, SelectionAction.EDIT), a.menu)
+    }
+
+    @Test
+    fun anEditedFileCanBeFinishedOrDiscarded() {
+        val a = selectionActions(listOf(own("a")), SelectionContext(offlineShown = true, editable = true, edited = true))
+        assertEquals(
+            listOf(SELECT_ALL, DETAILS, RENAME, COPY, MOVE, OFFLINE, SelectionAction.EDIT, SelectionAction.FINISH_EDIT, SelectionAction.DISCARD_EDIT),
+            a.menu,
+        )
+    }
+
+    @Test
+    fun editWorksFromTheCopiesOnThePhone() {
+        val a = selectionActions(listOf(own("a")), SelectionContext(offlineMode = true, editable = true, edited = true))
+        assertEquals(listOf(SELECT_ALL, DETAILS, SelectionAction.EDIT, SelectionAction.FINISH_EDIT, SelectionAction.DISCARD_EDIT), a.menu)
+        assertTrue(selectionActionEnabled(SelectionAction.EDIT, 1, busy = true, batchSaving = false))
+    }
+
+    @Test
+    fun noEditForSeveralFilesOrInTheTrash() {
+        val several = selectionActions(listOf(own("a"), own("b")), SelectionContext(editable = true, edited = true))
+        assertFalse(SelectionAction.EDIT in several.menu + several.quick)
+        val trash = selectionActions(listOf(own("a")), SelectionContext(inTrash = true, editable = true, edited = true))
+        assertFalse(SelectionAction.EDIT in trash.menu + trash.quick)
+    }
 }

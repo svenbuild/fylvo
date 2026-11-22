@@ -87,6 +87,8 @@ import kotlinx.coroutines.withContext
 import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.ViewMode
+import io.github.svenbuild.fylvo.android.data.offline.EditEntry
+import io.github.svenbuild.fylvo.android.data.offline.needsAttention
 import io.github.svenbuild.fylvo.android.ui.settings.AccountScreen
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.Permissions
@@ -104,7 +106,6 @@ import androidx.compose.runtime.setValue
 @Composable
 fun FilesScreen(
     viewModel: FilesViewModel,
-    onSignOut: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
@@ -122,6 +123,8 @@ fun FilesScreen(
     /** Fylvo: the selected paths to delete, taken when the question opens. */
     var deleteSelectedTarget by remember { mutableStateOf<List<String>?>(null) }
     var deleteForeverTarget by remember { mutableStateOf<List<String>?>(null) }
+    /** Fylvo: the working copy to discard, asked first. */
+    var discardTarget by remember { mutableStateOf<EditEntry?>(null) }
     /** Paths to move/copy and whether it is a copy; non-null shows the folder picker. */
     var movePick by remember { mutableStateOf<Pair<List<String>, Boolean>?>(null) }
     /** Folder the search was opened from (scope chip), null when opened at root/home. */
@@ -210,6 +213,18 @@ fun FilesScreen(
         searchOpenedFrom = null
     }
 
+    /** Fylvo: "Bearbeiten": the working copy goes to an editor; a message when none takes it. */
+    fun editFile(file: FileObject) {
+        viewModel.startEditing(file) { local ->
+            val message = when (openForEdit(context, local)) {
+                Editor.EDIT -> null
+                Editor.VIEW -> R.string.edit_opened_to_view
+                Editor.NONE -> R.string.edit_no_editor
+            }
+            if (message != null) scope.launch { snackbar.showSnackbar(context.getString(message)) }
+        }
+    }
+
     fun openWithSystemApp(file: FileObject) {
         viewModel.fetchForOpen(context, file) { local -> openWithSystem(context, local) }
     }
@@ -273,6 +288,8 @@ fun FilesScreen(
             offlineMode = state.offlineMode,
             virtual = state.virtual,
             offlineShown = selectedOne != null && (state.offlineCovered(selectedOne) || state.offlineAllowed(selectedOne)),
+            editable = selectedOne != null && state.canEdit(selectedOne),
+            edited = selectedOne != null && state.editOf(selectedOne) != null,
         ),
     )
     val listingBusy = state.loading || state.revalidating
@@ -305,6 +322,9 @@ fun FilesScreen(
             SelectionAction.OFFLINE -> one?.let { viewModel.toggleOffline(it) }
             SelectionAction.RESTORE -> viewModel.restore(paths)
             SelectionAction.DELETE_FOREVER -> if (paths.isNotEmpty()) deleteForeverTarget = paths
+            SelectionAction.EDIT -> one?.let { editFile(it) }
+            SelectionAction.FINISH_EDIT -> one?.let(state::editOf)?.let(viewModel::finishEditing)
+            SelectionAction.DISCARD_EDIT -> one?.let(state::editOf)?.let { discardTarget = it }
         }
     }
 
@@ -542,7 +562,7 @@ fun FilesScreen(
         !accountOpen && !offlineOpen && preview == null && movePick == null && sheetTarget == null && !addSheetOpen &&
         !mkdirOpen && renameTarget == null && deleteTarget == null && deleteSelectedTarget == null &&
         deleteForeverTarget == null && shareTarget == null && detailsTarget == null && pendingUpload == null &&
-        state.offlinePrompt == null
+        state.offlinePrompt == null && discardTarget == null && state.editPrompt == null && state.rootPrompt == null
     LaunchedEffect(hintReady) { if (hintReady) viewModel.showSelectionHint() }
 
     pendingUpload?.let { pending ->
@@ -638,6 +658,11 @@ fun FilesScreen(
             inTrash = state.inTrash,
             onRestore = { sheetTarget = null; viewModel.restore(listOf(file.path)) },
             onDeleteForever = { sheetTarget = null; deleteForeverTarget = listOf(file.path) },
+            canEdit = state.canEdit(file),
+            edited = state.editOf(file) != null,
+            onEdit = { sheetTarget = null; editFile(file) },
+            onFinishEdit = { sheetTarget = null; state.editOf(file)?.let(viewModel::finishEditing) },
+            onDiscardEdit = { sheetTarget = null; discardTarget = state.editOf(file) },
             onShowInFolder = if (!state.inTrash && (state.home || state.virtual || inSearch)) ({
                 sheetTarget = null
                 if (inSearch) closeSearch()
@@ -738,12 +763,40 @@ fun FilesScreen(
         )
     }
 
+    discardTarget?.let { entry ->
+        DiscardEditDialog(
+            entry = entry,
+            onConfirm = { viewModel.discardEditing(entry.id, entry.name); discardTarget = null },
+            onDismiss = { discardTarget = null },
+        )
+    }
+
+    state.editPrompt?.let { prompt ->
+        NotUploadedDialog(
+            prompt = prompt,
+            onRetryLater = viewModel::retryEditLater,
+            onDiscard = { viewModel.discardEditing(prompt.entryId, prompt.name) },
+            onDismiss = viewModel::dismissEditPrompt,
+        )
+    }
+
+    state.rootPrompt?.let { prompt ->
+        val n = prompt.entries.size
+        EditChoiceDialog(
+            title = pluralStringResource(R.plurals.edit_unuploaded_title, n, n),
+            text = stringResource(R.string.edit_root_text, prompt.name),
+            busy = prompt.busy,
+            onUpload = { viewModel.resolveRootPrompt(upload = true) },
+            onDiscard = { viewModel.resolveRootPrompt(upload = false) },
+            onDismiss = viewModel::dismissRootPrompt,
+        )
+    }
+
     if (accountOpen) {
         AccountScreen(
             offlineCount = state.offlineRoots.size,
             onOpenOffline = { offlineOpen = true },
             onBack = { accountOpen = false },
-            onSignOut = onSignOut,
             bottomBar = { BottomTabs(Tab.ACCOUNT, ::selectTab) },
         )
     }
@@ -774,6 +827,11 @@ fun FilesScreen(
             onSyncNow = { viewModel.syncOfflineNow() },
             onRemove = { root -> viewModel.removeOffline(root.id, root.name) },
             bottomBar = { BottomTabs(Tab.ACCOUNT, ::selectTab) },
+            edits = state.editEntries.filter(::needsAttention),
+            onEditOpen = { entry -> scope.launch { viewModel.editedFile(entry)?.let { openWithSystem(context, it) } } },
+            onEditFinish = viewModel::finishEditing,
+            onEditDiscard = { discardTarget = it },
+            onEditDismissNotice = viewModel::dismissEditNotice,
         )
     }
 

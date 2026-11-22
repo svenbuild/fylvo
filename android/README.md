@@ -34,7 +34,18 @@ Neither project is affiliated with or endorses Fylvo.
   address the user enters.
 - The bearer token goes only to that server's exact origin. No HTTP logging.
 - Sign-out also stops background jobs and deletes offline copies, cached
-  downloads and the folder-sync and notification settings.
+  downloads and the folder-sync and notification settings. Edited files whose
+  changes are not on the server yet are asked about first (upload or discard).
+- Files of offline folders can be edited on the phone ("Edit"): the app makes
+  a working copy, hands it to an editor app, and uploads every quiet save as a
+  new version of the file (only if the file still has the version the edit is
+  based on, otherwise as a conflict copy `<name> (phone conflict <date>)`).
+  Nothing written on the phone is lost. Note: a save that an editor leaves half
+  written for two minutes can be uploaded as a version. Fylvo accounts keep 10
+  versions, so the version before stays in the history; with version retention
+  switched off such a save can replace the last version.
+- Every request names the app as `Fylvo-Android/<version>` (User-Agent), so the
+  server's activity log can tell it apart.
 - In-app updates from the own Fylvo server instead of a store: the app asks
   `api/v4/fylvo/android/latest` once per start and on "App version" under
   Account, downloads the APK, checks size, SHA-256, package name, version and

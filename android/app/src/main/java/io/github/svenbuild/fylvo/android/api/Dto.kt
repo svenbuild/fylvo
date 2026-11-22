@@ -212,7 +212,10 @@ data class CreateUploadSessionRequest(
     @SerialName("mime_type") val mimeType: String = "",
     @SerialName("policy_id") val policyId: String = "",
     @SerialName("entity_type") val entityType: String = "",
+    /** Fylvo: the version (entity id) an edit is based on; the server refuses with 40076 when it is not current. */
     val previous: String = "",
+    /** Fylvo: with [previous], fail with 40904 instead of creating the file when it is gone. */
+    @SerialName("previous_required") val previousRequired: Boolean = false,
 )
 
 @Serializable
@@ -233,6 +236,8 @@ data class UploadSessionResponse(
     @SerialName("storage_policy") val storagePolicy: StoragePolicy? = null,
     @SerialName("callback_secret") val callbackSecret: String = "",
     @SerialName("rapid_uploaded") val rapidUploaded: Boolean = false,
+    /** Fylvo: the entity (version) this upload becomes once it is finished. */
+    @SerialName("entity_id") val entityId: String = "",
 )
 
 @Serializable

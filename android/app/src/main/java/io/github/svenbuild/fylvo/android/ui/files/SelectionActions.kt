@@ -20,6 +20,10 @@ enum class SelectionAction(
     OFFLINE,
     RESTORE,
     DELETE_FOREVER,
+    /** Fylvo: edit a file of an offline root on the phone (works without a connection too). */
+    EDIT(server = false),
+    FINISH_EDIT(server = false),
+    DISCARD_EDIT(server = false),
 }
 
 /** Where the selection is made; decides together with the selected files which actions exist. */
@@ -31,6 +35,10 @@ data class SelectionContext(
     val virtual: Boolean = false,
     /** One item: "Available offline" can be switched here or is covered by an offline folder. */
     val offlineShown: Boolean = false,
+    /** Fylvo: one file that can be edited on the phone (FilesUiState.canEdit). */
+    val editable: Boolean = false,
+    /** Fylvo: one file with a working copy in use. */
+    val edited: Boolean = false,
 )
 
 /** [quick]: the small buttons left of the selection button, nearest first. [menu]: the card above it. */
@@ -54,7 +62,7 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
         )
         ctx.offlineMode -> SelectionActions(
             quick = emptyList(),
-            menu = listOfNotNull(SelectionAction.SELECT_ALL, SelectionAction.DETAILS.takeIf { one }),
+            menu = listOfNotNull(SelectionAction.SELECT_ALL, SelectionAction.DETAILS.takeIf { one }) + editActions(one, ctx),
         )
         // The server locks a file while its upload is not finished; offer only what still works.
         selected.any { it.isUploading } -> SelectionActions(
@@ -81,7 +89,7 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
                     SelectionAction.MOVE.takeIf { canModify },
                     SelectionAction.OFFLINE.takeIf { ctx.offlineShown },
                     SelectionAction.SHOW_IN_FOLDER.takeIf { ctx.virtual },
-                ),
+                ) + editActions(one, ctx),
             )
         }
         else -> {
@@ -97,6 +105,13 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
         }
     }
 }
+
+/** Fylvo: "Bearbeiten" for one editable file; finishing and discarding for one with a working copy. */
+private fun editActions(one: Boolean, ctx: SelectionContext): List<SelectionAction> = listOfNotNull(
+    SelectionAction.EDIT.takeIf { one && ctx.editable },
+    SelectionAction.FINISH_EDIT.takeIf { one && ctx.edited },
+    SelectionAction.DISCARD_EDIT.takeIf { one && ctx.edited },
+)
 
 /**
  * Fylvo: whether [action] can be tapped now. Server actions wait while the listing is still

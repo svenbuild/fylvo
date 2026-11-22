@@ -48,6 +48,11 @@ import androidx.compose.ui.platform.LocalContext
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import io.github.svenbuild.fylvo.android.api.FileObject
+import io.github.svenbuild.fylvo.android.data.THUMB_TTL_MS
+import io.github.svenbuild.fylvo.android.data.offline.EditEntry
+import io.github.svenbuild.fylvo.android.data.offline.EditState
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.ui.text.TextStyle
 
 /**
  * Gestures a row or tile responds to. Fylvo: no menu button on rows any more; a long press
@@ -85,13 +90,22 @@ private fun selectionState(selecting: Boolean, selected: Boolean): String? = whe
     else -> stringResource(R.string.state_not_selected)
 }
 
+/** Fylvo: waits before asking again for a preview whose request failed. */
+private val THUMB_RETRY_DELAYS_MS = longArrayOf(3_000, 10_000, 30_000, 0)
+
 @Composable
 fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
     // Signed URLs expire; re-key on a coarse time bucket so any recomposition
     // past the TTL refetches instead of sticking for the VM's lifetime.
     val bucket = System.currentTimeMillis() / THUMB_TTL_MS
-    val url by produceState<String?>(initialValue = null, file.id, bucket) {
-        value = viewModel.thumbUrl(file)
+    // Fylvo: keyed by the version too, so a new version fetches its own preview.
+    val url by produceState<String?>(initialValue = null, file.id, file.primaryEntity, bucket) {
+        // Fylvo: a failed request (network, busy server) is tried again a few times.
+        for (wait in THUMB_RETRY_DELAYS_MS) {
+            value = viewModel.thumbUrl(file)
+            if (value != null || viewModel.hasNoThumb(file)) break
+            kotlinx.coroutines.delay(wait)
+        }
     }
     return url
 }
@@ -182,6 +196,8 @@ fun FileListItem(
     /** Fylvo: a copy is kept on this phone ("Keep offline"); shown as a small pin. */
     offline: Boolean = false,
     subtitle: String = fileSubtitle(file),
+    /** Fylvo: the file's working copy in use; shown as "Bearbeitet" with its state. */
+    edit: EditEntry? = null,
 ) {
     val shape = RoundedCornerShape(12.dp)
     val background by animateColorAsState(
@@ -213,7 +229,7 @@ fun FileListItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (subtitle.isNotEmpty() || offline) {
+            if (subtitle.isNotEmpty() || offline || edit != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (offline) {
                         Icon(
@@ -222,6 +238,7 @@ fun FileListItem(
                             modifier = Modifier.padding(end = 4.dp).size(14.dp),
                         )
                     }
+                    if (edit != null) EditBadge(edit, 14.dp, MaterialTheme.typography.bodySmall)
                     Text(
                         subtitle,
                         style = MaterialTheme.typography.bodySmall,
@@ -255,6 +272,8 @@ fun FileGridItem(
     gallery: Boolean = false,
     /** Fylvo: kept on this phone; a small pin before the caption's second line. */
     offline: Boolean = false,
+    /** Fylvo: the file's working copy in use; shown as "Bearbeitet" with its state. */
+    edit: EditEntry? = null,
 ) {
     val shape = RoundedCornerShape(if (gallery) 6.dp else 16.dp)
     val background = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
@@ -296,7 +315,7 @@ fun FileGridItem(
                 overflow = TextOverflow.Ellipsis,
             )
             val subtitle = fileSubtitle(file)
-            if (subtitle.isNotEmpty() || offline) {
+            if (subtitle.isNotEmpty() || offline || edit != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (offline) {
                         Icon(
@@ -305,6 +324,7 @@ fun FileGridItem(
                             modifier = Modifier.padding(end = 4.dp).size(12.dp),
                         )
                     }
+                    if (edit != null) EditBadge(edit, 12.dp, MaterialTheme.typography.labelSmall)
                     Text(
                         subtitle,
                         style = MaterialTheme.typography.labelSmall,
@@ -316,6 +336,28 @@ fun FileGridItem(
             }
         }
     }
+}
+
+/** Fylvo: "Bearbeitet" with the state of the working copy (wird hochgeladen, hochgeladen, ...). */
+@Composable
+fun editBadgeText(entry: EditEntry): String {
+    val state = when {
+        entry.state == EditState.Error -> R.string.edit_state_error
+        entry.state == EditState.Uploading || entry.pending != null -> R.string.edit_state_uploading
+        entry.conflict.isNotEmpty() -> R.string.edit_state_conflict
+        entry.state == EditState.Synced -> R.string.edit_state_synced
+        else -> null
+    }
+    val badge = stringResource(R.string.edit_badge)
+    return if (state == null) badge else "$badge · ${stringResource(state)}"
+}
+
+/** Fylvo: the small edit mark and its state before a row's second line. */
+@Composable
+private fun EditBadge(entry: EditEntry, iconSize: Dp, style: TextStyle) {
+    val color = if (entry.state == EditState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    Icon(Icons.Outlined.Edit, contentDescription = null, tint = color, modifier = Modifier.padding(end = 4.dp).size(iconSize))
+    Text("${editBadgeText(entry)} · ", style = style, color = color, maxLines = 1)
 }
 
 /** Fylvo: decorative; the row itself tells TalkBack whether it is selected. */

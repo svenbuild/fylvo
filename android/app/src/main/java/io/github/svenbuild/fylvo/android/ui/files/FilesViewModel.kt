@@ -26,7 +26,10 @@ import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.ApiException
 import io.github.svenbuild.fylvo.android.data.FileRepository
+import io.github.svenbuild.fylvo.android.data.offline.EditEntry
 import io.github.svenbuild.fylvo.android.data.offline.OfflineCoverage
+import io.github.svenbuild.fylvo.android.data.offline.OfflineEdits
+import io.github.svenbuild.fylvo.android.data.offline.refusalCode
 import io.github.svenbuild.fylvo.android.data.offline.OfflineManager
 import io.github.svenbuild.fylvo.android.data.offline.OfflineRootInfo
 import io.github.svenbuild.fylvo.android.data.offline.hasRoomFor
@@ -65,9 +68,6 @@ enum class Category(val uri: String, @StringRes val label: Int, val filter: Stri
     }
 }
 
-/** Signed thumbnail URLs are refetched after this; servers typically sign for ~1 h. */
-internal const val THUMB_TTL_MS = 50L * 60 * 1000
-
 /** Fylvo: the server address a folder or file is kept offline under (a shared folder's own share). */
 fun offlineUriOf(file: FileObject): String = file.sharedRedirect ?: file.path
 
@@ -93,6 +93,20 @@ data class OfflinePrompt(
 ) {
     enum class Refusal { NoRoom, TooManyFolders }
 }
+
+/** Fylvo: "Bearbeitung abschliessen" could not upload the changes of [name]: ask what to do. */
+data class EditPrompt(
+    val entryId: String,
+    val name: String,
+    val reason: OfflineEdits.NotUploaded,
+    /** A kept snapshot (bytes not confirmed on the server) goes too when it is discarded. */
+    val unsent: Boolean = false,
+    /** The server's code of a refusal. */
+    val code: Int = 0,
+)
+
+/** Fylvo: switching root [rootId] off while [entries] hold changes the server does not have. */
+data class RootEditPrompt(val rootId: String, val name: String, val entries: List<EditEntry>, val busy: Boolean = false)
 
 /** One-off message for the snackbar, optionally with an action such as Undo. [long]: stays longer (hints). */
 data class UiMessage(val text: UiText, val actionLabel: UiText? = null, val action: (() -> Unit)? = null, val long: Boolean = false)
@@ -145,7 +159,21 @@ data class FilesUiState(
     val staleCopies: Set<String> = emptySet(),
     /** Fylvo: the folder on screen as the server describes it, with its capability set. */
     val parent: FileObject? = null,
+    /** Fylvo: every working copy of this account (also finished ones), see OfflineEdits. */
+    val editEntries: List<EditEntry> = emptyList(),
+    val editPrompt: EditPrompt? = null,
+    val rootPrompt: RootEditPrompt? = null,
 ) {
+    /** Fylvo: working copies in use, by server file id. */
+    private val editsById: Map<String, EditEntry> by lazy { editEntries.filter { it.active }.associateBy { it.fileId } }
+    /** Fylvo: the working copy in use of [file], or null. */
+    fun editOf(file: FileObject): EditEntry? = if (file.isFolder || file.id.isEmpty()) null else editsById[file.id]
+    /**
+     * Fylvo: "Bearbeiten" is offered for a file of an offline root (reopens a working copy that
+     * exists): in the person's own files, in a share with the right to change it (online only).
+     */
+    fun canEdit(file: FileObject): Boolean = !file.isFolder && !file.isUploading && !inTrash && file.id.isNotEmpty() &&
+        (editOf(file) != null || (isOffline(file) && if (offlineMode) !CrUri.isShare(file.path) else Permissions.canModifyFile(file)))
     /** Fylvo: kept on this phone, as a root or inside an offline folder (shown with a pin). */
     fun isOffline(file: FileObject): Boolean = offlineCoverage.isOffline(offlineUriOf(file))
     /** Fylvo: kept offline as its own root. */
@@ -170,6 +198,7 @@ data class FilesUiState(
 class FilesViewModel(
     private val repo: FileRepository,
     private val offline: OfflineManager,
+    private val edits: OfflineEdits,
     private val viewSettings: ViewSettings,
     private val workManager: WorkManager,
     /** Invoked when the server no longer accepts our session; the caller returns to login. */
@@ -179,9 +208,6 @@ class FilesViewModel(
     private val _state = MutableStateFlow(FilesUiState())
     val state: StateFlow<FilesUiState> = _state
 
-    /** Resolved thumbnail URLs by file id with fetch time, shared across list/grid recompositions. */
-    private val thumbCache = ConcurrentHashMap<String, Pair<String, Long>>()
-    private val noThumb = ConcurrentHashMap.newKeySet<String>()
     /** Last progress emission per path; download callbacks fire every 256 KB. */
     private val lastProgressAt = ConcurrentHashMap<String, Long>()
 
@@ -216,6 +242,9 @@ class FilesViewModel(
         }
         viewModelScope.launch {
             offline.syncing.collect { _state.value = _state.value.copy(offlineSyncing = it) }
+        }
+        viewModelScope.launch {
+            edits.entries.collect { list -> _state.update { it.copy(editEntries = list) } }
         }
         viewModelScope.launch {
             var first = true
@@ -491,8 +520,9 @@ class FilesViewModel(
         // Fylvo: already being saved by a download of several files.
         if (file.path in batchPaths) return
         // Fylvo: a file kept offline opens from its copy on this phone when that is the current
-        // version (or there is no connection); otherwise from the server like any file.
-        if (state.value.isOffline(file)) {
+        // version (or there is no connection); otherwise from the server like any file. An edited
+        // file opens from its working copy.
+        if (state.value.isOffline(file) || state.value.editOf(file) != null) {
             viewModelScope.launch {
                 val local = currentOfflineCopy(file)
                 if (local != null) onReady(local) else fetchFromServer(context, file, onReady)
@@ -745,6 +775,8 @@ class FilesViewModel(
      * shows (any copy while the folder is shown from the phone); null otherwise.
      */
     private suspend fun currentOfflineCopy(file: FileObject): File? = when {
+        // Fylvo: the working copy first (also outside an offline root, it may have outlived it).
+        _state.value.editOf(file) != null -> edits.workingCopy(file.id) ?: offline.localCopy(file.path, entity = file.primaryEntity.ifEmpty { null })
         !_state.value.isOffline(file) -> null
         _state.value.offlineMode -> offline.localCopy(file.path)
         file.primaryEntity.isNotEmpty() -> offline.localCopy(file.path, entity = file.primaryEntity)
@@ -1167,13 +1199,116 @@ class FilesViewModel(
         _state.value = _state.value.copy(offlinePrompt = null)
     }
 
-    /** Switches an offline root off: its copies on this phone are deleted. */
+    /**
+     * Switches an offline root off: its copies on this phone are deleted. Fylvo: when files edited
+     * in it hold changes the server does not have, it asks first ([FilesUiState.rootPrompt]).
+     */
     fun removeOffline(rootId: String, name: String) {
         viewModelScope.launch {
-            offline.removeRoot(rootId)
-            _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.offline_switched_off, name)))
+            val open = edits.rootBlockers(rootId)
+            if (open.isNotEmpty()) {
+                _state.update { it.copy(rootPrompt = RootEditPrompt(rootId, name, open)) }
+                return@launch
+            }
+            switchOff(rootId, name)
         }
     }
+
+    private suspend fun switchOff(rootId: String, name: String) {
+        offline.removeRoot(rootId)
+        _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.offline_switched_off, name))) }
+    }
+
+    /** Fylvo: the answer to [FilesUiState.rootPrompt]: upload first (true) or discard (false); the root goes after. */
+    fun resolveRootPrompt(upload: Boolean) {
+        val prompt = _state.value.rootPrompt ?: return
+        if (prompt.busy) return
+        _state.update { it.copy(rootPrompt = prompt.copy(busy = true)) }
+        viewModelScope.launch {
+            // Why it did not work, or null when the root can go.
+            val problem = if (upload) {
+                edits.upload(prompt.entries)?.let { reason ->
+                    val ids = prompt.entries.mapTo(HashSet()) { it.id }
+                    val code = _state.value.editEntries.filter { it.id in ids }.map(::refusalCode).firstOrNull { it > 0 } ?: 0
+                    UiText.Res(R.string.edit_upload_failed, notUploadedText(reason, code))
+                }
+            } else {
+                UiText.Res(R.string.edit_discard_failed, prompt.name).takeUnless { edits.discardAll(prompt.entries.mapTo(HashSet()) { it.id }) }
+            }
+            _state.update { it.copy(rootPrompt = null) }
+            if (problem == null) switchOff(prompt.rootId, prompt.name)
+            else _state.update { it.copy(snackbar = UiMessage(problem)) }
+        }
+    }
+
+    fun dismissRootPrompt() {
+        if (_state.value.rootPrompt?.busy == true) return
+        _state.update { it.copy(rootPrompt = null) }
+    }
+
+    /**
+     * Fylvo: "Bearbeiten": makes (or reopens) the working copy of [file], then [open] hands it to an
+     * editor. Not offered for a copy that is not the current version yet.
+     */
+    fun startEditing(file: FileObject, open: (File) -> Unit) {
+        viewModelScope.launch {
+            when (val result = edits.startEditing(file, _state.value.offlineMode)) {
+                is OfflineEdits.StartResult.Ready -> {
+                    open(result.file)
+                    edits.opened(result.entryId)
+                }
+                OfflineEdits.StartResult.NotReady ->
+                    _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_not_ready))) }
+            }
+        }
+    }
+
+    /** Fylvo: "Bearbeitung abschliessen" for [entry]; asks what to do when the changes could not go up. */
+    fun finishEditing(entry: EditEntry) {
+        _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_uploading_now))) }
+        viewModelScope.launch {
+            when (val result = edits.finish(entry.id)) {
+                OfflineEdits.FinishResult.Done ->
+                    _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_finished, entry.name))) }
+                is OfflineEdits.FinishResult.Failed -> _state.update { s ->
+                    val now = s.editEntries.firstOrNull { it.id == entry.id }
+                    s.copy(
+                        editPrompt = EditPrompt(
+                            entry.id, entry.name, result.reason,
+                            unsent = now != null && (now.pending != null || now.refusedSnapshots.isNotEmpty()),
+                            code = now?.let(::refusalCode) ?: 0,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    /** Fylvo: "Änderungen verwerfen" (asked before): the working copy goes. */
+    fun discardEditing(entryId: String, name: String) {
+        _state.update { it.copy(editPrompt = null) }
+        viewModelScope.launch {
+            val text = if (edits.discard(entryId)) R.string.edit_discarded else R.string.edit_discard_failed
+            _state.update { it.copy(snackbar = UiMessage(UiText.Res(text, name))) }
+        }
+    }
+
+    /** Fylvo: "Später erneut versuchen": the working copy stays, a check comes soon. */
+    fun retryEditLater() {
+        _state.update { it.copy(editPrompt = null) }
+        viewModelScope.launch { edits.checkSoon() }
+    }
+
+    fun dismissEditPrompt() {
+        _state.update { it.copy(editPrompt = null) }
+    }
+
+    fun dismissEditNotice(entry: EditEntry) {
+        viewModelScope.launch { edits.dismissNotice(entry.id) }
+    }
+
+    /** Fylvo: the working copy of [entry] for the Offline screen, to open it. */
+    suspend fun editedFile(entry: EditEntry): File? = edits.workingCopy(entry.fileId)
 
     fun syncOfflineNow() {
         viewModelScope.launch { offline.syncNow() }
@@ -1227,26 +1362,21 @@ class FilesViewModel(
      * a listing lands, so rows do not each pay a round trip as they scroll in.
      */
     private fun prefetchThumbs(files: List<FileObject>) {
-        val wanted = files.filter { it.mayHaveThumbnail && !thumbCache.containsKey(it.id) && it.id !in noThumb }.take(PREFETCH_THUMBS)
+        val wanted = files.filter { !repo.hasNoThumb(it) }.take(PREFETCH_THUMBS)
         if (wanted.isEmpty()) return
         viewModelScope.launch {
             val gate = kotlinx.coroutines.sync.Semaphore(PREFETCH_PARALLELISM)
             wanted.forEach { f ->
-                launch { gate.withPermit { runCatching { thumbUrl(f) } } }
+                launch { gate.withPermit { thumbUrl(f) } }
             }
         }
     }
 
-    suspend fun thumbUrl(file: FileObject): String? {
-        if (!file.mayHaveThumbnail || file.id in noThumb) return null
-        thumbCache[file.id]?.let { (url, fetchedAt) ->
-            if (System.currentTimeMillis() - fetchedAt < THUMB_TTL_MS) return url
-        }
-        val url = repo.thumbUrl(file.path)
-        if (url == null) noThumb.add(file.id)
-        else thumbCache[file.id] = url to System.currentTimeMillis()
-        return url
-    }
+    /** Fylvo: one request per file at a time and the cache live in the repository (shared with the file picker). */
+    suspend fun thumbUrl(file: FileObject): String? = repo.cachedThumbUrl(file)
+
+    /** Fylvo: true once the server said this version of the file has no preview. */
+    fun hasNoThumb(file: FileObject): Boolean = repo.hasNoThumb(file)
 
     fun consumeSnackbar() {
         _state.value = _state.value.copy(snackbar = null)

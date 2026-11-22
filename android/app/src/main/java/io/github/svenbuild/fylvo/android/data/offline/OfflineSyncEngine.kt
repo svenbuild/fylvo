@@ -21,9 +21,14 @@ import java.util.concurrent.atomic.AtomicInteger
  * Fylvo: one sync run over all offline roots of the signed-in account (server to phone only in
  * this version). Every step can be stopped at any point: copies are fetched into offline-tmp and
  * renamed into place, the index records only finished copies, and the next run goes on from there.
- * The caller holds [OfflineManager.engineLock].
+ * Fylvo: the uploads of working copies ([OfflineEdits]) run at the start and at the end of every
+ * run; the engine itself never touches the edit index. The caller holds [OfflineManager.engineLock].
  */
-class OfflineSyncEngine(private val repo: FileRepository, private val manager: OfflineManager) {
+class OfflineSyncEngine(
+    private val repo: FileRepository,
+    private val manager: OfflineManager,
+    private val edits: OfflineEdits,
+) {
 
     private val storageFull = AtomicBoolean(false)
     private val space = SpaceReservation()
@@ -38,7 +43,10 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
         manager.migrateLegacy(store)
         // Leftovers of a stopped run (tmp) or an interrupted "Remove" (copies without an index).
         manager.cleanUp(store)
+        // Fylvo: edits first, so a run the system stops after a while has still uploaded them.
+        edits.pass(store, EditPhase.Start)
         val done = HashSet<String>()
+        var failure: Exception? = null
         try {
             // Roots switched on during the run are taken too.
             while (!storageFull.get()) {
@@ -56,9 +64,17 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
                 }
             }
             dropCoveredRoots(store)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Fylvo: a local failure of the roots still lets the edits go up (below), then it counts.
+            failure = e
         } finally {
             manager.setSyncing(null)
         }
+        // Fylvo: after the listings (renames seen), whatever happened to the roots.
+        edits.pass(store, EditPhase.End)
+        failure?.let { throw it }
     }
 
     private suspend fun syncRoot(store: OfflineStore, initial: OfflineIndex) {
@@ -132,13 +148,17 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
                     writer.remove(path)
                     pruneEmptyDirs(store.dirOf(id), file.parentFile)
                 }
+                // Fylvo: the index on disk matches the files whenever the write lock is free.
+                writer.flush()
             }
         }
 
         // Moves after deletions: a moved file may go where a deleted one was (a file `a` replaced
         // by a folder `a/` holding a moved file). A move that does not work becomes a download.
         val downloads = actions.filterIsInstance<SyncAction.Download>().map { it.file }.toMutableList()
-        val failedMoves = manager.writing(id) { moveCopies(store, writer, id, actions.filterIsInstance<SyncAction.Move>()) } ?: return
+        val failedMoves = manager.writing(id) {
+            moveCopies(store, writer, id, actions.filterIsInstance<SyncAction.Move>()).also { writer.flush() }
+        } ?: return
         failedMoves.forEach { move -> if (downloads.none { it.path == move.file.path }) downloads += move.file }
 
         val failures = AtomicInteger(0)
@@ -166,6 +186,7 @@ class OfflineSyncEngine(private val repo: FileRepository, private val manager: O
                     pruneEmptyDirs(store.dirOf(id), store.fileOf(id, move.from).parentFile)
                 }
             }
+            writer.flush()
         }
 
         manager.writing(id) {

@@ -22,7 +22,10 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.OfflinePin
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EditOff
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.OfflinePin
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -77,6 +80,13 @@ fun FileActionSheet(
     inTrash: Boolean = false,
     onRestore: () -> Unit = {},
     onDeleteForever: () -> Unit = {},
+    /** Fylvo: "Bearbeiten" is offered (FilesUiState.canEdit). */
+    canEdit: Boolean = false,
+    /** Fylvo: the file has a working copy in use: finish or discard it. */
+    edited: Boolean = false,
+    onEdit: () -> Unit = {},
+    onFinishEdit: () -> Unit = {},
+    onDiscardEdit: () -> Unit = {},
 ) {
     // Every action should be reachable without a second drag, so skip the half-open state.
     ModalBottomSheet(
@@ -129,6 +139,8 @@ fun FileActionSheet(
 
         SheetAction(Icons.AutoMirrored.Filled.OpenInNew, stringResource(if (file.isFolder) R.string.open_folder else R.string.open), onOpen)
         onShowInFolder?.let { SheetAction(Icons.Default.FolderOpen, stringResource(R.string.show_in_folder), it) }
+        if (canEdit) SheetAction(Icons.Outlined.Edit, stringResource(R.string.edit), onEdit)
+        if (edited) SheetAction(Icons.Outlined.TaskAlt, stringResource(R.string.edit_finish), onFinishEdit)
         if (canShare) SheetAction(Icons.Default.Link, stringResource(R.string.share_link), onShare)
         SheetAction(Icons.Default.Download, stringResource(if (file.isFolder) R.string.download_as_zip else R.string.download), onDownload)
         when {
@@ -147,6 +159,7 @@ fun FileActionSheet(
             SheetAction(Icons.Default.DriveFileRenameOutline, stringResource(R.string.rename), onRename)
         }
         SheetAction(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
+        if (edited) SheetAction(Icons.Outlined.EditOff, stringResource(R.string.edit_discard), onDiscardEdit, tint = MaterialTheme.colorScheme.error)
         if (canModify) SheetAction(Icons.Default.Delete, stringResource(R.string.delete), onDelete, tint = MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(24.dp))
     }

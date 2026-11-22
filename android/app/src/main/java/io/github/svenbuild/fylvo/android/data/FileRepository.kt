@@ -15,7 +15,16 @@ import io.github.svenbuild.fylvo.android.api.RestoreFileRequest
 import io.github.svenbuild.fylvo.android.api.ShareCreateRequest
 import io.github.svenbuild.fylvo.android.api.UploadSessionResponse
 import io.github.svenbuild.fylvo.android.util.CrUri
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
+import io.github.svenbuild.fylvo.android.api.ApiService
+import java.util.concurrent.ConcurrentHashMap
 import retrofit2.Response
 import java.io.File
 
@@ -44,6 +53,11 @@ class ApiException(val code: Int, message: String, val innerCodes: List<Int> = e
 
 private const val CODE_OBJECT_EXISTS = ApiException.CODE_OBJECT_EXISTS
 private const val MAX_CHUNK_BYTES = 64L * 1024 * 1024
+/** Fylvo: the server's answer when a file has no preview ("Entity not exist"). */
+private const val CODE_NO_THUMB = 40077
+
+/** Signed thumbnail URLs are refetched after this; servers typically sign for ~1 h. */
+const val THUMB_TTL_MS = 50L * 60 * 1000
 
 class FileRepository(private val api: ApiClient) {
 
@@ -165,9 +179,78 @@ class FileRepository(private val api: ApiClient) {
         }
     }
 
-    /** Resolves a thumbnail URL for the file, or null when none exists. */
-    suspend fun thumbUrl(uri: String): String? =
-        runCatching { api.service().thumb(uri).unwrap().url }.getOrNull()
+    /** Fylvo: preview requests that outlive the screen that asked first (see [thumbUrl]). */
+    private val thumbScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val thumbInFlight = ConcurrentHashMap<String, Deferred<String?>>()
+    /** Resolved preview URLs with fetch time, by file id and version (a new version has a new preview). */
+    private val thumbCache = ConcurrentHashMap<String, Pair<String, Long>>()
+    private val noThumb = ConcurrentHashMap.newKeySet<String>()
+    /** The account [thumbCache] and [noThumb] belong to; another one starts them afresh. */
+    @Volatile private var thumbAccount = ""
+
+    /**
+     * Resolves a thumbnail URL for the file, or null when the server says there is none.
+     * Fylvo: any other failure (network, a busy server) throws, so it can be asked again later.
+     * One request per file at a time, for the file list and the system file picker together: the
+     * server makes a missing preview on the first request; two at once for the same file made it
+     * twice, and the losing one deleted the winner's preview file.
+     */
+    suspend fun thumbUrl(uri: String): String? {
+        // Per account: the same address of another account is another file.
+        val key = api.accountTag() + "|" + CrUri.canonical(uri)
+        val request = thumbInFlight.computeIfAbsent(key) {
+            thumbScope.async(start = CoroutineStart.LAZY) {
+                try {
+                    try {
+                        api.service().thumb(uri).unwrap().url
+                    } catch (e: ApiException) {
+                        if (e.code == CODE_NO_THUMB) null else throw e
+                    }
+                } finally {
+                    thumbInFlight.remove(key)
+                }
+            }
+        }
+        request.start()
+        return request.await()
+    }
+
+    /**
+     * Fylvo: [thumbUrl] of [file], remembered per file and version for [THUMB_TTL_MS]. Only the
+     * server's clear "no preview" is remembered for good; a failure gives null and is asked again.
+     */
+    suspend fun cachedThumbUrl(file: FileObject): String? {
+        val account = api.accountTag()
+        if (account != thumbAccount) {
+            forgetThumbs()
+            thumbAccount = account
+        }
+        if (hasNoThumb(file)) return null
+        val key = thumbKey(file)
+        thumbCache[key]?.let { (url, fetchedAt) ->
+            if (System.currentTimeMillis() - fetchedAt < THUMB_TTL_MS) return url
+        }
+        val url = try {
+            thumbUrl(file.path)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return null
+        }
+        if (url == null) noThumb.add(key) else thumbCache[key] = url to System.currentTimeMillis()
+        return url
+    }
+
+    /** Fylvo: true once the server said this version of the file has no preview. */
+    fun hasNoThumb(file: FileObject): Boolean = !file.mayHaveThumbnail || thumbKey(file) in noThumb
+
+    /** Fylvo: the session ended; previews of the old account are not kept. */
+    fun forgetThumbs() {
+        thumbCache.clear()
+        noThumb.clear()
+    }
+
+    private fun thumbKey(file: FileObject) = "${file.id}:${file.primaryEntity}"
 
     /**
      * Creates a share link. [expireSeconds] 0 = never; [password] empty = public.
@@ -225,8 +308,11 @@ class FileRepository(private val api: ApiClient) {
         lastModified: Long,
         mimeType: String,
         overwrite: Boolean = false,
+        previous: String = "",
+        previousRequired: Boolean = false,
+        service: ApiService? = null,
     ): UploadSessionResponse =
-        api.service().createUploadSession(
+        (service ?: api.service()).createUploadSession(
             CreateUploadSessionRequest(
                 uri = uri,
                 size = size,
@@ -235,6 +321,8 @@ class FileRepository(private val api: ApiClient) {
                 // "version" tells the server to add a new version to the existing
                 // file instead of failing with 40004; it is what the web uploader sends.
                 entityType = if (overwrite) "version" else "",
+                previous = previous,
+                previousRequired = previousRequired,
             )
         ).unwrap()
 
@@ -312,12 +400,13 @@ class FileRepository(private val api: ApiClient) {
      */
     suspend fun lookup(uri: String): FileObject? {
         val resp = api.service().fileInfo(uri)
-        if (!resp.isSuccessful) throw java.io.IOException("server answered ${resp.code()}")
+        // Fylvo: refusals carry their code, so an edit upload can tell "no access" from trouble.
+        if (!resp.isSuccessful) throw ApiException(resp.code(), "server answered ${resp.code()}")
         val body = resp.body() ?: throw java.io.IOException("no answer from the server")
         return when (body.code) {
             0 -> body.data ?: throw java.io.IOException("empty answer")
             ApiException.CODE_PATH_NOT_EXIST -> null
-            else -> throw java.io.IOException("unclear answer ${body.code}")
+            else -> throw ApiException(body.code, "unclear answer ${body.code}")
         }
     }
 
@@ -325,6 +414,10 @@ class FileRepository(private val api: ApiClient) {
      * Streams a local file through the upload-session flow: create session,
      * PUT/POST each chunk to its resolved URL, then call completeURL when the
      * policy requires an explicit finalize step (e.g. S3 multipart).
+     *
+     * Fylvo: [previous] and [previousRequired] make it a conditional update (see
+     * CreateUploadSessionRequest). [strict] is for edited offline files: the client never repeats
+     * a request by itself, and a completion answer must be the server's envelope with code 0.
      */
     suspend fun uploadFile(
         localFile: File,
@@ -333,19 +426,26 @@ class FileRepository(private val api: ApiClient) {
         overwrite: Boolean = false,
         mimeType: String? = null,
         lastModified: Long = localFile.lastModified(),
-        onSession: (sessionId: String, targetUri: String) -> Unit = { _, _ -> },
+        previous: String = "",
+        previousRequired: Boolean = false,
+        strict: Boolean = false,
+        onSession: (sessionId: String, targetUri: String, entityId: String) -> Unit = { _, _, _ -> },
         onProgress: (sent: Long, total: Long) -> Unit = { _, _ -> },
     ): UploadSessionResponse {
         val targetUri = CrUri.join(remoteParentUri, remoteName)
         val mime = mimeType?.takeIf { it.isNotBlank() }
             ?: java.net.URLConnection.guessContentTypeFromName(remoteName)
             ?: "application/octet-stream"
+        val svc = if (strict) api.editService() else api.service()
         val session = createUploadSession(
             uri = targetUri,
             size = localFile.length(),
             lastModified = lastModified,
             mimeType = mime,
             overwrite = overwrite,
+            previous = previous,
+            previousRequired = previousRequired,
+            service = svc,
         )
 
         if (session.rapidUploaded) return session
@@ -353,7 +453,7 @@ class FileRepository(private val api: ApiClient) {
         // cancelled on the server instead of leaving a locked 0 B placeholder.
         // The server may store the file under another name (e.g. in a shared folder where names
         // are made unique); the session belongs to the address it answers with.
-        onSession(session.sessionId, session.uri.ifEmpty { targetUri })
+        onSession(session.sessionId, session.uri.ifEmpty { targetUri }, session.entityId)
 
         val urls = session.uploadUrls
         // Local/slave policies return no presigned URLs: chunks go to the
@@ -367,7 +467,6 @@ class FileRepository(private val api: ApiClient) {
             throw ApiException(-1, "Unsupported upload chunk size: $chunkSize")
         }
         val totalChunks = ((localFile.length() + chunkSize - 1) / chunkSize).toInt().coerceAtLeast(1)
-        val svc = api.service()
         var sent = 0L
         localFile.inputStream().buffered().use { input ->
             // Never larger than the file: several uploads run at once, a 2 MB photo needs no
@@ -409,9 +508,32 @@ class FileRepository(private val api: ApiClient) {
             if (!resp.isSuccessful) {
                 throw ApiException(resp.code(), "Upload completion failed: HTTP ${resp.code()}")
             }
-            resp.body()?.close()
+            if (strict) checkEnvelope(resp.body()) else resp.body()?.close()
         }
         return session
+    }
+
+    /**
+     * Fylvo: cancels an upload session like [deleteUploadSession], for edited offline files: the
+     * server's parsed code (0 = done), or null when there was no clear answer (network, no JSON).
+     */
+    suspend fun cancelUploadStrict(sessionId: String, targetUri: String): Int? = try {
+        val resp = api.editService().deleteUploadSession(
+            io.github.svenbuild.fylvo.android.api.DeleteUploadSessionRequest(id = sessionId, uri = targetUri)
+        )
+        if (!resp.isSuccessful) {
+            resp.body()?.close()
+            resp.code()
+        } else {
+            resp.body()?.use { body ->
+                runCatching {
+                    ((api.json.parseToJsonElement(body.string()) as? kotlinx.serialization.json.JsonObject)
+                        ?.get("code") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toIntOrNull()
+                }.getOrNull()
+            }
+        }
+    } catch (_: java.io.IOException) {
+        null
     }
 
     /**

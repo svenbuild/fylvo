@@ -5,6 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.work.WorkManager
+import coil.ImageLoader
+import coil.ImageLoaderFactory
+import okhttp3.OkHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -17,11 +20,12 @@ import io.github.svenbuild.fylvo.android.data.SessionManager
 import io.github.svenbuild.fylvo.android.data.TaskNotifySettings
 import io.github.svenbuild.fylvo.android.data.SyncFolderSettings
 import io.github.svenbuild.fylvo.android.data.ViewSettings
+import io.github.svenbuild.fylvo.android.data.offline.OfflineEdits
 import io.github.svenbuild.fylvo.android.data.offline.OfflineManager
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.localized
 
-class FylvoApp : Application() {
+class FylvoApp : Application(), ImageLoaderFactory {
 
     lateinit var sessionManager: SessionManager
         private set
@@ -41,6 +45,8 @@ class FylvoApp : Application() {
         private set
     lateinit var offlineManager: OfflineManager
         private set
+    lateinit var offlineEdits: OfflineEdits
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -54,9 +60,24 @@ class FylvoApp : Application() {
         viewSettings = ViewSettings(this)
         appUpdater = AppUpdater(this, apiClient)
         offlineManager = OfflineManager(this, sessionManager, favoritesStore)
+        offlineEdits = OfflineEdits(this, offlineManager, fileRepository)
         // Upload lists no job will finish any more; off the main thread.
         Thread { runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cleanUpOldBatches(this) } }.start()
     }
+
+    /** Fylvo: previews and the image viewer name the app to the server like every other request. */
+    override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
+        .okHttpClient { OkHttpClient.Builder().addInterceptor(ApiClient.userAgent).build() }
+        .build()
+
+    /**
+     * Fylvo: sign-out, with [choice] for working copies whose changes are not on the server yet
+     * (see OfflineEdits.signOut). The result says whether it happened or what to ask first.
+     */
+    suspend fun signOut(
+        choice: OfflineEdits.SignOutChoice = OfflineEdits.SignOutChoice.None,
+        shown: Set<String> = emptySet(),
+    ): OfflineEdits.SignOutResult = offlineEdits.signOut(choice, shown) { endSession() }
 
     /**
      * Fylvo: ends the session and removes what the account left on the device: background
@@ -87,11 +108,15 @@ class FylvoApp : Application() {
                 WorkManager.getInstance(this@FylvoApp).pruneWork()
             }
             io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames()
+            fileRepository.forgetThumbs()
             appUpdater.reset()
             favoritesStore.clear()
-            // Offline copies are read-only in this version, nothing on the phone is lost. After an
-            // expired session they stay for the same account (bound to it, see OfflineStore).
+            // Synced copies are read-only, the server has them. After an expired session they stay
+            // for the same account (bound to it, see OfflineStore). Working copies are never deleted
+            // here: a sign-out handles them first (signOut), after an expired session they stay
+            // hidden until the same account signs in again.
             if (expired) offlineManager.forget() else offlineManager.deleteAll()
+            offlineEdits.forget()
             syncFolderSettings.clear()
             taskNotifySettings.clear()
             contentResolver.persistedUriPermissions.forEach {
@@ -104,7 +129,7 @@ class FylvoApp : Application() {
                 Uri.parse("content://$packageName.documents/"),
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
             )
-            // Also the grants to opened files (offline copies stay after an expired session).
+            // Also the grants to opened files, working copies included (they stay after an expired session).
             revokeUriPermission(
                 "content://$packageName.fileprovider/".toUri(),
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,

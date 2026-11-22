@@ -56,7 +56,10 @@ import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EditOff
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.OfflinePin
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -423,7 +426,7 @@ private fun MenuRowLayout(
 }
 
 private val SelectionAction.danger: Boolean
-    get() = this == SelectionAction.DELETE || this == SelectionAction.DELETE_FOREVER
+    get() = this == SelectionAction.DELETE || this == SelectionAction.DELETE_FOREVER || this == SelectionAction.DISCARD_EDIT
 
 private val SelectionAction.icon: ImageVector
     get() = when (this) {
@@ -439,6 +442,9 @@ private val SelectionAction.icon: ImageVector
         SelectionAction.OFFLINE -> Icons.Outlined.OfflinePin
         SelectionAction.RESTORE -> Icons.Default.RestoreFromTrash
         SelectionAction.DELETE_FOREVER -> Icons.Default.DeleteForever
+        SelectionAction.EDIT -> Icons.Outlined.Edit
+        SelectionAction.FINISH_EDIT -> Icons.Outlined.TaskAlt
+        SelectionAction.DISCARD_EDIT -> Icons.Outlined.EditOff
     }
 
 /** [quick]: the short label of a quick button ("Move" instead of "Move to"). */
@@ -457,5 +463,8 @@ private fun SelectionAction.label(quick: Boolean): String = stringResource(
         SelectionAction.OFFLINE -> R.string.available_offline
         SelectionAction.RESTORE -> R.string.restore
         SelectionAction.DELETE_FOREVER -> R.string.delete_forever
+        SelectionAction.EDIT -> R.string.edit
+        SelectionAction.FINISH_EDIT -> R.string.edit_finish
+        SelectionAction.DISCARD_EDIT -> R.string.edit_discard
     },
 )

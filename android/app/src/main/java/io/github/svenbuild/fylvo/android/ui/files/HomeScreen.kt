@@ -109,6 +109,7 @@ fun HomeScreen(
                     selecting = false,
                     selected = false,
                     offline = state.isOffline(file),
+                    edit = state.editOf(file),
                     // Fylvo: no selection here; a long press opens the file's sheet.
                     actions = FileActions(
                         onOpen = { onOpenFile(file) },
