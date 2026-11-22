@@ -6,7 +6,7 @@
 
 use cloudreve_sync::{activity, ConfigManager, DriveManager};
 use fylvo_update::state::{Installing, StartOutcome, State};
-use fylvo_update::{Downloaded, Release, Server, Version};
+use fylvo_update::{Downloaded, Platform, Release, Server, Version};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -101,8 +101,9 @@ pub fn start(app: AppHandle, drives: Arc<DriveManager>) {
 
     report_last_update(&updater.dir, running);
     fylvo_update::clean_downloads(&updater.dir);
+    tracing::info!(target: "updater", %running, "Updater started");
 
-    tauri::async_runtime::spawn(async move {
+    let task = tauri::async_runtime::spawn(async move {
         let mut wait = FIRST_CHECK_AFTER;
         loop {
             let manual = tokio::select! {
@@ -114,6 +115,7 @@ pub fn start(app: AppHandle, drives: Arc<DriveManager>) {
             if !manual && !auto {
                 continue;
             }
+            tracing::info!(target: "updater", manual, "Checking for updates");
             if let Err(e) = run(&app, &updater, &drives, running, manual).await {
                 tracing::warn!(target: "updater", error = %e, "Update failed");
                 set_status(|s| {
@@ -124,6 +126,12 @@ pub fn start(app: AppHandle, drives: Arc<DriveManager>) {
             set_status(|s| s.last_check = Some(now()));
             fylvo_update::clean_downloads(&updater.dir);
         }
+    });
+    // A panic in the loop would otherwise end it without a trace.
+    tauri::async_runtime::spawn(async move {
+        // The loop never ends, so only a panic gets here.
+        let Err(e) = task.await;
+        tracing::error!(target: "updater", error = %e, "The updater stopped");
     });
 }
 
@@ -179,16 +187,19 @@ async fn run(
         s.phase = "checking";
         s.error = None;
     });
-    if drives.list_drives().await.is_empty() {
+    if drives.mounts().await.is_empty() {
         set_status(|s| s.phase = "no_drive");
         return Ok(());
     }
+    let platform = current_platform().ok_or_else(|| anyhow::anyhow!("no updates for this platform"))?;
     let http = fylvo_update::http_client(cloudreve_sync::USER_AGENT)?;
-    let Some((server, release)) = find_release(&http, drives).await? else {
+    let Some((server, release)) = find_release(&http, drives, &platform).await? else {
+        tracing::info!(target: "updater", "No release published");
         set_status(|s| s.phase = "up_to_date");
         return Ok(());
     };
     if !fylvo_update::is_newer(release.version, running) {
+        tracing::info!(target: "updater", published = %release.version, "Up to date");
         set_status(|s| s.phase = "up_to_date");
         return Ok(());
     }
@@ -211,12 +222,12 @@ async fn run(
     let mut path = None;
     // A release replaced between the check and the download: ask once more.
     for _ in 0..2 {
-        match fylvo_update::download(&http, &server, &release, &updater.dir).await? {
+        match fylvo_update::download(&http, &server, &platform, &release, &updater.dir).await? {
             Downloaded::File(p) => {
                 path = Some(p);
                 break;
             }
-            Downloaded::Gone => match fylvo_update::latest(&http, &server).await? {
+            Downloaded::Gone => match fylvo_update::latest(&http, &server, &platform).await? {
                 Some(r) if fylvo_update::is_newer(r.version, running) => release = r,
                 _ => {
                     set_status(|s| s.phase = "up_to_date");
@@ -245,10 +256,10 @@ async fn run(
 async fn find_release(
     http: &reqwest::Client,
     drives: &Arc<DriveManager>,
+    platform: &Platform,
 ) -> anyhow::Result<Option<(Server, Release)>> {
     let mut last_error = None;
-    for config in drives.list_drives().await {
-        let Some(mount) = drives.get_drive(&config.id).await else { continue };
+    for mount in drives.mounts().await {
         let token = match mount.cr_client.fresh_access_token().await {
             Ok(t) => t,
             Err(e) => {
@@ -257,16 +268,24 @@ async fn find_release(
             }
         };
         let server = Server { base_url: mount.cr_client.base_url().to_string(), access_token: token };
-        match fylvo_update::latest(http, &server).await {
+        match fylvo_update::latest(http, &server, &platform).await {
             Ok(Some(release)) => return Ok(Some((server, release))),
             Ok(None) => {}
-            Err(e) => last_error = Some(e),
+            Err(e) => {
+                tracing::info!(target: "updater", server = %server.base_url, error = %e, "No answer about updates");
+                last_error = Some(e);
+            }
         }
     }
     match last_error {
         Some(e) => Err(e),
         None => Ok(None),
     }
+}
+
+/// The package format this app was installed as (Linux adds its own).
+fn current_platform() -> Option<Platform> {
+    fylvo_update::windows_platform()
 }
 
 #[cfg(windows)]

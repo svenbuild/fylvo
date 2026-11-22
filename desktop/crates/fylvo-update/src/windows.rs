@@ -14,7 +14,7 @@ use windows::core::{HSTRING, PCWSTR};
 use windows::ApplicationModel::Package;
 use windows::Foundation::Uri;
 use windows::Management::Deployment::{DeploymentOptions, PackageManager};
-use windows::Win32::Storage::Packaging::Appx::{AppxFactory, IAppxFactory};
+use windows::Win32::Storage::Packaging::Appx::{AppxFactory, IAppxFactory, APPX_FOOTPRINT_FILE_TYPE_SIGNATURE};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
     STGM_READ, STGM_SHARE_DENY_WRITE,
@@ -44,7 +44,7 @@ pub fn current() -> Option<Identity> {
     })
 }
 
-/// Reads the identity of a package file without installing anything.
+/// Reads the identity of a signed package file without installing anything.
 pub fn read_identity(path: &Path) -> Result<Identity> {
     unsafe {
         // The packaging API is COM; this runs on its own blocking thread.
@@ -69,6 +69,11 @@ unsafe fn read_identity_com(path: &Path) -> Result<Identity> {
     let factory: IAppxFactory = CoCreateInstance(&AppxFactory, None, CLSCTX_INPROC_SERVER)
         .context("the Windows packaging API is not available")?;
     let reader = factory.CreatePackageReader(&stream).context("the file is not a valid package")?;
+    // With Developer Mode on, Windows also stages unsigned packages (and then does not register
+    // them), so an unsigned package is refused here, before sync is touched.
+    if reader.GetFootprintFile(APPX_FOOTPRINT_FILE_TYPE_SIGNATURE).is_err() {
+        bail!("the package is not signed");
+    }
     let id = reader
         .GetManifest()
         .and_then(|m| m.GetPackageId())
@@ -190,5 +195,9 @@ mod tests {
         assert!(identity.family_name.starts_with("Fylvo.Desktop_"), "{identity:?}");
         assert_eq!(identity.architecture, 9);
         assert!(read_identity(Path::new("Cargo.toml")).is_err());
+        if let Ok(unsigned) = std::env::var("FYLVO_TEST_UNSIGNED_MSIX") {
+            let err = read_identity(Path::new(&unsigned)).unwrap_err().to_string();
+            assert!(err.contains("not signed"), "{err}");
+        }
     }
 }

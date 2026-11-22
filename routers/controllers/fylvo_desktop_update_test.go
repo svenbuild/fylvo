@@ -63,8 +63,8 @@ func TestFylvoDesktopEndpoints(t *testing.T) {
 	assert.Equal(t, pkg, rec.Body.Bytes())
 
 	// Another platform has nothing published, an unknown one is the same "not found".
-	for _, path := range []string{"/desktop/linux-x64/latest", "/desktop/mac-x64/latest",
-		"/desktop/linux-x64/package/" + hash, "/desktop/windows-x64/package/" + strings.Repeat("0", 64)} {
+	for _, path := range []string{"/desktop/linux-x64-rpm/latest", "/desktop/mac-x64/latest",
+		"/desktop/linux-x64-rpm/package/" + hash, "/desktop/windows-x64/package/" + strings.Repeat("0", 64)} {
 		rec = httptest.NewRecorder()
 		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		assert.Contains(t, rec.Header().Get("Content-Type"), "application/json", path)

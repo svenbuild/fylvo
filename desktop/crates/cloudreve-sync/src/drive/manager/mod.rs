@@ -274,6 +274,11 @@ impl DriveManager {
         read_guard.get(id).cloned()
     }
 
+    /// Fylvo: all mounted drives (`list_drives` below is an empty stub of the original).
+    pub async fn mounts(&self) -> Vec<Arc<Mount>> {
+        self.drives.read().await.values().cloned().collect()
+    }
+
     /// List all drives
     pub async fn list_drives(&self) -> Vec<DriveConfig> {
         // let read_guard = self.drives.read().await;

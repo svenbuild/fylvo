@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -33,28 +34,28 @@ func writeDesktopJSON(t *testing.T, dir, platform, text string) {
 func TestDesktopReleasesArePerPlatform(t *testing.T) {
 	dir := t.TempDir()
 	win := publishDesktop(t, dir, "windows-x64", "0.3.0.0", []byte("msix"))
-	lin := publishDesktop(t, dir, "linux-x64", "0.3.1", []byte("linux package"))
+	lin := publishDesktop(t, dir, "linux-x64-rpm", "0.3.1", []byte("linux package"))
 	d := NewDesktopReleases(dir)
 
 	r, err := d.Latest("windows-x64")
 	if err != nil || r.Version != "0.3.0.0" || r.SHA256 != win || r.Size != 4 || r.FileName != "Fylvo.msix" {
 		t.Fatalf("windows: %+v %v", r, err)
 	}
-	r, err = d.Latest("linux-x64")
+	r, err = d.Latest("linux-x64-rpm")
 	if err != nil || r.Version != "0.3.1" || r.SHA256 != lin {
 		t.Fatalf("linux: %+v %v", r, err)
 	}
 	if _, err := d.Latest("windows-arm64"); err != ErrNoDesktopRelease {
 		t.Fatalf("nothing published must be not found, got %v", err)
 	}
-	for _, p := range []string{"", "..", "../windows-x64", "windows-x64/", "WINDOWS-X64", "mac-x64"} {
+	for _, p := range []string{"", "..", "../windows-x64", "windows-x64/", "WINDOWS-X64", "mac-x64", "linux-x64"} {
 		if _, err := d.Latest(p); err != ErrNoDesktopRelease {
 			t.Fatalf("platform %q must be not found, got %v", p, err)
 		}
 	}
 
 	// The package of one platform is not served under another one.
-	if _, _, err := d.OpenPackage("linux-x64", win); err != ErrNoDesktopRelease {
+	if _, _, err := d.OpenPackage("linux-x64-rpm", win); err != ErrNoDesktopRelease {
 		t.Fatalf("wrong platform must be not found, got %v", err)
 	}
 	_, f, err := d.OpenPackage("windows-x64", win)
@@ -79,6 +80,8 @@ func TestDesktopReleaseRejectsBadFields(t *testing.T) {
 		fmt.Sprintf(`{"version":"0.3.0","sha256":"%s","size":4,"file_name":"../a.msix"}`, hash),
 		fmt.Sprintf(`{"version":"0.3.0","sha256":"%s","size":5,"file_name":"a.msix"}`, hash),
 		`{"version":"0.3.0","sha256":"../../etc/passwd","size":4,"file_name":"a.msix"}`,
+		fmt.Sprintf(`{"version":"0.3.0","sha256":"%s","size":4,"file_name":"a.msix","signature":"bm90IDY0IGJ5dGVz"}`, hash),
+		fmt.Sprintf(`{"version":"0.3.0","sha256":"%s","size":4,"file_name":"a.msix","signature":"not base64!"}`, hash),
 		`not json`,
 	} {
 		writeDesktopJSON(t, dir, "windows-x64", text)
@@ -97,5 +100,17 @@ func TestValidDesktopVersion(t *testing.T) {
 		if got := ValidDesktopVersion(v); got != want {
 			t.Errorf("ValidDesktopVersion(%q) = %v, want %v", v, got, want)
 		}
+	}
+}
+
+func TestDesktopReleaseCarriesItsSignature(t *testing.T) {
+	dir := t.TempDir()
+	pkg := []byte("rpm")
+	hash := publishDesktop(t, dir, "linux-x64-rpm", "0.3.0", pkg)
+	sig := strings.Repeat("A", 86) + "=="
+	writeDesktopJSON(t, dir, "linux-x64-rpm", fmt.Sprintf(`{"version":"0.3.0","sha256":"%s","size":3,"file_name":"f.rpm","signature":"%s"}`, hash, sig))
+	r, err := NewDesktopReleases(dir).Latest("linux-x64-rpm")
+	if err != nil || r.Signature != sig {
+		t.Fatalf("%+v %v", r, err)
 	}
 }

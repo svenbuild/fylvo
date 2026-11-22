@@ -23,21 +23,43 @@ pub mod windows;
 /// The largest package the app accepts, whatever the server says (the app is about 12 MB).
 pub const MAX_PACKAGE_SIZE: u64 = 500 << 20;
 
-/// The platform key of this build, as the server knows it. `None`: no updates on this platform.
-pub const PLATFORM: Option<&str> = if cfg!(all(windows, target_arch = "x86_64")) {
-    Some("windows-x64")
-} else if cfg!(all(windows, target_arch = "aarch64")) {
-    Some("windows-arm64")
-} else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-    Some("linux-x64")
-} else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
-    Some("linux-arm64")
-} else {
-    None
-};
+/// What the app asks the server for: one package format of one operating system and processor.
+/// The server knows these keys: windows-x64, windows-arm64, linux-x64-appimage, linux-x64-rpm,
+/// linux-x64-deb, linux-arm64-appimage, linux-arm64-rpm, linux-arm64-deb. An app asks only for
+/// the format it was installed as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Platform {
+    /// The key in the server's routes.
+    pub key: &'static str,
+    /// File extension of the downloaded package.
+    pub ext: &'static str,
+    /// Public ed25519 key the release must be signed with (see `release_message`). `None`: the
+    /// operating system checks the package itself (Windows: the signed MSIX).
+    pub release_key: Option<&'static [u8; 32]>,
+}
 
-/// File extension of a downloaded package on this platform.
-pub const PACKAGE_EXT: &str = if cfg!(windows) { "msix" } else { "pkg" };
+pub const WINDOWS_X64: Platform = Platform { key: "windows-x64", ext: "msix", release_key: None };
+pub const WINDOWS_ARM64: Platform = Platform { key: "windows-arm64", ext: "msix", release_key: None };
+
+/// The platform of this Windows build; `None` elsewhere (Linux picks its format at run time).
+pub fn windows_platform() -> Option<Platform> {
+    if cfg!(all(windows, target_arch = "x86_64")) {
+        Some(WINDOWS_X64)
+    } else if cfg!(all(windows, target_arch = "aarch64")) {
+        Some(WINDOWS_ARM64)
+    } else {
+        None
+    }
+}
+
+/// Extensions of downloaded packages, for cleaning up.
+const PACKAGE_EXTS: [&str; 4] = ["msix", "AppImage", "rpm", "deb"];
+
+/// The text a release signature covers (ed25519, by the publish script), lines ending in LF:
+/// "fylvo-desktop-release", the platform key, the version as a.b.c.d, the sha256, the size.
+pub fn release_message(platform: &Platform, version: Version, sha256: &str, size: u64) -> String {
+    format!("fylvo-desktop-release\n{}\n{version}\n{sha256}\n{size}\n", platform.key)
+}
 
 /// A version with up to four parts of 0 to 65535 (like a Windows package version). Missing
 /// parts count as 0, so "0.2.2" equals "0.2.2.0".
@@ -81,10 +103,13 @@ struct RawRelease {
     version: String,
     sha256: String,
     size: u64,
+    /// Base64 ed25519 signature over `release_message`; required when the platform has a key.
+    #[serde(default)]
+    signature: Option<String>,
 }
 
 impl RawRelease {
-    fn check(self) -> Result<Release> {
+    fn check(self, platform: &Platform) -> Result<Release> {
         let version = Version::parse(&self.version)
             .ok_or_else(|| anyhow!("the server names an invalid version"))?;
         if self.sha256.len() != 64 || !self.sha256.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
@@ -93,8 +118,25 @@ impl RawRelease {
         if self.size == 0 || self.size > MAX_PACKAGE_SIZE {
             bail!("the server names an invalid size ({} bytes)", self.size);
         }
+        if let Some(key) = platform.release_key {
+            verify_signature(key, &release_message(platform, version, &self.sha256, self.size), self.signature.as_deref())?;
+        }
         Ok(Release { version, sha256: self.sha256, size: self.size })
     }
+}
+
+/// Checks the release signature against the key built into the app.
+fn verify_signature(key: &[u8; 32], message: &str, signature: Option<&str>) -> Result<()> {
+    use base64::Engine;
+    use ed25519_dalek::{Signature, VerifyingKey};
+    let signature = signature.ok_or_else(|| anyhow!("the release is not signed"))?;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(signature)
+        .map_err(|_| anyhow!("the release signature is not valid"))?;
+    let signature = Signature::from_slice(&raw).map_err(|_| anyhow!("the release signature is not valid"))?;
+    let key = VerifyingKey::from_bytes(key).map_err(|_| anyhow!("the built-in release key is not valid"))?;
+    key.verify_strict(message.as_bytes(), &signature)
+        .map_err(|_| anyhow!("the release signature does not match"))
 }
 
 #[derive(Deserialize)]
@@ -153,9 +195,8 @@ pub fn http_client(user_agent: &str) -> Result<reqwest::Client> {
 }
 
 /// Asks the server for the published release of this platform. `None`: nothing published.
-pub async fn latest(http: &reqwest::Client, server: &Server) -> Result<Option<Release>> {
-    let platform = PLATFORM.ok_or_else(|| anyhow!("no updates for this platform"))?;
-    let url = server.api_url(&format!("{platform}/latest"))?;
+pub async fn latest(http: &reqwest::Client, server: &Server, platform: &Platform) -> Result<Option<Release>> {
+    let url = server.api_url(&format!("{}/latest", platform.key))?;
     let answer = http
         .get(url)
         .bearer_auth(&server.access_token)
@@ -170,7 +211,7 @@ pub async fn latest(http: &reqwest::Client, server: &Server) -> Result<Option<Re
         0 => answer
             .data
             .ok_or_else(|| anyhow!("the server sent no release"))?
-            .check()
+            .check(platform)
             .map(Some),
         CODE_NOT_FOUND => Ok(None),
         code => bail!("the server answered with code {code}: {}", answer.msg),
@@ -188,13 +229,18 @@ pub enum Downloaded {
 
 /// Downloads the package of `release` into `dir`. The file only gets its final name when size
 /// and checksum match; otherwise nothing is left behind.
-pub async fn download(http: &reqwest::Client, server: &Server, release: &Release, dir: &Path) -> Result<Downloaded> {
-    let platform = PLATFORM.ok_or_else(|| anyhow!("no updates for this platform"))?;
-    let url = server.api_url(&format!("{platform}/package/{}", release.sha256))?;
+pub async fn download(
+    http: &reqwest::Client,
+    server: &Server,
+    platform: &Platform,
+    release: &Release,
+    dir: &Path,
+) -> Result<Downloaded> {
+    let url = server.api_url(&format!("{}/package/{}", platform.key, release.sha256))?;
     tokio::fs::create_dir_all(dir).await.context("failed to create the update folder")?;
     // The checksum was checked to be 64 hex characters, so the names stay inside dir.
     let part = dir.join(format!("{}.part", release.sha256));
-    let target = dir.join(format!("{}.{PACKAGE_EXT}", release.sha256));
+    let target = dir.join(format!("{}.{}", release.sha256, platform.ext));
 
     let answer = http
         .get(url)
@@ -262,7 +308,7 @@ pub fn clean_downloads(dir: &Path) {
     for entry in entries.flatten() {
         let path = entry.path();
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if (ext == "part" || ext == PACKAGE_EXT) && path.is_file() {
+        if (ext == "part" || PACKAGE_EXTS.contains(&ext)) && path.is_file() {
             let _ = std::fs::remove_file(&path);
         }
     }

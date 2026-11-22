@@ -1,6 +1,7 @@
 package fylvo
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,10 +16,13 @@ import (
 // In-app updates of Fylvo Desktop. scripts/publish-desktop.sh writes into
 // <data>/desktop/<platform>/:
 //   - the package, named after its SHA-256: <sha256>.pkg
-//   - release.json: {"version":"0.3.0","sha256":"<64 hex>","size":123,"file_name":"Fylvo-Desktop-0.3.0-x64.msix"}
+//   - release.json: {"version":"0.3.0","sha256":"<64 hex>","size":123,"file_name":"Fylvo-Desktop-0.3.0-x64.msix",
+//     "signature":"<base64>"}
 //
-// The format of the package depends on the platform (Windows: a signed MSIX). The app checks
-// size and checksum after the download; Windows checks the signature before it installs.
+// A platform is one package format of one system and processor (Windows: a signed MSIX, which
+// Windows checks itself; Linux: AppImage, rpm or deb). "signature" is optional here: an ed25519
+// signature by the publish script, which the app requires where it has a key for the platform
+// (desktop/crates/fylvo-update, release_message). The app checks size and checksum too.
 const (
 	desktopPackageExt = ".pkg"
 	// maxDesktopPackageSize guards against a wrong file in the folder; the app is about 12 MB.
@@ -27,7 +31,11 @@ const (
 
 // DesktopPlatforms are the platforms that can have a release. Anything else is never used in
 // a path.
-var DesktopPlatforms = []string{"windows-x64", "windows-arm64", "linux-x64", "linux-arm64"}
+var DesktopPlatforms = []string{
+	"windows-x64", "windows-arm64",
+	"linux-x64-appimage", "linux-x64-rpm", "linux-x64-deb",
+	"linux-arm64-appimage", "linux-arm64-rpm", "linux-arm64-deb",
+}
 
 // ErrNoDesktopRelease means nothing (valid) is published; the app treats it as "no update".
 var ErrNoDesktopRelease = serializer.NewError(serializer.CodeNotFound, "No desktop release is published", nil)
@@ -40,13 +48,24 @@ type DesktopRelease struct {
 	SHA256   string `json:"sha256"`
 	Size     int64  `json:"size"`
 	FileName string `json:"file_name"`
+	// Signature is the base64 ed25519 signature of the release, or empty.
+	Signature string `json:"signature,omitempty"`
 }
 
 func (r DesktopRelease) checksum() string { return r.SHA256 }
 func (r DesktopRelease) fileSize() int64  { return r.Size }
 func (r DesktopRelease) valid() bool {
 	return ValidDesktopVersion(r.Version) && desktopFileName.MatchString(r.FileName) &&
-		r.FileName != "." && r.FileName != ".."
+		r.FileName != "." && r.FileName != ".." && validSignature(r.Signature)
+}
+
+// validSignature accepts no signature or a standard base64 ed25519 signature (64 bytes).
+func validSignature(s string) bool {
+	if s == "" {
+		return true
+	}
+	raw, err := base64.StdEncoding.DecodeString(s)
+	return err == nil && len(raw) == 64
 }
 
 // ValidDesktopVersion accepts 1 to 4 numbers separated by dots, each 0 to 65535 (the parts of a

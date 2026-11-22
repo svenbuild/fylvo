@@ -34,7 +34,11 @@ fail() { echo "publish-desktop: $*" >&2; exit 1; }
 FILE="${1:?usage: publish-desktop.sh path/to/package platform}"
 PLATFORM="${2:?usage: publish-desktop.sh path/to/package platform}"
 [ -f "$FILE" ] || fail "no file $FILE"
-case "$PLATFORM" in windows-x64|windows-arm64|linux-x64|linux-arm64) ;; *) fail "unknown platform $PLATFORM" ;; esac
+case "$PLATFORM" in
+  windows-x64|windows-arm64) ;;
+  linux-x64-appimage|linux-x64-rpm|linux-x64-deb|linux-arm64-appimage|linux-arm64-rpm|linux-arm64-deb) ;;
+  *) fail "unknown platform $PLATFORM" ;;
+esac
 case "$BASE" in /*) ;; *) fail "FYLVO_DESKTOP_DIR must be an absolute path" ;; esac
 case "$BASE" in *[!A-Za-z0-9/._-]*) fail "FYLVO_DESKTOP_DIR has unexpected characters" ;; esac
 DIR="$BASE/$PLATFORM"
@@ -70,6 +74,10 @@ check_windows() {
   EXT="msix"
 }
 
+# Linux: the Linux app adds its package check here, and an ed25519 signature (base64) written
+# as "signature" into release.json. It covers the lines "fylvo-desktop-release", the platform,
+# the version as a.b.c.d, the sha256 and the size, each ending in LF (release_message in
+# desktop/crates/fylvo-update).
 check_linux() {
   fail "Linux packages are not supported yet (the Linux app adds its check here)"
 }
@@ -91,7 +99,8 @@ valid_version "$VERSION" || fail "unexpected version '$VERSION'"
 
 SHA="$(sha256sum "$FILE" | cut -c1-64)"
 SIZE="$(wc -c < "$FILE" | tr -d ' ')"
-NAME_OUT="Fylvo-Desktop-$VERSION-${PLATFORM#*-}.$EXT"
+ARCH_OUT="${PLATFORM#*-}"
+NAME_OUT="Fylvo-Desktop-$VERSION-${ARCH_OUT%%-*}.$EXT"
 echo "Package: Fylvo Desktop $VERSION for $PLATFORM, $SIZE bytes, sha256 $SHA"
 
 # Run a command on the NAS, or locally for tests.

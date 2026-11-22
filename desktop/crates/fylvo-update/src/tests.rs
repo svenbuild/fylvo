@@ -32,19 +32,19 @@ fn only_https_or_loopback_http() {
 }
 
 fn raw(version: &str, sha256: &str, size: u64) -> RawRelease {
-    RawRelease { version: version.into(), sha256: sha256.into(), size }
+    RawRelease { version: version.into(), sha256: sha256.into(), size, signature: None }
 }
 
 #[test]
 fn release_fields_are_checked_before_use() {
     let hash = "a".repeat(64);
-    assert!(raw("0.3.0", &hash, 10).check().is_ok());
-    assert!(raw("0.3.0", &"A".repeat(64), 10).check().is_err(), "upper case hex");
-    assert!(raw("0.3.0", &"a".repeat(63), 10).check().is_err());
-    assert!(raw("0.3.0", "../../../../etc/passwd", 10).check().is_err());
-    assert!(raw("0.3.0", &hash, 0).check().is_err());
-    assert!(raw("0.3.0", &hash, MAX_PACKAGE_SIZE + 1).check().is_err());
-    assert!(raw("0.3-beta", &hash, 10).check().is_err());
+    assert!(raw("0.3.0", &hash, 10).check(&WINDOWS_X64).is_ok());
+    assert!(raw("0.3.0", &"A".repeat(64), 10).check(&WINDOWS_X64).is_err(), "upper case hex");
+    assert!(raw("0.3.0", &"a".repeat(63), 10).check(&WINDOWS_X64).is_err());
+    assert!(raw("0.3.0", "../../../../etc/passwd", 10).check(&WINDOWS_X64).is_err());
+    assert!(raw("0.3.0", &hash, 0).check(&WINDOWS_X64).is_err());
+    assert!(raw("0.3.0", &hash, MAX_PACKAGE_SIZE + 1).check(&WINDOWS_X64).is_err());
+    assert!(raw("0.3-beta", &hash, 10).check(&WINDOWS_X64).is_err());
 }
 
 /// A tiny HTTP server that answers every request with `answer` and returns its address.
@@ -83,7 +83,7 @@ async fn try_download(answer: Vec<u8>, release: &Release) -> (Result<Downloaded>
     let dir = tempfile::tempdir().unwrap();
     let server = Server { base_url, access_token: "token".into() };
     let http = http_client("test").unwrap();
-    (download(&http, &server, release, dir.path()).await, dir)
+    (download(&http, &server, &WINDOWS_X64, release, dir.path()).await, dir)
 }
 
 fn files_in(dir: &Path) -> Vec<String> {
@@ -98,7 +98,7 @@ async fn download_keeps_only_a_checked_file() {
     match result.unwrap() {
         Downloaded::File(path) => {
             assert_eq!(std::fs::read(&path).unwrap(), body);
-            assert_eq!(path.file_name().unwrap().to_string_lossy(), format!("{}.{PACKAGE_EXT}", release.sha256));
+            assert_eq!(path.file_name().unwrap().to_string_lossy(), format!("{}.msix", release.sha256));
         }
         other => panic!("unexpected {other:?}"),
     }
@@ -143,17 +143,17 @@ async fn latest_reads_release_nothing_and_errors() {
     let ok = format!(r#"{{"code":0,"data":{{"version":"0.3.0.0","sha256":"{hash}","size":12,"file_name":"F.msix"}}}}"#);
     let server = Server { base_url: serve(http_answer("application/json", ok.as_bytes(), ok.len())).await, access_token: "t".into() };
     assert_eq!(
-        latest(&http, &server).await.unwrap(),
+        latest(&http, &server, &WINDOWS_X64).await.unwrap(),
         Some(Release { version: v("0.3.0"), sha256: hash, size: 12 })
     );
 
     let none = br#"{"code":404,"msg":"none","data":null}"#;
     let server = Server { base_url: serve(http_answer("application/json", none, none.len())).await, access_token: "t".into() };
-    assert_eq!(latest(&http, &server).await.unwrap(), None);
+    assert_eq!(latest(&http, &server, &WINDOWS_X64).await.unwrap(), None);
 
     let denied = br#"{"code":401,"msg":"Login required","data":null}"#;
     let server = Server { base_url: serve(http_answer("application/json", denied, denied.len())).await, access_token: "t".into() };
-    assert!(latest(&http, &server).await.is_err());
+    assert!(latest(&http, &server, &WINDOWS_X64).await.is_err());
 }
 
 #[test]
@@ -163,7 +163,7 @@ fn redirects_are_not_followed() {
     rt.block_on(async {
         let answer = b"HTTP/1.1 302 Found\r\nLocation: http://example.net/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec();
         let server = Server { base_url: serve(answer).await, access_token: "t".into() };
-        let err = latest(&http_client("test").unwrap(), &server).await.unwrap_err();
+        let err = latest(&http_client("test").unwrap(), &server, &WINDOWS_X64).await.unwrap_err();
         assert!(err.to_string().contains("302"), "{err}");
     });
 }
@@ -171,7 +171,7 @@ fn redirects_are_not_followed() {
 #[test]
 fn clean_downloads_keeps_the_state_file() {
     let dir = tempfile::tempdir().unwrap();
-    for name in ["a.part", &format!("b.{PACKAGE_EXT}"), "state.json", "notes.txt"] {
+    for name in ["a.part", "b.msix", "c.AppImage", "d.rpm", "e.deb", "state.json", "notes.txt"] {
         std::fs::write(dir.path().join(name), b"x").unwrap();
     }
     clean_downloads(dir.path());
@@ -206,4 +206,34 @@ fn start_tells_success_from_failure_and_blocks_a_failed_version() {
     // A broken file is an empty state.
     std::fs::write(dir.path().join("state.json"), b"{broken").unwrap();
     assert_eq!(State::load(dir.path()), State::default());
+}
+
+#[test]
+fn a_platform_with_a_key_needs_a_matching_signature() {
+    use base64::Engine;
+    use ed25519_dalek::{Signer, SigningKey};
+    let signing = SigningKey::from_bytes(&[7u8; 32]);
+    static KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
+    let key = KEY.get_or_init(|| signing.verifying_key().to_bytes());
+    let platform = Platform { key: "linux-x64-rpm", ext: "rpm", release_key: Some(key) };
+    let hash = "c".repeat(64);
+    let sign = |p: &Platform, version: &str, size: u64| {
+        let msg = release_message(p, v(version), &hash, size);
+        base64::engine::general_purpose::STANDARD.encode(signing.sign(msg.as_bytes()).to_bytes())
+    };
+    let signed = |signature: Option<String>| RawRelease { version: "0.3.0".into(), sha256: hash.clone(), size: 10, signature };
+
+    assert!(signed(Some(sign(&platform, "0.3.0", 10))).check(&platform).is_ok());
+    assert!(signed(None).check(&platform).is_err(), "unsigned");
+    assert!(signed(Some(sign(&platform, "0.3.1", 10))).check(&platform).is_err(), "other version");
+    assert!(signed(Some(sign(&platform, "0.3.0", 11))).check(&platform).is_err(), "other size");
+    let deb = Platform { key: "linux-x64-deb", ..platform };
+    assert!(signed(Some(sign(&deb, "0.3.0", 10))).check(&platform).is_err(), "signed for another format");
+    assert!(signed(Some("not base64!".into())).check(&platform).is_err());
+    // Windows has no key: the operating system checks the signed MSIX.
+    assert!(signed(None).check(&WINDOWS_X64).is_ok());
+    assert_eq!(
+        release_message(&platform, v("0.3.0"), &hash, 10),
+        format!("fylvo-desktop-release\nlinux-x64-rpm\n0.3.0.0\n{hash}\n10\n")
+    );
 }
