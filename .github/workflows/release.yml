@@ -1,0 +1,137 @@
+name: Release
+
+# A version tag (v1.2.3, or v1.2.3-rc.1 for a pre-release) builds and tests the server, pushes the
+# Docker image for amd64 and arm64 to ghcr.io as :1.2.3 only and creates a DRAFT release with the
+# server binaries. The signed app files are added by hand before publishing (docs/releasing.md).
+# The tags people pull (:1.2, :1, :latest) move only when the release is published (promote.yml).
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write   # the draft release
+      packages: write   # the image on ghcr.io
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Version from the tag
+        id: version
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "Tag $GITHUB_REF_NAME is not vX.Y.Z or vX.Y.Z-suffix" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT"; else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Build
+        env:
+          FYLVO_VERSION: ${{ steps.version.outputs.version }}
+          FYLVO_ARCH: amd64 arm64
+        run: scripts/build.sh
+
+      - name: Go tests
+        run: scripts/test.sh
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ steps.version.outputs.image }}
+          tags: |
+            type=semver,pattern={{version}}
+          labels: |
+            org.opencontainers.image.title=Fylvo
+            org.opencontainers.image.description=Your files. Your cloud. A lean, private cloud for your own server.
+            org.opencontainers.image.licenses=GPL-3.0-only
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Server archives and checksums
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            stage="$(mktemp -d)"
+            cp "release/fylvo-linux-$arch" "$stage/fylvo"
+            cp LICENSE NOTICE "$stage/"
+            tar -C "$stage" -czf "dist/fylvo-$VERSION-linux-$arch.tar.gz" fylvo LICENSE NOTICE
+          done
+          (cd dist && sha256sum * > SHA256SUMS)
+
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+          IMAGE: ${{ steps.version.outputs.image }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<EOF
+          ## Install or update
+
+          \`\`\`bash
+          docker compose pull && docker compose up -d
+          \`\`\`
+
+          Image: \`$IMAGE:$VERSION\`. New here? See the [quick start](https://github.com/$GH_REPO#quick-start). Make a backup before updating ([guide](https://github.com/$GH_REPO/blob/main/docs/self-hosting.md#3-backup-and-restore)).
+
+          ## Changes
+
+          - (filled in before publishing)
+
+          ## Apps
+
+          | App | Version | File |
+          | --- | --- | --- |
+          | Android | | \`Fylvo-Android-<version>.apk\` |
+          | Windows | | \`Fylvo-Desktop-<version>-windows-x64.zip\` |
+          | Linux (preview) | | AppImage, \`.deb\`, \`.rpm\` |
+
+          \`fylvo-app-updates-$VERSION.tar.gz\` lets your server offer these versions to the apps ([how](https://github.com/$GH_REPO/blob/main/docs/self-hosting.md#5-connect-the-apps)).
+          EOF
+          flags=(--draft --title "Fylvo $VERSION" --notes-file notes.md --verify-tag)
+          [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" "${flags[@]}" dist/*

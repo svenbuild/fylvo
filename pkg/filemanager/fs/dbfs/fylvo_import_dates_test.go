@@ -136,7 +136,7 @@ func TestNewContentOfImportedFileGetsTodaysDate(t *testing.T) {
 // A file on disk that an imported file uses stays known after a rename, in the trash and while it
 // waits to be recycled after a delete for good, so that a second import does not register it again
 // (two files on one file on disk: deleting one for good would delete the content of the other).
-// The skip itself was checked with a real second import (deploy/UMZUG.md, "Probe").
+// The skip itself was checked with a real second import.
 func TestImportedSourceStaysKnown(t *testing.T) {
 	e := newSharedFolderEnv(t)
 	require.NoError(t, e.importFile(e.as(e.owner), "cloudreve://my/Import/a.txt", 10, diskDate))

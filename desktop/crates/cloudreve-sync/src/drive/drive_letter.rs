@@ -701,7 +701,7 @@ mod tests {
         let ours = vec![r"\??\C:\Users\Alex\Fylvo".to_string()];
         assert_eq!(classify(&ours, &folder), LetterOwner::Ours);
         // Case and a trailing backslash do not matter on Windows.
-        let ours2 = vec![r"\??\c:\users\Alex\fylvo\".to_string()];
+        let ours2 = vec![r"\??\c:\users\alex\fylvo\".to_string()];
         assert_eq!(classify(&ours2, &folder), LetterOwner::Ours);
         // A USB stick, or another folder (also one inside ours).
         let usb = vec![r"\Device\HarddiskVolume7".to_string()];

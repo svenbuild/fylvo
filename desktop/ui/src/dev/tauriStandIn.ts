@@ -23,9 +23,9 @@ const drives = [
   },
   {
     id: "drive-2",
-    name: "Fotos",
+    name: "Photos",
     instance_url: "https://cloud.example.net",
-    sync_path: "C:\\Users\\Alex\\Fotos",
+    sync_path: "C:\\Users\\Alex\\Photos",
     enabled: true,
     user_id: "u1",
     remote_path: "cloudreve://shared/fotos",
@@ -55,11 +55,11 @@ const summary = {
   drives: drives.map(({ id, name, instance_url, sync_path }) => ({ id, name, instance_url, sync_path })),
   active_tasks: [
     {
-      ...task("u1", "C:\\Users\\Alex\\Fylvo\\Projekte\\Offerte Küche.pdf", "Running", 0.42, 18_400_000, 5),
+      ...task("u1", "C:\\Users\\Alex\\Fylvo\\Projects\\Quote Kitchen.pdf", "Running", 0.42, 18_400_000, 5),
       live_progress: {
         task_id: "u1",
         kind: "Upload",
-        local_path: "C:\\Users\\Alex\\Fylvo\\Projekte\\Offerte Küche.pdf",
+        local_path: "C:\\Users\\Alex\\Fylvo\\Projects\\Quote Kitchen.pdf",
         progress: 0.42,
         processed_bytes: 7_728_000,
         total_bytes: 18_400_000,
@@ -67,12 +67,12 @@ const summary = {
         eta_seconds: 5,
       },
     },
-    task("d1", "C:\\Users\\Alex\\Fylvo\\Ferien\\IMG_2041.jpg", "Pending", 0, 4_100_000, 2),
+    task("d1", "C:\\Users\\Alex\\Fylvo\\Holiday\\IMG_2041.jpg", "Pending", 0, 4_100_000, 2),
   ],
   finished_tasks: [
-    task("d2", "C:\\Users\\Alex\\Fylvo\\Steuern 2025.xlsx", "Completed", 1, 230_000, 120),
-    task("u2", "C:\\Users\\Alex\\Fylvo\\Notizen.txt", "Completed", 1, 2_000, 600),
-    task("u3", "C:\\Users\\Alex\\Fotos\\Neu.txt", "Failed", 0, 1_000, 900, "Read-only drive"),
+    task("d2", "C:\\Users\\Alex\\Fylvo\\Taxes 2025.xlsx", "Completed", 1, 230_000, 120),
+    task("u2", "C:\\Users\\Alex\\Fylvo\\Notes.txt", "Completed", 1, 2_000, 600),
+    task("u3", "C:\\Users\\Alex\\Photos\\New.txt", "Failed", 0, 1_000, 900, "Read-only drive"),
   ],
 };
 

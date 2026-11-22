@@ -41,7 +41,7 @@ pub struct Platform {
 pub const WINDOWS_X64: Platform = Platform { key: "windows-x64", ext: "msix", release_key: None };
 pub const WINDOWS_ARM64: Platform = Platform { key: "windows-arm64", ext: "msix", release_key: None };
 
-/// Public ed25519 key of the Linux releases (the private key stays with Sven, see
+/// Public ed25519 key of the Linux releases (the private key stays with the maintainer, see
 /// `scripts/publish-desktop.sh`). Linux has no system check like Windows' signed MSIX.
 pub const LINUX_RELEASE_KEY: [u8; 32] = [
     0xef, 0x41, 0xa2, 0xfc, 0xf2, 0x47, 0xe1, 0x96, 0x1e, 0x57, 0x10, 0x8e, 0x53, 0x2b, 0x96, 0x5f,

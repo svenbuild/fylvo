@@ -8,7 +8,7 @@ export default class Logger {
   ) {}
 
   private getPrintPrefix(level: LogLevel) {
-    return `Cloudreve-Uploader [${level}][${this.prefix}#${this.id}]:`;
+    return `Fylvo-Uploader [${level}][${this.prefix}#${this.id}]:`;
   }
 
   info(...args: unknown[]) {

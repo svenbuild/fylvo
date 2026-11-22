@@ -150,7 +150,7 @@ func (c *HTTPClient) Request(method, target string, body io.Reader, opts ...Opti
 		}
 	}
 
-	req.Header.Set("User-Agent", "Cloudreve/"+constants.BackendVersion)
+	req.Header.Set("User-Agent", "Fylvo/"+constants.BackendVersion)
 
 	if options.ctx != nil && options.withCorrelationID {
 		req.Header.Add(CorrelationHeader, logging.CorrelationID(options.ctx).String())

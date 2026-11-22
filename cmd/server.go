@@ -14,12 +14,12 @@ import (
 
 func init() {
 	rootCmd.AddCommand(serverCmd)
-	serverCmd.PersistentFlags().StringVarP(&licenseKey, "license-key", "l", "", "License key of your Cloudreve Pro")
+	serverCmd.PersistentFlags().StringVarP(&licenseKey, "license-key", "l", "", "Unused, kept for command line compatibility")
 }
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "Start a Cloudreve server with the given config file",
+	Short: "Start a Fylvo server with the given config file",
 	Run: func(cmd *cobra.Command, args []string) {
 		dep := dependency.NewDependency(
 			dependency.WithConfigPath(confPath),

@@ -1079,7 +1079,7 @@
     "storeFiles": "Store files",
     "storeFilesDes": "Use this node to store user files.",
     "storeFilesHint": "If you want to use this node for storage policies, please create a slave storage policy and select this node.",
-    "runCrWithConfig": "Save the above file as <0>config.ini</0> file, and start Fylvo with this file: <0>./cloudreve -c config.ini</0>. A slave Fylvo instance can serve multiple Fylvo master nodes; simply add this slave node to all master nodes and keep the secret same.",
+    "runCrWithConfig": "Save the above file as <0>config.ini</0> file, and start Fylvo with this file: <0>./fylvo -c config.ini</0>. A slave Fylvo instance can serve multiple Fylvo master nodes; simply add this slave node to all master nodes and keep the secret same.",
     "inputServer": "Enter the node endpoint:",
     "testButton": "You can click the button below to test if the communication is successful.",
     "hostHeaderHint": "If there is a signature error, please check if the reverse proxy in front of the node is passing the <0>Host</0> header.",
