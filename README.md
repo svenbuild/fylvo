@@ -58,7 +58,7 @@ curl -fsSLO https://raw.githubusercontent.com/svenbuild/fylvo/main/docker-compos
 docker compose up -d
 ```
 
-Open `http://localhost:5212` and create an account. The first account becomes the admin; after it,
+Open `http://localhost:5212` (the first start takes about a minute) and create an account. The first account becomes the admin; after it,
 registration is closed. (Use `sudo docker compose` if your user is not in the `docker` group.)
 Until then Fylvo only listens on the server itself, so nobody else can
 take the admin account. On a remote server, reach it through ssh from your computer:

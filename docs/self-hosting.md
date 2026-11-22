@@ -11,7 +11,8 @@ cd ~/fylvo
 curl -fsSL -o .env https://raw.githubusercontent.com/svenbuild/fylvo/main/.env.example
 ```
 
-After changing `.env`, apply it with `docker compose up -d`. Fylvo listens only on the server itself
+The template has every setting commented out; the examples below are lines you add to `.env` (or
+uncomment there). After changing `.env`, apply it with `docker compose up -d`. Fylvo listens only on the server itself
 (`127.0.0.1:5212`) until you change `FYLVO_BIND`. The commands use `docker compose`; put `sudo` in
 front if your user is not in the `docker` group.
 
@@ -29,7 +30,7 @@ cloud.example.com {
 }
 ```
 
-`.env`:
+Add to `.env`:
 
 ```bash
 FYLVO_URL=https://cloud.example.com
@@ -43,7 +44,9 @@ docker compose up -d && sudo systemctl reload caddy
 - Port 5212 stays closed to the outside, only the proxy on the server reaches it.
 - `FYLVO_TRUSTED_PROXIES` lets Fylvo see the real address of each visitor (the proxy reaches the
   container from the Docker network). Without it every visitor looks like the proxy, and wrong
-  passwords from a stranger also lock you out for a while.
+  passwords from a stranger also lock you out for a while. Set it **only** while port 5212 is
+  closed to the outside (the default): anyone who reaches 5212 directly comes from the same
+  Docker network and could then fake their address.
 - With another proxy (nginx, Traefik): forward to `127.0.0.1:5212`, pass `Host`,
   `X-Forwarded-For` and `X-Forwarded-Proto`, allow WebSockets, and do not limit the size of
   request bodies (uploads come in chunks, but WebDAV clients send whole files).
@@ -65,7 +68,7 @@ office.example.com {
 }
 ```
 
-`.env`, in addition to the lines from step 1:
+Add to `.env`, next to the lines from step 1:
 
 ```bash
 FYLVO_OFFICE_URL=https://office.example.com
@@ -82,7 +85,8 @@ every `docker compose` command that should include office (`up`, `pull`).
 Collabora must reach `FYLVO_URL` from inside its container, so the address has to resolve and be
 reachable from the server itself. Without a proxy, in a home network, use the address of the
 server for both and open the ports to your network: `FYLVO_URL=http://192.168.1.10:5212`,
-`FYLVO_OFFICE_URL=http://192.168.1.10:9980`, `FYLVO_BIND=5212`, `OFFICE_BIND=9980`.
+`FYLVO_OFFICE_URL=http://192.168.1.10:9980`, `FYLVO_BIND=5212`, `OFFICE_BIND=9980`,
+`OFFICE_BEHIND_HTTPS=false`, and no `FYLVO_TRUSTED_PROXIES` (see step 1).
 
 ## 3. Backup and restore
 
@@ -97,7 +101,8 @@ sudo sh -c "umask 077 && tar -czf $HOME/fylvo-backup-$(date +%F).tar.gz -C $HOME
 docker compose start fylvo
 ```
 
-The archive holds all your files and settings, so only root may read it (`umask 077`).
+The archive holds all your files and settings, so only root may read it (`umask 077`); copy it
+with `sudo`.
 
 Keep the backup on another disk or machine. For large amounts of data, a tool that copies only
 changes (`rsync`, `restic`, `borg`) is faster: stop Fylvo, copy the folder, start it again.
@@ -105,11 +110,14 @@ changes (`rsync`, `restic`, `borg`) is faster: stop Fylvo, copy the folder, star
 Restore a backup:
 
 ```bash
-cd ~/fylvo && docker compose down
+cd ~/fylvo && docker compose --profile office down
 cd ~ && sudo mv fylvo fylvo-old
-sudo tar -xzf ~/fylvo-backup-2026-01-31.tar.gz -C ~
+sudo tar -xzf ~/fylvo-backup-<date>.tar.gz -C ~
 cd ~/fylvo && docker compose up -d
 ```
+
+`--profile office` stops office too, if you use it; without office it changes nothing. With office,
+start with `docker compose --profile office up -d` in the last line.
 
 Sign in and open a few files. Delete `~/fylvo-old` when everything is there. A backup from an
 older Fylvo version starts with the current image too; Fylvo updates the database by itself.
@@ -148,9 +156,10 @@ file `fylvo-app-updates-<version>.tar.gz` with the new app packages in the layou
 Unpack it into the data folder:
 
 ```bash
-cd ~/fylvo
+cd /tmp
 curl -fsSLO https://github.com/svenbuild/fylvo/releases/download/v1.0.0/fylvo-app-updates-1.0.0.tar.gz
-sudo tar --no-same-owner -xzf fylvo-app-updates-1.0.0.tar.gz -C data
+sudo tar --no-same-owner -xzf fylvo-app-updates-1.0.0.tar.gz -C ~/fylvo/data
+rm fylvo-app-updates-1.0.0.tar.gz
 ```
 
 Signed-in apps find the update within a few hours and install it after asking (Android) or when
