@@ -12,6 +12,7 @@ import { FileManagerIndex } from "../FileManager.tsx";
 import { FmIndexContext } from "../FmIndexContext.tsx";
 import Pinned, { usePinned } from "./Pinned.tsx";
 import TreeFiles from "./TreeFiles.tsx";
+import CustomSidebar from "./CustomSidebar.tsx";
 
 export interface TreeNavigationProps {
   scrollRef?: React.MutableRefObject<HTMLElement | undefined>;
@@ -51,6 +52,8 @@ const TreeNavigation = React.memo(
       }
     }, [path, base, elements]);
 
+    // Fylvo: the main sidebar follows the account's arrangement once it is loaded.
+    const sidebarItems = useAppSelector((s) => s.fylvo.prefs?.sidebar.items);
     const pinned = usePinned();
     const alreadyPinned = base && pinned && pinned.find((p) => p.uri == base);
     const showShareTree = base && currentFs && currentFs == Filesystem.share && !alreadyPinned;
@@ -82,7 +85,17 @@ const TreeNavigation = React.memo(
                     <TreeFiles level={0} path={base} elements={elements} />
                   </Collapse>
                 )}
-                {isLogin && (
+                {isLogin && index == FileManagerIndex.main && sidebarItems && (
+                  <CustomSidebar
+                    items={sidebarItems}
+                    elements={elements}
+                    currentFs={currentFs}
+                    pathRoot={base}
+                    disableSharedWithMe={disableSharedWithMe}
+                    disableTrash={disableTrash}
+                  />
+                )}
+                {isLogin && !(index == FileManagerIndex.main && sidebarItems) && (
                   <>
                     <TreeFiles
                       canDrop
