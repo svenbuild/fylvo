@@ -193,6 +193,16 @@ impl IgnoreMatcher {
                 && !std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()))
     }
 
+    /// Fylvo: like `is_match` for a path whose kind is known from elsewhere (a server entry, an
+    /// inventory row): the files-only names (`LINUX_TEMP_FILE_NAMES`) never match a folder.
+    pub fn is_match_as<P: AsRef<Path>>(&self, path: P, is_folder: bool) -> bool {
+        let Ok(relative) = path.as_ref().strip_prefix(&self.sync_root) else {
+            return false;
+        };
+        let normalized = relative.to_string_lossy().replace('\\', "/");
+        self.globset.is_match(&normalized) || (!is_folder && self.files_only.is_match(&normalized))
+    }
+
     /// Check if a path (given as relative path from sync root) matches any patterns.
     ///
     /// Use this when you already have a relative path.

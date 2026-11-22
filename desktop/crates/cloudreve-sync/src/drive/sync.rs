@@ -387,6 +387,16 @@ pub(crate) fn generate_conflict_path(path: &Path) -> PathBuf {
         new_name.push('.');
         new_name.push_str(ext);
     }
+    // Fylvo (Linux): a name may have 255 bytes; a long one keeps its start and extension.
+    if cfg!(target_os = "linux") && new_name.len() > 255 {
+        let ext = ext.map(|e| format!(".{e}")).filter(|e| e.len() < 32).unwrap_or_default();
+        let mut cut = 255 - ext.len();
+        while !new_name.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        new_name = format!("{}{ext}", &new_name[..cut.min(new_name.len())]);
+        new_name.truncate(255);
+    }
     let mut conflict_path = path.to_path_buf();
     conflict_path.set_file_name(new_name);
     conflict_path
@@ -1299,7 +1309,14 @@ impl Mount {
             if crate::drive::local_linux::is_foreign(&child) {
                 continue;
             }
-            if matcher.is_match(&child) {
+            // Fylvo: a folder only on the server is a folder too (files-only ignore names).
+            let ignored = match remote_files.get(&child) {
+                Some(remote) if !child.exists() => {
+                    matcher.is_match_as(&child, remote.file_type == file_type::FOLDER)
+                }
+                _ => matcher.is_match(&child),
+            };
+            if ignored {
                 tracing::trace!(
                     target: "drive::sync",
                     id = %self.id,

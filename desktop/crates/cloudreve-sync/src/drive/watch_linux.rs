@@ -463,6 +463,7 @@ impl Mount {
     pub(crate) fn moved_from(&self, path: &Path) -> Option<PathBuf> {
         let stamp = crate::drive::local_linux::LocalStamp::of_path(path)?;
         let rows = self.inventory.query_by_local_inode(&self.id, stamp.inode).ok()?;
+        tracing::debug!(target: "drive::watch", path = %path.display(), inode = stamp.inode, rows = rows.len(), "Looking for the old name of a moved file");
         stamp.content?;
         rows.into_iter()
             .filter(|row| {
@@ -673,7 +674,12 @@ impl Mount {
         }
         let root = self.config.read().await.sync_path.clone();
         let matcher = self.ignore_matcher.read().await;
-        let (from_ignored, to_ignored) = (matcher.is_match(&from), matcher.is_match(&to));
+        // The old name is gone: whether it was a folder comes from its row.
+        let from_ignored = match self.row_at(&from) {
+            Some(row) => matcher.is_match_as(&from, row.is_folder),
+            None => matcher.is_match(&from),
+        };
+        let to_ignored = matcher.is_match(&to);
         drop(matcher);
         let from_row = if from_ignored { None } else { self.row_at(&from) };
 

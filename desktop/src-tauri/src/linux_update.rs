@@ -61,11 +61,24 @@ fn prepared_path(target: &Path) -> PathBuf {
 pub fn prepare_appimage(download: &Path) -> anyhow::Result<PathBuf> {
     use anyhow::Context;
     use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::OpenOptionsExt;
     let target = appimage().context("not running from an AppImage")?;
     let prepared = prepared_path(&target);
-    std::fs::copy(download, &prepared)
+    // A leftover of an earlier try (or anything else under that name) goes first; removing a
+    // link removes the link, not its target.
+    match std::fs::remove_file(&prepared) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+        _ => {}
+    }
+    let mut out = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o700)
+        .open(&prepared)
         .with_context(|| format!("cannot write next to {}", target.display()))?;
-    std::fs::set_permissions(&prepared, std::fs::Permissions::from_mode(0o755))?;
+    std::io::copy(&mut std::fs::File::open(download)?, &mut out)?;
+    out.sync_all()?;
+    out.set_permissions(std::fs::Permissions::from_mode(0o755))?;
     Ok(prepared)
 }
 
@@ -77,21 +90,39 @@ pub fn replace_appimage(prepared: &Path) -> anyhow::Result<()> {
         .with_context(|| format!("cannot replace {}", target.display()))
 }
 
-/// The package manager command for a downloaded package (also an upgrade of the installed one).
-fn install_command(format: LinuxFormat, package: &Path) -> Option<Vec<String>> {
-    let file = package.to_string_lossy().to_string();
+/// The package manager of a format (also upgrades the installed package).
+fn package_manager(format: LinuxFormat) -> Option<&'static str> {
     match format {
-        LinuxFormat::Rpm => Some(vec!["dnf".into(), "install".into(), "-y".into(), file]),
-        LinuxFormat::Deb => Some(vec!["apt-get".into(), "install".into(), "-y".into(), file]),
+        LinuxFormat::Rpm => Some("dnf install -y"),
+        LinuxFormat::Deb => Some("apt-get install -y"),
         LinuxFormat::AppImage => None,
     }
 }
 
+/// Runs as root (through pkexec): copies the package into a fresh root-only folder, checks its
+/// sha256 there against the signed release, and installs that copy. The user's download can
+/// change after the app checked it; the copy cannot. Arguments: package, sha256, manager.
+const ROOT_INSTALL: &str = r#"set -eu
+dir=$(mktemp -d /var/tmp/fylvo-update.XXXXXX)
+trap 'rm -rf "$dir"' EXIT
+pkg="$dir/package.$4"
+cp -- "$1" "$pkg"
+[ "$(sha256sum "$pkg" | cut -c1-64)" = "$2" ] || { echo "checksum differs" >&2; exit 3; }
+$3 "$pkg"
+"#;
+
 /// Installs an rpm or deb with the package manager, the system asks for the admin password.
-pub fn install_package(format: LinuxFormat, package: &Path) -> anyhow::Result<()> {
-    let command = install_command(format, package)
-        .ok_or_else(|| anyhow::anyhow!("not a package format"))?;
-    let status = Command::new("pkexec").args(&command).status()?;
+pub fn install_package(format: LinuxFormat, package: &Path, sha256: &str) -> anyhow::Result<()> {
+    let manager = package_manager(format).ok_or_else(|| anyhow::anyhow!("not a package format"))?;
+    if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+        anyhow::bail!("unexpected checksum");
+    }
+    let ext = if format == LinuxFormat::Rpm { "rpm" } else { "deb" };
+    let status = Command::new("pkexec")
+        .args(["/bin/sh", "-c", ROOT_INSTALL, "fylvo-update"])
+        .arg(package)
+        .args([sha256, manager, ext])
+        .status()?;
     if !status.success() {
         anyhow::bail!("the installation was cancelled or failed ({status})");
     }
@@ -101,7 +132,12 @@ pub fn install_package(format: LinuxFormat, package: &Path) -> anyhow::Result<()
 /// Starts the app again once this process has ended, then ends this process (started earlier,
 /// the single-instance check would hand the new start to this process).
 pub fn restart(app: &AppHandle) {
+    // After an rpm/deb upgrade `current_exe` names the replaced file (" (deleted)"): a packaged
+    // app restarts from its installed path.
+    let packaged = std::env::current_exe()
+        .is_ok_and(|exe| exe.to_string_lossy().starts_with(INSTALLED_PROGRAM));
     let program = appimage()
+        .or_else(|| packaged.then(|| PathBuf::from(INSTALLED_PROGRAM)))
         .or_else(|| std::env::current_exe().ok())
         .unwrap_or_else(|| PathBuf::from(INSTALLED_PROGRAM));
     let script = "while kill -0 \"$1\" 2>/dev/null; do sleep 1; done; exec \"$2\"";
@@ -135,11 +171,37 @@ mod tests {
     }
 
     #[test]
-    fn packages_go_to_their_package_manager() {
-        let rpm = install_command(LinuxFormat::Rpm, Path::new("/tmp/a b.rpm")).unwrap();
-        assert_eq!(rpm, ["dnf", "install", "-y", "/tmp/a b.rpm"]);
-        let deb = install_command(LinuxFormat::Deb, Path::new("/tmp/x.deb")).unwrap();
-        assert_eq!(deb, ["apt-get", "install", "-y", "/tmp/x.deb"]);
-        assert!(install_command(LinuxFormat::AppImage, Path::new("/tmp/x")).is_none());
+    fn the_root_step_installs_only_the_checked_copy() {
+        // Run the script without root: "install" is `cat` into a log here.
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("a b.rpm");
+        std::fs::write(&package, b"package").unwrap();
+        let log = dir.path().join("log");
+        let fake = dir.path().join("fake-manager");
+        std::fs::write(&fake, format!("#!/bin/sh\ncat \"$1\" > '{}'\n", log.display())).unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let manager = fake.to_string_lossy().to_string();
+        let sha = "1a4b2a6c3cfb5b0b6f40d1bc5e0b1c7ce7b9f73c0d4f5a7e6c2b1e5c0f0a9b8c"; // wrong
+        let run = |sha: &str| {
+            Command::new("/bin/sh")
+                .args(["-c", ROOT_INSTALL, "fylvo-update"])
+                .arg(&package)
+                .args([sha, manager.as_str(), "rpm"])
+                .env("TMPDIR", dir.path())
+                .status()
+                .unwrap()
+        };
+        assert!(!run(sha).success());
+        assert!(!log.exists());
+        let right = String::from_utf8(
+            Command::new("sha256sum").arg(&package).output().unwrap().stdout,
+        )
+        .unwrap()[..64]
+            .to_string();
+        assert!(run(&right).success());
+        assert_eq!(std::fs::read(&log).unwrap(), b"package");
     }
 }

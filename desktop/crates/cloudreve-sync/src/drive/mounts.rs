@@ -244,7 +244,7 @@ impl Mount {
         // persisted download (which would open a new temp file of the same kind). A walk of the
         // whole folder: not on an async worker.
         #[cfg(target_os = "linux")]
-        {
+        if crate::drive::local_linux::check_file_system(&config.sync_path).is_ok() {
             let folder = config.sync_path.clone();
             let _ = tokio::task::spawn_blocking(move || {
                 crate::tasks::download::linux::clean_leftovers(&folder)

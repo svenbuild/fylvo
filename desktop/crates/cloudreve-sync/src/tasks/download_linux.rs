@@ -56,12 +56,16 @@ impl DownloadTask<'_> {
 
         if self.started.is_none() {
             use std::os::unix::fs::PermissionsExt;
-            let umask = unsafe {
-                let old = libc::umask(0o022);
-                libc::umask(old);
-                old
-            };
-            std::fs::set_permissions(temp, std::fs::Permissions::from_mode(0o666 & !(umask as u32)))
+            let umask = std::fs::read_to_string("/proc/self/status")
+                .ok()
+                .and_then(|status| {
+                    status
+                        .lines()
+                        .find_map(|line| line.strip_prefix("Umask:"))
+                        .and_then(|value| u32::from_str_radix(value.trim(), 8).ok())
+                })
+                .unwrap_or(0o022);
+            std::fs::set_permissions(temp, std::fs::Permissions::from_mode(0o666 & !umask))
                 .context("failed to set the access rights")?;
             // A new file: row first, then the file (see the module comment).
             let old_row = self.inventory.query_by_path(&path_text)?;
@@ -292,6 +296,11 @@ fn process_may_write(pid_dir: &Path, target: &std::fs::Metadata) -> Option<bool>
 /// At start: leftovers of a crash in `folder` and below. Unfinished downloads are removed; a
 /// backup goes back to its name if that is free, else it becomes a conflict copy (never deleted).
 pub(crate) fn clean_leftovers(folder: &Path) {
+    // Only a real folder: a sync folder replaced by a symlink while the app was off is not
+    // followed (the walk below never follows links either).
+    if !std::fs::symlink_metadata(folder).is_ok_and(|m| m.is_dir()) {
+        return;
+    }
     let Ok(entries) = std::fs::read_dir(folder) else {
         return;
     };

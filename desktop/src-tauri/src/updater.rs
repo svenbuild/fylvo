@@ -87,7 +87,10 @@ pub fn check_now() {
 /// Starts the updater once the sync service runs. Without package identity it only reports
 /// that updates are not available.
 pub fn start(app: AppHandle, drives: Arc<DriveManager>) {
+    #[cfg(not(target_os = "linux"))]
     let running = current_version();
+    #[cfg(target_os = "linux")]
+    let running = current_version(&app);
     let updater = Arc::new(Updater {
         status: Mutex::new(UpdateStatus {
             version: running.map(|v| v.to_string()).unwrap_or_default(),
@@ -328,11 +331,12 @@ fn current_version() -> Option<Version> {
     fylvo_update::windows::current().map(|id| id.version)
 }
 
+/// Linux: the version Tauri knows (tauri.conf.json), the one the package names carry.
 #[cfg(target_os = "linux")]
-fn current_version() -> Option<Version> {
+fn current_version(app: &AppHandle) -> Option<Version> {
     // A build from source (no package) has no update path.
     crate::linux_update::format()?;
-    Version::parse(env!("CARGO_PKG_VERSION"))
+    Version::parse(&app.package_info().version.to_string())
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
@@ -468,11 +472,12 @@ async fn install(
         fylvo_update::LinuxFormat::AppImage => Some(lin::prepare_appimage(&path)?),
         _ => None,
     };
-    if !wait_until_idle(updater, drives, manual, Duration::ZERO).await? {
+    let waited = wait_until_idle(updater, drives, manual, Duration::ZERO).await;
+    if !matches!(waited, Ok(true)) {
         if let Some(prepared) = &prepared {
             let _ = std::fs::remove_file(prepared);
         }
-        return Ok(());
+        return waited.map(|_| ());
     }
     set_status(|s| s.phase = "installing");
     let mut state = State::load(&updater.dir);
@@ -494,7 +499,8 @@ async fn install(
         (fylvo_update::LinuxFormat::AppImage, Some(prepared)) => lin::replace_appimage(&prepared),
         (other, _) => {
             let path = path.clone();
-            tokio::task::spawn_blocking(move || lin::install_package(other, &path))
+            let sha256 = release.sha256.clone();
+            tokio::task::spawn_blocking(move || lin::install_package(other, &path, &sha256))
                 .await
                 .map_err(|e| anyhow::anyhow!(e))
                 .and_then(|r| r)

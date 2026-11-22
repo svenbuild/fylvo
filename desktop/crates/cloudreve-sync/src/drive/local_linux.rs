@@ -49,6 +49,11 @@ pub fn sync_root_of(path: &Path) -> Option<PathBuf> {
 /// same (the local state in the inventory is keyed by them). FAT, exFAT, NTFS through FUSE and
 /// network shares are refused.
 pub fn check_file_system(folder: &Path) -> Result<()> {
+    let meta = std::fs::symlink_metadata(folder)
+        .with_context(|| format!("the sync folder {} is missing", folder.display()))?;
+    if !meta.is_dir() {
+        anyhow::bail!("the sync folder {} is a link or no folder, it is not synced", folder.display());
+    }
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
     const SUPPORTED: &[(i64, &str)] = &[

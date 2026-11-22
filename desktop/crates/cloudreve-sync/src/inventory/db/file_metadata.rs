@@ -488,6 +488,26 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
+    fn rows_are_found_by_the_inode_of_their_local_state() {
+        let (_dir, db) = db();
+        let drive = Uuid::new_v4();
+        let mut entry = MetadataEntry::new(drive, "/S/a.txt", false);
+        entry.metadata.insert("fylvo:file_id".into(), "x1".into());
+        entry.metadata.insert("fylvo:local".into(), "298328:15:1795371388113173780".into());
+        db.upsert(&entry).unwrap();
+        let mut folder = MetadataEntry::new(drive, "/S/f", true);
+        folder.metadata.insert("fylvo:local".into(), "298".into());
+        db.upsert(&folder).unwrap();
+        let id = drive.to_string();
+        let found = db.query_by_local_inode(&id, 298328).unwrap();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].local_path, "/S/a.txt");
+        assert_eq!(db.query_by_local_inode(&id, 298).unwrap().len(), 1);
+        assert!(db.query_by_local_inode(&id, 2983).unwrap().is_empty());
+    }
+
+    #[test]
     fn count_under_paths_counts_descendants_once() {
         let (_dir, db) = db();
         let drive = Uuid::new_v4();

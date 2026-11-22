@@ -693,6 +693,14 @@ impl Mount {
                     // `file~`), the Linux rename handler decides.
                     let is_ignored = if cfg!(target_os = "linux") && is_rename {
                         event.paths.iter().all(|path| matcher.is_match(path))
+                    } else if cfg!(target_os = "linux")
+                        && matches!(event_kind, EventKind::Remove(_))
+                    {
+                        // Fylvo (Linux): a deleted folder is known as one from its row.
+                        match dominated_path.to_str().and_then(|p| self.inventory.query_by_path(p).ok().flatten()) {
+                            Some(row) => matcher.is_match_as(dominated_path, row.is_folder),
+                            None => matcher.is_match(dominated_path),
+                        }
                     } else {
                         matcher.is_match(dominated_path)
                     };

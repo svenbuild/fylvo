@@ -275,6 +275,12 @@ async fn linux_folder_to_server() {
     wait_exists(&s, "both.txt").await;
     assert_eq!(file_id("both.txt").await, notes_id);
     // A move into a folder made a moment ago (not on the server yet) is still a move.
+    // (Only once the last rename is recorded here: a second move within that second is seen
+    // as delete plus upload, nothing is lost.)
+    wait_for("both.txt tracked", || {
+        LocalFileInfo::from_path(&s.sync.join("both.txt")).is_ok_and(|i| i.in_sync())
+    })
+    .await;
     std::fs::create_dir(s.sync.join("Fresh")).unwrap();
     std::fs::rename(s.sync.join("both.txt"), s.sync.join("Fresh/both.txt")).unwrap();
     wait_server(&s, "both.txt", None).await;

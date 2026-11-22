@@ -176,6 +176,11 @@ impl Mount {
         let mut delete_events: Vec<FileEventData> = Vec::new();
 
         for event in events {
+            // Fylvo: a server path with `.` or `..` parts could leave the sync folder.
+            if !safe_server_path(&event.from) || !safe_server_path(&event.to) {
+                tracing::warn!(target: "drive::remote_events", from = %event.from, to = %event.to, "Server path with . or .. parts, ignored");
+                continue;
+            }
             match event.event_type {
                 FileEventType::Create => create_update_events.push(event),
                 FileEventType::Modify => create_update_events.push(event),
@@ -560,8 +565,8 @@ impl Mount {
     }
 }
 
-/// Fylvo: whether a server path has no empty, `.` or `..` parts (it then stays inside the sync
-/// folder when joined to it).
+/// Fylvo: whether a server path has no `.` or `..` parts (it then stays inside the sync folder
+/// when joined to it).
 fn safe_server_path(path: &str) -> bool {
     path.trim_start_matches('/')
         .split('/')
