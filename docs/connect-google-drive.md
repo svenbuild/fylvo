@@ -4,6 +4,9 @@ Users of your Fylvo can connect their Google Drive and see it as a folder next t
 files. For this, you as the operator create one access (an OAuth client) at Google, once per
 installation, and enter it in Fylvo. It takes about 15 minutes.
 
+This setup is meant for a private installation: fewer than 100 users, all people you know.
+A public service open to anyone must have its app verified by Google first.
+
 Checked against Google's pages on 2026-11-22. Google renames menus now and then; if a label
 differs, look for the closest match. Steps marked *not confirmed* could not be checked on an
 official page.
@@ -67,10 +70,11 @@ You see the Google Auth Platform overview with the sections **Branding**, **Audi
 ## 4. Fill in the branding
 
 1. **Branding**.
-2. **Application home page:** your Fylvo address, `https://cloud.example.com`.
+2. **Authorized domains** > **Add domain**: the registered domain of your Fylvo address, and
+   of your privacy page if it is elsewhere. For `cloud.example.com` that is `example.com`.
+   For a name under a shared suffix such as `name.duckdns.org`, enter the whole name.
+3. **Application home page:** your Fylvo address, `https://cloud.example.com`.
    **Application privacy policy link:** your privacy page.
-3. **Authorized domains** > **Add domain**: your domain without the first part, for
-   `cloud.example.com` that is `example.com`.
 4. Click **Save**.
 
 Without the domain, Google refuses the return address in step 7. Without the links, Google
@@ -93,8 +97,9 @@ and change the files and folders that are already in the drive.
 2. The status reads **In production**.
 
 Do not stay in **Testing**: there, Google ends every Drive connection after 7 days, and only
-test users you list by hand can connect. Google shows that verification is needed. Ignore it;
-the app works without verification (see [The warning page](#the-warning-page)).
+test users you list by hand can connect. Google shows that verification is needed. For a
+private installation you can leave it; the app works without verification (see
+[The warning page](#the-warning-page)).
 
 ## 7. Create the client
 
@@ -119,29 +124,30 @@ To test, open your own settings, tab **Connected storage**, and connect a Google
 
 Your app is not verified by Google, so a user who connects sees the page "Google hasn't
 verified this app": Fylvo asks for full access to the drive, and Google has not checked the
-app. The user clicks **Advanced** > **Go to Fylvo (unsafe)** and then allows access. The page
-may show your project name instead of `Fylvo`.
+app. The user clicks **Advanced** > **Go to cloud.example.com (unsafe)** and then allows
+access. Until an app is verified, Google shows its domain instead of the app name.
 
 Limits of an unverified app:
 
 - At most **100 users** in total, for the life of the project. Users who disconnect still
   count; the number cannot be reset. **Audience** shows how many are used.
 - Connections do not expire after a fixed time. They end when the user removes the access,
-  after 6 months without use, or when a Workspace admin limits it. Without a valid secret in
-  Fylvo, connections stop working until you enter one.
+  after 6 months without use, or when a Workspace admin limits it.
 - School and company accounts can be blocked by their admin, and accounts with Google's
   Advanced Protection cannot connect at all.
 
-Verification can lift the user limit, but for the Drive scope Google requires a paid security
-audit. Not worth it for a private installation.
+Verification lifts the user limit, but for the Drive scope it includes a security assessment.
+Not worth it for a private installation.
 
 ## Renew the secret
 
 The secret does not expire. Renew it when it may have leaked:
 
-1. **Clients** > your client > **Add secret**. Copy the new secret (shown only once).
-2. Enter it in Fylvo (step 8) and check that a connection still opens.
-3. Back at Google, **Disable** the old secret, then delete it.
+1. **Clients** > your client > **Add secret**. Copy the new secret (shown only once). A client
+   can have at most two secrets.
+2. Enter it in Fylvo (step 8). Connect a Google account anew in Fylvo, to test the new secret.
+3. Back at Google, **Disable** the old secret, test once more, then delete it. Deleting cannot
+   be undone.
 
 Existing connections keep working.
 
@@ -156,7 +162,7 @@ Existing connections keep working.
   the project; Google deletes it after 30 days.
 
 Google also deletes a client by itself after 6 months without any use, and sends an email
-30 days before. You can restore it within about 30 days on the **Deleted credentials** page.
+before. You can restore it within about 30 days on the **Deleted credentials** page.
 
 ## Common errors
 
@@ -172,5 +178,4 @@ Google also deletes a client by itself after 6 months without any use, and sends
 | Fylvo reports `access_denied` | The user clicked **Cancel** | Connect again |
 | `admin_policy_enforced` | The admin of a school or company account blocks the app | The admin must allow Fylvo, or the user connects a private account |
 | `invalid_grant` when Fylvo uses a connection | The user removed the access at Google, or it was unused for 6 months | Reconnect in Fylvo |
-| Only a few files or no folders are visible | Wrong scope, for example `drive.file` | Add the full `drive` scope (step 5) and reconnect |
 | New users cannot connect, existing ones still can *(not confirmed)* | 100 users reached | Check the count under **Audience**. Only verification lifts the limit. |

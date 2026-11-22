@@ -34,7 +34,8 @@ page.* Microsoft may block directories that stay unused for a long time.
 ## 1. Get a directory
 
 Skip this if you already manage a Microsoft Entra directory (for example through Microsoft 365
-for business) and may register apps in it.
+for business, or an earlier Azure account) and may register apps in it. The free account is
+only for new Azure customers.
 
 1. Open [azure.microsoft.com/free](https://azure.microsoft.com/free) and click **Try Azure for
    free** (the button name changes now and then).
@@ -63,8 +64,7 @@ Fylvo.
 
 ## 3. Add the return address
 
-1. In the app: **Manage** > **Authentication**. If your return address is already listed
-   under **Web**, go on with step 4.
+1. In the app: **Manage** > **Authentication**.
 2. Tab **Redirect URI configuration** > **Add Redirect URI** > tile **Web**.
 3. **Redirect URI:** your return address, exactly as above. Click **Configure**.
 
@@ -111,8 +111,9 @@ which a private operator is not.
 
 - **Personal accounts** (outlook.com, hotmail.com, live.com) are supported.
 - **Work or school accounts** of other organisations: many organisations let users approve
-  only verified apps, or none at all. Then the user sees "Need admin approval" and must ask
-  their IT. There is nothing you can change in Fylvo for this.
+  only verified apps, or none at all, and Microsoft's default settings can also ask for an
+  admin for a new unverified app. Then the user sees "Need admin approval" and their IT has
+  to approve Fylvo in their directory. There is nothing you can change in Fylvo for this.
 
 A connection ends after 90 days without any use (each use renews it); the user then
 reconnects.
@@ -123,7 +124,8 @@ The secret runs out after the time you chose, at most 24 months. Then every OneD
 connection stops working until a new secret is in Fylvo. Renew it before:
 
 1. **Certificates & secrets** > **New client secret**, as in step 4. Copy the new value.
-2. Enter it in Fylvo (step 6) and check that a connection still opens.
+2. Enter it in Fylvo (step 6). Connect a Microsoft account anew in Fylvo, to test the new
+   secret.
 3. Back at Microsoft, delete the old secret (bin icon in its row).
 
 Existing connections keep working, users do not need to reconnect.
@@ -133,22 +135,22 @@ Existing connections keep working, users do not need to reconnect.
 - **One user** disconnects in Fylvo. Microsoft has no way for Fylvo to remove its access
   there, so the user also removes it in their account:
   - personal account: [account.microsoft.com/privacy/app-access](https://account.microsoft.com/privacy/app-access)
-    > Fylvo > **Edit** > **Remove these permissions**. *Labels not confirmed.*
+    > Fylvo > **Edit** > **Remove these permissions** (on newer pages **Details** > **Don't
+    allow**). *Labels not confirmed.*
   - work or school account: [myapplications.microsoft.com](https://myapplications.microsoft.com)
     > point at the Fylvo tile > **...** > **Manage your application** > **Revoke Permissions**.
-    If an admin approved Fylvo for the organisation, only the admin can remove it.
+    If there is no Fylvo tile, or an admin approved Fylvo for the organisation, only that
+    admin can remove it.
 - **The whole access:** remove the values in Fylvo, then at Microsoft **App registrations** >
   Fylvo > **Delete**. For 30 days you can still restore it under the tab **Deleted
   applications**.
-- Once you no longer need the directory, you can cancel the Azure subscription in the Azure
-  portal (**Subscriptions** > **Cancel subscription**). This does not delete the directory.
 
 ## Common errors
 
 | What you see | Cause | Fix |
 | --- | --- | --- |
 | `AADSTS50011` "The redirect URI ... does not match" | The return address at Microsoft differs from the one Fylvo uses, even by `http`/`https`, `www` or a trailing `/` | Copy the address from the Fylvo admin panel into **Authentication** (step 3) |
-| `AADSTS50194` | The app accepts only accounts of your own directory | Register a new app with **Any Entra ID Tenant + Personal Microsoft accounts** (step 2) and enter its values |
+| `AADSTS50194` | The app accepts only accounts of your own directory | Change the app's supported account types to **Any Entra ID Tenant + Personal Microsoft accounts** ([how](https://learn.microsoft.com/en-us/entra/identity-platform/howto-modify-supported-accounts)), or register a new app (step 2) and enter its values |
 | `AADSTS50020` | The browser signed in with another account than intended, or the account type is wrong | Try again in a private window with the right account. If that fails, see `AADSTS50194`. |
 | `AADSTS7000215` "Invalid client secret" | The **Secret ID** was entered instead of the **Value**, or a typo | Create a new secret and enter its value (step 4) |
 | `AADSTS7000222` "client secret keys ... are expired" | Secret older than its expiry date | [Renew the secret](#renew-the-secret) |
