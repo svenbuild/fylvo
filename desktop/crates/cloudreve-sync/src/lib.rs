@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod cfapi;
 pub mod config;
 pub mod drive;

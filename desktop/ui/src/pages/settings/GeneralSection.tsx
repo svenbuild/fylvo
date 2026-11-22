@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { languages, toSupportedLanguage } from "../../i18n";
+import UpdateSettings from "./UpdateSettings";
 
 interface SettingItemProps {
   title: string;
@@ -23,7 +24,7 @@ interface SettingItemProps {
   isLast?: boolean;
 }
 
-function SettingItem({
+export function SettingItem({
   title,
   description,
   checked,
@@ -128,7 +129,7 @@ interface SettingActionItemProps {
   isLast?: boolean;
 }
 
-function SettingActionItem({
+export function SettingActionItem({
   title,
   description,
   actionLabel,
@@ -175,7 +176,7 @@ interface SettingsGroupProps {
   children: React.ReactNode;
 }
 
-function SettingsGroup({ title, children }: SettingsGroupProps) {
+export function SettingsGroup({ title, children }: SettingsGroupProps) {
   return (
     <Box sx={{ mb: 3 }}>
       <Typography
@@ -393,6 +394,8 @@ export default function GeneralSection() {
           isLast={true}
         />
       </SettingsGroup>
+
+      <UpdateSettings />
 
       <SettingsGroup title={t("settings.languageSettings")}>
         <SettingSelectItem

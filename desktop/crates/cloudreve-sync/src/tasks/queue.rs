@@ -571,7 +571,11 @@ impl TaskQueue {
             return;
         }
         let queue = Arc::clone(self);
+        // Fylvo: a waiting retry counts as work for the updater (activity.rs) from now until
+        // it is queued.
+        let busy = crate::activity::enter_now();
         tokio::spawn(async move {
+            let _busy = busy;
             if !delay.is_zero() {
                 tokio::time::sleep(delay).await;
                 queue.later.remove(&key);

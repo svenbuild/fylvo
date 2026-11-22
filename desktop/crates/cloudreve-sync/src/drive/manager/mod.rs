@@ -127,7 +127,10 @@ impl DriveManager {
 
         let content =
             serde_json::to_string_pretty(&new_state).context("Failed to serialize drive state")?;
-        fs::write(&config_file, content).context("Failed to write drive config file")?;
+        // Fylvo: in one step (temp file + rename), so a stop in the middle keeps the old file.
+        let tmp_file = config_file.with_extension("json.tmp");
+        fs::write(&tmp_file, content).context("Failed to write drive config file")?;
+        fs::rename(&tmp_file, &config_file).context("Failed to write drive config file")?;
 
         tracing::info!(target: "drive", count = new_state.drives.len(), "Persisted drive(s) to config");
 
@@ -670,6 +673,19 @@ impl DriveManager {
     /// Get a command sender for external code to send commands to the manager
     pub fn get_command_sender(&self) -> mpsc::UnboundedSender<ManagerCommand> {
         self.command_tx.clone()
+    }
+
+    /// Fylvo: true if a drive has queued or running tasks, or a held deletion that waits for
+    /// the user. For the updater's gate (`activity.rs`), so it does not wait: a drive list that
+    /// is locked right now counts as busy.
+    pub fn has_pending_work(&self) -> bool {
+        let Ok(drives) = self.drives.try_read() else {
+            return true;
+        };
+        drives.values().any(|mount| {
+            let tasks = mount.task_queue.list_active_tasks().map(|t| !t.is_empty()).unwrap_or(true);
+            tasks || !mount.held_deletions().is_empty()
+        })
     }
 
     pub async fn shutdown(&self) {

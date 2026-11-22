@@ -542,6 +542,8 @@ impl Mount {
                     let s_clone = s.clone();
                     let mount_id_clone = mount_id.clone();
                     spawn(async move {
+                        // Fylvo: counted for the updater (activity.rs).
+                        let _busy = crate::activity::enter().await;
                         let result = s_clone.rename(source, target).await;
                         if let Err(e) = result {
                             tracing::error!(target: "drive::mounts", id = %mount_id_clone, error = %e, "Failed to rename");
@@ -556,6 +558,8 @@ impl Mount {
                     let s_clone = s.clone();
                     let mount_id_clone = mount_id.clone();
                     spawn(async move {
+                        // Fylvo: counted for the updater (activity.rs).
+                        let _busy = crate::activity::enter().await;
                         match s_clone.sync_paths(local_paths, mode).await {
                             Ok(_) => {
                                 if user_initiated {
@@ -581,6 +585,8 @@ impl Mount {
                     let s_clone = s.clone();
                     let mount_id_clone = mount_id.clone();
                     spawn(async move {
+                        // Fylvo: counted for the updater (activity.rs).
+                        let _busy = crate::activity::enter().await;
                         let result = s_clone.fetch_placeholders(path).await;
                         if let Err(e) = result {
                             tracing::error!(target: "drive::mounts", id = %mount_id_clone, error = %e, "Failed to fetch placeholders");
@@ -621,6 +627,8 @@ impl Mount {
                     let s_clone = s.clone();
                     let mount_id_clone = mount_id.clone();
                     spawn(async move {
+                        // Fylvo: counted for the updater (activity.rs).
+                        let _busy = crate::activity::enter().await;
                         let result = s_clone.fetch_data(path, ticket, range).await;
                         if let Err(e) = result {
                             tracing::error!(target: "drive::mounts", id = %mount_id_clone, error = ?e, "Failed to fetch data");
@@ -635,6 +643,8 @@ impl Mount {
                     let s_clone = s.clone();
                     //let mount_id_clone = mount_id.clone();
                     spawn(async move {
+                        // Fylvo: counted for the updater (activity.rs).
+                        let _busy = crate::activity::enter().await;
                         let _ = s_clone.process_fs_events(events).await;
                     });
                 }
@@ -645,6 +655,8 @@ impl Mount {
                     let s_clone = s.clone();
                     let mount_id_clone = mount_id.clone();
                     spawn(async move {
+                        // Fylvo: counted for the updater (activity.rs).
+                        let _busy = crate::activity::enter().await;
                         if let Err(e) = s_clone.rename_completed(source, destination).await {
                             tracing::error!(target: "drive::mounts", id = %mount_id_clone, error = ?e, "Failed to rename completed");
                             return;

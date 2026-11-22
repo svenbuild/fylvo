@@ -138,5 +138,21 @@
     "monthsAgo": "{{value}} months ago",
     "yearAgo": "{{value}} year ago",
     "yearsAgo": "{{value}} years ago"
+  },
+  "updates": {
+    "title": "Updates",
+    "auto": "Update automatically",
+    "autoDescription": "Install new versions by itself when no sync is running. The app restarts for a few seconds.",
+    "version": "Version {{version}}",
+    "checkNow": "Check now",
+    "idle": "Not checked yet",
+    "checking": "Checking for updates...",
+    "no_drive": "Add a drive first: updates come from your Fylvo server",
+    "up_to_date": "Fylvo Desktop is up to date",
+    "downloading": "Downloading version {{version}}...",
+    "waiting": "Version {{version}} is ready and waits until sync is finished",
+    "installing": "Installing version {{version}}...",
+    "failed": "Update to {{version}} failed: {{reason}}",
+    "unsupported": "Updates are only available in the installed app"
   }
 }

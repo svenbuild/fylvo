@@ -678,6 +678,7 @@ pub async fn get_general_settings() -> CommandResult<GeneralSettings> {
         log_max_files: config.log_max_files,
         log_dir: ConfigManager::get_log_dir().display().to_string(),
         language: config.language,
+        auto_update: config.auto_update,
     })
 }
 
@@ -691,6 +692,7 @@ pub struct GeneralSettings {
     pub log_max_files: usize,
     pub log_dir: String,
     pub language: Option<String>,
+    pub auto_update: bool,
 }
 
 /// Set log to file setting
@@ -753,4 +755,25 @@ pub async fn open_log_folder() -> CommandResult<()> {
 
     showfile::show_path_in_file_manager(format!("{}\\", log_dir.display()));
     Ok(())
+}
+
+/// Fylvo: state of the updates for the settings page.
+#[tauri::command]
+pub async fn get_update_status() -> CommandResult<crate::updater::UpdateStatus> {
+    Ok(crate::updater::status())
+}
+
+/// Fylvo: "Check now" in the settings (works also with automatic updates off).
+#[tauri::command]
+pub async fn check_for_update() -> CommandResult<()> {
+    crate::updater::check_now();
+    Ok(())
+}
+
+/// Fylvo: switch automatic updates on or off.
+#[tauri::command]
+pub async fn set_auto_update(enabled: bool) -> CommandResult<()> {
+    ConfigManager::get()
+        .set_auto_update(enabled)
+        .map_err(|e| e.to_string())
 }

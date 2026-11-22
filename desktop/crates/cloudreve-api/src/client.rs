@@ -475,6 +475,17 @@ impl Client {
         Ok(api_response.data.unwrap_or_default())
     }
 
+    /// Fylvo: the server address this client talks to (for the updater).
+    pub fn base_url(&self) -> &str {
+        &self.config.base_url
+    }
+
+    /// Fylvo: a valid access token, refreshed if needed (for the updater, which sends its own
+    /// requests without redirects).
+    pub async fn fresh_access_token(&self) -> ApiResult<String> {
+        self.get_access_token().await
+    }
+
     /// Send an API request with automatic token refresh
     pub async fn send<T, R>(
         &self,

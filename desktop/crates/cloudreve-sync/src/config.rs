@@ -62,6 +62,8 @@ pub struct AppConfig {
     pub log_max_files: usize,
     /// Language/locale setting (e.g., "en-US", "zh-CN"). None means use system default.
     pub language: Option<String>,
+    /// Fylvo: look for updates and install them by itself (desktop/UPDATER.md)
+    pub auto_update: bool,
 }
 
 impl Default for AppConfig {
@@ -75,6 +77,7 @@ impl Default for AppConfig {
             log_level: LogLevel::Debug,
             log_max_files: 5,
             language: None,
+            auto_update: true,
         }
     }
 }
@@ -225,6 +228,18 @@ impl ConfigManager {
     pub fn set_notify_file_conflict(&self, enabled: bool) -> Result<()> {
         self.update(|config| {
             config.notify_file_conflict = enabled;
+        })
+    }
+
+    /// Fylvo: whether the app looks for updates and installs them by itself
+    pub fn auto_update(&self) -> bool {
+        self.config.read().map(|c| c.auto_update).unwrap_or(true)
+    }
+
+    /// Fylvo: set whether the app looks for updates by itself
+    pub fn set_auto_update(&self, enabled: bool) -> Result<()> {
+        self.update(|config| {
+            config.auto_update = enabled;
         })
     }
 

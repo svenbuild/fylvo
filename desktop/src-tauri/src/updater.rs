@@ -1,0 +1,387 @@
+//! Fylvo: updates from the app (desktop/UPDATER.md). Asks the signed-in servers of the drives
+//! for a newer version, downloads and checks it, waits until no sync work runs, stops sync like
+//! "Quit" and lets Windows install it; Windows restarts the app afterwards.
+//!
+//! The general steps come from the crate `fylvo-update`; only `install()` is per platform.
+
+use cloudreve_sync::{activity, ConfigManager, DriveManager};
+use fylvo_update::state::{Installing, StartOutcome, State};
+use fylvo_update::{Downloaded, Release, Server, Version};
+use serde::Serialize;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tauri::AppHandle;
+use tokio::sync::Notify;
+
+const FIRST_CHECK_AFTER: Duration = Duration::from_secs(2 * 60);
+const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+const BUSY_RETRY_EVERY: Duration = Duration::from_secs(5 * 60);
+const BUSY_GIVE_UP_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
+/// Windows restarts an app after an update only if it ran for at least 60 seconds.
+const MIN_UPTIME: Duration = Duration::from_secs(65);
+
+/// What the settings page shows.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct UpdateStatus {
+    /// The running version, empty without package identity.
+    pub version: String,
+    /// False when the app runs without package identity (then there are no updates).
+    pub supported: bool,
+    /// idle, checking, no_drive, downloading, waiting, installing, up_to_date, failed
+    pub phase: &'static str,
+    /// The version found or being installed.
+    pub target: Option<String>,
+    /// Why the last run failed.
+    pub error: Option<String>,
+    /// Unix seconds of the last finished check.
+    pub last_check: Option<u64>,
+}
+
+struct Updater {
+    status: Mutex<UpdateStatus>,
+    check_now: Notify,
+    started: Instant,
+    dir: PathBuf,
+}
+
+static UPDATER: OnceLock<Arc<Updater>> = OnceLock::new();
+
+fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+fn update_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_default().join(cloudreve_sync::DATA_DIR).join("update")
+}
+
+fn set_status(f: impl FnOnce(&mut UpdateStatus)) {
+    if let Some(u) = UPDATER.get() {
+        f(&mut u.status.lock().unwrap_or_else(|e| e.into_inner()));
+    }
+}
+
+/// The status for the settings page.
+pub fn status() -> UpdateStatus {
+    UPDATER
+        .get()
+        .map(|u| u.status.lock().unwrap_or_else(|e| e.into_inner()).clone())
+        .unwrap_or_default()
+}
+
+/// "Check now" in the settings: runs a check at once, also with automatic updates off.
+pub fn check_now() {
+    if let Some(u) = UPDATER.get() {
+        u.check_now.notify_one();
+    }
+}
+
+/// Starts the updater once the sync service runs. Without package identity it only reports
+/// that updates are not available.
+pub fn start(app: AppHandle, drives: Arc<DriveManager>) {
+    let running = current_version();
+    let updater = Arc::new(Updater {
+        status: Mutex::new(UpdateStatus {
+            version: running.map(|v| v.to_string()).unwrap_or_default(),
+            supported: running.is_some(),
+            phase: "idle",
+            ..Default::default()
+        }),
+        check_now: Notify::new(),
+        started: Instant::now(),
+        dir: update_dir(),
+    });
+    if UPDATER.set(updater.clone()).is_err() {
+        return;
+    }
+    let Some(running) = running else {
+        tracing::info!(target: "updater", "No package identity, updates are off");
+        return;
+    };
+
+    report_last_update(&updater.dir, running);
+    fylvo_update::clean_downloads(&updater.dir);
+
+    tauri::async_runtime::spawn(async move {
+        let mut wait = FIRST_CHECK_AFTER;
+        loop {
+            let manual = tokio::select! {
+                _ = tokio::time::sleep(wait) => false,
+                _ = updater.check_now.notified() => true,
+            };
+            wait = CHECK_EVERY;
+            let auto = ConfigManager::try_get().map(|c| c.auto_update()).unwrap_or(true);
+            if !manual && !auto {
+                continue;
+            }
+            if let Err(e) = run(&app, &updater, &drives, running, manual).await {
+                tracing::warn!(target: "updater", error = %e, "Update failed");
+                set_status(|s| {
+                    s.phase = "failed";
+                    s.error = Some(e.to_string());
+                });
+            }
+            set_status(|s| s.last_check = Some(now()));
+            fylvo_update::clean_downloads(&updater.dir);
+        }
+    });
+}
+
+/// At start: was the last update installed? Shows the notification and keeps a failure.
+fn report_last_update(dir: &std::path::Path, running: Version) {
+    let mut state = State::load(dir);
+    let outcome = state.on_start(running, now());
+    if outcome == StartOutcome::Nothing {
+        return;
+    }
+    if let Err(e) = state.save(dir) {
+        tracing::warn!(target: "updater", error = %e, "Failed to save the update state");
+    }
+    match outcome {
+        StartOutcome::Updated { from, to } => {
+            tracing::info!(target: "updater", %from, %to, "Updated");
+            cloudreve_sync::utils::toast::send_general_text_toast(
+                &t!("updateDoneTitle"),
+                &t!("updateDoneMessage", version = short(to)),
+            );
+        }
+        StartOutcome::Failed { version } => {
+            tracing::warn!(target: "updater", %version, "The last update did not install");
+            set_status(|s| {
+                s.phase = "failed";
+                s.target = Some(short(version));
+                s.error = Some(t!("updateNotInstalled").to_string());
+            });
+            cloudreve_sync::utils::toast::send_warning_toast(
+                &t!("updateFailedTitle"),
+                &t!("updateFailedMessage", version = short(version), reason = t!("updateNotInstalled")),
+            );
+        }
+        StartOutcome::Nothing => {}
+    }
+}
+
+/// "0.3.0.0" -> "0.3.0" for people.
+fn short(v: Version) -> String {
+    let [a, b, c, d] = v.0;
+    if d == 0 { format!("{a}.{b}.{c}") } else { format!("{a}.{b}.{c}.{d}") }
+}
+
+/// One check: find, download, check, wait for idle, install.
+async fn run(
+    app: &AppHandle,
+    updater: &Updater,
+    drives: &Arc<DriveManager>,
+    running: Version,
+    manual: bool,
+) -> anyhow::Result<()> {
+    set_status(|s| {
+        s.phase = "checking";
+        s.error = None;
+    });
+    if drives.list_drives().await.is_empty() {
+        set_status(|s| s.phase = "no_drive");
+        return Ok(());
+    }
+    let http = fylvo_update::http_client(cloudreve_sync::USER_AGENT)?;
+    let Some((server, release)) = find_release(&http, drives).await? else {
+        set_status(|s| s.phase = "up_to_date");
+        return Ok(());
+    };
+    if !fylvo_update::is_newer(release.version, running) {
+        set_status(|s| s.phase = "up_to_date");
+        return Ok(());
+    }
+    if !manual && State::load(&updater.dir).blocked(release.version, now()) {
+        tracing::info!(target: "updater", version = %release.version, "Failed earlier, not tried again yet");
+        set_status(|s| {
+            s.phase = "failed";
+            s.target = Some(short(release.version));
+            s.error = Some(t!("updateNotInstalled").to_string());
+        });
+        return Ok(());
+    }
+
+    tracing::info!(target: "updater", version = %release.version, "Update found, downloading");
+    set_status(|s| {
+        s.phase = "downloading";
+        s.target = Some(short(release.version));
+    });
+    let mut release = release;
+    let mut path = None;
+    // A release replaced between the check and the download: ask once more.
+    for _ in 0..2 {
+        match fylvo_update::download(&http, &server, &release, &updater.dir).await? {
+            Downloaded::File(p) => {
+                path = Some(p);
+                break;
+            }
+            Downloaded::Gone => match fylvo_update::latest(&http, &server).await? {
+                Some(r) if fylvo_update::is_newer(r.version, running) => release = r,
+                _ => {
+                    set_status(|s| s.phase = "up_to_date");
+                    return Ok(());
+                }
+            },
+        }
+    }
+    let path = path.ok_or_else(|| anyhow::anyhow!("the release changed during the download"))?;
+
+    let result = install(app, updater, drives, running, &release, path).await;
+    if let Err(e) = &result {
+        // Not tried again for a day, unless the user asks.
+        let mut state = State::load(&updater.dir);
+        state.failed = Some(fylvo_update::state::Failed { version: release.version, at: now() });
+        let _ = state.save(&updater.dir);
+        cloudreve_sync::utils::toast::send_warning_toast(
+            &t!("updateFailedTitle"),
+            &t!("updateFailedMessage", version = short(release.version), reason = e.to_string()),
+        );
+    }
+    result
+}
+
+/// The first signed-in drive whose server has a release for this platform.
+async fn find_release(
+    http: &reqwest::Client,
+    drives: &Arc<DriveManager>,
+) -> anyhow::Result<Option<(Server, Release)>> {
+    let mut last_error = None;
+    for config in drives.list_drives().await {
+        let Some(mount) = drives.get_drive(&config.id).await else { continue };
+        let token = match mount.cr_client.fresh_access_token().await {
+            Ok(t) => t,
+            Err(e) => {
+                last_error = Some(anyhow::anyhow!("not signed in: {e}"));
+                continue;
+            }
+        };
+        let server = Server { base_url: mount.cr_client.base_url().to_string(), access_token: token };
+        match fylvo_update::latest(http, &server).await {
+            Ok(Some(release)) => return Ok(Some((server, release))),
+            Ok(None) => {}
+            Err(e) => last_error = Some(e),
+        }
+    }
+    match last_error {
+        Some(e) => Err(e),
+        None => Ok(None),
+    }
+}
+
+#[cfg(windows)]
+fn current_version() -> Option<Version> {
+    fylvo_update::windows::current().map(|id| id.version)
+}
+
+#[cfg(not(windows))]
+fn current_version() -> Option<Version> {
+    None
+}
+
+/// Windows: check the package, let Windows stage it, wait until idle, stop sync, register.
+#[cfg(windows)]
+async fn install(
+    app: &AppHandle,
+    updater: &Updater,
+    drives: &Arc<DriveManager>,
+    running: Version,
+    release: &Release,
+    path: PathBuf,
+) -> anyhow::Result<()> {
+    use fylvo_update::windows as win;
+
+    let current = win::current().ok_or_else(|| anyhow::anyhow!("no package identity"))?;
+    let package = {
+        let path = path.clone();
+        tokio::task::spawn_blocking(move || win::read_identity(&path)).await??
+    };
+    win::check_package(&package, &current, release.version)?;
+    {
+        let path = path.clone();
+        tokio::task::spawn_blocking(move || win::stage(&path)).await??;
+    }
+    tracing::info!(target: "updater", package = %package.full_name, "Update staged");
+
+    // Wait until no sync work runs; then the gate holds new work back.
+    set_status(|s| s.phase = "waiting");
+    let waiting_since = Instant::now();
+    loop {
+        if updater.started.elapsed() >= MIN_UPTIME && activity::close_if_idle(|| drives.has_pending_work()) {
+            break;
+        }
+        if waiting_since.elapsed() >= BUSY_GIVE_UP_AFTER {
+            anyhow::bail!("sync was busy for a whole day");
+        }
+        let pause = if updater.started.elapsed() < MIN_UPTIME { Duration::from_secs(5) } else { BUSY_RETRY_EVERY };
+        tokio::time::sleep(pause).await;
+    }
+
+    set_status(|s| s.phase = "installing");
+    let mut state = State::load(&updater.dir);
+    state.installing = Some(Installing { version: release.version, from: running });
+    if let Err(e) = state.save(&updater.dir) {
+        activity::reopen();
+        anyhow::bail!("failed to save the update state: {e}");
+    }
+
+    tracing::info!(target: "updater", "Stopping sync for the update");
+    if let Err(e) = crate::shutdown_sync().await {
+        // Sync is stopped already: start the app again instead of installing.
+        tracing::error!(target: "updater", error = %e, "Failed to save drive settings, not installing");
+        let mut state = State::load(&updater.dir);
+        state.installing = None;
+        let _ = state.save(&updater.dir);
+        restart(app, &current.family_name);
+        anyhow::bail!("failed to save drive settings: {e}");
+    }
+
+    let full_name = package.full_name.clone();
+    let result = tokio::task::spawn_blocking(move || win::register(&full_name)).await;
+    // Here Windows normally has closed the app already. Still running: either it failed, or
+    // Windows did not need to close it; start the installed version fresh in both cases.
+    let error = match result {
+        Ok(Ok(())) => None,
+        Ok(Err(e)) => Some(e),
+        Err(e) => Some(anyhow::anyhow!(e)),
+    };
+    if let Some(e) = &error {
+        tracing::error!(target: "updater", error = %e, "Registering the update failed");
+    }
+    restart(app, &current.family_name);
+    match error {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
+}
+
+#[cfg(not(windows))]
+async fn install(
+    _app: &AppHandle,
+    _updater: &Updater,
+    _drives: &Arc<DriveManager>,
+    _running: Version,
+    _release: &Release,
+    _path: PathBuf,
+) -> anyhow::Result<()> {
+    anyhow::bail!("updates are not supported on this platform yet")
+}
+
+/// Starts the app again through Windows (so it has its package identity) a moment after this
+/// process has ended, then ends this process. The single-instance check would otherwise hand
+/// the new start to this process.
+#[cfg(windows)]
+fn restart(app: &AppHandle, family_name: &str) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let target = format!("shell:AppsFolder\\{family_name}!Fylvo.Sync");
+    // The family name is Windows' own ([A-Za-z0-9._-]), so it needs no quoting.
+    let started = std::process::Command::new("cmd")
+        .raw_arg(format!("/d /c \"ping -n 4 127.0.0.1 >nul & start \"\" explorer.exe {target}\""))
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn();
+    if let Err(e) = started {
+        tracing::error!(target: "updater", error = %e, "Failed to schedule the restart");
+    }
+    app.exit(0);
+}

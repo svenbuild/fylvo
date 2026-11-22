@@ -125,6 +125,8 @@ impl Mount {
             match subscription.next_event().await {
                 Ok(Some(event)) => match event {
                     FileEvent::Event(events) => {
+                        // Fylvo: counted for the updater (activity.rs).
+                        let _busy = crate::activity::enter().await;
                         tracing::trace!(target: "drive::remote_events", events = ?events, "Handling file events batch");
                         if let Err(e) = self.handle_file_events(sync_path.clone(), events).await {
                             tracing::error!(target: "drive::remote_events", error = ?e, "Failed to handle file events");

@@ -13,6 +13,7 @@ use tokio::sync::OnceCell;
 use crate::commands::{show_add_drive_window_impl, show_main_window, show_settings_window_impl};
 mod commands;
 mod event_handler;
+mod updater;
 
 #[macro_use]
 extern crate rust_i18n;
@@ -139,6 +140,11 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
         .set(state)
         .map_err(|_| anyhow::anyhow!("App state already initialized"))?;
 
+    // Fylvo: updates from the app (desktop/UPDATER.md).
+    if let Some(state) = APP_STATE.get() {
+        updater::start(app.clone(), state.drive_manager.clone());
+    }
+
     // Store in Tauri's managed state as well for commands
     app.manage(AppStateHandle);
 
@@ -181,8 +187,21 @@ fn spawn_event_bridge(app_handle: AppHandle, event_broadcaster: &EventBroadcaste
     });
 }
 
+/// Fylvo: set once sync is stopped, so the exit after an update does not stop it twice.
+static SYNC_STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Perform graceful shutdown
 async fn shutdown() {
+    if let Err(e) = shutdown_sync().await {
+        tracing::error!(target: "main", error = %e, "Failed to persist drive configurations");
+    }
+}
+
+/// Stops sync and saves the drive settings, once; the updater uses it like "Quit".
+pub(crate) async fn shutdown_sync() -> anyhow::Result<()> {
+    if SYNC_STOPPED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Ok(());
+    }
     tracing::info!(target: "main", "Initiating shutdown...");
 
     if let Some(state) = APP_STATE.get() {
@@ -195,14 +214,12 @@ async fn shutdown() {
 
         // Persist drive state
         tracing::info!(target: "main", "Persisting drive configurations...");
-        if let Err(e) = state.drive_manager.persist().await {
-            tracing::error!(target: "main", error = %e, "Failed to persist drive configurations");
-        } else {
-            tracing::info!(target: "main", "Drive configurations saved successfully");
-        }
+        state.drive_manager.persist().await?;
+        tracing::info!(target: "main", "Drive configurations saved successfully");
     }
 
     tracing::info!(target: "main", "Shutdown complete");
+    Ok(())
 }
 
 /// Setup the system tray icon
@@ -344,6 +361,9 @@ pub fn run() {
             commands::set_log_max_files,
             commands::set_language,
             commands::open_log_folder,
+            commands::get_update_status,
+            commands::check_for_update,
+            commands::set_auto_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
