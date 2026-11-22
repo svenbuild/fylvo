@@ -19,6 +19,12 @@ publish the release, [Promote](../.github/workflows/promote.yml) also tags that 
 and `:latest`, the tags people pull. A tag like `v1.1.0-rc.1` becomes a pre-release and is never
 promoted.
 
+Publish one release at a time and wait until Promote has finished before the next one: GitHub keeps
+only one waiting run of it.
+
+The very first time, try the pipeline with a pre-release tag (`v1.0.0-rc.1`, never promoted) while
+the repository is still private, then delete that release and its image version.
+
 Only the first time: GitHub creates the image as private. Open the package `fylvo` under the
 profile's "Packages", "Package settings", set the visibility to public and link it to the
 repository.

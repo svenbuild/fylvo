@@ -1,6 +1,7 @@
 # The Fylvo image. The server binary is built outside (scripts/build.sh), one per architecture:
 # release/fylvo-linux-amd64 and release/fylvo-linux-arm64.
-FROM alpine:latest
+# Raise the Alpine version on purpose and test the image after it.
+FROM alpine:3.24
 
 WORKDIR /fylvo
 

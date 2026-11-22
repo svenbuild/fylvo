@@ -97,7 +97,7 @@ consistent; it takes as long as copying your files.
 ```bash
 cd ~/fylvo
 docker compose stop fylvo
-B=$HOME/fylvo-backup-$(date +%F-%H%M).tar.gz
+B=$HOME/fylvo-backup-$(date +%F-%H%M%S).tar.gz
 sudo sh -c "umask 077 && tar -czf $B.part -C $HOME fylvo && mv $B.part $B"
 docker compose start fylvo
 ```
@@ -108,19 +108,29 @@ holds all your files and settings, so only root may read it (`umask 077`); copy 
 Keep the backup on another disk or machine. For large amounts of data, a tool that copies only
 changes (`rsync`, `restic`, `borg`) is faster: stop Fylvo, copy the folder, start it again.
 
-Restore a backup: unpack it next to the current folder first, then swap the two.
+Restore a backup: the commands unpack it next to the current folder first and swap the two only
+when that worked. They stop at the first error; until the swap your current Fylvo is untouched.
+Unpacking needs free space for a second copy of your data.
 
 ```bash
-B=$HOME/fylvo-backup-<date>.tar.gz
-mkdir ~/fylvo-restore && sudo tar -xzf $B -C ~/fylvo-restore
-cd ~/fylvo && docker compose --profile office down
-cd ~ && sudo mv fylvo fylvo-old && sudo mv fylvo-restore/fylvo fylvo && rmdir fylvo-restore
-cd ~/fylvo && docker compose up -d
+B=$HOME/fylvo-backup-<date and time>.tar.gz
+bash -euc '
+  cd ~
+  [ ! -e fylvo-old ] && [ ! -e fylvo-restore ] || { echo "Move ~/fylvo-old and ~/fylvo-restore away first."; exit 1; }
+  mkdir fylvo-restore
+  sudo tar -xzf "$1" -C fylvo-restore
+  sudo test -d fylvo-restore/fylvo/data
+  (cd fylvo && docker compose --profile office down)
+  sudo mv fylvo fylvo-old
+  sudo mv fylvo-restore/fylvo fylvo
+  rmdir fylvo-restore
+  cd fylvo && docker compose up -d
+' restore "$B"
 ```
 
-If `tar` reports an error, stop there: your current Fylvo is untouched. `--profile office` stops
-office too, if you use it; with office, start with `docker compose --profile office up -d` in the
-last line.
+`--profile office` stops office too, if you use it; with office, start it again with
+`docker compose --profile office up -d`. If your user is not in the `docker` group, write
+`sudo docker compose` in the two compose lines.
 
 Sign in and open a few files. Delete `~/fylvo-old` when everything is there. A backup from an
 older Fylvo version starts with the current image too; Fylvo updates the database by itself.
@@ -159,10 +169,11 @@ file `fylvo-app-updates-<version>.tar.gz` with the new app packages in the layou
 Unpack it into the data folder:
 
 ```bash
-cd /tmp
-curl -fsSLO https://github.com/svenbuild/fylvo/releases/download/v1.0.0/fylvo-app-updates-1.0.0.tar.gz
-sudo tar --no-same-owner -xzf fylvo-app-updates-1.0.0.tar.gz -C ~/fylvo/data
-rm fylvo-app-updates-1.0.0.tar.gz
+V=1.0.0   # the release
+T=$(mktemp -d)
+curl -fsSL -o $T/apps.tar.gz https://github.com/svenbuild/fylvo/releases/download/v$V/fylvo-app-updates-$V.tar.gz
+sudo tar --no-same-owner -xzf $T/apps.tar.gz -C ~/fylvo/data
+rm -r $T
 ```
 
 Signed-in apps find the update within a few hours and install it after asking (Android) or when
