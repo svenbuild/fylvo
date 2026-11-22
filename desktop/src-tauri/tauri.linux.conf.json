@@ -8,7 +8,11 @@
     }
   },
   "bundle": {
-    "targets": ["appimage", "deb", "rpm"],
+    "targets": [
+      "appimage",
+      "deb",
+      "rpm"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -20,10 +24,16 @@
     "publisher": "Fylvo",
     "linux": {
       "deb": {
-        "depends": ["libayatana-appindicator3-1"]
+        "depends": [
+          "libayatana-appindicator3-1"
+        ],
+        "desktopTemplate": "linux/fylvo-desktop.desktop"
       },
       "rpm": {
-        "depends": ["libayatana-appindicator-gtk3"]
+        "depends": [
+          "libayatana-appindicator-gtk3"
+        ],
+        "desktopTemplate": "linux/fylvo-desktop.desktop"
       },
       "appimage": {
         "bundleMediaFramework": false
@@ -33,7 +43,9 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["fylvo"]
+        "schemes": [
+          "fylvo"
+        ]
       }
     }
   }

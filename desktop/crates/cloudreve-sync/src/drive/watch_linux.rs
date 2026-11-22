@@ -123,13 +123,13 @@ const RENAME_SETTLE: Duration = Duration::from_secs(5);
 const RENAME_RETRY: Duration = Duration::from_secs(60);
 
 /// Renames waiting for the server (network): both names are left alone by sync passes.
-static PENDING_RENAMES: Mutex<Vec<(PathBuf, PathBuf)>> = Mutex::new(Vec::new());
+static PENDING_RENAMES: Mutex<Vec<(PathBuf, PathBuf, Option<u64>)>> = Mutex::new(Vec::new());
 
-fn finish_pending_rename(from: &Path, to: &Path) {
-    PENDING_RENAMES
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .retain(|(f, t)| !(f == from && t == to));
+/// Ends a pending rename; returns the inode of the file it was about if it was one (a retry).
+fn finish_pending_rename(from: &Path, to: &Path) -> Option<Option<u64>> {
+    let mut pending = PENDING_RENAMES.lock().unwrap_or_else(|e| e.into_inner());
+    let index = pending.iter().position(|(f, t, _)| f == from && t == to)?;
+    Some(pending.remove(index).2)
 }
 
 fn in_pending_rename(path: &Path) -> bool {
@@ -137,12 +137,44 @@ fn in_pending_rename(path: &Path) -> bool {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .iter()
-        .any(|(from, to)| path.starts_with(from) || path.starts_with(to))
+        .any(|(from, to, _)| path.starts_with(from) || path.starts_with(to))
 }
 
 /// Paths put off by `rename_settled`, synced again together a moment later (one sync for many
 /// new files, not one each).
-static RESYNC: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+static RESYNC: Mutex<Vec<(PathBuf, Instant, UnboundedSender<MountCommand>)>> = Mutex::new(Vec::new());
+
+/// Sends the put-off paths whose wait is over, per drive, until none is left.
+async fn resync_loop() {
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let ready: Vec<(PathBuf, UnboundedSender<MountCommand>)> = {
+            let mut resync = RESYNC.lock().unwrap_or_else(|e| e.into_inner());
+            let (ready, waiting): (Vec<_>, Vec<_>) = std::mem::take(&mut *resync)
+                .into_iter()
+                .partition(|(_, at, _)| at.elapsed() >= RENAME_SETTLE);
+            *resync = waiting;
+            ready.into_iter().map(|(path, _, tx)| (path, tx)).collect()
+        };
+        let mut by_drive: Vec<(UnboundedSender<MountCommand>, Vec<PathBuf>)> = Vec::new();
+        for (path, tx) in ready {
+            match by_drive.iter_mut().find(|(known, _)| known.same_channel(&tx)) {
+                Some((_, paths)) => paths.push(path),
+                None => by_drive.push((tx, vec![path])),
+            }
+        }
+        for (tx, paths) in by_drive {
+            let _ = tx.send(MountCommand::Sync {
+                local_paths: paths,
+                mode: SyncMode::PathOnly,
+                user_initiated: false,
+            });
+        }
+        if RESYNC.lock().unwrap_or_else(|e| e.into_inner()).is_empty() {
+            return;
+        }
+    }
+}
 
 /// Paths a sync pass found as a possible half of a rename, with when it first saw them.
 static UNSETTLED: Mutex<Vec<(PathBuf, Instant)>> = Mutex::new(Vec::new());
@@ -172,21 +204,13 @@ pub(crate) fn rename_settled(
         }
         return false;
     }
-    unsettled.push((path.to_path_buf(), Instant::now()));
+    let now = Instant::now();
+    unsettled.push((path.to_path_buf(), now));
     let mut resync = RESYNC.lock().unwrap_or_else(|e| e.into_inner());
-    let first = resync.is_empty();
-    resync.push(path.to_path_buf());
-    if first {
-        let commands = commands.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(RENAME_SETTLE).await;
-            let paths = std::mem::take(&mut *RESYNC.lock().unwrap_or_else(|e| e.into_inner()));
-            let _ = commands.send(MountCommand::Sync {
-                local_paths: paths,
-                mode: SyncMode::PathOnly,
-                user_initiated: false,
-            });
-        });
+    let start = resync.is_empty();
+    resync.push((path.to_path_buf(), now, commands.clone()));
+    if start {
+        tokio::spawn(resync_loop());
     }
     false
 }
@@ -213,11 +237,18 @@ fn note_new_folders(events: &[DebouncedEvent]) {
 }
 
 /// Where the file or folder with `inode` is now, if it lies in a folder created a moment ago.
-fn find_in_new_folders(inode: u64) -> Option<PathBuf> {
+fn find_in_new_folders(inode: u64, root: &Path) -> Option<PathBuf> {
     use std::os::unix::fs::MetadataExt;
+    let device = std::fs::symlink_metadata(root).ok()?.dev();
     let folders: Vec<PathBuf> = {
         let recent = RECENT_FOLDERS.lock().unwrap_or_else(|e| e.into_inner());
-        recent.iter().map(|(path, _)| path.clone()).collect()
+        recent
+            .iter()
+            .map(|(path, _)| path.clone())
+            .filter(|path| {
+                path.starts_with(root) && !crate::drive::local_linux::is_foreign_below(path, root)
+            })
+            .collect()
     };
     let mut seen = 0;
     let mut stack = folders;
@@ -233,18 +264,40 @@ fn find_in_new_folders(inode: u64) -> Option<PathBuf> {
             let Ok(meta) = entry.metadata() else {
                 continue;
             };
-            if meta.file_type().is_symlink() {
+            if meta.file_type().is_symlink() || meta.dev() != device {
                 continue;
             }
             if meta.ino() == inode {
                 return Some(entry.path());
             }
-            if meta.is_dir() {
+            if meta.is_dir() && !crate::drive::local_linux::is_foreign(&entry.path()) {
                 stack.push(entry.path());
             }
         }
     }
     None
+}
+
+/// Deletions the rename handler decided on (a move to an ignored name, a move it could not
+/// undo): handled as deletions without looking for a hidden move again (that would loop).
+static DECIDED_DELETIONS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+pub(crate) fn note_decided_deletions(paths: &[PathBuf]) {
+    DECIDED_DELETIONS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .extend(paths.iter().cloned());
+}
+
+fn take_decided_deletion(path: &Path) -> bool {
+    let mut decided = DECIDED_DELETIONS.lock().unwrap_or_else(|e| e.into_inner());
+    match decided.iter().position(|known| known == path) {
+        Some(index) => {
+            decided.remove(index);
+            true
+        }
+        None => false,
+    }
 }
 
 /// A sync folder the shared watcher reports to.
@@ -392,12 +445,22 @@ impl Mount {
     /// Fylvo: deleted paths that are really moves into a folder made a moment ago (see
     /// `RECENT_FOLDERS`) are handled as renames; the rest is returned.
     pub(crate) async fn resolve_hidden_moves(&self, paths: Vec<PathBuf>) -> Vec<PathBuf> {
+        let root = self.config.read().await.sync_path.clone();
         let mut rest = Vec::with_capacity(paths.len());
         for path in paths {
+            if take_decided_deletion(&path) {
+                rest.push(path);
+                continue;
+            }
             let moved = self
                 .row_at(&path)
                 .and_then(|row| crate::drive::local_linux::stored_stamp(&row))
-                .and_then(|stamp| find_in_new_folders(stamp.inode));
+                .and_then(|stamp| {
+                    find_in_new_folders(stamp.inode, &root).filter(|found| {
+                        crate::drive::local_linux::LocalStamp::of_path(found)
+                            .is_some_and(|now| now.content == stamp.content)
+                    })
+                });
             match moved {
                 Some(to) if to != path => {
                     tracing::info!(target: "drive::watch", from = %path.display(), to = %to.display(), "A deletion is a move into a new folder");
@@ -417,6 +480,9 @@ impl Mount {
         let stamp = crate::drive::local_linux::LocalStamp::of_path(path)?;
         let rows = self.inventory.query_by_local_inode(&self.id, stamp.inode).ok()?;
         rows.into_iter()
+            .filter(|row| {
+                crate::drive::local_linux::stored_stamp(row).is_some_and(|s| s.content == stamp.content)
+            })
             .map(|row| PathBuf::from(row.local_path))
             .find(|old| old != path && std::fs::symlink_metadata(old).is_err())
     }
@@ -547,9 +613,10 @@ impl Mount {
     /// names alone meanwhile (`rename_settled`), and the rename is handled again in a minute.
     fn retry_rename_later(&self, from: PathBuf, to: PathBuf) {
         {
+            let inode = crate::drive::local_linux::LocalStamp::of_path(&to).map(|s| s.inode);
             let mut pending = PENDING_RENAMES.lock().unwrap_or_else(|e| e.into_inner());
-            if !pending.iter().any(|(f, t)| *f == from && *t == to) {
-                pending.push((from.clone(), to.clone()));
+            if !pending.iter().any(|(f, t, _)| *f == from && *t == to) {
+                pending.push((from.clone(), to.clone(), inode));
             }
         }
         let commands = self.command_tx.clone();
@@ -594,6 +661,20 @@ impl Mount {
 
     /// A user rename or move, seen after it happened. See the table in the plan.
     pub(crate) async fn process_rename_linux(&self, from: PathBuf, to: PathBuf) -> Result<()> {
+        // A retry is re-registered by `retry_rename_later` when it is needed again. A retry is
+        // only about the file it was made for: moved on or back meanwhile, the sync of both
+        // names decides instead.
+        if let Some(inode) = finish_pending_rename(&from, &to) {
+            let now = crate::drive::local_linux::LocalStamp::of_path(&to).map(|s| s.inode);
+            if inode.is_none() || now != inode || std::fs::symlink_metadata(&from).is_ok() {
+                let _ = self.command_tx.send(MountCommand::Sync {
+                    local_paths: vec![from, to],
+                    mode: SyncMode::PathOnly,
+                    user_initiated: false,
+                });
+                return Ok(());
+            }
+        }
         let root = self.config.read().await.sync_path.clone();
         let matcher = self.ignore_matcher.read().await;
         let (from_ignored, to_ignored) = (matcher.is_match(&from), matcher.is_match(&to));
@@ -648,9 +729,7 @@ impl Mount {
                 return Ok(());
             }
         }
-        let answer = self.rename_on_server(&from, &to).await;
-        finish_pending_rename(&from, &to);
-        match answer {
+        match self.rename_on_server(&from, &to).await {
             ServerAnswer::Done => {
                 if self.row_at(&from).is_some() {
                     self.inventory

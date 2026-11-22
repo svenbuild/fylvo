@@ -22,19 +22,28 @@ fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-/// A path for an `Exec=` line of a `.desktop` file (quoted, with the reserved characters
-/// escaped as the Desktop Entry spec asks).
-fn exec_quoted(path: &Path) -> String {
+/// A path for an `Exec=` line of a `.desktop` file, as the Desktop Entry spec asks: quoted, with
+/// `"`, `` ` ``, `$` and `\` escaped inside the quotes, `%` doubled (else a field code), then the
+/// backslashes escaped once more for the string value. `None` for a path with a line break or
+/// another control character, which no desktop file line can hold.
+fn exec_quoted(path: &Path) -> Option<String> {
     let text = path.to_string_lossy();
-    let mut out = String::from("\"");
-    for c in text.chars() {
-        if matches!(c, '"' | '`' | '$' | '\\') {
-            out.push('\\');
-        }
-        out.push(c);
+    if text.chars().any(|c| c.is_control()) {
+        return None;
     }
-    out.push('"');
-    out
+    let mut quoted = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' | '`' | '$' | '\\' => {
+                quoted.push('\\');
+                quoted.push(c);
+            }
+            '%' => quoted.push_str("%%"),
+            _ => quoted.push(c),
+        }
+    }
+    quoted.push('"');
+    Some(quoted.replace('\\', "\\\\"))
 }
 
 /// A path for a POSIX shell script (single quotes).
@@ -46,11 +55,11 @@ fn autostart_file() -> Option<PathBuf> {
     Some(home()?.join(".config/autostart/fylvo-desktop.desktop"))
 }
 
-fn autostart_entry(program: &Path) -> String {
-    format!(
+fn autostart_entry(program: &Path) -> Option<String> {
+    Some(format!(
         "[Desktop Entry]\nType=Application\nName=Fylvo Desktop\nExec={}\nIcon=fylvo-desktop\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
-        exec_quoted(program)
-    )
+        exec_quoted(program)?
+    ))
 }
 
 /// Whether the app starts with the session.
@@ -63,7 +72,9 @@ pub fn set_autostart(enabled: bool) -> std::io::Result<()> {
     let file = autostart_file()
         .ok_or_else(|| std::io::Error::other("no home folder"))?;
     if enabled {
-        write_file(&file, &autostart_entry(&launcher()), false)
+        let entry = autostart_entry(&launcher())
+            .ok_or_else(|| std::io::Error::other("the program path cannot be written to a desktop file"))?;
+        write_file(&file, &entry, false)
     } else {
         match std::fs::remove_file(&file) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
@@ -88,19 +99,19 @@ fn write_file(path: &Path, content: &str, executable: bool) -> std::io::Result<(
 /// GNOME Files (Nautilus) runs scripts from this folder for the selected files.
 fn nautilus_script(program: &Path) -> String {
     format!(
-        "#!/bin/sh\n# Fylvo Desktop: open the selected files in the Fylvo web app.\nprintf '%s' \"$NAUTILUS_SCRIPT_SELECTED_FILE_PATHS\" | while IFS= read -r path; do\n  [ -n \"$path\" ] && {} {} \"$path\"\ndone\n",
+        "#!/bin/sh\n# Fylvo Desktop: open the selected files in the Fylvo web app.\nprintf '%s' \"$NAUTILUS_SCRIPT_SELECTED_FILE_PATHS\" | while IFS= read -r path || [ -n \"$path\" ]; do\n  [ -n \"$path\" ] && {} {} \"$path\"\ndone\n",
         shell_quoted(program),
         VIEW_ONLINE_ARG
     )
 }
 
 /// Dolphin (KDE) reads service menus from this folder.
-fn dolphin_menu(program: &Path, label: &str) -> String {
-    format!(
+fn dolphin_menu(program: &Path, label: &str) -> Option<String> {
+    Some(format!(
         "[Desktop Entry]\nType=Service\nMimeType=all/all;inode/directory;\nActions=fylvoViewOnline;\nX-KDE-Priority=TopLevel\n\n[Desktop Action fylvoViewOnline]\nName={label}\nIcon=fylvo-desktop\nExec={} {} %f\n",
-        exec_quoted(program),
+        exec_quoted(program)?,
         VIEW_ONLINE_ARG
-    )
+    ))
 }
 
 /// Write the file manager entries and refresh the autostart entry, with the path of the
@@ -110,6 +121,10 @@ pub fn install_desktop_integration(label: &str) {
         return;
     };
     let program = launcher();
+    let Some(dolphin) = dolphin_menu(&program, label) else {
+        tracing::warn!(target: "main", path = %program.display(), "Program path with a line break, no file manager entries");
+        return;
+    };
     let files = [
         (
             home.join(".local/share/nautilus/scripts").join(label),
@@ -118,7 +133,7 @@ pub fn install_desktop_integration(label: &str) {
         ),
         (
             home.join(".local/share/kio/servicemenus/fylvo-desktop.desktop"),
-            dolphin_menu(&program, label),
+            dolphin,
             true,
         ),
     ];
@@ -162,8 +177,11 @@ mod tests {
     #[test]
     fn paths_are_quoted_for_desktop_files_and_shell() {
         let odd = Path::new("/home/a b/it's \"$x\".AppImage");
-        assert_eq!(exec_quoted(odd), "\"/home/a b/it's \\\"\\$x\\\".AppImage\"");
+        // Inside the quotes `\"` and `\$`, then every backslash doubled for the string value.
+        assert_eq!(exec_quoted(odd).unwrap(), "\"/home/a b/it's \\\\\"\\\\$x\\\\\".AppImage\"");
         assert_eq!(shell_quoted(odd), "'/home/a b/it'\\''s \"$x\".AppImage'");
+        assert_eq!(exec_quoted(Path::new("/a/100%.AppImage")).unwrap(), "\"/a/100%%.AppImage\"");
+        assert_eq!(exec_quoted(Path::new("/a/b\nExec=evil")), None);
     }
 
     #[test]
@@ -187,7 +205,7 @@ mod tests {
         let script = dir.path().join("script");
         write_file(&script, &nautilus_script(&fake), true).unwrap();
         let status = std::process::Command::new(&script)
-            .env("NAUTILUS_SCRIPT_SELECTED_FILE_PATHS", "/a/one.txt\n/a/two words.txt\n")
+            .env("NAUTILUS_SCRIPT_SELECTED_FILE_PATHS", "/a/one.txt\n/a/two words.txt")
             .status()
             .unwrap();
         assert!(status.success());

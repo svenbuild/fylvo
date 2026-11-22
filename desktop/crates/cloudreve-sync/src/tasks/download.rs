@@ -247,6 +247,12 @@ impl<'a> DownloadTask<'a> {
 
     /// Execute the download task
     pub async fn execute(&mut self) -> Result<()> {
+        // Fylvo (Linux): the folder may have become a symlink or mount point since planning.
+        #[cfg(target_os = "linux")]
+        if crate::drive::local_linux::is_foreign_below(&self.task.payload.local_path, &self.sync_path) {
+            info!(target: "tasks::download", local_path = %self.task.payload.local_path_display(), "Behind a symlink or mount point, not downloaded");
+            return Ok(());
+        }
         // Get local file info
         let local_file_info = LocalFileInfo::from_path(&self.task.payload.local_path)
             .context("failed to get local file info")?;

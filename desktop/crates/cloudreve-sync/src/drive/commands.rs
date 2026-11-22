@@ -1202,6 +1202,7 @@ impl Mount {
     /// Fylvo (Linux): handle `paths` as deleted here (guards, server trash).
     #[cfg(target_os = "linux")]
     pub(crate) async fn remove_paths(&self, paths: Vec<PathBuf>) {
+        crate::drive::watch_linux::note_decided_deletions(&paths);
         let (sync_path, remote_base) = {
             let config = self.config.read().await;
             (config.sync_path.clone(), config.remote_path.to_string())

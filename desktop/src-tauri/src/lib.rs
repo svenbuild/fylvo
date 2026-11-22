@@ -369,8 +369,14 @@ pub fn run() {
             // Setup system tray
             setup_tray(app)?;
 
-            #[cfg(desktop)]
+            #[cfg(all(desktop, not(target_os = "linux")))]
             app.deep_link().register("fylvo")?;
+            // Fylvo: on Linux this writes a desktop file and runs `xdg-mime`; without it (a
+            // minimal system) the app still runs, the rpm and deb carry the handler anyway.
+            #[cfg(target_os = "linux")]
+            if let Err(e) = app.deep_link().register("fylvo") {
+                tracing::warn!(target: "main", error = %e, "Failed to register fylvo:// links");
+            }
 
             // Spawn async setup task - this runs in the background
             // while the app continues to start
