@@ -64,13 +64,9 @@ const CustomizeSetting = () => {
   const [rootViewRead, setRootViewRead] = useState(false);
   const [savingView, setSavingView] = useState(false);
   const savingViewRef = useRef(false);
+  // The edited list is kept here only while saves run; afterwards the stored one is shown.
   const [localWidgets, setWidgets] = useState<HomeWidget[] | undefined>();
   const pendingWidgets = useRef(0);
-  useEffect(() => {
-    if (pendingWidgets.current == 0) {
-      setWidgets(prefs?.home.widgets);
-    }
-  }, [prefs?.home]);
   const viewSync = !prefs || prefs.view.layout !== undefined;
 
   const themeKeys = useMemo(() => {
@@ -104,7 +100,11 @@ const CustomizeSetting = () => {
     pendingWidgets.current++;
     dispatch(savePrefs({ home: { widgets: next } }))
       .catch(() => dispatch(loadPrefs()))
-      .finally(() => pendingWidgets.current--);
+      .finally(() => {
+        if (--pendingWidgets.current == 0) {
+          setWidgets(undefined);
+        }
+      });
   };
   const moveWidget = (from: number, to: number) => {
     if (to < 0 || to >= widgets.length) return;
@@ -120,7 +120,16 @@ const CustomizeSetting = () => {
     if (!rootViewRead || savingViewRef.current) return;
     savingViewRef.current = true;
     setSavingView(true);
-    const base = rootView ?? { page_size: 0 };
+    // Read again right before writing, so a change made meanwhile (another tab) is kept.
+    let current = rootView;
+    try {
+      current = (await dispatch(getFileList({ uri: defaultPath }))).view ?? current;
+    } catch (e) {
+      savingViewRef.current = false;
+      setSavingView(false);
+      return;
+    }
+    const base = current ?? { page_size: 0 };
     const view: ExplorerView = {
       page_size: base.page_size || SessionManager.getWithFallback(UserSettings.PageSize),
       order: base.order,

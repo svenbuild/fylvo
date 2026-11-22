@@ -196,6 +196,23 @@ func TestPrefsSidebarKeepsPinsInStep(t *testing.T) {
 	require.Contains(t, got, "link:cloudreve://my/D")
 	require.NotContains(t, got, "link:cloudreve://my/B", "removed in the editor")
 
+	// A link unpinned on another device while the editor was open stays removed.
+	_, err = e.dep.UserClient().UpdateSettings(e.ctx, e.owner.ID, func(s *types.UserSetting) error {
+		s.Pined = []types.PinedFile{{Uri: "cloudreve://my/E"}}
+		return nil
+	})
+	require.NoError(t, err)
+	res, err = e.patch(e.owner, `{"sidebar":{"items":[{"type":"my_files"},{"type":"link","uri":"cloudreve://my/D"}],"base":["cloudreve://my/D"]}}`)
+	require.NoError(t, err)
+	got = sidebarTypes(res.Sidebar.Items)
+	require.NotContains(t, got, "link:cloudreve://my/D")
+	require.Contains(t, got, "link:cloudreve://my/E")
+	_, err = e.dep.UserClient().UpdateSettings(e.ctx, e.owner.ID, func(s *types.UserSetting) error {
+		s.Pined = []types.PinedFile{{Uri: "cloudreve://my/D"}}
+		return nil
+	})
+	require.NoError(t, err)
+
 	// An empty list stays empty after a reload.
 	_, err = e.patch(e.member, `{"home":{"widgets":[]}}`)
 	require.NoError(t, err)

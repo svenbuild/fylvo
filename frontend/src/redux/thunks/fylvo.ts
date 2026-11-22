@@ -128,7 +128,10 @@ function changePrefs(send: () => Promise<Prefs>): AppThunk<Promise<Prefs>> {
         dispatch(applyIfCurrent(prefs, uid, version));
         return prefs;
       } finally {
-        prefsVersion++;
+        // Only while the same account is signed in; a newer account's reads stay valid.
+        if (uid == currentUid()) {
+          prefsVersion++;
+        }
       }
     });
   };
@@ -211,7 +214,9 @@ export function setFavorite(files: FileResponse[], on: boolean): AppThunk<Promis
           dispatch(setFavoriteIds(res.favorites));
         }
       } finally {
-        prefsVersion++;
+        if (uid == currentUid()) {
+          prefsVersion++;
+        }
       }
       dispatch(increaseFavoritesGeneration());
     });

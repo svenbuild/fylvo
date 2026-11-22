@@ -20,6 +20,8 @@ import FileRows from "./FileRows.tsx";
 // Fylvo: the start page, put together from the blocks the account chose (prefs.home).
 
 const recentCount = 12;
+// The search walks folder by folder; a larger window, sorted here, finds recent files in subfolders too.
+const recentWindow = 200;
 const favoritesCount = 8;
 
 const Section = ({
@@ -47,16 +49,22 @@ const Recent = () => {
   const dispatch = useAppDispatch();
   const [files, setFiles] = useState<FileResponse[] | undefined>();
   useEffect(() => {
-    // The same query as the phone app: the newest files of the whole account.
+    // Like the phone app: the newest files of the whole account.
     dispatch(
       getFileList({
         uri: `${defaultPath}?type=file`,
-        page_size: recentCount,
+        page_size: recentWindow,
         order_by: "updated_at",
         order_direction: "desc",
       }),
     )
-      .then((res) => setFiles(res.files.slice(0, recentCount)))
+      .then((res) =>
+        setFiles(
+          [...res.files]
+            .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+            .slice(0, recentCount),
+        ),
+      )
       .catch(() => setFiles([]));
   }, []);
   return (

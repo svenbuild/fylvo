@@ -179,8 +179,8 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 		}
 		var sidebar struct {
 			Items *[]types.FylvoSidebarItem `json:"items"`
-			// Base: the links the editor started from. A pinned link that is neither in Items nor
-			// in Base was added meanwhile (another device) and is kept at the end.
+			// Base: the links the editor started from, to merge with changes made meanwhile on
+			// another device (see mergeLinks).
 			Base *[]string `json:"base"`
 		}
 		if err := strictUnmarshal(raw, &sidebar); err != nil || sidebar.Items == nil {
@@ -190,7 +190,7 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 			if item.Type != SidebarLink {
 				continue
 			}
-			if uri, err := fs.NewUriFromString(item.Uri); err == nil && string(uri.FileSystem()) == connectedFileSystem {
+			if uri, err := parseLink(item.Uri); err == nil && string(uri.FileSystem()) == connectedFileSystem {
 				if err := CheckConnectedLink(ctx, dep, u, uri); err != nil {
 					return nil, err
 				}
@@ -200,7 +200,7 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 		allowed := connectedSet(connected)
 		return func(s *types.UserSetting) error {
 			previous := len(effectiveSidebar(s.FylvoPrefs.Sidebar, s.Pined, connected))
-			items, err := checkSidebar(keepNewLinks(*sidebar.Items, sidebar.Base, s.Pined), s.Pined, allowed,
+			items, err := checkSidebar(mergeLinks(*sidebar.Items, sidebar.Base, s.Pined), s.Pined, allowed,
 				connected, previous)
 			if err != nil {
 				return err
@@ -320,7 +320,7 @@ func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, conne
 			key += ":" + item.Category
 			item = types.FylvoSidebarItem{Type: item.Type, Category: item.Category, Hidden: item.Hidden}
 		case SidebarLink:
-			uri, err := fs.NewUriFromString(item.Uri)
+			uri, err := parseLink(item.Uri)
 			if err != nil {
 				return nil, paramError("invalid link %q", item.Uri)
 			}
@@ -365,28 +365,56 @@ func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, conne
 	return result, nil
 }
 
-// keepNewLinks appends the pinned links that are neither in items nor in base (when base is given).
-func keepNewLinks(items []types.FylvoSidebarItem, base *[]string, pined []types.PinedFile) []types.FylvoSidebarItem {
+// parseLink reads the address of a sidebar link. It is the one place to change when connected
+// storages need their own parser for "connected" addresses.
+func parseLink(raw string) (*fs.URI, error) {
+	return fs.NewUriFromString(raw)
+}
+
+// normalizedLink returns the address in the form stored in pined, or "" when it is not valid.
+func normalizedLink(raw string) string {
+	uri, err := parseLink(raw)
+	if err != nil {
+		return ""
+	}
+	return uri.String()
+}
+
+// mergeLinks takes the changes made on another device while the editor was open into account
+// (only when the editor sends base, the links it started from): a link pinned meanwhile (neither
+// in base nor in items) is kept at the end, a link unpinned meanwhile (in base, no longer pinned)
+// stays removed.
+func mergeLinks(items []types.FylvoSidebarItem, base *[]string, pined []types.PinedFile) []types.FylvoSidebarItem {
 	if base == nil {
 		return items
 	}
-	known := make(map[string]bool, len(*base)+len(items))
-	for _, uri := range *base {
-		if parsed, err := fs.NewUriFromString(uri); err == nil {
-			known[parsed.String()] = true
-		}
+	inBase := make(map[string]bool, len(*base))
+	for _, raw := range *base {
+		inBase[normalizedLink(raw)] = true
 	}
+	pinned := make(map[string]bool, len(pined))
+	for _, p := range pined {
+		pinned[p.Uri] = true
+	}
+
+	merged := make([]types.FylvoSidebarItem, 0, len(items)+len(pined))
+	known := make(map[string]bool, len(items))
 	for _, item := range items {
-		if parsed, err := fs.NewUriFromString(item.Uri); item.Type == SidebarLink && err == nil {
-			known[parsed.String()] = true
+		if item.Type == SidebarLink {
+			uri := normalizedLink(item.Uri)
+			if inBase[uri] && !pinned[uri] {
+				continue // unpinned meanwhile on another device
+			}
+			known[uri] = true
 		}
+		merged = append(merged, item)
 	}
 	for _, p := range pined {
-		if !known[p.Uri] {
-			items = append(items, types.FylvoSidebarItem{Type: SidebarLink, Uri: p.Uri, Name: p.Name})
+		if !known[p.Uri] && !inBase[p.Uri] {
+			merged = append(merged, types.FylvoSidebarItem{Type: SidebarLink, Uri: p.Uri, Name: p.Name})
 		}
 	}
-	return items
+	return merged
 }
 
 func checkHome(widgets []types.FylvoHomeWidget) ([]types.FylvoHomeWidget, error) {

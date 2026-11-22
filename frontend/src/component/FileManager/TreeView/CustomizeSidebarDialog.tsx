@@ -177,7 +177,8 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
           {t("customize.editSidebarHint")}
         </Typography>
-        <Stack spacing={0.25}>
+        {/* Read-only until the fresh copy is there, so no edit is replaced by it. */}
+        <Stack spacing={0.25} sx={{ pointerEvents: fresh ? "auto" : "none", opacity: fresh ? 1 : 0.6 }}>
           {rows.map(({ key, item }, index) => {
             const removable = item.type == "link" || item.type == "heading";
             return (
@@ -246,13 +247,13 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
           })}
         </Stack>
         <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: "wrap", rowGap: 1 }}>
-          <SecondaryButton variant="contained" size="small" onClick={addFolder}>
+          <SecondaryButton variant="contained" size="small" onClick={addFolder} disabled={!fresh}>
             {t("customize.addFolder")}
           </SecondaryButton>
           <SecondaryButton
             variant="contained"
             size="small"
-            disabled={!tags?.length}
+            disabled={!fresh || !tags?.length}
             onClick={(e) => setTagMenu(e.currentTarget)}
           >
             {t("customize.addTag")}
@@ -284,7 +285,7 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
             sx={{ flexGrow: 1, "& input": { py: "6px" } }}
             inputProps={{ maxLength: 64 }}
           />
-          <SecondaryButton variant="contained" size="small" onClick={addHeading} disabled={!heading.trim()}>
+          <SecondaryButton variant="contained" size="small" onClick={addHeading} disabled={!fresh || !heading.trim()}>
             {t("customize.addHeading")}
           </SecondaryButton>
         </Stack>

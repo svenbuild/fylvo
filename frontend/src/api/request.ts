@@ -221,7 +221,8 @@ export function send<T = any>(
           case Code.CodeLoginRequired:
             if (!signOutLock) {
               SessionManager.signOutCurrent();
-              // Fylvo: forget the account's preferences and tags in this tab.
+              // Fylvo: forget the account's preferences and tags in this tab (as clearAccountData,
+              // which cannot be imported here without an import loop).
               dispatch(setPrefs(undefined));
               dispatch(setTags(undefined));
               router.navigate(
