@@ -30,9 +30,12 @@ New, signed-in users only (`auth` group in `routers/router.go`, like Android):
 
 `platform` is one of a fixed list: `windows-x64`, `windows-arm64`, `linux-x64`,
 `linux-arm64` (anything else: 404, never used in a path). Folder:
-`<data>/desktop/<platform>/<sha256>.pkg` and `release.json`. `version`: `^\d{1,5}(\.\d{1,5}){0,3}$`;
-`file_name`: `^[A-Za-z0-9._-]{1,80}$`; size limit 500 MB. Nothing published or broken: code
-404 like Android (the app treats it as "no update").
+`<data>/desktop/<platform>/<sha256>.pkg` and `release.json`. `version`: 1 to 4 dot separated
+numbers, each 0..65535 (missing parts count as 0, so `0.2.2` = `0.2.2.0`); `file_name`:
+`^[A-Za-z0-9._-]{1,80}$`; size limit 500 MB. Errors like Android: HTTP 200 with the usual JSON
+`code`; nothing published or broken is code 404 (the app treats it as "no update"), not signed
+in is the usual 401 code. The Linux thread confirms its platform keys before the list is
+fixed (a key would name the format if Linux ever ships two, e.g. `linux-x64-appimage`).
 
 Tests: table tests for the shared store (missing, broken json, wrong size, wrong checksum,
 symlink, unknown platform), existing Android tests stay green, controller test for both routes.
@@ -46,8 +49,9 @@ older packages. Package check per platform in its own function; Windows:
 
 - `AppxManifest.xml` from the zip: `Name="Fylvo.Desktop"`, `Publisher="CN=Fylvo"`,
   `ProcessorArchitecture` matches the platform, version.
-- Signature: `signtool verify /pa` passes and the signer certificate thumbprint equals the
-  Fylvo certificate (pinned in the script).
+- Signature: `Get-AuthenticodeSignature` on the .msix reports no hash mismatch and the signer
+  thumbprint equals the Fylvo certificate (pinned in the script). `signtool verify /pa` is not
+  used: it wants a trusted root, the certificate is only in TrustedPeople.
 - Version strictly higher than the published one (part by part).
 
 Linux adds its own check function (other thread).
@@ -58,12 +62,27 @@ Linux adds its own check function (other thread).
   CA, `CN=Fylvo`, valid 30 years). Kept like the Android key: PFX in
   `C:\Users\alex\Documents\Projects\Fylvo-Signing\`, password from Sven (the password manager), public
   `.cer` in the repo (`desktop/package/fylvo-desktop.cer`) with its thumbprint.
+- The password lives only in the password manager (and in the session that signs), never on the NAS or
+  in the repo.
 - `build-msix.ps1 -Sign` signs with `signtool sign /fd SHA256 /f <pfx>`; password from the
   environment (`FYLVO_SIGN_PASSWORD`), never on the command line in logs.
-- `desktop/install.ps1` (replaces the Developer Mode part of `install-local.ps1`): asks for
-  admin once, imports the `.cer` into `LocalMachine\TrustedPeople` if missing, removes a
-  development registration of `Fylvo.Desktop` (data in `%USERPROFILE%\.fylvo` stays), then
-  `Add-AppxPackage` the signed MSIX. `install-local.ps1` stays for unsigned dev builds.
+- `desktop/install.ps1` (first install and the one-time move away from Developer Mode), runs
+  as the normal user:
+  1. Check the MSIX first: signature without hash mismatch, signer thumbprint pinned, manifest
+     name/publisher. Nothing is touched before that.
+  2. Import the `.cer` into `LocalMachine\TrustedPeople` if missing (only this step runs
+     elevated, in its own process).
+  3. If a development registration exists: stop the app, `Remove-AppxPackage
+     -PreserveApplicationData`, `Add-AppxPackage` the signed MSIX; if that fails, register the
+     old folder again (`Add-AppxPackage -Register`). The old folder
+     `%LOCALAPPDATA%\Programs\FylvoDesktop` is deleted only after the signed install works
+     (with the `Test-FylvoFolder` check of today's script). Data in `%USERPROFILE%\.fylvo`
+     stays.
+  4. `-ForceUpdateFromAnyVersion` switch for a manual repair with an older good package.
+- Every published MSIX is also kept on the PC
+  (`C:\Users\alex\Documents\Projects\Fylvo-Desktop\`), so a version that crashes at start
+  can be replaced by hand with the last good one (the NAS keeps only the newest).
+- `install-local.ps1` stays for unsigned dev builds.
 
 ## App (Rust)
 
@@ -77,15 +96,30 @@ New crate `desktop/crates/fylvo-update`, small hooks into existing files only:
   every 5 minutes (at most 24 hours, then the next round). Writes a small state file
   `~/.fylvo/update/state.json` (`{"installing": "<version>", "from": "<version>"}`) before the
   install so the next start can tell success from failure.
-- `windows.rs` (`cfg(windows)`): read `AppxManifest.xml` from the downloaded zip (crate `zip`)
-  and check name, publisher, architecture and version (= release version and higher than the
-  running one); then `RegisterApplicationRestart`, then
-  `PackageManager::AddPackageByUriAsync` with `ForceTargetAppShutdown`. Windows checks the
-  signature, stages, stops the app, registers, restarts it. If staging fails (bad signature,
-  broken file) the app is still running and reports the error.
-- Which server: the drives' own signed-in clients (`Mount::cr_client`), first one that
-  answers; no drive means no update check. `cloudreve-api` gets one small method for an
-  authenticated raw GET (stream).
+- `windows.rs` (`cfg(windows)`), in this order:
+  1. `PackageManager::StagePackageAsync` while sync keeps running. Windows checks signature,
+     publisher and files here; almost every error (broken file, unsigned, wrong key) ends here
+     and is only reported.
+  2. Ask `is_busy()` again; if busy, wait (the staged package stays, step 1 is cheap next time).
+  3. Stop sync exactly like "Quit" in the tray (`DriveManager::shutdown()` + `persist()`). An
+     update is never more harmful than quitting the app. If `persist()` fails: no install,
+     `app.restart()`.
+  4. `RegisterApplicationRestart("--updated")` (the app has run for more than 60 seconds by
+     then; "Check now" waits for that too), then `AddPackageAsync` with
+     `ForceTargetAppShutdown`. This only registers the staged package. If it fails while the
+     app still runs: `app.restart()`.
+  The app does not parse the package itself: Windows refuses other publishers and lower
+  versions; the app only compares the release version with its own
+  (`Package::Current().Id().Version()`, four u16 parts).
+- `persist()` writes atomically (temp file + rename), a small fix that also helps normal quits.
+- Which server: the drives' own signed-in clients (`Mount::cr_client`), in order, first one
+  that has a release; no drive means no update check. The same client downloads (token
+  refresh included). Only `https` base URLs, or `http` to a loopback address (local tests);
+  a response whose final URL is not https (redirect) is refused. If the checksum disappears
+  between `latest` and the download (a new release), `latest` is asked once more.
+  `cloudreve-api` gets one small method for an authenticated raw GET (stream).
+- "Check now" works also with the switch off (the switch only controls automatic checks). It
+  installs right away when idle, otherwise it shows "waiting for sync to finish".
 - `is_busy()` in `src-tauri`: any running or queued task in any drive (`task_queue`), any
   running hydration (counter in the fetch-data callback, small change), or a pending held
   deletion question.
@@ -107,9 +141,11 @@ version, downloaded over https from the user's own signed-in server, with matchi
 checksum.
 
 - Someone who controls the server or the NAS data folder can only offer packages; without the
-  private key Windows rejects them. They can withhold updates (no harm beyond staying old) or
+  private key and its password Windows rejects them (a copy of the PFX may sit on the NAS
+  like the Android key, its password never does). They can withhold updates (no harm beyond staying old) or
   offer an old signed package: refused by the "higher version" check.
-- A man in the middle: https; plain http server addresses are not used for updates.
+- A man in the middle: https; plain http only for loopback addresses; the signature still
+  protects even then.
 - A public CA certificate with subject exactly `CN=Fylvo` is not realistic (public code
   signing certificates carry O, L, C). Optional extra: pin the signer thumbprint in the app
   (parse the package signature); left out unless the review says it is needed.
@@ -129,12 +165,22 @@ checksum.
   unsigned / wrongly signed package, cut download: old version keeps running. Finally the
   newest version is installed and connected to nothing.
 
+## Known limits
+
+- If registration fails after Windows has closed the app (rare: staging already passed), the
+  app may stay closed until the next logon (startup task) or a manual start. Tested in the
+  spike; a fallback (scheduled task) is built only if the spike shows it is needed.
+- A version that installs fine and then crashes at start cannot heal itself: manual repair
+  with the kept good MSIX and `install.ps1 -ForceUpdateFromAnyVersion`.
+- Installing from a file URI needs Windows 10 2004 or newer; the manifest minimum is raised to
+  10.0.19041 (2004+ also has sideloading on by default).
+
 ## Order
 
-1. Spike: self update with `AddPackageByUriAsync` + `ForceTargetAppShutdown` +
-   `RegisterApplicationRestart` from inside the packaged app, and switching the dev
-   registration to the signed package (keeps `~/.fylvo`). If the restart does not work, a
-   fallback: the app starts the installation through a scheduled task outside the package.
+1. Spike (partly done 2026-11-22: unsigned refused, signed installs after trusting the
+   certificate, a dev registration must be removed first, family name unchanged). Still to
+   test: self update from inside the app incl. restart, a failure after the app was closed,
+   the move with existing placeholders and autostart.
 2. Server and publish script.
 3. App crate, settings, texts.
 4. Tests, real run, rat on the code.
