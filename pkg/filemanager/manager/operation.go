@@ -404,20 +404,23 @@ func (m *manager) TraverseFile(ctx context.Context, fileID int) (fs.File, error)
 
 func (m *manager) PatchView(ctx context.Context, uri *fs.URI, view *types.ExplorerView) error {
 	if uri.PathTrimmed() == "" && uri.FileSystem() != constants.FileSystemMy && uri.FileSystem() != constants.FileSystemShare {
-		if m.user.Settings.FsViewMap == nil {
-			m.user.Settings.FsViewMap = make(map[string]types.ExplorerView)
-		}
+		settings, err := m.dep.UserClient().UpdateSettings(ctx, m.user.ID, func(s *types.UserSetting) error {
+			if s.FsViewMap == nil {
+				s.FsViewMap = make(map[string]types.ExplorerView)
+			}
 
-		if view == nil {
-			delete(m.user.Settings.FsViewMap, string(uri.FileSystem()))
-		} else {
-			m.user.Settings.FsViewMap[string(uri.FileSystem())] = *view
-		}
-
-		if err := m.dep.UserClient().SaveSettings(ctx, m.user); err != nil {
+			if view == nil {
+				delete(s.FsViewMap, string(uri.FileSystem()))
+			} else {
+				s.FsViewMap[string(uri.FileSystem())] = *view
+			}
+			return nil
+		})
+		if err != nil {
 			return serializer.NewError(serializer.CodeDBError, "failed to save user settings", err)
 		}
 
+		m.user.Settings = settings
 		return nil
 	}
 

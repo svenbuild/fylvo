@@ -30,24 +30,28 @@ func (service *PinFileService) PinFile(c *gin.Context) error {
 	}
 
 	uriStr := uri.String()
-	for _, pin := range user.Settings.Pined {
-		if pin.Uri == uriStr {
-			if pin.Name != service.Name {
-				return serializer.NewError(serializer.CodeObjectExist, "uri already pinned with different name", nil)
+	settings, err := userClient.UpdateSettings(c, user.ID, func(s *types.UserSetting) error {
+		for _, pin := range s.Pined {
+			if pin.Uri == uriStr {
+				if pin.Name != service.Name {
+					return serializer.NewError(serializer.CodeObjectExist, "uri already pinned with different name", nil)
+				}
+
+				return nil
 			}
-
-			return nil
 		}
-	}
 
-	user.Settings.Pined = append(user.Settings.Pined, types.PinedFile{
-		Uri:  uriStr,
-		Name: service.Name,
+		s.Pined = append(s.Pined, types.PinedFile{
+			Uri:  uriStr,
+			Name: service.Name,
+		})
+		return nil
 	})
-	if err := userClient.SaveSettings(c, user); err != nil {
-		return serializer.NewError(serializer.CodeDBError, "failed to save settings", err)
+	if err != nil {
+		return serializer.KeepAppError(err, serializer.CodeDBError, "failed to save settings")
 	}
 
+	user.Settings = settings
 	return nil
 }
 
@@ -63,13 +67,16 @@ func (service *PinFileService) UnpinFile(c *gin.Context) error {
 	}
 
 	uriStr := uri.String()
-	user.Settings.Pined = lo.Filter(user.Settings.Pined, func(pin types.PinedFile, index int) bool {
-		return pin.Uri != uriStr
+	settings, err := userClient.UpdateSettings(c, user.ID, func(s *types.UserSetting) error {
+		s.Pined = lo.Filter(s.Pined, func(pin types.PinedFile, index int) bool {
+			return pin.Uri != uriStr
+		})
+		return nil
 	})
-
-	if err := userClient.SaveSettings(c, user); err != nil {
-		return serializer.NewError(serializer.CodeDBError, "failed to save settings", err)
+	if err != nil {
+		return serializer.KeepAppError(err, serializer.CodeDBError, "failed to save settings")
 	}
 
+	user.Settings = settings
 	return nil
 }

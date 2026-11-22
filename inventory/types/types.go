@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -20,6 +21,40 @@ type (
 		// FylvoMustChangePassword: the person has to set a new password at the next sign-in
 		// (see inventory/fylvo_password_change.go). Only the admin and the change itself write it.
 		FylvoMustChangePassword bool `json:"fylvo_must_change_password,omitempty"`
+		// FylvoPrefs: what the person customized (sidebar, start page, density, ...). Empty means
+		// everything as before; see service/fylvo/fylvo_prefs.go for the defaults.
+		FylvoPrefs *FylvoPrefs `json:"fylvo_prefs,omitempty"`
+		// FylvoFavorites: starred files, newest last. Private to the account.
+		FylvoFavorites []FylvoFavorite `json:"fylvo_favorites,omitempty"`
+	}
+
+	// FylvoPrefs holds only the parts the person saved; a nil field falls back to the default.
+	FylvoPrefs struct {
+		Sidebar   []FylvoSidebarItem `json:"sidebar,omitempty"`
+		Home      []FylvoHomeWidget  `json:"home,omitempty"`
+		StartPage *string            `json:"start_page,omitempty"`
+		Density   string             `json:"density,omitempty"`
+		Mode      string             `json:"mode,omitempty"`
+		Mobile    json.RawMessage    `json:"mobile,omitempty"`
+	}
+
+	FylvoSidebarItem struct {
+		Type     string `json:"type"`
+		Category string `json:"category,omitempty"`
+		Uri      string `json:"uri,omitempty"`
+		Name     string `json:"name,omitempty"`
+		ID       string `json:"id,omitempty"`
+		Hidden   bool   `json:"hidden,omitempty"`
+	}
+
+	FylvoHomeWidget struct {
+		Type   string `json:"type"`
+		Hidden bool   `json:"hidden,omitempty"`
+	}
+
+	FylvoFavorite struct {
+		FileID int       `json:"id"`
+		At     time.Time `json:"at"`
 	}
 
 	ShareLinksInProfileLevel string

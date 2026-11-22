@@ -66,7 +66,15 @@ func (c *userClient) SetOwnPassword(ctx context.Context, u *ent.User, newPasswor
 		Where(user.ID(u.ID), user.Password(u.Password)).
 		SetPassword(digest)
 	if MustChangePassword(u) {
-		q.SetSettings(WithMustChangePassword(u.Settings, false))
+		// The other settings come fresh from the database, under the settings lock.
+		settingsMu.Lock()
+		defer settingsMu.Unlock()
+		fresh, err := c.freshSettings(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		fresh.FylvoMustChangePassword = false
+		q.SetSettings(fresh)
 	}
 
 	updated, err := q.Save(ctx)
