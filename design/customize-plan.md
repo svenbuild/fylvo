@@ -191,14 +191,17 @@ mit eigener Ansicht, sonst gilt die feste Standard-Ansicht (`getDefaultView`, Ra
 "Standard-Ansicht" in `prefs.view` ist darum die Ansicht der Wurzel "Meine Dateien" (`Props.View`
 des Wurzelordners): `GET` liest sie (fehlt sie, die feste), `PATCH` schreibt sie über den
 bestehenden Weg: `PATCH /file/view` auf `cloudreve://my`. Dafür holt die App zuerst die ganze
-Ansicht aus einer Liste von `cloudreve://my`, ändert nur Darstellung und Sortierung, füllt fehlende
-Felder mit den heutigen Standardwerten der Web-App (`order_direction` `asc`, `page_size` 100,
-`gallery_width` 110, `thumbnail` an) und schickt das ganze Objekt. `prefs` schreibt die Ansicht
+Ansicht aus einer Liste von `cloudreve://my` (ohne `page_size` und Sortierung in der Anfrage, sonst
+überschreiben diese die gespeicherten Werte), ändert nur Darstellung und Sortierung und schickt das
+ganze Objekt. Fehlende Felder liest sie wie die Web-App heute: fehlendes `thumbnail` heisst aus,
+fehlende `gallery_width` und Spalten kommen aus den Browser-Werten der Web-App, fehlendes
+`order_direction` ist `asc`, ein leeres `order` bleibt leer, wenn die Sortierung nicht geändert wird. `prefs` schreibt die Ansicht
 nicht selbst, damit es nur einen Schreiber gibt. Ordner mit eigener Ansicht behalten sie. Hat das
 Konto `disable_view_sync` an, enthält `view` nur `density`, `view` steht nicht in `customized`, und
 die Einstellungsseite zeigt die Auswahl nicht. Am Handy: die App behält ihre heutige Ansicht und
-Sortierung, solange `view` nicht in `customized` steht; sonst lässt sie ihre Sortierung in der
-Liste weg und folgt dem `view` aus der Antwort der Liste.
+Sortierung, solange `view` nicht in `customized` steht; sonst lässt sie bei normalen Ordnern unter
+"Meine Dateien" ihre Sortierung in der Liste weg und folgt dem `view` aus der Antwort. Kategorien,
+Suche und Freigaben (die oft kein `view` liefern) behalten ihre heutige Sortierung.
 
 ### Akzentfarben
 
@@ -218,7 +221,8 @@ Eine Sperre im Prozess für das Feld `settings` (ein Server, SQLite). Neue Funkt
 die gewünschte Änderung anwenden, schreiben. Darüber laufen Anheften, Ansicht der Bereiche
 Papierkorb und Geteilt (`operation.go`), `PATCH /user/setting` und die neuen Routen. Die Sperre ist
 eine für alle Benutzer (einfach, die Schreibvorgänge sind kurz). Langsame Prüfungen (z. B. die
-Adressen beim Markieren von Favoriten) laufen vor der Sperre; in der Sperre wird nur angehängt.
+Adressen beim Markieren von Favoriten) laufen vor der Sperre; in der Sperre werden nur Doppelte gegen die frisch gelesene Liste entfernt,
+die Grenze von 200 geprüft und angehängt.
 Die zwei Stellen, die Passwort und Einstellungen in einer Anweisung schreiben, nehmen dieselbe Sperre
 und lesen die Einstellungen darin frisch: `SetOwnPassword` (Bedingung "altes Passwort" bleibt) und
 die Admin-Änderung (`Upsert` mit `passwordChangeSettings`; sie übernimmt alles ausser den Feldern, die
