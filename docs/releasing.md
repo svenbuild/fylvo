@@ -23,7 +23,8 @@ Publish one release at a time and wait until Promote has finished before the nex
 only one waiting run of it.
 
 The very first time, try the pipeline with a pre-release tag (`v1.0.0-rc.1`, never promoted) while
-the repository is still private, then delete that release and its image version.
+the repository is still private, then delete that release, its image version and the tag
+(`git push --delete origin v1.0.0-rc.1 && git tag -d v1.0.0-rc.1`).
 
 Only the first time: GitHub creates the image as private. Open the package `fylvo` under the
 profile's "Packages", "Package settings", set the visibility to public and link it to the
@@ -31,8 +32,11 @@ repository.
 
 ## 2. Apps
 
-Build the signed apps as described in [android/README.md](../android/README.md) and
-[desktop/README.md](../desktop/README.md). Then put them into one folder per release, here
+Build the signed apps: Android as described in [android/README.md](../android/README.md)
+(`FYLVO_KEYSTORE_PASSWORD=... ./gradlew :app:assembleRelease`), Windows with
+`.\build-msix.ps1 -Arch x64 -SignPasswordFile <file with the password>` (and `-SignPfx <path>` when
+the certificate is not in the default place), Linux as in [desktop/LINUX.md](../desktop/LINUX.md).
+Then put them into one folder per release, here
 `~/fylvo-release/1.0.0`:
 
 | Put into `~/fylvo-release/1.0.0` | From |
@@ -49,14 +53,22 @@ the Linux release key:
 
 ```bash
 R=~/fylvo-release/1.0.0
-B=$R/bundle
-FYLVO_PUBLISH_LOCAL=$B/android bash scripts/publish-android.sh "$R/Fylvo-Android-1.4.0.apk"
-FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo.x64.msix" windows-x64
-FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop_0.3.0_amd64.AppImage" linux-x64-appimage
-FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop_0.3.0_amd64.deb" linux-x64-deb
-FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop-0.3.0-1.x86_64.rpm" linux-x64-rpm
-tar -C "$B" --exclude=.publish.lock -czf "$R/fylvo-app-updates-1.0.0.tar.gz" android desktop
+bash -euc '
+  R="$1"; B="$(mktemp -d)"
+  FYLVO_PUBLISH_LOCAL=$B/android bash scripts/publish-android.sh "$R/Fylvo-Android-1.4.0.apk"
+  FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo.x64.msix" windows-x64
+  FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop_0.3.0_amd64.AppImage" linux-x64-appimage
+  FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop_0.3.0_amd64.deb" linux-x64-deb
+  FYLVO_PUBLISH_LOCAL=$B/desktop bash scripts/publish-desktop.sh "$R/Fylvo Desktop-0.3.0-1.x86_64.rpm" linux-x64-rpm
+  # Owner root, no user names in the archive.
+  tar -C "$B" --exclude=.publish.lock --owner=0 --group=0 --numeric-owner -czf "$R/fylvo-app-updates-1.0.0.tar.gz" android desktop
+  tar -tvzf "$R/fylvo-app-updates-1.0.0.tar.gz"
+  rm -rf "$B"
+' bundle "$R"
 ```
+
+It stops at the first failed check and starts from an empty folder each time, so a retry never
+packs older files. The listing at the end must show `0/0` as owner on every line.
 
 ## 3. Publish
 

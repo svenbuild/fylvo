@@ -119,7 +119,7 @@ jobs:
             stage="$(mktemp -d)"
             cp "release/fylvo-linux-$arch" "$stage/fylvo"
             cp LICENSE NOTICE "$stage/"
-            tar -C "$stage" -czf "dist/fylvo-$VERSION-linux-$arch.tar.gz" fylvo LICENSE NOTICE
+            tar -C "$stage" --owner=0 --group=0 --numeric-owner -czf "dist/fylvo-$VERSION-linux-$arch.tar.gz" fylvo LICENSE NOTICE
           done
           (cd dist && sha256sum * > SHA256SUMS)
 

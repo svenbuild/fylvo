@@ -95,14 +95,18 @@ settings in `.env`. Back up the whole folder. Stop Fylvo for the copy, so the da
 consistent; it takes as long as copying your files.
 
 ```bash
-cd ~/fylvo
-docker compose stop fylvo
-B=$HOME/fylvo-backup-$(date +%F-%H%M%S).tar.gz
-sudo sh -c "umask 077 && tar -czf $B.part -C $HOME fylvo && mv $B.part $B"
-docker compose start fylvo
+bash -euc '
+  cd ~/fylvo
+  B=$HOME/fylvo-backup-$(date +%F-%H%M%S).tar.gz
+  docker compose stop fylvo
+  trap "docker compose start fylvo" EXIT
+  sudo sh -c "umask 077 && tar -czf $B.part -C $HOME fylvo && mv $B.part $B"
+  echo "Backup: $B"
+'
 ```
 
-Each run makes a new file with date and time; a failed run leaves only a `.part` file. The archive
+Fylvo is started again in any case; the backup is only made when Fylvo stopped. Each run makes a
+new file with date and time; a failed run leaves at most a `.part` file and reports an error. The archive
 holds all your files and settings, so only root may read it (`umask 077`); copy it with `sudo`.
 
 Keep the backup on another disk or machine. For large amounts of data, a tool that copies only
@@ -130,7 +134,10 @@ bash -euc '
 
 `--profile office` stops office too, if you use it; with office, start it again with
 `docker compose --profile office up -d`. If your user is not in the `docker` group, write
-`sudo docker compose` in the two compose lines.
+`sudo docker compose` in the compose lines (also in the backup block).
+
+On a new server, with Docker installed and no `~/fylvo` yet, unpacking is enough:
+`sudo tar -xzf $B -C ~ && cd ~/fylvo && docker compose up -d`.
 
 Sign in and open a few files. Delete `~/fylvo-old` when everything is there. A backup from an
 older Fylvo version starts with the current image too; Fylvo updates the database by itself.
