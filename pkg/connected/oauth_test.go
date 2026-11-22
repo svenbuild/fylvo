@@ -105,9 +105,15 @@ func TestFlowHappyPath(t *testing.T) {
 	flow, p, client := testFlow(t)
 	ctx := context.Background()
 
+	if flow.Busy(ProviderDrive) {
+		t.Fatal("under way before anything started")
+	}
 	address, cookie, err := flow.Begin(7, ProviderDrive, client, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !flow.Busy(ProviderDrive) || flow.Busy(ProviderOneDrive) {
+		t.Fatal("a started sign-in is under way for its provider only")
 	}
 	if strings.Contains(address, "client-secret") {
 		t.Fatal("the consent address carries the client secret")
@@ -118,8 +124,8 @@ func TestFlowHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !flow.Pending(ProviderDrive, "account-1") {
-		t.Fatal("the completed sign-in is not reported as pending")
+	if !flow.Busy(ProviderDrive) {
+		t.Fatal("the completed sign-in is not reported as under way")
 	}
 
 	// Another account cannot take the result, and does not use it up.
@@ -149,8 +155,8 @@ func TestFlowHappyPath(t *testing.T) {
 	if _, err := flow.Callback(ctx, state, cookie, code, ""); !errors.Is(err, ErrFlowExpired) {
 		t.Fatalf("second callback: %v", err)
 	}
-	if flow.Pending(ProviderDrive, "account-1") {
-		t.Fatal("still pending after finish")
+	if flow.Busy(ProviderDrive) {
+		t.Fatal("still under way after finish")
 	}
 }
 

@@ -29,6 +29,31 @@ type Spec struct {
 	AuthParams map[string]string
 	// Identify reads who signed in and which drive is theirs.
 	Identify func(ctx context.Context, call APICall) (*Identity, error)
+	// Revoke takes the access back at the provider, for providers that can. It ends the
+	// access of every token the account granted to this installation.
+	Revoke func(ctx context.Context, client *http.Client, refreshToken string) error
+}
+
+// Token is the OAuth token of a connection, in the JSON form it is sealed in.
+type Token struct {
+	AccessToken  string    `json:"access_token"`
+	TokenType    string    `json:"token_type"`
+	RefreshToken string    `json:"refresh_token"`
+	Expiry       time.Time `json:"expiry"`
+}
+
+// ParseToken reads a stored token.
+func ParseToken(raw string) (*Token, error) {
+	var t Token
+	if err := json.Unmarshal([]byte(raw), &t); err != nil {
+		return nil, errors.New("stored token is not readable")
+	}
+	return &t, nil
+}
+
+func (t *Token) String() string {
+	raw, _ := json.Marshal(t)
+	return string(raw)
 }
 
 // APICall fetches a JSON document from the provider with the fresh access token.
@@ -57,6 +82,9 @@ func Specs() map[string]*Spec {
 			AuthParams: map[string]string{"access_type": "offline", "prompt": "consent"},
 			Identify: func(ctx context.Context, call APICall) (*Identity, error) {
 				return identifyDrive(ctx, call, "https://www.googleapis.com")
+			},
+			Revoke: func(ctx context.Context, client *http.Client, refreshToken string) error {
+				return revokeGoogle(ctx, client, "https://oauth2.googleapis.com/revoke", refreshToken)
 			},
 		},
 		ProviderOneDrive: {
@@ -92,6 +120,24 @@ func identifyDrive(ctx context.Context, call APICall, base string) (*Identity, e
 		label = about.User.DisplayName
 	}
 	return &Identity{Key: about.User.PermissionID, Label: label}, nil
+}
+
+func revokeGoogle(ctx context.Context, client *http.Client, address, refreshToken string) error {
+	form := url.Values{"token": {refreshToken}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, address, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	res, err := client.Do(req)
+	if err != nil {
+		return errors.New("the provider did not answer")
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("the provider answered %d", res.StatusCode)
+	}
+	return nil
 }
 
 func identifyOneDrive(ctx context.Context, call APICall, base string) (*Identity, error) {
@@ -191,10 +237,15 @@ type Flow struct {
 	mu      sync.Mutex
 	states  map[string]*flowState
 	granted map[string]*Granted
+	// exchanging counts the callbacks per provider that are talking to the provider.
+	exchanging map[string]int
 }
 
 func NewFlow(specs map[string]*Spec, client *http.Client) *Flow {
-	return &Flow{specs: specs, http: client, now: time.Now, states: map[string]*flowState{}, granted: map[string]*Granted{}}
+	return &Flow{
+		specs: specs, http: client, now: time.Now,
+		states: map[string]*flowState{}, granted: map[string]*Granted{}, exchanging: map[string]int{},
+	}
 }
 
 func randomToken(n int) string {
@@ -265,11 +316,20 @@ func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError 
 	f.sweep()
 	s := f.states[state]
 	delete(f.states, state)
+	if s != nil {
+		f.exchanging[s.provider]++
+	}
 	f.mu.Unlock()
 
 	if s == nil {
 		return "", ErrFlowExpired
 	}
+	// Counted until the result is stored below, so Busy never has a gap.
+	defer func() {
+		f.mu.Lock()
+		f.exchanging[s.provider]--
+		f.mu.Unlock()
+	}()
 	sum := sha256.Sum256([]byte(cookie))
 	if cookie == "" || subtle.ConstantTimeCompare(sum[:], s.browser[:]) != 1 {
 		return "", ErrFlowBrowser
@@ -388,14 +448,23 @@ func (f *Flow) Finish(userID int, finish string) (*Granted, error) {
 	return g, nil
 }
 
-// Pending tells whether a completed sign-in for this provider account is waiting
-// to be stored. A token of that account must not be revoked meanwhile.
-func (f *Flow) Pending(provider, accountKey string) bool {
+// Busy tells whether a sign-in at this provider is under way: started, talking to the
+// provider, or waiting to be stored. As long as one is, no token of that provider may be
+// revoked, because it is not yet known which provider account the sign-in is for.
+func (f *Flow) Busy(provider string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sweep()
+	if f.exchanging[provider] > 0 {
+		return true
+	}
+	for _, s := range f.states {
+		if s.provider == provider {
+			return true
+		}
+	}
 	for _, g := range f.granted {
-		if g.Provider == provider && g.Identity.Key == accountKey {
+		if g.Provider == provider {
 			return true
 		}
 	}
