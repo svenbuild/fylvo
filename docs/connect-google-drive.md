@@ -38,13 +38,6 @@ needed. Google plans to charge for use above its free
 [limits](https://developers.google.com/workspace/drive/api/guides/limits) from later in 2026,
 with at least 90 days notice.
 
-## rclone on the server
-
-Fylvo reaches connected storage through rclone (version 1.74.3 or newer). It uses `rclone`
-from `PATH`, or the program named in the environment variable `FYLVO_RCLONE_PATH`. Without
-it, the admin panel shows connected storage as not available. If you limit the memory of the
-container, allow at least 640 MB: rclone needs about 65 to 130 MB while it is in use.
-
 ## 1. Create a project
 
 1. Open [console.cloud.google.com](https://console.cloud.google.com) and sign in.
@@ -124,12 +117,16 @@ secret** (starts with `GOCSPX-`). Copy both now: Google shows the secret only th
 
 ## 8. Enter it in Fylvo
 
-1. Sign in to Fylvo as admin, open the admin panel, section **Connected storage**.
-2. Under **Google Drive**, paste the client ID and the client secret, and save.
+1. Sign in to Fylvo as admin, open the admin panel and its tab for connected storage. The
+   return address shown there is the one to enter at Google.
+2. For Google Drive, paste the client ID and the client secret, and save. Fylvo keeps the secret but never shows it again; to
+   change it, paste a new one.
+3. In the group settings, check that the groups whose members may connect a storage have
+   this right.
 
-To test, open your own settings, tab **Connected storage**, and click to connect. Sign in
-at Google and allow access. Back in Fylvo, confirm the connection: the drive appears as
-a folder next to your own files.
+To test, open your own settings, the tab for connected storage, and choose Google Drive. Sign in at
+Google and allow access. You come back to Fylvo, and the drive appears as a folder next to
+your own files.
 
 ## The warning page
 

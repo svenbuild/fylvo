@@ -32,13 +32,6 @@ After 30 days the Azure services of the trial switch off. The directory and the 
 registration are not Azure services and should keep working. *Not confirmed on an official
 page.* Microsoft may block directories that stay unused for a long time.
 
-## rclone on the server
-
-Fylvo reaches connected storage through rclone (version 1.74.3 or newer). It uses `rclone`
-from `PATH`, or the program named in the environment variable `FYLVO_RCLONE_PATH`. Without
-it, the admin panel shows connected storage as not available. If you limit the memory of the
-container, allow at least 640 MB: rclone needs about 65 to 130 MB while it is in use.
-
 ## 1. Get a directory
 
 Skip this if you already manage a Microsoft Entra directory (for example through Microsoft 365
@@ -106,12 +99,16 @@ Microsoft's default settings let only an admin approve them.
 
 ## 6. Enter it in Fylvo
 
-1. Sign in to Fylvo as admin, open the admin panel, section **Connected storage**.
-2. Under **OneDrive**, paste the client ID (step 2) and the secret value (step 4), and save.
+1. Sign in to Fylvo as admin, open the admin panel and its tab for connected storage. The
+   return address shown there is the one to enter at Microsoft.
+2. For OneDrive, paste the client ID (step 2) and the secret value (step 4), and save. Fylvo
+   keeps the secret but never shows it again; to change it, paste a new one.
+3. In the group settings, check that the groups whose members may connect a storage have
+   this right.
 
-To test, open your own settings, tab **Connected storage**, and click to connect. Sign in
-at Microsoft and allow access. Back in Fylvo, confirm the connection: the drive appears as
-a folder next to your own files.
+To test, open your own settings, the tab for connected storage, and choose OneDrive. Sign in at
+Microsoft and allow access. You come back to Fylvo, and the drive appears as a folder next to
+your own files.
 
 ## What users see
 
