@@ -17,8 +17,7 @@ import {
   setUserInfoCache,
 } from "../globalStateSlice.ts";
 import { AppThunk } from "../store.ts";
-import { readCachedPrefs, setPrefs } from "../fylvoSlice.ts";
-import { loadPrefs, startPath } from "./fylvo.ts";
+import { clearAccountData, loadPrefs, startPath } from "./fylvo.ts";
 import { longRunningTaskWithSnackbar } from "./file.ts";
 import { updateSiteConfig } from "./site.ts";
 
@@ -39,7 +38,7 @@ export function refreshUserSession(session: LoginResponse, redirect: string | nu
 export function setTargetSession(session: LoginResponse): AppThunk {
   return async (dispatch, _getState) => {
     SessionManager.upsert(session);
-    dispatch(setPrefs(readCachedPrefs()));
+    dispatch(clearAccountData());
     dispatch(setPreferredTheme(session.user.preferred_theme ?? ""));
     if (session.user.language) {
       i18next.changeLanguage(session.user.language);
@@ -81,6 +80,7 @@ export function signout(): AppThunk<void> {
     router.navigate("/session");
     dispatch(closeMusicPlayer());
     SessionManager.signOutCurrent();
+    dispatch(clearAccountData());
   };
 }
 

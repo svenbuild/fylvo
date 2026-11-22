@@ -209,6 +209,25 @@ func TestPrefsSidebarKeepsPinsInStep(t *testing.T) {
 	require.Equal(t, "home (hidden)", got[0])
 }
 
+func TestPrefsSidebarLimitDoesNotGrow(t *testing.T) {
+	e := newActivityEnv(t)
+	headings := func(n int) string {
+		items := make([]types.FylvoSidebarItem, 0, n)
+		for i := 0; i < n; i++ {
+			items = append(items, types.FylvoSidebarItem{Type: SidebarHeading, Name: "H"})
+		}
+		body, _ := json.Marshal(map[string]any{"sidebar": map[string]any{"items": items}})
+		return string(body)
+	}
+	// 90 headings plus the 10 fixed entries the server adds: 100, allowed, also again.
+	_, err := e.patch(e.owner, headings(90))
+	require.NoError(t, err)
+	_, err = e.patch(e.owner, headings(90))
+	require.NoError(t, err)
+	_, err = e.patch(e.owner, headings(91))
+	requireParamError(t, err)
+}
+
 func TestPrefsSidebarAddsNewEntriesAndConnectedStorages(t *testing.T) {
 	e := newActivityEnv(t)
 	_, err := e.patch(e.owner, `{"sidebar":{"items":[{"type":"trash"},{"type":"my_files"},{"type":"connected","id":"gone"}]}}`)

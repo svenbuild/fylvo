@@ -18,6 +18,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/service/explorer"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 )
 
 // Favorites are private to the account: stored as file IDs in the account's settings, so renaming
@@ -58,7 +59,7 @@ type favoriteResolver struct {
 	user   *ent.User
 	fm     manager.FileManager
 	files  map[int]*ent.File
-	shares map[int]*ent.Share // root folder ID -> member-only share the user belongs to
+	shares []*ent.Share // member-only shares the user belongs to (several may share a folder)
 }
 
 func newFavoriteResolver(dep dependency.Dep, u *ent.User, fm manager.FileManager) *favoriteResolver {
@@ -77,7 +78,7 @@ func (r *favoriteResolver) file(ctx context.Context, id int) (*ent.File, error) 
 	return f, nil
 }
 
-func (r *favoriteResolver) memberShares(ctx context.Context) (map[int]*ent.Share, error) {
+func (r *favoriteResolver) memberShares(ctx context.Context) ([]*ent.Share, error) {
 	if r.shares != nil {
 		return r.shares, nil
 	}
@@ -85,10 +86,10 @@ func (r *favoriteResolver) memberShares(ctx context.Context) (map[int]*ent.Share
 	if err != nil {
 		return nil, err
 	}
-	r.shares = make(map[int]*ent.Share, len(shares))
+	r.shares = make([]*ent.Share, 0, len(shares))
 	for _, share := range shares {
 		if share.Edges.File != nil {
-			r.shares[share.Edges.File.ID] = share
+			r.shares = append(r.shares, share)
 		}
 	}
 	return r.shares, nil
@@ -159,7 +160,7 @@ func (r *favoriteResolver) uri(ctx context.Context, id int) (*fs.URI, error) {
 		return nil, err
 	}
 	for i, f := range chain {
-		share, ok := shares[f.ID]
+		share, ok := lo.Find(shares, func(s *ent.Share) bool { return s.Edges.File.ID == f.ID })
 		if !ok {
 			continue
 		}

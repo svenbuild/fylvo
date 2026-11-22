@@ -6,7 +6,7 @@ import { SidebarItem } from "../../../api/fylvo.ts";
 import { raisedHoverSurface } from "../../../fylvoTheme.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { selectPath } from "../../../redux/thunks/dialog.ts";
-import { loadTags, savePrefs } from "../../../redux/thunks/fylvo.ts";
+import { loadPrefs, loadTags, savePrefs } from "../../../redux/thunks/fylvo.ts";
 import { FilledTextField, SecondaryButton } from "../../Common/StyledComponents.tsx";
 import DraggableDialog from "../../Dialogs/DraggableDialog.tsx";
 import Dismiss from "../../Icons/Dismiss.tsx";
@@ -71,11 +71,24 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
   const [tagMenu, setTagMenu] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // The rows come from freshly loaded preferences, so a save never drops a link pinned
+  // meanwhile on another device. Saving waits for them.
+  const [fresh, setFresh] = useState(false);
   useEffect(() => {
-    if (open && prefs) {
-      setRows(toRows(prefs.sidebar.items));
-      dispatch(loadTags());
+    if (!open) {
+      return;
     }
+    setFresh(false);
+    if (prefs) {
+      setRows(toRows(prefs.sidebar.items));
+    }
+    dispatch(loadTags());
+    dispatch(loadPrefs()).then((loaded) => {
+      if (loaded) {
+        setRows(toRows(loaded.sidebar.items));
+        setFresh(true);
+      }
+    });
   }, [open]);
 
   const move = (from: number, to: number) => {
@@ -130,8 +143,8 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
   const reset = async () => {
     setLoading(true);
     try {
-      const prefs = await dispatch(savePrefs({ sidebar: null }));
-      setRows(toRows(prefs.sidebar.items));
+      await dispatch(savePrefs({ sidebar: null }));
+      onClose();
     } catch (e) {
     } finally {
       setLoading(false);
@@ -144,6 +157,7 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
       showActions
       showCancel
       loading={loading}
+      disabled={!fresh}
       onAccept={save}
       okText={t("customize.save")}
       secondaryAction={

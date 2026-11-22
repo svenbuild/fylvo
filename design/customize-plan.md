@@ -1,6 +1,8 @@
 # Fylvo: Anpassung (Seitenleiste, Favoriten, Tags, Startseite, Ansicht, Aussehen)
 
-Stand 2026-11-22. Ziel: mehr Anpassung auf Web und Handy.
+Stand 2026-11-23 (gebaut: Server und Web-App). Ziel: mehr Anpassung auf Web und Handy. Diese Datei ist
+die gültige Beschreibung; die Endfassung der Schnittstelle für das Handy steht im Abschnitt
+"Für die Android-App".
 
 ## Entscheide (2026-11-22)
 
@@ -58,7 +60,7 @@ angehefteten Ordner):
       { "type": "category", "category": "document" },
       { "type": "shared_with_me" },
       { "type": "trash" },
-      { "type": "link", "uri": "cloudreve://my/Steuern", "name": "Steuern" }
+      { "type": "link", "uri": "cloudreve://my/Projekte", "name": "Projekte" }
     ]
   },
   "home": {
@@ -85,9 +87,10 @@ angehefteten Ordner):
     `heading` (mit `name`), `connected` (mit `id`, ein verbundener Speicher, siehe unten).
     `hidden` bei allen ausser `link` und `heading` (die werden gelöscht).
     Feste Typen höchstens einmal, `category` einmal pro Kategorie. `favorites` und `tags` zeigen die
-    Apps nur, wenn es welche gibt. Neu gespeichert: höchstens 100 Einträge, Name höchstens 64
-    Zeichen. Die Grenzen gelten nur für neue oder umbenannte Einträge: ein Link, der unverändert
-    schon in `pined` steht, darf sie überschreiten, damit Verschieben und Ausblenden immer gehen. Links: jede gültige
+    Apps nur, wenn es welche gibt. Höchstens 100 Einträge (gezählt wie angezeigt, mit den festen
+    Einträgen, die der Server ergänzt), oder so viele, wie die Seitenleiste schon hatte (alte grosse
+    Anheft-Listen). Name höchstens 64 Zeichen; ein Link, der unverändert schon in `pined` steht, darf
+    länger sein, damit Verschieben und Ausblenden immer gehen. Links: jede gültige
     Fylvo-Adresse (wie heute beim Anheften), normalisiert wie dort (`uri.String()`), jede Adresse
     nur einmal; eine Verknüpfung gibt keinen Zugriff, sie wird beim Öffnen normal geprüft.
   - Verbundene Speicher (kommen später): der Server bekommt eine Stelle, die die verbundenen
@@ -123,7 +126,10 @@ angehefteten Ordner):
 
 `PATCH /api/v4/fylvo/prefs` mit einem Teil der obersten Felder, z. B. `{"sidebar": {...}}` oder
 `{"appearance": {"mode": "dark"}}`. `sidebar`, `home`, `start_page`, `mobile` ersetzen den
-gespeicherten Teil ganz. Bei `view` (nur `density`) und `appearance` wird nur geschrieben, was
+gespeicherten Teil ganz. `sidebar` braucht `{"items": [...]}`, `home` braucht `{"widgets": [...]}`
+(fehlt die Liste: `40001`); eine leere Liste bleibt leer gespeichert. `{"sidebar": null}` und
+`{"home": null}` setzen diesen Teil auf den Standard zurück (Verknüpfungen bleiben), `{"mobile":
+null}` löscht `mobile`. Bei `view` (nur `density`) und `appearance` wird nur geschrieben, was
 mitgeschickt ist (jedes Unterfeld einzeln). `favorites` und `customized` sind nicht schreibbar.
 Erst wird alles geprüft, dann in einem Schreibvorgang gespeichert (Benutzerzeile, unter der Sperre). Ungültige Werte: Fehler `40001`, nichts wird gespeichert.
 Antwort wie `GET`. Zwei Geräte, die verschiedene Teile ändern, überschreiben sich nicht.
@@ -146,7 +152,7 @@ auch auf die Seitenleiste.
 
 Gespeichert: `fylvo_favorites` = Liste `{id, at}` (interne Datei-ID, Zeitpunkt), höchstens 200.
 
-Datei-ID zu Adresse (beim Lesen, eine Funktion im `dbfs`):
+Datei-ID zu Adresse (beim Lesen, in `service/fylvo/fylvo_favorites.go`):
 
 1. Datei per ID laden und zur Wurzel hochgehen (`findRoot`). Nicht gefunden: nicht verfügbar.
 2. Wurzel ist die normale Wurzel des Benutzers selbst: `cloudreve://my/<Pfad>`.
@@ -167,13 +173,16 @@ Ordner merkt sich eine Anfrage, damit 200 Favoriten nicht 200 Mal denselben Weg 
   gezählt. Beim nächsten Schreiben der Favoriten fallen endgültig gelöschte Dateien heraus.
 - `PUT /api/v4/fylvo/favorites` mit `{"uris": [...]}`. Angenommen:
   - `cloudreve://my/...` (keine Suche, nicht die Wurzel),
-  - `cloudreve://<share>@share/...` einer Mitglieder-Freigabe, in der man Mitglied ist (auch ihre Wurzel),
-  - Abgelehnt (`40001`): `shared_with_me`-Adressen (die Apps schicken für Einträge aus "Geteilt
-    mit mir" deren Ziel aus `metadata["sys:shared_redirect"]`), Papierkorb, Suchen, öffentliche
-    Freigabe-Links, alles, was nicht über die vier Schritte oben wieder zur selben Datei führt.
+  - `cloudreve://<share>@share/...` nur, wenn diese Freigabe eine Mitglieder-Freigabe ist, in der
+    man Mitglied ist (auch ihre Wurzel). Der Besitzer markiert seine Dateien über `my`.
+  - Abgelehnt (`40001`): `shared_with_me`-Adressen, öffentliche Freigabe-Links (auch wenn man die
+    Datei sonst erreichen könnte), Papierkorb, Suchen, alles, was nicht über die vier Schritte oben
+    wieder zur selben Datei führt.
   Bereits markierte bleiben. Über 200: Fehler.
 - `DELETE /api/v4/fylvo/favorites` mit `{"ids": [...]}`: Hash-IDs wie in `prefs.favorites`.
   Unbekannte werden ignoriert.
+- `PUT` und `DELETE` antworten mit `{"favorites": ["<hashid>", ...]}` (neuester zuerst), nicht mit
+  der ganzen Einstellung.
 
 ### Tags
 
@@ -243,7 +252,8 @@ Seiten-Links darunter (Freigaben, Aufgaben, Verbinden, Verwaltung) bleiben.
 
 Etappe 3, Favoriten und Tags: Stern im Rechtsklick und in der Mehrfachauswahl, kleiner Stern neben
 dem Namen in der Liste. Kein Stern in der Liste "Geteilt mit mir" (ihre Einträge haben teils eine
-andere ID als der Ordner, auf den sie zeigen), im Papierkorb und in öffentlichen Freigabe-Links.
+andere ID als der Ordner, auf den sie zeigen), im Papierkorb, in öffentlichen Freigabe-Links und
+für den Besitzer in seiner eigenen Freigabe.
 Einen gemeinsamen Ordner selbst markiert man in ihm über das Menü des aktuellen Ordners; darin
 funktioniert der Stern normal. Seite `/favorites` als schlichte Liste (Klick: Ordner öffnen oder Datei im
 Ordner zeigen). Tags in der Seitenleiste mit Farbe und Anzahl, Klick öffnet die Suche. "Farbe" als
@@ -269,13 +279,65 @@ Jede Etappe ist für sich nutzbar und wird einzeln committet.
   Fylvo-Datenbank. In verbundenen Speichern gibt es sie nicht, und `/fylvo/tags` zählt sie nicht.
 - Seitenleiste, Startseite, Ansicht, Aussehen: hängen am Konto, gehen überall.
 
-## Handy (Grundlage für die Handy-App)
+## Für die Android-App
 
-Liest `GET /fylvo/prefs` und benutzt `sidebar` (als Liste von Orten), `home`, `start_page` (leer:
-wie heute auf "Home"), `view` (siehe "Ansicht"), `appearance`, `favorites`.
-Legt Reiter und Wischgesten in `mobile` ab. Favoriten über `/fylvo/favorites`, Tags über
-`/fylvo/tags`, Ordnerfarben und Tags aus `metadata` der Datei (`customize:icon_color`, `tag:*`),
-setzen über `PATCH /file/metadata`. Akzentfarben aus `site/basic` `themes`.
+Endfassung der Schnittstelle, gebaut und getestet. Alle Routen unter `/api/v4/fylvo`, angemeldet,
+Fehler im üblichen Umschlag (`code` != 0); ungültige Eingaben geben `40001`, die App zeigt dann die
+Meldung und behält den alten Stand.
+
+| Aufruf | Zweck | Antwort |
+| --- | --- | --- |
+| `GET prefs` | wirksame Einstellungen (siehe oben) | ganzes `prefs`-Objekt |
+| `PATCH prefs` | Teile ändern (`sidebar`, `home`, `start_page`, `view.density`, `appearance.mode`, `appearance.accent`, `mobile`) | ganzes `prefs`-Objekt |
+| `DELETE prefs` | alles ausser `mobile` zurücksetzen | ganzes `prefs`-Objekt |
+| `GET favorites` | Favoriten als Datei-Antworten | `{"files": [...], "unavailable": n}` |
+| `PUT favorites` `{"uris": [...]}` | markieren | `{"favorites": [...]}` |
+| `DELETE favorites` `{"ids": [...]}` | Markierung weg | `{"favorites": [...]}` |
+| `GET tags` | eigene Tags mit Farbe und Anzahl | `[{"name", "color", "count"}]` |
+
+Dazu bestehend: Tags und Ordnerfarbe setzen mit `PATCH /api/v4/file/metadata` (`tag:<Name>` mit der
+Farbe als Wert, `customize:icon_color`), die Standard-Ansicht mit `PATCH /api/v4/file/view` auf
+`cloudreve://my` (siehe "Ansicht"), die Akzentfarben aus `GET /api/v4/site/config/basic` (`themes`,
+Schlüssel = Farbe im dunklen Modus; die helle Variante steht im Objekt).
+
+Gewählt für das Handy:
+
+- Reiter unten wählbar und sortierbar.
+- Wischgesten in Listen, links und rechts frei belegbar.
+- Schnellzugriffe am App-Symbol (lange drücken) und ein Widget.
+- Teilen in Fylvo mit Wahl des Zielordners statt immer "Meine Dateien".
+
+Empfohlenes Format für `mobile` (der Server prüft nur Objekt und Grösse, die App entscheidet):
+
+```json
+{
+  "v": 1,
+  "tabs": ["home", "files", "favorites", "shared", "account"],
+  "swipe": { "left": "delete", "right": "favorite" }
+}
+```
+
+- `tabs`: Reihenfolge der Reiter, aus `home`, `files`, `favorites`, `shared`, `tags`, `account`;
+  `account` ist immer dabei (sonst kommt man nicht an die Einstellungen), 3 bis 5 Reiter.
+- `swipe.left` und `swipe.right`: `none`, `favorite`, `share`, `offline`, `delete`.
+- Fehlt `mobile` oder ein Feld darin, gilt das heutige Verhalten (Reiter Home, Files, Shared,
+  Account; keine Wischgesten). Unbekannte Werte überspringt die App; ein Schreiben ersetzt
+  `mobile` ganz, darum immer das ganze Objekt schicken.
+
+Was am Handy dem Konto folgt: Startseite (`start_page`; leer heisst wie heute "Home"), Bausteine der
+Startseite (`home`), die Orte der Seitenleiste als Liste in "Files" oder im Menü (`sidebar`;
+versteckte weglassen, `favorites` und `tags` nur wenn es welche gibt, unbekannte Typen wie
+`connected` überspringen, bis die App sie kennt), Dichte (`view.density`), hell/dunkel (nur wenn
+`mode` in `customized` steht, sonst wie das Gerät), Akzentfarbe, Favoriten (Stern), Standard-Ansicht
+(nur wenn `view` in `customized` steht, siehe "Ansicht"), Reiter und Wischgesten (`mobile`).
+
+Was pro Gerät bleibt: Offline-Ordner und ihre Einstellungen, Ordner-Abgleich, Sprache der App,
+Benachrichtigungen, die Einrichtung des Widgets und der Schnellzugriffe (Android legt sie pro Gerät
+an), der zuletzt gewählte Zielordner beim Teilen.
+
+Stern am Handy: wie in der Web-App nur bei eigenen Dateien (`my`) und in Mitglieder-Freigaben, nicht
+in "Geteilt mit mir", im Papierkorb, in Suchen, in öffentlichen Links und nicht in verbundenen
+Speichern.
 
 ## Prüfen
 

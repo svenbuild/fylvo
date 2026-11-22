@@ -13,7 +13,14 @@ import {
 } from "../../api/fylvo.ts";
 import SessionManager, { UserSettings } from "../../session";
 import CrUri, { Filesystem } from "../../util/uri.ts";
-import { increaseFavoritesGeneration, setFavoriteIds, setPrefs, setTags, writeCachedPrefs } from "../fylvoSlice.ts";
+import {
+  increaseFavoritesGeneration,
+  readCachedPrefs,
+  setFavoriteIds,
+  setPrefs,
+  setTags,
+  writeCachedPrefs,
+} from "../fylvoSlice.ts";
 import { setDarkMode, setPreferredTheme } from "../globalStateSlice.ts";
 import { AppThunk } from "../store.ts";
 
@@ -63,9 +70,18 @@ export function applyPrefs(prefs: Prefs): AppThunk {
 // startPath is where the app opens: the start page when the account chose it, else the files.
 export const startPath = (prefs?: Prefs): string => (prefs?.start_page == "home" ? "/start" : "/home");
 
-// Answers can arrive late or out of order. One is only applied when it still belongs to the
-// signed-in account and no change was saved after it was asked for.
+// Answers can arrive late or out of order. Changes are sent one after the other; every change
+// raises the version when it starts and when it ends. A read is only applied when it still
+// belongs to the signed-in account and no change started or ended since it was asked for.
 let prefsVersion = 0;
+let changeQueue: Promise<unknown> = Promise.resolve();
+
+// queueChange runs one change after the previous one has finished.
+const queueChange = <T>(run: () => Promise<T>): Promise<T> => {
+  const next = changeQueue.then(run, run);
+  changeQueue = next.catch(() => undefined);
+  return next;
+};
 const currentUid = () => SessionManager.currentLoginOrNull()?.user.id;
 
 function applyIfCurrent(prefs: Prefs, uid: string | undefined, version: number): AppThunk<boolean> {
@@ -96,13 +112,18 @@ export function loadPrefs(): AppThunk<Promise<Prefs | undefined>> {
 }
 
 function changePrefs(send: () => Promise<Prefs>): AppThunk<Promise<Prefs>> {
-  return async (dispatch) => {
-    const uid = currentUid();
-    const version = ++prefsVersion;
-    const prefs = await send();
-    dispatch(applyIfCurrent(prefs, uid, version));
-    return prefs;
-  };
+  return (dispatch) =>
+    queueChange(async () => {
+      const uid = currentUid();
+      const version = ++prefsVersion;
+      try {
+        const prefs = await send();
+        dispatch(applyIfCurrent(prefs, uid, version));
+        return prefs;
+      } finally {
+        prefsVersion++;
+      }
+    });
 }
 
 export function savePrefs(patch: PrefsPatch): AppThunk<Promise<Prefs>> {
@@ -156,22 +177,40 @@ export const canBeFavorite = (file: FileResponse, shareInfo?: Record<string, Sha
       return !!file.owned && !uri.is_root();
     }
     if (uri.fs() == Filesystem.share && shareInfo) {
+      // A member of the shared folder; its owner stars it in their own files instead.
       const prefix = uri.id() + "/";
-      return Object.keys(shareInfo).some((key) => key.startsWith(prefix) && !!shareInfo[key].member_only);
+      return Object.keys(shareInfo).some(
+        (key) => key.startsWith(prefix) && !!shareInfo[key].member_only && shareInfo[key].owner?.id != currentUid(),
+      );
     }
   } catch (e) {}
   return false;
 };
 
 export function setFavorite(files: FileResponse[], on: boolean): AppThunk<Promise<void>> {
-  return async (dispatch) => {
-    const uid = currentUid();
-    const res = on
-      ? await dispatch(sendAddFavorites(files.map((f) => f.path)))
-      : await dispatch(sendRemoveFavorites(files.map((f) => f.id)));
-    if (uid == currentUid()) {
-      dispatch(setFavoriteIds(res.favorites));
-    }
-    dispatch(increaseFavoritesGeneration());
+  return (dispatch) =>
+    queueChange(async () => {
+      const uid = currentUid();
+      prefsVersion++;
+      try {
+        const res = on
+          ? await dispatch(sendAddFavorites(files.map((f) => f.path)))
+          : await dispatch(sendRemoveFavorites(files.map((f) => f.id)));
+        if (uid == currentUid()) {
+          dispatch(setFavoriteIds(res.favorites));
+        }
+      } finally {
+        prefsVersion++;
+      }
+      dispatch(increaseFavoritesGeneration());
+    });
+}
+
+// clearAccountData forgets what belongs to the account in this tab (on sign-out or switch).
+export function clearAccountData(): AppThunk {
+  return (dispatch) => {
+    prefsVersion++;
+    dispatch(setPrefs(readCachedPrefs()));
+    dispatch(setTags(undefined));
   };
 }

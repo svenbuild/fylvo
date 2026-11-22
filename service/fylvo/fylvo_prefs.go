@@ -193,10 +193,11 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 				}
 			}
 		}
-		allowed := connectedSet(ConnectedStorages(ctx, dep, u))
+		connected := ConnectedStorages(ctx, dep, u)
+		allowed := connectedSet(connected)
 		return func(s *types.UserSetting) error {
-			previous := len(effectiveSidebar(s.FylvoPrefs.Sidebar, s.Pined, nil))
-			items, err := checkSidebar(*sidebar.Items, s.Pined, allowed, previous)
+			previous := len(effectiveSidebar(s.FylvoPrefs.Sidebar, s.Pined, connected))
+			items, err := checkSidebar(*sidebar.Items, s.Pined, allowed, connected, previous)
 			if err != nil {
 				return err
 			}
@@ -295,7 +296,7 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 // the limits (a long name, more entries than allowed), so they never block a change; a sidebar
 // may only not grow beyond the limit or beyond what it had.
 func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, connected map[string]bool,
-	previous int) ([]types.FylvoSidebarItem, error) {
+	connectedIDs []string, previous int) ([]types.FylvoSidebarItem, error) {
 	legacy := make(map[types.PinedFile]bool, len(pined))
 	for _, p := range pined {
 		legacy[p] = true
@@ -351,7 +352,9 @@ func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, conne
 		result = append(result, item)
 	}
 
-	if len(result) > max(sidebarMaxItems, previous) {
+	// Counted as it will be shown, with the fixed entries the server adds, so saving it again
+	// cannot raise the limit.
+	if len(effectiveSidebar(result, linksOf(result), connectedIDs)) > max(sidebarMaxItems, previous) {
 		return nil, paramError("the sidebar can have at most %d entries", sidebarMaxItems)
 	}
 

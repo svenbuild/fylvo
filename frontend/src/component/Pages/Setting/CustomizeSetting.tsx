@@ -1,6 +1,6 @@
 import { Box, IconButton, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
 import { ArrowDownward, ArrowUpward } from "@mui/icons-material";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getFileList, sendPatchViewSync } from "../../../api/api.ts";
 import { ExplorerView } from "../../../api/explorer.ts";
@@ -9,6 +9,7 @@ import { defaultPath } from "../../../hooks/useNavigation.tsx";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { loadPrefs, resetPrefs, savePrefs } from "../../../redux/thunks/fylvo.ts";
 import SessionManager, { UserSettings } from "../../../session";
+import { setPrefs } from "../../../redux/fylvoSlice.ts";
 import { SecondaryButton } from "../../Common/StyledComponents.tsx";
 import { ColorCircle, SelectorBox } from "../../FileManager/FileInfo/ColorCircle/CircleColorSelector.tsx";
 import { SwitchPopover } from "../../Frame/NavBar/DarkThemeSwitcher.tsx";
@@ -63,6 +64,7 @@ const CustomizeSetting = () => {
   // The view of "My files" was read; until then (or if that failed) nothing is written over it.
   const [rootViewRead, setRootViewRead] = useState(false);
   const [savingView, setSavingView] = useState(false);
+  const savingViewRef = useRef(false);
   const viewSync = !prefs || prefs.view.layout !== undefined;
 
   const themeKeys = useMemo(() => {
@@ -89,7 +91,11 @@ const CustomizeSetting = () => {
   }
 
   const widgets = prefs.home.widgets;
-  const saveWidgets = (next: HomeWidget[]) => dispatch(savePrefs({ home: { widgets: next } }));
+  // Shown at once, so a second click builds on the first one.
+  const saveWidgets = (next: HomeWidget[]) => {
+    dispatch(setPrefs({ ...prefs, home: { widgets: next } }));
+    dispatch(savePrefs({ home: { widgets: next } }));
+  };
   const moveWidget = (from: number, to: number) => {
     if (to < 0 || to >= widgets.length) return;
     const next = [...widgets];
@@ -101,7 +107,8 @@ const CustomizeSetting = () => {
   // Writes the view of "My files", which every folder without its own view follows. Only layout
   // and sort change; missing fields are read the way the file list reads them.
   const saveView = async (change: Partial<ExplorerView>) => {
-    if (!rootViewRead || savingView) return;
+    if (!rootViewRead || savingViewRef.current) return;
+    savingViewRef.current = true;
     setSavingView(true);
     const base = rootView ?? { page_size: 0 };
     const view: ExplorerView = {
@@ -120,6 +127,7 @@ const CustomizeSetting = () => {
       await dispatch(loadPrefs());
     } catch (e) {
     } finally {
+      savingViewRef.current = false;
       setSavingView(false);
     }
   };
