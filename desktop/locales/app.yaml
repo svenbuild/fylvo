@@ -662,3 +662,18 @@ caseHeldMessage:
 caseTakenMessage:
   en-US: "\"%{name}\" could not be saved on the server: the folder there has this name already in other upper/lower case. If the name was just changed on the server, the app catches up by itself shortly; otherwise rename one of them."
   de: "\"%{name}\" konnte nicht auf dem Server gespeichert werden: Im Ordner dort gibt es den Namen schon mit anderer Gross-/Kleinschreibung. Wurde der Name gerade am Server geändert, gleicht die App das gleich selbst ab; sonst benennen Sie einen davon um."
+updateDoneTitle:
+  en-US: "Fylvo Desktop updated"
+  de: "Fylvo Desktop aktualisiert"
+updateDoneMessage:
+  en-US: "Now running version %{version}."
+  de: "Jetzt läuft Version %{version}."
+updateFailedTitle:
+  en-US: "Update failed"
+  de: "Update fehlgeschlagen"
+updateFailedMessage:
+  en-US: "Version %{version} was not installed: %{reason}. The current version keeps running."
+  de: "Version %{version} wurde nicht installiert: %{reason}. Die bisherige Version läuft weiter."
+updateNotInstalled:
+  en-US: "Windows did not install the update"
+  de: "Windows hat das Update nicht installiert"

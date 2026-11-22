@@ -19,6 +19,13 @@
 .PARAMETER OutputDir
     Output directory for MSIX files (default: "dist")
 
+.PARAMETER SignPasswordFile
+    Fylvo: sign each MSIX with the Fylvo Desktop certificate. A file that holds the password of
+    the PFX (the password itself never goes on a command line). See desktop/UPDATER.md.
+
+.PARAMETER SignPfx
+    The PFX to sign with (default: Documents\Projects\Fylvo-Signing\fylvo-desktop.pfx).
+
 .EXAMPLE
     .\build-msix.ps1
     # Build MSIX packages for both x64 and ARM64, then create bundle
@@ -37,7 +44,9 @@ param(
     [string]$Arch = "all",
     [string]$Version,
     [switch]$SkipBuild,
-    [string]$OutputDir = "dist"
+    [string]$OutputDir = "dist",
+    [string]$SignPasswordFile,
+    [string]$SignPfx = (Join-Path ([Environment]::GetFolderPath("MyDocuments")) "Projects\Fylvo-Signing\fylvo-desktop.pfx")
 )
 
 $ErrorActionPreference = "Stop"
@@ -85,6 +94,31 @@ function Find-MakeAppx {
     }
 
     return $null
+}
+
+# Fylvo: signs a package with the Fylvo Desktop certificate. The PFX is imported into the
+# user's store only for the moment of signing and removed again; signtool picks it by
+# thumbprint, so the password is not passed on a command line.
+$FylvoSignerThumbprint = "16A089077B5D78CCAA8996BD51EE523CF0264D79"
+function Invoke-FylvoSign([string]$Package, [string]$SignTool) {
+    $Password = ConvertTo-SecureString -String ((Get-Content -LiteralPath $SignPasswordFile -Raw).TrimEnd("`r", "`n")) -AsPlainText -Force
+    $Imported = $null
+    # A certificate that was in the store before is left there.
+    $WasThere = Test-Path -LiteralPath "Cert:\CurrentUser\My\$FylvoSignerThumbprint"
+    try {
+        $Imported = Import-PfxCertificate -FilePath $SignPfx -CertStoreLocation Cert:\CurrentUser\My -Password $Password
+        if ($Imported.Thumbprint -ne $FylvoSignerThumbprint) {
+            throw "The PFX holds $($Imported.Thumbprint), not the Fylvo Desktop certificate."
+        }
+        & $SignTool sign /q /fd SHA256 /s My /sha1 $FylvoSignerThumbprint $Package
+        if ($LASTEXITCODE -ne 0) {
+            throw "signtool failed with exit code $LASTEXITCODE"
+        }
+    } finally {
+        if ($Imported -and -not $WasThere) {
+            Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($Imported.Thumbprint)" -DeleteKey -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 # Get version from tauri.conf.json if not provided
@@ -211,6 +245,11 @@ foreach ($TargetArch in $TargetArchs) {
     if ($LASTEXITCODE -ne 0) {
         Write-Error "makeappx.exe pack failed with exit code $LASTEXITCODE"
         exit $LASTEXITCODE
+    }
+
+    if ($SignPasswordFile) {
+        Write-Host "Signing $MsixPath ..." -ForegroundColor Cyan
+        Invoke-FylvoSign $MsixPath (Join-Path (Split-Path $MakeAppx -Parent) "signtool.exe")
     }
 
     Write-Host "Created: $MsixPath" -ForegroundColor Green

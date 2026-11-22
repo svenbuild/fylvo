@@ -885,6 +885,12 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				fylvoAndroid.GET("latest", controllers.FylvoAndroidLatest)
 				fylvoAndroid.GET("apk/:sha256", controllers.FylvoAndroidApk)
 			}
+			// Fylvo: in-app updates of Fylvo Desktop, per platform, for signed-in users only.
+			fylvoDesktop := auth.Group("fylvo/desktop/:platform")
+			{
+				fylvoDesktop.GET("latest", controllers.FylvoDesktopLatest)
+				fylvoDesktop.GET("package/:sha256", controllers.FylvoDesktopPackage)
+			}
 
 			// 管理
 			admin := auth.Group("admin", middleware.IsAdmin())

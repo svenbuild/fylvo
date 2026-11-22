@@ -138,5 +138,21 @@
     "monthsAgo": "Vor {{value}} Monaten",
     "yearAgo": "Vor {{value}} Jahr",
     "yearsAgo": "Vor {{value}} Jahren"
+  },
+  "updates": {
+    "title": "Updates",
+    "auto": "Automatisch aktualisieren",
+    "autoDescription": "Neue Versionen selbst installieren, wenn kein Abgleich läuft. Die App startet dafür ein paar Sekunden neu.",
+    "version": "Version {{version}}",
+    "checkNow": "Jetzt suchen",
+    "idle": "Noch nicht gesucht",
+    "checking": "Suche nach Updates...",
+    "no_drive": "Zuerst ein Laufwerk hinzufügen: Updates kommen von Ihrem Fylvo-Server",
+    "up_to_date": "Fylvo Desktop ist aktuell",
+    "downloading": "Lade Version {{version}}...",
+    "waiting": "Version {{version}} ist bereit und wartet, bis der Abgleich fertig ist",
+    "installing": "Installiere Version {{version}}...",
+    "failed": "Update auf {{version}} fehlgeschlagen: {{reason}}",
+    "unsupported": "Updates gibt es nur in der installierten App"
   }
 }

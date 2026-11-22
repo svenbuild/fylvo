@@ -1,3 +1,4 @@
+pub mod activity;
 #[cfg(windows)]
 pub mod cfapi;
 pub mod config;

@@ -1,6 +1,6 @@
 [package]
 name = "fylvo-desktop"
-version = "0.2.0"
+version = "0.3.0"
 description = "Fylvo Desktop sync client (based on Cloudreve Desktop)"
 authors = ["cloudreve"]
 license = ""
@@ -37,6 +37,10 @@ urlencoding = "2.1"
 
 # Main sync service crate
 cloudreve-sync = { path = "../crates/cloudreve-sync" }
+# Fylvo: updates from the app
+fylvo-update = { path = "../crates/fylvo-update" }
+dirs = "5.0"
+reqwest = "0.12"
 
 tauri-plugin-frame = "1.1.6"
 tauri-plugin-http = "~2.9"

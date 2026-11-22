@@ -479,7 +479,9 @@ impl TaskQueue {
                 // Fylvo: the file changed during the upload (or a download kept a local
                 // change). This task is done; a new one uploads the newer content, unless the
                 // task was cancelled meanwhile (the file was renamed, deleted or is downloaded:
-                // what happens to it is decided there).
+                // what happens to it is decided there). Counted for the updater from before
+                // this task ends until the new one is queued (activity.rs).
+                let busy = crate::activity::enter_now();
                 let completed = self.inventory.change_task_status_if(
                     &task.task_id,
                     TaskStatus::Running,
@@ -487,7 +489,7 @@ impl TaskQueue {
                 );
                 self.cleanup_task_entry(&task.task_id).await;
                 if matches!(completed, Ok(true)) {
-                    self.upload_later(path, delay);
+                    self.upload_later(path, delay, busy);
                 }
                 return;
             }
@@ -535,7 +537,7 @@ impl TaskQueue {
                 {
                     let path = &task.payload.local_path;
                     if let Some(delay) = crate::tasks::upload::retry_name_taken_after(path) {
-                        self.upload_later(path.clone(), delay);
+                        self.upload_later(path.clone(), delay, crate::activity::enter_now());
                     }
                 }
                 if let Err(update_err) = self.inventory.update_task(
@@ -564,9 +566,9 @@ impl TaskQueue {
 
     /// Fylvo: queue an upload of `path` after `delay` (at once for none). A task for the path
     /// that is queued by then takes its place.
-    fn upload_later(self: &Arc<Self>, path: PathBuf, delay: Duration) {
+    fn upload_later(self: &Arc<Self>, path: PathBuf, delay: Duration, busy: crate::activity::Busy) {
         if !crate::drive::commands::LOCAL_CHANGES_TO_SERVER {
-            info!(target: "tasks::queue", drive = %self.drive_id, path = %path.display(), "Upload skipped, local changes are not sent to the server on this platform yet");
+            info!(target: "tasks::queue", drive = %self.drive_id, path = %path.display(), "Upload skipped, local changes are not sent to the server on this platform");
             return;
         }
         // One waiting upload per file, however many uploads ask for one meanwhile (on Windows
@@ -576,7 +578,9 @@ impl TaskQueue {
             return;
         }
         let queue = Arc::clone(self);
+        // A waiting retry counts as work for the updater until it is queued.
         tokio::spawn(async move {
+            let _busy = busy;
             if !delay.is_zero() {
                 tokio::time::sleep(delay).await;
                 queue.later.remove(&key);
