@@ -104,7 +104,9 @@ New crate `desktop/crates/fylvo-update`, small hooks into existing files only. T
 off when the app runs without package identity (`cargo tauri dev`).
 
 - `lib.rs` (all platforms): `Release` type, `PLATFORM` from `cfg`, version parse/compare
-  (four u16 parts, missing = 0), `check()` (the `latest` route), `download()` to
+  (four u16 parts, missing = 0), `check()` (the `latest` route; the answer is checked before
+  anything is written: `sha256` exactly 64 lowercase hex, `size` 1 byte to 500 MB, version
+  parses), `download()` to
   `<dir>/<sha256>.part`, stream with size limit = `release.size`, SHA-256, rename to
   `<sha256>.msix` (extension per platform) only when both match. If the checksum is gone
   between `latest` and the download (a new release), `latest` is asked once more.
@@ -125,9 +127,12 @@ off when the app runs without package identity (`cargo tauri dev`).
      version = release version and higher than `Package::Current().Id().Version()`.
   2. `PackageManager::StagePackageAsync` while sync keeps running. Windows checks signature,
      trust and files here; almost every error ends here and is only reported.
-  3. Final idle check and stop are one step: with no await in between, `is_busy()` false ->
-     stop sync exactly like "Quit" in the tray (`DriveManager::shutdown()` + `persist()`).
-     If busy: wait (the staged package stays). If `persist()` fails: no install, restart.
+  3. Final idle check and stop are one step through a gate in `cloudreve-sync`
+     (`activity.rs`): one mutex holds the count of running work and a "closed" flag.
+     `close_if_idle()` closes only when nothing runs and no task is queued; after that, new
+     work waits at the gate. Then sync stops exactly like "Quit" in the tray
+     (`DriveManager::shutdown()` + `persist()`). If busy: the gate stays open, wait (the
+     staged package stays). If `persist()` fails: no install, restart.
   4. `RegisterApplicationRestart` (the app has run for more than 60 seconds by then; "Check
      now" waits for that too), then `RegisterPackageByFullNameAsync(<full name from step 1>,
      ForceTargetApplicationShutdown)`: registers exactly the staged package. (The spike checks
@@ -135,17 +140,20 @@ off when the app runs without package identity (`cargo tauri dev`).
      from inside the app is used, both only update the installed family.) If it fails while
      the app still runs: restart through `app.restart()`; a flag makes the second
      `shutdown()` on exit do nothing.
-- `is_busy()`: any running or queued task in any drive (`task_queue`), an in-flight counter in
-  `cloudreve-sync` (RAII guard around the batch of filesystem events, rename handling and
-  hydration in `fetch_data`; a few lines each), or a pending held deletion question. What can
-  still be cut off is the same as when the user quits the app.
+- Busy means: any running or queued task in any drive (`task_queue`), work counted by the gate
+  (an RAII guard taken in each handler that `process_commands` spawns: rename, sync,
+  placeholders, hydration, filesystem events, rename completed; and around each remote event
+  batch in `listen_remote_events`), or a pending held deletion question. What can still be
+  cut off is the same as when the user quits the app.
 - `persist()` writes atomically (temp file + rename), a small fix that also helps normal quits.
 - "Check now" works also with the switch off (the switch only controls automatic checks). It
   installs right away when idle, otherwise it shows "waiting for sync to finish".
 - Start: if `state.json` says `installing` and the running version equals it: toast "updated";
-  if it is still the old version: toast "update failed", and the same version is not tried
-  again for 24 hours. Files in `~/.fylvo/update/` are removed; a package that was staged but
-  never registered is left to Windows (known limit).
+  if it is still the old version: toast "update failed", and `state.json` keeps
+  `{"failed": "<version>", "at": <time>}` so the same version is not tried again for 24
+  hours (also the "last result" line in settings). Only downloaded packages and `.part` files
+  in `~/.fylvo/update/` are removed, never `state.json`; a package that was staged but never
+  registered is left to Windows (known limit).
 - Settings (`AboutSection.tsx` or `GeneralSection.tsx`): version, switch, "Check now", last
   result line. Config: `AppConfig.auto_update: bool` (default true; the struct already loads
   missing fields with its defaults). Tauri commands `get_update_status`, `check_for_update`,
@@ -191,7 +199,8 @@ off when the app runs without package identity (`cargo tauri dev`).
    certificate, a dev registration must be removed first, family name unchanged,
    `Get-AuthenticodeSignature` says `Valid` once trusted). Still to test: self update from
    inside the app incl. restart, a failure after the app was closed, the move with existing
-   placeholders and autostart.
+   placeholders and autostart. The spike must show that the chosen register call activates
+   exactly the checked package and that the app comes back by itself.
 2. Server and publish script.
 3. App crate, settings, texts.
 4. Tests, real run, rat on the code.
