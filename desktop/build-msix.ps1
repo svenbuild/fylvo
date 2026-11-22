@@ -103,6 +103,8 @@ $FylvoSignerThumbprint = "16A089077B5D78CCAA8996BD51EE523CF0264D79"
 function Invoke-FylvoSign([string]$Package, [string]$SignTool) {
     $Password = ConvertTo-SecureString -String ((Get-Content -LiteralPath $SignPasswordFile -Raw).TrimEnd("`r", "`n")) -AsPlainText -Force
     $Imported = $null
+    # A certificate that was in the store before is left there.
+    $WasThere = Test-Path -LiteralPath "Cert:\CurrentUser\My\$FylvoSignerThumbprint"
     try {
         $Imported = Import-PfxCertificate -FilePath $SignPfx -CertStoreLocation Cert:\CurrentUser\My -Password $Password
         if ($Imported.Thumbprint -ne $FylvoSignerThumbprint) {
@@ -113,7 +115,7 @@ function Invoke-FylvoSign([string]$Package, [string]$SignTool) {
             throw "signtool failed with exit code $LASTEXITCODE"
         }
     } finally {
-        if ($Imported) {
+        if ($Imported -and -not $WasThere) {
             Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($Imported.Thumbprint)" -DeleteKey -ErrorAction SilentlyContinue
         }
     }

@@ -124,7 +124,16 @@ cp -f "$FILE" "$KEEP/$NAME_OUT"
 remote "mkdir -p '$DIR' 2>/dev/null; [ -d '$DIR' ] && [ -w '$DIR' ]" ||
   fail "$DIR is missing or not writable, see the one-time setup at the top of this script"
 remote "umask 022; cat > '$DIR/.upload-$SHA.pkg'" < "$FILE"
+# Switched over under a lock (two publishes at once could remove each other's package), and
+# the published version is checked again under it.
 remote "set -e; cd '$DIR'
+  if command -v flock >/dev/null 2>&1; then exec 9> .publish.lock; flock 9; fi
+  NOW=\$(sed -n 's/.*\"version\":\"\([0-9.]*\)\".*/\\1/p' release.json 2>/dev/null || true)
+  if [ -n \"\$NOW\" ] && ! awk -v a='$VERSION' -v b=\"\$NOW\" 'BEGIN { n = split(a, x, \".\"); m = split(b, y, \".\");
+    for (i = 1; i <= 4; i++) { p = (i <= n) ? x[i] + 0 : 0; q = (i <= m) ? y[i] + 0 : 0;
+      if (p > q) exit 0; if (p < q) exit 1 } exit 1 }'; then
+    rm -f .upload-$SHA.pkg; echo \"version $VERSION is not higher than the published \$NOW\" >&2; exit 1
+  fi
   [ \"\$(sha256sum .upload-$SHA.pkg | cut -c1-64)\" = '$SHA' ] || { rm -f .upload-$SHA.pkg; echo 'checksum differs after the copy' >&2; exit 1; }
   chmod 644 .upload-$SHA.pkg
   mv -f .upload-$SHA.pkg $SHA.pkg

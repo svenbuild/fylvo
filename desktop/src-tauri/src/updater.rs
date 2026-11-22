@@ -17,6 +17,9 @@ use tokio::sync::Notify;
 const FIRST_CHECK_AFTER: Duration = Duration::from_secs(2 * 60);
 const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 const BUSY_RETRY_EVERY: Duration = Duration::from_secs(5 * 60);
+/// After the gate closed: how long to wait for work that was already on its way (file events
+/// are delayed by 2 s) before sync is stopped.
+const SETTLE: Duration = Duration::from_secs(3);
 const BUSY_GIVE_UP_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 /// Windows restarts an app after an update only if it ran for at least 60 seconds.
 const MIN_UPTIME: Duration = Duration::from_secs(65);
@@ -46,6 +49,11 @@ struct Updater {
 }
 
 static UPDATER: OnceLock<Arc<Updater>> = OnceLock::new();
+
+/// Automatic updates are on (the switch in the settings).
+fn auto_update_on() -> bool {
+    ConfigManager::try_get().map(|c| c.auto_update()).unwrap_or(true)
+}
 
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
@@ -111,8 +119,7 @@ pub fn start(app: AppHandle, drives: Arc<DriveManager>) {
                 _ = updater.check_now.notified() => true,
             };
             wait = CHECK_EVERY;
-            let auto = ConfigManager::try_get().map(|c| c.auto_update()).unwrap_or(true);
-            if !manual && !auto {
+            if !manual && !auto_update_on() {
                 continue;
             }
             tracing::info!(target: "updater", manual, "Checking for updates");
@@ -238,7 +245,7 @@ async fn run(
     }
     let path = path.ok_or_else(|| anyhow::anyhow!("the release changed during the download"))?;
 
-    let result = install(app, updater, drives, running, &release, path).await;
+    let result = install(app, updater, drives, running, &release, path, manual).await;
     if let Err(e) = &result {
         // Not tried again for a day, unless the user asks.
         let mut state = State::load(&updater.dir);
@@ -307,6 +314,7 @@ async fn install(
     running: Version,
     release: &Release,
     path: PathBuf,
+    manual: bool,
 ) -> anyhow::Result<()> {
     use fylvo_update::windows as win;
 
@@ -326,8 +334,20 @@ async fn install(
     set_status(|s| s.phase = "waiting");
     let waiting_since = Instant::now();
     loop {
+        // Switched off meanwhile: an automatic update does not install (a manual one does).
+        if !manual && !auto_update_on() {
+            tracing::info!(target: "updater", "Automatic updates were switched off, not installing");
+            set_status(|s| s.phase = "idle");
+            return Ok(());
+        }
         if updater.started.elapsed() >= MIN_UPTIME && activity::close_if_idle(|| drives.has_pending_work()) {
-            break;
+            // Work that was on its way when the gate closed (a save in the 2 s file event
+            // delay, a command in a channel) shows up at the gate within this pause.
+            tokio::time::sleep(SETTLE).await;
+            if activity::still_idle() && !drives.has_pending_work() {
+                break;
+            }
+            activity::reopen();
         }
         if waiting_since.elapsed() >= BUSY_GIVE_UP_AFTER {
             anyhow::bail!("sync was busy for a whole day");
@@ -364,14 +384,13 @@ async fn install(
         Ok(Err(e)) => Some(e),
         Err(e) => Some(anyhow::anyhow!(e)),
     };
+    // The state file still says "installing": the next start tells success from failure and
+    // shows the one notification about it.
     if let Some(e) = &error {
         tracing::error!(target: "updater", error = %e, "Registering the update failed");
     }
     restart(app, &current.family_name);
-    match error {
-        Some(e) => Err(e),
-        None => Ok(()),
-    }
+    Ok(())
 }
 
 #[cfg(not(windows))]
@@ -382,25 +401,32 @@ async fn install(
     _running: Version,
     _release: &Release,
     _path: PathBuf,
+    _manual: bool,
 ) -> anyhow::Result<()> {
     anyhow::bail!("updates are not supported on this platform yet")
 }
 
-/// Starts the app again through Windows (so it has its package identity) a moment after this
-/// process has ended, then ends this process. The single-instance check would otherwise hand
-/// the new start to this process.
+/// Starts the app again through Windows (so it has its package identity) once this process
+/// has ended, then ends this process. Started earlier, the single-instance check would hand
+/// the new start to this process. If the helper cannot be started, the app restarts itself.
 #[cfg(windows)]
 fn restart(app: &AppHandle, family_name: &str) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let target = format!("shell:AppsFolder\\{family_name}!Fylvo.Sync");
     // The family name is Windows' own ([A-Za-z0-9._-]), so it needs no quoting.
-    let started = std::process::Command::new("cmd")
-        .raw_arg(format!("/d /c \"ping -n 4 127.0.0.1 >nul & start \"\" explorer.exe {target}\""))
+    let script = format!(
+        "Wait-Process -Id {} -Timeout 120 -ErrorAction SilentlyContinue; Start-Process 'shell:AppsFolder\\{family_name}!Fylvo.Sync'",
+        std::process::id()
+    );
+    let started = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
         .creation_flags(CREATE_NO_WINDOW)
         .spawn();
-    if let Err(e) = started {
-        tracing::error!(target: "updater", error = %e, "Failed to schedule the restart");
+    match started {
+        Ok(_) => app.exit(0),
+        Err(e) => {
+            tracing::error!(target: "updater", error = %e, "Failed to start the restart helper, restarting directly");
+            app.restart();
+        }
     }
-    app.exit(0);
 }

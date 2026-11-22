@@ -187,8 +187,9 @@ fn spawn_event_bridge(app_handle: AppHandle, event_broadcaster: &EventBroadcaste
     });
 }
 
-/// Fylvo: set once sync is stopped, so the exit after an update does not stop it twice.
-static SYNC_STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Fylvo: sync is stopped once; a second caller (Quit during an update) waits for the first
+/// and gets its result.
+static SYNC_STOPPED: OnceCell<Result<(), String>> = OnceCell::const_new();
 
 /// Perform graceful shutdown
 async fn shutdown() {
@@ -199,9 +200,14 @@ async fn shutdown() {
 
 /// Stops sync and saves the drive settings, once; the updater uses it like "Quit".
 pub(crate) async fn shutdown_sync() -> anyhow::Result<()> {
-    if SYNC_STOPPED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        return Ok(());
-    }
+    SYNC_STOPPED
+        .get_or_init(|| async { stop_sync().await.map_err(|e| format!("{e:#}")) })
+        .await
+        .clone()
+        .map_err(|e| anyhow::anyhow!(e))
+}
+
+async fn stop_sync() -> anyhow::Result<()> {
     tracing::info!(target: "main", "Initiating shutdown...");
 
     if let Some(state) = APP_STATE.get() {

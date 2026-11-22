@@ -241,6 +241,8 @@ impl DriveManager {
     ///
     /// Note: The caller is responsible for calling `persist()` after this to save the config.
     pub async fn remove_drive(&self, id: &str) -> Result<Option<DriveConfig>> {
+        // Fylvo: counted for the updater until the drive is cleaned up (activity.rs).
+        let _busy = crate::activity::enter().await;
         let mut write_guard = self.drives.write().await;
 
         // Remove the mount from the map

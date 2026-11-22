@@ -65,14 +65,21 @@ if (-not $Cer) {
 
 # Returns the signature of the package if it is signed by the Fylvo Desktop certificate and
 # not changed; throws otherwise. Before the certificate is trusted Windows reports the chain
-# as not trusted, which is accepted only then.
+# as not trusted, which is accepted only then (checked by the chain status, not by the
+# message, which depends on the language of Windows).
 function Assert-FylvoSignature([bool]$Trusted) {
     $Sig = Get-AuthenticodeSignature -LiteralPath $Msix
     if (-not $Sig.SignerCertificate -or $Sig.SignerCertificate.Thumbprint -ne $Signer) {
         throw "$Msix is not signed by the Fylvo Desktop certificate ($($Sig.Status))."
     }
     if ($Sig.Status -eq "Valid") { return }
-    if (-not $Trusted -and $Sig.Status -eq "UnknownError" -and $Sig.StatusMessage -match "not trusted") { return }
+    if (-not $Trusted -and $Sig.Status -eq "UnknownError") {
+        $Chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
+        $Chain.ChainPolicy.RevocationMode = "NoCheck"
+        [void]$Chain.Build($Sig.SignerCertificate)
+        $Problems = @($Chain.ChainStatus | ForEach-Object { $_.Status.ToString() })
+        if ($Problems.Count -gt 0 -and -not ($Problems | Where-Object { $_ -ne "UntrustedRoot" })) { return }
+    }
     throw "The signature of $Msix is not valid: $($Sig.Status) $($Sig.StatusMessage)"
 }
 

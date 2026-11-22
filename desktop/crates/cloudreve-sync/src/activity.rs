@@ -11,10 +11,12 @@ use tokio::sync::Notify;
 
 struct Gate {
     running: usize,
+    /// Work that arrived while the gate was closed and waits for it.
+    waiting: usize,
     closed: bool,
 }
 
-static GATE: Mutex<Gate> = Mutex::new(Gate { running: 0, closed: false });
+static GATE: Mutex<Gate> = Mutex::new(Gate { running: 0, waiting: 0, closed: false });
 static OPENED: Notify = Notify::const_new();
 
 /// Held while a piece of sync work runs.
@@ -28,8 +30,19 @@ impl Drop for Busy {
     }
 }
 
+/// Counts a caller waiting at the closed gate; also when its wait is cancelled.
+struct Waiting(());
+
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        let mut gate = GATE.lock().unwrap_or_else(|e| e.into_inner());
+        gate.waiting = gate.waiting.saturating_sub(1);
+    }
+}
+
 /// Waits until the gate is open and counts the caller as running.
 pub async fn enter() -> Busy {
+    let mut waiting: Option<Waiting> = None;
     loop {
         let opened = OPENED.notified();
         tokio::pin!(opened);
@@ -38,8 +51,17 @@ pub async fn enter() -> Busy {
         {
             let mut gate = GATE.lock().unwrap_or_else(|e| e.into_inner());
             if !gate.closed {
+                if let Some(mark) = waiting.take() {
+                    // Uncounted here, under the lock its drop would take.
+                    gate.waiting = gate.waiting.saturating_sub(1);
+                    std::mem::forget(mark);
+                }
                 gate.running += 1;
                 return Busy(());
+            }
+            if waiting.is_none() {
+                gate.waiting += 1;
+                waiting = Some(Waiting(()));
             }
         }
         opened.await;
@@ -67,6 +89,14 @@ pub fn close_if_idle(queued: impl FnOnce() -> bool) -> bool {
     }
     gate.closed = true;
     true
+}
+
+/// After the gate was closed: true if nothing runs and nothing arrived at the gate since.
+/// The updater asks this after a short pause (longer than the 2 s file event delay), so work
+/// that was on its way when the gate closed is not cut off.
+pub fn still_idle() -> bool {
+    let gate = GATE.lock().unwrap_or_else(|e| e.into_inner());
+    gate.closed && gate.running == 0 && gate.waiting == 0
 }
 
 /// Opens the gate again; waiting work goes on.
@@ -99,10 +129,19 @@ mod tests {
         drop(retry);
 
         assert!(close_if_idle(|| false));
+        assert!(still_idle());
+        let cancelled = tokio::spawn(async { enter().await });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!still_idle());
+        cancelled.abort();
+        let _ = cancelled.await;
+        assert!(still_idle(), "a cancelled wait does not count");
+
         let waiting = tokio::spawn(async { enter().await });
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!waiting.is_finished(), "new work waits while the gate is closed");
         assert_eq!(running(), 0);
+        assert!(!still_idle(), "work arrived at the closed gate");
 
         reopen();
         let busy = tokio::time::timeout(Duration::from_secs(5), waiting).await.unwrap().unwrap();

@@ -98,7 +98,10 @@ impl DriveManager {
                     path,
                     action,
                 } => {
+                    // Fylvo: counted for the updater (activity.rs).
+                    let busy = crate::activity::enter().await;
                     spawn(async move {
+                        let _busy = busy;
                         let drive = manager.get_drive(&drive_id).await;
                         if let Some(drive) = drive {
                             let result = drive.resolve_conflict(action, file_id, path).await;
