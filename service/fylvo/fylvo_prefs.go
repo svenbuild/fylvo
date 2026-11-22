@@ -179,6 +179,9 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 		}
 		var sidebar struct {
 			Items *[]types.FylvoSidebarItem `json:"items"`
+			// Base: the links the editor started from. A pinned link that is neither in Items nor
+			// in Base was added meanwhile (another device) and is kept at the end.
+			Base *[]string `json:"base"`
 		}
 		if err := strictUnmarshal(raw, &sidebar); err != nil || sidebar.Items == nil {
 			return nil, paramError("sidebar needs a list of items")
@@ -197,7 +200,8 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 		allowed := connectedSet(connected)
 		return func(s *types.UserSetting) error {
 			previous := len(effectiveSidebar(s.FylvoPrefs.Sidebar, s.Pined, connected))
-			items, err := checkSidebar(*sidebar.Items, s.Pined, allowed, connected, previous)
+			items, err := checkSidebar(keepNewLinks(*sidebar.Items, sidebar.Base, s.Pined), s.Pined, allowed,
+				connected, previous)
 			if err != nil {
 				return err
 			}
@@ -359,6 +363,30 @@ func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, conne
 	}
 
 	return result, nil
+}
+
+// keepNewLinks appends the pinned links that are neither in items nor in base (when base is given).
+func keepNewLinks(items []types.FylvoSidebarItem, base *[]string, pined []types.PinedFile) []types.FylvoSidebarItem {
+	if base == nil {
+		return items
+	}
+	known := make(map[string]bool, len(*base)+len(items))
+	for _, uri := range *base {
+		if parsed, err := fs.NewUriFromString(uri); err == nil {
+			known[parsed.String()] = true
+		}
+	}
+	for _, item := range items {
+		if parsed, err := fs.NewUriFromString(item.Uri); item.Type == SidebarLink && err == nil {
+			known[parsed.String()] = true
+		}
+	}
+	for _, p := range pined {
+		if !known[p.Uri] {
+			items = append(items, types.FylvoSidebarItem{Type: SidebarLink, Uri: p.Uri, Name: p.Name})
+		}
+	}
+	return items
 }
 
 func checkHome(widgets []types.FylvoHomeWidget) ([]types.FylvoHomeWidget, error) {

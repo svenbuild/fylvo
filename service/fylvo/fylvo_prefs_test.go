@@ -184,6 +184,18 @@ func TestPrefsSidebarKeepsPinsInStep(t *testing.T) {
 	require.Equal(t, "link:cloudreve://my/C", got[len(got)-1])
 	require.Equal(t, "my_files", got[0])
 
+	// A link pinned on another device while the editor was open is kept.
+	_, err = e.dep.UserClient().UpdateSettings(e.ctx, e.owner.ID, func(s *types.UserSetting) error {
+		s.Pined = append(s.Pined, types.PinedFile{Uri: "cloudreve://my/D"})
+		return nil
+	})
+	require.NoError(t, err)
+	res, err = e.patch(e.owner, `{"sidebar":{"items":[{"type":"my_files"}],"base":["cloudreve://my/B","cloudreve://my/C"]}}`)
+	require.NoError(t, err)
+	got = sidebarTypes(res.Sidebar.Items)
+	require.Contains(t, got, "link:cloudreve://my/D")
+	require.NotContains(t, got, "link:cloudreve://my/B", "removed in the editor")
+
 	// An empty list stays empty after a reload.
 	_, err = e.patch(e.member, `{"home":{"widgets":[]}}`)
 	require.NoError(t, err)
@@ -198,14 +210,14 @@ func TestPrefsSidebarKeepsPinsInStep(t *testing.T) {
 	res, err = e.patch(e.owner, `{"sidebar":null}`)
 	require.NoError(t, err)
 	require.NotContains(t, res.Customized, "sidebar")
-	require.Len(t, e.reload(e.owner).Settings.Pined, 2)
+	require.Equal(t, []types.PinedFile{{Uri: "cloudreve://my/D"}}, e.reload(e.owner).Settings.Pined)
 
 	// Reset: the links stay, the rest is the default again.
 	res, err = ResetPrefs(e.as(e.reload(e.owner)))
 	require.NoError(t, err)
 	require.Empty(t, res.Customized)
 	got = sidebarTypes(res.Sidebar.Items)
-	require.Equal(t, []string{"link:cloudreve://my/B", "link:cloudreve://my/C"}, got[len(got)-2:])
+	require.Equal(t, "link:cloudreve://my/D", got[len(got)-1])
 	require.Equal(t, "home (hidden)", got[0])
 }
 

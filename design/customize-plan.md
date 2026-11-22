@@ -105,7 +105,9 @@ angehefteten Ordner):
   - `view.density`: `compact` (heute), `normal`, `comfortable`; gespeichert in `fylvo_prefs`, gilt
     nur in den Apps, das einzige schreibbare Feld von `view`. `view.layout` (`list|grid|gallery`),
     `view.sort_by` (`name|size|updated_at|created_at`), `view.sort_direction` (`asc|desc`): nur
-    lesen (im `PATCH`: Fehler `40001`), siehe "Ansicht" unten.
+    lesen (im `PATCH`: Fehler `40001`), siehe "Ansicht" unten. Ist in der gespeicherten Ansicht keine
+    Sortierung gesetzt, meldet `GET` `created_at`; die Liste ordnet dann nach der Reihenfolge des
+    Anlegens (praktisch gleich).
   - `appearance.mode`: `system|light|dark`, gespeichert in `fylvo_prefs`.
     `appearance.accent`: ein Schlüssel aus den Farbthemen der Seite (`themes` in `site/basic`,
     Einstellung `theme_options`), gespeichert nur im bestehenden Feld `preferred_theme`. Ist dort
@@ -127,7 +129,10 @@ angehefteten Ordner):
 `PATCH /api/v4/fylvo/prefs` mit einem Teil der obersten Felder, z. B. `{"sidebar": {...}}` oder
 `{"appearance": {"mode": "dark"}}`. `sidebar`, `home`, `start_page`, `mobile` ersetzen den
 gespeicherten Teil ganz. `sidebar` braucht `{"items": [...]}`, `home` braucht `{"widgets": [...]}`
-(fehlt die Liste: `40001`); eine leere Liste bleibt leer gespeichert. `{"sidebar": null}` und
+(fehlt die Liste: `40001`); eine leere Liste bleibt leer gespeichert. Zu `sidebar` kann die App
+`"base": ["<Adresse>", ...]` mitschicken, die Links, mit denen der Editor begonnen hat: ein
+angehefteter Link, der weder in `items` noch in `base` steht (inzwischen auf einem anderen Gerät
+angeheftet), bleibt dann am Ende erhalten. Ohne `base` gilt `items` genau so, wie geschickt. `{"sidebar": null}` und
 `{"home": null}` setzen diesen Teil auf den Standard zurück (Verknüpfungen bleiben), `{"mobile":
 null}` löscht `mobile`. Bei `view` (nur `density`) und `appearance` wird nur geschrieben, was
 mitgeschickt ist (jedes Unterfeld einzeln). `favorites` und `customized` sind nicht schreibbar.
@@ -176,8 +181,8 @@ Ordner merkt sich eine Anfrage, damit 200 Favoriten nicht 200 Mal denselben Weg 
   - `cloudreve://<share>@share/...` nur, wenn diese Freigabe eine Mitglieder-Freigabe ist, in der
     man Mitglied ist (auch ihre Wurzel). Der Besitzer markiert seine Dateien über `my`.
   - Abgelehnt (`40001`): `shared_with_me`-Adressen, öffentliche Freigabe-Links (auch wenn man die
-    Datei sonst erreichen könnte), Papierkorb, Suchen, alles, was nicht über die vier Schritte oben
-    wieder zur selben Datei führt.
+    Datei sonst erreichen könnte), Papierkorb, Suchadressen (eine gefundene Datei hat ihre normale
+    Adresse und geht), alles, was nicht über die vier Schritte oben wieder zur selben Datei führt.
   Bereits markierte bleiben. Über 200: Fehler.
 - `DELETE /api/v4/fylvo/favorites` mit `{"ids": [...]}`: Hash-IDs wie in `prefs.favorites`.
   Unbekannte werden ignoriert.
@@ -335,9 +340,11 @@ Was pro Gerät bleibt: Offline-Ordner und ihre Einstellungen, Ordner-Abgleich, S
 Benachrichtigungen, die Einrichtung des Widgets und der Schnellzugriffe (Android legt sie pro Gerät
 an), der zuletzt gewählte Zielordner beim Teilen.
 
-Stern am Handy: wie in der Web-App nur bei eigenen Dateien (`my`) und in Mitglieder-Freigaben, nicht
-in "Geteilt mit mir", im Papierkorb, in Suchen, in öffentlichen Links und nicht in verbundenen
-Speichern.
+Stern am Handy: wie in der Web-App nur bei eigenen Dateien (`my`, auch in Suchergebnissen, die
+ja ihre normale Adresse haben) und in Mitglieder-Freigaben, in denen man Mitglied ist. Nicht für
+den Besitzer in seiner eigenen Freigabe (er markiert über `my`), nicht in "Geteilt mit mir", im
+Papierkorb, auf einer Suchadresse selbst, in öffentlichen Links und nicht in verbundenen Speichern.
+Ändert die App die Seitenleiste, schickt sie `base` mit (siehe `PATCH`).
 
 ## Prüfen
 

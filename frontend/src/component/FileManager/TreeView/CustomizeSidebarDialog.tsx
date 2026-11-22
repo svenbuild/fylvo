@@ -2,11 +2,11 @@ import { ArrowDownward, ArrowUpward, DragIndicator } from "@mui/icons-material";
 import { Box, DialogContent, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { SidebarItem } from "../../../api/fylvo.ts";
+import { getPrefs, SidebarItem } from "../../../api/fylvo.ts";
 import { raisedHoverSurface } from "../../../fylvoTheme.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { selectPath } from "../../../redux/thunks/dialog.ts";
-import { loadPrefs, loadTags, savePrefs } from "../../../redux/thunks/fylvo.ts";
+import { loadTags, savePrefs } from "../../../redux/thunks/fylvo.ts";
 import { FilledTextField, SecondaryButton } from "../../Common/StyledComponents.tsx";
 import DraggableDialog from "../../Dialogs/DraggableDialog.tsx";
 import Dismiss from "../../Icons/Dismiss.tsx";
@@ -71,24 +71,30 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
   const [tagMenu, setTagMenu] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // The rows come from freshly loaded preferences, so a save never drops a link pinned
-  // meanwhile on another device. Saving waits for them.
+  // The rows come from a fresh copy read when the dialog opens; saving waits for it. The links
+  // of that copy go along as "base", so a link pinned meanwhile on another device is kept.
   const [fresh, setFresh] = useState(false);
+  const [baseLinks, setBaseLinks] = useState<string[]>([]);
+  const openCount = useRef(0);
   useEffect(() => {
     if (!open) {
       return;
     }
+    const thisOpen = ++openCount.current;
     setFresh(false);
     if (prefs) {
       setRows(toRows(prefs.sidebar.items));
     }
     dispatch(loadTags());
-    dispatch(loadPrefs()).then((loaded) => {
-      if (loaded) {
-        setRows(toRows(loaded.sidebar.items));
-        setFresh(true);
-      }
-    });
+    dispatch(getPrefs())
+      .then((loaded) => {
+        if (thisOpen == openCount.current) {
+          setRows(toRows(loaded.sidebar.items));
+          setBaseLinks(loaded.sidebar.items.filter((i) => i.type == "link" && i.uri).map((i) => i.uri as string));
+          setFresh(true);
+        }
+      })
+      .catch(() => {});
   }, [open]);
 
   const move = (from: number, to: number) => {
@@ -131,7 +137,7 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
   const save = async () => {
     setLoading(true);
     try {
-      await dispatch(savePrefs({ sidebar: { items } }));
+      await dispatch(savePrefs({ sidebar: { items, base: baseLinks } }));
       onClose();
     } catch (e) {
     } finally {

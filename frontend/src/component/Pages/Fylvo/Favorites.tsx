@@ -1,5 +1,5 @@
 import { Container, Typography } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileResponse } from "../../../api/explorer.ts";
 import { getFavorites } from "../../../api/fylvo.ts";
@@ -18,15 +18,20 @@ export const useFavorites = () => {
   const [unavailable, setUnavailable] = useState(0);
   const [loading, setLoading] = useState(false);
 
+  // Only the answer to the latest request is shown.
+  const latest = useRef(0);
   const refresh = useCallback(() => {
+    const request = ++latest.current;
     setLoading(true);
     dispatch(getFavorites())
       .then((res) => {
-        setFiles(res.files);
-        setUnavailable(res.unavailable);
+        if (request == latest.current) {
+          setFiles(res.files);
+          setUnavailable(res.unavailable);
+        }
       })
-      .catch(() => setFiles([]))
-      .finally(() => setLoading(false));
+      .catch(() => request == latest.current && setFiles([]))
+      .finally(() => request == latest.current && setLoading(false));
   }, [dispatch]);
 
   useEffect(refresh, [generation]);

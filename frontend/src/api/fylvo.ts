@@ -48,7 +48,8 @@ export interface Prefs {
 
 export interface PrefsPatch {
   // null drops the saved part, back to the default.
-  sidebar?: { items: SidebarItem[] } | null;
+  // base: the links the editor started from (links pinned elsewhere meanwhile are kept).
+  sidebar?: { items: SidebarItem[]; base?: string[] } | null;
   home?: { widgets: HomeWidget[] } | null;
   start_page?: StartPage;
   view?: { density: Density };

@@ -9,7 +9,6 @@ import { defaultPath } from "../../../hooks/useNavigation.tsx";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { loadPrefs, resetPrefs, savePrefs } from "../../../redux/thunks/fylvo.ts";
 import SessionManager, { UserSettings } from "../../../session";
-import { setPrefs } from "../../../redux/fylvoSlice.ts";
 import { SecondaryButton } from "../../Common/StyledComponents.tsx";
 import { ColorCircle, SelectorBox } from "../../FileManager/FileInfo/ColorCircle/CircleColorSelector.tsx";
 import { SwitchPopover } from "../../Frame/NavBar/DarkThemeSwitcher.tsx";
@@ -65,6 +64,13 @@ const CustomizeSetting = () => {
   const [rootViewRead, setRootViewRead] = useState(false);
   const [savingView, setSavingView] = useState(false);
   const savingViewRef = useRef(false);
+  const [localWidgets, setWidgets] = useState<HomeWidget[] | undefined>();
+  const pendingWidgets = useRef(0);
+  useEffect(() => {
+    if (pendingWidgets.current == 0) {
+      setWidgets(prefs?.home.widgets);
+    }
+  }, [prefs?.home]);
   const viewSync = !prefs || prefs.view.layout !== undefined;
 
   const themeKeys = useMemo(() => {
@@ -90,11 +96,15 @@ const CustomizeSetting = () => {
     return null;
   }
 
-  const widgets = prefs.home.widgets;
-  // Shown at once, so a second click builds on the first one.
+  const widgets = localWidgets ?? prefs.home.widgets;
+  // The blocks are edited here and each list is sent in order, so every click builds on the one
+  // before. A failed save shows the stored state again.
   const saveWidgets = (next: HomeWidget[]) => {
-    dispatch(setPrefs({ ...prefs, home: { widgets: next } }));
-    dispatch(savePrefs({ home: { widgets: next } }));
+    setWidgets(next);
+    pendingWidgets.current++;
+    dispatch(savePrefs({ home: { widgets: next } }))
+      .catch(() => dispatch(loadPrefs()))
+      .finally(() => pendingWidgets.current--);
   };
   const moveWidget = (from: number, to: number) => {
     if (to < 0 || to >= widgets.length) return;

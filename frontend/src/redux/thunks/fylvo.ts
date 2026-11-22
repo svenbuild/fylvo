@@ -111,10 +111,17 @@ export function loadPrefs(): AppThunk<Promise<Prefs | undefined>> {
   };
 }
 
+// A change belongs to the account that was signed in when the person made it. When another account
+// is signed in by the time it is sent, it is dropped.
+const accountChanged = () => new Error("the signed-in account changed");
+
 function changePrefs(send: () => Promise<Prefs>): AppThunk<Promise<Prefs>> {
-  return (dispatch) =>
-    queueChange(async () => {
-      const uid = currentUid();
+  return (dispatch) => {
+    const uid = currentUid();
+    return queueChange(async () => {
+      if (!uid || uid != currentUid()) {
+        throw accountChanged();
+      }
       const version = ++prefsVersion;
       try {
         const prefs = await send();
@@ -124,6 +131,7 @@ function changePrefs(send: () => Promise<Prefs>): AppThunk<Promise<Prefs>> {
         prefsVersion++;
       }
     });
+  };
 }
 
 export function savePrefs(patch: PrefsPatch): AppThunk<Promise<Prefs>> {
@@ -188,9 +196,12 @@ export const canBeFavorite = (file: FileResponse, shareInfo?: Record<string, Sha
 };
 
 export function setFavorite(files: FileResponse[], on: boolean): AppThunk<Promise<void>> {
-  return (dispatch) =>
-    queueChange(async () => {
-      const uid = currentUid();
+  return (dispatch) => {
+    const uid = currentUid();
+    return queueChange(async () => {
+      if (!uid || uid != currentUid()) {
+        throw accountChanged();
+      }
       prefsVersion++;
       try {
         const res = on
@@ -204,6 +215,7 @@ export function setFavorite(files: FileResponse[], on: boolean): AppThunk<Promis
       }
       dispatch(increaseFavoritesGeneration());
     });
+  };
 }
 
 // clearAccountData forgets what belongs to the account in this tab (on sign-out or switch).
