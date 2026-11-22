@@ -1,6 +1,6 @@
 # Fylvo Desktop for Linux: plan
 
-Status: revision 4, 2026-11-22. Branch `fylvo/desktop-linux`.
+Status: revision 5, 2026-11-22. Branch `fylvo/desktop-linux`.
 
 ## Decisions (Sven, 2026-11-22)
 
@@ -19,12 +19,12 @@ It implements FUSE (files on demand), which Sven did not choose, is untested, an
 `LocalFileInfo` becomes **one plain shared struct** (`exists`, `is_directory`, `file_size`, `last_modified`, `placeholder`, `in_sync`, `partial_on_disk`, `pin`) with today's methods, moved from `cfapi` to `drive/local.rs`. Each platform fills it:
 
 - **Windows:** from the Cloud Files placeholder state, exactly as now. No behavior change.
-- **Linux:** from `lstat` plus the inventory row **at exactly this path**. The row keeps the local state it was synced with in metadata key `fylvo:local` = `<device>:<inode>:<size>:<mtime ns>` (folders: `<device>:<inode>`). No schema migration.
+- **Linux:** from `lstat` plus the inventory row **at exactly this path**. The row keeps the local state it was synced with in metadata key `fylvo:local` = `<inode>:<size>:<mtime ns>` (folders: `<inode>`). No schema migration. The device number is not stored (btrfs subvolumes and disks can get other numbers after a reboot); it is only used at runtime to stay inside one filesystem.
 
 | Method | Linux |
 | --- | --- |
-| `is_placeholder()` | row at this path with `fylvo:local`, device and inode match |
-| `in_sync()` | device, inode, size and mtime match |
+| `is_placeholder()` | row at this path with `fylvo:local`, inode matches |
+| `in_sync()` | inode, size and mtime match |
 | `partial_on_disk()` | false |
 | `pinned()` | Pinned |
 | `is_folder_populated()` | true for a tracked folder |
@@ -35,7 +35,7 @@ A renamed path has no row, so it is never "synced and deleted on the server". Ed
 
 `upsert` replaces the whole metadata, so the Linux `CrPlaceholder::commit` applies one rule:
 
-1. A new key comes only from: the stat of a download's temp file (the inode survives the rename), the upload's `started` state (now with device and inode, via `symlink_metadata`; the end-of-upload check "changed meanwhile" compares them too), or a folder the app created or found on disk at that path.
+1. A new key comes only from: the stat of a download's temp file (the inode survives the rename), the upload's `started` state (now with inode, via `symlink_metadata`; the end-of-upload check "changed meanwhile" compares it too), or a folder the app created or found on disk at that path.
 2. Otherwise the key of the existing row is carried over **only if** the current `lstat` still matches it and the server content is unchanged (same etag). If not, the row is written without key, which makes the file "changed here" (upload, or conflict).
 3. `commit_inventory_only` writes no key (the file changed during the upload).
 4. Linux planner difference: "same etag, other date" on a file in sync is a row update with the key carried over, not a download (Windows keeps its current behavior; the switch is a constant per platform).
@@ -55,27 +55,29 @@ All Windows tests (83) stay green, `build-msix.ps1 -Arch x64` builds. The planne
 
 ## Linux sync behavior
 
-**Watcher.** One inotify watcher for all Linux sync folders, events routed by path prefix, so a move between two sync folders arrives as one paired rename. Before any filtering, a bare `Name(From)` (move out, also "Move to Trash") becomes Remove and a bare `Name(To)` becomes Create; then the existing event blockers and the ignore list apply. A queue overflow or rescan event triggers a full sync; hitting the watch limit is shown as an error with the fix. Symlinks are skipped (lstat, walker does not follow, one-time notice). Paths that come from the server or from events (not from a walk) are checked component by component below the root; a symlinked component stops the action. Mount points inside a sync folder (other device number) are skipped like symlinks. Deliberate path swaps by other programs on the same account are out of scope.
+**Watcher.** One inotify watcher for all Linux sync folders, events routed by path prefix, so a move between two sync folders arrives as one paired rename. First the app's own moves are dropped (below). Then a bare `Name(From)` (move out, also "Move to Trash") becomes Remove and a bare `Name(To)` becomes Create; then the existing event blockers and the ignore list apply. On Linux a Remove reaches the server only for a path with a row (something synced): moving out a file that was never uploaded deletes nothing on the server, even if the server has an unrelated file of that name. A queue overflow or rescan event triggers a full sync; hitting the watch limit is shown as an error with the fix. Symlinks are skipped (lstat, walker does not follow, one-time notice). Paths that come from the server or from events (not from a walk) are checked component by component below the root; a symlinked component stops the action. Mount points inside a sync folder (other device number, or listed in `/proc/self/mountinfo`, which also catches bind mounts) are skipped like symlinks. Deliberate path swaps by other programs on the same account are out of scope.
 
-**The app's own moves** (download temp to final, moving a file aside for an update, conflict copies, server renames applied here, case renames, moves back after a refusal) are registered before they happen, in the existing own-rename registry of `case.rs` (`register`/`matches`), extended with a short expiry. The watcher drops matching events before any rule below, so the app never mistakes its own moves for user actions, and none of these moves is sent to the server.
+**The app's own moves** (download temp to final, moving a file aside for an update, conflict copies, server renames applied here, case renames, moves back after a refusal) are registered before they happen, in the existing own-rename registry of `case.rs` (`register`/`matches`, 60 s expiry). On Linux it compares paths exactly and also matches a lone half (From or To alone). The watcher drops matching events before any rule below, so the app never mistakes its own moves for user actions, and none of these moves is sent to the server. A conflict copy the app made in a writable drive gets its upload queued explicitly (on Windows its rename event does that).
+
+**Sync passes and pending user moves.** A sync pass can run in the 2 seconds before the watcher reports a rename. So on Linux, "on the server, missing here, row present" is downloaded no sooner than 5 seconds after planning, and the download task checks again that the path is still missing and the row unchanged. The rename handler cancels queued tasks of both paths; queued uploads check again before they run (a file in sync is skipped, as now).
 
 **Renames by the user, seen after the fact** (`process_fs_modify_name_event`, a separate Linux handler, no event blockers):
 
 | Case | Action |
 | --- | --- |
 | From has a row, To is new, both in this folder | server rename or move, then `inventory.rename_path`; on refusal (read-only, 40905, other owner) move back with `move_no_replace` and the Windows notice; on "not found" upload To |
-| From ignored or without row (gedit `.goutputstream-*`, LibreOffice `lu*.tmp`, own `.~fylvo-dl-*`) | change of To (upload or own download) |
+| From ignored or without row (gedit `.goutputstream-*`, LibreOffice `lu*.tmp`, own `~fylvo-download-*.tmp`) | change of To (upload or own download) |
 | To ignored, From has a row (vim `file~`, `.Trash-1000` at a mount top) | Remove of From (guards apply; the existing "saved by replacement" grace keeps vim saves safe) |
 | To had a row (rename over an existing file) | change of To (upload with `previous`) plus Remove of From |
-| From in sync folder A, To in folder B (paired) | server move into B's folder; if the server refuses (other owner, read-only): move back and the Windows notice. The source is never trashed before the server holds the file at its new place |
+| From in sync folder A, To in folder B (paired) | only if A and B use the same server and account: server move into B's folder, then a server rename if the name changed, then the row moves from drive A to drive B with its key. If the rename fails, the local file gets the name the server has (own move) and the notice. Different account, or the server refuses (read-only, other owner): move back and the Windows notice. The source is never trashed before the server holds the file at its new place |
 | Folder moved in (bare To) | full sync of that folder (uploads the whole tree) |
 
 A move between two sync folders on different filesystems is a copy plus delete in the file manager and cannot be paired: it is a deletion in A (server trash, guards) and a new file in B, as on Windows for moves across drives. A read-only B refuses the upload with the read-only notice; the file stays in B locally and in A's server trash.
 
 **Server to PC.**
 
-- New file: download to a temp file in the target folder (`.~fylvo-dl-*`, ignored, leftovers removed at start), set mtime, stat, write the row, then `renameat2(RENAME_NOREPLACE)`. Something appeared meanwhile: temp file dropped, the row as it was before (or none) put back, path planned again. Crash between row and rename: a row without file is downloaded again (a missing file counts as deleted only when the watcher reports it).
-- Update of an existing file (new Linux logic; Windows keeps `ReplaceFileW`): move aside to `~fylvo-backup-*` (own move), compare with the stored state, rename the new file in without replace, write the row. The backup is removed only if it still matches the stored state **and** no process has it open (scan of `/proc/*/fd`; an editor can keep writing through an open handle). Otherwise it becomes a conflict copy. At start, a leftover backup is renamed back if the path is free, else kept as conflict copy, never deleted. Crash between rename and row: the new file looks changed, its upload meets 40076 and a conflict copy with identical content appears (rare, nothing lost).
+- New file: download to a temp file in the target folder (the existing `~fylvo-download-*.tmp`, ignored, leftovers removed at start), set mtime, stat, write the row, then `renameat2(RENAME_NOREPLACE)`. Something appeared meanwhile: temp file dropped, the row as it was before (or none) put back, path planned again. Crash between row and rename: a row without file is downloaded again (a missing file counts as deleted only when the watcher reports it).
+- Update of an existing file (new Linux logic; Windows keeps `ReplaceFileW`): move aside to `~fylvo-backup-*` (own move), compare with the stored state, rename the new file in without replace, write the row. The backup is removed only if it still matches the stored state **and** no process can still write to it: no handle open for writing (`/proc/*/fdinfo` flags) and no shared writable mapping (`/proc/*/maps`). Read-only handles (indexers, viewers) do not count. If a writer cannot be ruled out (for example no permission to read another process's entries), the backup is kept as a conflict copy. At start, a leftover backup is renamed back if the path is free, else kept as conflict copy, never deleted. Crash between rename and row: the new file looks changed, its upload meets 40076 and a conflict copy with identical content appears (rare, nothing lost).
 - Server rename (SSE): Linux moves the local file or folder (own move, `move_no_replace`, then `rename_path`) instead of delete plus create, only if the row at the old path has the event's file ID and the local file there is still in sync (same checks as the case rename in `case.rs`, including pending transfers). Otherwise the current delete plus create.
 - Server deletion: freedesktop trash, guarded as on Windows. The planned trash action re-reads the local state first and runs only if the file is still in sync.
 
@@ -83,7 +85,7 @@ A move between two sync folders on different filesystems is a copy plus delete i
 
 **Adding a drive.** Refused for a non-empty local folder (existing rule) and for filesystems without stable inodes (allowed: ext4, btrfs, xfs, f2fs; refused: vfat, exfat, ntfs-3g fuse, network shares). Warned when the server folder is larger than the free space.
 
-**Ignore list**, Linux only: `.Trash-*`, `.goutputstream-*`, `*~`, `.*.sw?`, `4913`, `*.kate-swp`, `.#*`, `.directory`, `.nfs*`, `.fuse_hidden*`, `.~fylvo-dl-*`, `lu*.tmp` and `*.part` after checking what LibreOffice and KIO really write, `.~lock.*#`.
+**Ignore list**, Linux only: `.Trash-*`, `.goutputstream-*`, `*~`, `.*.sw?`, `4913`, `*.kate-swp`, `.#*`, `.directory`, `.nfs*`, `.fuse_hidden*`, `lu*.tmp` and `*.part` after checking what LibreOffice and KIO really write, `.~lock.*#`.
 
 **App not running.** A rename while off: new path uploaded, old path comes back from the server (a duplicate, nothing lost). A deletion while off comes back, as on Windows. Both noted for Sven.
 
