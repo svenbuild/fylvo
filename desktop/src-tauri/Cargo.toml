@@ -1,6 +1,6 @@
 [package]
 name = "fylvo-desktop"
-version = "0.2.0"
+version = "0.3.0"
 description = "Fylvo Desktop sync client (based on Cloudreve Desktop)"
 authors = ["cloudreve"]
 license = ""

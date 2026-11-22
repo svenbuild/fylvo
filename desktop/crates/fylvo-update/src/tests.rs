@@ -184,12 +184,15 @@ fn clean_downloads_keeps_the_state_file() {
 fn start_tells_success_from_failure_and_blocks_a_failed_version() {
     let dir = tempfile::tempdir().unwrap();
     let mut s = State::default();
-    s.installing = Some(state::Installing { version: v("0.3.0"), from: v("0.2.0") });
+    s.installing = Some(state::Installing { version: v("0.3.0"), from: v("0.2.0"), error: Some("0x80073CF3".into()) });
     s.save(dir.path()).unwrap();
 
     // Still the old version after the restart: failed, blocked for a day.
     let mut loaded = State::load(dir.path());
-    assert_eq!(loaded.on_start(v("0.2.0"), 1000), StartOutcome::Failed { version: v("0.3.0") });
+    assert_eq!(
+        loaded.on_start(v("0.2.0"), 1000),
+        StartOutcome::Failed { version: v("0.3.0"), error: Some("0x80073CF3".into()) }
+    );
     assert!(loaded.blocked(v("0.3.0"), 1000 + 60));
     assert!(!loaded.blocked(v("0.3.1"), 1000 + 60));
     assert!(!loaded.blocked(v("0.3.0"), 1000 + state::RETRY_FAILED_AFTER_SECS));
@@ -199,7 +202,7 @@ fn start_tells_success_from_failure_and_blocks_a_failed_version() {
 
     // The new version runs: updated, the block is gone.
     let mut s = State::load(dir.path());
-    s.installing = Some(state::Installing { version: v("0.3.0"), from: v("0.2.0") });
+    s.installing = Some(state::Installing { version: v("0.3.0"), from: v("0.2.0"), error: None });
     assert_eq!(s.on_start(v("0.3.0"), 3000), StartOutcome::Updated { from: v("0.2.0"), to: v("0.3.0") });
     assert!(s.failed.is_none());
 

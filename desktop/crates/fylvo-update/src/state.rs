@@ -21,6 +21,9 @@ pub struct State {
 pub struct Installing {
     pub version: Version,
     pub from: Version,
+    /// Windows' reason, when registering failed while the app still ran.
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,7 +38,7 @@ pub struct Failed {
 pub enum StartOutcome {
     Nothing,
     Updated { from: Version, to: Version },
-    Failed { version: Version },
+    Failed { version: Version, error: Option<String> },
 }
 
 impl State {
@@ -65,7 +68,7 @@ impl State {
             StartOutcome::Updated { from: installing.from, to: running }
         } else {
             self.failed = Some(Failed { version: installing.version, at: now });
-            StartOutcome::Failed { version: installing.version }
+            StartOutcome::Failed { version: installing.version, error: installing.error }
         }
     }
 

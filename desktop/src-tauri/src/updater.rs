@@ -18,8 +18,8 @@ const FIRST_CHECK_AFTER: Duration = Duration::from_secs(2 * 60);
 const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 const BUSY_RETRY_EVERY: Duration = Duration::from_secs(5 * 60);
 /// After the gate closed: how long to wait for work that was already on its way (file events
-/// are delayed by 2 s) before sync is stopped.
-const SETTLE: Duration = Duration::from_secs(3);
+/// are delayed by 2 s and polled every 0.5 s) before sync is stopped.
+const SETTLE: Duration = Duration::from_secs(5);
 const BUSY_GIVE_UP_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 /// Windows restarts an app after an update only if it ran for at least 60 seconds.
 const MIN_UPTIME: Duration = Duration::from_secs(65);
@@ -160,16 +160,17 @@ fn report_last_update(dir: &std::path::Path, running: Version) {
                 &t!("updateDoneMessage", version = short(to)),
             );
         }
-        StartOutcome::Failed { version } => {
-            tracing::warn!(target: "updater", %version, "The last update did not install");
+        StartOutcome::Failed { version, error } => {
+            tracing::warn!(target: "updater", %version, ?error, "The last update did not install");
+            let reason = error.unwrap_or_else(|| t!("updateNotInstalled").to_string());
             set_status(|s| {
                 s.phase = "failed";
                 s.target = Some(short(version));
-                s.error = Some(t!("updateNotInstalled").to_string());
+                s.error = Some(reason.clone());
             });
             cloudreve_sync::utils::toast::send_warning_toast(
                 &t!("updateFailedTitle"),
-                &t!("updateFailedMessage", version = short(version), reason = t!("updateNotInstalled")),
+                &t!("updateFailedMessage", version = short(version), reason = reason),
             );
         }
         StartOutcome::Nothing => {}
@@ -344,6 +345,10 @@ async fn install(
             // Work that was on its way when the gate closed (a save in the 2 s file event
             // delay, a command in a channel) shows up at the gate within this pause.
             tokio::time::sleep(SETTLE).await;
+            if !manual && !auto_update_on() {
+                activity::reopen();
+                continue;
+            }
             if activity::still_idle() && !drives.has_pending_work() {
                 break;
             }
@@ -358,7 +363,7 @@ async fn install(
 
     set_status(|s| s.phase = "installing");
     let mut state = State::load(&updater.dir);
-    state.installing = Some(Installing { version: release.version, from: running });
+    state.installing = Some(Installing { version: release.version, from: running, error: None });
     if let Err(e) = state.save(&updater.dir) {
         activity::reopen();
         anyhow::bail!("failed to save the update state: {e}");
@@ -385,9 +390,14 @@ async fn install(
         Err(e) => Some(anyhow::anyhow!(e)),
     };
     // The state file still says "installing": the next start tells success from failure and
-    // shows the one notification about it.
+    // shows the one notification about it, with Windows' reason.
     if let Some(e) = &error {
         tracing::error!(target: "updater", error = %e, "Registering the update failed");
+        let mut state = State::load(&updater.dir);
+        if let Some(installing) = state.installing.as_mut() {
+            installing.error = Some(e.to_string());
+            let _ = state.save(&updater.dir);
+        }
     }
     restart(app, &current.family_name);
     Ok(())
@@ -414,9 +424,15 @@ fn restart(app: &AppHandle, family_name: &str) {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     // The family name is Windows' own ([A-Za-z0-9._-]), so it needs no quoting.
+    // Waits for this process, then starts the app and checks that it runs (three tries).
     let script = format!(
-        "Wait-Process -Id {} -Timeout 120 -ErrorAction SilentlyContinue; Start-Process 'shell:AppsFolder\\{family_name}!Fylvo.Sync'",
-        std::process::id()
+        "Wait-Process -Id {pid} -Timeout 120 -ErrorAction SilentlyContinue; \
+         for ($i = 0; $i -lt 3; $i++) {{ \
+           Start-Process 'shell:AppsFolder\\{family_name}!Fylvo.Sync' -ErrorAction SilentlyContinue; \
+           Start-Sleep -Seconds 10; \
+           if (Get-Process fylvo-desktop -ErrorAction SilentlyContinue | Where-Object Id -ne {pid}) {{ break }} \
+         }}",
+        pid = std::process::id()
     );
     let started = std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])

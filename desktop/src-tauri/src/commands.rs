@@ -90,6 +90,8 @@ pub async fn add_drive(
     let app_state = state
         .get()
         .ok_or_else(|| "App not yet initialized".to_string())?;
+    // Fylvo: counted for the updater until the drive is added and saved (activity.rs).
+    let _busy = cloudreve_sync::activity::enter().await;
 
     // Validate local_path for new drives (not for reauthorization)
     if config.drive_id.is_none() && is_root_drive(&config.local_path) {
