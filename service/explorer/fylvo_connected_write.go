@@ -1,7 +1,6 @@
 package explorer
 
 import (
-
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"

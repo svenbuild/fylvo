@@ -277,7 +277,8 @@ func (u *upload) State(ctx context.Context) (int64, *provider.Item, error) {
 	case res.StatusCode == http.StatusOK || res.StatusCode == http.StatusCreated:
 		item, err := receipt(res)
 		if err != nil {
-			return 0, nil, err
+			// "Stored", and nothing to go by: what Drive stored is open.
+			return 0, nil, &provider.Error{Kind: provider.KindOpen, Status: res.StatusCode}
 		}
 		return item.Size, item, nil
 	case res.StatusCode >= 400:

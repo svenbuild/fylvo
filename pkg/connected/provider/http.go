@@ -302,13 +302,14 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 			if !said {
 				wait = RetryBase << min(tries, 4)
 			}
+			if res.StatusCode == http.StatusTooManyRequests || res.StatusCode == http.StatusForbidden {
+				// A plain "slow down" (a 403 only counts as busy when its body says
+				// so): this try was not carried out.
+				sent = before
+			}
 			if waited+wait <= maxWait && tries < MaxTries {
 				tries++
 				waited += wait
-				if res.StatusCode == http.StatusTooManyRequests {
-					// A plain "slow down": this try was not carried out.
-					sent = before
-				}
 				select {
 				case <-time.After(wait):
 					continue

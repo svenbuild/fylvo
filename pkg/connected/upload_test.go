@@ -1513,3 +1513,79 @@ func TestUploadStoredWithoutAReceiptToGoBy(t *testing.T) {
 	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
 	require.Equal(t, UploadUnknown, e.status(info.ID).State)
 }
+
+// What a range that was refused outright had read on its way does not count as "the
+// provider can have it": a later claim of the provider is held against what was really
+// handed over to a request that was taken.
+func TestUploadRefusedRangeLeavesNothingAtTheProvider(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		data := payload(2*testChunk + 1000)
+		info, err := e.start("a.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+
+		// The whole first range is read, then: "slow down".
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes 0-") {
+				_, _ = io.Copy(io.Discard, r.Body)
+				return &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}, Body: http.NoBody}, nil
+			}
+			return nil, nil
+		}
+		_, err = e.chunk(info.ID, 0, data)
+		require.Equal(t, serializer.CodeConnectedBusy, codeOf(err))
+		e.http.hook = nil
+
+		u := e.f.uploads.byID[info.ID]
+		require.Zero(t, u.sentTo, "nothing of the refused range counts as sent")
+		row, err := e.send(info.ID, 0, data)
+		require.NoError(t, err)
+		require.NotNil(t, row)
+		require.Equal(t, data, e.content("a.bin"))
+	})
+}
+
+// A 403 that says "slow down" is as clear a "no" as a 429 when time runs out before
+// the next try.
+func TestSlowDownAs403ThenOutOfTimeIsAClearNo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	slowDown := func(status int, _ http.Header, _ []byte) *provider.Error {
+		return &provider.Error{Kind: provider.KindBusy, Status: status, Code: "rateLimitExceeded"}
+	}
+	call := provider.Caller{HTTP: server.Client(), Auth: fixedAuth("token"), AllowHTTP: true, Classify: slowDown}
+	_, err := call.Do(ctx, http.MethodPost, server.URL+"/files", nil, []byte("{}"))
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.False(t, provider.Sent(err))
+}
+
+// A range lost its answer, and Drive, asked what it has, says "stored" with a receipt
+// that tells nothing. The upload ends unknown and closes its name; it is not taken for
+// one that can simply go on or be cancelled.
+func TestUploadStoredSaysTheProbeWithoutAReceipt(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	data := payload(2*testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes 0-"):
+			_, _ = io.Copy(io.Discard, r.Body)
+			return nil, errors.New("connection reset")
+		case r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes */"):
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":"x"}`))}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 0, data)
+	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	require.Equal(t, UploadUnknown, e.status(info.ID).State)
+	e.http.hook = nil
+	require.ErrorIs(t, e.f.CancelUpload(e.ctx, e.conn, info.ID), ErrOutcomeUnknown, "a cancel does not make it failed")
+	_, err = e.start("a.bin", 1000, UploadRequest{})
+	require.ErrorIs(t, err, ErrBusy, "the name is closed")
+}

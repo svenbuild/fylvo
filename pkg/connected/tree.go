@@ -168,10 +168,10 @@ func (l *listing) find(name string) *Row {
 type snapshot struct {
 	key     listKey
 	account string
-	user   int
-	path   string
-	order  Order
-	parent *Row
+	user    int
+	path    string
+	order   Order
+	parent  *Row
 	// rows are the entries of the listing in the order of the snapshot. They belong
 	// to the listing and are not changed: a page gets copies with its paths.
 	rows     []*Row

@@ -679,8 +679,11 @@ func (m *Manager) receive(ctx context.Context, u *upload, body io.Reader, start,
 		limit := time.AfterFunc(uploadRange, stop)
 		_, err := u.up.Send(sendCtx, u.next, r, send)
 		r.cut()
-		// The provider cannot have more than what was handed to the network.
-		u.sentTo = max(u.sentTo, u.next+r.handed())
+		// The provider cannot have more than what was handed to the network, and of a
+		// range it refused outright it has nothing.
+		if !refusedOutright(err) {
+			u.sentTo = max(u.sentTo, u.next+r.handed())
+		}
 		watch.Stop()
 		limit.Stop()
 		stop()
@@ -755,6 +758,12 @@ func (c *cutReader) cut() {
 	c.mu.Unlock()
 }
 
+// refusedOutright tells whether the provider said a plain "no" to a range, or was never
+// asked: whatever was read on the way, it took nothing of it.
+func refusedOutright(err error) bool {
+	return err != nil && (provider.KindOf(err) == provider.KindRetry || !provider.Sent(err))
+}
+
 // sendFailed handles a range the provider did not take. The caller holds u.work.
 func (m *Manager) sendFailed(ctx context.Context, u *upload, err error) error {
 	switch {
@@ -793,6 +802,10 @@ func (m *Manager) reconcile(ctx context.Context, u *upload) error {
 	case provider.KindOf(err) == provider.KindNotFound:
 		// The provider dropped the session. It stored nothing: the tail is here.
 		return m.fail(ctx, u, ErrUploadGone)
+	case provider.KindOf(err) == provider.KindOpen:
+		// The provider says "stored" and does not show what: nothing about it is certain.
+		m.endUnknown(u)
+		return ErrOutcomeUnknown
 	case err != nil:
 		// Still open; asked again with the next chunk.
 		return Error(ctx, err)
@@ -906,7 +919,9 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	item, err := u.up.Send(callCtx, u.next, tail, int64(len(u.held)))
 	tail.cut()
 	left := tail.handed()
-	u.sentTo = max(u.sentTo, u.next+left)
+	if !refusedOutright(err) {
+		u.sentTo = max(u.sentTo, u.next+left)
+	}
 	switch {
 	case err == nil && item != nil && left < int64(len(u.held)):
 		// A receipt for a file whose end never left this server. Whatever was stored,

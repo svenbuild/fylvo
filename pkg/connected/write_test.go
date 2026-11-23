@@ -1,9 +1,9 @@
 package connected
 
 import (
-	"os"
 	"context"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
