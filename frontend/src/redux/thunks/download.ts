@@ -25,7 +25,14 @@ import { closeContextMenu } from "../fileManagerSlice.ts";
 import { DialogSelectOption, setBatchDownloadLog, setBatchDownloadProgress } from "../globalStateSlice.ts";
 import { AppThunk } from "../store.ts";
 import { promiseId, selectOption } from "./dialog.ts";
-import { longRunningTaskWithSnackbar, refreshSingleFileSymbolicLinks, walk, walkAll } from "./file.ts";
+import {
+  FileResponseWalked,
+  longRunningTaskWithSnackbar,
+  refreshSingleFileSymbolicLinks,
+  walk,
+  walkAll,
+  WalkSkipped,
+} from "./file.ts";
 import { downloadFileName, inConnectedStorage } from "../../api/connected.ts";
 
 enum MultipleDownloadOption {
@@ -292,164 +299,173 @@ function startBrowserBatchDownloadTo(
 
     // get the files in the directory to compare with queue files
     const fsPaths = await getFileSystemDirectoryPaths(handle, "");
+    const skipped: WalkSkipped = { names: [], omitted: 0 };
 
     await dispatch(
-      walk(files, async (children, relativePath) => {
-        const childFiles = children.filter((f) => f.type == FileType.file);
-        // Names in this folder, so an exported document does not take the name of another file.
-        const takenNames = new Set(children.map((f) => f.name));
-        try {
-          const entityUrls = await dispatch(
-            getFileEntityUrl({
-              uris: childFiles.map((f) => getFileLinkedUri(f)),
-              download: true,
-              skip_error: true,
-            }),
-          );
+      walk(
+        files,
+        async (children, relativePath) => {
+          const childFiles = children.filter((f) => f.type == FileType.file);
+          // Names in this folder, so an exported document does not take the name of another file.
+          const takenNames = new Set(children.map((f) => f.name));
+          try {
+            const entityUrls = await dispatch(
+              getFileEntityUrl({
+                uris: childFiles.map((f) => getFileLinkedUri(f)),
+                download: true,
+                skip_error: true,
+              }),
+            );
 
-          for (let i = 0; i < entityUrls.urls.length; i++) {
-            // Fylvo: an address the server could not give comes back empty.
-            if (!entityUrls.urls[i]?.url) {
-              appendLog(
-                i18next.t("modals.directoryDownloadErrorNotification", {
-                  name: childFiles[i].name,
-                  msg: "failed to get download url",
-                }),
-              );
-              failed++;
-              filesCompleted++;
-              updateProgress(true);
-              continue;
-            }
-            const name =
-              (relativePath == "" ? "" : relativePath + "/") +
-              downloadFileName(childFiles[i], childFiles[i].name, takenNames);
-            if (fsPaths.has(name)) {
-              if (skipAll) {
+            for (let i = 0; i < entityUrls.urls.length; i++) {
+              // Fylvo: an address the server could not give comes back empty.
+              if (!entityUrls.urls[i]?.url) {
                 appendLog(
-                  i18next.t("modals.directoryDownloadSkipNotifiction", {
-                    name,
+                  i18next.t("modals.directoryDownloadErrorNotification", {
+                    name: childFiles[i].name,
+                    msg: "failed to get download url",
                   }),
                 );
+                failed++;
                 filesCompleted++;
                 updateProgress(true);
                 continue;
               }
+              const name =
+                (relativePath == "" ? "" : relativePath + "/") +
+                downloadFileName(childFiles[i], childFiles[i].name, takenNames);
+              if (fsPaths.has(name)) {
+                if (skipAll) {
+                  appendLog(
+                    i18next.t("modals.directoryDownloadSkipNotifiction", {
+                      name,
+                    }),
+                  );
+                  filesCompleted++;
+                  updateProgress(true);
+                  continue;
+                }
 
-              if (overwriteAll) {
+                if (overwriteAll) {
+                  appendLog(
+                    i18next.t("modals.directoryDownloadReplaceNotifiction", {
+                      name,
+                    }),
+                  );
+                } else {
+                  // No overwrite options, ask for one
+                  let overwriteOption = DownloadOverwriteOption.Skip;
+                  try {
+                    overwriteOption = (await dispatch(
+                      selectOption(getDownloadOverwriteOption(name), "fileManager.selectDirectoryDuplicationMethod"),
+                    )) as DownloadOverwriteOption;
+                  } catch (e) {
+                    // User cancel, use skip option
+                    overwriteOption = DownloadOverwriteOption.Skip;
+                  }
+
+                  if (overwriteOption == DownloadOverwriteOption.Skip) {
+                    appendLog(
+                      i18next.t("modals.directoryDownloadSkipNotifiction", {
+                        name,
+                      }),
+                    );
+                    filesCompleted++;
+                    updateProgress(true);
+                    continue;
+                  } else if (overwriteOption == DownloadOverwriteOption.SkipAll) {
+                    appendLog(
+                      i18next.t("modals.directoryDownloadSkipNotifiction", {
+                        name,
+                      }),
+                    );
+                    skipAll = true;
+                    filesCompleted++;
+                    updateProgress(true);
+                    continue;
+                  } else if (overwriteOption == DownloadOverwriteOption.OverwriteAll) {
+                    appendLog(
+                      i18next.t("modals.directoryDownloadReplaceNotifiction", {
+                        name,
+                      }),
+                    );
+                    overwriteAll = true;
+                  } else {
+                    appendLog(
+                      i18next.t("modals.directoryDownloadReplaceNotifiction", {
+                        name,
+                      }),
+                    );
+                  }
+                }
+              }
+
+              appendLog(i18next.t("modals.directoryDownloadStarted", { name }));
+              currentFile = name;
+
+              updateProgress(true);
+              try {
+                const res = await fetch(entityUrls.urls[i].url, {
+                  signal: cancelSignals[downloadId].signal,
+                });
+                // Fylvo: an error answer must not become the file.
+                if (!res.ok) {
+                  throw new Error(`HTTP ${res.status}`);
+                }
+
+                // Stream the response directly to disk to avoid buffering
+                // the entire file in memory
+                const reader = res.body?.getReader();
+                if (!reader) {
+                  throw new Error("Response body is not readable");
+                }
+
+                await streamFileToFileSystemDirectory(handle, reader, name, (bytes) => {
+                  totalBytes += bytes;
+                  updateProgress();
+                });
+                filesCompleted++;
+                updateProgress(true);
+                appendLog(i18next.t("modals.directoryDownloadFinished", { name }));
+              } catch (e) {
+                // User cancel download
+                if (e instanceof Error && e.name == "AbortError") {
+                  appendLog(i18next.t("modals.directoryDownloadCancelled"));
+                  throw e;
+                }
+                failed++;
+                filesCompleted++;
+                updateProgress(true);
                 appendLog(
-                  i18next.t("modals.directoryDownloadReplaceNotifiction", {
-                    name,
+                  i18next.t("modals.directoryDownloadErrorNotification", {
+                    name: name,
+                    msg: (e as Error).message,
                   }),
                 );
-              } else {
-                // No overwrite options, ask for one
-                let overwriteOption = DownloadOverwriteOption.Skip;
-                try {
-                  overwriteOption = (await dispatch(
-                    selectOption(getDownloadOverwriteOption(name), "fileManager.selectDirectoryDuplicationMethod"),
-                  )) as DownloadOverwriteOption;
-                } catch (e) {
-                  // User cancel, use skip option
-                  overwriteOption = DownloadOverwriteOption.Skip;
-                }
-
-                if (overwriteOption == DownloadOverwriteOption.Skip) {
-                  appendLog(
-                    i18next.t("modals.directoryDownloadSkipNotifiction", {
-                      name,
-                    }),
-                  );
-                  filesCompleted++;
-                  updateProgress(true);
-                  continue;
-                } else if (overwriteOption == DownloadOverwriteOption.SkipAll) {
-                  appendLog(
-                    i18next.t("modals.directoryDownloadSkipNotifiction", {
-                      name,
-                    }),
-                  );
-                  skipAll = true;
-                  filesCompleted++;
-                  updateProgress(true);
-                  continue;
-                } else if (overwriteOption == DownloadOverwriteOption.OverwriteAll) {
-                  appendLog(
-                    i18next.t("modals.directoryDownloadReplaceNotifiction", {
-                      name,
-                    }),
-                  );
-                  overwriteAll = true;
-                } else {
-                  appendLog(
-                    i18next.t("modals.directoryDownloadReplaceNotifiction", {
-                      name,
-                    }),
-                  );
-                }
               }
             }
-
-            appendLog(i18next.t("modals.directoryDownloadStarted", { name }));
-            currentFile = name;
-
+          } catch (e) {
+            if (e instanceof Error && e.name == "AbortError") {
+              throw e;
+            }
+            failed += childFiles.length;
+            filesCompleted += childFiles.length;
             updateProgress(true);
-            try {
-              const res = await fetch(entityUrls.urls[i].url, {
-                signal: cancelSignals[downloadId].signal,
-              });
-              // Fylvo: an error answer must not become the file.
-              if (!res.ok) {
-                throw new Error(`HTTP ${res.status}`);
-              }
-
-              // Stream the response directly to disk to avoid buffering
-              // the entire file in memory
-              const reader = res.body?.getReader();
-              if (!reader) {
-                throw new Error("Response body is not readable");
-              }
-
-              await streamFileToFileSystemDirectory(handle, reader, name, (bytes) => {
-                totalBytes += bytes;
-                updateProgress();
-              });
-              filesCompleted++;
-              updateProgress(true);
-              appendLog(i18next.t("modals.directoryDownloadFinished", { name }));
-            } catch (e) {
-              // User cancel download
-              if (e instanceof Error && e.name == "AbortError") {
-                appendLog(i18next.t("modals.directoryDownloadCancelled"));
-                throw e;
-              }
-              failed++;
-              filesCompleted++;
-              updateProgress(true);
-              appendLog(
-                i18next.t("modals.directoryDownloadErrorNotification", {
-                  name: name,
-                  msg: (e as Error).message,
-                }),
-              );
-            }
+            appendLog(
+              i18next.t("modals.directoryDownloadError", {
+                msg: (e as Error).message,
+              }),
+            );
           }
-        } catch (e) {
-          if (e instanceof Error && e.name == "AbortError") {
-            throw e;
-          }
-          failed += childFiles.length;
-          filesCompleted += childFiles.length;
-          updateProgress(true);
-          appendLog(
-            i18next.t("modals.directoryDownloadError", {
-              msg: (e as Error).message,
-            }),
-          );
-        }
-      }),
+        },
+        [],
+        "",
+        skipped,
+      ),
     );
 
+    // Fylvo: say what was left out, so the download does not look complete.
+    skippedNotes(skipped).forEach(appendLog);
     if (failed === 0) {
       appendLog(i18next.t("fileManager.directoryDownloadFinished"));
     } else {
@@ -458,10 +474,31 @@ function startBrowserBatchDownloadTo(
   };
 }
 
+// Fylvo: lines that name what a walk left out (see WalkSkipped).
+const skippedNotes = (skipped: WalkSkipped): string[] => {
+  const notes: string[] = [];
+  if (skipped.names.length > 0) {
+    notes.push(
+      i18next.t("application:connected.downloadSkipped", {
+        count: skipped.names.length,
+        names: skipped.names.join(", "),
+      }),
+    );
+  }
+  if (skipped.omitted > 0) {
+    notes.push(i18next.t("application:connected.downloadOmitted", { count: skipped.omitted }));
+  }
+  return notes;
+};
+
 export function streamSaverDownload(files: FileResponse[]): AppThunk {
   return async (dispatch, getState) => {
+    const skipped: WalkSkipped = { names: [], omitted: 0 };
     const allFiles = (
-      await longRunningTaskWithSnackbar(dispatch(walkAll(files)), "application:fileManager.preparingBathDownload")
+      await longRunningTaskWithSnackbar(
+        dispatch(walkAll(files, skipped)),
+        "application:fileManager.preparingBathDownload",
+      )
     ).filter((f) => f.type == FileType.file);
 
     const fileStream = streamSaver.createWriteStream(formatLocalTime(dayjs()) + ".zip");
@@ -476,52 +513,61 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
     let current = 0;
     // Paths in the archive, so an exported document does not take the path of another file.
     const takenNames = new Set(allFiles.map((f) => f.relativePath));
+    const pending: { file: FileResponseWalked; url: string }[] = [];
+    const failedNames: string[] = [];
 
     const readableZipStream = new (window as any).ZIP({
       start(_ctrl: any) {
         // ctrl.close()
       },
       async pull(ctrl: any) {
-        // Fylvo: the archive asks for more only after an entry, so a batch in which every
-        // file failed goes on with the next one instead of ending the download.
+        // Fylvo: one entry per call, fetched when the archive is ready for it: open responses
+        // wait while earlier entries are written, and a provider allows only a few at once.
+        // A file that fails is left out and named at the end.
         while (true) {
-          const batch = allFiles.slice(current, current + maxBatch);
-          current += batch.length;
-          if (batch.length == 0) {
-            ctrl.close();
-            return;
-          }
-
-          let added = 0;
-          try {
-            const entityUrls = await dispatch(
-              getFileEntityUrl({
-                uris: batch.map((f) => getFileLinkedUri(f)),
-                skip_error: true,
-                download: true,
-              }),
-            );
-
-            for (let i = 0; i < entityUrls.urls.length; i++) {
-              const url = entityUrls.urls[i];
-              if (!url?.url) {
-                continue;
-              }
-              const res = await fetch(url.url);
-              // Fylvo: an error answer must not become a file in the archive.
-              if (!res.ok) {
-                console.warn("Failed to download", batch[i].relativePath, res.status);
-                continue;
-              }
-              const stream = () => res.body;
-              ctrl.enqueue({ name: downloadFileName(batch[i], batch[i].relativePath, takenNames), stream });
-              added++;
+          if (pending.length == 0) {
+            const batch = allFiles.slice(current, current + maxBatch);
+            current += batch.length;
+            if (batch.length == 0) {
+              ctrl.close();
+              return;
             }
-          } catch (e) {
-            console.warn("Failed to get entity urls", e);
+            try {
+              const entityUrls = await dispatch(
+                getFileEntityUrl({
+                  uris: batch.map((f) => getFileLinkedUri(f)),
+                  skip_error: true,
+                  download: true,
+                }),
+              );
+              batch.forEach((file, i) => {
+                const url = entityUrls.urls[i]?.url;
+                if (url) {
+                  pending.push({ file, url });
+                } else {
+                  failedNames.push(file.relativePath);
+                }
+              });
+            } catch (e) {
+              console.warn("Failed to get entity urls", e);
+              failedNames.push(...batch.map((f) => f.relativePath));
+            }
+            continue;
           }
-          if (added > 0) {
+
+          const next = pending.shift()!;
+          try {
+            const res = await fetch(next.url);
+            // An error answer must not become a file in the archive.
+            if (!res.ok) {
+              throw new Error(`HTTP ${res.status}`);
+            }
+            const stream = () => res.body;
+            ctrl.enqueue({ name: downloadFileName(next.file, next.file.relativePath, takenNames), stream });
             return;
+          } catch (e) {
+            console.warn("Failed to download", next.file.relativePath, e);
+            failedNames.push(next.file.relativePath);
           }
         }
       },
@@ -532,6 +578,19 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
         await longRunningTaskWithSnackbar(readableZipStream.pipeTo(fileStream), "fileManager.batchDownloadStarted");
       } catch (e) {
         console.log(e);
+      }
+      // Fylvo: name what is missing from the archive.
+      const notes = skippedNotes(skipped);
+      if (failedNames.length > 0) {
+        notes.push(
+          i18next.t("application:connected.downloadFailed", {
+            count: failedNames.length,
+            names: failedNames.join(", "),
+          }),
+        );
+      }
+      if (notes.length > 0) {
+        enqueueSnackbar({ message: notes.join(" "), variant: "warning", persist: true, action: DefaultCloseAction });
       }
     }
   };

@@ -1259,6 +1259,12 @@
     "rowDuplicate": "Diesen Namen gibt es beim Anbieter mehrfach, darum lässt er sich hier nicht verwenden. Bitte einen davon beim Anbieter umbenennen.",
     "rowLink": "Verknüpfung beim Anbieter, nur lesen",
     "omitted_one": "{{count}} Eintrag wird nicht angezeigt: sein Name lässt sich hier nicht verwenden.",
-    "omitted_other": "{{count}} Einträge werden nicht angezeigt: ihre Namen lassen sich hier nicht verwenden."
+    "omitted_other": "{{count}} Einträge werden nicht angezeigt: ihre Namen lassen sich hier nicht verwenden.",
+    "downloadSkipped_one": "{{count}} Eintrag wurde nicht heruntergeladen (eine Verknüpfung oder ein mehrfach vorhandener Name): {{names}}.",
+    "downloadSkipped_other": "{{count}} Einträge wurden nicht heruntergeladen (Verknüpfungen oder mehrfach vorhandene Namen): {{names}}.",
+    "downloadOmitted_one": "{{count}} weiterer Eintrag liess sich wegen seines Namens nicht lesen.",
+    "downloadOmitted_other": "{{count}} weitere Einträge liessen sich wegen ihrer Namen nicht lesen.",
+    "downloadFailed_one": "{{count}} Datei fehlt im Archiv: {{names}}.",
+    "downloadFailed_other": "{{count}} Dateien fehlen im Archiv: {{names}}."
   }
 }

@@ -34,6 +34,14 @@ export function pinToSidebar(uri: string, name?: string): AppThunk<Promise<void>
 
 export function unPinFromSidebar(uri: string): AppThunk<Promise<void>> {
   return async (dispatch, _getState) => {
+    // Fylvo: a link into a connected storage lives in the sidebar prefs (see pinToSidebar).
+    // The removed address stays in base, so the server does not add it back.
+    if (inConnectedStorage(uri)) {
+      const items = (await dispatch(getPrefs())).sidebar.items;
+      const base = items.filter((i) => i.type == "link" && i.uri).map((i) => i.uri as string);
+      await dispatch(savePrefs({ sidebar: { items: items.filter((i) => !(i.type == "link" && i.uri == uri)), base } }));
+      return;
+    }
     await dispatch(
       sendUnpinFile({
         uri,

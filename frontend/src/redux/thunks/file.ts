@@ -84,6 +84,7 @@ import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers } from "./viewer.ts";
 import { folderEnterable } from "../../api/connected.ts";
+import { rowUnsupported } from "../../component/FileManager/Connected/ConnectedMark.tsx";
 
 const contextMenuCloseAnimationDelay = 250;
 
@@ -1165,19 +1166,41 @@ export function submitCreateNew(index: number, name: string, type: number): AppT
   };
 }
 
+// Fylvo: what a walk left out, so a download can say so instead of looking complete.
+export interface WalkSkipped {
+  // Paths of rows not taken: shortcuts and folders that cannot be entered in a connected
+  // storage, and rows whose name exists more than once there.
+  names: string[];
+  // Entries the server could not list at all (their names cannot be names here).
+  omitted: number;
+}
+
 export function walk(
   files: FileResponse[],
   callback: (f: FileResponse[], relativePath: string) => Promise<any>,
   walkedSymbolicLinks: string[] = [],
   relativePath: string = "",
+  skipped?: WalkSkipped,
 ): AppThunk {
   return async (dispatch, _getState) => {
+    const pathOf = (f: FileResponse) => (relativePath == "" ? "" : relativePath + "/") + f.name;
+    // Fylvo: a row of a connected storage that cannot be used is left out.
+    const usable = files.filter((f) => !rowUnsupported(f));
+    files.filter(rowUnsupported).forEach((f) => skipped?.names.push(pathOf(f)));
+    files = usable;
     await callback(files, relativePath);
 
     for (const f of files) {
-      // Fylvo: in a connected storage, folders that cannot be entered and shortcuts are not
-      // walked into (a shortcut can lead back to a folder above).
-      if (f.type == FileType.folder && folderEnterable(f) && !f.metadata?.[Metadata.connected_link]) {
+      if (f.type != FileType.folder) {
+        continue;
+      }
+      // Fylvo: in a connected storage, shortcuts (they can lead back to a folder above) and
+      // folders that cannot be entered are not walked into.
+      if (!folderEnterable(f) || f.metadata?.[Metadata.connected_link] !== undefined) {
+        skipped?.names.push(pathOf(f));
+        continue;
+      }
+      {
         var uri = getFileLinkedUri(f);
         if (f.metadata && f.metadata[Metadata.share_redirect]) {
           if (!walkedSymbolicLinks.includes(uri)) {
@@ -1201,6 +1224,9 @@ export function walk(
               }),
             );
             allChildren.push(...children.files);
+            if (skipped && !nextToken && page === undefined) {
+              skipped.omitted += children.connected?.omitted ?? 0;
+            }
             // Fylvo: a cursor listing (connected storages) goes on only by its token, also
             // when it names a total.
             if (children.pagination.is_cursor) {
@@ -1228,7 +1254,7 @@ export function walk(
             }
           }
           const path = (relativePath == "" ? "" : relativePath + "/") + f.name;
-          await dispatch(walk(allChildren, callback, walkedSymbolicLinks, path));
+          await dispatch(walk(allChildren, callback, walkedSymbolicLinks, path, skipped));
         } catch (e) {
           console.warn("Failed to load children", e);
           if (e instanceof Error && e.name == "AbortError") {
@@ -1244,19 +1270,24 @@ export interface FileResponseWalked extends FileResponse {
   relativePath: string;
 }
 
-export function walkAll(files: FileResponse[]): AppThunk<Promise<FileResponseWalked[]>> {
+export function walkAll(files: FileResponse[], skipped?: WalkSkipped): AppThunk<Promise<FileResponseWalked[]>> {
   return async (dispatch, _getState): Promise<FileResponseWalked[]> => {
     const allFiles: FileResponseWalked[] = [];
     await dispatch(
-      walk(files, async (f, relativePath) =>
-        allFiles.push(
-          ...f.map(
-            (file): FileResponseWalked => ({
-              ...file,
-              relativePath: (relativePath == "" ? "" : relativePath + "/") + file.name,
-            }),
+      walk(
+        files,
+        async (f, relativePath) =>
+          allFiles.push(
+            ...f.map(
+              (file): FileResponseWalked => ({
+                ...file,
+                relativePath: (relativePath == "" ? "" : relativePath + "/") + file.name,
+              }),
+            ),
           ),
-        ),
+        [],
+        "",
+        skipped,
       ),
     );
     return allFiles;

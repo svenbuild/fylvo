@@ -1181,6 +1181,12 @@
     "rowDuplicate": "This name exists more than once at the provider, so it cannot be used here. Rename one of them at the provider.",
     "rowLink": "Shortcut at the provider, read only",
     "omitted_one": "{{count}} entry is not shown: its name cannot be used here.",
-    "omitted_other": "{{count}} entries are not shown: their names cannot be used here."
+    "omitted_other": "{{count}} entries are not shown: their names cannot be used here.",
+    "downloadSkipped_one": "{{count}} entry was not downloaded (a shortcut, or a name that exists more than once): {{names}}.",
+    "downloadSkipped_other": "{{count}} entries were not downloaded (shortcuts, or names that exist more than once): {{names}}.",
+    "downloadOmitted_one": "{{count}} more entry could not be read because of its name.",
+    "downloadOmitted_other": "{{count}} more entries could not be read because of their names.",
+    "downloadFailed_one": "{{count}} file is missing from the archive: {{names}}.",
+    "downloadFailed_other": "{{count}} files are missing from the archive: {{names}}."
   }
 }

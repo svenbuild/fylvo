@@ -19,16 +19,17 @@ export const inConnectedStorage = (path?: string) => {
 // Name under which a file is saved: a document of the provider (for example a Google Sheet)
 // downloads in the format named in its metadata, so it gets that extension. taken holds the
 // names already used in the same place; a name in it is not given twice (Budget.gsheet next
-// to Budget.xlsx becomes Budget.gsheet.xlsx). The chosen name is added to taken.
+// to Budget.xlsx becomes "Budget (2).xlsx"). The chosen name is added to taken.
 export const downloadFileName = (file: FileResponse, name: string = file.name, taken?: Set<string>) => {
   const ext = file.metadata?.[Metadata.connected_export];
   if (!ext) {
     return name;
   }
   const dot = name.lastIndexOf(".");
-  let res = (dot > name.lastIndexOf("/") ? name.slice(0, dot) : name) + "." + ext;
-  if (taken?.has(res)) {
-    res = name + "." + ext;
+  const base = dot > name.lastIndexOf("/") ? name.slice(0, dot) : name;
+  let res = `${base}.${ext}`;
+  for (let n = 2; taken?.has(res); n++) {
+    res = `${base} (${n}).${ext}`;
   }
   taken?.add(res);
   return res;
