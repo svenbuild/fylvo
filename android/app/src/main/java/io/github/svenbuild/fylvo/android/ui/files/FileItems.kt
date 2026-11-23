@@ -141,13 +141,12 @@ fun thumbCacheKey(file: FileObject, thumbUrl: String?): String? {
 private val THUMB_ID = Regex("/file/content/([^/?]+)/")
 
 /**
- * Fylvo 1.6: the request for [file]'s preview at [thumbUrl], kept under [thumbCacheKey]. A
- * picture of a connected storage is noted for its storage before it is loaded, so disconnecting
- * removes it (rows and the image viewer use this one way).
+ * Fylvo 1.6: the request for [file]'s preview at [thumbUrl], kept under [thumbCacheKey] (rows and
+ * the image viewer use this one way; pictures of connected storages then go through
+ * ConnectedThumbs.Pictures).
  */
 fun thumbRequest(context: android.content.Context, file: FileObject, thumbUrl: String): ImageRequest.Builder {
     val key = thumbCacheKey(file, thumbUrl)
-    if (key != null && Connected.isConnected(file.path)) io.github.svenbuild.fylvo.android.data.ConnectedThumbs.note(context, key)
     return ImageRequest.Builder(context).data(thumbUrl).memoryCacheKey(key).diskCacheKey(key)
 }
 

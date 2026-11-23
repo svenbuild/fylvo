@@ -125,11 +125,12 @@ class FylvoApp : Application(), ImageLoaderFactory {
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient {
             OkHttpClient.Builder().addInterceptor(ApiClient.userAgent)
-                // Fylvo 1.6: pictures of connected storages, two at a time, kept by version.
-                .addInterceptor(io.github.svenbuild.fylvo.android.data.ConnectedThumbs.limiter)
+                // Fylvo 1.6: pictures of connected storages are kept by version (30 days).
                 .addNetworkInterceptor(io.github.svenbuild.fylvo.android.data.ConnectedThumbs.keepLonger)
                 .build()
         }
+        // Fylvo 1.6: pictures of connected storages: noted, two at a time, retried when busy.
+        .components { add(io.github.svenbuild.fylvo.android.data.ConnectedThumbs.Pictures) }
         .build()
 
     /**

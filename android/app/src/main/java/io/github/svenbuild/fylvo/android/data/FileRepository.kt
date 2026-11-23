@@ -16,6 +16,7 @@ import io.github.svenbuild.fylvo.android.api.UploadSessionResponse
 import io.github.svenbuild.fylvo.android.util.Connected
 import io.github.svenbuild.fylvo.android.util.CrUri
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -235,22 +236,19 @@ class FileRepository(private val api: ApiClient) {
      * server makes a missing preview on the first request; two at once for the same file made it
      * twice, and the losing one deleted the winner's preview file.
      */
-    suspend fun thumbUrl(uri: String, version: String = ""): String? {
-        // Per account: the same address of another account is another file. Fylvo 1.6: and per
-        // version, so a new version never takes the address asked for the one before.
-        val key = api.accountTag() + "|" + CrUri.canonical(uri) + "|" + version
-        val connected = Connected.isConnected(uri)
+    suspend fun thumbUrl(uri: String): String? {
+        // Fylvo 1.6: in a connected storage the address is asked by the row itself (it stops when
+        // the row goes away), a few at a time; the server makes nothing there at this point.
+        if (Connected.isConnected(uri)) return connectedLookups.withPermit { connectedThumbUrl(uri) }
+        // Per account: the same address of another account is another file.
+        val key = api.accountTag() + "|" + CrUri.canonical(uri)
         val request = thumbInFlight.computeIfAbsent(key) {
             thumbScope.async(start = CoroutineStart.LAZY) {
                 try {
                     try {
-                        // The address only; the picture behind it is loaded two at a time
-                        // (ConnectedThumbs.limiter), as the server fetches it from the provider then.
                         readService(uri).thumb(uri).unwrap().url
                     } catch (e: ApiException) {
-                        // No preview for this version; in a connected storage also: not supported.
-                        // "Connect again" or "not found" are failures asked again later.
-                        if (e.code == CODE_NO_THUMB || (connected && e.code == CODE_CONNECTED_UNSUPPORTED)) null else throw e
+                        if (e.code == CODE_NO_THUMB) null else throw e
                     }
                 } finally {
                     thumbInFlight.remove(key)
@@ -259,6 +257,21 @@ class FileRepository(private val api: ApiClient) {
         }
         request.start()
         return request.await()
+    }
+
+    /** Fylvo 1.6: address requests into connected storages at a time (the pictures: ConnectedThumbs). */
+    private val connectedLookups = kotlinx.coroutines.sync.Semaphore(4)
+
+    /**
+     * Fylvo 1.6: the address of a connected file's preview (the picture behind it is loaded two at
+     * a time, ConnectedThumbs.Pictures, as the server fetches it from the provider then). No
+     * preview for this version, or not supported: null. "Connect again" or "not found" are
+     * failures, asked again later.
+     */
+    private suspend fun connectedThumbUrl(uri: String): String? = try {
+        readService(uri).thumb(uri).unwrap().url
+    } catch (e: ApiException) {
+        if (e.code == CODE_NO_THUMB || e.code == CODE_CONNECTED_UNSUPPORTED) null else throw e
     }
 
     /**
@@ -277,7 +290,7 @@ class FileRepository(private val api: ApiClient) {
             if (System.currentTimeMillis() - fetchedAt < THUMB_TTL_MS) return url
         }
         val url = try {
-            thumbUrl(file.path, file.primaryEntity)
+            thumbUrl(file.path)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
