@@ -827,17 +827,18 @@ function processFileListDiff(index: number, deleted: FileResponse[], refreshIfNe
     }
 
     const newNavigateUri = new CrUri(newNavigatePath);
+    // remove deleted files from selected (Fylvo: for both kinds of pagination, so "1 selected"
+    // does not stay after the file is gone)
+    const newSelected = { ...fm.selected };
+    Object.keys(newSelected).forEach((p) => {
+      if (deleted.find((f) => f.path === p)) {
+        delete newSelected[p];
+      }
+    });
+    dispatch(setSelected({ index, value: Object.values(newSelected) }));
+
     const isCursorPagination = fm.list?.pagination.is_cursor;
     if (isCursorPagination) {
-      // remove deleted files from selected
-      const newSelected = { ...fm.selected };
-      Object.keys(newSelected).forEach((p) => {
-        if (deleted.find((f) => f.path === p)) {
-          delete newSelected[p];
-        }
-      });
-      dispatch(setSelected({ index, value: Object.values(newSelected) }));
-
       // For cursor pagination, Remove file from file list
       const newList = fm.list?.files.filter((f) => !deleted.find((d) => d.path === f.path));
       if (newList) {
@@ -929,6 +930,8 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
         });
         return;
       }
+      // Fylvo: a copy cannot be undone with Ctrl+Z.
+      rememberUndo({ kind: "none" });
       try {
         await dispatch(sendConnectedCopy({ src: src.map((f) => f.path), dst }));
         enqueueSnackbar({

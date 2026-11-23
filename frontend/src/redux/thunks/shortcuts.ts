@@ -1,15 +1,24 @@
 import i18next from "i18next";
 import { enqueueSnackbar } from "notistack";
 import { getFileInfo, getFileList } from "../../api/api.ts";
+import { inConnectedStorage } from "../../api/connected.ts";
 import { FileResponse, Metadata } from "../../api/explorer.ts";
 import { DefaultCloseAction } from "../../component/Common/Snackbar/snackbar.tsx";
 import { getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
 import CrUri, { CrUriPrefix, Filesystem } from "../../util/uri.ts";
-import { ContextMenuTypes } from "../fileManagerSlice.ts";
+import { ContextMenuTypes, Layouts } from "../fileManagerSlice.ts";
 import { setFileClipboard } from "../globalStateSlice.ts";
 import { Viewers } from "../siteConfigSlice.ts";
 import { AppThunk } from "../store.ts";
-import { deleteFile, fileDoubleClicked, isMacbook, moveFiles, restoreFile, submitRenameFile } from "./file.ts";
+import {
+  deleteFile,
+  fileDoubleClicked,
+  isMacbook,
+  moveFiles,
+  renameFile,
+  restoreFile,
+  submitRenameFile,
+} from "./file.ts";
 import { navigateToPath, refreshFileList } from "./filemanager.ts";
 import { takeUndo, withoutRecording } from "./undo.ts";
 
@@ -67,7 +76,12 @@ export function pasteClipboard(index: number): AppThunk {
       hint("cannotPaste");
       return;
     }
-    if (!clipboard.cut && clipboard.files.every((f) => new CrUri(f.path).parent().toString() == dst)) {
+    // In a connected storage a copy into the same folder is allowed (the server names it "name (2)").
+    if (
+      !clipboard.cut &&
+      !inConnectedStorage(dst) &&
+      clipboard.files.every((f) => new CrUri(f.path).parent().toString() == dst)
+    ) {
       hint("sameFolder");
       return;
     }
@@ -117,13 +131,21 @@ export function openSelected(index: number): AppThunk {
   };
 }
 
-// F2: the rename itself is started by the row (useInlineRename); this only explains why nothing
-// happens.
-export function renameHint(index: number): AppThunk {
-  return async (_dispatch, getState) => {
+// F2: rename the one selected file. inline: the focused row renames itself (useInlineRename), so
+// here only a hint when it cannot. Otherwise (gallery view, or the focus is not in the file view)
+// the rename dialog opens.
+export function renameSelected(index: number, inline: boolean): AppThunk {
+  return async (dispatch, getState) => {
     const files = selectedFiles(getState(), index);
-    if (files.length > 1 || (files.length == 1 && !getActionOpt(files, Viewers).showRename)) {
+    if (files.length == 0) {
+      return;
+    }
+    if (files.length > 1 || !getActionOpt(files, Viewers).showRename) {
       hint("cannotRename");
+      return;
+    }
+    if (!inline || getState().fileManager[index].layout == Layouts.gallery) {
+      dispatch(renameFile(index, files[0]));
     }
   };
 }

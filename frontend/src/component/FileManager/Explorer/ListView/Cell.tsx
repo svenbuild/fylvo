@@ -121,6 +121,10 @@ export const ThumbPopover = memo((props: ThumbPopoverProps) => {
   return (
     <HoverPopover
       open={open}
+      // Fylvo: the preview only shows; the focus stays in the list, so the keys keep working.
+      disableAutoFocus
+      disableEnforceFocus
+      disableRestoreFocus
       anchorOrigin={{
         vertical: "bottom",
         horizontal: "center",

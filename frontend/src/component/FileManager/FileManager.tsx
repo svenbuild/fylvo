@@ -13,7 +13,7 @@ import {
   goUp,
   openSelected,
   pasteClipboard,
-  renameHint,
+  renameSelected,
   undoLast,
 } from "../../redux/thunks/shortcuts.ts";
 import ImageViewer from "../Viewers/ImageViewer/ImageViewer.tsx";
@@ -63,15 +63,14 @@ export const FileManager = ({ index = 0, initialPath, skipRender }: FileManagerP
     }
   }, [list]);
 
-  // Fylvo: the keys of a file manager, only while the file view has the focus. Keys typed into
-  // a field, or in a menu or dialog opened from here (they are portals), are left alone.
-  const onKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLElement>) => {
+  // Fylvo: the keys of a file manager, while the file view (view) has the focus, or nothing has
+  // it (see below). Keys typed into a field are left alone.
+  const handleKey = useCallback(
+    (e: KeyboardEvent, view: HTMLElement) => {
       const target = e.target as HTMLElement;
       if (
         index != FileManagerIndex.main ||
-        e.nativeEvent.isComposing ||
-        !e.currentTarget.contains(target) ||
+        e.isComposing ||
         target.isContentEditable ||
         target.closest("input, textarea, select")
       ) {
@@ -112,7 +111,9 @@ export const FileManager = ({ index = 0, initialPath, skipRender }: FileManagerP
             action = !e.altKey ? () => dispatch(deleteSelected(index)) : undefined;
             break;
           case "F2":
-            action = !e.altKey ? () => dispatch(renameHint(index)) : undefined;
+            // A row in the list or grid renames itself when it has the focus (useInlineRename);
+            // otherwise the rename dialog opens.
+            action = !e.altKey ? () => dispatch(renameSelected(index, view.contains(target))) : undefined;
             break;
           case "Enter":
             // A focused button (breadcrumb, toolbar) keeps its own Enter; a file card does not.
@@ -140,7 +141,6 @@ export const FileManager = ({ index = 0, initialPath, skipRender }: FileManagerP
         e.preventDefault();
         // After the action (for example a question that closed and took the focus with the
         // deleted card), the file view takes the focus back if nothing else has it.
-        const view = e.currentTarget;
         Promise.resolve(action()).finally(() =>
           setTimeout(() => {
             if (!document.activeElement || document.activeElement == document.body) {
@@ -152,6 +152,35 @@ export const FileManager = ({ index = 0, initialPath, skipRender }: FileManagerP
     },
     [dispatch, index],
   );
+
+  // Keys in a menu or dialog opened from here (they are portals) are left alone.
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLElement>) => {
+      if (e.currentTarget.contains(e.target as Node)) {
+        handleKey(e.nativeEvent, e.currentTarget);
+      }
+    },
+    [handleKey],
+  );
+
+  // Fylvo: after a dialog closes, the focus often rests on the page itself. The keys work there
+  // too, as long as no modal dialog, menu, popup or image viewer is open (the upload list is none).
+  useEffect(() => {
+    if (index != FileManagerIndex.main) {
+      return;
+    }
+    const onPageKey = (e: KeyboardEvent) => {
+      if (
+        e.target == document.body &&
+        viewRef.current &&
+        !document.querySelector(".MuiModal-root:not(.MuiModal-hidden), .PhotoView-Portal")
+      ) {
+        handleKey(e, viewRef.current);
+      }
+    };
+    document.addEventListener("keydown", onPageKey);
+    return () => document.removeEventListener("keydown", onPageKey);
+  }, [handleKey, index]);
 
   if (skipRender) {
     return null;

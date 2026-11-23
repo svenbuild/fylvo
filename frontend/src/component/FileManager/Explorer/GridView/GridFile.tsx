@@ -488,6 +488,10 @@ const GridFile = memo((props: FileBlockProps) => {
         {thumbSrc && showThumb && (
           <HoverPopover
             open={thumbPopoverOpen}
+            // Fylvo: the preview only shows; the focus stays on the card, so the keys keep working.
+            disableAutoFocus
+            disableEnforceFocus
+            disableRestoreFocus
             sx={{
               zIndex: (t) => t.zIndex.drawer,
             }}
