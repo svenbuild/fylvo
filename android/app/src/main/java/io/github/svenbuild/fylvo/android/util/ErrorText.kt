@@ -88,9 +88,12 @@ private fun connectedItemText(reason: String?): Int = when (reason) {
     else -> R.string.error_connected_item
 }
 
-/** [ErrorText.of] that also logs the raw text of [e] (server message or parser text, never tokens). */
+/**
+ * [ErrorText.of] that also logs the kind of [e] and its code. Fylvo: never its text: a message can
+ * carry an address, and an address can carry a share password.
+ */
 fun userError(e: Throwable, involvesUpload: Boolean = false, @StringRes fallback: Int? = null): UiText {
     val code = (e as? ApiException)?.code
-    Log.w("Fylvo", "Request failed${code?.let { " (code $it)" }.orEmpty()}: ${e.javaClass.simpleName}: ${e.message}")
+    Log.w("Fylvo", "Request failed${code?.let { " (code $it)" }.orEmpty()}: ${e.javaClass.simpleName}")
     return ErrorText.of(e, involvesUpload, fallback)
 }

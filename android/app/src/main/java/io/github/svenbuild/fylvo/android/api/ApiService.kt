@@ -176,6 +176,10 @@ interface ApiService {
     @GET("api/v4/file")
     suspend fun folderView(@Query("uri") uri: String, @Tag session: SessionTag): Response<ApiResponse<FolderViewResponse>>
 
+    /** Fylvo: the signed-in account with its group rights. */
+    @GET("api/v4/user/me")
+    suspend fun me(@Tag session: SessionTag): Response<ApiResponse<Me>>
+
     /** Fylvo: one share's public facts (member-only, owner); decides the star inside shares. */
     @GET("api/v4/share/info/{id}")
     suspend fun shareInfo(@Path("id") id: String, @Tag session: SessionTag): Response<ApiResponse<ShareInfo>>

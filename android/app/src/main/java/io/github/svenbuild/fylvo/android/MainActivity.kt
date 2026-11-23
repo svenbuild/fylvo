@@ -162,6 +162,8 @@ fun App() {
             // Folders pinned for this account work again after a sign-in.
             runCatching { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.enableFor(context, app.accountPrefs.accountHash()) }
             runCatching { app.accountPrefs.refresh(ifOlderThanMs = io.github.svenbuild.fylvo.android.data.prefs.AccountPrefsRepository.STALE_MS) }
+            // Fylvo: the group rights decide which actions are offered.
+            runCatching { app.account.ensureLoaded() }
         }
     }
     val prefs = prefsState.prefs.takeIf { prefsState.usable }

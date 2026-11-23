@@ -79,23 +79,6 @@ class FileRepository(private val api: ApiClient) {
     /** Fylvo: connected storages (Google Drive, OneDrive through the server). */
     val connected = ConnectedRepository(api)
 
-    private fun <T> Response<io.github.svenbuild.fylvo.android.api.ApiResponse<T>>.unwrap(): T {
-        if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
-        val body = body() ?: throw ApiException(-1, "Empty response")
-        if (body.code != 0 || body.data == null) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes, body.reason, body.failedPaths)
-        }
-        return body.data
-    }
-
-    private fun <T> Response<io.github.svenbuild.fylvo.android.api.ApiResponse<T>>.unwrapEmpty() {
-        if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
-        val body = body() ?: throw ApiException(-1, "Empty response")
-        if (body.code != 0) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes, body.reason, body.failedPaths)
-        }
-    }
-
     suspend fun list(
         uri: String,
         pageToken: String? = null,
@@ -141,7 +124,8 @@ class FileRepository(private val api: ApiClient) {
     private suspend fun signedUrl(uri: String, download: Boolean, archive: Boolean = false, entity: String = ""): String {
         val url = api.service().fileUrls(FileUrlRequest(listOf(uri), download = download, archive = archive, entity = entity))
             .unwrap().urls.firstOrNull()?.url
-            ?: throw ApiException(-1, "No URL returned for $uri")
+            // Fylvo: no address in the text (it may carry a share password).
+            ?: throw ApiException(-1, "No URL returned")
         return reachableUrl(url)
     }
 

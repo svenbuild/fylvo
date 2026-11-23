@@ -52,6 +52,9 @@ class FylvoApp : Application(), ImageLoaderFactory {
     /** Fylvo: the account's customisation (prefs, favourites, tags, accents). */
     lateinit var accountPrefs: io.github.svenbuild.fylvo.android.data.prefs.AccountPrefsRepository
         private set
+    /** Fylvo: the account's group rights and the server's explorer switches (memory only). */
+    lateinit var account: io.github.svenbuild.fylvo.android.data.AccountRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -59,6 +62,7 @@ class FylvoApp : Application(), ImageLoaderFactory {
         sessionManager = SessionManager(this)
         apiClient = ApiClient(sessionManager)
         fileRepository = FileRepository(apiClient)
+        account = io.github.svenbuild.fylvo.android.data.AccountRepository(apiClient, sessionManager)
         favoritesStore = FavoritesStore(this)
         taskNotifySettings = TaskNotifySettings(this)
         syncFolderSettings = SyncFolderSettings(this)
@@ -136,6 +140,7 @@ class FylvoApp : Application(), ImageLoaderFactory {
             }
             // Fylvo: what names the account's files on this device goes first.
             step { accountPrefs.clear() }
+            step { account.clear() }
             step { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.disableAll(this@FylvoApp) }
             step { io.github.svenbuild.fylvo.android.data.prefs.ShareTargetStore(this@FylvoApp).clear() }
             io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = null

@@ -383,8 +383,8 @@ fun FilesScreen(
     }
     // Inside a share: whether it is a member share (the star is offered only there).
     LaunchedEffect(state.currentUri, prefsState.usable) {
-        if (prefsState.usable && CrUri.isShare(state.currentUri)) {
-            prefsRepo.memberShare(CrUri.root(state.currentUri).removePrefix("cloudreve://").substringBefore('@'))
+        if (prefsState.usable && CrUri.isShare(state.currentUri) && !CrUri.hasSecret(state.currentUri)) {
+            CrUri.shareId(state.currentUri)?.let { prefsRepo.memberShare(it) }
         }
     }
     fun starOf(file: FileObject): io.github.svenbuild.fylvo.android.data.prefs.StarState =

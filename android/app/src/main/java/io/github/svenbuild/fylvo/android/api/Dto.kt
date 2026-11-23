@@ -269,10 +269,14 @@ data class ShareCreateRequest(
     val expire: Int = 0,
     @SerialName("share_view") val shareView: Boolean = false,
     @SerialName("show_readme") val showReadme: Boolean = false,
+    /** Fylvo: visitors of a folder link may upload; with [hideContent] they only upload. */
     @SerialName("allow_upload") val allowUpload: Boolean = false,
-    @SerialName("allow_edit") val allowEdit: Boolean = false,
-    @SerialName("preview_only") val previewOnly: Boolean = false,
-    @SerialName("upload_only") val uploadOnly: Boolean = false,
+    @SerialName("hide_content") val hideContent: Boolean = false,
+    /** Fylvo: bytes visitors may upload in total; 0 = no limit. */
+    @SerialName("upload_limit") val uploadLimit: Long = 0,
+    /** Fylvo: a share with chosen people only; [members] null keeps the existing ones on an edit. */
+    @SerialName("member_only") val memberOnly: Boolean = false,
+    val members: List<ShareMemberDto>? = null,
 )
 
 @Serializable
@@ -312,4 +316,8 @@ data class AndroidRelease(
 @Serializable
 data class ExplorerConfig(
     val icons: kotlinx.serialization.json.JsonElement? = null,
+    /** Fylvo: "none" or empty = no map; the app then offers no map app either. */
+    @SerialName("map_provider") val mapProvider: String = "",
+    /** Fylvo: the server can search inside file contents (`GET /file/search`). */
+    @SerialName("full_text_search") val fullTextSearch: Boolean = false,
 )
