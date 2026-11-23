@@ -189,19 +189,21 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("provider error (kind %d, status %d, code %q)", e.Kind, e.Status, e.Code)
 }
 
-// KindOf returns the kind of a provider error, KindOther for everything else.
-// notSent is an error that came up before anything was sent to the provider.
+// notSent is an error of a call the provider certainly did not carry out: it came up
+// before anything was sent, or after the provider refused the token (401).
 type notSent struct{ error }
 
 func (n notSent) Unwrap() error { return n.error }
 
-// Sent tells whether a failed call can have reached the provider. False only where that
-// is certain: the call ended before its request was handed to the network.
+// Sent tells whether a failed call can have been carried out by the provider. False only
+// where that is certain: the call ended before its request was handed to the network,
+// or its only answer was that the token is not taken.
 func Sent(err error) bool {
 	var n notSent
 	return !errors.As(err, &n)
 }
 
+// KindOf returns the kind of a provider error, KindOther for everything else.
 func KindOf(err error) Kind {
 	var e *Error
 	if errors.As(err, &e) {

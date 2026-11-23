@@ -219,7 +219,7 @@ func ConnectedUploadState(c *gin.Context, id string) (*ConnectedUploadStateRespo
 	}
 	res := &ConnectedUploadStateResponse{State: status.State, Received: status.Received}
 	if status.Row != nil {
-		req := &connectedRequest{conn: &connected.Conn{ID: status.Conn}}
+		req := &connectedRequest{conn: &connected.Conn{ID: status.Conn, Provider: status.Provider}}
 		res.File = connectedFile(req, status.Row, false)
 	}
 	var app serializer.AppError

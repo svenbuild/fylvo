@@ -271,7 +271,7 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 				// A new token for the next try, which the client makes: this one
 				// would read the bytes long after the caller looked at the file.
 				if _, err := c.Auth.Token(ctx, token); err != nil {
-					return nil, err
+					return nil, notSent{err}
 				}
 				return nil, &Error{Kind: KindBusy, Status: res.StatusCode}
 			}
@@ -282,7 +282,8 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 				}
 				return nil, &Error{Kind: KindReconnect, Status: res.StatusCode}
 			}
-			renewed, rejected = true, token
+			// The provider refused this try outright: so far nothing was carried out.
+			renewed, rejected, sent = true, token, false
 			continue
 		}
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -1318,4 +1319,78 @@ func TestUploadOpenOutcomeInTheMiddleClosesTheName(t *testing.T) {
 	require.ErrorIs(t, err, ErrBusy)
 	_, err = e.f.CreateEntry(e.ctx, e.conn, "a.bin", false, true)
 	require.ErrorIs(t, err, ErrBusy)
+}
+
+// renewalFails is an Auth whose first token the provider refuses and which then cannot
+// get a new one.
+type renewalFails struct{ asked int }
+
+func (r *renewalFails) Token(_ context.Context, rejected string) (string, error) {
+	r.asked++
+	if rejected != "" {
+		return "", &provider.Error{Kind: provider.KindBusy, Status: http.StatusServiceUnavailable}
+	}
+	return "old-token", nil
+}
+
+// The provider refuses the token (401) and no new one can be had: the call was not
+// carried out, whatever the error of the renewal looks like.
+func TestRefusedTokenIsAClearNo(t *testing.T) {
+	refuses := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
+	server := httptest.NewServer(refuses)
+	defer server.Close()
+
+	auth := &renewalFails{}
+	call := provider.Caller{HTTP: server.Client(), Auth: auth, AllowHTTP: true}
+	_, err := call.Do(context.Background(), http.MethodPost, server.URL+"/files", nil, []byte("{}"))
+	require.Error(t, err)
+	require.Equal(t, 2, auth.asked)
+	require.False(t, provider.Sent(err))
+	require.False(t, unclear(err))
+
+	_, err = call.Stream(context.Background(), http.MethodPut, server.URL+"/upload", nil, strings.NewReader("x"), 1, true)
+	require.Error(t, err)
+	require.False(t, provider.Sent(err))
+	require.False(t, unclear(err))
+}
+
+// A receipt that the provider tells when it is asked is no count of bytes: also one with
+// a size that would fit as "so much has arrived" ends the upload as unknown.
+func TestUploadReceiptIsNoOffset(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	data := payload(testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	_, err = e.chunk(info.ID, 0, data)
+	require.NoError(t, err)
+
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		switch {
+		case isLastRange(r, len(data)):
+			_, _ = io.CopyN(io.Discard, r.Body, 100)
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{}, Body: http.NoBody}, nil
+		case r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes */"):
+			// A stored file as large as what had arrived before the failure.
+			receipt := fmt.Sprintf(`{"id":"forged","name":"a.bin","mimeType":"application/octet-stream","size":"%d","md5Checksum":"00"}`, testChunk+100)
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+				Body: io.NopCloser(strings.NewReader(receipt))}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 1, data)
+	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	require.Equal(t, UploadUnknown, e.status(info.ID).State)
+	e.http.hook = nil
+	_, err = e.start("a.bin", 1000, UploadRequest{})
+	require.ErrorIs(t, err, ErrBusy, "the name is closed")
+}
+
+// The state of an upload names the kind of provider, so the file it tells carries the
+// same capability as in a listing.
+func TestUploadStatusNamesTheProvider(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		info, err := e.start("a.bin", 1000, UploadRequest{})
+		require.NoError(t, err)
+		require.Equal(t, e.kind, e.status(info.ID).Provider)
+	})
 }

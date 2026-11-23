@@ -105,7 +105,8 @@ func nameKey(account, folderID, name string) string {
 	return account + "\x00" + folderID + "\x00" + strings.ToLower(name)
 }
 
-// unsettle closes a name in a folder for a while. The caller holds the lock of the account.
+// unsettle closes a name in a folder for a while. The caller holds the lock of the
+// account, or the work lock of an upload that just became open in its middle.
 func (m *Manager) unsettle(account, folderID, name string) {
 	now := m.uploads.now()
 	m.unsettled.mu.Lock()
@@ -211,7 +212,9 @@ func (m *Manager) nameFree(ctx context.Context, c *Conn, folderID, name, self st
 	case err != nil:
 		return err
 	case self != "" && row.ID == self:
-		return nil
+		// Its own name in another spelling. Not while a change about that name may
+		// still be on its way.
+		return m.settled(c.AccountKey, folderID, name)
 	case row.Name != name:
 		return ErrCaseTaken
 	}

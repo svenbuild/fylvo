@@ -20,10 +20,14 @@ import (
 type connectedIDs map[string]string
 
 // addressKey names an address by what it leads to, so "Trial x" and "Trial%20x" are one.
-func addressKey(uri *fs.URI) (string, bool) {
+func addressKey(uri *fs.URI, fold bool) (string, bool) {
 	path, err := connected.CheckPath(uri.U.Path)
 	if err != nil || len(uri.U.Query()) > 0 {
 		return "", false
+	}
+	if fold {
+		// Where the provider takes "Docs" and "docs" for one name, they are one address.
+		path = strings.ToLower(path)
 	}
 	return connectionOf(uri) + "\x00" + path, true
 }
@@ -33,20 +37,22 @@ func addressKey(uri *fs.URI) (string, bool) {
 type idsByAddress struct {
 	ids     map[string]string
 	unclear map[string]bool
+	// fold: the provider of the connection does not tell names apart by case.
+	fold bool
 }
 
 // byAddress sorts the ids by the address their keys name. A client may spell the key
 // of an address differently from the address it sends (escaped or not). Two keys for
 // one address with different ids contradict each other: a change that names this
 // address is refused, also where an id would have been optional.
-func (ids connectedIDs) byAddress() idsByAddress {
+func (ids connectedIDs) byAddress(fold bool) idsByAddress {
 	sorted, unclear := make(map[string]string, len(ids)), map[string]bool{}
 	for raw, id := range ids {
 		uri, ok := connectedURI(raw)
 		if !ok {
 			continue
 		}
-		key, ok := addressKey(uri)
+		key, ok := addressKey(uri, fold)
 		if !ok {
 			continue
 		}
@@ -55,13 +61,13 @@ func (ids connectedIDs) byAddress() idsByAddress {
 		}
 		sorted[key] = id
 	}
-	return idsByAddress{ids: sorted, unclear: unclear}
+	return idsByAddress{ids: sorted, unclear: unclear, fold: fold}
 }
 
 // of returns the id sent for an address, "" when there is none, and an error when the
 // request names two.
 func (s idsByAddress) of(uri *fs.URI) (string, error) {
-	key, ok := addressKey(uri)
+	key, ok := addressKey(uri, s.fold)
 	if !ok {
 		return "", nil
 	}
@@ -91,7 +97,7 @@ func connectedSources(c *gin.Context, uris []*fs.URI, ids connectedIDs) (*connec
 		return nil, nil, err
 	}
 	sources := make([]connected.Source, 0, len(uris))
-	seen, sorted := map[string]bool{}, ids.byAddress()
+	seen, sorted := map[string]bool{}, ids.byAddress(req.conn.P.CaseInsensitive())
 	for _, uri := range uris {
 		path, err := connected.CheckPath(uri.U.Path)
 		key := path
@@ -159,7 +165,7 @@ func connectedRename(c *gin.Context, uri *fs.URI, s *RenameFileService) (*FileRe
 	}
 	defer req.done()
 
-	id, err := s.Ids.byAddress().of(uri)
+	id, err := s.Ids.byAddress(req.conn.P.CaseInsensitive()).of(uri)
 	if err != nil {
 		return nil, err
 	}

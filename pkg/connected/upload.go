@@ -116,9 +116,11 @@ type UploadStatus struct {
 	State string
 	// Received is the number of bytes taken from the client.
 	Received int64
-	// Conn is the connection the upload goes into, Generation the one it was started in.
+	// Conn is the connection the upload goes into, Generation the one it was started in,
+	// Provider its kind.
 	Conn       string
 	Generation int
+	Provider   string
 	// Row is the stored file, once the upload is done.
 	Row *Row
 	// Err says why an upload failed or what is unknown about it.
@@ -137,8 +139,8 @@ type upload struct {
 	conn       string
 	generation int
 	live       *liveConn
-	// account is the account at the provider (Conn.AccountKey).
-	account string
+	// account is the account at the provider (Conn.AccountKey), provider its kind.
+	account, provider string
 
 	path, name string
 	folderID   string
@@ -435,7 +437,7 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 		return nil, err
 	}
 	u := &upload{
-		user: c.UserID, conn: c.ID, generation: c.Generation, live: c.live, account: c.AccountKey,
+		user: c.UserID, conn: c.ID, generation: c.Generation, live: c.live, account: c.AccountKey, provider: c.Provider,
 		path: r.Path, name: name, folderID: parent.ContentID(), size: r.Size, state: UploadReceiving,
 	}
 	if c.Provider == ProviderDrive {
@@ -852,6 +854,14 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	if c.ended() || u.closed.Load() {
 		return nil, m.fail(ctx, u, ErrUploadGone)
 	}
+	// The commit is a request to the provider like any other: it takes one of the
+	// places, which was given back while this waited for the lock. It takes it before
+	// the last look at the provider, so nothing comes between that look and the write.
+	release, err := m.uploads.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if err := m.unchanged(ctx, c, u); err != nil {
 		return nil, err
 	}
@@ -861,13 +871,6 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	if callCtx.Err() != nil {
 		return nil, m.fail(ctx, u, ErrUploadGone)
 	}
-	// The commit is a request to the provider like any other: it takes one of the
-	// places, which was given back while this waited for the lock.
-	release, err := m.uploads.acquire(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 	if u.up == nil {
 		item, err := w.CreateEmpty(callCtx, u.folderID, u.name)
 		switch {
@@ -933,7 +936,7 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	switch {
 	case err == nil && done != nil && left == int64(len(u.held)):
 		return m.finish(u, done, true)
-	case err == nil && n >= u.next && n <= u.sentTo && n < u.size && left < int64(len(u.held)):
+	case err == nil && done == nil && n >= u.next && n <= u.sentTo && n < u.size && left < int64(len(u.held)):
 		// Not all of the tail left this server, so nothing was stored. What is missing
 		// is sent with the next try of the last chunk.
 		u.moveTo(n)
@@ -943,8 +946,9 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 		// nothing was stored, and nothing will be.
 		return nil, m.fail(ctx, u, ErrUploadGone)
 	}
-	// All of the tail was handed over and no receipt came: the provider may be storing
-	// the file this very moment, whatever its session says. Nothing is sent again.
+	// All of the tail was handed over and no receipt came, or the provider tells a
+	// receipt for a file whose end never left this server: the provider may be storing
+	// a file this very moment, whatever its session says. Nothing is sent again.
 	m.endUnknown(u)
 	return nil, ErrOutcomeUnknown
 }
@@ -1041,7 +1045,7 @@ func (m *Manager) UploadStatus(ctx context.Context, userID int, id string) (*Upl
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return &UploadStatus{State: u.state, Received: u.received, Conn: u.conn, Generation: u.generation, Row: u.row, Err: u.err}, nil
+	return &UploadStatus{State: u.state, Received: u.received, Conn: u.conn, Generation: u.generation, Provider: u.provider, Row: u.row, Err: u.err}, nil
 }
 
 // CancelUpload ends an upload. It waits for a chunk or a commit under way. Before the

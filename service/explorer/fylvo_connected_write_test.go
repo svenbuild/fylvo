@@ -9,6 +9,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive/drivetest"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/stretchr/testify/require"
@@ -389,4 +390,35 @@ func TestConnectedSaveWithABadLength(t *testing.T) {
 	_, err := (&FileUpdateService{Uri: e.root + "/notes.txt"}).PutContent(c, nil)
 	require.Equal(t, serializer.CodeParamErr, connectedCode(err))
 	require.Equal(t, []byte("hello"), e.download(e.root+"/notes.txt"))
+}
+
+// Where the provider takes names in any case for one, so do the keys of "ids".
+func TestConnectedIdsFollowTheCaseRuleOfTheProvider(t *testing.T) {
+	uri := func(raw string) *fs.URI {
+		parsed, ok := connectedURI(raw)
+		require.True(t, ok, raw)
+		return parsed
+	}
+	root := "cloudreve://abcdefghijklmnop@connected"
+	ids := connectedIDs{root + "/Docs": "current", root + "/docs": "stale"}
+
+	// Drive: two names, two addresses, each with its id.
+	exact := ids.byAddress(false)
+	id, err := exact.of(uri(root + "/Docs"))
+	require.NoError(t, err)
+	require.Equal(t, "current", id)
+	id, err = exact.of(uri(root + "/DOCS"))
+	require.NoError(t, err)
+	require.Empty(t, id)
+
+	// OneDrive: one address with two ids that contradict each other, however it is asked for.
+	folded := ids.byAddress(true)
+	for _, spelling := range []string{"/Docs", "/docs", "/DOCS"} {
+		_, err = folded.of(uri(root + spelling))
+		require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err), spelling)
+	}
+	same := connectedIDs{root + "/Docs": "current"}.byAddress(true)
+	id, err = same.of(uri(root + "/docs"))
+	require.NoError(t, err)
+	require.Equal(t, "current", id)
 }
