@@ -169,13 +169,28 @@ class ConnectedTest {
     }
 
     @Test
-    fun writingStaysOffEvenWhenOwnedAndBitsAreSet() {
+    fun writingFollowsTheBitsAndNeverTheNormalSheet() {
+        // Every bit set: the connected rules allow it, the rules of the normal sheet never do.
         val mine = FileObject(path = "cloudreve://abc@connected/a.txt", owned = true, capability = "////////")
         val folder = FileObject(type = 1, path = "cloudreve://abc@connected/Docs", owned = true, capability = "////////")
-        assertFalse(Connected.writesAllowed(mine.path))
+        assertTrue(Connected.canRename(mine))
+        assertTrue(Connected.canDelete(mine))
+        assertTrue(Connected.canCreateIn(folder))
+        assertTrue(Connected.canUploadTo(folder))
+        assertTrue(Permissions.canAddTo(folder))
         assertFalse(Permissions.canModifyFile(mine))
         assertFalse(Permissions.canShareLink(mine))
-        assertFalse(Permissions.canAddTo(folder))
+        // Without bits (a server that does not write there): nothing.
+        val readOnly = folder.copy(capability = "AAKI")
+        assertFalse(Permissions.canAddTo(readOnly))
+        assertFalse(Connected.canRename(row("notes.txt")))
+        assertFalse(Connected.canDelete(row("notes.txt")))
+        // Bit 6 on a file is no folder to upload into.
+        assertFalse(Connected.canUploadTo(mine))
+        // A duplicate stays untouchable whatever its bits.
+        val twice = mine.copy(metadata = mapOf(Connected.META_UNSUPPORTED to "duplicate"))
+        assertFalse(Connected.canRename(twice))
+        assertFalse(Connected.canDelete(twice))
         // Own files are not affected.
         assertTrue(Permissions.canModifyFile(FileObject(path = "cloudreve://my/a.txt", owned = true)))
     }

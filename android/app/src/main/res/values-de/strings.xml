@@ -492,4 +492,14 @@
     <string name="error_connected_export_too_large">Dieses Dokument ist zu gross, um es beim Anbieter umzuwandeln.</string>
     <string name="error_connected_daily_limit">Das Tageslimit des Anbieters für diese Datei ist erreicht. Bitte morgen nochmal versuchen.</string>
     <string name="error_connected_too_large">Dieser Ordner hat zu viele Einträge, um ihn in Fylvo zu zeigen.</string>
+    <!-- Fylvo: schreiben in verbundenen Speichern -->
+    <string name="connected_delete">In den Papierkorb</string>
+    <string name="connected_delete_note">Es landet im Papierkorb von %1$s. Wiederherstellen geht dort, nicht in Fylvo.</string>
+    <string name="connected_deleted_one">%1$s in den Papierkorb von %2$s gelegt</string>
+    <string name="connected_deleted_many">%1$d Einträge in den Papierkorb von %2$s gelegt</string>
+    <string name="connected_partly_done">%1$d von %2$d erledigt. %3$s</string>
+    <string name="error_connected_full">Der Speicher beim Anbieter ist voll.</string>
+    <string name="error_connected_outcome_unknown">Es ist nicht bekannt, ob diese Änderung angekommen ist. Fylvo hat sie nicht wiederholt; bitte im Ordner nachsehen.</string>
+    <string name="upload_outcome_unknown">%1$s: Es ist nicht bekannt, ob das Hochladen angekommen ist. Fylvo hat die Datei nicht nochmal gesendet; sie bleibt auf dem Handy. Bitte im Ordner nachsehen.</string>
+    <string name="could_not_upload_reason">%1$s: %2$s</string>
 </resources>

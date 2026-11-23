@@ -68,6 +68,9 @@ fun FolderPicker(
     onCreateFolder: (parent: String, name: String) -> Unit,
     onPick: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** Fylvo: the listed folder may be picked / get a new folder (connected storages: by its bits). */
+    canPick: (String) -> Boolean = { true },
+    canCreateIn: (String) -> Boolean = { true },
 ) {
     var current by remember { mutableStateOf(startUri) }
     var folders by remember { mutableStateOf<List<FileObject>?>(null) }
@@ -114,7 +117,7 @@ fun FolderPicker(
                             }
                         },
                         actions = {
-                            IconButton(onClick = { mkdirOpen = true }) {
+                            if (folders != null && canCreateIn(current)) IconButton(onClick = { mkdirOpen = true }) {
                                 Icon(Icons.Default.CreateNewFolder, contentDescription = stringResource(R.string.new_folder))
                             }
                         },
@@ -127,7 +130,7 @@ fun FolderPicker(
                             .padding(16.dp),
                         horizontalArrangement = Arrangement.End,
                     ) {
-                        Button(onClick = { onPick(current) }, enabled = !isExcluded(current, excluded)) {
+                        Button(onClick = { onPick(current) }, enabled = !isExcluded(current, excluded) && folders != null && canPick(current)) {
                             Text(stringResource(confirmLabel, CrUri.displayName(current)))
                         }
                     }

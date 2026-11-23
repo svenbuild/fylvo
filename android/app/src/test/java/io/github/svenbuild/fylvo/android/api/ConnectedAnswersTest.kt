@@ -145,6 +145,7 @@ class ConnectedAnswersTest {
         val ctx = SelectionContext(connected = true)
         val notes = root.files.single { it.name == "notes.txt" }
         val one = selectionActions(listOf(notes), ctx)
+        // Read only (no write bits): download and details.
         assertEquals(listOf(SelectionAction.DOWNLOAD), one.quick)
         assertEquals(listOf(SelectionAction.SELECT_ALL, SelectionAction.DETAILS), one.menu)
         // A folder or a duplicate in the selection: nothing to download.

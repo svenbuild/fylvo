@@ -62,6 +62,8 @@ object ErrorText {
             Connected.CODE_BUSY -> R.string.error_connected_busy
             Connected.CODE_ITEM -> connectedItemText(reason)
             Connected.CODE_LISTING_EXPIRED -> R.string.error_connected_listing_expired
+            Connected.CODE_FULL -> R.string.error_connected_full
+            Connected.CODE_OUTCOME_UNKNOWN -> R.string.error_connected_outcome_unknown
             in 500..599, in 50000..50999 -> R.string.error_server
             else -> null
         }

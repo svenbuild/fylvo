@@ -25,6 +25,10 @@ object Connected {
     const val CODE_BUSY = 40923
     const val CODE_ITEM = 40925
     const val CODE_LISTING_EXPIRED = 40926
+    /** The outcome of an upload is not known: keep the data, never send it again by itself. */
+    const val CODE_OUTCOME_UNKNOWN = 40927
+    /** The provider's storage is full. */
+    const val CODE_FULL = 40924
     /** The version a request names is not the current one (also for connected rows). */
     const val CODE_VERSION_GONE = 40077
 
@@ -43,13 +47,39 @@ object Connected {
     fun storageId(uri: String): String? =
         if (isConnected(uri)) CrUri.root(uri).removePrefix("cloudreve://").substringBefore('@') else null
 
-    /**
-     * Writing (upload, new folder, rename, move, copy, delete, share, offline, favourites, tags,
-     * colours) stays off inside connected storages in this version, whatever the bits say: those
-     * calls need the row ids (`ids`) the server asks for there. Switched on by Android 2.
-     */
-    @Suppress("UNUSED_PARAMETER")
-    fun writesAllowed(uri: String): Boolean = false
+    // ---- what may be written (only the row's bits decide; a server that does not write
+    // into connected storages sends none of them) ----------------------------------------
+
+    const val BIT_CREATE = 0
+    const val BIT_RENAME = 1
+    const val BIT_UPLOAD = 6
+    const val BIT_DELETE = 14
+
+    /** New folder in [folder]. */
+    fun canCreateIn(folder: FileObject?): Boolean = folder != null && folder.isFolder && writable(folder, BIT_CREATE)
+
+    /** Upload into [folder] (bit 6 on a file means "replace its content", which this app does not offer). */
+    fun canUploadTo(folder: FileObject?): Boolean = folder != null && folder.isFolder && writable(folder, BIT_UPLOAD)
+
+    /** Rename, and move inside the same storage. */
+    fun canRename(file: FileObject): Boolean = writable(file, BIT_RENAME)
+
+    /** Delete: into the trash of the provider. */
+    fun canDelete(file: FileObject): Boolean = writable(file, BIT_DELETE)
+
+    private fun writable(file: FileObject, bit: Int): Boolean = !isUnusable(file) && Permissions.enabled(file.capability, bit)
+
+    /** The `ids` the server needs for rename, move and delete: listed path to row id. */
+    fun idsOf(rows: Collection<FileObject>): Map<String, String> =
+        rows.filter { isConnected(it.path) && it.id.isNotEmpty() }.associate { it.path to it.id }
+
+    /** At most this many addresses go into one request. */
+    const val BATCH_LIMIT = 100
+
+    /** Delay before sending a chunk again: the server's Retry-After, else 2 s doubling up to 60 s. */
+    fun retryDelayMs(attempt: Int, retryAfterSeconds: Long? = null): Long =
+        retryAfterSeconds?.takeIf { it > 0 }?.let { minOf(it, 60) * 1000 }
+            ?: (2000L shl attempt.coerceIn(0, 5)).coerceAtMost(60_000)
 
     // ---- marks of a row ------------------------------------------------------
 
@@ -176,4 +206,32 @@ object Connected {
     fun rootName(root: String): String? = names[root]
 
     fun forgetNames() = names.clear()
+}
+
+/** Fylvo: what a batched write in a connected storage did: [done] paths, and the first [error]. */
+data class BatchResult(val done: List<String>, val error: Exception?)
+
+/**
+ * Fylvo: sends [paths] in requests of at most [Connected.BATCH_LIMIT] and stops at the first
+ * failure. A batch answer (40081) names the addresses that failed; the others of that request
+ * count as done. Unit-tested.
+ */
+suspend fun connectedBatches(paths: List<String>, send: suspend (List<String>) -> Unit): BatchResult {
+    val done = mutableListOf<String>()
+    for (chunk in paths.chunked(Connected.BATCH_LIMIT)) {
+        try {
+            send(chunk)
+            done += chunk
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (e is ApiException && e.code == ErrorText.CODE_BATCH_NOT_COMPLETED) {
+                // The server names the addresses as it reads them: compared in one spelling.
+                val failed = e.failedPaths.mapTo(HashSet(), CrUri::canonical)
+                done += chunk.filter { CrUri.canonical(it) !in failed }
+            }
+            return BatchResult(done, e)
+        }
+    }
+    return BatchResult(done, null)
 }

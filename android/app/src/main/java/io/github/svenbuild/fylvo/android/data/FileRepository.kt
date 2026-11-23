@@ -14,6 +14,7 @@ import io.github.svenbuild.fylvo.android.api.RenameFileRequest
 import io.github.svenbuild.fylvo.android.api.RestoreFileRequest
 import io.github.svenbuild.fylvo.android.api.ShareCreateRequest
 import io.github.svenbuild.fylvo.android.api.UploadSessionResponse
+import io.github.svenbuild.fylvo.android.util.Connected
 import io.github.svenbuild.fylvo.android.util.CrUri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +39,8 @@ class ApiException(
     val innerCodes: List<Int> = emptyList(),
     /** Fylvo: `data.reason` of the answer (connected storages, 40925). */
     val reason: String? = null,
+    /** Fylvo: the addresses that failed in a batch answer (40081); the others worked. */
+    val failedPaths: Set<String> = emptySet(),
 ) : Exception(message) {
     companion object {
         /** Server envelope code for "login required" (session expired or revoked). */
@@ -59,6 +62,12 @@ class ApiException(
 
 private const val CODE_OBJECT_EXISTS = ApiException.CODE_OBJECT_EXISTS
 private const val MAX_CHUNK_BYTES = 64L * 1024 * 1024
+/** Fylvo: tries of one chunk into a connected storage before the upload waits for a later run. */
+private const val CHUNK_TRIES = 5
+
+/** Fylvo: a chunk into a connected storage that may simply be sent again. */
+internal fun chunkRetryable(e: Throwable): Boolean =
+    e is java.io.IOException || (e is ApiException && (e.code == Connected.CODE_BUSY || e.code in 502..504))
 /** Fylvo: the server's answer when a file has no preview ("Entity not exist"). */
 private const val CODE_NO_THUMB = 40077
 
@@ -74,7 +83,7 @@ class FileRepository(private val api: ApiClient) {
         if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
         val body = body() ?: throw ApiException(-1, "Empty response")
         if (body.code != 0 || body.data == null) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes, body.reason)
+            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes, body.reason, body.failedPaths)
         }
         return body.data
     }
@@ -83,7 +92,7 @@ class FileRepository(private val api: ApiClient) {
         if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
         val body = body() ?: throw ApiException(-1, "Empty response")
         if (body.code != 0) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes, body.reason)
+            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes, body.reason, body.failedPaths)
         }
     }
 
@@ -277,33 +286,56 @@ class FileRepository(private val api: ApiClient) {
         return if (password.isEmpty()) "$base/s/$link" else "$base/s/$link/$password"
     }
 
+    /** Fylvo: inside a connected storage a taken name is refused instead of numbered. */
     suspend fun mkdir(uri: String) {
-        api.service().createFile(CreateFileRequest(uri = uri, type = "folder")).unwrapEmpty()
+        api.service().createFile(CreateFileRequest(uri = uri, type = "folder", errOnConflict = Connected.isConnected(uri))).unwrapEmpty()
     }
 
-    suspend fun rename(uri: String, newName: String) {
-        api.service().renameFile(RenameFileRequest(uri = uri, newName = newName)).unwrapEmpty()
+    /**
+     * Fylvo: [ids] (row ids by address) are required inside connected storages and only sent
+     * there. Writes there use the client without transport replay, so a lost answer is seen.
+     */
+    suspend fun rename(uri: String, newName: String, ids: Map<String, String>? = null) {
+        writeService(uri).renameFile(RenameFileRequest(uri = uri, newName = newName, ids = ids?.takeIf { it.isNotEmpty() })).unwrapEmpty()
     }
 
-    /** Moves (or copies) [uris] into the folder [dst]. */
-    suspend fun move(uris: List<String>, dst: String, copy: Boolean) {
-        api.service().moveFiles(MoveFileRequest(uris = uris, dst = dst, copy = copy)).unwrapEmpty()
+    /** Moves (or copies) [uris] into the folder [dst]. Fylvo: [ids] as for [rename]. */
+    suspend fun move(uris: List<String>, dst: String, copy: Boolean, ids: Map<String, String>? = null) {
+        writeService(dst).moveFiles(MoveFileRequest(uris = uris, dst = dst, copy = copy, ids = ids?.takeIf { it.isNotEmpty() })).unwrapEmpty()
     }
+
+    private suspend fun writeService(uri: String): ApiService =
+        if (Connected.isConnected(uri)) api.editService() else api.service()
 
     /** Subfolders of [uri] only, for the destination picker. */
-    suspend fun listFolders(uri: String): List<FileObject> {
-        val out = mutableListOf<FileObject>()
-        var token: String? = null
-        do {
-            val page = list(uri, pageToken = token, orderBy = "name", orderDirection = "asc")
-            out += page.files.filter { it.isFolder }
-            token = page.pagination.nextToken
-        } while (!token.isNullOrEmpty())
-        return out
+    suspend fun listFolders(uri: String): List<FileObject> = listFoldersWithParent(uri).first
+
+    /** Fylvo: [listFolders] with the listed folder itself. A listing that expired (40926) starts again once. */
+    suspend fun listFoldersWithParent(uri: String): Pair<List<FileObject>, FileObject?> {
+        var restarted = false
+        while (true) {
+            val out = mutableListOf<FileObject>()
+            var parent: FileObject? = null
+            var token: String? = null
+            try {
+                do {
+                    val page = list(uri, pageToken = token, orderBy = "name", orderDirection = "asc")
+                    if (parent == null) parent = page.parent
+                    out += page.files.filter { it.isFolder }
+                    token = page.pagination.nextToken
+                } while (!token.isNullOrEmpty())
+                return out to parent
+            } catch (e: ApiException) {
+                if (e.code != Connected.CODE_LISTING_EXPIRED || restarted) throw e
+                restarted = true
+            }
+        }
     }
 
-    suspend fun delete(uris: List<String>, permanently: Boolean = false) {
-        api.service().deleteFiles(DeleteFileRequest(uris = uris, skipSoftDelete = permanently)).unwrapEmpty()
+    suspend fun delete(uris: List<String>, permanently: Boolean = false, ids: Map<String, String>? = null) {
+        writeService(uris.firstOrNull().orEmpty()).deleteFiles(
+            DeleteFileRequest(uris = uris, skipSoftDelete = permanently, ids = ids?.takeIf { it.isNotEmpty() })
+        ).unwrapEmpty()
     }
 
     /** Puts trashed items (cloudreve://trash/… URIs) back where they came from. */
@@ -445,7 +477,10 @@ class FileRepository(private val api: ApiClient) {
         val mime = mimeType?.takeIf { it.isNotBlank() }
             ?: java.net.URLConnection.guessContentTypeFromName(remoteName)
             ?: "application/octet-stream"
-        val svc = if (strict) api.editService() else api.service()
+        // Fylvo: connected storages get the client without transport replay (a lost answer must be
+        // seen as such) and send a chunk again after busy or a lost answer (see sendChunk).
+        val connected = Connected.isConnected(remoteParentUri)
+        val svc = if (strict || connected) api.editService() else api.service()
         val session = createUploadSession(
             uri = targetUri,
             size = localFile.length(),
@@ -491,21 +526,36 @@ class FileRepository(private val api: ApiClient) {
                     resolveUrl(urls[index])
                 }
                 val chunkStart = sent
-                val body = ProgressRequestBody(buffer, read, mime.toMediaTypeOrNull()) { written ->
-                    onProgress(chunkStart + written, localFile.length())
+                var attempt = 0
+                while (true) {
+                    val body = ProgressRequestBody(buffer, read, mime.toMediaTypeOrNull()) { written ->
+                        onProgress(chunkStart + written, localFile.length())
+                    }
+                    var retryAfter: Long? = null
+                    try {
+                        val resp = if (target.contains("/file/upload/")) {
+                            svc.uploadChunk(target, body)
+                        } else {
+                            // Presigned third-party URLs are conventionally PUT.
+                            svc.uploadChunkPut(target, body)
+                        }
+                        retryAfter = resp.headers()["Retry-After"]?.trim()?.toLongOrNull()
+                        if (!resp.isSuccessful) {
+                            resp.body()?.close()
+                            throw ApiException(resp.code(), "Chunk $index upload failed: HTTP ${resp.code()}")
+                        }
+                        // Fylvo answers HTTP 200 with an error code in the JSON envelope.
+                        if (conventional) checkEnvelope(resp.body()) else resp.body()?.close()
+                        break
+                    } catch (e: Exception) {
+                        // Fylvo: a connected storage takes the same chunk again: one it already has is
+                        // confirmed, a repeated last chunk returns the file. Busy, a gateway error and a
+                        // lost answer are tried again after a pause, a few times.
+                        if (!connected || attempt + 1 >= CHUNK_TRIES || !chunkRetryable(e)) throw e
+                        kotlinx.coroutines.delay(Connected.retryDelayMs(attempt, retryAfter))
+                        attempt++
+                    }
                 }
-                val resp = if (target.contains("/file/upload/")) {
-                    svc.uploadChunk(target, body)
-                } else {
-                    // Presigned third-party URLs are conventionally PUT.
-                    svc.uploadChunkPut(target, body)
-                }
-                if (!resp.isSuccessful) {
-                    resp.body()?.close()
-                    throw ApiException(resp.code(), "Chunk $index upload failed: HTTP ${resp.code()}")
-                }
-                // Fylvo answers HTTP 200 with an error code in the JSON envelope.
-                if (conventional) checkEnvelope(resp.body()) else resp.body()?.close()
                 sent += read
                 onProgress(sent, localFile.length())
                 if (read <= 0) break

@@ -54,6 +54,7 @@ fun UploadConflictDialog(
     onDismiss: () -> Unit,
 ) {
     val conflicts = pending.conflicts
+    val connected = io.github.svenbuild.fylvo.android.util.Connected.isConnected(pending.parentUri)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -77,11 +78,13 @@ fun UploadConflictDialog(
                 }
             }
         },
+        // Fylvo: no replacing in connected storages in this version (keep both or skip).
         confirmButton = {
-            TextButton(onClick = { onResolve(pending.replace()) }) { Text(stringResource(R.string.replace)) }
+            if (connected) TextButton(onClick = { onResolve(pending.keepBoth()) }) { Text(stringResource(R.string.keep_both)) }
+            else TextButton(onClick = { onResolve(pending.replace()) }) { Text(stringResource(R.string.replace)) }
         },
         dismissButton = {
-            TextButton(onClick = { onResolve(pending.keepBoth()) }) { Text(stringResource(R.string.keep_both)) }
+            if (!connected) TextButton(onClick = { onResolve(pending.keepBoth()) }) { Text(stringResource(R.string.keep_both)) }
             TextButton(onClick = { onResolve(pending.skip()) }) { Text(stringResource(R.string.skip)) }
         },
     )
