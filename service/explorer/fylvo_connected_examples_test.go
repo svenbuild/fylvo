@@ -79,6 +79,31 @@ func TestConnectedExamples(t *testing.T) {
 	require.NoError(t, err)
 	x.Add("file-url", urls, nil)
 
+	// Everything below a folder, in pages, and a search by a part of the name. The
+	// root has entries the walk cannot see behind (a name twice, one left out), so it
+	// says that it is not complete.
+	deep, err := e.walk(e.alex, e.root, 4, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, deep.Pagination.NextPageToken)
+	require.True(t, deep.Connected.Incomplete)
+	x.Add("list-recursive-page-1", deep, nil)
+	whole, err := e.walk(e.alex, e.root+"/Docs", 0, "")
+	require.NoError(t, err)
+	require.False(t, whole.Connected.Incomplete)
+	x.Add("list-recursive", whole, nil)
+	search, err := e.walk(e.alex, e.root+"?name=NOTES&case_folding&type=file", 0, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, search.Files)
+	x.Add("list-search", search, nil)
+	_, err = e.list(e.alex, e.root+"?name=notes", 0, "")
+	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
+	x.Add("error-search-without-recursive", nil, err)
+
+	// A document that exists only at the provider, read in another format than its usual one.
+	exported, err := (&FileURLService{Uris: []string{e.root + "/Budget.gsheet"}, Download: true, Export: "pdf"}).Get(e.as(e.alex))
+	require.NoError(t, err)
+	x.Add("file-url-export", exported, nil)
+
 	// Previews: a picture has one (its row carries no "thumb:disabled"), a text has none.
 	e.sim.AddFile("", "photo.png", testPNG(1))
 	e.m.Tree().Forget(e.id)
@@ -91,6 +116,10 @@ func TestConnectedExamples(t *testing.T) {
 	_, err = e.thumb(e.alex, e.root+"/notes.txt")
 	require.Equal(t, serializer.CodeEntityNotExist, connectedCode(err))
 	x.Add("error-thumb-none", nil, err)
+	// The client names the version of the row it shows, and the file is in another.
+	_, err = e.thumbOf(e.alex, e.root+"/photo.png", "v0000000000000000")
+	require.Equal(t, serializer.CodeStaleVersion, connectedCode(err))
+	x.Add("error-thumb-stale", nil, err)
 
 	usage, err := ConnectedCapacity(e.as(e.alex), e.id)
 	require.NoError(t, err)

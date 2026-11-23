@@ -1,6 +1,6 @@
 import { SpaceDashboardOutlined } from "@mui/icons-material";
-import { Box, IconButton, Tooltip, Typography } from "@mui/material";
-import { memo, useEffect, useState } from "react";
+import { Box, Typography } from "@mui/material";
+import { memo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SidebarItem } from "../../../api/fylvo.ts";
@@ -10,11 +10,9 @@ import { navigateToPath } from "../../../redux/thunks/filemanager.ts";
 import { defaultPath, defaultSharedWithMePath, defaultTrashPath } from "../../../hooks/useNavigation.tsx";
 import CrUri, { Filesystem, UriQuery } from "../../../util/uri.ts";
 import SideNavItem from "../../Frame/NavBar/SideNavItem.tsx";
-import Edit from "../../Icons/Edit.tsx";
 import StarFilled from "../../Icons/StarFilled.tsx";
 import { Metadata } from "../../../api/explorer.ts";
 import { FileManagerIndex } from "../FileManager.tsx";
-import CustomizeSidebarDialog from "./CustomizeSidebarDialog.tsx";
 import TreeFiles from "./TreeFiles.tsx";
 import { connectedRootUri } from "../../../api/connected.ts";
 
@@ -68,7 +66,6 @@ const CustomSidebar = memo(
     const location = useLocation();
     const favorites = useAppSelector((state) => state.fylvo.prefs?.favorites);
     const tags = useAppSelector((state) => state.fylvo.tags);
-    const [customizeOpen, setCustomizeOpen] = useState(false);
 
     const showTags = items.some((item) => item.type == "tags" && !item.hidden);
     useEffect(() => {
@@ -206,24 +203,7 @@ const CustomSidebar = memo(
       }
     };
 
-    return (
-      <>
-        {items.map(render)}
-        <Box sx={{ display: "flex", justifyContent: "flex-end", pr: "6px", mt: "2px" }}>
-          <Tooltip title={t("customize.editSidebar")}>
-            <IconButton
-              size="small"
-              aria-label={t("customize.editSidebar")}
-              onClick={() => setCustomizeOpen(true)}
-              sx={{ p: "4px", opacity: 0.55, "&:hover": { opacity: 1 } }}
-            >
-              <Edit sx={{ fontSize: 15 }} />
-            </IconButton>
-          </Tooltip>
-        </Box>
-        <CustomizeSidebarDialog open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
-      </>
-    );
+    return <>{items.map(render)}</>;
   },
 );
 

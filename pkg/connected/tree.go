@@ -39,6 +39,8 @@ const (
 	maxRows = 50000
 	// parallelListings is how many folders are read from providers at once.
 	parallelListings = 2
+	// parallelWalks is how many walks below a folder run at once (see walk.go).
+	parallelWalks = 2
 	// maxPages is how many pages the provider may need for one folder. A real folder
 	// under maxRows stays far below it; a provider that keeps sending pages does not.
 	maxPages = 2000
@@ -178,6 +180,15 @@ type snapshot struct {
 	viaLink  bool
 	omitted  int
 	lastUsed time.Time
+
+	// deep marks the snapshot of a walk below the folder (see walk.go): its rows carry
+	// their own paths. scan is what the walk kept, folders are the ids of all folders
+	// it read, incomplete and links what it has to say about itself.
+	deep       bool
+	scan       string
+	folders    map[string]bool
+	incomplete bool
+	links      int
 }
 
 // Page is one page of a listing.
@@ -190,6 +201,11 @@ type Page struct {
 	Total int
 	// Omitted is the number of entries the provider has but the listing leaves out.
 	Omitted int
+	// Deep marks a page of a walk below the folder. Incomplete tells that the walk did
+	// not see everything, Links how many links it met and did not enter.
+	Deep       bool
+	Incomplete bool
+	Links      int
 }
 
 // Order of a listing.
@@ -204,6 +220,8 @@ type Order struct {
 type Tree struct {
 	now func() time.Time
 	sem chan struct{}
+	// walks has a place for every walk that may run at once.
+	walks chan struct{}
 
 	mu        sync.Mutex
 	listings  map[listKey]*listing
@@ -237,6 +255,7 @@ func NewTree() *Tree {
 	return &Tree{
 		now:       time.Now,
 		sem:       make(chan struct{}, parallelListings),
+		walks:     make(chan struct{}, parallelWalks),
 		listings:  map[listKey]*listing{},
 		snapshots: map[string]*snapshot{},
 		reads:     map[*reading]struct{}{},
@@ -301,7 +320,10 @@ func (t *Tree) fresh(key listKey) *listing {
 }
 
 // load returns the listing of the folder with the given id, from memory when fresh.
-func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, error) {
+// folder is the entry the folder was reached as. The provider is told about it before
+// every page it is asked for: what it takes to reach the folder may have been forgotten
+// since the entry was listed, or while the pages before were read.
+func (t *Tree) load(ctx context.Context, c *Conn, folderID string, folder *provider.Item) (*listing, error) {
 	key := listKey{conn: c.ID, gen: c.Generation, folder: folderID}
 	if l := t.fresh(key); l != nil {
 		return l, nil
@@ -326,6 +348,7 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 	defer done()
 	l := newListing(c.P.CaseInsensitive())
 	for page, pages := "", 0; ; pages++ {
+		c.P.Known(folder)
 		p, err := c.P.Children(ctx, folderID, page)
 		if err != nil {
 			if provider.KindOf(err) == provider.KindNotFound {
@@ -396,7 +419,7 @@ func (t *Tree) makeRoom(rows int) {
 		total += len(l.entries) + 1
 	}
 	for _, s := range t.snapshots {
-		total += len(s.rows)
+		total += s.weight()
 	}
 	for total > maxRows && len(t.listings) > 0 {
 		var (
@@ -418,7 +441,7 @@ func (t *Tree) makeRoom(rows int) {
 				oldest = id
 			}
 		}
-		total -= len(t.snapshots[oldest].rows)
+		total -= t.snapshots[oldest].weight()
 		delete(t.snapshots, oldest)
 	}
 }
@@ -584,23 +607,9 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 	}
 
 	if token != "" {
-		id, offset, ok := parseToken(token)
-		if !ok {
-			return nil, ErrListingGone
-		}
-		t.mu.Lock()
-		t.sweep()
-		snap := t.snapshots[id]
-		if snap != nil && (snap.key.conn != c.ID || snap.key.gen != c.Generation || snap.user != c.UserID ||
-			snap.path != path || snap.order != o) {
-			// A token of another account, connection, folder or order.
-			snap = nil
-		}
-		if snap != nil {
-			snap.lastUsed = t.now()
-		}
-		t.mu.Unlock()
-		if snap == nil || offset > len(snap.rows) {
+		snap, id, offset := t.snapshot(c, path, o, token)
+		if snap == nil || snap.deep {
+			// Also the token of a walk: a listing of one folder is not continued by it.
 			return nil, ErrListingGone
 		}
 		return snap.page(id, offset, size), nil
@@ -616,7 +625,7 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 	key := listKey{conn: c.ID, gen: c.Generation, folder: parent.ContentID()}
 	r, done := t.read(key, c.AccountKey)
 	defer done()
-	l, err := t.load(ctx, c, parent.ContentID())
+	l, err := t.load(ctx, c, parent.ContentID(), &parent.Item)
 	if err != nil {
 		return nil, err
 	}
@@ -656,16 +665,48 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 	return snap.page(id, 0, size), nil
 }
 
+// snapshot returns the paged listing a token continues, for the account, connection,
+// folder and order it was made for; nil for any other, and for a token that is no
+// longer good.
+func (t *Tree) snapshot(c *Conn, path string, o Order, token string) (snap *snapshot, id string, offset int) {
+	id, offset, ok := parseToken(token)
+	if !ok {
+		return nil, "", 0
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.sweep()
+	snap = t.snapshots[id]
+	if snap == nil || snap.key.conn != c.ID || snap.key.gen != c.Generation || snap.user != c.UserID ||
+		snap.path != path || snap.order != o || offset > len(snap.rows) {
+		// A token of another account, connection, folder or order.
+		return nil, "", 0
+	}
+	snap.lastUsed = t.now()
+	return snap, id, offset
+}
+
+// weight is what a paged listing counts for in the bound of memory: its rows, and for a
+// walk the folders it remembers having read.
+func (s *snapshot) weight() int {
+	return len(s.rows) + len(s.folders)
+}
+
 func (s *snapshot) page(id string, offset, size int) *Page {
 	end := min(offset+size, len(s.rows))
 	rows := make([]*Row, 0, end-offset)
 	for _, e := range s.rows[offset:end] {
 		row := *e
-		row.Path = joinPath(s.path, row.Name)
-		row.ViaLink = s.viaLink || row.Link != nil
+		if !s.deep {
+			row.Path = joinPath(s.path, row.Name)
+			row.ViaLink = s.viaLink || row.Link != nil
+		}
 		rows = append(rows, &row)
 	}
-	page := &Page{Parent: s.parent, Rows: rows, Total: len(s.rows), Omitted: s.omitted}
+	page := &Page{
+		Parent: s.parent, Rows: rows, Total: len(s.rows), Omitted: s.omitted,
+		Deep: s.deep, Incomplete: s.incomplete, Links: s.links,
+	}
 	if end < len(s.rows) {
 		page.Next = id + "." + strconv.Itoa(end)
 	}
@@ -712,7 +753,10 @@ func (t *Tree) Changed(c *Conn, folderIDs ...string) {
 			}
 		}
 		for id, s := range t.snapshots {
-			if same(s.key, s.account) {
+			// A walk ends with a write to any folder it read.
+			below := s.deep && s.folders[folder] &&
+				((s.key.conn == c.ID && s.key.gen == c.Generation) || (c.AccountKey != "" && s.account == c.AccountKey))
+			if same(s.key, s.account) || below {
 				delete(t.snapshots, id)
 			}
 		}

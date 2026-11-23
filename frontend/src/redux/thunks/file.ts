@@ -22,6 +22,7 @@ import {
   ConflictDetail,
   DirectLink,
   FileResponse,
+  FileThumbResponse,
   FileType,
   ListResponse,
   Metadata,
@@ -91,6 +92,7 @@ import {
   folderEnterable,
   inConnectedStorage,
   inGroups,
+  limiter,
 } from "../../api/connected.ts";
 import { rowUnsupported } from "../../component/FileManager/Connected/ConnectedMark.tsx";
 import { BusyState, codeOf, ProviderGaveUp, retryBusy } from "../../component/FileManager/Connected/providerRetry.ts";
@@ -115,7 +117,74 @@ export const isMac = () => {
 
 export const isMacbook = isMac();
 
+// Fylvo: the server asks the provider for a preview of a connected storage when its image is
+// loaded, only a few at a time (it answers 503 when busy). So the web app loads them itself, two
+// at a time, a few times 5 seconds apart, before the row shows the address (the browser keeps the
+// image). The answer for a version without a preview: 40077.
+const connectedThumbs = limiter(2);
+// The address of a preview is cheap while the folder's listing is fresh; after that the server
+// looks the file up at the provider again, so those requests are limited as well.
+const connectedThumbAddresses = limiter(3);
+const connectedThumbTries = 3;
+const connectedThumbPause = 5000;
+const connectedThumbTimeout = 30000;
+
+const imageLoads = (url: string) =>
+  new Promise<boolean>((resolve) => {
+    const img = new Image();
+    const timer = setTimeout(() => {
+      // Stopped, so its place is free only once nothing is loading any more.
+      img.onload = img.onerror = null;
+      img.src = "";
+      resolve(false);
+    }, connectedThumbTimeout);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    img.src = url;
+  });
+
+// Loads the preview image of a connected file: true when it loaded, false when it did not after a
+// few tries, undefined when the file is no longer listed anywhere (a waiting load is dropped).
+const loadConnectedImage = async (url: string, listed: () => boolean): Promise<boolean | undefined> => {
+  for (let i = 0; i < connectedThumbTries; i++) {
+    if (i > 0) {
+      await new Promise((resolve) => setTimeout(resolve, connectedThumbPause));
+    }
+    const loaded = await connectedThumbs((waited) =>
+      (waited || i > 0) && !listed() ? Promise.resolve(undefined) : imageLoads(url),
+    );
+    if (loaded !== false) {
+      return loaded;
+    }
+  }
+  return false;
+};
+
 export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promise<string | null>> {
+  return (dispatch) => {
+    // Fylvo: callers for the same version of a connected file share one load.
+    if (!inConnectedStorage(file.path)) {
+      return dispatch(loadThumb(index, file));
+    }
+    const key = `${index}|${file.path}|${file.primary_entity}`;
+    let load = connectedThumbLoads.get(key);
+    if (!load) {
+      load = dispatch(loadThumb(index, file)).finally(() => connectedThumbLoads.delete(key));
+      connectedThumbLoads.set(key, load);
+    }
+    return load;
+  };
+}
+
+const connectedThumbLoads = new Map<string, Promise<string | null>>();
+
+function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string | null>> {
   return async (dispatch, getState) => {
     const { fileManager } = getState();
     const cache = fileManager[index].tree[file.path]?.thumb;
@@ -126,18 +195,80 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
       }
     }
 
+    const connected = inConnectedStorage(file.path);
+    // Fylvo: still wanted: this version is listed somewhere and may have a preview.
+    const listed = () =>
+      getState().fileManager.some(
+        (fm) =>
+          fm.list?.files.some(
+            (f) =>
+              f.path == file.path &&
+              f.primary_entity == file.primary_entity &&
+              f.metadata?.[Metadata.thumbDisabled] === undefined,
+          ),
+      );
+    // Fylvo: an answer for an older version does not replace the one of the version listed now.
+    const outdated = () => {
+      const listedNow = getState().fileManager[index].list?.files.find((f) => f.path == file.path);
+      return !!listedNow && listedNow.primary_entity != file.primary_entity;
+    };
+    // Marks a waiting request that was dropped because its version is no longer listed.
+    const dropped = new Error("dropped");
     try {
-      const thumb = await dispatch(getFileThumb(getFileLinkedUri(file), fileManager[index].list?.context_hint));
+      let thumb: FileThumbResponse;
+      // Fylvo: a busy connected storage (40923) is asked again a few times, 5 seconds apart,
+      // while the version is still wanted.
+      for (let i = 0; ; i++) {
+        try {
+          const request = () =>
+            dispatch(getFileThumb(getFileLinkedUri(file), getState().fileManager[index].list?.context_hint));
+          thumb = connected
+            ? await connectedThumbAddresses((waited) => (waited && !listed() ? Promise.reject(dropped) : request()))
+            : await request();
+          break;
+        } catch (e) {
+          const busy = connected && e instanceof AppError && e.code == ConnectedCode.Busy;
+          if (!busy || i + 1 >= connectedThumbTries) {
+            throw e;
+          }
+          await new Promise((resolve) => setTimeout(resolve, connectedThumbPause));
+          if (!listed()) {
+            return null;
+          }
+        }
+      }
+      if (connected) {
+        const loaded = await loadConnectedImage(thumb.url, listed);
+        if (loaded === undefined) {
+          return null;
+        }
+        if (!loaded) {
+          throw new Error("The preview image did not load");
+        }
+      }
+      if (outdated()) {
+        return null;
+      }
       dispatch(setThumbCache({ index, value: [file.path, thumb, file.primary_entity] }));
       return thumb.url;
     } catch (e) {
+      if (e === dropped || outdated()) {
+        return null;
+      }
       // Fylvo: remembered for this version of the file only, in the thumbnail cache, and for a
       // minute (a busy server may have it later); the file entry itself is not touched (an answer
-      // that comes late must not bring back an older one).
+      // that comes late must not bring back an older one). A connected storage that has no
+      // preview for this version (40077) is not asked again for it.
+      const none = connected && e instanceof AppError && e.code == ConnectedCode.NoPreview;
       dispatch(
         setThumbCache({
           index,
-          value: [file.path, { url: "", expires: dayjs().add(1, "minute").toISOString() }, file.primary_entity, true],
+          value: [
+            file.path,
+            { url: "", expires: none ? "" : dayjs().add(1, "minute").toISOString() },
+            file.primary_entity,
+            true,
+          ],
         }),
       );
       console.warn("Failed to load thumb", e);
