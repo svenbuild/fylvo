@@ -334,4 +334,6 @@
     <string name="connected_no_provider">No provider is set up on this server yet. Please ask the administrator.</string>
     <string name="connected_empty">No storage connected yet.</string>
     <string name="connected_load_failed">The connected storages could not be loaded.</string>
+    <!-- 1.6.2: trademark notice for the provider logos (as in the web app) -->
+    <string name="connected_trademarks">Google Drive is a trademark of Google LLC. Use of this trademark is subject to Google Permissions. OneDrive is a trademark of the Microsoft group of companies.</string>
 </resources>
