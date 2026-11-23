@@ -157,3 +157,20 @@ func TestNoChangesUnlessSwitchedOn(t *testing.T) {
 	t.Setenv(EnvWrite, "true")
 	require.False(t, Writes())
 }
+
+// A rename whose answer was lost closes the new name also for the entry itself: a second
+// rename of it to another spelling waits like any other change about that name.
+func TestRenameAgainWhileTheFirstIsOpen(t *testing.T) {
+	f, s, c, ctx := oneDriveConn(t)
+	s.AddFile("", "note.txt", []byte("a"))
+	src := source(t, f, ctx, c, "note.txt")
+	row, err := f.Tree().ResolveNow(ctx, c, "")
+	require.NoError(t, err)
+
+	// As after a rename to "Note.txt" that was not answered.
+	f.unsettle(c.AccountKey, row.ContentID(), "Note.txt")
+	_, err = f.RenameEntry(ctx, c, src, "NOTE.txt")
+	require.ErrorIs(t, err, ErrBusy)
+	_, err = f.RenameEntry(ctx, c, src, "other.txt")
+	require.NoError(t, err, "another name is not closed")
+}

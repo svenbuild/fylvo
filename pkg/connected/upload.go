@@ -116,9 +116,11 @@ type UploadStatus struct {
 	State string
 	// Received is the number of bytes taken from the client.
 	Received int64
-	// Conn is the connection the upload goes into, Generation the one it was started in.
+	// Conn is the connection the upload goes into, Generation the one it was started in,
+	// Provider its kind.
 	Conn       string
 	Generation int
+	Provider   string
 	// Row is the stored file, once the upload is done.
 	Row *Row
 	// Err says why an upload failed or what is unknown about it.
@@ -137,6 +139,8 @@ type upload struct {
 	conn       string
 	generation int
 	live       *liveConn
+	// account is the account at the provider (Conn.AccountKey), provider its kind.
+	account, provider string
 
 	path, name string
 	folderID   string
@@ -294,7 +298,9 @@ func cancelAll(expired []*upload) {
 		u.work.Unlock()
 	}
 	for _, u := range expired {
-		if u.up != nil {
+		// Not where the installation only reads: the session at the provider runs out
+		// by itself, and without the tail held here it stores nothing.
+		if u.up != nil && Writes() {
 			ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 			_ = u.up.Cancel(ctx)
 			cancel()
@@ -431,7 +437,7 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 		return nil, err
 	}
 	u := &upload{
-		user: c.UserID, conn: c.ID, generation: c.Generation, live: c.live,
+		user: c.UserID, conn: c.ID, generation: c.Generation, live: c.live, account: c.AccountKey, provider: c.Provider,
 		path: r.Path, name: name, folderID: parent.ContentID(), size: r.Size, state: UploadReceiving,
 	}
 	if c.Provider == ProviderDrive {
@@ -449,7 +455,7 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 			return nil, err
 		}
 		// Not while a change about this name may still be on its way at the provider.
-		if err := m.settled(c, u.folderID, name); err != nil {
+		if err := m.settled(c.AccountKey, u.folderID, name); err != nil {
 			return nil, err
 		}
 		err = nil
@@ -543,6 +549,10 @@ func (m *Manager) session(c *Conn, id string) (*upload, error) {
 func (m *Manager) UploadChunk(ctx context.Context, c *Conn, id string, index int, body io.Reader, length int64) (*Row, error) {
 	u, err := m.session(c, id)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := writer(c); err != nil {
+		// Also for an upload that was opened while changes were still switched on.
 		return nil, err
 	}
 	chunks := max(1, (u.size+chunkSize-1)/chunkSize)
@@ -757,7 +767,7 @@ func (m *Manager) sendFailed(ctx context.Context, u *upload, err error) error {
 		// Refused before any byte was taken, and the reason is gone.
 		return ErrSendAgain
 	case provider.KindOf(err) == provider.KindOpen:
-		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+		m.endUnknown(u)
 		u.held = nil
 		return ErrOutcomeUnknown
 	}
@@ -784,7 +794,7 @@ func (m *Manager) reconcile(ctx context.Context, u *upload) error {
 		return Error(ctx, err)
 	case done != nil || n >= u.size:
 		// Complete without the bytes held here: nothing about it is certain.
-		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+		m.endUnknown(u)
 		return ErrOutcomeUnknown
 	case n < u.next || n > u.sentTo:
 		// Less than it confirmed before, or more than it was sent.
@@ -807,12 +817,22 @@ func (u *upload) moveTo(n int64) {
 	u.noteReceived()
 }
 
+// endUnknown ends an upload whose outcome is open. A new file may be in the storage or
+// on its way there, so its name stays closed for a while, like after any change with an
+// open outcome, wherever in the upload it became open. The caller holds u.work.
+func (m *Manager) endUnknown(u *upload) {
+	u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+	if u.replace == "" {
+		m.unsettle(u.account, u.folderID, u.name)
+	}
+}
+
 // fail ends an upload before its commit and cancels it at the provider. Nothing was
 // stored. The caller holds u.work.
 func (m *Manager) fail(ctx context.Context, u *upload, err error) error {
 	u.end(UploadFailed, nil, err, m.uploads.now())
 	u.held = nil
-	if u.up != nil {
+	if u.up != nil && Writes() {
 		callCtx, cancel := detached(ctx, u.live)
 		defer cancel()
 		_ = u.up.Cancel(callCtx)
@@ -829,19 +849,19 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	}
 	defer m.writing(c)()
 	defer m.tree.Changed(c, u.folderID)
-	// A new file that may still be on its way into the storage keeps its name closed
-	// for a while, like any change with an open outcome.
-	defer func() {
-		if state, _, _ := u.outcome(); state == UploadUnknown && u.replace == "" {
-			m.unsettle(c, u.folderID, u.name)
-		}
-	}()
-
 	// The wait for the lock can have been long. A storage that was disconnected or
 	// connected again meanwhile gets nothing: the tail never leaves this server.
 	if c.ended() || u.closed.Load() {
 		return nil, m.fail(ctx, u, ErrUploadGone)
 	}
+	// The commit is a request to the provider like any other: it takes one of the
+	// places, which was given back while this waited for the lock. It takes it before
+	// the last look at the provider, so nothing comes between that look and the write.
+	release, err := m.uploads.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if err := m.unchanged(ctx, c, u); err != nil {
 		return nil, err
 	}
@@ -851,13 +871,6 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	if callCtx.Err() != nil {
 		return nil, m.fail(ctx, u, ErrUploadGone)
 	}
-	// The commit is a request to the provider like any other: it takes one of the
-	// places, which was given back while this waited for the lock.
-	release, err := m.uploads.acquire(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 	if u.up == nil {
 		item, err := w.CreateEmpty(callCtx, u.folderID, u.name)
 		switch {
@@ -874,8 +887,12 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 		case provider.KindOf(err) == provider.KindRetry:
 			// Refused before anything was done, for a reason that is gone.
 			return nil, ErrSendAgain
+		case !unclear(err):
+			// A clear "no" of the provider: nothing was created, and the upload stays
+			// open for another try.
+			return nil, Error(ctx, err)
 		}
-		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+		m.endUnknown(u)
 		return nil, ErrOutcomeUnknown
 	}
 
@@ -888,7 +905,7 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	case err == nil && item != nil && left < int64(len(u.held)):
 		// A receipt for a file whose end never left this server. Whatever was stored,
 		// it is not known to be this upload.
-		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+		m.endUnknown(u)
 		u.held = nil
 		return nil, ErrOutcomeUnknown
 	case err == nil && item != nil:
@@ -902,7 +919,7 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 		// Refused before the tail was taken, for a reason that is gone.
 		return nil, ErrSendAgain
 	case provider.KindOf(err) == provider.KindOpen:
-		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+		m.endUnknown(u)
 		u.held = nil
 		return nil, ErrOutcomeUnknown
 	case err != nil && left == 0:
@@ -917,9 +934,9 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	defer cancelProbe()
 	n, done, err := u.up.State(probeCtx)
 	switch {
-	case err == nil && done != nil:
+	case err == nil && done != nil && left == int64(len(u.held)):
 		return m.finish(u, done, true)
-	case err == nil && n >= u.next && n <= u.sentTo && n < u.size && left < int64(len(u.held)):
+	case err == nil && done == nil && n >= u.next && n <= u.sentTo && n < u.size && left < int64(len(u.held)):
 		// Not all of the tail left this server, so nothing was stored. What is missing
 		// is sent with the next try of the last chunk.
 		u.moveTo(n)
@@ -929,9 +946,10 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 		// nothing was stored, and nothing will be.
 		return nil, m.fail(ctx, u, ErrUploadGone)
 	}
-	// All of the tail was handed over and no receipt came: the provider may be storing
-	// the file this very moment, whatever its session says. Nothing is sent again.
-	u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+	// All of the tail was handed over and no receipt came, or the provider tells a
+	// receipt for a file whose end never left this server: the provider may be storing
+	// a file this very moment, whatever its session says. Nothing is sent again.
+	m.endUnknown(u)
 	return nil, ErrOutcomeUnknown
 }
 
@@ -954,6 +972,10 @@ func (m *Manager) unchanged(ctx context.Context, c *Conn, u *upload) error {
 	}
 
 	if u.replace == "" {
+		// Not while another change about this name may still be on its way.
+		if err := m.settled(c.AccountKey, u.folderID, u.name); err != nil {
+			return err
+		}
 		if c.P.CaseInsensitive() && !hasNativeKind(u.name) {
 			// Such a provider keeps names unique itself and refuses the commit. Not
 			// the names Fylvo makes up for entries without bytes: those it does not know.
@@ -995,7 +1017,7 @@ func (m *Manager) finish(u *upload, item *provider.Item, checksum bool) (*Row, e
 		ok = ok && item.Hash == hex.EncodeToString(u.sum.Sum(nil))
 	}
 	if !ok {
-		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+		m.endUnknown(u)
 		return nil, ErrOutcomeUnknown
 	}
 	row := rowOf(item, u.path)
@@ -1023,7 +1045,7 @@ func (m *Manager) UploadStatus(ctx context.Context, userID int, id string) (*Upl
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return &UploadStatus{State: u.state, Received: u.received, Conn: u.conn, Generation: u.generation, Row: u.row, Err: u.err}, nil
+	return &UploadStatus{State: u.state, Received: u.received, Conn: u.conn, Generation: u.generation, Provider: u.provider, Row: u.row, Err: u.err}, nil
 }
 
 // CancelUpload ends an upload. It waits for a chunk or a commit under way. Before the

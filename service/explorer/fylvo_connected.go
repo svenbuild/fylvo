@@ -153,7 +153,7 @@ func connectedRowURI(connection, path string) string {
 	return base.Join(strings.Split(path, "/")...).String()
 }
 
-func connectedCapability(row *connected.Row) *boolset.BooleanSet {
+func connectedCapability(conn *connected.Conn, row *connected.Row) *boolset.BooleanSet {
 	set := &boolset.BooleanSet{}
 	flags := map[dbfs.NavigatorCapability]bool{dbfs.NavigatorCapabilityInfo: true}
 	// Nothing that changes the storage is offered where the installation only reads.
@@ -173,7 +173,7 @@ func connectedCapability(row *connected.Row) *boolset.BooleanSet {
 			// On a file the bit says that its content can be replaced: by a save from an
 			// editor (PUT /file/content) or by an upload that asks for a new version.
 			// Never by an upload that only names it: that stays "name taken".
-			flags[dbfs.NavigatorCapabilityUploadFile] = writes && !row.ReadOnly() && row.Version != ""
+			flags[dbfs.NavigatorCapabilityUploadFile] = writes && conn.Replaceable(row)
 		}
 	}
 	if writes && !row.ReadOnly() && row.Path != "" {
@@ -195,7 +195,7 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 		Size:          row.Size,
 		Metadata:      map[string]string{},
 		Path:          connectedRowURI(req.conn.ID, row.Path),
-		Capability:    connectedCapability(row),
+		Capability:    connectedCapability(req.conn, row),
 		PrimaryEntity: connected.VersionID(req.conn.ID, row),
 		// The storage is the account's own. What can be done with a row is in its capability.
 		Owned: true,
@@ -313,7 +313,7 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 			IsCursor:      true,
 		},
 		Props: &fs.NavigatorProps{
-			Capability:            connectedCapability(page.Parent),
+			Capability:            connectedCapability(req.conn, page.Parent),
 			MaxPageSize:           connectedMaxPageSize,
 			OrderByOptions:        []string{"name", "size", "updated_at"},
 			OrderDirectionOptions: []string{"asc", "desc"},

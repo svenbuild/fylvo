@@ -9,6 +9,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive/drivetest"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/stretchr/testify/require"
@@ -346,4 +347,78 @@ func TestConnectedIdsBySpellingOfTheAddress(t *testing.T) {
 		Ids: connectedIDs{escaped + "/first.txt": two}}).Rename(e.as(e.alex))
 	require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err))
 	require.Equal(t, "first.txt", e.names(t, plain))
+}
+
+// Ids that contradict each other are no ids: a change that names such an address is
+// refused, also for the folder a move goes into, whose id may otherwise be left out.
+func TestConnectedIdsThatContradictEachOther(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFolder("", "Trial x")
+	e.sim.AddFile("", "note.txt", []byte("a"))
+	plain, escaped := e.root+"/Trial x", e.root+"/Trial%20x"
+	ids := e.idsOf(t, e.root)
+	// A listing spells the address of the folder one way; which, does not matter here.
+	note, folder := ids[e.root+"/note.txt"], ids[plain]+ids[escaped]
+	require.NotEmpty(t, note)
+	require.NotEmpty(t, folder)
+
+	err := (&MoveFileService{Uris: []string{e.root + "/note.txt"}, Dst: plain,
+		Ids: connectedIDs{e.root + "/note.txt": note, plain: folder, escaped: "another-id"}}).Move(e.as(e.alex))
+	require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err))
+	require.Equal(t, "Trial x|note.txt", e.names(t, e.root), "nothing was moved")
+	require.NoError(t, (&DeleteFileService{Uris: []string{e.root + "/note.txt"},
+		Ids: connectedIDs{e.root + "/note.txt": note, e.root + "/note%2Etxt": note}}).Delete(e.as(e.alex)),
+		"the same id twice contradicts nothing")
+
+	// Without an id for the folder the move goes through, as before.
+	e.sim.AddFile("", "second.txt", []byte("b"))
+	ids = e.idsOf(t, e.root)
+	require.NoError(t, (&MoveFileService{Uris: []string{e.root + "/second.txt"}, Dst: escaped,
+		Ids: connectedIDs{e.root + "/second.txt": ids[e.root+"/second.txt"]}}).Move(e.as(e.alex)))
+	require.Equal(t, "second.txt", e.names(t, plain))
+}
+
+// A save whose length cannot be read is refused like any other request with a bad
+// parameter, before anything is opened.
+func TestConnectedSaveWithABadLength(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "notes.txt", []byte("hello"))
+	c := e.withBody(e.alex, "PUT", []byte("other"))
+	c.Request.ContentLength = -1
+	c.Request.Header.Del("Content-Length")
+	c.Request.Header.Set("X-Expected-Entity-Length", "not a number")
+	_, err := (&FileUpdateService{Uri: e.root + "/notes.txt"}).PutContent(c, nil)
+	require.Equal(t, serializer.CodeParamErr, connectedCode(err))
+	require.Equal(t, []byte("hello"), e.download(e.root+"/notes.txt"))
+}
+
+// Where the provider takes names in any case for one, so do the keys of "ids".
+func TestConnectedIdsFollowTheCaseRuleOfTheProvider(t *testing.T) {
+	uri := func(raw string) *fs.URI {
+		parsed, ok := connectedURI(raw)
+		require.True(t, ok, raw)
+		return parsed
+	}
+	root := "cloudreve://abcdefghijklmnop@connected"
+	ids := connectedIDs{root + "/Docs": "current", root + "/docs": "stale"}
+
+	// Drive: two names, two addresses, each with its id.
+	exact := ids.byAddress(false)
+	id, err := exact.of(uri(root + "/Docs"))
+	require.NoError(t, err)
+	require.Equal(t, "current", id)
+	id, err = exact.of(uri(root + "/DOCS"))
+	require.NoError(t, err)
+	require.Empty(t, id)
+
+	// OneDrive: one address with two ids that contradict each other, however it is asked for.
+	folded := ids.byAddress(true)
+	for _, spelling := range []string{"/Docs", "/docs", "/DOCS"} {
+		_, err = folded.of(uri(root + spelling))
+		require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err), spelling)
+	}
+	same := connectedIDs{root + "/Docs": "current"}.byAddress(true)
+	id, err = same.of(uri(root + "/docs"))
+	require.NoError(t, err)
+	require.Equal(t, "current", id)
 }

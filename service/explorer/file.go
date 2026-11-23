@@ -344,16 +344,16 @@ type (
 func (service *FileUpdateService) PutContent(c *gin.Context, ls fs.LockSession) (*FileResponse, error) {
 	dep := dependency.FromContext(c)
 	settings := dep.SettingProvider()
+	// Fylvo: a connected storage saves through an upload session at its provider.
+	if uri, ok := connectedURI(service.Uri); ok {
+		return connectedPutContent(c, uri, service)
+	}
 	// 取得文件大小
 	rc, fileSize, err := request.SniffContentLength(c.Request)
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeParamErr, "invalid content length", err)
 	}
 
-	// Fylvo: a connected storage saves through an upload session at its provider.
-	if uri, ok := connectedURI(service.Uri); ok {
-		return connectedPutContent(c, uri, service, rc, fileSize, settings.MaxOnlineEditSize(c))
-	}
 	if fileSize > settings.MaxOnlineEditSize(c) {
 		return nil, fs.ErrFileSizeTooBig
 	}

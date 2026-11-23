@@ -101,12 +101,13 @@ type openNames struct {
 	until map[string]time.Time
 }
 
-func nameKey(c *Conn, folderID, name string) string {
-	return c.AccountKey + "\x00" + folderID + "\x00" + strings.ToLower(name)
+func nameKey(account, folderID, name string) string {
+	return account + "\x00" + folderID + "\x00" + strings.ToLower(name)
 }
 
-// unsettle closes a name in a folder for a while. The caller holds the lock of the account.
-func (m *Manager) unsettle(c *Conn, folderID, name string) {
+// unsettle closes a name in a folder for a while. The caller holds the lock of the
+// account, or the work lock of an upload that just became open in its middle.
+func (m *Manager) unsettle(account, folderID, name string) {
 	now := m.uploads.now()
 	m.unsettled.mu.Lock()
 	defer m.unsettled.mu.Unlock()
@@ -118,14 +119,14 @@ func (m *Manager) unsettle(c *Conn, folderID, name string) {
 			delete(m.unsettled.until, key)
 		}
 	}
-	m.unsettled.until[nameKey(c, folderID, name)] = now.Add(unsettledFor)
+	m.unsettled.until[nameKey(account, folderID, name)] = now.Add(unsettledFor)
 }
 
 // settled answers ErrBusy for a name that is closed right now.
-func (m *Manager) settled(c *Conn, folderID, name string) error {
+func (m *Manager) settled(account, folderID, name string) error {
 	m.unsettled.mu.Lock()
 	defer m.unsettled.mu.Unlock()
-	if until, closed := m.unsettled.until[nameKey(c, folderID, name)]; closed && m.uploads.now().Before(until) {
+	if until, closed := m.unsettled.until[nameKey(account, folderID, name)]; closed && m.uploads.now().Before(until) {
 		return ErrBusy
 	}
 	return nil
@@ -135,7 +136,8 @@ func (m *Manager) settled(c *Conn, folderID, name string) error {
 // still be: the answer was lost, time ran out, or the provider failed while it worked.
 // A clear "no" of the provider is not unclear.
 func unclear(err error) bool {
-	if err == nil {
+	if err == nil || !provider.Sent(err) {
+		// Also not when the call never left: without a token there was no request.
 		return false
 	}
 	var e *provider.Error
@@ -204,13 +206,15 @@ func (m *Manager) nameFree(ctx context.Context, c *Conn, folderID, name, self st
 	row, err := m.tree.named(ctx, c, folderID, name)
 	switch {
 	case errors.Is(err, ErrNotFound):
-		return m.settled(c, folderID, name)
+		return m.settled(c.AccountKey, folderID, name)
 	case errors.Is(err, ErrAmbiguous):
 		return ErrNameTaken
 	case err != nil:
 		return err
 	case self != "" && row.ID == self:
-		return nil
+		// Its own name in another spelling. Not while a change about that name may
+		// still be on its way.
+		return m.settled(c.AccountKey, folderID, name)
 	case row.Name != name:
 		return ErrCaseTaken
 	}
@@ -250,7 +254,7 @@ func (m *Manager) CreateEntry(ctx context.Context, c *Conn, path string, dir, er
 	existing, err := m.tree.named(ctx, c, parent.ContentID(), name)
 	switch {
 	case errors.Is(err, ErrNotFound):
-		if err := m.settled(c, parent.ContentID(), name); err != nil {
+		if err := m.settled(c.AccountKey, parent.ContentID(), name); err != nil {
 			return nil, err
 		}
 	case errors.Is(err, ErrAmbiguous):
@@ -276,7 +280,7 @@ func (m *Manager) CreateEntry(ctx context.Context, c *Conn, path string, dir, er
 	m.tree.Changed(c, parent.ContentID())
 	if err != nil {
 		if unclear(err) {
-			m.unsettle(c, parent.ContentID(), name)
+			m.unsettle(c.AccountKey, parent.ContentID(), name)
 		}
 		return nil, err
 	}
@@ -310,7 +314,7 @@ func (m *Manager) RenameEntry(ctx context.Context, c *Conn, src Source, newName 
 	m.tree.Changed(c, parent.ContentID())
 	if err != nil {
 		if unclear(err) {
-			m.unsettle(c, parent.ContentID(), newName)
+			m.unsettle(c.AccountKey, parent.ContentID(), newName)
 		}
 		return nil, err
 	}
@@ -366,7 +370,7 @@ func (m *Manager) move(ctx context.Context, c *Conn, w provider.Writer, src Sour
 	_, err = w.Update(ctx, row.ID, provider.Change{Parent: target.ContentID(), OldParent: parent.ContentID()})
 	m.tree.Changed(c, parent.ContentID())
 	if unclear(err) {
-		m.unsettle(c, target.ContentID(), row.Name)
+		m.unsettle(c.AccountKey, target.ContentID(), row.Name)
 	}
 	return err
 }
