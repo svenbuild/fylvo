@@ -16,10 +16,12 @@ var ErrBadPath = errors.New("invalid path")
 // is not a plain list of names. Nothing is cleaned up silently: "a/../b" is an
 // error, not "b".
 func CheckPath(raw string) (string, error) {
-	p := strings.Trim(raw, "/")
-	if p == "" {
+	// One slash at each end is how addresses are written. More of them are empty
+	// names, like anywhere else in the path.
+	if raw == "" || raw == "/" {
 		return "", nil
 	}
+	p := strings.TrimSuffix(strings.TrimPrefix(raw, "/"), "/")
 	for _, part := range strings.Split(p, "/") {
 		if part == "" || part == "." || part == ".." {
 			return "", ErrBadPath

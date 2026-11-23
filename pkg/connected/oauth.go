@@ -206,6 +206,8 @@ var (
 const (
 	stateLife  = 10 * time.Minute
 	finishLife = 5 * time.Minute
+	// callbackTime bounds the calls to the provider that complete a sign-in.
+	callbackTime = time.Minute
 	// maxStates is how many sign-ins one account can have under way. A further one
 	// takes the place of the oldest.
 	maxStates = 5
@@ -399,6 +401,9 @@ func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError 
 	if s == nil {
 		return "", ErrFlowExpired
 	}
+	// A provider that stalls must not keep the sign-in under way for good.
+	ctx, cancel := context.WithTimeout(ctx, callbackTime)
+	defer cancel()
 	// Counted until the result is stored below, so Busy never has a gap.
 	defer func() {
 		f.mu.Lock()

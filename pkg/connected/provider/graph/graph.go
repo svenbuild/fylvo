@@ -61,12 +61,9 @@ func New(o Options) provider.Provider {
 	}
 	caller := provider.Caller{HTTP: &httpClient, Auth: o.Auth, Classify: classify, AllowHTTP: o.BaseURL != ""}
 	remote := caller
-	remote.Auth = tokenOnly{o.Auth}
+	remote.ItemOnly = true
 	return &client{caller: caller, remote: remote, baseURL: baseURL, driveID: o.DriveID}
 }
-
-// tokenOnly is an Auth that hands out tokens and takes no other message.
-type tokenOnly struct{ provider.Auth }
 
 // Known does nothing: an id is all it takes to reach an item of OneDrive.
 func (c *client) Known(*provider.Item) {}

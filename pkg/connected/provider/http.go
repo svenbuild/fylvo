@@ -143,6 +143,10 @@ type Caller struct {
 	Classify Classifier
 	// AllowHTTP lets addresses without TLS through. For tests against a local server only.
 	AllowHTTP bool
+	// ItemOnly is for calls about items outside the connection's own drive. A refusal
+	// there says something about that item, never about the connection: it is
+	// KindForbidden, and nobody is told that the connection was refused.
+	ItemOnly bool
 }
 
 // ByStatus is the Classifier for answers that carry no usable error body.
@@ -202,6 +206,12 @@ func retryAfter(h http.Header) (wait time.Duration, ok bool) {
 //
 // Do is for calls that can be repeated. Ranges of an upload have their own rules.
 func (c *Caller) Do(ctx context.Context, method, address string, header http.Header, body []byte) (*http.Response, error) {
+	return c.do(ctx, method, address, header, body, true)
+}
+
+// do is Do. With patient false a "slow down" answer is returned at once instead of
+// being waited out: for a call whose answer must not be older than a check made before.
+func (c *Caller) do(ctx context.Context, method, address string, header http.Header, body []byte, patient bool) (*http.Response, error) {
 	if err := c.checkAddress(address); err != nil {
 		return nil, err
 	}
@@ -247,6 +257,18 @@ func (c *Caller) Do(ctx context.Context, method, address string, header http.Hea
 
 		if res.StatusCode == http.StatusUnauthorized {
 			res.Body.Close()
+			if c.ItemOnly {
+				// About that item only: no new token is asked for on its account.
+				return nil, &Error{Kind: KindForbidden, Status: res.StatusCode}
+			}
+			if !renewed && !patient {
+				// A new token for the next try, which the client makes: this one
+				// would read the bytes long after the caller looked at the file.
+				if _, err := c.Auth.Token(ctx, token); err != nil {
+					return nil, err
+				}
+				return nil, &Error{Kind: KindBusy, Status: res.StatusCode}
+			}
 			if renewed {
 				// Refused with a token that is brand new: the account has to sign in again.
 				if a, ok := c.Auth.(Refusable); ok {
@@ -262,7 +284,7 @@ func (c *Caller) Do(ctx context.Context, method, address string, header http.Hea
 		// its body tells apart. The call is tried again while the total wait stays small.
 		failure := c.classify(res)
 		res.Body.Close()
-		if KindOf(failure) == KindBusy {
+		if KindOf(failure) == KindBusy && patient {
 			wait, said := retryAfter(res.Header)
 			if !said {
 				wait = RetryBase << min(tries, 4)
@@ -317,6 +339,10 @@ func (c *Caller) JSON(ctx context.Context, method, address string, in, out any) 
 	return nil
 }
 
+// Download does not wait when the provider asks to slow down: the caller has just
+// compared the version of the file, and the bytes must not be read long after that. The
+// client is told to come back, and its next try compares again.
+//
 // Download sends a call for content and follows the provider's redirects to its
 // content hosts itself: only to https, without the access token, at most maxRedirects
 // times, and with the Range passed on. An answer with the whole content where a range
@@ -327,7 +353,7 @@ func (c *Caller) Download(ctx context.Context, address, rangeHeader string) (*Co
 		header.Set("Range", rangeHeader)
 	}
 
-	res, err := c.Do(ctx, http.MethodGet, address, header, nil)
+	res, err := c.do(ctx, http.MethodGet, address, header, nil, false)
 	if err != nil {
 		return nil, err
 	}

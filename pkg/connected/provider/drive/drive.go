@@ -286,13 +286,12 @@ func (c *client) Open(ctx context.Context, item *provider.Item, rangeHeader stri
 
 	content, err := c.call.Download(ctx, address, rangeHeader)
 	if err != nil && byRevision {
-		// Drive answers 404, or 403 without a more telling reason, for a revision it no
-		// longer serves. Rate limits, blocked files and a plain "you may not" keep
-		// their own kind: asking again would not help there.
+		// Drive answers 404, or 403 without any reason, for a revision it no longer
+		// serves. Rate limits, blocked files and every 403 that names a reason keep
+		// their own kind: asking for a new address would not help there.
 		var e *provider.Error
-		if errors.As(err, &e) && (e.Kind == provider.KindNotFound ||
-			(e.Kind == provider.KindForbidden && (e.Code == "forbidden" || e.Code == ""))) &&
-			(e.Status == http.StatusNotFound || e.Status == http.StatusForbidden) {
+		if errors.As(err, &e) && ((e.Status == http.StatusNotFound && e.Kind == provider.KindNotFound) ||
+			(e.Status == http.StatusForbidden && e.Code == "")) {
 			return nil, &provider.Error{Kind: provider.KindStale, Status: e.Status, Code: e.Code}
 		}
 	}
@@ -437,9 +436,9 @@ func (f *file) item() (item provider.Item, ok bool) {
 			item.Version = "r:" + f.HeadRevisionID
 		case f.MD5Checksum != "":
 			item.Version = "h:" + f.MD5Checksum + ":" + strconv.FormatInt(f.Size, 10)
-		default:
-			item.Version = timeVersion(f.ModifiedTime)
 		}
+		// Neither a revision nor a checksum: no version. A time alone does not tell
+		// whether bytes changed.
 	}
 	return item, true
 }

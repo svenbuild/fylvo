@@ -70,24 +70,18 @@ func (entry *driveItem) asItem() *provider.Item {
 	return item
 }
 
-// version names the state of the content of a file: by the tag for it, else by what
-// else the answer tells. It is empty only for an answer that tells nothing at all, and
-// nothing can be tied to such content.
+// version names the state of the content of a file: by the tag for it, else by the tag
+// of the item (which changes more often, never less), else by its checksum. A time and a size are no evidence, a file can be
+// replaced by another one of the same size within the same second: without any of the
+// three there is no version, and nothing can be tied to such content.
 func (entry *driveItem) version() string {
 	switch {
 	case entry.CTag != "":
 		return "c:" + entry.CTag
-	case entry.File != nil && entry.File.Hashes.QuickXorHash != "":
-		return "h:" + entry.File.Hashes.QuickXorHash + ":" + strconv.FormatInt(entry.Size, 10)
 	case entry.ETag != "":
 		return "e:" + entry.ETag
+	case entry.File != nil && entry.File.Hashes.QuickXorHash != "":
+		return "h:" + entry.File.Hashes.QuickXorHash + ":" + strconv.FormatInt(entry.Size, 10)
 	}
-	modTime := entry.FileSystemInfo.LastModifiedDateTime
-	if modTime.IsZero() {
-		modTime = entry.LastModifiedDateTime
-	}
-	if modTime.IsZero() {
-		return ""
-	}
-	return "t:" + modTime.UTC().Format(time.RFC3339Nano) + ":" + strconv.FormatInt(entry.Size, 10)
+	return ""
 }
