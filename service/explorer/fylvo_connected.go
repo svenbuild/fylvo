@@ -265,12 +265,16 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 // below; a recursive one takes parts of a name and a kind, as the search of Fylvo's own
 // files spells them, and nothing else.
 func connectedScan(uri *fs.URI, recursive bool) (*connected.Scan, error) {
-	query := uri.U.Query()
 	if !recursive {
-		if len(query) > 0 {
+		if uri.U.RawQuery != "" {
 			return nil, connected.ErrUnsupported
 		}
 		return nil, nil
+	}
+	// Read strictly: a parameter that cannot be read is refused, not left out.
+	query, err := url.ParseQuery(uri.U.RawQuery)
+	if err != nil {
+		return nil, connected.ErrUnsupported
 	}
 	scan := &connected.Scan{}
 	for name, values := range query {

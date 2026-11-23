@@ -131,6 +131,14 @@ func TestConnectedSearch(t *testing.T) {
 		_, err = e.walk(e.alex, e.root+"?"+query, 100, "")
 		require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err), query)
 	}
+	// A parameter that cannot be read is refused, not left out: neither a search nor a
+	// plain listing answers as if it had not been there.
+	for _, query := range []string{"size_gte=%ZZ", "name=report&size_gte=%ZZ", "name=%ZZ", "name=a;size_gte=1"} {
+		_, err = e.walk(e.alex, e.root+"?"+query, 100, "")
+		require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err), query)
+		_, err = e.list(e.alex, e.root+"?"+query, 100, "")
+		require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err), query)
+	}
 }
 
 // What the walk could not see it says, in the words clients know.

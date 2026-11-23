@@ -415,7 +415,7 @@ func (t *Tree) makeRoom(rows int) {
 		total += len(l.entries) + 1
 	}
 	for _, s := range t.snapshots {
-		total += len(s.rows)
+		total += s.weight()
 	}
 	for total > maxRows && len(t.listings) > 0 {
 		var (
@@ -437,7 +437,7 @@ func (t *Tree) makeRoom(rows int) {
 				oldest = id
 			}
 		}
-		total -= len(t.snapshots[oldest].rows)
+		total -= t.snapshots[oldest].weight()
 		delete(t.snapshots, oldest)
 	}
 }
@@ -680,6 +680,12 @@ func (t *Tree) snapshot(c *Conn, path string, o Order, token string) (snap *snap
 	}
 	snap.lastUsed = t.now()
 	return snap, id, offset
+}
+
+// weight is what a paged listing counts for in the bound of memory: its rows, and for a
+// walk the folders it remembers having read.
+func (s *snapshot) weight() int {
+	return len(s.rows) + len(s.folders)
 }
 
 func (s *snapshot) page(id string, offset, size int) *Page {

@@ -20,7 +20,9 @@ import (
 // ran into a bound, or met a folder it could not read whole, is marked incomplete.
 
 const (
-	// walkRows is the most rows one walk looks at.
+	// walkRows is the most rows one walk looks at. A folder is read whole before its
+	// rows are counted, as for a plain listing, so a walk reads at most this many rows
+	// and one folder more (which has its own bound, maxRows).
 	walkRows = 20000
 )
 
@@ -96,14 +98,6 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 		return snap.page(id, offset, size), nil
 	}
 
-	parent, err := t.Resolve(ctx, c, path)
-	if err != nil {
-		return nil, err
-	}
-	if !parent.Enterable() {
-		return nil, ErrNotFound
-	}
-
 	// A walk holds its rows while it runs and asks the provider folder by folder. Only
 	// parallelWalks of them run at once, on the whole server: that bounds the memory
 	// they take together. The others wait for a place as long as a listing waits, and
@@ -119,9 +113,23 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 		return nil, ctx.Err()
 	}
 
-	deadline := t.now().Add(walkTime)
-	ctx, cancel := context.WithDeadline(ctx, deadline)
+	// The time of a walk runs from here: the way to its folder is part of it.
+	asked := ctx
+	ctx, cancel := context.WithTimeout(ctx, walkTime)
 	defer cancel()
+	// late tells that the walk ran out of its own time, while its client still waits.
+	// A provider call that was cut off by it may name its error as it likes.
+	late := func() bool {
+		return errors.Is(ctx.Err(), context.DeadlineExceeded) && asked.Err() == nil
+	}
+
+	parent, err := t.Resolve(ctx, c, path)
+	if err != nil {
+		return nil, err
+	}
+	if !parent.Enterable() {
+		return nil, ErrNotFound
+	}
 
 	snap := &snapshot{
 		key:     listKey{conn: c.ID, gen: c.Generation, folder: parent.ContentID()},
@@ -143,8 +151,10 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 	type folder struct {
 		id, path string
 		viaLink  bool
+		// item is the entry the folder was listed as; nil for the folder asked for.
+		item *provider.Item
 	}
-	queue := []folder{{parent.ContentID(), path, parent.ViaLink}}
+	queue := []folder{{id: parent.ContentID(), path: path, viaLink: parent.ViaLink}}
 	// full is set when a bound of the walk is reached: it ends there. What it could
 	// not see of a single folder only marks it incomplete, and it goes on.
 	seen, full := 0, false
@@ -159,29 +169,37 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 		r, done := t.read(listKey{conn: c.ID, gen: c.Generation, folder: f.id}, c.AccountKey)
 		reads, unread = append(reads, r), append(unread, done)
 
+		if f.item != nil {
+			// The provider may have to be told again what it takes to reach the folder:
+			// it was listed a while ago, many folders before this one.
+			c.P.Known(f.item)
+		}
 		l, err := t.load(ctx, c, f.id)
 		if err == nil {
 			// A provider that does not look at its caller's patience is asked here.
 			err = ctx.Err()
 		}
 		if err != nil {
-			if c.ended() {
+			below := f.id != parent.ContentID() && (errors.Is(err, ErrNotFound) || errors.Is(err, ErrTooLarge) ||
+				provider.KindOf(err) == provider.KindIncomplete || provider.KindOf(err) == provider.KindForbidden)
+			if (late() || below) && c.ended() {
+				// What is left out below is only left out of a connection that is still there.
 				return nil, context.Canceled
 			}
-			if errors.Is(err, context.DeadlineExceeded) && !t.now().Before(deadline) {
+			if late() {
 				// Out of time: what was found is the answer, marked as not all.
 				snap.incomplete, full = true, true
 				break
 			}
-			if f.id != parent.ContentID() && (errors.Is(err, ErrNotFound) || errors.Is(err, ErrTooLarge) ||
-				provider.KindOf(err) == provider.KindIncomplete || provider.KindOf(err) == provider.KindForbidden) {
+			if below {
 				// A folder below that cannot be read whole, or not at all: the rest is
 				// still worth having.
 				snap.incomplete = true
 				continue
 			}
 			// The folder asked for itself, or trouble that is not about one folder (the
-			// provider is busy, the connection has to be renewed): no answer.
+			// provider is busy, the connection has to be renewed, the client is gone): no
+			// answer, and the error is the provider's own.
 			return nil, err
 		}
 		if l.omitted > 0 {
@@ -204,7 +222,7 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 				snap.incomplete = true
 			}
 			if row.Enterable() && row.Link == nil {
-				queue = append(queue, folder{row.ContentID(), row.Path, row.ViaLink})
+				queue = append(queue, folder{id: row.ContentID(), path: row.Path, viaLink: row.ViaLink, item: &e.Item})
 			}
 			if scan.keeps(&row) {
 				snap.rows = append(snap.rows, &row)
@@ -232,7 +250,7 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 		// page: it is not kept, and its next page answers ErrListingGone.
 		if !changed {
 			t.sweep()
-			t.makeRoom(len(snap.rows))
+			t.makeRoom(snap.weight())
 			snap.lastUsed = t.now()
 			t.snapshots[id] = snap
 		}
