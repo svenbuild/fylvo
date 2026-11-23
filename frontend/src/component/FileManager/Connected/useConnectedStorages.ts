@@ -26,6 +26,9 @@ export const publishConnectedStorages = (next: ConnectedStorage[] | undefined) =
 // Set when the list became out of date while a load was running; that load is followed by
 // another one, so an answer from before the change is not the last word.
 let stale = false;
+// Set once a part of the page asked for the list, so a later 40921 reloads it even after a
+// failed first load.
+let requested = false;
 
 // Loads the list unless a load is running; an answer for a previous account is dropped.
 const load = (dispatch: AppDispatch) => {
@@ -34,6 +37,7 @@ const load = (dispatch: AppDispatch) => {
     return;
   }
   stale = false;
+  requested = true;
   const started = generation;
   const request = dispatch(getConnectedStorages())
     .then((res) => started == generation && publishConnectedStorages(res.storages))
@@ -58,7 +62,7 @@ const listenForChanges = (dispatch: AppDispatch) => {
   }
   listening = true;
   window.addEventListener(ConnectedChangedEvent, () => {
-    if (storages || loading) {
+    if (storages || loading || requested) {
       load(dispatch);
     }
   });

@@ -405,6 +405,10 @@ function startBrowserBatchDownloadTo(
             );
 
         for (let i = 0; i < childFiles.length; i++) {
+          // A cancel during the destination scan or a question ends here, before any further one.
+          if (cancelSignals[downloadId].signal.aborted) {
+            throw new DOMException("Aborted", "AbortError");
+          }
           const name =
             (relativePath == "" ? "" : relativePath + "/") +
             downloadFileName(childFiles[i], childFiles[i].name, takenNames);
@@ -681,7 +685,12 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
         // Fylvo: one entry per call, fetched when the archive is ready for it: open responses
         // wait while earlier entries are written, and a provider allows only a few at once.
         // A file that fails is left out and named at the end.
+        activeName = "";
         while (true) {
+          if (stopped.signal.aborted) {
+            ctrl.close();
+            return;
+          }
           if (pending.length == 0) {
             const batch = allFiles.slice(current, current + maxBatch);
             current += batch.length;
@@ -715,6 +724,10 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
                 });
               }
             } catch (e) {
+              if (e instanceof Error && e.name == "AbortError") {
+                ctrl.close();
+                return;
+              }
               console.warn("Failed to get entity urls", e);
               if (e instanceof ProviderGaveUp) {
                 // The provider stayed busy: the archive ends here, the rest is named as missing.
@@ -734,8 +747,13 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
             const fetchOne = () => fetchContent(next.url, stopped.signal);
             const res = busy ? await retryBusy(busy, fetchOne) : await fetchOne();
             const stream = () => res.body;
+            try {
+              ctrl.enqueue({ name: downloadFileName(next.file, next.file.relativePath, takenNames), stream });
+            } catch (e) {
+              res.body?.cancel().catch(() => {});
+              throw e;
+            }
             activeName = next.file.relativePath;
-            ctrl.enqueue({ name: downloadFileName(next.file, next.file.relativePath, takenNames), stream });
             return;
           } catch (e) {
             if (e instanceof Error && e.name == "AbortError") {
@@ -774,6 +792,12 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
             i18next.t("application:connected.archiveBroken"),
             activeName ? i18next.t("application:connected.archiveBrokenAt", { name: activeName }) : "",
             ...skippedNotes(skipped),
+            failedNames.length > 0
+              ? i18next.t("application:connected.downloadFailed", {
+                  count: failedNames.length,
+                  names: shortList(failedNames),
+                })
+              : "",
           ]
             .filter(Boolean)
             .join(" "),

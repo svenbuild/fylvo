@@ -489,11 +489,17 @@ const ConnectedSetting = () => {
         setRenameTarget((r) => (r && res.allowed && res.storages.some((s) => s.id == r.id) ? r : undefined));
       })
       .catch(() => {
+        if (seq != loadSeq.current) {
+          return;
+        }
         setList(undefined);
         setRenameTarget(undefined);
         setLoadFailed(true);
       })
       .finally(() => {
+        if (seq != loadSeq.current) {
+          return;
+        }
         setLoading(false);
         setRefreshing(false);
       });
