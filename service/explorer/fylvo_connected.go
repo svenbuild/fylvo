@@ -324,7 +324,7 @@ func connectedURLs(c *gin.Context, uris []*fs.URI, s *FileURLService) (*FileURLR
 	for i, uri := range uris {
 		address, err := connectedURL(c, uri, s, base, expire)
 		if err != nil {
-			ae.Add(uri.String(), err)
+			ae.Add(uri.String(), connected.Public(c, err))
 			continue
 		}
 		res[i] = manager.EntityUrl{Url: address}
@@ -354,13 +354,9 @@ func connectedURL(c *gin.Context, uri *fs.URI, s *FileURLService, base *url.URL,
 	if row.IsDir || row.Unsupported != "" {
 		return "", fs.ErrEntityNotExist
 	}
-	if row.Link != nil {
-		// A listing does not tell the state of what a link points to.
-		target, err := req.conn.P.Target(req.ctx, &row.Item)
-		if err != nil {
-			return "", connected.Error(c, err)
-		}
-		row.Item = *target
+	// The state as it is now, not as a listing of some seconds ago told it.
+	if err := connected.Fresh(req.ctx, req.conn.P, row); err != nil {
+		return "", connected.Error(c, err)
 	}
 	if row.Version == "" {
 		// Without a marker for the state of the content an address could go on to
@@ -466,14 +462,6 @@ func ServeConnectedContent(c *gin.Context) {
 	}
 	defer done()
 
-	release, err := connected.AcquireStream(ctx)
-	if err != nil {
-		c.Header("Retry-After", "5")
-		c.AbortWithStatus(http.StatusServiceUnavailable)
-		return
-	}
-	defer release()
-
 	item := grant.Item.ProviderItem()
 	// The file as it is now. A grant is for one state of one item: when the content
 	// changed since, the client has to ask for a new address. For a link that is the
@@ -496,9 +484,38 @@ func ServeConnectedContent(c *gin.Context) {
 	}
 
 	name := item.Name
-	var content *provider.Content
 	if item.Native != "" {
 		name = connected.ExportName(item.Name, item.Native, grant.Export)
+	}
+	disposition := "inline"
+	if grant.Download {
+		disposition = "attachment"
+	}
+	c.Header("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": name}))
+	c.Header("Content-Type", dep.MimeDetector(c).TypeByName(name))
+	if item.Native == "" {
+		c.Header("Accept-Ranges", "bytes")
+	}
+	if c.Request.Method == http.MethodHead {
+		// Answered from what is known of the file: no download is started for it.
+		if item.Native == "" {
+			c.Header("Content-Length", fmt.Sprint(current.Size))
+		}
+		c.Status(http.StatusOK)
+		c.Writer.WriteHeaderNow()
+		return
+	}
+
+	release, err := connected.AcquireStream(ctx)
+	if err != nil {
+		c.Header("Retry-After", "5")
+		c.AbortWithStatus(http.StatusServiceUnavailable)
+		return
+	}
+	defer release()
+
+	var content *provider.Content
+	if item.Native != "" {
 		content, err = conn.P.Export(ctx, item, grant.Export)
 	} else {
 		content, err = conn.P.Open(ctx, item, singleRange(c.GetHeader("Range")))
@@ -509,15 +526,6 @@ func ServeConnectedContent(c *gin.Context) {
 	}
 	defer content.Body.Close()
 
-	disposition := "inline"
-	if grant.Download {
-		disposition = "attachment"
-	}
-	c.Header("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": name}))
-	c.Header("Content-Type", dep.MimeDetector(c).TypeByName(name))
-	if item.Native == "" {
-		c.Header("Accept-Ranges", "bytes")
-	}
 	if content.Length >= 0 {
 		c.Header("Content-Length", fmt.Sprint(content.Length))
 	}
@@ -528,9 +536,6 @@ func ServeConnectedContent(c *gin.Context) {
 	}
 	c.Status(status)
 	c.Writer.WriteHeaderNow()
-	if c.Request.Method == http.MethodHead {
-		return
-	}
 	if _, err := io.Copy(c.Writer, content.Body); err != nil {
 		// The provider's stream broke off, or the client went away. An answer without
 		// a length would otherwise end like a complete one, and the client would keep

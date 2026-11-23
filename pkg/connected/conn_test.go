@@ -251,3 +251,32 @@ func TestErrorMapping(t *testing.T) {
 	// An error that already is one of the API is passed on as it is.
 	require.Equal(t, serializer.CodeConnectedReconnect, codeOf(Error(ctx, ErrReconnect)))
 }
+
+// A provider that refuses a token it has just handed out: the storage shows as one that
+// has to be connected again, as the calls say.
+func TestRefusedFreshTokenMarksReconnect(t *testing.T) {
+	f := newManagerFixture(t)
+	ctx := context.Background()
+	secret := "client-secret"
+	require.NoError(t, f.SetProvider(ctx, ProviderDrive, "client-id", &secret))
+	auths := f.withProvider(newMem(false))
+	storage, err := f.connect(t, 7, "")
+	require.NoError(t, err)
+	_, _, done, err := f.Use(ctx, 7, storage.ID)
+	require.NoError(t, err)
+	defer done()
+
+	auth := (*auths)[0]
+	token, err := auth.Token(ctx, "")
+	require.NoError(t, err)
+	// Some other token: nothing happens.
+	auth.(provider.Refusable).Refused(ctx, "another-token")
+	row, _ := f.storages.Get(ctx, 7, storage.ID)
+	require.Equal(t, inventory.ConnectedStatusOK, row.Status)
+
+	auth.(provider.Refusable).Refused(ctx, token)
+	row, _ = f.storages.Get(ctx, 7, storage.ID)
+	require.Equal(t, inventory.ConnectedStatusReconnect, row.Status)
+	_, _, _, err = f.Use(ctx, 7, storage.ID)
+	require.ErrorIs(t, err, ErrReconnect)
+}

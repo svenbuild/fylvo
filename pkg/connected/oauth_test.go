@@ -376,3 +376,65 @@ func TestFlowBoundsStatesPerAccount(t *testing.T) {
 		t.Fatalf("the newest sign-in: %v", err)
 	}
 }
+
+// An account that is removed while the provider answers its sign-in gets nothing kept:
+// the token of that sign-in is let go, not left waiting in memory.
+func TestFlowLetsGoOfARemovedAccount(t *testing.T) {
+	flow, p, client := testFlow(t)
+	ctx := context.Background()
+	address, cookie, err := flow.Begin(7, ProviderDrive, client, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, code := p.consent(t, address)
+	p.tokenAnswer = func(http.ResponseWriter) bool {
+		flow.Forget(7)
+		return false
+	}
+	if _, err := flow.Callback(ctx, state, cookie, code, ""); !errors.Is(err, ErrFlowExpired) {
+		t.Fatalf("got %v", err)
+	}
+	if len(flow.granted) != 0 || len(flow.talking) != 0 || len(flow.dropped) != 0 {
+		t.Fatalf("kept: %d results, %d talking, %d dropped", len(flow.granted), len(flow.talking), len(flow.dropped))
+	}
+
+	// The number is free again for whoever gets it next.
+	p.tokenAnswer = nil
+	address, cookie, _ = flow.Begin(7, ProviderDrive, client, nil)
+	state, code = p.consent(t, address)
+	if _, err := flow.Callback(ctx, state, cookie, code, ""); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Sign-ins that wait to be stored count like the ones that wait for the provider.
+func TestFlowBoundCountsWaitingResults(t *testing.T) {
+	flow, p, client := testFlow(t)
+	ctx := context.Background()
+	now := time.Unix(1800000000, 0)
+	flow.now = func() time.Time { return now }
+
+	var codes []string
+	for i := 0; i < maxStates+1; i++ {
+		address, cookie, err := flow.Begin(7, ProviderDrive, client, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state, code := p.consent(t, address)
+		finish, err := flow.Callback(ctx, state, cookie, code, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		codes = append(codes, finish)
+		now = now.Add(time.Second)
+	}
+	if len(flow.granted) != maxStates {
+		t.Fatalf("%d results are kept", len(flow.granted))
+	}
+	if _, err := flow.Finish(7, codes[0]); !errors.Is(err, ErrFlowExpired) {
+		t.Fatalf("the oldest result: %v", err)
+	}
+	if _, err := flow.Finish(7, codes[maxStates]); err != nil {
+		t.Fatalf("the newest result: %v", err)
+	}
+}

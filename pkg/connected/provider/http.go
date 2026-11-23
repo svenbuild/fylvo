@@ -39,12 +39,13 @@ var RetryBase = time.Second
 // followed by itself, and connections to private, loopback and link-local addresses
 // are refused at the moment of dialing, whatever name led there.
 func NewHTTPClient() *http.Client {
-	return newHTTPClient(http.ProxyFromEnvironment)
+	return newHTTPClient(http.ProxyFromEnvironment, net.DefaultResolver.LookupIPAddr)
 }
 
-// newHTTPClient is NewHTTPClient with the function that names the proxy of a request.
-func newHTTPClient(proxy func(*http.Request) (*url.URL, error)) *http.Client {
-	g := &guard{proxy: proxy}
+// newHTTPClient is NewHTTPClient with the function that names the proxy of a request
+// and the one that looks names up.
+func newHTTPClient(proxy func(*http.Request) (*url.URL, error), lookup func(context.Context, string) ([]net.IPAddr, error)) *http.Client {
+	g := &guard{proxy: proxy, lookup: lookup}
 	plain := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
 	checked := *plain
 	checked.Control = func(_, address string, _ syscall.RawConn) error {
@@ -81,6 +82,8 @@ func newHTTPClient(proxy func(*http.Request) (*url.URL, error)) *http.Client {
 type guard struct {
 	base  *http.Transport
 	proxy func(*http.Request) (*url.URL, error)
+	// lookup resolves a name to addresses.
+	lookup func(ctx context.Context, host string) ([]net.IPAddr, error)
 	// proxies holds the addresses ("host:port") of the proxies requests were sent to.
 	proxies sync.Map
 }
@@ -103,15 +106,22 @@ func (g *guard) proxyOf(req *http.Request) (*url.URL, error) {
 
 func (g *guard) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Through a proxy it is the proxy that looks the name up and dials, so the check at
-	// the dial sees nothing of the target. What the address itself tells is checked here.
+	// the dial sees nothing of the target. The name is looked up here as well, and the
+	// request refused when it leads to an internal address. A name this machine cannot
+	// look up (a network where only the proxy knows the outside) is left to the proxy.
 	if u, err := g.proxy(req); err == nil && u != nil {
 		host := req.URL.Hostname()
-		if ip := net.ParseIP(host); ip != nil {
-			if err := request.CheckDialIP(ip); err != nil {
+		addresses := []net.IPAddr{{IP: net.ParseIP(host)}}
+		if addresses[0].IP == nil {
+			if strings.EqualFold(host, "localhost") {
+				return nil, request.ErrUnsafeURL
+			}
+			addresses, _ = g.lookup(req.Context(), host)
+		}
+		for _, address := range addresses {
+			if err := request.CheckDialIP(address.IP); err != nil {
 				return nil, err
 			}
-		} else if strings.EqualFold(host, "localhost") {
-			return nil, request.ErrUnsafeURL
 		}
 	}
 	return g.base.RoundTrip(req)
@@ -236,6 +246,9 @@ func (c *Caller) Do(ctx context.Context, method, address string, header http.Hea
 			res.Body.Close()
 			if renewed {
 				// Refused with a token that is brand new: the account has to sign in again.
+				if a, ok := c.Auth.(Refusable); ok {
+					a.Refused(ctx, token)
+				}
 				return nil, &Error{Kind: KindReconnect, Status: res.StatusCode}
 			}
 			renewed, rejected = true, token

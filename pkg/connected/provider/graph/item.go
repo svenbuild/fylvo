@@ -70,8 +70,9 @@ func (entry *driveItem) asItem() *provider.Item {
 	return item
 }
 
-// version names the state of the content of a file. It is never empty: an answer
-// without a cTag still tells a checksum or at least a time.
+// version names the state of the content of a file: by the tag for it, else by what
+// else the answer tells. It is empty only for an answer that tells nothing at all, and
+// nothing can be tied to such content.
 func (entry *driveItem) version() string {
 	switch {
 	case entry.CTag != "":
@@ -84,6 +85,9 @@ func (entry *driveItem) version() string {
 	modTime := entry.FileSystemInfo.LastModifiedDateTime
 	if modTime.IsZero() {
 		modTime = entry.LastModifiedDateTime
+	}
+	if modTime.IsZero() {
+		return ""
 	}
 	return "t:" + modTime.UTC().Format(time.RFC3339Nano) + ":" + strconv.FormatInt(entry.Size, 10)
 }

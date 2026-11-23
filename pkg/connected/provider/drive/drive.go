@@ -33,7 +33,8 @@ const (
 	maxNamedPages = 10
 
 	itemFields = "id,name,mimeType,size,modifiedTime,md5Checksum,headRevisionId,version,trashed," +
-		"webViewLink,resourceKey,shortcutDetails(targetId,targetMimeType,targetResourceKey)"
+		"webViewLink,resourceKey,capabilities(canReadRevisions)," +
+		"shortcutDetails(targetId,targetMimeType,targetResourceKey)"
 
 	// resourceKeyHeader carries the resource key that some shared items need to be opened.
 	resourceKeyHeader = "X-Goog-Drive-Resource-Keys"
@@ -94,7 +95,14 @@ const maxKeys = 10000
 
 // remember keeps the resource key a shortcut carries for its target.
 func (c *client) remember(item *provider.Item) {
-	if item.Link == nil || item.Link.ResourceKey == "" {
+	if item.Link != nil {
+		c.rememberKey(item.Link.TargetID, item.Link.ResourceKey)
+	}
+}
+
+// rememberKey keeps the resource key of the item with the given id, if it has one.
+func (c *client) rememberKey(id, key string) {
+	if key == "" {
 		return
 	}
 	c.mu.Lock()
@@ -102,7 +110,17 @@ func (c *client) remember(item *provider.Item) {
 	if c.keys == nil || len(c.keys) >= maxKeys {
 		c.keys = map[string]string{}
 	}
-	c.keys[item.Link.TargetID] = item.Link.ResourceKey
+	c.keys[id] = key
+}
+
+// mapped maps an entry of Drive to an Item and keeps the resource keys it tells.
+func (c *client) mapped(f *file) (provider.Item, bool) {
+	item, ok := f.item()
+	if ok {
+		c.rememberKey(f.ID, f.ResourceKey)
+		c.remember(&item)
+	}
+	return item, ok
 }
 
 // keyed marks a call about the item with the given id with its resource key, if it has one.
@@ -165,8 +183,7 @@ func (c *client) Children(ctx context.Context, folderID, page string) (*provider
 	// A page may come back empty with a token for the next one; that is not the end.
 	res := &provider.Page{Items: make([]provider.Item, 0, len(list.Files)), Next: list.NextPageToken}
 	for _, f := range list.Files {
-		if item, ok := f.item(); ok {
-			c.remember(&item)
+		if item, ok := c.mapped(&f); ok {
 			res.Items = append(res.Items, item)
 		}
 	}
@@ -190,8 +207,7 @@ func (c *client) Named(ctx context.Context, folderID, name string) ([]provider.I
 			if f.Name != name {
 				continue
 			}
-			if item, ok := f.item(); ok {
-				c.remember(&item)
+			if item, ok := c.mapped(&f); ok {
 				res = append(res, item)
 			}
 		}
@@ -208,12 +224,11 @@ func (c *client) Get(ctx context.Context, id string) (*provider.Item, error) {
 	if err := c.call.JSON(c.keyed(ctx, id), http.MethodGet, address, nil, &f); err != nil {
 		return nil, err
 	}
-	item, ok := f.item()
+	item, ok := c.mapped(&f)
 	if !ok {
 		// Trashed, or a Google type that has nothing to show.
 		return nil, &provider.Error{Kind: provider.KindNotFound}
 	}
-	c.remember(&item)
 	return &item, nil
 }
 
@@ -226,7 +241,7 @@ func (c *client) Target(ctx context.Context, link *provider.Item) (*provider.Ite
 	if err != nil {
 		return nil, err
 	}
-	if target.IsDir != link.IsDir || target.Link != nil || target.Native != "" {
+	if target.IsDir != link.IsDir || target.Link != nil || target.Native != link.Native {
 		// Not what the shortcut was made for: nothing that can be read through it.
 		return nil, &provider.Error{Kind: provider.KindNotFound}
 	}
@@ -270,11 +285,14 @@ func (c *client) Open(ctx context.Context, item *provider.Item, rangeHeader stri
 
 func (c *client) Export(ctx context.Context, item *provider.Item, format string) (*provider.Content, error) {
 	mimeType, ok := exports[item.Native][format]
-	if !ok || item.Link != nil {
+	if !ok {
 		return nil, &provider.Error{Kind: provider.KindForbidden}
 	}
-	address := c.api + "files/" + url.PathEscape(item.ID) + "/export?mimeType=" + url.QueryEscape(mimeType)
-	return c.call.Download(ctx, address, "")
+	// A shortcut to a document is exported by the document it points to.
+	id := item.ContentID()
+	c.remember(item)
+	address := c.api + "files/" + url.PathEscape(id) + "/export?mimeType=" + url.QueryEscape(mimeType)
+	return c.call.Download(c.keyed(ctx, id), address, "")
 }
 
 func (c *client) About(ctx context.Context) (*provider.Usage, error) {
@@ -341,7 +359,10 @@ type file struct {
 	Trashed        bool   `json:"trashed"`
 	WebViewLink    string `json:"webViewLink"`
 	ResourceKey    string `json:"resourceKey"`
-	Shortcut       *struct {
+	Capabilities   *struct {
+		CanReadRevisions bool `json:"canReadRevisions"`
+	} `json:"capabilities"`
+	Shortcut *struct {
 		TargetID          string `json:"targetId"`
 		TargetMimeType    string `json:"targetMimeType"`
 		TargetResourceKey string `json:"targetResourceKey"`
@@ -368,7 +389,13 @@ func (f *file) item() (item provider.Item, ok bool) {
 		}
 		target := f.Shortcut.TargetMimeType
 		if strings.HasPrefix(target, googleType) && target != folderType {
-			return item, false
+			// A shortcut to a document that exists only at Google shows as such a
+			// document; one to a Google type without content is not shown.
+			native, known := natives[target]
+			if !known {
+				return item, false
+			}
+			item.Native = native
 		}
 		item.IsDir = target == folderType
 		item.Link = &provider.Link{TargetID: f.Shortcut.TargetID, ResourceKey: f.Shortcut.TargetResourceKey}
@@ -379,21 +406,35 @@ func (f *file) item() (item provider.Item, ok bool) {
 		}
 		// A native document has no bytes; every edit changes its time.
 		item.Native = native
-		item.Version = "t:" + f.ModifiedTime
+		item.Version = timeVersion(f.ModifiedTime)
 	default:
 		item.Size = f.Size
 		item.Hash = f.MD5Checksum
-		item.Revision = f.HeadRevisionID
+		// Reading a revision by its id is for accounts that may see the revisions of
+		// the file. A file shared for viewing only is read as it is now, after its
+		// version was compared.
+		if f.Capabilities == nil || f.Capabilities.CanReadRevisions {
+			item.Revision = f.HeadRevisionID
+		}
 		switch {
 		case f.HeadRevisionID != "":
 			item.Version = "r:" + f.HeadRevisionID
 		case f.MD5Checksum != "":
 			item.Version = "h:" + f.MD5Checksum + ":" + strconv.FormatInt(f.Size, 10)
 		default:
-			item.Version = "t:" + f.ModifiedTime
+			item.Version = timeVersion(f.ModifiedTime)
 		}
 	}
 	return item, true
+}
+
+// timeVersion is the version of content that has nothing but a time to tell it by.
+// Without the time there is no version: nothing can be tied to such content.
+func timeVersion(modifiedTime string) string {
+	if modifiedTime == "" {
+		return ""
+	}
+	return "t:" + modifiedTime
 }
 
 // reasons maps the reason of a Drive error to its kind. A reason not listed here is
