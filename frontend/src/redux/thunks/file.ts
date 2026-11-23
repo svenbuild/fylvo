@@ -460,6 +460,10 @@ export function fileDoubleClicked(index: number, file: FileResponse, e?: React.M
       dispatch(openAtProvider(index, file));
     } else if (actionOpt.showOpen || actionOpt.showEnter) {
       dispatch(openFile(index, file));
+    } else if (actionOpt.showAlsoAtProvider) {
+      // Fylvo: a shortcut to a file has no "open" here; its address at the provider is the way
+      // to open it.
+      dispatch(openAtProvider(index, file));
     } else if (
       file.type == FileType.file &&
       actionOpt.showDownload &&
