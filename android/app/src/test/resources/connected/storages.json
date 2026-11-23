@@ -18,23 +18,23 @@
     ],
     "storages": [
       {
-        "id": "qkpdi9t578cyp8fo",
+        "id": "bdeam0qi5s466zup",
         "provider": "drive",
         "name": "Google Drive",
         "account": "user@example.com",
         "status": "ok",
-        "uri": "cloudreve://qkpdi9t578cyp8fo@connected",
-        "created_at": "2026-11-23T02:50:22.2614908+01:00"
+        "uri": "cloudreve://bdeam0qi5s466zup@connected",
+        "created_at": "2026-11-23T03:23:42.0275859+01:00"
       },
       {
-        "id": "h3eja9vw4v4tvzao",
+        "id": "0aaf85p9pz1fgn9o",
         "provider": "drive",
         "name": "Google Drive",
         "account": "alex@example.com",
         "status": "reconnect",
         "message": "The provider no longer accepts the stored access.",
-        "uri": "cloudreve://h3eja9vw4v4tvzao@connected",
-        "created_at": "2026-11-23T02:50:22.2668844+01:00"
+        "uri": "cloudreve://0aaf85p9pz1fgn9o@connected",
+        "created_at": "2026-11-23T03:23:42.0328498+01:00"
       }
     ]
   },
