@@ -17,6 +17,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager/entitysource"
+	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/queue"
 	"github.com/cloudreve/Cloudreve/v4/pkg/thumb"
@@ -121,9 +122,11 @@ func (m *manager) SubmitAndAwaitThumbnailTask(ctx context.Context, uri *fs.URI, 
 		return nil, fmt.Errorf("failed to get entity source: %w", err)
 	}
 
-	defer es.Close()
+	// Fylvo: the task closes the source when it is done with it, also when the caller stops
+	// waiting earlier (a closed browser tab, shutdown), so it is never closed under the worker.
 	t := newGenerateThumbTask(ctx, m, uri, ext, es)
 	if err := m.dep.ThumbQueue(ctx).QueueTask(ctx, t); err != nil {
+		es.Close()
 		return nil, fmt.Errorf("failed to queue task: %w", err)
 	}
 
@@ -151,10 +154,9 @@ func (m *manager) generateThumb(ctx context.Context, uri *fs.URI, ext string, es
 		}
 
 		// Fylvo: a file is marked as having no thumbnail only while it still has the version that
-		// failed. The background maker marks it only when no generator handles it; other failures
-		// (a busy or short-memory moment) are left to the next try.
-		if !errors.Is(err, context.Canceled) && !m.stateless &&
-			(!isThumbPregen(ctx) || errors.Is(err, thumb.ErrNotAvailable)) &&
+		// failed, and never by the background maker: its failures (a busy or short-memory moment,
+		// a size limit that may be raised later) are left to the first view.
+		if !errors.Is(err, context.Canceled) && !m.stateless && !isThumbPregen(ctx) &&
 			m.isCurrentVersion(ctx, uri, es.Entity().ID()) {
 			if err := disableThumb(ctx, m, uri); err != nil {
 				m.l.Warning("Failed to disable thumb: %v", err)
@@ -218,6 +220,9 @@ func (m *manager) generateThumb(ctx context.Context, uri *fs.URI, ext string, es
 				SavePath:   savePath,
 				MimeType:   m.dep.MimeDetector(ctx).TypeByName("thumb.jpg"),
 				EntityType: &entityType,
+				// Fylvo: stored only while the file still has the version it was made from (checked
+				// under the file's lock), so a new version never gets the old version's thumbnail.
+				PreviousVersion: hashid.EncodeEntityID(m.hasher, es.Entity().ID()),
 			},
 			File:   thumbFile,
 			Seeker: thumbFile,
@@ -291,6 +296,7 @@ func newGenerateThumbTask(ctx context.Context, m *manager, uri *fs.URI, ext stri
 }
 
 func (m *GenerateThumbTask) Do(ctx context.Context) (task.Status, error) {
+	defer m.es.Close()
 	// Make sure user does not cancel request before we start generating thumb.
 	select {
 	case <-ctx.Done():

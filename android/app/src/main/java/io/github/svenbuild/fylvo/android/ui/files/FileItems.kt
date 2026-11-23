@@ -101,16 +101,19 @@ fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
     // Signed URLs expire; re-key on a coarse time bucket so any recomposition
     // past the TTL refetches instead of sticking for the VM's lifetime.
     val bucket = System.currentTimeMillis() / THUMB_TTL_MS
-    // Fylvo: keyed by the version too, so a new version fetches its own preview.
-    val url by produceState<String?>(initialValue = null, file.id, file.primaryEntity, bucket) {
+    // Fylvo: keyed by the version too, so a new version fetches its own preview. The address is
+    // kept with the version it was asked for, so while the next one is asked the old version's
+    // address is never shown (and stored by Coil) under the new version's key (thumbCacheKey).
+    val resolved by produceState<Pair<String, String?>?>(initialValue = null, file.id, file.primaryEntity, bucket) {
         // Fylvo: a failed request (network, busy server) is tried again a few times.
         for (wait in THUMB_RETRY_DELAYS_MS) {
-            value = viewModel.thumbUrl(file)
-            if (value != null || viewModel.hasNoThumb(file)) break
+            val url = viewModel.thumbUrl(file)
+            value = file.primaryEntity to url
+            if (url != null || viewModel.hasNoThumb(file)) break
             kotlinx.coroutines.delay(wait)
         }
     }
-    return url
+    return resolved?.takeIf { it.first == file.primaryEntity }?.second
 }
 
 /**

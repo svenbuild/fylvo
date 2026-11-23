@@ -2,7 +2,8 @@
 // that are gone, for example when an editor is opened for the first time. Only the core of the
 // app is kept by the service worker; the rest is loaded when needed. Such a tab takes the new
 // version once: it activates the waiting service worker (or finds the new one first), then
-// reloads. Once per tab session, so a real failure does not reload over and over.
+// reloads. Once per page load, so a real failure does not reload over and over; a tab that ran
+// fine for a while may do it again after a later update.
 const reloadedKey = "fylvo_chunk_reload";
 
 async function activateNewVersion() {
@@ -37,6 +38,16 @@ function installed(worker: ServiceWorker | null): Promise<ServiceWorker | null> 
 }
 
 export function reloadOnMissingChunk() {
+  window.addEventListener("load", () => {
+    setTimeout(() => {
+      try {
+        sessionStorage.removeItem(reloadedKey);
+      } catch {
+        // Nothing to clear.
+      }
+    }, 30000);
+  });
+
   window.addEventListener("vite:preloadError", (event) => {
     try {
       if (sessionStorage.getItem(reloadedKey)) {

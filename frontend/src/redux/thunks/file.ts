@@ -131,18 +131,23 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
       dispatch(setThumbCache({ index, value: [file.path, thumb, file.primary_entity] }));
       return thumb.url;
     } catch (e) {
-      dispatch(
-        fileUpdated({
-          index,
-          value: [
-            {
-              file: { ...file, metadata: { ...file.metadata, [Metadata.thumbDisabled]: "" } },
-              oldPath: file.path,
-              includeMetadata: true,
-            },
-          ],
-        }),
-      );
+      // Fylvo: marks the file as it is now, and only if it still has the version that failed (an
+      // answer that comes late must not bring back an older version of the file).
+      const current = getState().fileManager[index].tree[file.path]?.file ?? file;
+      if (current.primary_entity == file.primary_entity) {
+        dispatch(
+          fileUpdated({
+            index,
+            value: [
+              {
+                file: { ...current, metadata: { ...current.metadata, [Metadata.thumbDisabled]: "" } },
+                oldPath: file.path,
+                includeMetadata: true,
+              },
+            ],
+          }),
+        );
+      }
       console.warn("Failed to load thumb", e);
       return null;
     }

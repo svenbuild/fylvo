@@ -26,18 +26,22 @@ func StableThumbExpire(now time.Time) time.Time {
 // prepareThumbResponse sets the headers for the image of a stored thumbnail (Fylvo): private
 // caching no longer than the signed address is valid, and the content type of the real format
 // (thumbnails are JPEG or PNG, but all are named ".jpg").
+// A thumbnail that cannot be read (still being stored, file gone) is not kept at all, so the
+// same address works once it is there.
 func prepareThumbResponse(c *gin.Context, es entitysource.EntitySource) {
+	var head [512]byte
+	n, _ := io.ReadFull(es, head[:])
+	if _, err := es.Seek(0, io.SeekStart); err != nil || n == 0 || es.Entity().UploadSessionID() != nil {
+		c.Header("Cache-Control", "no-store")
+		return
+	}
+	c.Header("Content-Type", http.DetectContentType(head[:n]))
+
 	maxAge := thumbCacheMaxAge
 	if expires, ok := auth.SignExpiry(c); ok {
 		maxAge = min(maxAge, time.Until(expires))
 	}
 	c.Header("Cache-Control", fmt.Sprintf("private, max-age=%d", max(0, int(maxAge.Seconds()))))
-
-	var head [512]byte
-	n, _ := io.ReadFull(es, head[:])
-	if _, err := es.Seek(0, io.SeekStart); err == nil && n > 0 {
-		c.Header("Content-Type", http.DetectContentType(head[:n]))
-	}
 }
 
 func isThumbEntity(es entitysource.EntitySource) bool {

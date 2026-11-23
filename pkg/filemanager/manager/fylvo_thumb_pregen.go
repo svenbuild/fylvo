@@ -16,19 +16,25 @@ import (
 )
 
 // Fylvo: thumbnails made ahead of time. Without them a folder of photos opened for the first time
-// waits until every thumbnail is made. A single background loop on the master walks the files
-// without a thumbnail, newest first, and has each one made the same way as when it is viewed:
-// through the thumbnail queue, so all generators together never exceed the queue's workers, and
-// waiting for the result, so at most one of its tasks is queued or running. After each thumbnail
-// it pauses as long as making it took. New files (a wake-up after an upload) are done before the
-// rest of a pass; after a pass the loop sleeps, then starts again at the top, which also catches
-// files that got a new version. It keeps nothing between restarts except what is in the database.
+// waits until every thumbnail is made. A single background loop on the master has the thumbnails
+// of files that have none made, the same way as when a file is viewed: through the thumbnail
+// queue, so all generators together never exceed the queue's workers, and waiting for the result,
+// so at most one of its tasks is queued or running. After each thumbnail it pauses as long as
+// making it took.
+//
+// A full pass walks all files without a thumbnail, newest first; it runs shortly after the start
+// and then every hour, and so also catches files that got a new version. In between, a wake-up
+// after an upload only looks at files newer than any it has seen. Nothing is kept between
+// restarts except what is in the database.
 
 const (
-	thumbPregenBatch    = 100
-	thumbPregenIdle     = 10 * time.Minute
-	thumbPregenMinPause = 200 * time.Millisecond
-	thumbPregenLogEvery = 500
+	thumbPregenBatch      = 100
+	thumbPregenFirstDelay = time.Minute
+	thumbPregenFullEvery  = time.Hour
+	thumbPregenMinPause   = 200 * time.Millisecond
+	// thumbPregenItemTimeout ends the wait for one thumbnail (the queue's own limit is shorter).
+	thumbPregenItemTimeout = 15 * time.Minute
+	thumbPregenLogEvery    = 500
 )
 
 var thumbPregenWake = make(chan struct{}, 1)
@@ -41,93 +47,95 @@ func WakeThumbPregen() {
 	}
 }
 
-// StartThumbPregen starts the background loop; it ends with ctx.
-func StartThumbPregen(ctx context.Context, dep dependency.Dep) {
+// StartThumbPregen starts the background loop. It ends with ctx; the returned channel is closed
+// when it has ended.
+func StartThumbPregen(ctx context.Context, dep dependency.Dep) <-chan struct{} {
 	l := dep.Logger().CopyWithPrefix("[ThumbPregen]")
 	ctx = dep.ForkWithLogger(ctx, l)
 	ctx = context.WithValue(ctx, logging.LoggerCtx{}, l)
-	p := &thumbPregen{dep: dep, l: l, tried: map[[2]int]struct{}{}}
-	go p.run(ctx)
+	p := &thumbPregen{dep: dep, l: l, failedFiles: map[[2]int]struct{}{}, top: -1}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.run(ctx)
+	}()
+	return done
 }
 
 type thumbPregen struct {
 	dep dependency.Dep
 	l   logging.Logger
-	// tried holds file id and version of files done in this run of the server. A failure is not
-	// tried again before a restart; a file that got no thumbnail for another reason (a storage
-	// that makes its own) is not looked at again.
-	tried map[[2]int]struct{}
-	// Per pass.
-	owners                 map[int]*ent.User
+	// failedFiles holds file id and version of files whose thumbnail failed in this run of the
+	// server; they are left to the first view.
+	failedFiles map[[2]int]struct{}
+	// top is the highest file id seen; a wake-up looks only above it. -1: no pass yet.
+	top int
+	// Per batch.
+	owners map[int]*ent.User
+	// Per walk, for the log.
 	made, failed, lastLogged int
 }
 
 func (p *thumbPregen) run(ctx context.Context) {
+	nextFull := time.Now().Add(thumbPregenFirstDelay)
 	for {
-		if p.dep.SettingProvider().ThumbPregenEnabled(ctx) {
-			p.pass(ctx)
+		full := !time.Now().Before(nextFull)
+		if p.dep.SettingProvider().ThumbPregenEnabled(ctx) && (full || p.top >= 0) {
+			after := p.top
+			if full {
+				after = 0
+				nextFull = time.Now().Add(thumbPregenFullEvery)
+			}
+			p.made, p.failed, p.lastLogged = 0, 0, 0
+			if p.walk(ctx, after) && (p.made > 0 || p.failed > 0) {
+				p.l.Info("Done: %d thumbnails made, %d failed.", p.made, p.failed)
+			}
 		}
 
 		select {
 		case <-ctx.Done():
 			return
 		case <-thumbPregenWake:
-		case <-time.After(thumbPregenIdle):
+		case <-time.After(time.Until(nextFull)):
 		}
 	}
 }
 
-// pass walks all files without a thumbnail once, newest first.
-func (p *thumbPregen) pass(ctx context.Context) {
-	p.owners = map[int]*ent.User{}
-	p.made, p.failed, p.lastLogged = 0, 0, 0
-	// Files above top are new since the pass started.
-	top := -1
-	if !p.walk(ctx, 0, math.MaxInt, &top, nil) {
-		return
-	}
-	if p.made > 0 || p.failed > 0 {
-		p.l.Info("Pass done: %d thumbnails made, %d failed.", p.made, p.failed)
-	}
-}
-
-// walk handles the files without a thumbnail with after < id < before, newest first. Between
-// batches it does new files first (above top) when woken; highest gets the highest id it saw.
-// It returns false when it was stopped.
-func (p *thumbPregen) walk(ctx context.Context, after, before int, top, highest *int) bool {
+// walk handles the files without a thumbnail with an id above after, newest first. Between
+// batches it does new files first when woken. It returns false when it was stopped.
+func (p *thumbPregen) walk(ctx context.Context, after int) bool {
+	before := math.MaxInt
 	for {
 		if ctx.Err() != nil || !p.dep.SettingProvider().ThumbPregenEnabled(ctx) {
 			return false
 		}
 
-		if top != nil && *top >= 0 {
+		// New files during a long walk (a pass can take days the first time).
+		if p.top > after && before <= p.top {
 			select {
 			case <-thumbPregenWake:
-				// A file that comes in meanwhile is above what this saw, and wakes the loop again.
-				seen := *top
-				if !p.walk(ctx, *top, math.MaxInt, nil, &seen) {
+				if !p.walk(ctx, p.top) {
 					return false
 				}
-				*top = seen
 			default:
 			}
 		}
 
 		files, err := p.dep.FileClient().ThumbCandidates(ctx, after, before, thumbPregenBatch, dbfs.ThumbDisabledKey)
 		if err != nil {
-			p.l.Warning("Failed to list files without thumbnail: %s", err)
+			if ctx.Err() == nil {
+				p.l.Warning("Failed to list files without thumbnail: %s", err)
+			}
 			return false
 		}
 		if len(files) == 0 {
 			return true
 		}
-		if top != nil && *top < 0 {
-			*top = files[0].ID
-		}
-		if highest != nil && files[0].ID > *highest {
-			*highest = files[0].ID
+		if files[0].ID > p.top {
+			p.top = files[0].ID
 		}
 
+		p.owners = map[int]*ent.User{}
 		for _, f := range files {
 			if !p.one(ctx, f) {
 				return false
@@ -140,7 +148,7 @@ func (p *thumbPregen) walk(ctx context.Context, after, before int, top, highest 
 // one has the thumbnail of one file made if it is a candidate. It returns false when stopped.
 func (p *thumbPregen) one(ctx context.Context, f *ent.File) bool {
 	key := [2]int{f.ID, f.PrimaryEntity}
-	if _, ok := p.tried[key]; ok || !p.supported(ctx, f.Name) {
+	if _, failed := p.failedFiles[key]; failed || !p.supported(ctx, f.Name) {
 		return true
 	}
 
@@ -150,40 +158,46 @@ func (p *thumbPregen) one(ctx context.Context, f *ent.File) bool {
 	}
 
 	fm := NewFileManager(p.dep, owner).(*manager)
-	defer fm.Recycle()
 	userCtx := context.WithValue(ctx, inventory.UserCtx{}, owner)
 
 	// A full account gets no thumbnail (they count towards the quota).
 	if capacity, err := fm.fs.Capacity(userCtx, owner); err != nil || capacity.Used >= capacity.Total {
+		fm.Recycle()
 		return true
 	}
 
 	target, err := fm.fs.TraverseFile(userCtx, f.ID)
-	if err != nil {
+	if err != nil || target.Uri(true).FileSystem() == constants.FileSystemTrash {
+		fm.Recycle()
 		return true
 	}
 	uri := target.Uri(true)
-	if uri.FileSystem() == constants.FileSystemTrash {
-		return true
-	}
 
-	p.tried[key] = struct{}{}
 	start := time.Now()
-	src, err := fm.Thumbnail(withThumbPregen(userCtx), uri)
+	itemCtx, cancel := context.WithTimeout(withThumbPregen(userCtx), thumbPregenItemTimeout)
+	src, err := fm.Thumbnail(itemCtx, uri)
+	// Stopped waiting (timeout or shutdown): the queue's worker may still be using the file
+	// manager, so it is not recycled then.
+	stoppedWaiting := itemCtx.Err() != nil
+	cancel()
 	if err != nil {
 		if ctx.Err() != nil {
 			return false
 		}
+		p.failedFiles[key] = struct{}{}
 		p.failed++
 		p.l.Debug("No thumbnail for %q: %s", uri.String(), err)
 	} else {
 		src.Close()
 		p.made++
 	}
+	if !stoppedWaiting {
+		fm.Recycle()
+	}
 
 	if done := p.made + p.failed; done-p.lastLogged >= thumbPregenLogEvery {
 		p.lastLogged = done
-		p.l.Info("%d thumbnails made, %d failed so far in this pass.", p.made, p.failed)
+		p.l.Info("%d thumbnails made, %d failed so far.", p.made, p.failed)
 	}
 
 	select {
@@ -194,7 +208,7 @@ func (p *thumbPregen) one(ctx context.Context, f *ent.File) bool {
 	}
 }
 
-// owner returns the active owner of a file, cached for the pass.
+// owner returns the active owner of a file, cached for one batch.
 func (p *thumbPregen) owner(ctx context.Context, id int) (*ent.User, bool) {
 	if u, ok := p.owners[id]; ok {
 		return u, u != nil

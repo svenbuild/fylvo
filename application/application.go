@@ -57,8 +57,9 @@ type server struct {
 	// Fylvo: kept to stop them in order at shutdown.
 	cron     *cron.Cron
 	activity *activity.Recorder
-	// stopThumbPregen ends the background thumbnail maker (Fylvo).
+	// stopThumbPregen ends the background thumbnail maker, which closes thumbPregenDone (Fylvo).
 	stopThumbPregen context.CancelFunc
+	thumbPregenDone <-chan struct{}
 }
 
 func (s *server) PrintBanner() {
@@ -125,7 +126,7 @@ func (s *server) Start() error {
 		// Fylvo: thumbnails made ahead of time.
 		pregenCtx, stopPregen := context.WithCancel(context.Background())
 		s.stopThumbPregen = stopPregen
-		manager.StartThumbPregen(pregenCtx, s.dep)
+		s.thumbPregenDone = manager.StartThumbPregen(pregenCtx, s.dep)
 
 		// Start node pool
 		if _, err := s.dep.NodePool(context.Background()); err != nil {
@@ -201,6 +202,10 @@ func (s *server) Close() {
 	s.dep.EventHub().Close()
 	if s.stopThumbPregen != nil {
 		s.stopThumbPregen()
+		select {
+		case <-s.thumbPregenDone:
+		case <-ctx.Done():
+		}
 	}
 
 	// Shutdown http server
