@@ -28,6 +28,7 @@ import Image from "../../Icons/Image.tsx";
 import Markdown from "../../Icons/Markdown.tsx";
 import MoreHorizontal from "../../Icons/MoreHorizontal.tsx";
 import MusicNote1 from "../../Icons/MusicNote1.tsx";
+import { usableViewers } from "../Connected/usableViewers.ts";
 
 export interface ViewerIconProps {
   viewer: Viewer;
@@ -178,7 +179,13 @@ const OpenWith = () => {
               overflow: "auto",
             }}
           >
-            {((expanded ? Object.values(ViewersByID) : selectorState?.viewers) ?? emptyViewer).map((viewer) => (
+            {(
+              (expanded
+                ? selectorState?.file
+                  ? usableViewers(selectorState.file, Object.values(ViewersByID))
+                  : Object.values(ViewersByID)
+                : selectorState?.viewers) ?? emptyViewer
+            ).map((viewer) => (
               <ListItem
                 disablePadding
                 key={viewer.id}

@@ -83,6 +83,9 @@ import { navigateToPath, refreshFileList, updateUserCapacity } from "./filemanag
 import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers } from "./viewer.ts";
+import { ConnectedCode, folderEnterable } from "../../api/connected.ts";
+import { rowUnsupported } from "../../component/FileManager/Connected/ConnectedMark.tsx";
+import { BusyState, codeOf, ProviderGaveUp, retryBusy } from "../../component/FileManager/Connected/providerRetry.ts";
 
 const contextMenuCloseAnimationDelay = 250;
 
@@ -153,6 +156,18 @@ export function goToParent(index: number, folder: FileResponse): AppThunk {
     setTimeout(() => {
       dispatch(navigateToPath(index, path));
     }, contextMenuCloseAnimationDelay);
+  };
+}
+
+// Fylvo: a document of a connected storage's provider (for example a Google Sheet) opens at
+// the provider in a new tab.
+export function openAtProvider(index: number, file: FileResponse): AppThunk {
+  return async (dispatch) => {
+    dispatch(closeContextMenu({ index, value: undefined }));
+    const url = file.metadata?.[Metadata.connected_external_url];
+    if (url && /^https?:\/\//i.test(url)) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   };
 }
 
@@ -239,7 +254,13 @@ export function fileClicked(index: number, file: FileResponse, e?: React.MouseEv
     const ctrlKeyPressed = e && (e.ctrlKey || e.metaKey || e.shiftKey);
     const isTrash = file.metadata && file.metadata[Metadata.restore_uri];
     const folderClickAction = SessionManager.getWithFallback(UserSettings.FolderClickAction);
-    if (file.type === FileType.folder && !ctrlKeyPressed && !isTrash && folderClickAction === "open") {
+    if (
+      file.type === FileType.folder &&
+      !ctrlKeyPressed &&
+      !isTrash &&
+      folderClickAction === "open" &&
+      folderEnterable(file)
+    ) {
       dispatch(openFile(index, file));
     } else {
       dispatch(selectFile(index, file, e));
@@ -254,7 +275,9 @@ export function fileClicked(index: number, file: FileResponse, e?: React.MouseEv
 export function fileDoubleClicked(index: number, file: FileResponse, e?: React.MouseEvent<HTMLElement>): AppThunk {
   return async (dispatch, _getState) => {
     const actionOpt = getActionOpt([file], Viewers);
-    if (actionOpt.showOpen || actionOpt.showEnter) {
+    if (actionOpt.showOpenAtProvider) {
+      dispatch(openAtProvider(index, file));
+    } else if (actionOpt.showOpen || actionOpt.showEnter) {
       dispatch(openFile(index, file));
     } else if (file.type == FileType.file && actionOpt.showDownload) {
       dispatch(downloadSingleFile(file));
@@ -1144,17 +1167,51 @@ export function submitCreateNew(index: number, name: string, type: number): AppT
   };
 }
 
+// Fylvo: what a walk left out, so a download can say so instead of looking complete.
+export interface WalkSkipped {
+  // Paths of rows not taken: shortcuts and folders that cannot be entered in a connected
+  // storage, and rows whose name exists more than once there.
+  names: string[];
+  // Entries the server could not list at all (their names cannot be names here).
+  omitted: number;
+  // Paths of folders whose listing failed (for example a busy provider).
+  unreadable: string[];
+  // Paths of entries that only open at the provider and have no file (for example a form).
+  providerOnly: string[];
+}
+
 export function walk(
   files: FileResponse[],
   callback: (f: FileResponse[], relativePath: string) => Promise<any>,
   walkedSymbolicLinks: string[] = [],
   relativePath: string = "",
+  skipped?: WalkSkipped,
+  busy?: BusyState,
 ): AppThunk {
   return async (dispatch, _getState) => {
+    const pathOf = (f: FileResponse) => (relativePath == "" ? "" : relativePath + "/") + f.name;
+    // Fylvo: a row of a connected storage that cannot be used is left out, as is an entry of
+    // the provider that has no file to download (it only opens there).
+    const providerOnly = (f: FileResponse) =>
+      f.type == FileType.file &&
+      f.metadata?.[Metadata.connected_external_url] !== undefined &&
+      !f.metadata?.[Metadata.connected_export];
+    files.filter(rowUnsupported).forEach((f) => skipped?.names.push(pathOf(f)));
+    files.filter((f) => !rowUnsupported(f) && providerOnly(f)).forEach((f) => skipped?.providerOnly.push(pathOf(f)));
+    files = files.filter((f) => !rowUnsupported(f) && !providerOnly(f));
     await callback(files, relativePath);
 
     for (const f of files) {
-      if (f.type == FileType.folder) {
+      if (f.type != FileType.folder) {
+        continue;
+      }
+      // Fylvo: in a connected storage, shortcuts (they can lead back to a folder above) and
+      // folders that cannot be entered are not walked into.
+      if (!folderEnterable(f) || f.metadata?.[Metadata.connected_link] !== undefined) {
+        skipped?.names.push(pathOf(f));
+        continue;
+      }
+      {
         var uri = getFileLinkedUri(f);
         if (f.metadata && f.metadata[Metadata.share_redirect]) {
           if (!walkedSymbolicLinks.includes(uri)) {
@@ -1168,16 +1225,53 @@ export function walk(
           const allChildren: FileResponse[] = [];
           let nextToken: string | undefined = undefined;
           let page: number | undefined = undefined;
+          let restarted = false;
+          let omittedHere = 0;
           while (true) {
-            const children: ListResponse = await dispatch(
-              getFileList({
-                next_page_token: nextToken,
-                page,
-                uri,
-                page_size: 1000,
-              }),
-            );
+            const list = () =>
+              dispatch(
+                getFileList({
+                  next_page_token: nextToken,
+                  page,
+                  uri,
+                  page_size: 1000,
+                }),
+              );
+            // Fylvo: a busy provider of a connected storage is waited for (see providerRetry);
+            // other storages keep their own handling.
+            let children: ListResponse;
+            try {
+              children = busy ? await retryBusy(busy, list) : await list();
+            } catch (e) {
+              // Fylvo: the server no longer keeps the listing of a connected folder (40926):
+              // that folder starts again from its first page, once.
+              if (!restarted && (nextToken || page !== undefined) && codeOf(e) == ConnectedCode.ListingGone) {
+                restarted = true;
+                allChildren.length = 0;
+                nextToken = undefined;
+                page = undefined;
+                if (skipped) {
+                  skipped.omitted -= omittedHere;
+                }
+                omittedHere = 0;
+                continue;
+              }
+              throw e;
+            }
             allChildren.push(...children.files);
+            if (skipped && !nextToken && page === undefined) {
+              omittedHere = children.connected?.omitted ?? 0;
+              skipped.omitted += omittedHere;
+            }
+            // Fylvo: a cursor listing (connected storages) goes on only by its token, also
+            // when it names a total.
+            if (children.pagination.is_cursor) {
+              nextToken = children.pagination.next_token;
+              if (!nextToken) {
+                break;
+              }
+              continue;
+            }
             if (children.pagination.total_items) {
               page = (page ?? 0) + 1;
             } else if (children.pagination.next_token) {
@@ -1196,12 +1290,16 @@ export function walk(
             }
           }
           const path = (relativePath == "" ? "" : relativePath + "/") + f.name;
-          await dispatch(walk(allChildren, callback, walkedSymbolicLinks, path));
+          await dispatch(walk(allChildren, callback, walkedSymbolicLinks, path, skipped, busy));
         } catch (e) {
           console.warn("Failed to load children", e);
           if (e instanceof Error && e.name == "AbortError") {
             return;
           }
+          if (e instanceof ProviderGaveUp) {
+            throw e;
+          }
+          skipped?.unreadable.push(pathOf(f));
         }
       }
     }
@@ -1212,19 +1310,29 @@ export interface FileResponseWalked extends FileResponse {
   relativePath: string;
 }
 
-export function walkAll(files: FileResponse[]): AppThunk<Promise<FileResponseWalked[]>> {
+export function walkAll(
+  files: FileResponse[],
+  skipped?: WalkSkipped,
+  busy?: BusyState,
+): AppThunk<Promise<FileResponseWalked[]>> {
   return async (dispatch, _getState): Promise<FileResponseWalked[]> => {
     const allFiles: FileResponseWalked[] = [];
     await dispatch(
-      walk(files, async (f, relativePath) =>
-        allFiles.push(
-          ...f.map(
-            (file): FileResponseWalked => ({
-              ...file,
-              relativePath: (relativePath == "" ? "" : relativePath + "/") + file.name,
-            }),
+      walk(
+        files,
+        async (f, relativePath) =>
+          allFiles.push(
+            ...f.map(
+              (file): FileResponseWalked => ({
+                ...file,
+                relativePath: (relativePath == "" ? "" : relativePath + "/") + file.name,
+              }),
+            ),
           ),
-        ),
+        [],
+        "",
+        skipped,
+        busy,
       ),
     );
     return allFiles;

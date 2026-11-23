@@ -56,6 +56,7 @@ import {
 import { MediaMetaElements } from "../../Sidebar/MediaMetaCard.tsx";
 import FileTagSummary from "../FileTagSummary.tsx";
 import FavoriteMark from "../FavoriteMark.tsx";
+import ConnectedMark, { rowUnsupported, sizeKnown, timeKnown } from "../../Connected/ConnectedMark.tsx";
 import { ThumbLoadingPlaceholder, ThumbPopoverImg } from "../GridView/GridFile.tsx";
 import UploadingTag from "../UploadingTag.tsx";
 import { useInlineRename } from "../useInlineRename.ts";
@@ -216,7 +217,11 @@ const FileNameCell = memo((props: CellProps) => {
     />
   ) : (
     <Tooltip title={file.name} disableInteractive>
-      <NoWrapBox onClick={onNameClick} onDoubleClick={onNameDoubleClick}>
+      <NoWrapBox
+        onClick={onNameClick}
+        onDoubleClick={onNameDoubleClick}
+        sx={rowUnsupported(file) ? { opacity: 0.6 } : undefined}
+      >
         {search?.name ? (
           <Highlighter
             highlightClassName="highlight-marker"
@@ -232,8 +237,8 @@ const FileNameCell = memo((props: CellProps) => {
   );
 
   if (showThumb) {
-    const showSize = nameMeta?.size && !isFolder && !file.metadata?.[Metadata.share_redirect];
-    const showModified = nameMeta?.modified;
+    const showSize = nameMeta?.size && !isFolder && !file.metadata?.[Metadata.share_redirect] && sizeKnown(file);
+    const showModified = nameMeta?.modified && timeKnown(file.updated_at);
     return (
       <>
         <Box
@@ -270,6 +275,7 @@ const FileNameCell = memo((props: CellProps) => {
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
               <Box sx={{ minWidth: 0, overflow: "hidden" }}>{nameNode}</Box>
               {!isEditing && <FavoriteMark file={file} />}
+              {!isEditing && <ConnectedMark file={file} />}
               {!isEditing && !uploading && fileTag && fileTag.length > 0 && (
                 <FileTagSummary sx={{ maxWidth: "50%" }} tags={fileTag} />
               )}
@@ -319,6 +325,7 @@ const FileNameCell = memo((props: CellProps) => {
 
         {nameNode}
         {!isEditing && <FavoriteMark file={file} />}
+        {!isEditing && <ConnectedMark file={file} />}
         {!isEditing && !uploading && fileTag && fileTag.length > 0 && (
           <FileTagSummary sx={{ maxWidth: "50%" }} tags={fileTag} />
         )}
@@ -342,7 +349,7 @@ interface FolderSizeCellProps {
 
 const FolderSizeCell = memo(({ file }: FolderSizeCellProps) => {
   const { t } = useTranslation();
-  if (file.type == FileType.folder || file.metadata?.[Metadata.share_redirect]) {
+  if (file.type == FileType.folder || file.metadata?.[Metadata.share_redirect] || !sizeKnown(file)) {
     return <Box />;
   }
   return <Box>{sizeToString(file.size)}</Box>;
@@ -369,7 +376,7 @@ const FolderDateCell = memo(({ file, dateType }: FolderDateCellProps) => {
         : "";
   }
 
-  if (!datetime) {
+  if (!datetime || (typeof datetime == "string" && !timeKnown(datetime))) {
     return <Box />;
   }
   return <TimeBadge variant={"inherit"} datetime={datetime} />;

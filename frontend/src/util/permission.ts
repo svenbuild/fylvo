@@ -11,7 +11,14 @@ function shareCapability(file: FileResponse, capability: number): boolean | unde
   if (!file.path) {
     return undefined;
   }
-  if (new CrUri(file.path).fs() == Filesystem.share) {
+  const fs = new CrUri(file.path).fs();
+  // Fylvo: nothing in a connected storage can be changed from the web app yet. Changes there
+  // need the ids of the listed rows, which the web package for writing adds together with
+  // following the capability bits of its rows here.
+  if (fs == Filesystem.connected) {
+    return false;
+  }
+  if (fs == Filesystem.share) {
     return new Boolset(file.capability).enabled(capability);
   }
   return undefined;

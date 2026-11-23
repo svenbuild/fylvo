@@ -23,6 +23,7 @@ import {
 } from "../fylvoSlice.ts";
 import { setDarkMode, setPreferredTheme } from "../globalStateSlice.ts";
 import { AppThunk } from "../store.ts";
+import { publishConnectedStorages } from "../../component/FileManager/Connected/useConnectedStorages.ts";
 
 // Fylvo: loading and saving the account preferences (design/customize-plan.md).
 
@@ -229,5 +230,6 @@ export function clearAccountData(): AppThunk {
     prefsVersion++;
     dispatch(setPrefs(readCachedPrefs()));
     dispatch(setTags(undefined));
+    publishConnectedStorages(undefined);
   };
 }

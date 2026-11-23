@@ -1430,5 +1430,28 @@
   "vas": {
     "used": "Verwendet",
     "productDes": "Produktname"
+  },
+  "connected": {
+    "title": "Verbundene Speicher",
+    "des": "Benutzer können ihr Google Drive oder OneDrive neben den eigenen Dateien anzeigen. Für jeden Anbieter, der angeboten werden soll, dort einen OAuth-Client dieses Servers anlegen und hier eintragen. Welche Gruppen Speicher verbinden dürfen, steht bei der Gruppe.",
+    "callbackUrl": "Weiterleitungs-URI",
+    "callbackUrlDes": "Diese Adresse bei jedem Anbieter als Weiterleitungs-URI eintragen. Sie wird aus der ersten Site-URL gebildet.",
+    "copy": "Kopieren",
+    "clientId": "Client-ID",
+    "clientIdDes": "Leer lassen und speichern, um diesen Anbieter zu entfernen.",
+    "clientSecret": "Client-Geheimnis",
+    "clientSecretDes": "Wird verschlüsselt gespeichert und lässt sich nicht wieder anzeigen.",
+    "clientSecretSetDes": "Ein Geheimnis ist gespeichert und wird nicht angezeigt. Nur zum Ersetzen ein neues eingeben.",
+    "secretKept": "Gespeichert, nicht sichtbar",
+    "ready": "Bereit",
+    "secretMissing": "Geheimnis fehlt",
+    "notSetUp": "Nicht eingerichtet",
+    "driveDes": "In der Google Cloud Console die Google Drive API aktivieren und einen OAuth-Client vom Typ \"Webanwendung\" mit der Weiterleitungs-URI oben anlegen.",
+    "onedriveDes": "In Microsoft Entra eine App für private und geschäftliche Konten registrieren, die Weiterleitungs-URI oben für die Plattform \"Web\" eintragen und ein Client-Geheimnis anlegen.",
+    "allow": "Speicher verbinden",
+    "allowDes": "Mitglieder können ihr Google Drive oder OneDrive verbinden. Dazu muss zuerst ein Anbieter in den Einstellungen eingerichtet sein.",
+    "retry": "Nochmals versuchen",
+    "loadFailed": "Die Einstellungen konnten nicht geladen werden.",
+    "removeConfirm": "{{provider}} entfernen? Die Verbindungen der Benutzer dazu funktionieren erst wieder, wenn der Anbieter erneut eingerichtet ist."
   }
 }

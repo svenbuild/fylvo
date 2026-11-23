@@ -6,6 +6,8 @@ import { GroupPermission } from "../../../api/user.ts";
 import { ContextMenuTypes } from "../../../redux/fileManagerSlice.ts";
 import { Viewers, ViewersByID } from "../../../redux/siteConfigSlice.ts";
 import { ExpandedViewerSetting } from "../../../redux/thunks/viewer.ts";
+import { usableViewers } from "../Connected/usableViewers.ts";
+import { folderEnterable, inConnectedStorage } from "../../../api/connected.ts";
 import SessionManager from "../../../session";
 import { fileExtension } from "../../../util";
 import Boolset from "../../../util/boolset.ts";
@@ -50,6 +52,8 @@ export interface DisplayOption {
 
   showEnter?: boolean;
   showOpen?: boolean;
+  // Fylvo: a document of a connected storage's provider, opened there.
+  showOpenAtProvider?: boolean;
   showOpenWithCascading?: () => boolean;
   showOpenWith?: () => boolean;
   showDownload?: boolean;
@@ -250,7 +254,7 @@ export const getActionOpt = (
     display.showDownload &&
     !!viewerSetting &&
     !!firstFileSuffix &&
-    !!viewerSetting?.[firstFileSuffix];
+    usableViewers(targets[0], viewerSetting?.[firstFileSuffix]).length > 0;
   display.showEnter =
     targets.length == 1 &&
     display.hasFolder &&
@@ -309,6 +313,26 @@ export const getActionOpt = (
     display.allUpdatable &&
     display.orCapability &&
     display.orCapability.enabled(NavigatorCapability.update_metadata);
+
+  // Fylvo: a connected storage has no files of this server, so nothing that needs one: no
+  // archives, direct links, remote downloads or thumbnails to reset. Everything else follows
+  // the capability bits of its rows.
+  if (targets.some((f) => inConnectedStorage(f.path))) {
+    display.showExtractArchive = false;
+    display.showTorrentRemoteDownload = false;
+    display.showDirectLink = false;
+    display.showDirectLinkManagement = false;
+    display.showCreateArchive = false;
+    display.showResetThumb = false;
+    // Pinned as a link of the sidebar (see pinToSidebar); only folders that can be entered.
+    display.showPin = display.showPin && folderEnterable(targets[0]);
+    display.showOrganize = display.showPin || display.showMove || display.showChangeIcon;
+    if (targets.length == 1 && targets[0].metadata?.[Metadata.connected_external_url]) {
+      display.showOpenAtProvider = true;
+      display.showOpenWith = () => false;
+      display.showOpenWithCascading = () => false;
+    }
+  }
 
   display.showMore =
     display.showVersionControl ||

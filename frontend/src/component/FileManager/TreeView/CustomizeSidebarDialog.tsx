@@ -13,6 +13,7 @@ import Dismiss from "../../Icons/Dismiss.tsx";
 import Eye from "../../Icons/Eye.tsx";
 import EyeOff from "../../Icons/EyeOff.tsx";
 import { tagSearchUri } from "./CustomSidebar.tsx";
+import { useConnectedStorages } from "../Connected/useConnectedStorages.ts";
 
 // Fylvo: the dialog to arrange the sidebar. Entries can be dragged, hidden, renamed (links) and
 // removed (links, headings); folders, tags and headings can be added.
@@ -26,6 +27,7 @@ const categoryLabels: Record<string, string> = {
 
 export const useSidebarLabel = () => {
   const { t } = useTranslation("application");
+  const storages = useConnectedStorages();
   return (item: SidebarItem): string => {
     switch (item.type) {
       case "home":
@@ -43,7 +45,8 @@ export const useSidebarLabel = () => {
       case "category":
         return t(categoryLabels[item.category ?? ""] ?? "");
       case "connected":
-        return t("customize.connected");
+        // Fylvo: the name the account gave the storage.
+        return storages?.find((s) => s.id == item.id)?.name ?? t("customize.connected");
       default:
         return item.name || item.uri || "";
     }

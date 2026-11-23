@@ -36,6 +36,7 @@ import PinOutlined from "../../Icons/PinOutlined.tsx";
 import { DenseDivider, SquareMenuItem } from "../ContextMenu/ContextMenu.tsx";
 import { FmIndexContext } from "../FmIndexContext.tsx";
 import { ActionButton, ActionButtonGroup } from "../TopBar/TopActions.tsx";
+import { ConnectedOmitted } from "../Connected/ConnectedMark.tsx";
 
 interface EmptyFileListProps {
   [key: string]: any;
@@ -65,7 +66,6 @@ export const SharedWithMeEmpty = () => {
           borderColor: "divider",
           borderRadius: (t) => `${t.shape.borderRadius}px`,
           p: 1,
-
         }}
       >
         <Box
@@ -242,6 +242,7 @@ const EmptyFileList = memo(
                 secondary={search_params || !canCreate ? undefined : t("fileManager.orClickUploadButton")}
               />
             </Box>
+            <ConnectedOmitted />
             {recursion_limit_reached && <SearchLimitReached />}
           </>
         )}

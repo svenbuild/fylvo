@@ -71,6 +71,7 @@ Next steps, in this order, are in the **[self-hosting guide](docs/self-hosting.m
 3. [Backup and restore](docs/self-hosting.md#3-backup-and-restore)
 4. [Update](docs/self-hosting.md#4-update)
 5. [Connect the apps](docs/self-hosting.md#5-connect-the-apps)
+6. [Google Drive and OneDrive](docs/self-hosting.md#6-google-drive-and-onedrive) (optional)
 
 ## Apps
 

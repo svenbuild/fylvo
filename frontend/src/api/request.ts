@@ -28,6 +28,10 @@ export const defaultOpts: requestOpts = {
 
 export const ApiPrefix = "/api/v4";
 
+// Fylvo: see api/connected.ts (not imported here, it imports this module).
+export const ConnectedReconnectCode = 40921;
+export const ConnectedChangedEvent = "fylvo:connected-changed";
+
 const instance = axios.create({
   baseURL: ApiPrefix,
 });
@@ -65,7 +69,11 @@ export class AppError extends Error {
     this.rawMessage = message;
     this.error = error;
 
-    if (i18n.exists(`errors.${code}`, { ns: "common" })) {
+    // Fylvo: some errors name a reason in data (for example 40925 of a connected storage).
+    const reason = typeof resp.data?.reason == "string" ? resp.data.reason : undefined;
+    if (reason && i18n.exists(`errors.${code}_${reason}`, { ns: "common" })) {
+      this.message = i18n.t(`errors.${code}_${reason}`, { ns: "common", message });
+    } else if (i18n.exists(`errors.${code}`, { ns: "common" })) {
       this.message = i18n.t(`errors.${code}`, {
         ns: "common",
         message,
@@ -232,6 +240,14 @@ export function send<T = any>(
             signOutLock = true;
         }
 
+        // Fylvo: a connected storage needs to be connected again; whoever shows its state
+        // (sidebar, breadcrumb, settings) loads the list again.
+        if (
+          resp.data.code == ConnectedReconnectCode ||
+          Object.values(resp.data.aggregated_error ?? {}).some((inner) => inner.code == ConnectedReconnectCode)
+        ) {
+          window.dispatchEvent(new Event(ConnectedChangedEvent));
+        }
         throw new AppError(resp.data);
       }
       return resp.data.data;

@@ -21,6 +21,7 @@ import GalleryView from "./GalleryView/GalleryView.tsx";
 import { ListViewColumn } from "./ListView/Column.tsx";
 import ListView from "./ListView/ListView.tsx";
 import SingleFileView from "./SingleFileView.tsx";
+import { ConnectedOmitted } from "../Connected/ConnectedMark.tsx";
 
 export const ExplorerPage = {
   Error: 1,
@@ -145,6 +146,9 @@ const Explorer = () => {
             {index == ExplorerPage.Empty && <EmptyFileList />}
             {index == ExplorerPage.ListView && <ListView />}
             {index == ExplorerPage.GalleryView && <GalleryView />}
+            {(index == ExplorerPage.GridView || index == ExplorerPage.GalleryView) && (
+              <ConnectedOmitted sx={{ px: 2, pb: 1 }} />
+            )}
             {recursion_limit_reached && (index == ExplorerPage.GridView || index == ExplorerPage.GalleryView) && (
               <Box sx={{ px: 2, pb: 1 }}>
                 <SearchLimitReached />

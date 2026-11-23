@@ -8,6 +8,7 @@ import { canUpdate, getActionOpt } from "../../component/FileManager/ContextMenu
 import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
 import SessionManager, { UserSettings } from "../../session";
 import { isTrueVal } from "../../session/utils.ts";
+import { usableViewers } from "../../component/FileManager/Connected/usableViewers.ts";
 import { dataUrlToBytes, fileExtension, fileNameNoExt, getFileLinkedUri, sizeToString } from "../../util";
 import { base64Encode } from "../../util/base64.ts";
 import CrUri, { CrUriPrefix } from "../../util/uri.ts";
@@ -74,12 +75,13 @@ export function openViewers(
 
     // Try user preference
     const userPreference = SessionManager.get(UserSettings.OpenWithPrefix + ext);
-    if (!ignorePreference && userPreference && ViewersByID[userPreference]) {
+    const usable = (id?: string) => !!id && !!ViewersByID[id] && usableViewers(file, [ViewersByID[id]]).length > 0;
+    if (!ignorePreference && usable(userPreference)) {
       dispatch(openViewer(file, ViewersByID[userPreference], entitySize, preferredVersion));
       return;
     }
 
-    const viewerOptions = Viewers[ext];
+    const viewerOptions = usableViewers(file, Viewers[ext]);
 
     if (!ignorePreference && viewerOptions.length == 1) {
       dispatch(openViewer(file, viewerOptions[0], entitySize, preferredVersion));
@@ -87,7 +89,7 @@ export function openViewers(
     }
 
     const globalDefaultViewer = explorer?.config?.default_viewer_mapping?.[ext];
-    if (!ignorePreference && globalDefaultViewer && ViewersByID[globalDefaultViewer]) {
+    if (!ignorePreference && globalDefaultViewer && usable(globalDefaultViewer)) {
       dispatch(openViewer(file, ViewersByID[globalDefaultViewer], entitySize, preferredVersion));
       return;
     }
@@ -113,6 +115,11 @@ export function openViewer(
   forceNotOpenInNew?: boolean,
 ): AppThunk {
   return async (dispatch, getState) => {
+    // Fylvo: also for a viewer named in the address (?viewer=).
+    if (usableViewers(file, [viewer]).length == 0) {
+      enqueueSnackbar({ message: i18next.t("common:errors.40920"), variant: "warning", action: DefaultCloseAction });
+      return;
+    }
     if (!forceNotOpenInNew && viewer.type != ViewerType.custom && isTrueVal(viewer.props?.openInNew ?? "")) {
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.set("viewer", viewer.id ?? "");

@@ -1,6 +1,8 @@
 import dayjs from "dayjs";
 import { getFileInfo, getFileList, getUserCapacity, sendPatchViewSync } from "../../api/api.ts";
 import { ExplorerView, FileResponse, FileType, ListResponse, Metadata } from "../../api/explorer.ts";
+import { ConnectedCode, inConnectedStorage } from "../../api/connected.ts";
+import { AppError } from "../../api/request.ts";
 import { getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { ListViewColumnSetting } from "../../component/FileManager/Explorer/ListView/Column.tsx";
 import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
@@ -219,10 +221,27 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
       // sort by localCompare, if all files in current page is loaded, and sortBy is name.
       const sortBy = listRes.view ? listRes.view.order : currentView?.order;
       const orderDirection = listRes.view ? listRes.view.order_direction : currentView?.order_direction;
-      if (sortBy == "name" && !getPaginationState(list?.pagination).moreItems) {
+      // Fylvo: only a listing that is complete in this answer; a cursor listing continues in
+      // the server's order, which a local order of its first page would break.
+      if (
+        sortBy == "name" &&
+        !getPaginationState(list?.pagination).moreItems &&
+        !opt?.next_page &&
+        !listRes.pagination.next_token
+      ) {
         listRes.files = sortByLocalCompare(listRes.files, listRes.mixed_type, orderDirection == "desc");
       }
     } catch (e) {
+      if (
+        opt?.next_page &&
+        e instanceof AppError &&
+        e.code == ConnectedCode.ListingGone &&
+        currentGeneration == generation
+      ) {
+        // Fylvo: the server no longer keeps this listing (connected storage); start again.
+        dispatch(setFmLoading({ index, value: false }));
+        return dispatch(navigateReconcile(index));
+      }
       if (currentGeneration == generation) {
         dispatch(
           setFmError({
@@ -641,7 +660,8 @@ export function openAdvancedSearch(index: number, initialKeywords?: string): App
     dispatch(
       setAdvanceSearch({
         open: true,
-        basePath: current_base ?? defaultPath,
+        // Fylvo: a connected storage cannot be searched yet; start in the own files.
+        basePath: current_base && !inConnectedStorage(current_base) ? current_base : defaultPath,
         nameCondition: initialKeywords != undefined ? initialKeywords.split(SPACE_RE).filter((x) => x) : undefined,
       }),
     );
@@ -747,7 +767,10 @@ export function syncViewSettings(
     const shouldUpdatedView =
       currentLogin &&
       !currentLogin.user.disable_view_sync &&
-      (parent?.owned || crUri.fs() == Filesystem.trash || crUri.fs() == Filesystem.shared_with_me);
+      (parent?.owned ||
+        crUri.fs() == Filesystem.trash ||
+        crUri.fs() == Filesystem.shared_with_me ||
+        crUri.fs() == Filesystem.connected);
 
     const currentView: ExplorerView = {
       page_size: Math.max(MinPageSize, pageSize(fm)),

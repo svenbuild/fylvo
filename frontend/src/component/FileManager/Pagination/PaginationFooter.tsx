@@ -35,7 +35,8 @@ export const getPaginationState = (pagination?: PaginationResults) => {
 
   const currentPage = (page ?? 0) + 1;
   const totalPages = Math.ceil((totalItems ?? 1) / (pageSize && pageSize > 0 ? pageSize : MinPageSize));
-  const usePagination = totalPages > 1;
+  // A cursor cannot jump to a page, so its listings always load more as they scroll.
+  const usePagination = !pagination?.is_cursor && totalPages > 1;
   return {
     currentPage,
     totalPages,

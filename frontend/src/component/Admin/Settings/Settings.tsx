@@ -24,6 +24,8 @@ import ServerSetting from "./Server/ServerSetting.tsx";
 import SettingsWrapper from "./SettingWrapper.tsx";
 import SiteInformation from "./SiteInformation/SiteInformation.tsx";
 import UserSession from "./UserSession/UserSession.tsx";
+import ConnectedProviders from "./Connected/ConnectedProviders.tsx";
+import CloudOutlined from "../../Icons/CloudOutlined.tsx";
 
 export const StyledInputAdornment = styled(InputAdornment)(({ theme }) => ({
   fontSize: theme.typography.body2.fontSize,
@@ -77,6 +79,7 @@ export enum SettingsPageTab {
   Queue = "queue",
   Appearance = "appearance",
   Server = "server",
+  Connected = "connected",
 }
 
 const Settings = () => {
@@ -126,6 +129,11 @@ const Settings = () => {
           label: t("nav.server"),
           value: SettingsPageTab.Server,
           icon: <Server />,
+        },
+        {
+          label: t("connected.title"),
+          value: SettingsPageTab.Connected,
+          icon: <CloudOutlined />,
         },
       ],
     );
@@ -317,6 +325,7 @@ const Settings = () => {
                   <ServerSetting />
                 </SettingsWrapper>
               )}
+              {tab === SettingsPageTab.Connected && <ConnectedProviders />}
             </Box>
           </CSSTransition>
         </SwitchTransition>

@@ -7,6 +7,7 @@ import { closeSidebar } from "../../../redux/globalStateSlice.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { SideBarProps } from "./Sidebar.tsx";
 import SidebarContent from "./SidebarContent.tsx";
+import { rowUnsupported } from "../Connected/ConnectedMark.tsx";
 
 const Transition = forwardRef(function Transition(
   props: TransitionProps & {
@@ -43,7 +44,10 @@ const SidebarDialog = ({ inPhotoViewer }: SideBarProps) => {
       if (typeof sidebarTarget === "string") {
       } else {
         setTarget(sidebarTarget);
-        loadExtendedInfo(sidebarTarget.path);
+        // Fylvo: a row of a connected storage that cannot be used has no details to load.
+        if (!rowUnsupported(sidebarTarget)) {
+          loadExtendedInfo(sidebarTarget.path);
+        }
       }
     } else {
       setTarget(null);
