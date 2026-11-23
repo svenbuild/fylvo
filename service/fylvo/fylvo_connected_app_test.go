@@ -417,15 +417,26 @@ func TestAppStartTakesOnlyItsOwnButton(t *testing.T) {
 	require.Equal(t, http.StatusGone, upload("text/plain", "confirm="+hidden).Code)
 	require.Equal(t, http.StatusGone, upload("application/x-www-form-urlencoded", "pad="+strings.Repeat("a", 8192)+"&confirm="+hidden).Code)
 	require.Equal(t, http.StatusSeeOther, upload("application/x-www-form-urlencoded; charset=UTF-8", "confirm="+hidden).Code)
-	// A request without the cookie or from elsewhere is answered without a look at its body.
-	for _, site := range []string{"same-origin", "cross-site"} {
+	// A request without the cookie of the browser that owns the ticket, or from
+	// elsewhere, is answered without a look at its body.
+	for _, who := range []string{"no cookie", "a made-up cookie", "cross-site", "not a form", "an upload"} {
 		unread := httptest.NewRecorder()
 		c, engine := gin.CreateTestContext(unread)
 		engine.ContextWithFallback = true
 		c.Request = httptest.NewRequest("POST", startPath+ticket, readFails{t})
 		c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		c.Request.Header.Set("Sec-Fetch-Site", site)
-		if site == "cross-site" {
+		c.Request.Header.Set("Sec-Fetch-Site", "same-origin")
+		switch who {
+		case "a made-up cookie":
+			c.Request.AddCookie(&http.Cookie{Name: hashedName(connectedConfirmCookie, ticket), Value: "made-up"})
+		case "cross-site":
+			c.Request.Header.Set("Sec-Fetch-Site", "cross-site")
+		case "not a form":
+			c.Request.Header.Set("Content-Type", "text/plain")
+		case "an upload":
+			c.Request.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+		}
+		if who != "no cookie" && who != "a made-up cookie" {
 			for _, cookie := range b.cookies {
 				c.Request.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
 			}
@@ -535,7 +546,8 @@ func TestAppCallbackPages(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	checkPageHeaders(t, rec)
 	require.Empty(t, rec.Header().Get("Location"))
-	require.Contains(t, rec.Body.String(), "This sign-in was not started in this browser.")
+	stranger := rec.Body.String()
+	require.Contains(t, stranger, "The sign-in is no longer valid.")
 	require.NotContains(t, rec.Body.String(), attempt)
 	require.NotContains(t, rec.Body.String(), "alex")
 	require.Equal(t, "fylvo://connected", link(t, rec.Body.String()))
@@ -544,7 +556,7 @@ func TestAppCallbackPages(t *testing.T) {
 	rec = b.get(callbackPath + "?state=" + url.QueryEscape(state) + "&code=granted")
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Empty(t, rec.Header().Get("Location"))
-	require.Contains(t, rec.Body.String(), "The sign-in is no longer valid.")
+	require.Equal(t, stranger, rec.Body.String(), "the page does not tell whether the state was still there")
 	require.Equal(t, "fylvo://connected", link(t, rec.Body.String()))
 	c, _ := e.as(e.alex, "GET", "/api/v4/fylvo/connected")
 	list, err := ConnectedList(c)
@@ -760,6 +772,37 @@ func TestAppSigninUnavailable(t *testing.T) {
 		t.Setenv(connected.EnvAppSignin, "1")
 		e := newAppEnv(t, "https://cloud.example.com")
 		e.authorize(e.alex, "")
+	})
+
+	// An address that spells out the port of its scheme is the same address: a request
+	// to it is not taken for one to the first address.
+	t.Run("addresses with their default port", func(t *testing.T) {
+		e := newAppEnv(t, "https://cloud.example.com:443,https://files.example.com:443,http://lan.example.com:80,https://[2001:db8::1]:8443")
+		at := func(host string) *gin.Context {
+			c, _ := e.as(e.alex, "GET", "/api/v4/fylvo/connected")
+			util.WithValue(c, requestinfo.RequestInfoCtx{}, &requestinfo.RequestInfo{Host: host})
+			return c
+		}
+		for host, want := range map[string][2]bool{ // app sign-in here, first address
+			"cloud.example.com":      {true, true},
+			"cloud.example.com:443":  {true, true},
+			"CLOUD.example.com":      {true, true},
+			"files.example.com":      {true, false},
+			"files.example.com:443":  {true, false},
+			"lan.example.com":        {false, false},
+			"lan.example.com:80":     {false, false},
+			"[2001:db8::1]:8443":     {true, false},
+			"cloud.example.com:8443": {true, true}, // none of the addresses: as the first
+			"unknown.example.net":    {true, true},
+		} {
+			c := at(host)
+			require.Equal(t, want[0], appSigninHere(c, e.dep), host)
+			require.Equal(t, want[1], underFirstAddress(c, e.dep), host)
+		}
+		elsewhere := e.browser()
+		elsewhere.host = "files.example.com"
+		require.Equal(t, http.StatusNotFound, elsewhere.get(startPath+strings.Repeat("A", 43)).Code)
+		require.Equal(t, http.StatusNotFound, elsewhere.get(callbackPath+"?state=a.x&code=y").Code)
 	})
 
 	t.Run("another address of the installation", func(t *testing.T) {

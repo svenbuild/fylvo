@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudreve/Cloudreve/v4/ent"
+	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/stretchr/testify/require"
 )
@@ -808,17 +810,32 @@ func TestManagerAppStartChecksAgain(t *testing.T) {
 			first <- answer{address, err}
 		}()
 		<-inside
+		asked := make(chan struct{})
 		go func() {
-			address, _, _, err := f.StartTicket(ctx, ticket, confirm, testRedirect, func(context.Context, int) error { return ErrNotAllowed })
+			address, _, _, err := f.StartTicket(ctx, ticket, confirm, testRedirect, func(context.Context, int) error {
+				close(asked)
+				return ErrNotAllowed
+			})
 			second <- answer{address, err}
 		}()
-		time.Sleep(50 * time.Millisecond)
+		// While the first is in its checks the second does not get to its own.
+		select {
+		case <-asked:
+			t.Fatal("the second press checked the ticket while the first was at it")
+		case <-time.After(200 * time.Millisecond):
+		}
 		close(release)
 		a, b := <-first, <-second
 		require.NoError(t, a.err)
 		require.NoError(t, b.err)
 		require.Equal(t, a.address, b.address)
 		require.Len(t, f.flow.states, 1)
+		// It found the sign-in of the first and never asked.
+		select {
+		case <-asked:
+			t.Fatal("the second press checked a ticket that was used already")
+		default:
+		}
 	})
 
 	t.Run("account being removed", func(t *testing.T) {
@@ -972,6 +989,47 @@ func TestManagerAppReconnect(t *testing.T) {
 	require.NoError(t, f.Disconnect(ctx, 7, storage.ID))
 	_, err = f.Finish(ctx, 7, code, appVerifier)
 	require.ErrorIs(t, err, ErrNoStorage)
+}
+
+// renewLosesItsAnswer stores a renewed token and then fails to read the row back.
+type renewLosesItsAnswer struct {
+	inventory.ConnectedStorageClient
+}
+
+func (r renewLosesItsAnswer) Renew(ctx context.Context, id, generation int, args *inventory.RenewConnectedStorageArgs) (*ent.ConnectedStorage, bool, error) {
+	_, ok, err := r.ConnectedStorageClient.Renew(ctx, id, generation, args)
+	if ok && err == nil {
+		err = errors.New("the connection to the database broke")
+	}
+	return nil, ok, err
+}
+
+// A reconnect whose token is stored and whose answer is then lost: the app asks again
+// and gets the storage, not "expired".
+func TestManagerAppReconnectStoredButUnanswered(t *testing.T) {
+	f := newManagerFixture(t)
+	ctx := context.Background()
+	f.setUp(t)
+	storage, err := f.connect(t, 7, "")
+	require.NoError(t, err)
+	code := f.appSignIn(t, 7, storage.ID)
+
+	working := f.storages
+	before, err := working.Get(ctx, 7, storage.ID)
+	require.NoError(t, err)
+	f.storages = renewLosesItsAnswer{working}
+	_, err = f.Finish(ctx, 7, code, appVerifier)
+	require.Equal(t, serializer.CodeDBError, appCodeOf(err))
+	f.storages = working
+
+	again, err := f.Finish(ctx, 7, code, appVerifier)
+	require.NoError(t, err)
+	require.Equal(t, storage.ID, again.ID)
+	// It was stored once: one generation further, and what ran with the old token ended.
+	require.Equal(t, []string{storage.ID}, f.closed)
+	row, err := working.Get(ctx, 7, storage.ID)
+	require.NoError(t, err)
+	require.Equal(t, before.Generation+1, row.Generation)
 }
 
 // An account that signed in at the provider already cannot be connected twice, from an

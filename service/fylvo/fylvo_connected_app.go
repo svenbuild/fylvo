@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
+	"github.com/cloudreve/Cloudreve/v4/pkg/auth/requestinfo"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/gin-gonic/gin"
@@ -48,17 +50,46 @@ const (
 	connectedFormSize = 4096
 )
 
+// siteAddress returns the address of the installation this request came under, and
+// whether that is its first one. The host of the request is compared by name and port,
+// so an address that spells out the port of its scheme is found too. A request under a
+// host that is none of the installation's addresses counts as its first address, as
+// everywhere in the server.
+func siteAddress(c *gin.Context, dep dependency.Dep) (address *url.URL, first bool) {
+	primary := primarySiteURL(c, dep)
+	info := requestinfo.RequestInfoFromContext(c)
+	if info == nil || info.Host == "" {
+		return primary, true
+	}
+	name, port := info.Host, ""
+	if h, p, err := net.SplitHostPort(info.Host); err == nil {
+		name, port = h, p
+	}
+	name = strings.Trim(name, "[]")
+	for i, u := range dep.SettingProvider().AllSiteURLs(c) {
+		if !strings.EqualFold(name, u.Hostname()) {
+			continue
+		}
+		// Without a port the request came to the one of the scheme.
+		if port == portOf(u) || (port == "" && portOf(u) == portOf(&url.URL{Scheme: u.Scheme})) {
+			return u, i == 0
+		}
+	}
+	return primary, true
+}
+
 // appSigninHere tells whether apps can connect storages through the address this request
-// came under. A request under a host that is none of the installation's addresses counts
-// as its first address, as everywhere in the server.
+// came under.
 func appSigninHere(c *gin.Context, dep dependency.Dep) bool {
-	return connected.AppSignin(primarySiteURL(c, dep), dep.SettingProvider().SiteURL(c))
+	current, _ := siteAddress(c, dep)
+	return connected.AppSignin(primarySiteURL(c, dep), current)
 }
 
 // underFirstAddress tells whether this request came under the first site address, the
 // one the cookies of the flow are for and the provider sends the browser back to.
 func underFirstAddress(c *gin.Context, dep dependency.Dep) bool {
-	return dep.SettingProvider().SiteURL(c).Host == primarySiteURL(c, dep).Host
+	_, first := siteAddress(c, dep)
+	return first
 }
 
 // authorizeApp keeps the sign-in an app asks for and answers the address of its start
@@ -178,9 +209,10 @@ func ConnectedStart(c *gin.Context) {
 
 	// The button. It counts only from the browser that owns the ticket, from the form
 	// of the page above, and from that page: no other site can send it for the user.
-	// Nothing of the body is read before the cookie and the origin are there, and then
-	// only as much as the form of the page can be.
-	if cookie == "" || !ownOrigin(c, primarySiteURL(c, dep)) ||
+	// Nothing of the body is read for anybody else: the cookie has to be the one of the
+	// browser that owns the ticket and the origin has to be there first, and then only
+	// as much is read as the form of the page can be.
+	if !m.OwnsTicket(ticket, cookie) || !ownOrigin(c, primarySiteURL(c, dep)) ||
 		!strings.HasPrefix(c.ContentType(), "application/x-www-form-urlencoded") {
 		page.invalid()
 		return
@@ -248,8 +280,9 @@ func connectedAppCallback(c *gin.Context, dep dependency.Dep) {
 		// This browser is the one that confirmed, and the sign-in ended.
 		page.ended(http.StatusOK, out.Attempt, connected.FlowErrorCode(err))
 	default:
-		// Nothing about the attempt is proven: the link back names none.
-		page.unproven(connected.FlowErrorCode(err))
+		// Nothing about the attempt is proven: the link back names none, and the page
+		// is the same whether the state was still there or not.
+		page.unproven()
 	}
 }
 
@@ -323,7 +356,6 @@ var connectedPageTexts = []*connectedTexts{
 			"expired":     "The sign-in is no longer valid. Go back to the app and start again.",
 			"not_allowed": "This account may not connect storages.",
 			"too_many":    "This account has as many connected storages as it can have.",
-			"browser":     "This sign-in was not started in this browser. Go back to the app and start again.",
 		},
 	},
 	{
@@ -357,7 +389,6 @@ var connectedPageTexts = []*connectedTexts{
 			"expired":     "Die Anmeldung ist nicht mehr gültig. Geh zurück zur App und starte neu.",
 			"not_allowed": "Dieses Konto darf keine Speicher verbinden.",
 			"too_many":    "Dieses Konto hat bereits so viele verbundene Speicher wie möglich.",
-			"browser":     "Diese Anmeldung wurde nicht in diesem Browser gestartet. Geh zurück zur App und starte neu.",
 		},
 	},
 }
@@ -486,8 +517,8 @@ func (p *connectedPage) invalid() { p.plain(http.StatusGone, p.data.T.Invalid) }
 func (p *connectedPage) unavailable() { p.plain(http.StatusNotFound, p.data.T.Unavailable) }
 
 // unproven: the sign-in ended and nothing ties this browser to an attempt.
-func (p *connectedPage) unproven(reason string) {
-	p.plain(http.StatusOK, p.reason(reason))
+func (p *connectedPage) unproven() {
+	p.plain(http.StatusOK, p.reason(connected.ReasonExpired))
 }
 
 func (p *connectedPage) reason(reason string) string {

@@ -451,6 +451,12 @@ func (m *Manager) AuthorizeApp(ctx context.Context, userID int, provider, reconn
 	return ticket, attempt, startError(err)
 }
 
+// OwnsTicket tells whether a browser shows the cookie of the one that owns a ticket.
+func (m *Manager) OwnsTicket(ticket, cookie string) bool {
+	_, err := m.flow.Check(ticket, cookie)
+	return err == nil
+}
+
 // OpenTicket answers a browser that asks for the start page of a ticket (see Flow.Open).
 func (m *Manager) OpenTicket(ticket, cookie string) (view *TicketView, confirm string, err error) {
 	return m.flow.Open(ticket, cookie)
@@ -654,16 +660,15 @@ func (m *Manager) Finish(ctx context.Context, userID int, code, verifier string)
 	if err != nil {
 		return nil, flowError(err)
 	}
-	storage, err := m.store(ctx, userID, granted)
-	if err == nil {
-		m.flow.Remember(code, granted, storage.ID)
-	}
-	return storage, err
+	// The receipt is written the moment the storage is kept, also when something after
+	// that fails: the app that asks again then gets the storage instead of "expired".
+	return m.store(ctx, userID, granted, func(id string) { m.flow.Remember(code, granted, id) })
 }
 
 // store keeps the token of a finished sign-in: for the connection it renews, or as a new
-// connection. The caller holds m.mu.
-func (m *Manager) store(ctx context.Context, userID int, granted *Granted) (*Storage, error) {
+// connection. kept is told the id of the storage once it is stored for good. The caller
+// holds m.mu.
+func (m *Manager) store(ctx context.Context, userID int, granted *Granted, kept func(id string)) (*Storage, error) {
 	props := &types.ConnectedStorageProps{
 		DriveID:   granted.Identity.Props["drive_id"],
 		DriveType: granted.Identity.Props["drive_type"],
@@ -692,6 +697,8 @@ func (m *Manager) store(ctx context.Context, userID int, granted *Granted) (*Sto
 			Props:   props,
 		})
 		if ok {
+			// The new token is stored, whatever becomes of reading the row back.
+			kept(row.PublicID)
 			// What ran with the old token ends here, whatever else went wrong.
 			m.closeLive(row.PublicID)
 			if m.hooks.Closed != nil {
@@ -712,7 +719,11 @@ func (m *Manager) store(ctx context.Context, userID int, granted *Granted) (*Sto
 		return storageOf(renewed), nil
 	}
 
-	return m.createLocked(ctx, userID, granted.Provider, granted.Identity, granted.Token, props)
+	storage, err := m.createLocked(ctx, userID, granted.Provider, granted.Identity, granted.Token, props)
+	if err == nil {
+		kept(storage.ID)
+	}
+	return storage, err
 }
 
 // Create stores a new connection of an account from a token its provider granted. The
