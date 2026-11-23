@@ -2,7 +2,8 @@ import { FileResponse } from "../../api/explorer.ts";
 import SessionManager from "../../session";
 
 // Fylvo: the last own action in the file manager, for Ctrl+Z. Only one step is kept. Actions
-// that cannot be undone cleanly (copies, final deletes, failed actions, anything in a connected
+// that cannot be undone cleanly but change the files (uploads, copies, new files or folders,
+// restores, final deletes, failed actions, anything in a connected
 // storage) are kept as "none", so Ctrl+Z never reaches back past them to an older action.
 export type UndoEntry =
   // file is the renamed file as the server returned it.

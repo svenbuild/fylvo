@@ -1003,6 +1003,8 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
 export function restoreFile(index: number, src: FileResponse[]): AppThunk {
   return async (dispatch, _getState) => {
     dispatch(closeContextMenu({ index, value: undefined }));
+    // Fylvo: changes the files, cannot be undone with Ctrl+Z (not recorded while an undo runs).
+    rememberUndo({ kind: "none" });
 
     let success = true;
     try {
@@ -1038,6 +1040,8 @@ export function emptyTrash(index: number): AppThunk {
       return;
     }
 
+    // Fylvo: cannot be undone with Ctrl+Z.
+    rememberUndo({ kind: "none" });
     let success = true;
     try {
       await longRunningTaskWithSnackbar(dispatch(sendEmptyTrash()), "application:modals.processingDeletion");
@@ -1430,6 +1434,8 @@ export function submitCreateNew(index: number, name: string, type: number): AppT
         err_on_conflict: true,
       }),
     );
+    // Fylvo: a new file or folder cannot be undone with Ctrl+Z.
+    rememberUndo({ kind: "none" });
 
     // if name does not contain "/", append cache
     if (name.includes("/")) {

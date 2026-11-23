@@ -1319,7 +1319,7 @@
     "cannotDelete": "Diese Dateien lassen sich nicht löschen.",
     "cannotRename": "Umbenennen geht nur bei einer einzelnen Datei, die geändert werden darf.",
     "nothingToUndo": "Nichts rückgängig zu machen.",
-    "cannotUndo": "Die letzte Aktion lässt sich nicht rückgängig machen. Kopieren und endgültiges Löschen gehen nicht.",
+    "cannotUndo": "Die letzte Aktion lässt sich nicht rückgängig machen. Hochladen, Kopieren, Neuanlegen und endgültiges Löschen gehen nicht.",
     "notInTrash": "Die Dateien sind nicht mehr im Papierkorb. Nichts wurde wiederhergestellt.",
     "changedSince": "Die Dateien haben sich seither geändert. Nichts wurde rückgängig gemacht."
   }
