@@ -6,10 +6,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/application/constants"
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
+	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster/routes"
@@ -19,6 +22,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
+	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -432,12 +436,40 @@ func ConnectedOfficePut(c *gin.Context) {
 		return
 	}
 
-	row, err := o.req.m.OfficeSave(o.req.ctx, o.req.conn, o.session, movingBody(c, c.Request.Body), size)
+	var body io.Reader = movingBody(c, c.Request.Body)
+	// The last save of a window that is closing: after it nobody is there to be asked.
+	// It is taken in whole first, so that it can still be kept if it meets a conflict.
+	var last *os.File
+	if officeExitSave(c) {
+		kept, err := spoolOffice(body, size)
+		if err != nil {
+			connectedOfficeError(c, err)
+			return
+		}
+		defer func() {
+			_ = kept.Close()
+			_ = os.Remove(kept.Name())
+		}()
+		last, body = kept, kept
+	}
+
+	row, err := o.req.m.OfficeSave(o.req.ctx, o.req.conn, o.session, body, size)
 	var app serializer.AppError
 	if errors.As(err, &app) && app.Code == serializer.CodeStaleVersion {
-		// The file is no longer the version this editor read. The body is what the
-		// Office server understands as "the document changed in storage": it asks the
-		// user instead of trying again.
+		if last != nil {
+			// What the user wrote is not thrown away with the window: it is stored as a
+			// new file beside the one that changed, and the editor is told it is saved.
+			if beside, err := o.req.m.OfficeKeepBeside(o.req.ctx, o.req.conn, o.session, last, size, officeConflictWord(o.req.user)); err == nil {
+				logging.FromContext(c).Info("Connected storage: the last save of an editor met a changed file and was kept as a copy beside it.")
+				c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(beside.ModTime)})
+				return
+			}
+			// It could not be kept either (no room, the folder is gone): the conflict
+			// is all there is to say.
+		}
+		// The file is no longer the version this editor read, or no longer where it
+		// was. The body is what the Office server understands as "the document
+		// changed in storage": it asks the user instead of trying again.
 		c.Header(wopi.ServerErrorHeader, "document changed in storage")
 		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"COOLStatusCode": 1010, "LOOLStatusCode": 1010})
 		return
@@ -448,6 +480,48 @@ func ConnectedOfficePut(c *gin.Context) {
 	}
 	c.Header(wopi.ItemVersionHeader, connected.VersionID(o.req.conn.ID, row))
 	c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(row.ModTime)})
+}
+
+// officeExitSave tells whether the Office server marks a save as the last one of a
+// document whose last window was closed.
+func officeExitSave(c *gin.Context) bool {
+	for _, name := range []string{"X-COOL-WOPI-IsExitSave", "X-LOOL-WOPI-IsExitSave"} {
+		if strings.EqualFold(c.GetHeader(name), "true") {
+			return true
+		}
+	}
+	return false
+}
+
+// spoolOffice takes a body of the given size into a file of its own, to be read again.
+// The caller closes and removes it.
+func spoolOffice(body io.Reader, size int64) (*os.File, error) {
+	kept, err := os.CreateTemp("", "fylvo-office-*")
+	if err != nil {
+		return nil, serializer.NewError(serializer.CodeIOFailed, "Failed to take in the document", err)
+	}
+	n, err := io.Copy(kept, io.LimitReader(body, size))
+	if err == nil && n != size {
+		err = io.ErrUnexpectedEOF
+	}
+	if err == nil {
+		_, err = kept.Seek(0, io.SeekStart)
+	}
+	if err != nil {
+		_ = kept.Close()
+		_ = os.Remove(kept.Name())
+		return nil, serializer.NewError(serializer.CodeIOFailed, "Failed to take in the document", err)
+	}
+	return kept, nil
+}
+
+// officeConflictWord is the word in the name of a copy kept after a conflict, in the
+// language of the account as far as the server knows it.
+func officeConflictWord(u *ent.User) string {
+	if u != nil && u.Settings != nil && strings.HasPrefix(strings.ToLower(u.Settings.Language), "de") {
+		return "Konflikt"
+	}
+	return "conflict"
 }
 
 // ConnectedOfficeOther answers every other call (locks, rename, a copy beside the file):

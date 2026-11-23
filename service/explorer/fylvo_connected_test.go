@@ -49,6 +49,8 @@ type connectedEnv struct {
 	// root is the address of the root of the storage Alex connected.
 	root string
 	id   string
+	// officeHeaders are sent with the calls of the Office server (see office).
+	officeHeaders map[string]string
 }
 
 const connectedTestToken = `{"access_token":"access-1","token_type":"Bearer","refresh_token":"refresh-1","expiry":"2099-01-01T00:00:00Z"}`

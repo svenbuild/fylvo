@@ -8,6 +8,8 @@ import (
 	"errors"
 	"hash"
 	"io"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -434,9 +436,11 @@ func (m *Manager) OfficeRead(ctx context.Context, c *Conn, s *OfficeSession, lim
 // OfficeSave stores new content for the session's file, from one body of the given size.
 // The file is replaced only if the address the session was opened at still leads to its
 // item, in the version this session last read or saved. Otherwise the answer is
-// ErrStale, and stays so until the document is read again. A file that is no longer at
-// its address answers ErrTargetGone. The other errors are those of an upload
-// (ErrOutcomeUnknown included). The caller entered the session.
+// ErrStale, and stays so until the document is read again. That is also the answer for
+// a file that is no longer at its address (renamed, moved, deleted): for the editor all
+// of these are "the document changed in storage", which it can tell its user. The other
+// errors are those of an upload (ErrOutcomeUnknown included). The caller entered the
+// session.
 func (m *Manager) OfficeSave(ctx context.Context, c *Conn, s *OfficeSession, body io.Reader, size int64) (*Row, error) {
 	if !s.Edit {
 		return nil, ErrUnsupported
@@ -463,7 +467,7 @@ func (m *Manager) OfficeSave(ctx context.Context, c *Conn, s *OfficeSession, bod
 		Path: s.Path, Size: size, Replace: true, Previous: s.version, PreviousRequired: true, Item: s.itemID,
 	}, body)
 	var app serializer.AppError
-	if errors.As(err, &app) && app.Code == serializer.CodeStaleVersion {
+	if errors.As(err, &app) && (app.Code == serializer.CodeStaleVersion || app.Code == serializer.CodeUploadTargetGone) {
 		return conflict()
 	}
 	if err != nil {
@@ -474,6 +478,54 @@ func (m *Manager) OfficeSave(ctx context.Context, c *Conn, s *OfficeSession, bod
 	}
 	s.version = VersionID(c.ID, row)
 	return row, nil
+}
+
+// officeCopies is how many names are tried for a copy beside a file.
+const officeCopies = 20
+
+// OfficeKeepBeside stores content as a new file beside the file of the session, in the
+// folder the session was opened in: "letter (word).docx", or with a number when that
+// name is taken. It is for what an editor wanted to save when its file had changed and
+// nobody is left to ask (the window was closed): nothing is replaced, and nothing is
+// lost. body is read from its start for every name that is tried. The caller entered
+// the session.
+func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSession, body io.ReadSeeker, size int64, word string) (*Row, error) {
+	if !s.Edit {
+		return nil, ErrUnsupported
+	}
+	if s.closed.Load() || s.Conn != c.ID || s.Generation != c.Generation {
+		return nil, ErrOfficeGone
+	}
+	folder, name := ParentOf(s.Path)
+	base, ext := name, ""
+	if dot := strings.LastIndex(name, "."); dot > 0 {
+		base, ext = name[:dot], name[dot:]
+	}
+	var err error
+	for n := 1; n <= officeCopies; n++ {
+		copyName := base + " (" + word + ")" + ext
+		if n > 1 {
+			copyName = base + " (" + word + " " + strconv.Itoa(n) + ")" + ext
+		}
+		path := copyName
+		if folder != "" {
+			path = folder + "/" + copyName
+		}
+		if _, err = body.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		var row *Row
+		row, err = m.Save(ctx, c, UploadRequest{Path: path, Size: size}, body)
+		var app serializer.AppError
+		if err == nil {
+			return row, nil
+		}
+		if !errors.As(err, &app) || (app.Code != serializer.CodeObjectExist && app.Code != serializer.CodeNameCaseTaken) {
+			return nil, err
+		}
+		// The name is taken: the next one.
+	}
+	return nil, err
 }
 
 // Save runs a whole upload from one body: the start, every chunk in its order, the
