@@ -470,6 +470,8 @@
     "thumbQuality": "影象質量",
     "thumbQualityDes": "壓縮質量百分比，只針對 jpg 和 webp 格式有效。",
     "thumbGC": "生成完成後立即回收記憶體",
+    "thumbPregen": "在背景產生缺少的縮圖",
+    "thumbPregenDes": "緩慢地逐一產生，最新檔案優先。Office 文件在首次檢視時產生。",
     "captcha": "驗證碼",
     "captchaType": "驗證碼型別",
     "captchaTypeDes": "選擇驗證碼型別和驗證碼服務提供商。",

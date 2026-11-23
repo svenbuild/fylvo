@@ -469,6 +469,8 @@
     "thumbQuality": "이미지 품질",
     "thumbQualityDes": "압축 품질 백분율로, jpg 및 webp 인코딩에만 유효합니다.",
     "thumbGC": "생성 완료 후 즉시 메모리 회수",
+    "thumbPregen": "누락된 썸네일을 백그라운드에서 생성",
+    "thumbPregenDes": "천천히 하나씩, 최신 파일부터. Office 문서는 처음 볼 때 생성합니다.",
     "captcha": "인증 코드",
     "captchaType": "인증 코드 유형",
     "captchaTypeDes": "인증 코드 유형 및 인증 코드 서비스 제공업체를 선택합니다.",

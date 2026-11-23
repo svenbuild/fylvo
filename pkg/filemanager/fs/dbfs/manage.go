@@ -504,6 +504,12 @@ func (f *DBFS) VersionControl(ctx context.Context, path *fs.URI, versionId int, 
 		return nil, err
 	}
 
+	// Fylvo: read again under the lock, so a thumbnail stored just before is removed with the
+	// change of version too (a thumbnail is stored under the same lock).
+	if target, err = f.getFileByPath(ctx, navigator, path); err != nil {
+		return nil, fmt.Errorf("failed to get target file: %w", err)
+	}
+
 	if delete {
 		// Fylvo: removing the part of an upload that never finished is no deleted version.
 		finished := lo.ContainsBy(target.Entities(), func(e fs.Entity) bool {

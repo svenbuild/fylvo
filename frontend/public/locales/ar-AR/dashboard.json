@@ -470,6 +470,8 @@
     "thumbQuality": "الجودة",
     "thumbQualityDes": "نسبة جودة الضغط، صالحة فقط لتنسيقي jpg وwebp.",
     "thumbGC": "تشغيل GC بعد توليد الصورة المصغرة",
+    "thumbPregen": "إنشاء الصور المصغرة المفقودة في الخلفية",
+    "thumbPregenDes": "ببطء، واحدة تلو الأخرى، الملفات الأحدث أولاً. مستندات Office عند أول عرض فقط.",
     "captcha": "CAPTCHA",
     "captchaType": "نوع اختبار CAPTCHA",
     "captchaTypeDes": "اختر نوع CAPTCHA ومزوده.",
