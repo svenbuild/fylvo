@@ -121,6 +121,8 @@ export const ConnectedMaxNameBytes = 64;
 export const ConnectedCode = {
   // Existing code: the account at the provider is already connected.
   ObjectExists: 40004,
+  // Existing code: no preview for this version of the file.
+  NoPreview: 40077,
   Unsupported: 40920,
   Reconnect: 40921,
   Unavailable: 40922,

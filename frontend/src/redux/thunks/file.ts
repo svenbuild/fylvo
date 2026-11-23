@@ -125,7 +125,6 @@ const connectedThumbs = limiter(2);
 // The address of a preview is cheap while the folder's listing is fresh; after that the server
 // looks the file up at the provider again, so those requests are limited as well.
 const connectedThumbAddresses = limiter(3);
-const connectedNoPreview = 40077;
 const connectedThumbTries = 3;
 const connectedThumbPause = 5000;
 const connectedThumbTimeout = 30000;
@@ -221,7 +220,8 @@ function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string |
       // while the version is still wanted.
       for (let i = 0; ; i++) {
         try {
-          const request = () => dispatch(getFileThumb(getFileLinkedUri(file), fileManager[index].list?.context_hint));
+          const request = () =>
+            dispatch(getFileThumb(getFileLinkedUri(file), getState().fileManager[index].list?.context_hint));
           thumb = connected
             ? await connectedThumbAddresses((waited) => (waited && !listed() ? Promise.reject(dropped) : request()))
             : await request();
@@ -259,7 +259,7 @@ function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string |
       // minute (a busy server may have it later); the file entry itself is not touched (an answer
       // that comes late must not bring back an older one). A connected storage that has no
       // preview for this version (40077) is not asked again for it.
-      const none = connected && e instanceof AppError && e.code == connectedNoPreview;
+      const none = connected && e instanceof AppError && e.code == ConnectedCode.NoPreview;
       dispatch(
         setThumbCache({
           index,

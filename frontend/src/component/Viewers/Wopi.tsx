@@ -42,7 +42,10 @@ const refreshFolderIfOpen =
   (folder: string, later: boolean): AppThunk =>
   (dispatch, getState) => {
     const fm = getState().fileManager[FileManagerIndex.main];
-    const busy = Object.keys(fm.selected ?? {}).length > 0 || !!fm.list?.pagination?.next_token;
+    const pagination = fm.list?.pagination;
+    // More than one page: there is a next one, or more rows are shown than one page holds.
+    const pages = !!pagination?.next_token || (fm.list?.files.length ?? 0) > (pagination?.page_size ?? Infinity);
+    const busy = Object.keys(fm.selected ?? {}).length > 0 || pages;
     if (fm.pure_path && new CrUri(fm.pure_path).toString() == folder && !(later && busy)) {
       dispatch(refreshFileList(FileManagerIndex.main));
     }
