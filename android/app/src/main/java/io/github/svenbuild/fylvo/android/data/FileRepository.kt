@@ -110,6 +110,10 @@ class FileRepository(private val api: ApiClient) {
         null
     }
 
+    /** Fylvo 1.6: full-text search, [offset] = hits already shown. */
+    suspend fun fullTextSearch(query: String, offset: Int): io.github.svenbuild.fylvo.android.api.FullTextResult =
+        api.service().fullTextSearch(query, offset).unwrap()
+
     /** Fylvo: one file or folder as the server describes it now. */
     suspend fun folderInfo(uri: String): FileObject = readService(uri).fileInfo(uri).unwrap()
 

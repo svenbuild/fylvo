@@ -214,4 +214,26 @@
     <string name="load_more">Mehr laden</string>
 
     <string name="editor_saving_wait">Wird gespeichert … der Editor schliesst danach.</string>
+
+    <!-- Suche -->
+    <string name="search_in_contents">In Inhalten</string>
+    <string name="search_filters">Filter</string>
+    <string name="search_filters_n">Filter (%1$d)</string>
+    <string name="search_filters_clear">Zurücksetzen</string>
+    <string name="search_filters_apply">Anzeigen</string>
+    <string name="search_kind_replaces_filters">Eine Art zeigt alle Dateien dieser Art; die Filter gelten wieder, wenn sie aus ist.</string>
+    <string name="search_filter_type">Typ</string>
+    <string name="search_type_all">Alle</string>
+    <string name="search_type_files">Dateien</string>
+    <string name="search_type_folders">Ordner</string>
+    <string name="search_filter_modified">Geändert</string>
+    <string name="search_any">Egal</string>
+    <string name="search_size_small">Unter 1 MB</string>
+    <string name="search_size_medium">1 bis 100 MB</string>
+    <string name="search_size_large">Über 100 MB</string>
+    <string name="search_size_huge">Über 1 GB</string>
+    <string name="search_today">Heute</string>
+    <string name="search_7_days">Letzte 7 Tage</string>
+    <string name="search_30_days">Letzte 30 Tage</string>
+    <string name="search_year">Letztes Jahr</string>
 </resources>

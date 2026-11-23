@@ -180,6 +180,10 @@ interface ApiService {
     @PUT("api/v4/user/setting/avatar")
     suspend fun uploadAvatar(@Body image: RequestBody, @Tag session: SessionTag): Response<ApiResponse<Unit>>
 
+    /** Fylvo 1.6: search inside file contents (only when the server has it switched on). */
+    @GET("api/v4/file/search")
+    suspend fun fullTextSearch(@Query("query") query: String, @Query("offset") offset: Int = 0): Response<ApiResponse<FullTextResult>>
+
     // ---- Fylvo 1.6: versions, history, trash (design/android-parity-plan.md, 6 to 8).
 
     @POST("api/v4/file/version/current")

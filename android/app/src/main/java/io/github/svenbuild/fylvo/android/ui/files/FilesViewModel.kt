@@ -169,6 +169,12 @@ data class FilesUiState(
     /** Folder the search is limited to; null = whole drive. */
     val searchScope: String? = null,
     val searchType: Category? = null,
+    /** Fylvo 1.6: filters of the search (type, size, date, tags) and the full-text mode. */
+    val searchFilters: io.github.svenbuild.fylvo.android.util.SearchFilters = io.github.svenbuild.fylvo.android.util.SearchFilters(),
+    val searchFullText: Boolean = false,
+    /** Full-text snippets by path, and how many hits there are in all. */
+    val searchSnippets: Map<String, String> = emptyMap(),
+    val searchFullTextTotal: Long = 0,
     val searchResults: List<FileObject> = emptyList(),
     val searchNextToken: String? = null,
     val searchLoading: Boolean = false,
@@ -1278,7 +1284,23 @@ class FilesViewModel(
     fun openSearch() {
         val s = _state.value
         val scope = if (!s.home && !s.virtual && CrUri.isSearchScope(s.currentUri)) s.currentUri else null
-        _state.value = s.copy(searchQuery = "", searchScope = scope, searchType = null, searchResults = emptyList(), selected = emptySet())
+        _state.value = s.copy(
+            searchQuery = "", searchScope = scope, searchType = null, searchResults = emptyList(), selected = emptySet(),
+            searchFilters = io.github.svenbuild.fylvo.android.util.SearchFilters(), searchFullText = false,
+            searchSnippets = emptyMap(), searchFullTextTotal = 0,
+        )
+    }
+
+    /** Fylvo 1.6: the search's filters. */
+    fun setSearchFilters(filters: io.github.svenbuild.fylvo.android.util.SearchFilters) {
+        _state.value = _state.value.copy(searchFilters = filters)
+        runSearch()
+    }
+
+    /** Fylvo 1.6: search inside file contents instead of names. */
+    fun setSearchFullText(on: Boolean) {
+        _state.value = _state.value.copy(searchFullText = on, searchResults = emptyList(), searchSnippets = emptyMap())
+        runSearch()
     }
 
     fun setSearchScope(folder: String?) {
@@ -1303,16 +1325,44 @@ class FilesViewModel(
         runSearch(debounceMs = 300)
     }
 
+    /**
+     * Fylvo 1.6: the search address with every filter (util/SearchQuery). In full-text mode the
+     * key is "fulltext:<query>" (that search has no address). A category replaces the name on the
+     * server; its results are matched by name in the app ([matchSearch]).
+     */
     private fun searchUri(): String? {
         val s = _state.value
         val q = s.searchQuery?.trim().orEmpty()
-        if (q.isEmpty() || io.github.svenbuild.fylvo.android.util.ShareLinks.looksLikeLink(q)) return null
+        if (io.github.svenbuild.fylvo.android.util.ShareLinks.looksLikeLink(q)) return null
+        if (s.searchFullText) return if (q.length >= 2) "fulltext:$q" else null
         val base = s.searchScope ?: CrUri.MY_PREFIX
-        val encoded = java.net.URLEncoder.encode(q, "UTF-8").replace("+", "%20")
-        return buildString {
-            append(base).append("?name=").append(encoded).append("&case_folding")
-            s.searchType?.filter?.let { append('&').append(it) }
+        val category = s.searchType?.filter?.substringAfter("category=", "")?.ifEmpty { null }
+        return io.github.svenbuild.fylvo.android.util.SearchQuery.build(base, q, s.searchFilters, category)
+    }
+
+    /** Fylvo 1.6: pages asked for by themselves (a category filtered in the app can leave a page short). */
+    private var autoPages = 0
+
+    /** A short filtered list cannot be scrolled to load more: the next pages come by themselves (at most 10). */
+    private fun fillShortPage() {
+        val s = _state.value
+        if (s.searchType != null && s.searchResults.size < 20 && s.searchNextToken != null && autoPages < 10) {
+            autoPages++
+            searchMore()
         }
+    }
+
+    /** Fylvo 1.6: category results hold only names with every word of the query. */
+    private fun matchSearch(files: List<FileObject>): List<FileObject> {
+        val s = _state.value
+        val q = s.searchQuery?.trim().orEmpty()
+        return if (s.searchType != null && q.isNotEmpty()) files.filter { io.github.svenbuild.fylvo.android.util.SearchQuery.matches(it.name, q) } else files
+    }
+
+    /** Fylvo 1.6: one page of the full-text search, as rows and their snippets. */
+    private suspend fun fullTextPage(query: String, offset: Int): Triple<List<FileObject>, Map<String, String>, Long> {
+        val res = repo.fullTextSearch(query, offset)
+        return Triple(res.hits.map { it.file }, res.hits.associate { it.file.path to it.content }, res.total)
     }
 
     private fun runSearch(debounceMs: Long = 0) {
@@ -1326,13 +1376,24 @@ class FilesViewModel(
         searchJob = viewModelScope.launch {
             if (debounceMs > 0) kotlinx.coroutines.delay(debounceMs)
             try {
+                if (uri.startsWith("fulltext:")) {
+                    val (files, snippets, total) = fullTextPage(uri.removePrefix("fulltext:"), 0)
+                    _state.value = _state.value.copy(
+                        searchLoading = false, searchResults = files, searchSnippets = snippets, searchFullTextTotal = total,
+                        searchNextToken = if (files.size < total) "more" else null,
+                    )
+                    prefetchThumbs(files)
+                    return@launch
+                }
                 val res = repo.list(uri, orderBy = "updated_at", orderDirection = "desc")
+                autoPages = 0
                 _state.value = _state.value.copy(
                     searchLoading = false,
-                    searchResults = res.files,
+                    searchResults = matchSearch(res.files),
                     searchNextToken = res.pagination.nextToken,
                 )
                 prefetchThumbs(res.files)
+                fillShortPage()
             } catch (_: CancellationException) {
             } catch (e: Exception) {
                 if (!handleSessionExpiry(e)) _state.value = _state.value.copy(searchLoading = false, searchError = userError(e))
@@ -1348,14 +1409,27 @@ class FilesViewModel(
         _state.value = s.copy(searchLoadingMore = true)
         viewModelScope.launch {
             try {
+                if (uri.startsWith("fulltext:")) {
+                    val shown = _state.value.searchResults
+                    val (files, snippets, total) = fullTextPage(uri.removePrefix("fulltext:"), shown.size)
+                    if (searchUri() != uri) return@launch
+                    val all = shown + files.filter { f -> shown.none { it.path == f.path } }
+                    _state.value = _state.value.copy(
+                        searchLoadingMore = false, searchResults = all,
+                        searchSnippets = _state.value.searchSnippets + snippets, searchFullTextTotal = total,
+                        searchNextToken = if (files.isNotEmpty() && all.size < total) "more" else null,
+                    )
+                    return@launch
+                }
                 val res = repo.list(uri, pageToken = token, orderBy = "updated_at", orderDirection = "desc")
                 // A newer query replaced this one while the page was in flight.
                 if (searchUri() != uri) return@launch
                 _state.value = _state.value.copy(
                     searchLoadingMore = false,
-                    searchResults = _state.value.searchResults + res.files,
+                    searchResults = _state.value.searchResults + matchSearch(res.files),
                     searchNextToken = res.pagination.nextToken,
                 )
+                fillShortPage()
             } catch (e: Exception) {
                 if (searchUri() == uri) {
                     _state.value = _state.value.copy(searchLoadingMore = false, snackbar = failure(e))
@@ -1370,6 +1444,10 @@ class FilesViewModel(
             searchQuery = null,
             searchScope = null,
             searchType = null,
+            searchFilters = io.github.svenbuild.fylvo.android.util.SearchFilters(),
+            searchFullText = false,
+            searchSnippets = emptyMap(),
+            searchFullTextTotal = 0,
             searchResults = emptyList(),
             searchNextToken = null,
             searchLoading = false,

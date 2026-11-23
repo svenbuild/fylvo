@@ -381,3 +381,10 @@ data class ActivityContent(
     val method: String = "",
     val target: String = "",
 )
+
+/** Fylvo 1.6: hits of the full-text search; [FullTextHit.content] marks matches with `<em>`. */
+@Serializable
+data class FullTextResult(val hits: List<FullTextHit> = emptyList(), val total: Long = 0)
+
+@Serializable
+data class FullTextHit(val file: FileObject = FileObject(), val content: String = "")

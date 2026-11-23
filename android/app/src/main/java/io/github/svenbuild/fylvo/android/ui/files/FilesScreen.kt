@@ -888,6 +888,8 @@ fun FilesScreen(
                     }
                 }
                 inSearch -> SearchResults(
+                    fullTextAvailable = accountState.fullTextSearch,
+                    tags = if (prefsState.usable) prefsState.tags.map { it.name } else emptyList(),
                     state = state,
                     viewModel = viewModel,
                     listState = listState,
