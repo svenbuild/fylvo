@@ -344,8 +344,7 @@ export function openAtProvider(index: number, file: FileResponse): AppThunk {
   return async (dispatch) => {
     dispatch(closeContextMenu({ index, value: undefined }));
     // The first one that names an address, as the menu decides whether to show the entry.
-    const url =
-      file.metadata?.[Metadata.connected_external_url] || file.metadata?.[Metadata.connected_provider_url];
+    const url = file.metadata?.[Metadata.connected_external_url] || file.metadata?.[Metadata.connected_provider_url];
     if (url && /^https?:\/\//i.test(url)) {
       window.open(url, "_blank", "noopener,noreferrer");
     }

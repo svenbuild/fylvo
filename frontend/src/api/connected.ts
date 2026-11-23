@@ -258,6 +258,23 @@ export function getConnectedUploadState(session: string): ThunkResponse<Connecte
   };
 }
 
+// How an editor window of a connected storage stands: conflict means it can no longer save,
+// because its file changed elsewhere, and copy is the file next to it that holds what the
+// window wanted to save. The editor itself does not tell the page around it. Errors are left
+// to the caller (40016 when the server no longer knows the window).
+export interface ConnectedOfficeState {
+  conflict: boolean;
+  copy?: FileResponse;
+}
+
+export function getConnectedOfficeState(session: string): ThunkResponse<ConnectedOfficeState> {
+  return async (dispatch) => {
+    return await dispatch(
+      send(`/fylvo/connected/office/${encodeURIComponent(session)}`, { method: "GET" }, quietOpts()),
+    );
+  };
+}
+
 // Errors are left to the caller.
 export function getConnectedAdmin(): ThunkResponse<ConnectedAdminResponse> {
   return async (dispatch) => {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/cloudreve/Cloudreve/v4/ent"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/cloudreve/Cloudreve/v4/ent/group"
@@ -1116,4 +1118,112 @@ func TestConnectedOfficeConflictCopyIsFollowed(t *testing.T) {
 		}
 	}
 	require.Regexp(t, `^letter \(conflict \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d\)\.docx$`, held)
+}
+
+// The web app asks how an editor window stands: whether it can still save, and where
+// what it wanted to save is kept. The question costs nothing and tells nobody else.
+func TestConnectedOfficeState(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	folder := e.sim.AddFolder("", "Docs")
+	id := e.sim.AddFile(folder, "letter.docx", []byte("version one"))
+	res, err := e.officeSession(t, "/Docs/letter.docx", types.ViewerActionEdit)
+	require.NoError(t, err)
+	session, token := res.Session.ID, res.Session.AccessToken
+	read := func() {
+		t.Helper()
+		rec, _ := e.office(ConnectedOfficeGet, http.MethodGet, session, token, nil)
+		require.Equal(t, http.StatusOK, rec.Code)
+	}
+	state := func(u *ent.User, id string) (*ConnectedOfficeStateResponse, error) {
+		return ConnectedOfficeState(e.as(u), id)
+	}
+	calls := func() int {
+		n := 0
+		for _, kind := range []drivetest.Call{drivetest.CallList, drivetest.CallGet, drivetest.CallMedia, drivetest.CallStart, drivetest.CallRange} {
+			n += e.sim.Calls(kind)
+		}
+		return n
+	}
+
+	// Before it read anything, and while it can save: no conflict.
+	got, err := state(e.alex, session)
+	require.NoError(t, err)
+	require.Equal(t, &ConnectedOfficeStateResponse{}, got)
+	read()
+	rec, _ := e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("version two"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	got, err = state(e.alex, session)
+	require.NoError(t, err)
+	require.False(t, got.Conflict)
+	require.Nil(t, got.Copy)
+
+	// The file changes elsewhere and a save is refused: the window cannot save any
+	// more, and the answer names the copy as a row a client can open.
+	e.sim.SetContent(id, []byte("changed at the provider"))
+	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("what the user wrote"))
+	require.Equal(t, http.StatusConflict, rec.Code)
+	before := calls()
+	got, err = state(e.alex, session)
+	require.NoError(t, err)
+	require.True(t, got.Conflict)
+	require.NotNil(t, got.Copy)
+	require.Equal(t, "letter (conflict).docx", got.Copy.Name)
+	require.Equal(t, e.root+"/Docs/letter%20(conflict).docx", got.Copy.Path)
+	require.Equal(t, int(types.FileTypeFile), got.Copy.Type)
+	require.NotEmpty(t, got.Copy.PrimaryEntity)
+	require.Equal(t, before, calls(), "no provider is asked")
+	// The row is the one a listing of the folder shows.
+	e.m.Tree().Forget(e.id)
+	list, err := e.list(e.alex, e.root+"/Docs", 100, "")
+	require.NoError(t, err)
+	for _, f := range list.Files {
+		if f.Name == got.Copy.Name {
+			require.Equal(t, f.ID, got.Copy.ID)
+			require.Equal(t, f.Path, got.Copy.Path)
+			require.Equal(t, f.PrimaryEntity, got.Copy.PrimaryEntity)
+		}
+	}
+	require.Equal(t, []byte("what the user wrote"), e.download(got.Copy.Path))
+
+	// A call of the Office server that runs in the session is not waited for.
+	s, err := e.m.Office(session, token)
+	require.NoError(t, err)
+	leave, err := e.m.OfficeEnter(e.ctx, s)
+	require.NoError(t, err)
+	answered := make(chan error, 1)
+	go func() {
+		_, err := state(e.alex, session)
+		answered <- err
+	}()
+	select {
+	case err := <-answered:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the question waited for the session")
+	}
+	leave()
+
+	// Somebody else, and a session that is not there, get the same answer: nothing.
+	_, err = state(e.sam, session)
+	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
+	_, err = state(e.alex, "no-such-session")
+	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
+
+	// The window reads the document again: it can save, and nothing is told of a copy.
+	read()
+	got, err = state(e.alex, session)
+	require.NoError(t, err)
+	require.Equal(t, &ConnectedOfficeStateResponse{}, got)
+
+	// A storage that is disconnected takes its windows with it.
+	e.sim.SetContent(id, []byte("changed again"))
+	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("more"))
+	require.Equal(t, http.StatusConflict, rec.Code)
+	got, err = state(e.alex, session)
+	require.NoError(t, err)
+	require.True(t, got.Conflict)
+	require.NoError(t, e.m.Disconnect(e.ctx, e.alex.ID, e.id))
+	_, err = state(e.alex, session)
+	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
 }

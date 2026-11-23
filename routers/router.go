@@ -941,6 +941,10 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					middleware.RequiredScopes(types.ScopeFilesRead),
 					controllers.FylvoConnectedUploadState,
 				)
+				fylvoConnected.GET("office/:session",
+					middleware.RequiredScopes(types.ScopeFilesRead),
+					controllers.FylvoConnectedOfficeState,
+				)
 				manage := fylvoConnected.Group("", middleware.RequiredScopes(types.ScopeUserSecurityInfoWrite))
 				manage.POST("authorize",
 					controllers.FromJSON[fylvosvc.ConnectedAuthorizeService](fylvosvc.ConnectedAuthorizeParamCtx{}),

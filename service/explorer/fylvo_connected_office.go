@@ -559,6 +559,35 @@ func officeConflictWord(u *ent.User) string {
 	return "conflict"
 }
 
+// ConnectedOfficeStateResponse tells the web app how an editor window stands.
+type ConnectedOfficeStateResponse struct {
+	// Conflict: the window can no longer save, because its file changed elsewhere. The
+	// Office server tells its user so once, and then sends nothing more of what is typed.
+	Conflict bool `json:"conflict"`
+	// Copy is the file beside the document that holds what the window wanted to save.
+	Copy *FileResponse `json:"copy,omitempty"`
+}
+
+// ConnectedOfficeState answers GET /fylvo/connected/office/:session, for the account the
+// editor window belongs to. The web app asks it while such a window is open: the Office
+// server does not tell the page around it of a conflict. It costs nothing: no provider
+// is asked, and no call of the Office server is waited for.
+func ConnectedOfficeState(c *gin.Context, id string) (*ConnectedOfficeStateResponse, error) {
+	user := inventory.UserFromContext(c)
+	if !mayUseConnected(user) {
+		return nil, connected.ErrNotAllowed
+	}
+	kept, err := connected.For(dependency.FromContext(c)).OfficeConflict(user.ID, id)
+	if err != nil {
+		return nil, err
+	}
+	if kept == nil {
+		return &ConnectedOfficeStateResponse{}, nil
+	}
+	req := &connectedRequest{conn: &connected.Conn{ID: kept.Conn, Provider: kept.Provider}}
+	return &ConnectedOfficeStateResponse{Conflict: true, Copy: connectedFile(req, kept.Row, false)}, nil
+}
+
 // ConnectedOfficeOther answers every other call (locks, rename, a copy beside the file):
 // none of them is offered for a connected storage.
 func ConnectedOfficeOther(c *gin.Context) {
