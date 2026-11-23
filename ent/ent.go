@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/cloudreve/Cloudreve/v4/ent/activity"
+	"github.com/cloudreve/Cloudreve/v4/ent/connectedstorage"
 	"github.com/cloudreve/Cloudreve/v4/ent/davaccount"
 	"github.com/cloudreve/Cloudreve/v4/ent/directlink"
 	"github.com/cloudreve/Cloudreve/v4/ent/entity"
@@ -89,23 +90,24 @@ var (
 func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			activity.Table:      activity.ValidColumn,
-			davaccount.Table:    davaccount.ValidColumn,
-			directlink.Table:    directlink.ValidColumn,
-			entity.Table:        entity.ValidColumn,
-			file.Table:          file.ValidColumn,
-			fsevent.Table:       fsevent.ValidColumn,
-			group.Table:         group.ValidColumn,
-			metadata.Table:      metadata.ValidColumn,
-			node.Table:          node.ValidColumn,
-			oauthclient.Table:   oauthclient.ValidColumn,
-			oauthgrant.Table:    oauthgrant.ValidColumn,
-			passkey.Table:       passkey.ValidColumn,
-			setting.Table:       setting.ValidColumn,
-			share.Table:         share.ValidColumn,
-			storagepolicy.Table: storagepolicy.ValidColumn,
-			task.Table:          task.ValidColumn,
-			user.Table:          user.ValidColumn,
+			activity.Table:         activity.ValidColumn,
+			connectedstorage.Table: connectedstorage.ValidColumn,
+			davaccount.Table:       davaccount.ValidColumn,
+			directlink.Table:       directlink.ValidColumn,
+			entity.Table:           entity.ValidColumn,
+			file.Table:             file.ValidColumn,
+			fsevent.Table:          fsevent.ValidColumn,
+			group.Table:            group.ValidColumn,
+			metadata.Table:         metadata.ValidColumn,
+			node.Table:             node.ValidColumn,
+			oauthclient.Table:      oauthclient.ValidColumn,
+			oauthgrant.Table:       oauthgrant.ValidColumn,
+			passkey.Table:          passkey.ValidColumn,
+			setting.Table:          setting.ValidColumn,
+			share.Table:            share.ValidColumn,
+			storagepolicy.Table:    storagepolicy.ValidColumn,
+			task.Table:             task.ValidColumn,
+			user.Table:             user.ValidColumn,
 		})
 	})
 	return columnCheck(table, column)

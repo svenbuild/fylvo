@@ -16,6 +16,8 @@ type Tx struct {
 	config
 	// Activity is the client for interacting with the Activity builders.
 	Activity *ActivityClient
+	// ConnectedStorage is the client for interacting with the ConnectedStorage builders.
+	ConnectedStorage *ConnectedStorageClient
 	// DavAccount is the client for interacting with the DavAccount builders.
 	DavAccount *DavAccountClient
 	// DirectLink is the client for interacting with the DirectLink builders.
@@ -180,6 +182,7 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.Activity = NewActivityClient(tx.config)
+	tx.ConnectedStorage = NewConnectedStorageClient(tx.config)
 	tx.DavAccount = NewDavAccountClient(tx.config)
 	tx.DirectLink = NewDirectLinkClient(tx.config)
 	tx.Entity = NewEntityClient(tx.config)

@@ -363,6 +363,13 @@ func ErrWithDetails(c context.Context, errCode int, msg string, err error) Respo
 				res.AggregatedError = errs.Expand(c)
 			}
 		}
+
+		// Fylvo: an error that knows data for the client carries it in every answer,
+		// also as one entry of an aggregated error.
+		var detailed interface{ ResponseData() any }
+		if errors.As(err, &detailed) {
+			res.Data = detailed.ResponseData()
+		}
 	}
 
 	// 生产环境隐藏底层报错

@@ -10,6 +10,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -254,34 +255,51 @@ func (s *BatchUserService) Delete(c *gin.Context) error {
 			continue
 		}
 
+		// Fylvo: the storages the account connected go first, tokens included. Should the
+		// rest fail, the account is still there and can connect them again.
+		// From here until the account is gone nothing new is stored for it, so a storage
+		// it finishes connecting at this moment cannot leave a token behind.
+		gone := connected.For(dep).Leaving(id)
+		if err := connected.For(dep).DisconnectUser(c, id); err != nil {
+			gone()
+			ae.Add(strconv.Itoa(id), err)
+			continue
+		}
+
 		fc, tx, ctx, err := inventory.WithTx(c, fileClient)
 		if err != nil {
+			gone()
 			ae.Add(strconv.Itoa(id), serializer.NewError(serializer.CodeDBError, "Failed to start transaction", err))
 			continue
 		}
 
 		uc, _, ctx, err := inventory.WithTx(ctx, userClient)
 		if err != nil {
+			gone()
 			ae.Add(strconv.Itoa(id), serializer.NewError(serializer.CodeDBError, "Failed to start transaction", err))
 			continue
 		}
 
 		if err := fc.DeleteByUser(ctx, id); err != nil {
 			_ = inventory.Rollback(tx)
+			gone()
 			ae.Add(strconv.Itoa(id), serializer.NewError(serializer.CodeDBError, "Failed to delete user files", err))
 			continue
 		}
 
 		if err := uc.Delete(ctx, id); err != nil {
 			_ = inventory.Rollback(tx)
+			gone()
 			ae.Add(strconv.Itoa(id), serializer.NewError(serializer.CodeDBError, "Failed to delete user", err))
 			continue
 		}
 
 		if err := inventory.Commit(tx); err != nil {
+			gone()
 			ae.Add(strconv.Itoa(id), serializer.NewError(serializer.CodeDBError, "Failed to commit transaction", err))
 			continue
 		}
+		gone()
 
 		activity.Record(c, activity.Entry{Type: activity.AccountDelete, UserID: current.ID, OwnerID: id,
 			Content: types.ActivityContent{Target: deleted.Email}})

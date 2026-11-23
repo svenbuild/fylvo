@@ -166,6 +166,11 @@ type (
 
 // List all files for given path
 func (service *ListFileService) List(c *gin.Context) (*ListResponse, error) {
+	// Fylvo: a folder of a connected storage is listed by its own engine.
+	if uri, ok := connectedURI(service.Uri); ok {
+		return connectedList(c, uri, service)
+	}
+
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	m := manager.NewFileManager(dep, user)
@@ -435,6 +440,14 @@ func (s *FileURLService) GetArchiveDownloadSession(c *gin.Context) (*FileURLResp
 }
 
 func (s *FileURLService) Get(c *gin.Context) (*FileURLResponse, error) {
+	// Fylvo: files of a connected storage get their own download addresses. This comes
+	// first: an archive session must never be made for addresses nobody checked.
+	if connectedUris, err := connectedURIs(s.Uris); err != nil {
+		return nil, err
+	} else if connectedUris != nil {
+		return connectedURLs(c, connectedUris, s)
+	}
+
 	if s.Archive {
 		return s.GetArchiveDownloadSession(c)
 	}
@@ -507,6 +520,12 @@ type (
 
 // Get redirect to thumb file.
 func (s *FileThumbService) Get(c *gin.Context) (*FileThumbResponse, error) {
+	// Fylvo: no thumbnails for connected storages yet. The answer tells a client not to
+	// ask again for this version.
+	if _, ok := connectedURI(s.Uri); ok {
+		return nil, fs.ErrEntityNotExist
+	}
+
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	m := manager.NewFileManager(dep, user)
@@ -671,6 +690,12 @@ func (s *GetFileInfoService) Get(c *gin.Context) (*FileResponse, error) {
 		return nil, serializer.NewError(serializer.CodeParamErr, "uri is required", nil)
 	}
 
+	// Fylvo: an entry of a connected storage. Looking one up by id does not exist: the
+	// ids of such entries are no ids of the database.
+	if uri, ok := connectedURI(s.Uri); ok {
+		return connectedInfo(c, uri, s.ExtendedInfo)
+	}
+
 	uri, err := fs.NewUriFromString(s.Uri)
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeParamErr, "unknown uri", err)
@@ -739,6 +764,11 @@ type (
 )
 
 func (s *PatchViewService) Patch(c *gin.Context) error {
+	// Fylvo: the view of a connected storage is kept with the connection.
+	if uri, ok := connectedURI(s.Uri); ok {
+		return connectedPatchView(c, uri, s.View)
+	}
+
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	m := manager.NewFileManager(dep, user)

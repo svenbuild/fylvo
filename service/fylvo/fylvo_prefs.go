@@ -368,7 +368,9 @@ func checkSidebar(items []types.FylvoSidebarItem, pined []types.PinedFile, conne
 // parseLink reads the address of a sidebar link. It is the one place to change when connected
 // storages need their own parser for "connected" addresses.
 func parseLink(raw string) (*fs.URI, error) {
-	return fs.NewUriFromString(raw)
+	// Links may lead into connected storages, which the ordinary parser refuses on
+	// purpose. Such a link is then checked by CheckConnectedLink, never by the file manager.
+	return fs.NewAnyUriFromString(raw)
 }
 
 // normalizedLink returns the address in the form stored in pined, or "" when it is not valid.

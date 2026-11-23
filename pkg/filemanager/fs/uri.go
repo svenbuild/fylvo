@@ -2,6 +2,7 @@ package fs
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"path"
@@ -41,7 +42,33 @@ type URI struct {
 	U *url.URL
 }
 
+// ErrConnectedUri Fylvo: an address inside a connected storage reached code that works on
+// files in the database.
+var ErrConnectedUri = errors.New("addresses of connected storages are not accepted here")
+
+// NewUriFromString parses the address of a file in the database file system.
+//
+// Fylvo: it refuses addresses of connected storages. Their files have no rows in the
+// database, so nothing that parses addresses this way (shares, pins, direct links, archive
+// sessions, tasks, WebDAV accounts, ...) may ever hold one. Code that serves connected
+// storages on purpose uses NewAnyUriFromString.
 func NewUriFromString(u string) (*URI, error) {
+	uri, err := NewAnyUriFromString(u)
+	if err != nil {
+		return nil, err
+	}
+
+	if uri.FileSystem() == constants.FileSystemConnected {
+		return nil, ErrConnectedUri
+	}
+
+	return uri, nil
+}
+
+// NewAnyUriFromString parses an address and also accepts one inside a connected storage
+// (Fylvo). The caller must check FileSystem() before handing the result to the database
+// file system.
+func NewAnyUriFromString(u string) (*URI, error) {
 	raw, err := url.Parse(u)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse uri: %w", err)
@@ -103,6 +130,12 @@ func (u *URI) UnmarshalJSON(text []byte) error {
 	u.U, err = url.Parse(r["uri"])
 	if err != nil {
 		return err
+	}
+
+	// Fylvo: see NewUriFromString. The binary form above is left alone: only the server
+	// itself writes it, and the cache is restored from it in one piece.
+	if u.FileSystem() == constants.FileSystemConnected {
+		return ErrConnectedUri
 	}
 
 	return nil
