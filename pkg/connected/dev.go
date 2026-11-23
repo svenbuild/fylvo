@@ -327,6 +327,15 @@ func devSampleData(s *drivetest.Server) {
 		s.AddFile(many, fmt.Sprintf("File %03d.txt", i), []byte(fmt.Sprintf("File number %d\n", i)))
 	}
 
+	// One more folder with as many files as asked for, to see how the server and the
+	// apps hold up with a very large one.
+	if n, err := strconv.Atoi(os.Getenv(DevEnv + "_FILES")); err == nil && n > 0 {
+		huge := s.AddFolder("", "Huge folder")
+		for i := 1; i <= n; i++ {
+			s.AddFile(huge, fmt.Sprintf("File %06d.txt", i), nil)
+		}
+	}
+
 	s.AddFolder("", "Empty folder")
 	readme := s.AddFile("", "Read me.txt", []byte("Sample data of the simulated provider.\n"))
 	s.AddFile("", "Large file.bin", make([]byte, 2*1024*1024))
