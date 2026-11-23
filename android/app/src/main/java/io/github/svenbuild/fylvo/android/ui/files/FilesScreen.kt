@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.outlined.Link
@@ -160,6 +161,13 @@ fun FilesScreen(
     val groupShare = accountState.group(Permissions.GROUP_SHARE)
     /** Fylvo: the file whose shares are listed ("Manage shares"). */
     var sharesOfTarget by remember { mutableStateOf<FileObject?>(null) }
+    // Fylvo 1.6: the text editor; its view model keeps the text when the phone is turned.
+    val editor = androidx.lifecycle.viewmodel.compose.viewModel(key = "text-editor") {
+        io.github.svenbuild.fylvo.android.ui.editor.TextEditorViewModel(app.texts, app.sessionManager) { f -> viewModel.state.value.editOf(f) != null }
+    }
+    val editorState by editor.state.collectAsState()
+    /** Fylvo 1.6: "New text file" / "New Markdown note" asks for a name first. */
+    var newTextExt by remember { mutableStateOf<String?>(null) }
     /** Fylvo 1.6: a share link that needs its password (kept in memory only). */
     var linkPassword by remember { mutableStateOf<LinkPasswordAsk?>(null) }
     var linkBusy by remember { mutableStateOf(false) }
@@ -992,8 +1000,24 @@ fun FilesScreen(
             onDelete = { preview = null; deleteTarget = it },
             canShare = { Permissions.canShare(it, groupShare) },
             canDelete = Permissions::canModifyFile,
+            canEdit = { f ->
+                Permissions.canSaveContent(f) && io.github.svenbuild.fylvo.android.ui.editor.editableAsText(f) &&
+                    viewModel.state.value.editOf(f) == null && !state.offlineMode
+            },
+            onEdit = { f -> editor.open(io.github.svenbuild.fylvo.android.ui.editor.EditorTarget.Existing(f)) },
         )
       }
+    }
+
+    // Fylvo 1.6: the text editor over everything (also over the preview it was opened from).
+    if (editorState.target != null) {
+        io.github.svenbuild.fylvo.android.ui.editor.TextEditorScreen(editor) { wrote ->
+            editor.close()
+            if (wrote) {
+                preview = null
+                viewModel.refresh()
+            }
+        }
     }
 
     if (addSheetOpen) {
@@ -1017,6 +1041,19 @@ fun FilesScreen(
                 headlineContent = { Text(stringResource(R.string.new_folder)) },
                 leadingContent = { Icon(Icons.Default.CreateNewFolder, contentDescription = null) },
             )
+            // Fylvo 1.6: new text files (the web's templates with content: text and Markdown).
+            if (Permissions.canCreateTextIn(state.parent) && !state.offlineMode) {
+                ListItem(
+                    modifier = Modifier.clickable { addSheetOpen = false; newTextExt = "txt" },
+                    headlineContent = { Text(stringResource(R.string.new_text_file)) },
+                    leadingContent = { Icon(Icons.Outlined.Description, contentDescription = null) },
+                )
+                ListItem(
+                    modifier = Modifier.clickable { addSheetOpen = false; newTextExt = "md" },
+                    headlineContent = { Text(stringResource(R.string.new_markdown_note)) },
+                    leadingContent = { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Outlined.Article, contentDescription = null) },
+                )
+            }
             Box(Modifier.height(24.dp))
         }
     }
@@ -1160,6 +1197,22 @@ fun FilesScreen(
             onDismiss = { movePick = null },
         )
       }
+    }
+
+    newTextExt?.let { ext ->
+        val initial = stringResource(if (ext == "md") R.string.new_note_name else R.string.new_text_name) + "." + ext
+        NameDialog(
+            title = stringResource(if (ext == "md") R.string.new_markdown_note else R.string.new_text_file),
+            label = stringResource(R.string.name),
+            confirm = stringResource(R.string.create),
+            initial = initial,
+            selectEnd = initial.length - ext.length - 1,
+            onConfirm = { name ->
+                newTextExt = null
+                editor.open(io.github.svenbuild.fylvo.android.ui.editor.EditorTarget.New(state.currentUri, name.trim()))
+            },
+            onDismiss = { newTextExt = null },
+        )
     }
 
     if (mkdirOpen) {

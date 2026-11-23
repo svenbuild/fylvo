@@ -109,6 +109,8 @@ dependencies {
     implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
+    // Fylvo 1.6: Markdown preview in the text editor (Apache 2.0; no image module, so no remote images).
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.28.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-video:2.7.0")
 

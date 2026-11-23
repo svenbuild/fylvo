@@ -165,7 +165,7 @@ wie `ShareSetting.tsx`:
   dieselbe Datei-ID ist), "Abbrechen". 40904 (Datei weg): nur "Als Kopie speichern". "Als Kopie"
   lädt den Text als neue Datei hoch (vorhandener Upload-Weg, der nur anlegt: belegter Name = 40004 oder
   40905, dann der nächste Name; wie das Web in verbundenen Speichern, `viewer.ts:511`), Name
-  `<Name> (Kopie <Datum>).<ext>`. 40073 gesperrt, 40049 zu gross: Satz. 40927 (verbundener
+  `<Name> (copy <Datum>).<ext>` (wie die Konfliktkopien der Offline-Bearbeitung). 40073 gesperrt, 40049 zu gross: Satz. 40927 (verbundener
   Speicher, Ausgang unbekannt): Entwurf bleibt, Hinweis, neu laden vor erneutem Versuch. Verbundene
   Speicher nehmen keine leere Datei an: Speichern bei leerem Text dort gesperrt, mit Satz.
 - **Zurück mit ungespeicherten Änderungen:** Speichern / Verwerfen / Weiter bearbeiten.

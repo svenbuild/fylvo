@@ -68,4 +68,30 @@
     <string name="link_password_needed">Diese Freigabe ist mit einem Passwort geschützt.</string>
     <string name="link_password_wrong">Das Passwort passt nicht. Versuche es nochmals.</string>
     <string name="link_upload_password">In einen Link mit Passwort kann die App nicht hochladen.</string>
+
+    <!-- Text-Editor -->
+    <string name="name">Name</string>
+    <string name="new_text_file">Neue Textdatei</string>
+    <string name="new_markdown_note">Neue Markdown-Notiz</string>
+    <string name="new_text_name">Neue Datei</string>
+    <string name="new_note_name">Notiz</string>
+    <string name="editor_preview">Vorschau</string>
+    <string name="editor_edit">Bearbeiten</string>
+    <string name="editor_saved">Gespeichert</string>
+    <string name="editor_not_text">Diese Datei ist kein reiner Text und lässt sich hier nicht bearbeiten.</string>
+    <string name="editor_too_large">Diese Datei ist zu gross, um sie am Handy zu bearbeiten (bis 256 KB).</string>
+    <string name="editor_working_copy">Diese Datei wird gerade in einer anderen App bearbeitet (Bearbeiten). Schliesse das zuerst ab.</string>
+    <string name="editor_empty_connected">Ein verbundener Speicher nimmt keine leere Datei an.</string>
+    <string name="editor_outcome_unknown">Es ist nicht bekannt, ob das Speichern beim Speicher angekommen ist. Dein Text bleibt hier; lade die Datei neu, bevor du nochmals speicherst.</string>
+    <string name="editor_unsaved_title">Änderungen speichern?</string>
+    <string name="editor_unsaved_text">Deine Änderungen sind noch nicht gespeichert.</string>
+    <string name="editor_discard">Verwerfen</string>
+    <string name="editor_keep_editing">Weiter bearbeiten</string>
+    <string name="editor_changed_title">Die Datei wurde inzwischen geändert</string>
+    <string name="editor_changed_text">Jemand hat während deiner Bearbeitung eine neuere Fassung gespeichert. Speichere deinen Text als Kopie, oder ersetze die neuere Fassung.</string>
+    <string name="editor_save_copy">Als Kopie speichern</string>
+    <string name="editor_overwrite">Trotzdem ersetzen</string>
+    <string name="editor_gone_title">Die Datei ist weg</string>
+    <string name="editor_gone_text">Die Datei wurde inzwischen gelöscht oder ersetzt. Speichere deinen Text als Kopie.</string>
+    <string name="editor_name_taken">Dieser Name ist schon vergeben. Wähle einen anderen.</string>
 </resources>

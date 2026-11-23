@@ -55,7 +55,7 @@ object Permissions {
      * upload link have only bit 6 and may not replace.
      */
     fun canSaveContent(file: FileObject): Boolean = when {
-        file.isFolder -> false
+        file.isFolder || CrUri.hasSecret(file.path) -> false
         Connected.isConnected(file.path) -> Connected.canRename(file) && enabled(file.capability, UPLOAD_FILE) &&
             Connected.canDownload(file)
         CrUri.isShare(file.path) -> enabled(file.capability, RENAME_FILE) && enabled(file.capability, UPLOAD_FILE)
@@ -64,7 +64,7 @@ object Permissions {
 
     /** A new text file in [folder]: the same rule as saving content, taken at the folder. */
     fun canCreateTextIn(folder: FileObject?): Boolean = folder != null && folder.isFolder &&
-        !Connected.isConnected(folder.path) && when {
+        !Connected.isConnected(folder.path) && !CrUri.hasSecret(folder.path) && when {
             CrUri.isShare(folder.path) -> enabled(folder.capability, RENAME_FILE) && enabled(folder.capability, UPLOAD_FILE)
             else -> folder.owned == true
         }

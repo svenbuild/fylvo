@@ -68,4 +68,30 @@
     <string name="link_password_needed">This share is protected with a password.</string>
     <string name="link_password_wrong">The password does not fit. Try again.</string>
     <string name="link_upload_password">Uploading into a link with a password is not possible in the app.</string>
+
+    <!-- Text editor -->
+    <string name="name">Name</string>
+    <string name="new_text_file">New text file</string>
+    <string name="new_markdown_note">New Markdown note</string>
+    <string name="new_text_name">New file</string>
+    <string name="new_note_name">Note</string>
+    <string name="editor_preview">Preview</string>
+    <string name="editor_edit">Edit</string>
+    <string name="editor_saved">Saved</string>
+    <string name="editor_not_text">This file is not plain text and cannot be edited here.</string>
+    <string name="editor_too_large">This file is too large to edit on the phone (up to 256 KB).</string>
+    <string name="editor_working_copy">This file is being edited in another app (Edit). Finish that first.</string>
+    <string name="editor_empty_connected">A connected storage does not take an empty file.</string>
+    <string name="editor_outcome_unknown">It is not known whether the save reached the storage. Your text stays here; reload the file before saving again.</string>
+    <string name="editor_unsaved_title">Save changes?</string>
+    <string name="editor_unsaved_text">Your changes are not saved yet.</string>
+    <string name="editor_discard">Discard</string>
+    <string name="editor_keep_editing">Keep editing</string>
+    <string name="editor_changed_title">The file was changed meanwhile</string>
+    <string name="editor_changed_text">Someone saved a newer version while you were editing. Save your text as a copy, or replace the newer version.</string>
+    <string name="editor_save_copy">Save as copy</string>
+    <string name="editor_overwrite">Replace anyway</string>
+    <string name="editor_gone_title">The file is gone</string>
+    <string name="editor_gone_text">The file was deleted or replaced meanwhile. Save your text as a copy.</string>
+    <string name="editor_name_taken">This name is taken. Choose another one.</string>
 </resources>

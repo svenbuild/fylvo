@@ -142,6 +142,18 @@ interface ApiService {
         @Query("owner_extended") ownerExtended: Boolean? = null,
     ): Response<ApiResponse<ShareInfo>>
 
+    /**
+     * Fylvo 1.6: replaces the content of the file at [uri]; with [previous] and [previousRequired]
+     * only while that version is still the current one (40076 otherwise, 40904 when gone).
+     */
+    @PUT("api/v4/file/content")
+    suspend fun putContent(
+        @Query("uri") uri: String,
+        @Query("previous") previous: String?,
+        @Query("previous_required") previousRequired: Boolean?,
+        @Body body: RequestBody,
+    ): Response<ApiResponse<FileObject>>
+
     /** A file with `extended_info` (shares, versions, storage used). */
     @GET("api/v4/file/info")
     suspend fun fileInfoExtended(@Query("uri") uri: String, @Query("extended") extended: Boolean = true): Response<ApiResponse<FileObject>>
