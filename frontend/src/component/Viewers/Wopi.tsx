@@ -74,11 +74,9 @@ const Wopi = () => {
   }, [viewerState?.src, theme]);
 
   // Fylvo: editing in a connected storage: each editor window is a document of its own. The
-  // server may open it for viewing only; the view addresses of the bundled Office viewers say
-  // "permission=readonly" (another WOPI viewer may not, then this counts as editing).
+  // server says whether the session may save (it may open it for viewing only).
   const connected = !!viewerState?.file && inConnectedStorage(viewerState.file.path);
-  const connectedEdit =
-    connected && canEdit && !!replacedSrc && new URL(replacedSrc).searchParams.get("permission") != "readonly";
+  const connectedEdit = connected && (viewerState?.edit ?? canEdit);
 
   const handlePostMessage = (e: MessageEvent) => {
     console.log("Received PostMessage from " + e.origin, e.data);
