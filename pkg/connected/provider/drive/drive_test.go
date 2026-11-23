@@ -159,7 +159,7 @@ func TestVersionWithoutRevision(t *testing.T) {
 	bare := file{ID: "x", MimeType: "text/plain", ModifiedTime: "2026-01-01T00:00:00.000Z"}
 	item, ok = bare.item()
 	require.True(t, ok)
-	assert.Equal(t, "t:2026-01-01T00:00:00.000Z", item.Version)
+	assert.Empty(t, item.Version, "a time alone does not tell whether the bytes changed")
 }
 
 func TestGetTrashedAndUnsupported(t *testing.T) {

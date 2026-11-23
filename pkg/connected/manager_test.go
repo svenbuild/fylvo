@@ -481,7 +481,9 @@ func TestSavingAViewKeepsTheStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, f.SetProviderForTest(ctx, storage.ID, 7))
-	require.NoError(t, f.SetView(ctx, 7, storage.ID, &types.ExplorerView{PageSize: 50}))
+	require.Equal(t, serializer.CodeConnectedBusy, codeOf(f.SetView(ctx, 7, storage.ID, 5, &types.ExplorerView{PageSize: 10})),
+		"a request of another generation")
+	require.NoError(t, f.SetView(ctx, 7, storage.ID, 1, &types.ExplorerView{PageSize: 50}))
 	row, err := f.storages.Get(ctx, 7, storage.ID)
 	require.NoError(t, err)
 	require.Equal(t, inventory.ConnectedStatusReconnect, row.Status)
