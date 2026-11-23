@@ -105,6 +105,7 @@ import {
 } from "./user.ts";
 import {
   ArchiveWorkflowService,
+  ConnectedCopyService,
   DownloadWorkflowService,
   ImportWorkflowService,
   ListTaskService,
@@ -954,6 +955,20 @@ export function sendSetDownloadTarget(id: string, req: SetDownloadFilesService):
         },
       ),
     );
+  };
+}
+
+// Fylvo: starts a copy between Fylvo and connected storages, as a task.
+export function sendConnectedCopy(req: ConnectedCopyService): ThunkResponse<TaskResponse> {
+  return async (dispatch, _getState) => {
+    return await dispatch(send("/workflow/copy", { data: req, method: "POST" }, { ...defaultOpts }));
+  };
+}
+
+// Fylvo: stops a copy between Fylvo and connected storages; what is copied stays.
+export function sendCancelConnectedCopy(id: string): ThunkResponse {
+  return async (dispatch, _getState) => {
+    return await dispatch(send("/workflow/copy/" + id, { method: "DELETE" }, { ...defaultOpts }));
   };
 }
 

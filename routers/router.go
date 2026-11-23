@@ -645,6 +645,18 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					controllers.CancelDownloadTask,
 				)
 			}
+
+			// Fylvo: copy between Fylvo and connected storages, as a task.
+			wf.POST("copy",
+				middleware.RequiredScopes(types.ScopeWorkflowWrite, types.ScopeFilesWrite),
+				controllers.FromJSON[explorer.ConnectedCopyService](explorer.ConnectedCopyParamCtx{}),
+				controllers.CreateConnectedCopy,
+			)
+			wf.DELETE("copy/:id",
+				middleware.RequiredScopes(types.ScopeWorkflowWrite),
+				middleware.HashID(hashid.TaskID),
+				controllers.CancelConnectedCopy,
+			)
 		}
 
 		// 文件

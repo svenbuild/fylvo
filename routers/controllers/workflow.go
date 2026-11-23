@@ -66,3 +66,25 @@ func CancelDownloadTask(c *gin.Context) {
 
 	c.JSON(200, serializer.Response{})
 }
+
+// CreateConnectedCopy starts a copy between Fylvo and connected storages (Fylvo).
+func CreateConnectedCopy(c *gin.Context) {
+	service := ParametersFromContext[*explorer.ConnectedCopyService](c, explorer.ConnectedCopyParamCtx{})
+	resp, err := service.CreateConnectedCopy(c)
+	if err != nil {
+		c.JSON(200, serializer.Err(c, err))
+		c.Abort()
+		return
+	}
+	c.JSON(200, serializer.Response{Data: resp})
+}
+
+// CancelConnectedCopy stops a copy between Fylvo and connected storages (Fylvo).
+func CancelConnectedCopy(c *gin.Context) {
+	if err := explorer.CancelConnectedCopy(c, hashid.FromContext(c)); err != nil {
+		c.JSON(200, serializer.Err(c, err))
+		c.Abort()
+		return
+	}
+	c.JSON(200, serializer.Response{})
+}

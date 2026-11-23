@@ -182,9 +182,19 @@ const PathSelection = () => {
       if (variantProps.disableTrash && crUri.fs() == Filesystem.trash) {
         return true;
       }
+      // Fylvo: a copy goes anywhere; into a connected storage only into a folder that takes new
+      // entries.
+      if (variant == PathSelectionVariantOptions.copy) {
+        if (
+          inConnectedStorage(dst) &&
+          !new Boolset(destinationRow?.capability).enabled(NavigatorCapability.create_file)
+        ) {
+          return true;
+        }
+      }
       // Fylvo: files of a connected storage move only into a folder of the same storage that
       // takes new entries, and nothing goes from elsewhere into a connected storage.
-      if (variant == PathSelectionVariantOptions.move || variant == PathSelectionVariantOptions.copy) {
+      if (variant == PathSelectionVariantOptions.move) {
         if (inConnectedStorage(sourcePath)) {
           if (
             !inConnectedStorage(dst) ||

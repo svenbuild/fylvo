@@ -48,6 +48,18 @@ export function canCopyMoveTo(files: FileResponse[], dst: string, isCopy: boolea
   // Fylvo: a copy goes between the own files and shared folders the user may edit. A move stays
   // inside one share. Whether the destination may be changed is checked by the server.
   if (isCopy) {
+    // Fylvo: a copy that involves a connected storage is a task on the server, which checks
+    // the rest. It reads at the source; nothing there has to be changeable.
+    if (srcUri.fs() == Filesystem.connected || dstUri.fs() == Filesystem.connected) {
+      const readable = (uri: CrUri) =>
+        uri.fs() == Filesystem.connected ||
+        uri.fs() == Filesystem.my ||
+        uri.fs() == Filesystem.share ||
+        uri.fs() == Filesystem.shared_with_me;
+      const writable = (uri: CrUri) =>
+        uri.fs() == Filesystem.connected || uri.fs() == Filesystem.my || uri.fs() == Filesystem.share;
+      return readable(srcUri) && writable(dstUri);
+    }
     const ownOrShared = (uri: CrUri) => uri.fs() == Filesystem.my || uri.fs() == Filesystem.share;
     return ownOrShared(srcUri) && ownOrShared(dstUri) && files.every(canModifyFile);
   }

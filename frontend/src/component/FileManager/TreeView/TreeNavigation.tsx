@@ -13,6 +13,8 @@ import { FmIndexContext } from "../FmIndexContext.tsx";
 import Pinned, { usePinned } from "./Pinned.tsx";
 import TreeFiles from "./TreeFiles.tsx";
 import CustomSidebar from "./CustomSidebar.tsx";
+import { connectedRootUri } from "../../../api/connected.ts";
+import { useConnectedStorages } from "../Connected/useConnectedStorages.ts";
 
 export interface TreeNavigationProps {
   scrollRef?: React.MutableRefObject<HTMLElement | undefined>;
@@ -65,6 +67,7 @@ const TreeNavigation = React.memo(
     }, [showShareTree]);
 
     const isLogin = !!SessionManager.currentLoginOrNull();
+    const connectedStorages = useConnectedStorages(isLogin && index != FileManagerIndex.main);
 
     return (
       <FmIndexContext.Provider value={index}>
@@ -138,6 +141,19 @@ const TreeNavigation = React.memo(
                   {!disableSharedWithMe && (
                     <TreeFiles level={0} path={defaultSharedWithMePath} key={defaultSharedWithMePath} />
                   )}
+                  {/* Fylvo: the connected storages of the account, as targets of a copy or a move. */}
+                  {index != FileManagerIndex.main &&
+                    connectedStorages?.map((s) => {
+                      const root = connectedRootUri(s.id);
+                      return (
+                        <TreeFiles
+                          level={0}
+                          path={root}
+                          key={"connected" + s.id}
+                          elements={base == root ? elements : undefined}
+                        />
+                      );
+                    })}
                   {!disableTrash && (
                     <TreeFiles
                       level={0}

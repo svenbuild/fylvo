@@ -115,6 +115,9 @@ func TestOnlyKnownCodeReadsConnectedAddresses(t *testing.T) {
 		"pkg/filemanager/fs/uri.go":           true, // the parser itself
 		"service/explorer/fylvo_connected.go": true, // hands them to the engine of connected storages
 		"service/fylvo/fylvo_prefs.go":        true, // sidebar links, checked by CheckConnectedLink
+		// The copy task: the addresses were checked when it was made
+		// (service/explorer/fylvo_connected_copy.go), and it hands them to the engine.
+		"pkg/filemanager/workflows/fylvo_connected_copy.go": true,
 	}
 	root := filepath.Join("..", "..", "..")
 	found := map[string]bool{}

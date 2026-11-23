@@ -11,8 +11,9 @@ import {
   Typography,
 } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { TaskResponse, TaskStatus } from "../../../api/workflow.ts";
+import { TaskResponse, TaskStatus, TaskType } from "../../../api/workflow.ts";
 import { StyledTableContainerPaper } from "../../Common/StyledComponents.tsx";
+import ConnectedCopyReport from "./ConnectedCopyReport.tsx";
 import DownloadFileList from "./DownloadFileList.tsx";
 import TaskProgress from "./TaskProgress.tsx";
 import TaskProps from "./TaskProps.tsx";
@@ -59,7 +60,10 @@ const TaskDetail = ({ task, downloading }: TaskDetailProps) => {
             ))}
           </Alert>
         )}
-        {task.status == TaskStatus.error && <Alert severity={"error"}>{task.error}</Alert>}
+        {task.type == TaskType.connected_copy && <ConnectedCopyReport task={task} />}
+        {task.status == TaskStatus.error && !task.summary?.props.connected_copy?.stopped && (
+          <Alert severity={"error"}>{task.error}</Alert>
+        )}
         <TaskProgress
           taskId={task.id}
           taskStatus={task.status}

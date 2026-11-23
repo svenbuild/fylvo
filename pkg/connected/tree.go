@@ -188,7 +188,10 @@ type snapshot struct {
 	scan       string
 	folders    map[string]bool
 	incomplete bool
-	links      int
+	// missed: the walk did not see entries that are there (incomplete for any other
+	// reason than names that stand for several entries, which it shows).
+	missed bool
+	links  int
 }
 
 // Page is one page of a listing.
@@ -205,7 +208,11 @@ type Page struct {
 	// not see everything, Links how many links it met and did not enter.
 	Deep       bool
 	Incomplete bool
-	Links      int
+	// Missed tells that entries were not seen at all: a bound was reached, a folder
+	// could not be read whole, entries were left out, or something changed meanwhile.
+	// Names that stand for several entries are shown as rows and do not count here.
+	Missed bool
+	Links  int
 }
 
 // Order of a listing.
@@ -705,7 +712,7 @@ func (s *snapshot) page(id string, offset, size int) *Page {
 	}
 	page := &Page{
 		Parent: s.parent, Rows: rows, Total: len(s.rows), Omitted: s.omitted,
-		Deep: s.deep, Incomplete: s.incomplete, Links: s.links,
+		Deep: s.deep, Incomplete: s.incomplete, Missed: s.missed, Links: s.links,
 	}
 	if end < len(s.rows) {
 		page.Next = id + "." + strconv.Itoa(end)
