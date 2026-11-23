@@ -33,8 +33,11 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DriveFolderUpload
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -61,6 +64,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
@@ -145,6 +149,8 @@ fun FilesScreen(
     var offlineOpen by remember { mutableStateOf(false) }
     /** Fylvo: Account › Customise. */
     var customizeOpen by rememberSaveable { mutableStateOf(false) }
+    /** Fylvo 1.6: Account › profile or security ([ACCOUNT_PROFILE], [ACCOUNT_SECURITY]). */
+    var accountPage by rememberSaveable { mutableStateOf<String?>(null) }
     /** Fylvo: a page of a place ([PAGE_FAVORITES], [PAGE_TAGS]) over the files, or null. */
     var page by rememberSaveable { mutableStateOf<String?>(null) }
     val searchFocus = remember { FocusRequester() }
@@ -154,6 +160,109 @@ fun FilesScreen(
     val app = context.applicationContext as io.github.svenbuild.fylvo.android.FylvoApp
     val prefsRepo = app.accountPrefs
     val prefsState by prefsRepo.state.collectAsState()
+    // Fylvo 1.6: the account's group rights (null while not known: nothing that needs them is offered).
+    val accountState by app.account.state.collectAsState()
+    val groupShare = accountState.group(Permissions.GROUP_SHARE)
+    LaunchedEffect(state.currentUri, accountOpen) {
+        if (accountState.me == null || accountState.mapEnabled == null) runCatching { app.account.ensureLoaded() }
+    }
+    /** Fylvo: the file whose shares are listed ("Manage shares"). */
+    var sharesOfTarget by remember { mutableStateOf<FileObject?>(null) }
+    /** Fylvo 1.6: the file whose versions are listed, and "Empty trash" waiting for its yes. */
+    var versionsTarget by remember { mutableStateOf<FileObject?>(null) }
+    var emptyTrashAsk by remember { mutableStateOf(false) }
+    /** Fylvo 1.6: an archive being looked into, one being extracted (target picker), files to pack. */
+    var archiveView by remember { mutableStateOf<FileObject?>(null) }
+    var extractPick by remember { mutableStateOf<FileObject?>(null) }
+    var compressAsk by remember { mutableStateOf<List<FileObject>?>(null) }
+    /** Fylvo 1.6: a folder being shared with people. */
+    var peopleTarget by remember { mutableStateOf<PeopleTarget?>(null) }
+    /** Fylvo 1.6: a folder of the phone read for uploading, waiting for its yes. */
+    var folderUploadAsk by remember { mutableStateOf<FolderUploadAsk?>(null) }
+    /** The target as chosen before the picker opened: address, folder id (empty for the root), account. */
+    var folderUploadTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderUploadTargetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderUploadAccount by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderReading by remember { mutableStateOf(false) }
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        val target = folderUploadTarget
+        val targetId = folderUploadTargetId
+        val account = folderUploadAccount
+        folderUploadTarget = null
+        folderUploadTargetId = null
+        folderUploadAccount = null
+        if (tree == null || target == null || targetId == null || account == null || CrUri.hasSecret(target)) return@rememberLauncherForActivityResult
+        folderReading = true
+        scope.launch {
+            val pick = java.util.concurrent.atomic.AtomicBoolean(false)
+            val scan = try {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(tree, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        io.github.svenbuild.fylvo.android.work.FolderUpload.picked(context, tree)
+                        pick.set(true)
+                        io.github.svenbuild.fylvo.android.work.FolderUpload.scan(context, tree)
+                    }.getOrNull()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // The screen went (e.g. turned) while reading: the pick ends, its right goes back.
+                if (pick.get()) io.github.svenbuild.fylvo.android.work.FolderUpload.done(context, tree)
+                throw e
+            }
+            folderReading = false
+            if (scan == null || (scan.files.isEmpty() && scan.dirs.isEmpty())) {
+                io.github.svenbuild.fylvo.android.work.FolderUpload.done(context, tree)
+                snackbar.showSnackbar(context.getString(if (scan == null) R.string.folder_upload_unreadable else R.string.folder_upload_empty))
+                return@launch
+            }
+            folderUploadAsk = FolderUploadAsk(scan, target, targetId.ifEmpty { null }, account)
+        }
+    }
+    val groupArchive = accountState.group(Permissions.GROUP_ARCHIVE)
+    // Fylvo 1.6: the text editor; its view model keeps the text when the phone is turned.
+    val editor = androidx.lifecycle.viewmodel.compose.viewModel(key = "text-editor") {
+        io.github.svenbuild.fylvo.android.ui.editor.TextEditorViewModel(app.texts, app.sessionManager) { f -> viewModel.state.value.editOf(f) != null }
+    }
+    val editorState by editor.state.collectAsState()
+    /** Fylvo 1.6: "New text file" / "New Markdown note" asks for a name first. */
+    var newTextExt by remember { mutableStateOf<String?>(null) }
+    /** Fylvo 1.6: a share link that needs its password (kept in memory only). */
+    var linkPassword by remember { mutableStateOf<LinkPasswordAsk?>(null) }
+    var linkBusy by remember { mutableStateOf(false) }
+
+
+    /**
+     * Fylvo 1.6: the further actions of one file, the same in its sheet and in the selection menu
+     * (design/android-parity-plan.md). Each one follows its own rule (util/Permissions).
+     */
+    fun moreActions(file: FileObject): List<SelectionAction> {
+        if (state.offlineMode || file.isUploading || state.inTrash) return emptyList()
+        return listOfNotNull(
+            SelectionAction.MANAGE_SHARES.takeIf { file.shared == true && Permissions.canShare(file, groupShare) },
+            SelectionAction.SHARE_PEOPLE.takeIf { file.isFolder && Permissions.canShare(file, groupShare) },
+            // Not while an offline working copy is open (its base would go stale unnoticed).
+            SelectionAction.VERSIONS.takeIf { Permissions.canManageVersions(file) && state.editOf(file) == null },
+            SelectionAction.VIEW_ARCHIVE.takeIf {
+                !file.isFolder && io.github.svenbuild.fylvo.android.data.ArchiveRepository.viewable(file.name) && Permissions.canArchiveFrom(listOf(file), groupArchive)
+            },
+            SelectionAction.EXTRACT.takeIf {
+                !file.isFolder && io.github.svenbuild.fylvo.android.data.ArchiveRepository.extractable(file.name) && Permissions.canArchiveFrom(listOf(file), groupArchive)
+            },
+            SelectionAction.COMPRESS.takeIf { Permissions.canArchiveFrom(listOf(file), groupArchive) && Permissions.canArchiveInto(state.parent) },
+        )
+    }
+
+    fun runMore(action: SelectionAction, file: FileObject) {
+        when (action) {
+            SelectionAction.MANAGE_SHARES -> sharesOfTarget = file
+            SelectionAction.VERSIONS -> versionsTarget = file
+            SelectionAction.VIEW_ARCHIVE -> archiveView = file
+            SelectionAction.SHARE_PEOPLE -> peopleTarget = PeopleTarget(file.path, null)
+            SelectionAction.EXTRACT -> extractPick = file
+            SelectionAction.COMPRESS -> compressAsk = listOf(file)
+            else -> Unit
+        }
+    }
 
     var pendingUpload by remember { mutableStateOf<PendingUpload?>(null) }
     val haptics = LocalHapticFeedback.current
@@ -164,6 +273,8 @@ fun FilesScreen(
         val parentUri = uploadTarget ?: state.currentUri
         uploadTarget = null
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        // Fylvo 1.6: never into a link with a password (the upload queue is stored).
+        if (CrUri.hasSecret(parentUri)) return@rememberLauncherForActivityResult
         // Fylvo: the names on screen only when they are of the target folder.
         val loaded = if (parentUri == state.currentUri) state.files.map { it.name }.toSet() else emptySet()
         // Fylvo: names and the upload list are read and written off the main thread; with a few
@@ -245,6 +356,7 @@ fun FilesScreen(
         searchOpenedFrom = null
     }
 
+
     /** Fylvo: "Bearbeiten": the working copy goes to an editor; a message when none takes it. */
     fun editFile(file: FileObject) {
         viewModel.startEditing(file) { local ->
@@ -275,6 +387,54 @@ fun FilesScreen(
         }
         val siblings = if (alone || inSearch || state.home) listOf(file) else viewModel.previewableSiblings(file)
         preview = siblings to siblings.indexOfFirst { it.path == file.path }.coerceAtLeast(0)
+    }
+
+    /**
+     * Fylvo 1.6: opens the share [id] of a link of the signed-in server, with [typed] as its
+     * password; asks for one when needed (design/android-parity-plan.md, 3).
+     */
+    fun openShareLink(id: String, typed: String) {
+        if (linkBusy) return
+        linkBusy = true
+        val tag = app.sessionManager.sessionTag()
+        scope.launch {
+            try {
+                runCatching { app.account.ensureLoaded() }
+                val info = app.shares.visit(id, typed)
+                if (!app.sessionManager.isCurrent(tag)) return@launch
+                val account = app.account.state.value
+                when (val d = io.github.svenbuild.fylvo.android.util.ShareLinks.decide(id, info, typed, account.me?.id, account.group(Permissions.GROUP_SHARE_DOWNLOAD))) {
+                    is io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.NeedPassword -> linkPassword = LinkPasswordAsk(id, d.name, d.wrong)
+                    io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.NotAllowed -> snackbar.showSnackbar(context.getString(R.string.link_not_allowed))
+                    is io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.Open -> {
+                        linkPassword = null
+                        accountOpen = false
+                        offlineOpen = false
+                        customizeOpen = false
+                        page = null
+                        viewModel.clearSelection()
+                        if (inSearch) closeSearch()
+                        CrUri.nameShare(d.root, d.name)
+                        viewModel.openPlace(d.root)
+                        // A shared single file opens right away: its preview, or its sheet when the app
+                        // has none (no download without asking). Only while still on that share.
+                        if (!info.isFolder) {
+                            val single = runCatching { app.fileRepository.list(d.root).files.firstOrNull { !it.isFolder } }.getOrNull()
+                            if (single != null && app.sessionManager.isCurrent(tag) && viewModel.state.value.currentUri == d.root) {
+                                if (io.github.svenbuild.fylvo.android.ui.preview.previewKindOf(single) != null) openFile(single, alone = true)
+                                else sheetTarget = single
+                            }
+                        }
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                snackbar.showSnackbar(io.github.svenbuild.fylvo.android.util.userError(e).resolve(context))
+            } finally {
+                linkBusy = false
+            }
+        }
     }
 
     var shareTarget by remember { mutableStateOf<FileObject?>(null) }
@@ -383,8 +543,8 @@ fun FilesScreen(
     }
     // Inside a share: whether it is a member share (the star is offered only there).
     LaunchedEffect(state.currentUri, prefsState.usable) {
-        if (prefsState.usable && CrUri.isShare(state.currentUri)) {
-            prefsRepo.memberShare(CrUri.root(state.currentUri).removePrefix("cloudreve://").substringBefore('@'))
+        if (prefsState.usable && CrUri.isShare(state.currentUri) && !CrUri.hasSecret(state.currentUri)) {
+            CrUri.shareId(state.currentUri)?.let { prefsRepo.memberShare(it) }
         }
     }
     fun starOf(file: FileObject): io.github.svenbuild.fylvo.android.data.prefs.StarState =
@@ -417,7 +577,7 @@ fun FilesScreen(
         val star = starOf(file)
         fun allowed(action: io.github.svenbuild.fylvo.android.data.prefs.SwipeAction) = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.swipeAction(
             action, star,
-            canShare = Permissions.canShareLink(file),
+            canShare = Permissions.canShare(file, groupShare),
             canOffline = state.offlineAllowed(file) && !state.offlineCovered(file),
             canDelete = Permissions.canModifyFile(file),
             limited = limited,
@@ -454,6 +614,10 @@ fun FilesScreen(
                 ?: io.github.svenbuild.fylvo.android.data.prefs.StarState.NONE,
             metadata = !state.offlineMode && !state.inConnected && io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.canEditMetadata(selectedFiles) &&
                 selectedFiles.size == state.selected.size,
+            groupShare = groupShare,
+            more = selectedOne?.let(::moreActions).orEmpty(),
+            compress = selectedFiles.size > 1 && selectedFiles.size == state.selected.size &&
+                Permissions.canArchiveFrom(selectedFiles, groupArchive) && Permissions.canArchiveInto(state.parent),
             pinnable = selectedOne != null && selectedOne.owned == true &&
                 io.github.svenbuild.fylvo.android.data.prefs.FylvoActions.openAllowed(selectedOne.path) &&
                 io.github.svenbuild.fylvo.android.widget.FolderShortcuts.canPin(context),
@@ -497,6 +661,9 @@ fun FilesScreen(
             SelectionAction.UNFAVORITE -> setFavorite(targets, false)
             SelectionAction.COLOR -> colorTarget = targets
             SelectionAction.TAGS -> tagsTarget = targets
+            SelectionAction.MANAGE_SHARES, SelectionAction.VERSIONS, SelectionAction.VIEW_ARCHIVE, SelectionAction.EXTRACT,
+            SelectionAction.SHARE_PEOPLE -> one?.let { runMore(action, it) }
+            SelectionAction.COMPRESS -> if (targets.isNotEmpty()) compressAsk = targets
             SelectionAction.PIN_HOME -> one?.let { folder ->
                 scope.launch { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.pin(context, folder, prefsRepo.accountHash()) }
             }
@@ -520,6 +687,8 @@ fun FilesScreen(
         storages = connectedState.storages.map { it.id },
     ).filter { it !is io.github.svenbuild.fylvo.android.data.prefs.Place.Storage || connectedState.storages.any { s -> s.id == it.id } } else emptyList()
     val showChips = !state.home && !inSearch && !state.selecting && state.currentUri == CrUri.MY_PREFIX
+    // Fylvo 1.6: "Shared by me" next to the shares of others.
+    val showSharedChips = !state.home && !inSearch && !state.selecting && state.currentUri == CrUri.SHARED_WITH_ME
     val startTab = io.github.svenbuild.fylvo.android.data.prefs.Navigation.startTab(prefsState.prefs?.startPage.takeIf { prefsState.usable }, tabs)
     /** The tab tapped last; a place that is no tab of its own keeps it lit. */
     var lastTab by rememberSaveable(stateSaver = placeSaver) { mutableStateOf<io.github.svenbuild.fylvo.android.data.prefs.Place?>(null) }
@@ -537,6 +706,7 @@ fun FilesScreen(
         accountOpen = tab == io.github.svenbuild.fylvo.android.data.prefs.Place.Account || tab == io.github.svenbuild.fylvo.android.data.prefs.Place.Offline
         offlineOpen = tab == io.github.svenbuild.fylvo.android.data.prefs.Place.Offline
         customizeOpen = false
+        accountPage = null
         page = null
         when (tab) {
             io.github.svenbuild.fylvo.android.data.prefs.Place.Home -> viewModel.goHome()
@@ -613,6 +783,9 @@ fun FilesScreen(
                 page = null
                 viewModel.openPlace(if (request.folder) request.uri else CrUri.parent(request.uri))
             }
+            is io.github.svenbuild.fylvo.android.data.prefs.Incoming.ShareLink -> openShareLink(request.id, request.password)
+            io.github.svenbuild.fylvo.android.data.prefs.Incoming.ForeignLink ->
+                snackbar.showSnackbar(context.getString(R.string.link_not_own_server))
         }
     }
 
@@ -683,6 +856,8 @@ fun FilesScreen(
                     onSort = { viewModel.sortBy(it) },
                     onRefresh = { viewModel.refresh() },
                     onTrash = { viewModel.openCategory(Category.TRASH) },
+                    // Fylvo 1.6: "Empty trash" in the trash itself, when there is something in it.
+                    onEmptyTrash = if (state.inTrash && state.files.isNotEmpty() && !state.offlineMode) ({ emptyTrashAsk = true }) else null,
                     showSearch = !state.inConnected,
                     showTrash = !state.inConnected,
                     sortOptions = if (state.inConnected) listOf(SortBy.NAME, SortBy.SIZE, SortBy.UPDATED) else SortBy.entries,
@@ -762,7 +937,25 @@ fun FilesScreen(
                     extras = homeExtras,
                     swipeFor = { swipeFor(it, limited = true) },
                 )
+                // Fylvo 1.6: a pasted link is opened, not searched for.
+                inSearch && io.github.svenbuild.fylvo.android.util.ShareLinks.looksLikeLink(state.searchQuery.orEmpty()) -> {
+                    val serverBase by produceState("") { value = app.sessionManager.serverUrlNow() }
+                    val ref = io.github.svenbuild.fylvo.android.util.ShareLinks.parse(state.searchQuery.orEmpty(), serverBase)
+                    Column(Modifier.fillMaxSize()) {
+                        if (ref != null) ListItem(
+                            modifier = Modifier.clickable(enabled = !linkBusy) { openShareLink(ref.id, ref.password) },
+                            headlineContent = { Text(stringResource(R.string.open_share_link)) },
+                            supportingContent = { Text(stringResource(R.string.open_share_link_hint)) },
+                            leadingContent = { Icon(Icons.Outlined.Link, contentDescription = null) },
+                        ) else if (serverBase.isNotEmpty()) EmptyState(
+                            icon = Icons.Outlined.Link,
+                            title = stringResource(R.string.link_not_own_server),
+                        )
+                    }
+                }
                 inSearch -> SearchResults(
+                    fullTextAvailable = accountState.fullTextSearch,
+                    tags = if (prefsState.usable) prefsState.tags.map { it.name } else emptyList(),
                     state = state,
                     viewModel = viewModel,
                     listState = listState,
@@ -812,7 +1005,13 @@ fun FilesScreen(
                         EmptyState(
                             icon = Icons.Outlined.FolderOpen,
                             title = stringResource(R.string.folder_empty),
-                            detail = if (state.canAddHere) stringResource(R.string.folder_empty_hint) else null,
+                            detail = when {
+                                state.canAddHere -> stringResource(R.string.folder_empty_hint)
+                                // Fylvo 1.6: an upload link with a password: the app cannot upload there.
+                                CrUri.hasSecret(state.currentUri) && Permissions.enabled(state.parent?.capability, Permissions.UPLOAD_FILE) ->
+                                    stringResource(R.string.link_upload_password)
+                                else -> null
+                            },
                         )
                     }
                     Category.TRASH -> EmptyState(icon = Icons.Outlined.Delete, title = stringResource(R.string.trash_empty), detail = stringResource(R.string.trash_empty_hint))
@@ -821,11 +1020,15 @@ fun FilesScreen(
                     Category.VIDEOS -> EmptyState(icon = Icons.Outlined.Videocam, title = stringResource(R.string.no_videos))
                     Category.AUDIO -> EmptyState(icon = Icons.Outlined.MusicNote, title = stringResource(R.string.no_audio))
                     Category.DOCUMENTS -> EmptyState(icon = Icons.Outlined.Description, title = stringResource(R.string.no_documents))
-                    Category.SHARED_WITH_ME -> EmptyState(icon = Icons.Outlined.FolderOpen, title = stringResource(R.string.nothing_shared))
+                    Category.SHARED_WITH_ME -> Column(Modifier.fillMaxSize()) {
+                        if (showSharedChips) SharedChips { page = PAGE_SHARES }
+                        EmptyState(icon = Icons.Outlined.FolderOpen, title = stringResource(R.string.nothing_shared))
+                    }
                 }
                 else -> Column(Modifier.fillMaxSize()) {
                     // Fylvo: the places of the sidebar above My files.
                     if (showChips) PlaceChips(chips, ::openChip)
+                    if (showSharedChips) SharedChips { page = PAGE_SHARES }
                     if (state.offlineMode) OfflineBanner()
                     if (state.inConnected) ConnectedBanner(state.connected?.omitted ?: 0)
                     Box(Modifier.weight(1f)) {
@@ -889,10 +1092,26 @@ fun FilesScreen(
             onDownload = { f -> viewModel.saveToDevice(context, f) },
             onOpenWith = { openWithSystemApp(it) },
             onDelete = { preview = null; deleteTarget = it },
-            canShare = Permissions::canShareLink,
+            canShare = { Permissions.canShare(it, groupShare) },
             canDelete = Permissions::canModifyFile,
+            canEdit = { f ->
+                Permissions.canSaveContent(f) && io.github.svenbuild.fylvo.android.ui.editor.editableAsText(f) &&
+                    viewModel.state.value.editOf(f) == null && !state.offlineMode
+            },
+            onEdit = { f -> editor.open(io.github.svenbuild.fylvo.android.ui.editor.EditorTarget.Existing(f)) },
         )
       }
+    }
+
+    // Fylvo 1.6: the text editor over everything (also over the preview it was opened from).
+    if (editorState.target != null) {
+        io.github.svenbuild.fylvo.android.ui.editor.TextEditorScreen(editor) { wrote ->
+            editor.close()
+            if (wrote) {
+                preview = null
+                viewModel.refresh()
+            }
+        }
     }
 
     if (addSheetOpen) {
@@ -901,12 +1120,41 @@ fun FilesScreen(
             if (!state.inConnected || Connected.canUploadTo(state.parent)) ListItem(
                 modifier = Modifier.clickable {
                     addSheetOpen = false
-                    uploadTarget = state.currentUri
-                    uploadLauncher.launch(arrayOf("*/*"))
+                    if (!CrUri.hasSecret(state.currentUri)) {
+                        uploadTarget = state.currentUri
+                        uploadLauncher.launch(arrayOf("*/*"))
+                    }
                 },
                 headlineContent = { Text(stringResource(R.string.upload_files)) },
                 supportingContent = { Text(stringResource(R.string.into_folder, state.folderTitle())) },
                 leadingContent = { Icon(Icons.Default.UploadFile, contentDescription = null) },
+            )
+            // Fylvo 1.6: a whole folder of the phone (not into connected storages, like the web).
+            if (!state.inConnected && !state.offlineMode && Permissions.canAddTo(state.parent)) ListItem(
+                modifier = Modifier.clickable {
+                    addSheetOpen = false
+                    val target = state.currentUri
+                    scope.launch {
+                        // The target is taken by id now (it must still be the same when the upload
+                        // starts); when its id cannot be read, nothing starts.
+                        // The folder on screen, not whatever has its address now.
+                        val shown = state.parent?.id?.takeIf { it.isNotEmpty() }
+                        val id = if (CrUri.isRoot(target)) "" else withContext(Dispatchers.IO) {
+                            runCatching { app.fileRepository.folderInfo(target).id }.getOrNull()?.takeIf { it.isNotEmpty() }
+                        }?.takeIf { shown == null || it == shown }
+                        if (id == null) {
+                            snackbar.showSnackbar(context.getString(R.string.folder_upload_failed))
+                            return@launch
+                        }
+                        folderUploadTarget = target
+                        folderUploadTargetId = id
+                        folderUploadAccount = UploadWorker.currentAccount(app)
+                        runCatching { folderLauncher.launch(null) }
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.folder_upload)) },
+                supportingContent = { Text(stringResource(R.string.into_folder, state.folderTitle())) },
+                leadingContent = { Icon(androidx.compose.material.icons.Icons.Default.DriveFolderUpload, contentDescription = null) },
             )
             if (!state.inConnected || Connected.canCreateIn(state.parent)) ListItem(
                 modifier = Modifier.clickable {
@@ -916,22 +1164,256 @@ fun FilesScreen(
                 headlineContent = { Text(stringResource(R.string.new_folder)) },
                 leadingContent = { Icon(Icons.Default.CreateNewFolder, contentDescription = null) },
             )
+            // Fylvo 1.6: new text files (the web's templates with content: text and Markdown).
+            if (Permissions.canCreateTextIn(state.parent) && !state.offlineMode) {
+                ListItem(
+                    modifier = Modifier.clickable { addSheetOpen = false; newTextExt = "txt" },
+                    headlineContent = { Text(stringResource(R.string.new_text_file)) },
+                    leadingContent = { Icon(Icons.Outlined.Description, contentDescription = null) },
+                )
+                ListItem(
+                    modifier = Modifier.clickable { addSheetOpen = false; newTextExt = "md" },
+                    headlineContent = { Text(stringResource(R.string.new_markdown_note)) },
+                    leadingContent = { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Outlined.Article, contentDescription = null) },
+                )
+            }
             Box(Modifier.height(24.dp))
         }
     }
 
     detailsTarget?.let { file ->
-        DetailsSheet(file = file, thumbUrl = rememberThumbUrl(viewModel, file), onDismiss = { detailsTarget = null })
+        DetailsSheet(
+            file = file,
+            thumbUrl = rememberThumbUrl(viewModel, file),
+            onDismiss = { detailsTarget = null },
+            mapEnabled = accountState.mapEnabled,
+            onShares = if (Permissions.canShare(file, groupShare)) ({ detailsTarget = null; sharesOfTarget = file }) else null,
+        )
     }
 
     shareTarget?.let { file ->
+        val thumbUrl = rememberThumbUrl(viewModel, file)
         ShareLinkSheet(
-            file = file,
-            thumbUrl = rememberThumbUrl(viewModel, file),
-            createLink = { pw, exp, dl -> viewModel.shareLink(file, pw, exp, dl) },
+            name = file.name,
+            isFolder = file.isFolder,
+            thumb = { FileThumb(file, thumbUrl, size = 48.dp) },
+            existing = null,
+            save = { options -> app.shares.create(file, options).also { viewModel.refresh() } },
             onDismiss = { shareTarget = null },
             onMessage = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
         )
+    }
+
+    // Fylvo 1.6: what the share lists may do (shared by "Shared by me" and a file's own list).
+    val shareActions = ShareActions(
+        openFolder = { uri ->
+            page = null
+            sharesOfTarget = null
+            accountOpen = false
+            offlineOpen = false
+            customizeOpen = false
+            viewModel.openPlace(uri)
+        },
+        editPeople = { share, uri -> sharesOfTarget = null; peopleTarget = PeopleTarget(uri, share) },
+        message = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+        canEdit = groupShare == true,
+    )
+    linkPassword?.let { ask ->
+        LinkPasswordDialog(
+            ask = ask,
+            busy = linkBusy,
+            onOpen = { pw -> openShareLink(ask.id, pw) },
+            onDismiss = { linkPassword = null },
+        )
+    }
+    // Fylvo 1.6: archives.
+    fun startedTask(started: Boolean, e: Throwable?) {
+        scope.launch {
+            if (started) {
+                val r = snackbar.showSnackbar(context.getString(R.string.task_started), actionLabel = context.getString(R.string.tasks))
+                if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) { accountOpen = true; accountPage = ACCOUNT_TASKS }
+            } else if (e != null) snackbar.showSnackbar(io.github.svenbuild.fylvo.android.util.userError(e).resolve(context))
+        }
+    }
+    archiveView?.let { file ->
+        ArchivePage(
+            file = file,
+            canExtract = io.github.svenbuild.fylvo.android.data.ArchiveRepository.extractable(file.name),
+            onExtract = { archiveView = null; extractPick = file },
+            onClose = { archiveView = null },
+        )
+    }
+    extractPick?.let { file ->
+        // The archive's own folder when it may receive files, else My files.
+        val start = CrUri.parent(file.path).takeIf { Permissions.canArchiveInto(state.parent) && it == state.currentUri } ?: CrUri.MY_PREFIX
+        FolderPicker(
+            title = stringResource(R.string.archive_extract_to),
+            confirmLabel = R.string.archive_extract_here,
+            startUri = start,
+            excluded = emptySet(),
+            loadFolders = { viewModel.listFolders(it) },
+            onCreateFolder = { parent, name -> viewModel.createFolder(parent, name) },
+            canPick = { Permissions.canArchiveInto(viewModel.pickerFolder(it)) },
+            canCreateIn = { Permissions.canArchiveInto(viewModel.pickerFolder(it)) },
+            onPick = { dst ->
+                extractPick = null
+                scope.launch {
+                    runCatching { app.archives.extract(file.path, dst) }
+                        .onSuccess { startedTask(true, null) }
+                        .onFailure { startedTask(false, it) }
+                }
+            },
+            onDismiss = { extractPick = null },
+        )
+    }
+    compressAsk?.let { files ->
+        val fallback = stringResource(R.string.archive_default_name)
+        NameDialog(
+            title = stringResource(R.string.archive_compress),
+            label = stringResource(R.string.name),
+            confirm = stringResource(R.string.archive_compress_go),
+            initial = io.github.svenbuild.fylvo.android.data.ArchiveRepository.zipName(files.map { it.name }, fallback),
+            onConfirm = { name ->
+                compressAsk = null
+                val zip = name.trim().let { if (it.lowercase().endsWith(".zip")) it else "$it.zip" }
+                viewModel.clearSelection()
+                scope.launch {
+                    runCatching { app.archives.compress(files.map { it.path }, CrUri.join(state.currentUri, zip)) }
+                        .onSuccess { startedTask(true, null) }
+                        .onFailure { startedTask(false, it) }
+                }
+            },
+            onDismiss = { compressAsk = null },
+        )
+    }
+
+    versionsTarget?.let { file ->
+        VersionsSheet(
+            file = file,
+            onDownload = { f, entity -> viewModel.saveToDevice(context, f, entity) },
+            onChanged = { viewModel.refresh() },
+            onMessage = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+            onDismiss = { versionsTarget = null },
+        )
+    }
+    if (emptyTrashAsk) {
+        var emptying by remember { mutableStateOf(false) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!emptying) emptyTrashAsk = false },
+            title = { Text(stringResource(R.string.empty_trash_title)) },
+            text = { Text(stringResource(R.string.empty_trash_text)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(enabled = !emptying, onClick = {
+                    emptying = true
+                    scope.launch {
+                        runCatching { app.history.emptyTrash() }
+                            .onSuccess { snackbar.showSnackbar(context.getString(R.string.trash_emptied)) }
+                            .onFailure { snackbar.showSnackbar(io.github.svenbuild.fylvo.android.util.userError(it).resolve(context)) }
+                        emptying = false
+                        emptyTrashAsk = false
+                        viewModel.refresh()
+                    }
+                }) {
+                    if (emptying) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text(stringResource(R.string.empty_trash), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(enabled = !emptying, onClick = { emptyTrashAsk = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    folderUploadAsk?.let { ask ->
+        val (scan, target, targetId, account) = ask
+        val many = scan.files.size >= io.github.svenbuild.fylvo.android.work.FolderUpload.MANY
+        // The question going away without an answer (cancel, or the screen turned) ends the pick.
+        DisposableEffect(ask) { onDispose { if (ask.ended.compareAndSet(false, true)) io.github.svenbuild.fylvo.android.work.FolderUpload.done(context, scan.tree) } }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { folderUploadAsk = null },
+            title = { Text(stringResource(R.string.folder_upload_title, scan.name)) },
+            text = {
+                Text(
+                    pluralStringResource(R.plurals.folder_upload_text, scan.files.size, scan.files.size, formatSize(scan.bytes), CrUri.displayName(target)) +
+                        if (many) "\n\n" + stringResource(R.string.folder_upload_many) else "",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    // Handed over: the queuing below ends the pick (also when it is stopped).
+                    if (!ask.ended.compareAndSet(false, true)) return@TextButton
+                    folderUploadAsk = null
+                    val tag = app.sessionManager.sessionTag()
+                    // Atomic: the body (and its finally) runs even when the screen goes at once.
+                    scope.launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
+                        val folders = io.github.svenbuild.fylvo.android.work.FolderUpload
+                        val groups = folders.groups(scan)
+                        // Batches queued; the right of the tree stays in use (since the pick) until all are stored.
+                        var queued = 0
+                        // The folders were made and every batch was tried (a tree of empty folders has none).
+                        var finished = false
+                        try {
+                            withContext(Dispatchers.IO) {
+                                runCatching {
+                                    // Still the account and the folder that were chosen (nothing lands in one that took its place).
+                                    suspend fun targetSame() = UploadWorker.currentAccount(app) == account && app.sessionManager.isCurrent(tag) &&
+                                        (targetId == null || app.fileRepository.folderIdMatches(target, targetId) == true)
+                                    if (!targetSame()) return@runCatching
+                                    // An existing folder of that name is filled up; files with a taken name get a new one.
+                                    val root = CrUri.join(target, scan.name)
+                                    app.fileRepository.mkdirs(root)
+                                    scan.dirs.forEach { app.fileRepository.mkdirs(CrUri.join(root, it)) }
+                                    // Once more after making the folders: the target was not replaced meanwhile.
+                                    if (!targetSame()) return@runCatching
+                                    groups.forEach { (dir, items) ->
+                                        val parent = if (dir.isEmpty()) root else CrUri.join(root, dir)
+                                        // Every batch checks its own folder by id before each file.
+                                        val parentId = app.fileRepository.folderInfo(parent).id
+                                        if (parentId.isEmpty()) return@runCatching
+                                        val existing = viewModel.namesInFolder(parent)
+                                        val names = UploadWorker.uniqueWithinSelection(items.map { it.name }, existing)
+                                        if (!UploadWorker.enqueueSafely(context, items.map { it.uri }, parent, names, expectedParentId = parentId, account = account)) return@runCatching
+                                        queued++
+                                    }
+                                    finished = true
+                                }
+                            }
+                        } finally {
+                            folders.done(context, scan.tree)
+                        }
+                        snackbar.showSnackbar(
+                            when {
+                                finished -> context.getString(R.string.folder_upload_started)
+                                // Some batches go up: said so, a new try would upload them twice.
+                                queued > 0 -> context.getString(R.string.folder_upload_partly, queued, groups.size)
+                                else -> context.getString(R.string.folder_upload_failed)
+                            },
+                        )
+                        if (finished || queued > 0) viewModel.refresh()
+                    }
+                }) { Text(stringResource(R.string.upload)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { folderUploadAsk = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    if (folderReading) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            text = { androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text(stringResource(R.string.folder_upload_reading), modifier = Modifier.padding(start = 16.dp))
+            } },
+        )
+    }
+    peopleTarget?.let { t ->
+        PeopleSheet(
+            target = t,
+            onDone = { msg -> peopleTarget = null; viewModel.refresh(); msg?.let { scope.launch { snackbar.showSnackbar(it) } } },
+            onDismiss = { peopleTarget = null },
+        )
+    }
+    sharesOfTarget?.let { file ->
+        FileSharesSheet(file, shareActions, onDismiss = { sharesOfTarget = null; viewModel.refresh() })
     }
 
     sheetTarget?.takeIf { Connected.isConnected(it.path) }?.let { file ->
@@ -976,7 +1458,9 @@ fun FilesScreen(
             onCopy = { sheetTarget = null; movePick = listOf(file.path) to true },
             onDetails = { sheetTarget = null; detailsTarget = file },
             canModify = Permissions.canModifyFile(file) && !limited,
-            canShare = Permissions.canShareLink(file) && !limited,
+            canShare = Permissions.canShare(file, groupShare) && !limited,
+            extras = if (limited) emptyList() else moreActions(file),
+            onExtra = { action -> sheetTarget = null; runMore(action, file) },
             // Fylvo: a sheet from a page (favourites) belongs to that page, never to the trash below it.
             inTrash = state.inTrash && page == null,
             onRestore = { sheetTarget = null; viewModel.restore(listOf(file.path)) },
@@ -1028,6 +1512,22 @@ fun FilesScreen(
             onDismiss = { movePick = null },
         )
       }
+    }
+
+    newTextExt?.let { ext ->
+        val initial = stringResource(if (ext == "md") R.string.new_note_name else R.string.new_text_name) + "." + ext
+        NameDialog(
+            title = stringResource(if (ext == "md") R.string.new_markdown_note else R.string.new_text_file),
+            label = stringResource(R.string.name),
+            confirm = stringResource(R.string.create),
+            initial = initial,
+            selectEnd = initial.length - ext.length - 1,
+            onConfirm = { name ->
+                newTextExt = null
+                editor.open(io.github.svenbuild.fylvo.android.ui.editor.EditorTarget.New(state.currentUri, name.trim()))
+            },
+            onDismiss = { newTextExt = null },
+        )
     }
 
     if (mkdirOpen) {
@@ -1132,6 +1632,12 @@ fun FilesScreen(
         AccountScreen(
             offlineCount = state.offlineRoots.size,
             onOpenOffline = { offlineOpen = true },
+            onOpenShares = { page = PAGE_SHARES },
+            onOpenProfile = { accountPage = ACCOUNT_PROFILE },
+            onOpenSecurity = { accountPage = ACCOUNT_SECURITY },
+            onOpenTasks = { accountPage = ACCOUNT_TASKS },
+            // Also without the right to connect: storages connected before can still be disconnected.
+            onOpenConnected = if (connectedState.overview?.let { it.available && (it.allowed || it.storages.isNotEmpty()) } == true) ({ accountPage = ACCOUNT_CONNECTED }) else null,
             onOpenCustomize = { customizeOpen = true },
             // Account is a tab: back goes to the start tab like every other tab.
             onBack = { selectTab(startTab) },
@@ -1166,6 +1672,53 @@ fun FilesScreen(
             loadFailed = prefsState.loadFailed || prefsState.favoritesFailed,
             onRetry = { scope.launch { prefsRepo.refreshFavorites(); prefsRepo.refresh() } },
         )
+    }
+    // Fylvo 1.6: profile and security, over Account.
+    if (accountOpen && accountPage == ACCOUNT_PROFILE) {
+        io.github.svenbuild.fylvo.android.ui.settings.ProfilePage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) })
+    }
+    if (accountOpen && accountPage == ACCOUNT_CONNECTED) {
+        ConnectedPage(
+            viewModel = viewModel,
+            onBack = { accountPage = null },
+            bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
+            onOpen = { s -> accountPage = null; accountOpen = false; viewModel.openPlace(s.uri) },
+            onMessage = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+        )
+    }
+    // Fylvo 1.6: the question before a new storage is saved, and messages of the sign-in.
+    val connectUi by app.connect.ui.collectAsState()
+    val connectMessage by app.connect.message.collectAsState()
+    (connectUi as? ConnectController.Ui.Confirm)?.let { c ->
+        ConnectConfirmDialog(
+            preview = c.preview,
+            myName = accountState.me?.let { it.nickname.ifEmpty { it.email } }.orEmpty(),
+            onAnswer = { yes -> scope.launch { app.connect.answer(yes) } },
+        )
+    }
+    LaunchedEffect(connectMessage) {
+        connectMessage?.let { snackbar.showSnackbar(it.resolve(context)); app.connect.messageShown() }
+    }
+    LaunchedEffect(Unit) { app.reloadConnected = { viewModel.connected.reload() } }
+    // A sign-in whose answer was lost (no network, or the app was stopped): sent again whenever
+    // the app comes back to the front; an attempt older than 20 minutes is dropped here too.
+    LifecycleResumeEffect(Unit) {
+        // Not cancelled on pause: a request in flight finishes (else the attempt would stay "busy").
+        scope.launch { runCatching { app.connect.resume() } }
+        onPauseOrDispose { }
+    }
+    if (accountOpen && accountPage == ACCOUNT_TASKS) {
+        TasksPage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) }, onOpenFolder = { uri ->
+            accountPage = null
+            accountOpen = false
+            viewModel.openPlace(uri)
+        })
+    }
+    if (accountOpen && accountPage == ACCOUNT_SECURITY) {
+        io.github.svenbuild.fylvo.android.ui.settings.SecurityPage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) })
+    }
+    if (page == PAGE_SHARES) {
+        SharesPage(onBack = { page = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) }, actions = shareActions)
     }
     if (page == PAGE_TAGS) {
         TagsPage(
@@ -1224,6 +1777,13 @@ fun FilesScreen(
             onEditDiscard = { discardTarget = it },
             onEditDismissNotice = viewModel::dismissEditNotice,
         )
+    }
+
+    // Fylvo 1.6: messages also show over the pages above the list (Account pages, shares, ...).
+    if (accountOpen || page != null || customizeOpen || offlineOpen) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            SnackbarHost(snackbar, Modifier.padding(bottom = 104.dp))
+        }
     }
 
     // Fylvo: "Save in Fylvo" for shared files: the folder is chosen first.
@@ -1417,12 +1977,31 @@ private fun openWithSystem(context: Context, local: File) {
     try {
         context.startActivity(intent)
     } catch (_: ActivityNotFoundException) {
-        // No handler; the file stays in cache.
+        // Fylvo 1.6: no app for this kind of file: say so (the file stays in the cache).
+        android.widget.Toast.makeText(context, context.getString(R.string.no_app_for_file), android.widget.Toast.LENGTH_LONG).show()
     }
 }
 
 /** Fylvo: the pages of places that are not folder listings. */
 internal const val PAGE_FAVORITES = "favorites"
 internal const val PAGE_TAGS = "tags"
+/** Fylvo 1.6: the pages over Account. */
+internal const val ACCOUNT_PROFILE = "profile"
+internal const val ACCOUNT_SECURITY = "security"
+internal const val ACCOUNT_TASKS = "tasks"
+
+/** Fylvo 1.6: a phone folder waiting for its yes: target address, its id (null for the root), account. */
+internal data class FolderUploadAsk(
+    val scan: io.github.svenbuild.fylvo.android.work.FolderUpload.Scan,
+    val target: String,
+    val targetId: String?,
+    val account: String,
+) {
+    /** Answered or gone: the pick is ended (or handed to the queuing) exactly once. */
+    val ended = java.util.concurrent.atomic.AtomicBoolean(false)
+}
+internal const val ACCOUNT_CONNECTED = "connected"
+/** Fylvo 1.6: "Shared by me", from the Shared tab or from Account. */
+internal const val PAGE_SHARES = "shares"
 /** Fylvo: [FilesUiState.origin] of a place opened from a page ("page:<page>"). */
 internal const val PAGE_ORIGIN = "page:"

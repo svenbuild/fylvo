@@ -80,6 +80,9 @@ class ApiClient(private val session: SessionManager) {
 
         val sessionInterceptor = Interceptor { chain ->
             val original = chain.request()
+            // Fylvo 1.6: a tagged request of an ended session is not sent anywhere, also not to
+            // a presigned address of another host.
+            original.tag(SessionTag::class.java)?.let { if (!session.isCurrent(it)) throw java.io.IOException("Session ended") }
             val sameOrigin = apiOrigin != null && originOf(original.url) == apiOrigin &&
                 runBlocking { session.serverUrlNow() + "/" }.toHttpUrlOrNull()?.let(::originOf) == apiOrigin
             if (!sameOrigin) return@Interceptor chain.proceed(original)

@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.svenbuild.fylvo.android"
         minSdk = 28
         targetSdk = 36
-        versionCode = 11
-        versionName = "1.5.0"
+        versionCode = 12
+        versionName = "1.6.0"
     }
 
     // Fylvo ships English and German only; keep libraries from adding other languages.
@@ -109,6 +109,10 @@ dependencies {
     implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
+    // Fylvo 1.6: Markdown preview in the text editor (Apache 2.0; no image module, so no remote images).
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.28.0")
+    // Fylvo 1.6: storage sign-ins in a Custom Tab (never a WebView).
+    implementation("androidx.browser:browser:1.8.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-video:2.7.0")
 

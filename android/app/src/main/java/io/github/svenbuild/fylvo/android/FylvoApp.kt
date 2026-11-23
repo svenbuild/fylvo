@@ -53,6 +53,31 @@ class FylvoApp : Application(), ImageLoaderFactory {
     /** Fylvo: the account's customisation (prefs, favourites, tags, accents). */
     lateinit var accountPrefs: io.github.svenbuild.fylvo.android.data.prefs.AccountPrefsRepository
         private set
+    /** Fylvo: the account's group rights and the server's explorer switches (memory only). */
+    lateinit var account: io.github.svenbuild.fylvo.android.data.AccountRepository
+        private set
+    /** Fylvo 1.6: connecting storages from the app. */
+    lateinit var connectRepo: io.github.svenbuild.fylvo.android.data.ConnectRepository
+        private set
+    lateinit var connect: io.github.svenbuild.fylvo.android.ui.files.ConnectController
+        private set
+    /** Fylvo 1.6: the storages list to read again after a connection (set by the files screen). */
+    @Volatile var reloadConnected: (suspend () -> Unit)? = null
+    /** Fylvo 1.6: archives and tasks. */
+    lateinit var archives: io.github.svenbuild.fylvo.android.data.ArchiveRepository
+        private set
+    /** Fylvo 1.6: profile and security of the account. */
+    lateinit var security: io.github.svenbuild.fylvo.android.data.SecurityRepository
+        private set
+    /** Fylvo 1.6: versions, details, history and the trash. */
+    lateinit var history: io.github.svenbuild.fylvo.android.data.HistoryRepository
+        private set
+    /** Fylvo 1.6: text files edited in the app. */
+    lateinit var texts: io.github.svenbuild.fylvo.android.data.TextRepository
+        private set
+    /** Fylvo 1.6: the account's own shares. */
+    lateinit var shares: io.github.svenbuild.fylvo.android.data.ShareRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -60,6 +85,17 @@ class FylvoApp : Application(), ImageLoaderFactory {
         sessionManager = SessionManager(this)
         apiClient = ApiClient(sessionManager)
         fileRepository = FileRepository(apiClient)
+        account = io.github.svenbuild.fylvo.android.data.AccountRepository(apiClient, sessionManager)
+        shares = io.github.svenbuild.fylvo.android.data.ShareRepository(apiClient, sessionManager)
+        texts = io.github.svenbuild.fylvo.android.data.TextRepository(apiClient, fileRepository, cacheDir, sessionManager)
+        history = io.github.svenbuild.fylvo.android.data.HistoryRepository(apiClient, sessionManager)
+        archives = io.github.svenbuild.fylvo.android.data.ArchiveRepository(apiClient, sessionManager)
+        connectRepo = io.github.svenbuild.fylvo.android.data.ConnectRepository(apiClient, sessionManager)
+        connect = io.github.svenbuild.fylvo.android.ui.files.ConnectController(
+            apiClient, connectRepo, io.github.svenbuild.fylvo.android.data.ConnectAttemptStore(this),
+            reload = { reloadConnected?.invoke() },
+        )
+        security = io.github.svenbuild.fylvo.android.data.SecurityRepository(apiClient, account, sessionManager)
         favoritesStore = FavoritesStore(this)
         taskNotifySettings = TaskNotifySettings(this)
         syncFolderSettings = SyncFolderSettings(this)
@@ -71,7 +107,18 @@ class FylvoApp : Application(), ImageLoaderFactory {
             this, apiClient, sessionManager, onSessionExpired = { endSession(expired = true) },
         )
         // Upload lists no job will finish any more; off the main thread.
-        Thread { runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cleanUpOldBatches(this) } }.start()
+        Thread {
+            runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cleanUpOldBatches(this) }
+            // Fylvo 1.6: read rights on uploaded phone folders that no batch needs any more.
+            runCatching { io.github.svenbuild.fylvo.android.work.FolderUpload.releaseFinished(this) }
+        }.start()
+    }
+
+    /** Fylvo 1.6: pictures of accounts; follows no redirect (never to a third-party service). */
+    val avatarLoader: ImageLoader by lazy {
+        ImageLoader.Builder(this)
+            .okHttpClient { OkHttpClient.Builder().followRedirects(false).addInterceptor(ApiClient.userAgent).build() }
+            .build()
     }
 
     /** Fylvo: previews and the image viewer name the app to the server like every other request. */
@@ -137,6 +184,8 @@ class FylvoApp : Application(), ImageLoaderFactory {
             }
             // Fylvo: what names the account's files on this device goes first.
             step { accountPrefs.clear() }
+            step { account.clear() }
+            step { connect.clear() }
             step { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.disableAll(this@FylvoApp) }
             step { io.github.svenbuild.fylvo.android.data.prefs.ShareTargetStore(this@FylvoApp).clear() }
             io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = null

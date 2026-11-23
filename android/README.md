@@ -67,6 +67,28 @@ Neither project is affiliated with or endorses Fylvo.
   screen, and a home screen widget (search, upload, up to four favourites). Sign-out empties the
   widget and switches pinned folders off; they only open for the account they were made for.
 
+- 1.6 brings more of the web app's functions (see `design/android-parity-plan.md`), each offered
+  only where the account's group and the file's rights allow it:
+  - Shares: "Shared by me" (chip above "Shared with me" and under Account) with views and
+    downloads; edit, copy, send, delete; all link options (end, download limit, uploads by
+    visitors, keep my view, README); sharing folders with chosen people (read or edit).
+  - Share links of the own server open in the app (shared into Fylvo or pasted into the search;
+    links of other servers are refused without a request). A share password stays in memory: it
+    is never stored, logged, kept offline or put into the upload queue.
+  - Text and Markdown files are edited in the app (up to 256 KB, Markdown with a preview); the
+    editor saves only over the version it loaded, otherwise it offers a copy. New text files and
+    Markdown notes from "+".
+  - Versions (download, make current, delete), details with camera data, place (a map app only
+    when the server has a map provider), history; "Empty trash".
+  - Account: profile (name, picture; no Gravatar request), security (password, two-factor
+    sign-in, app access, recent sign-ins), tasks.
+  - Search with filters (type, size, date, tags) and in contents when the server has full-text
+    search; archives (look inside zip and 7z, extract, pack as ZIP; no archive passwords).
+  - "Edit" in another app also for files not kept offline (a working copy from the server, every
+    quiet save goes up as a version, a conflict as a copy; an idle copy is finished after a day).
+  - Upload a whole folder of the phone; connected storages can be connected (in a Custom Tab, on
+    the server's way for apps), connected again, renamed and disconnected.
+
 ## Build
 
 Needs JDK 17 and an Android SDK with platform 36.

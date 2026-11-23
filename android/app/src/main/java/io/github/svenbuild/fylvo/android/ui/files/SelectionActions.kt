@@ -33,6 +33,16 @@ enum class SelectionAction(
     TAGS,
     /** Fylvo: an own folder as its own icon on the home screen. */
     PIN_HOME(server = false),
+    /** Fylvo 1.6: the shares of one file. */
+    MANAGE_SHARES,
+    /** Fylvo 1.6: older versions of an own file. */
+    VERSIONS,
+    /** Fylvo 1.6: archives: look inside, extract all, pack the selection as a ZIP. */
+    /** Fylvo 1.6: share a folder with chosen people. */
+    SHARE_PEOPLE,
+    VIEW_ARCHIVE,
+    EXTRACT,
+    COMPRESS,
 }
 
 /** Where the selection is made; decides together with the selected files which actions exist. */
@@ -56,6 +66,12 @@ data class SelectionContext(
     val metadata: Boolean = false,
     /** Fylvo: the one selected folder can be put on the home screen. */
     val pinnable: Boolean = false,
+    /** Fylvo 1.6: the account's group right to share (null = not known yet). */
+    val groupShare: Boolean? = true,
+    /** Fylvo 1.6: further actions for one selected file (the same list as its sheet's). */
+    val more: List<SelectionAction> = emptyList(),
+    /** Fylvo 1.6: the selection (several items) can be packed as a ZIP. */
+    val compress: Boolean = false,
 )
 
 /**
@@ -116,7 +132,7 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
             val canModify = Permissions.canModifyFile(file)
             SelectionActions(
                 quick = listOfNotNull(
-                    SelectionAction.SHARE.takeIf { Permissions.canShareLink(file) },
+                    SelectionAction.SHARE.takeIf { Permissions.canShare(file, ctx.groupShare) },
                     SelectionAction.DOWNLOAD,
                     SelectionAction.DELETE.takeIf { canModify },
                 ),
@@ -129,7 +145,7 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
                     SelectionAction.MOVE.takeIf { canModify },
                     SelectionAction.OFFLINE.takeIf { ctx.offlineShown },
                     SelectionAction.SHOW_IN_FOLDER.takeIf { ctx.virtual },
-                ) + editActions(one, ctx),
+                ) + editActions(one, ctx) + ctx.more,
             )
         }
         else -> {
@@ -141,7 +157,7 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
                     SelectionAction.DELETE.takeIf { canModify },
                 ),
                 menu = listOfNotNull(SelectionAction.SELECT_ALL) + customizeActions(selected, ctx) +
-                    listOfNotNull(SelectionAction.COPY.takeIf { canModify }),
+                    listOfNotNull(SelectionAction.COPY.takeIf { canModify }, SelectionAction.COMPRESS.takeIf { ctx.compress }),
             )
         }
     }

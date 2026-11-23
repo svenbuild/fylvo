@@ -123,6 +123,12 @@ data class EditEntry(
     val stalls: Int = 0,
     /** Recoveries of [pending] without a clear answer in a row (for the retry delay). */
     val attempts: Int = 0,
+    /**
+     * Fylvo 1.6: made from the server, not from an offline copy ("Edit" without keeping the file
+     * offline). Its address is followed by file id on the server; once uploaded and left alone for
+     * a day it is finished by itself and goes a day later.
+     */
+    val standalone: Boolean = false,
 ) {
     val retired: Boolean get() = retiredAt > 0
     /** What the working copy is compared with: the last confirmed upload, else the bytes it was made from. */
@@ -134,6 +140,10 @@ data class EditEntry(
 const val EDIT_STABLE_MS = 2 * 60_000L
 const val EDIT_RECOVERY_DELAY_MS = 3 * 60_000L
 const val EDIT_RETIRED_KEEP_MS = 7 * 24 * 60 * 60_000L
+/** Fylvo 1.6: a standalone working copy, uploaded and untouched this long, is finished by itself... */
+const val EDIT_STANDALONE_IDLE_MS = 24 * 60 * 60_000L
+/** ...and kept this long after that (watched for a late write, which goes up as a conflict copy). */
+const val EDIT_STANDALONE_KEEP_MS = 24 * 60 * 60_000L
 /** After an editor got access, the edit check keeps looking this long. */
 const val EDIT_WATCH_MS = 60 * 60_000L
 const val EDIT_MAX_STALLS = 3
@@ -141,6 +151,16 @@ const val EDIT_MAX_STALLS = 3
 const val EDIT_MAX_UNCLEAR = 5
 const val CONFLICT_MAX_TRIES = 20
 const val NAME_MAX_BYTES = 255
+
+/**
+ * Fylvo 1.6: a standalone working copy that can be finished by itself: in use, everything of it is
+ * on the server (nothing changed since the last confirmed upload, nothing pending or refused), and
+ * neither the file nor an editor's access changed for [EDIT_STANDALONE_IDLE_MS].
+ */
+fun idleStandalone(entry: EditEntry, stat: LocalStat?, sha256: String?, now: Long): Boolean =
+    entry.standalone && entry.active && entry.pending == null && entry.refusedSnapshots.isEmpty() &&
+        stat != null && sha256 != null && !isChanged(entry, sha256) &&
+        now - stat.mtime >= EDIT_STANDALONE_IDLE_MS && now - maxOf(entry.grantedAt, entry.createdAt) >= EDIT_STANDALONE_IDLE_MS
 
 /** The working copy differs from its last confirmed upload (or from what it was made from). */
 fun isChanged(entry: EditEntry, sha256: String): Boolean = sha256 != entry.reference.sha256
@@ -192,7 +212,8 @@ fun planEdit(entry: EditEntry, stat: LocalStat?, sha256: String?, now: Long, exp
             else -> EditStep.Skip
         }
         !isChanged(entry, sha256) ->
-            if (entry.retired && entry.refusedSnapshots.isEmpty() && now - entry.retiredAt >= EDIT_RETIRED_KEEP_MS) EditStep.Expire
+            if (entry.retired && entry.refusedSnapshots.isEmpty() &&
+                now - entry.retiredAt >= (if (entry.standalone) EDIT_STANDALONE_KEEP_MS else EDIT_RETIRED_KEEP_MS)) EditStep.Expire
             else EditStep.Unchanged
         explicit || isStable(stat, entry.seen, now) -> EditStep.Upload
         else -> EditStep.Unstable

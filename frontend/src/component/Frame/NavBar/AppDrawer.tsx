@@ -19,7 +19,7 @@ const DrawerContent = () => {
   const isDashboard = pageVariant === PageVariant.dashboard;
   return (
     <>
-      <DrawerHeader />
+      <DrawerHeader customize={!!user && !isDashboard} />
       <Stack
         direction={"column"}
         ref={scrollRef}

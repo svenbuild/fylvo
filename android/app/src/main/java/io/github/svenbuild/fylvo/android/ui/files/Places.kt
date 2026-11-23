@@ -135,3 +135,32 @@ val placeSaver = androidx.compose.runtime.saveable.Saver<Place?, String>(
     save = { it?.key ?: "" },
     restore = { Place.parse(it) },
 )
+
+/** Fylvo 1.6: above "Shared with me": the way to the account's own shares. */
+@Composable
+fun SharedChips(onSharedByMe: () -> Unit) {
+    Row(
+        Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Surface(
+            onClick = onSharedByMe,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            color = Color.Transparent,
+        ) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Outlined.Link, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    androidx.compose.ui.res.stringResource(io.github.svenbuild.fylvo.android.R.string.shared_by_me),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(start = 7.dp),
+                )
+            }
+        }
+    }
+}

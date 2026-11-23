@@ -80,7 +80,7 @@ interface ApiService {
     suspend fun deleteFiles(@Body request: DeleteFileRequest): Response<ApiResponse<Unit>>
 
     @PUT("api/v4/file/upload")
-    suspend fun createUploadSession(@Body request: CreateUploadSessionRequest): Response<ApiResponse<UploadSessionResponse>>
+    suspend fun createUploadSession(@Body request: CreateUploadSessionRequest, @Tag session: SessionTag? = null): Response<ApiResponse<UploadSessionResponse>>
 
     /** Cancels an unfinished upload session, so its placeholder file and lock go away. */
     @HTTP(method = "DELETE", path = "api/v4/file/upload", hasBody = true)
@@ -89,13 +89,13 @@ interface ApiService {
     // Chunk targets are fully resolved URLs returned in upload_urls —
     // same-origin for local policies, presigned for remote policies.
     @POST
-    suspend fun uploadChunk(@Url url: String, @Body body: RequestBody): Response<ResponseBody>
+    suspend fun uploadChunk(@Url url: String, @Body body: RequestBody, @Tag session: SessionTag? = null): Response<ResponseBody>
 
     @PUT
-    suspend fun uploadChunkPut(@Url url: String, @Body body: RequestBody): Response<ResponseBody>
+    suspend fun uploadChunkPut(@Url url: String, @Body body: RequestBody, @Tag session: SessionTag? = null): Response<ResponseBody>
 
     @POST
-    suspend fun completeUpload(@Url url: String): Response<ResponseBody>
+    suspend fun completeUpload(@Url url: String, @Tag session: SessionTag? = null): Response<ResponseBody>
 
     // Streamed: a large file must never be held in memory as a whole.
     @Streaming
@@ -109,14 +109,139 @@ interface ApiService {
     suspend fun listTasks(
         @Query("page_size") pageSize: Int = 20,
         @Query("category") category: String = "general",
+        @Query("next_page_token") nextPageToken: String? = null,
     ): Response<ApiResponse<TaskListResponse>>
 
+    /** Fylvo 1.6: the entries of a zip or 7z archive. */
+    @GET("api/v4/file/archive")
+    suspend fun archiveEntries(@Query("uri") uri: String): Response<ApiResponse<ArchiveListing>>
+
+    @POST("api/v4/workflow/extract")
+    suspend fun extractArchive(@Body request: WorkflowRequest, @Tag session: SessionTag): Response<ApiResponse<TaskItem>>
+
+    @POST("api/v4/workflow/archive")
+    suspend fun createArchive(@Body request: WorkflowRequest, @Tag session: SessionTag): Response<ApiResponse<TaskItem>>
+
     @PUT("api/v4/share")
-    suspend fun createShare(@Body request: ShareCreateRequest): Response<ApiResponse<String>>
+    suspend fun createShare(@Body request: ShareCreateRequest, @Tag session: SessionTag? = null): Response<ApiResponse<String>>
+
+    // ---- Fylvo 1.6: managing own shares (design/android-parity-plan.md, 1 and 2).
+
+    /** Own shares, newest first; [pageSize] 10 to 100, next page with `pagination.next_token`. */
+    @GET("api/v4/share")
+    suspend fun listShares(
+        @Query("page_size") pageSize: Int = 50,
+        @Query("order_direction") orderDirection: String = "desc",
+        @Query("next_page_token") nextPageToken: String? = null,
+    ): Response<ApiResponse<ShareListResponse>>
+
+    /** Replaces all settings of share [id] (the password stays); answers with the link. */
+    @POST("api/v4/share/{id}")
+    suspend fun editShare(@Path("id") id: String, @Body request: ShareCreateRequest, @Tag session: SessionTag): Response<ApiResponse<String>>
+
+    @HTTP(method = "DELETE", path = "api/v4/share/{id}")
+    suspend fun deleteShare(@Path("id") id: String, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    /**
+     * One share; [password] unlocks a protected one (also needed by its owner for
+     * [ownerExtended], which adds `source_uri`). A wrong password answers `unlocked: false`.
+     */
+    @GET("api/v4/share/info/{id}")
+    suspend fun shareDetails(
+        @Path("id") id: String,
+        @Query("password") password: String? = null,
+        @Query("owner_extended") ownerExtended: Boolean? = null,
+    ): Response<ApiResponse<ShareInfo>>
+
+    /**
+     * Fylvo 1.6: replaces the content of the file at [uri]; with [previous] and [previousRequired]
+     * only while that version is still the current one (40076 otherwise, 40904 when gone).
+     */
+    @PUT("api/v4/file/content")
+    suspend fun putContent(
+        @Query("uri") uri: String,
+        @Query("previous") previous: String?,
+        @Query("previous_required") previousRequired: Boolean?,
+        @Body body: RequestBody,
+        @Tag session: SessionTag,
+    ): Response<ApiResponse<FileObject>>
+
+    // ---- Fylvo 1.6: account and security (design/android-parity-plan.md, 9). Calls that carry a
+    // password or a 2FA code go through ApiClient.authService (no redirects).
+
+    @GET("api/v4/user/setting")
+    suspend fun securitySettings(): Response<ApiResponse<UserSettings>>
+
+    /** Name, password (with the current one) or 2FA (always with its code); empty answer. */
+    @PATCH("api/v4/user/setting")
+    suspend fun patchUserSetting(@Body patch: JsonObject, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    /** A new 2FA secret (base32), valid for 10 minutes until confirmed with a code. */
+    @GET("api/v4/user/setting/2fa")
+    suspend fun twoFaSecret(@Tag session: SessionTag): Response<ApiResponse<String>>
+
+    /** The account's sign-ins and security changes; [next] pages on. */
+    @GET("api/v4/user/setting/activity")
+    suspend fun accountActivity(@Query("next") next: Int? = null): Response<ApiResponse<ActivityList>>
+
+    @HTTP(method = "DELETE", path = "api/v4/session/oauth/grant/{id}")
+    suspend fun revokeGrant(@Path("id") clientId: String, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    /** A new profile picture (raw image bytes, `Content-Type` of the image). */
+    @PUT("api/v4/user/setting/avatar")
+    suspend fun uploadAvatar(@Body image: RequestBody, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    /** Fylvo 1.6: search inside file contents (only when the server has it switched on). */
+    @GET("api/v4/file/search")
+    suspend fun fullTextSearch(@Query("query") query: String, @Query("offset") offset: Int = 0): Response<ApiResponse<FullTextResult>>
+
+    // ---- Fylvo 1.6: versions, history, trash (design/android-parity-plan.md, 6 to 8).
+
+    @POST("api/v4/file/version/current")
+    suspend fun setCurrentVersion(@Body request: VersionRequest, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    @HTTP(method = "DELETE", path = "api/v4/file/version", hasBody = true)
+    suspend fun deleteVersion(@Body request: VersionRequest, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    /** The history of an own file (or of a folder and the files directly in it); [next] pages on. */
+    @GET("api/v4/file/activity")
+    suspend fun fileActivity(@Query("uri") uri: String, @Query("next") next: Int? = null): Response<ApiResponse<ActivityList>>
+
+    /** Empties the trash for good; runs on the server until it is done (can take a while). */
+    @HTTP(method = "DELETE", path = "api/v4/file/trash")
+    suspend fun emptyTrash(@Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    /** Fylvo 1.6: a file by its id (wherever it is now). */
+    @GET("api/v4/file/info")
+    suspend fun fileInfoById(@Query("id") id: String): Response<ApiResponse<FileObject>>
+
+    /** A file with `extended_info` (shares, versions, storage used). */
+    @GET("api/v4/file/info")
+    suspend fun fileInfoExtended(@Query("uri") uri: String, @Query("extended") extended: Boolean = true): Response<ApiResponse<FileObject>>
 
     /** Fylvo: the account's connected storages; a server without the feature answers HTTP 404. */
     @GET("api/v4/fylvo/connected")
     suspend fun connectedStorages(): Response<ApiResponse<ConnectedOverview>>
+
+    // ---- Fylvo 1.6: connecting storages from the app (data/ConnectFlow).
+
+    @POST("api/v4/fylvo/connected/authorize")
+    suspend fun connectAuthorize(@Body request: ConnectAuthorizeRequest, @Tag session: SessionTag): Response<ApiResponse<ConnectAuthorizeResponse>>
+
+    @POST("api/v4/fylvo/connected/finish")
+    suspend fun connectPreview(@Body request: ConnectFinishRequest, @Tag session: SessionTag): Response<ApiResponse<ConnectPreview>>
+
+    @POST("api/v4/fylvo/connected/finish")
+    suspend fun connectFinish(@Body request: ConnectFinishRequest, @Tag session: SessionTag): Response<ApiResponse<ConnectedStorage>>
+
+    @POST("api/v4/fylvo/connected/finish")
+    suspend fun connectCancel(@Body request: ConnectFinishRequest, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    @PATCH("api/v4/fylvo/connected/{id}")
+    suspend fun connectRename(@Path("id") id: String, @Body request: ConnectRenameRequest, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    @HTTP(method = "DELETE", path = "api/v4/fylvo/connected/{id}")
+    suspend fun connectDelete(@Path("id") id: String, @Tag session: SessionTag): Response<ApiResponse<Unit>>
 
     @GET("api/v4/fylvo/connected/upload/{session}")
     suspend fun connectedUploadState(@Path("session") session: String): Response<ApiResponse<ConnectedUploadState>>
@@ -175,6 +300,18 @@ interface ApiService {
     /** The listing's whole `view`; without page size and sort, which would replace the stored ones. */
     @GET("api/v4/file")
     suspend fun folderView(@Query("uri") uri: String, @Tag session: SessionTag): Response<ApiResponse<FolderViewResponse>>
+
+    /** Fylvo 1.6: a person by id (name only, for share members). */
+    @GET("api/v4/user/info/{id}")
+    suspend fun userInfo(@Path("id") id: String): Response<ApiResponse<User>>
+
+    /** Fylvo 1.6: active accounts by name or e-mail (at least 2 characters, at most 10 answers). */
+    @GET("api/v4/user/search")
+    suspend fun searchUsers(@Query("keyword") keyword: String): Response<ApiResponse<List<User>>>
+
+    /** Fylvo: the signed-in account with its group rights. */
+    @GET("api/v4/user/me")
+    suspend fun me(@Tag session: SessionTag): Response<ApiResponse<Me>>
 
     /** Fylvo: one share's public facts (member-only, owner); decides the star inside shares. */
     @GET("api/v4/share/info/{id}")

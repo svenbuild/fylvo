@@ -12,6 +12,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -95,9 +96,12 @@ fun LoginScreen(viewModel: LoginViewModel, onLoggedIn: () -> Unit) {
             Image(
                 painter = painterResource(R.drawable.ic_launcher_foreground),
                 contentDescription = null,
+                // Fylvo: on the dark tile of the app icon, so the white part of the mark is seen in
+                // the light theme too.
                 modifier = Modifier
-                    .size(112.dp)
-                    .clip(RoundedCornerShape(50)),
+                    .size(96.dp)
+                    .clip(RoundedCornerShape(28))
+                    .background(androidx.compose.ui.res.colorResource(R.color.ic_launcher_background)),
             )
             Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 8.dp))
 

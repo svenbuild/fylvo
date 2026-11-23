@@ -48,6 +48,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
             </intent-filter>
+            <!-- Fylvo 1.6: back from a storage sign-in in the browser (fylvo://connected?...). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fylvo" android:host="connected" />
+            </intent-filter>
         </activity>
 
         <provider

@@ -62,7 +62,14 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     /** One notification per batch: batches can run side by side. */
     private val notificationId = NOTIF_ID_BASE + (id.hashCode() and 0xFFFF)
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = try {
+        work()
+    } finally {
+        // Fylvo 1.6: the read right on an uploaded phone folder goes once no batch needs it.
+        runCatching { FolderUpload.releaseFinished(applicationContext) }
+    }
+
+    private suspend fun work(): Result {
         val app = applicationContext as FylvoApp
         val queue = queue(applicationContext)
         var batch = inputData.getString(KEY_BATCH_ID)?.let(queue::load)
@@ -710,6 +717,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             /** Fylvo: the account at the moment the upload was confirmed (instead of the one now). */
             account: String? = null,
         ) {
+            // Fylvo 1.6: the queue is stored on disk; an address with a share password never goes in.
+            require(!io.github.svenbuild.fylvo.android.util.CrUri.hasSecret(parentUri)) { "No uploads into a link with a password" }
             if (uris.isEmpty()) return
             // Shared files (no folder listing here): two with the same name would race for one
             // address, so they get unique names. Picked files come already renamed by the screen,
@@ -777,7 +786,20 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             }
             queue.delete(batchId)
             releaseUnused(context, queue, batch.items.map { it.uri })
+            runCatching { FolderUpload.releaseFinished(context) }
             File(context.cacheDir, "upload_staging").listFiles { f -> f.name.startsWith("$workId-") }?.forEach { it.delete() }
+        }
+
+        /** Fylvo 1.6: cancels the uploads into [root] (a disconnected storage). Off the main thread. */
+        suspend fun cancelForRoot(context: Context, root: String) {
+            val wm = WorkManager.getInstance(context)
+            val queue = queue(context)
+            val works = runCatching { wm.getWorkInfosByTag(TAG).get() }.getOrDefault(emptyList())
+            works.filter { !it.state.isFinished }.forEach { info ->
+                val batchId = info.tags.firstOrNull { it.startsWith(BATCH_TAG_PREFIX) }?.removePrefix(BATCH_TAG_PREFIX) ?: info.id.toString()
+                val batch = queue.load(batchId) ?: return@forEach
+                if (io.github.svenbuild.fylvo.android.util.CrUri.root(batch.parentUri) == root) cancel(context, info.id)
+            }
         }
 
         /**
@@ -813,14 +835,16 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             overwriteOnly: Set<String>? = null,
             expectedParentId: String? = null,
             account: String? = null,
-        ) {
-            try {
+        ): Boolean {
+            return try {
                 enqueue(context, uris, parentUri, names, overwrite, overwriteOnly, expectedParentId, account)
+                true
             } catch (e: Exception) {
                 Log.w(LOG_TAG, "Could not queue an upload: ${e.javaClass.simpleName}")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     android.widget.Toast.makeText(context, context.localized().getString(R.string.upload_could_not_start), android.widget.Toast.LENGTH_LONG).show()
                 }
+                false
             }
         }
 

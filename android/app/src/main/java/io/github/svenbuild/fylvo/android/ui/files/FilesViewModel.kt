@@ -79,7 +79,8 @@ fun offlineUriOf(file: FileObject): String = file.sharedRedirect ?: file.path
 fun canKeepOffline(file: FileObject): Boolean {
     val uri = offlineUriOf(file)
     val place = (CrUri.root(uri) == CrUri.MY_PREFIX && !CrUri.isRoot(uri)) || CrUri.isShare(uri)
-    return place && !file.isUploading
+    // Fylvo 1.6: an address with a share password never goes into the offline store.
+    return place && !file.isUploading && !CrUri.hasSecret(uri)
 }
 
 /**
@@ -168,6 +169,12 @@ data class FilesUiState(
     /** Folder the search is limited to; null = whole drive. */
     val searchScope: String? = null,
     val searchType: Category? = null,
+    /** Fylvo 1.6: filters of the search (type, size, date, tags) and the full-text mode. */
+    val searchFilters: io.github.svenbuild.fylvo.android.util.SearchFilters = io.github.svenbuild.fylvo.android.util.SearchFilters(),
+    val searchFullText: Boolean = false,
+    /** Full-text snippets by path, and how many hits there are in all. */
+    val searchSnippets: Map<String, String> = emptyMap(),
+    val searchFullTextTotal: Long = 0,
     val searchResults: List<FileObject> = emptyList(),
     val searchNextToken: String? = null,
     val searchLoading: Boolean = false,
@@ -201,7 +208,9 @@ data class FilesUiState(
      * exists): in the person's own files, in a share with the right to change it (online only).
      */
     fun canEdit(file: FileObject): Boolean = !file.isFolder && !file.isUploading && !inTrash && file.id.isNotEmpty() &&
-        (editOf(file) != null || (isOffline(file) && if (offlineMode) !CrUri.isShare(file.path) else Permissions.canModifyFile(file)))
+        (editOf(file) != null || (isOffline(file) && if (offlineMode) !CrUri.isShare(file.path) else Permissions.canModifyFile(file)) ||
+            // Fylvo 1.6: also without keeping it offline (a working copy from the server).
+            (!offlineMode && !isOffline(file) && file.primaryEntity.isNotEmpty() && Permissions.canSaveContent(file)))
     /** Fylvo: kept on this phone, as a root or inside an offline folder (shown with a pin). */
     fun isOffline(file: FileObject): Boolean = offlineCoverage.isOffline(offlineUriOf(file))
     /** Fylvo: kept offline as its own root. */
@@ -803,7 +812,8 @@ class FilesViewModel(
      * Folders come down as a server-built zip named "<folder>.zip". Progress
      * shows in [FilesUiState.downloading]; the snackbar reports the saved name.
      */
-    fun saveToDevice(context: Context, file: FileObject) {
+    /** Fylvo 1.6: [entity] saves that older version instead of the current one. */
+    fun saveToDevice(context: Context, file: FileObject, entity: String? = null) {
         val key = "save:${file.path}"
         downloadJobs.remove(key)?.cancel()
         // Fylvo: already being saved by a download of several files.
@@ -811,7 +821,7 @@ class FilesViewModel(
         setDownloading(file.path, null)
         val job = viewModelScope.launch {
             try {
-                val savedName = withContext(Dispatchers.IO) { saveToDeviceIo(context, file) }
+                val savedName = withContext(Dispatchers.IO) { saveToDeviceIo(context, file, entity) }
                 _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.saved_file, savedName)))
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
@@ -902,9 +912,9 @@ class FilesViewModel(
         downloadJobs[BATCH_SAVE_KEY] = job
     }
 
-    private suspend fun saveToDeviceIo(context: Context, file: FileObject): String {
+    private suspend fun saveToDeviceIo(context: Context, file: FileObject, entity: String? = null): String {
         val archive = file.isFolder
-        val url = repo.downloadUrl(file.path, archive = archive, entity = saveEntity(file))
+        val url = repo.downloadUrl(file.path, archive = archive, entity = entity ?: saveEntity(file))
         val displayName = if (archive) "${file.name}.zip" else Connected.downloadName(file)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val resolver = context.contentResolver
@@ -1261,6 +1271,9 @@ class FilesViewModel(
     fun pickerAllowsMoveInto(uri: String): Boolean =
         !Connected.isConnected(uri) || Connected.canCreateIn(pickerFolders[CrUri.canonical(uri)])
 
+    /** Fylvo 1.6: the folder [uri] as the picker listed it (its rights decide archive targets). */
+    fun pickerFolder(uri: String): FileObject? = pickerFolders[CrUri.canonical(uri)]
+
     /** Fylvo: the id of the folder [uri] as the picker listed it (sent with a move), or null. */
     fun pickerFolderId(uri: String): String? = pickerFolders[CrUri.canonical(uri)]?.id?.takeIf { it.isNotEmpty() }
 
@@ -1271,12 +1284,30 @@ class FilesViewModel(
     // enabled FTS, and answered "feature not enabled" on a stock server.
 
     private var searchJob: Job? = null
+    /** Fylvo 1.6: counts every new or ended search; a later page counts only for its own one. */
+    private var searchRound = 0
 
     /** Opens search; scoped to the current folder when inside one, otherwise everywhere. */
     fun openSearch() {
         val s = _state.value
         val scope = if (!s.home && !s.virtual && CrUri.isSearchScope(s.currentUri)) s.currentUri else null
-        _state.value = s.copy(searchQuery = "", searchScope = scope, searchType = null, searchResults = emptyList(), selected = emptySet())
+        _state.value = s.copy(
+            searchQuery = "", searchScope = scope, searchType = null, searchResults = emptyList(), selected = emptySet(),
+            searchFilters = io.github.svenbuild.fylvo.android.util.SearchFilters(), searchFullText = false,
+            searchSnippets = emptyMap(), searchFullTextTotal = 0,
+        )
+    }
+
+    /** Fylvo 1.6: the search's filters. */
+    fun setSearchFilters(filters: io.github.svenbuild.fylvo.android.util.SearchFilters) {
+        _state.value = _state.value.copy(searchFilters = filters)
+        runSearch()
+    }
+
+    /** Fylvo 1.6: search inside file contents instead of names. */
+    fun setSearchFullText(on: Boolean) {
+        _state.value = _state.value.copy(searchFullText = on, searchResults = emptyList(), searchSnippets = emptyMap())
+        runSearch()
     }
 
     fun setSearchScope(folder: String?) {
@@ -1292,23 +1323,59 @@ class FilesViewModel(
     /** Called as the user types; results are fetched after a short pause. */
     fun search(query: String) {
         _state.value = _state.value.copy(searchQuery = query)
+        // Fylvo 1.6: a pasted link is offered to open (FilesScreen), never searched for.
+        if (io.github.svenbuild.fylvo.android.util.ShareLinks.looksLikeLink(query)) {
+            searchJob?.cancel()
+            searchRound++
+            _state.update { it.copy(searchResults = emptyList(), searchNextToken = null, searchLoading = false, searchLoadingMore = false, searchError = null) }
+            return
+        }
         runSearch(debounceMs = 300)
     }
 
+    /**
+     * Fylvo 1.6: the search address with every filter (util/SearchQuery). In full-text mode the
+     * key is "fulltext:<query>" (that search has no address). A category replaces the name on the
+     * server; its results are matched by name in the app ([matchSearch]).
+     */
     private fun searchUri(): String? {
         val s = _state.value
         val q = s.searchQuery?.trim().orEmpty()
-        if (q.isEmpty()) return null
+        if (io.github.svenbuild.fylvo.android.util.ShareLinks.looksLikeLink(q)) return null
+        if (s.searchFullText) return if (q.length >= 2) "fulltext:$q" else null
         val base = s.searchScope ?: CrUri.MY_PREFIX
-        val encoded = java.net.URLEncoder.encode(q, "UTF-8").replace("+", "%20")
-        return buildString {
-            append(base).append("?name=").append(encoded).append("&case_folding")
-            s.searchType?.filter?.let { append('&').append(it) }
+        val category = s.searchType?.filter?.substringAfter("category=", "")?.ifEmpty { null }
+        return io.github.svenbuild.fylvo.android.util.SearchQuery.build(base, q, s.searchFilters, category)
+    }
+
+    /** Fylvo 1.6: pages asked for by themselves (a category filtered in the app can leave a page short). */
+    private var autoPages = 0
+
+    /** A short filtered list cannot be scrolled to load more: the next pages come by themselves (at most 10). */
+    private fun fillShortPage() {
+        val s = _state.value
+        if (s.searchType != null && s.searchResults.size < 20 && s.searchNextToken != null && autoPages < 10) {
+            autoPages++
+            searchMore()
         }
+    }
+
+    /** Fylvo 1.6: category results hold only names with every word of the query. */
+    private fun matchSearch(files: List<FileObject>): List<FileObject> {
+        val s = _state.value
+        val q = s.searchQuery?.trim().orEmpty()
+        return if (s.searchType != null && q.isNotEmpty()) files.filter { io.github.svenbuild.fylvo.android.util.SearchQuery.matches(it.name, q) } else files
+    }
+
+    /** Fylvo 1.6: one page of the full-text search, as rows and their snippets. */
+    private suspend fun fullTextPage(query: String, offset: Int): Triple<List<FileObject>, Map<String, String>, Long> {
+        val res = repo.fullTextSearch(query, offset)
+        return Triple(res.hits.map { it.file }, res.hits.associate { it.file.path to it.content }, res.total)
     }
 
     private fun runSearch(debounceMs: Long = 0) {
         searchJob?.cancel()
+        searchRound++
         val uri = searchUri()
         if (uri == null) {
             _state.value = _state.value.copy(searchResults = emptyList(), searchNextToken = null, searchLoading = false, searchLoadingMore = false, searchError = null)
@@ -1318,13 +1385,24 @@ class FilesViewModel(
         searchJob = viewModelScope.launch {
             if (debounceMs > 0) kotlinx.coroutines.delay(debounceMs)
             try {
+                if (uri.startsWith("fulltext:")) {
+                    val (files, snippets, total) = fullTextPage(uri.removePrefix("fulltext:"), 0)
+                    _state.value = _state.value.copy(
+                        searchLoading = false, searchResults = files, searchSnippets = snippets, searchFullTextTotal = total,
+                        searchNextToken = if (files.size < total) "more" else null,
+                    )
+                    prefetchThumbs(files)
+                    return@launch
+                }
                 val res = repo.list(uri, orderBy = "updated_at", orderDirection = "desc")
+                autoPages = 0
                 _state.value = _state.value.copy(
                     searchLoading = false,
-                    searchResults = res.files,
+                    searchResults = matchSearch(res.files),
                     searchNextToken = res.pagination.nextToken,
                 )
                 prefetchThumbs(res.files)
+                fillShortPage()
             } catch (_: CancellationException) {
             } catch (e: Exception) {
                 if (!handleSessionExpiry(e)) _state.value = _state.value.copy(searchLoading = false, searchError = userError(e))
@@ -1338,18 +1416,34 @@ class FilesViewModel(
         val uri = searchUri() ?: return
         if (s.searchLoadingMore || s.searchLoading) return
         _state.value = s.copy(searchLoadingMore = true)
+        // The same search still (a category search has one address for every text; A, B, A again is a new one).
+        val round = searchRound
+        fun sameSearch() = searchRound == round && searchUri() == uri
         viewModelScope.launch {
             try {
+                if (uri.startsWith("fulltext:")) {
+                    val shown = _state.value.searchResults
+                    val (files, snippets, total) = fullTextPage(uri.removePrefix("fulltext:"), shown.size)
+                    if (!sameSearch()) return@launch
+                    val all = shown + files.filter { f -> shown.none { it.path == f.path } }
+                    _state.value = _state.value.copy(
+                        searchLoadingMore = false, searchResults = all,
+                        searchSnippets = _state.value.searchSnippets + snippets, searchFullTextTotal = total,
+                        searchNextToken = if (files.isNotEmpty() && all.size < total) "more" else null,
+                    )
+                    return@launch
+                }
                 val res = repo.list(uri, pageToken = token, orderBy = "updated_at", orderDirection = "desc")
                 // A newer query replaced this one while the page was in flight.
-                if (searchUri() != uri) return@launch
+                if (!sameSearch()) return@launch
                 _state.value = _state.value.copy(
                     searchLoadingMore = false,
-                    searchResults = _state.value.searchResults + res.files,
+                    searchResults = _state.value.searchResults + matchSearch(res.files),
                     searchNextToken = res.pagination.nextToken,
                 )
+                fillShortPage()
             } catch (e: Exception) {
-                if (searchUri() == uri) {
+                if (sameSearch()) {
                     _state.value = _state.value.copy(searchLoadingMore = false, snackbar = failure(e))
                 }
             }
@@ -1358,10 +1452,15 @@ class FilesViewModel(
 
     fun clearSearch() {
         searchJob?.cancel()
+        searchRound++
         _state.value = _state.value.copy(
             searchQuery = null,
             searchScope = null,
             searchType = null,
+            searchFilters = io.github.svenbuild.fylvo.android.util.SearchFilters(),
+            searchFullText = false,
+            searchSnippets = emptyMap(),
+            searchFullTextTotal = 0,
             searchResults = emptyList(),
             searchNextToken = null,
             searchLoading = false,
@@ -1631,7 +1730,10 @@ class FilesViewModel(
      */
     fun startEditing(file: FileObject, open: (File) -> Unit) {
         viewModelScope.launch {
-            when (val result = edits.startEditing(file, _state.value.offlineMode)) {
+            // Fylvo 1.6: a file not kept offline gets its working copy from the server first.
+            val standalone = !_state.value.isOffline(file) && _state.value.editOf(file) == null
+            if (standalone) _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_fetching))) }
+            when (val result = edits.startEditing(file, _state.value.offlineMode, standalone)) {
                 is OfflineEdits.StartResult.Ready -> {
                     open(result.file)
                     edits.opened(result.entryId)
@@ -1647,8 +1749,11 @@ class FilesViewModel(
         _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_uploading_now))) }
         viewModelScope.launch {
             when (val result = edits.finish(entry.id)) {
-                OfflineEdits.FinishResult.Done ->
+                OfflineEdits.FinishResult.Done -> {
                     _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_finished, entry.name))) }
+                    // Fylvo 1.6: the list shows the new version.
+                    if (!_state.value.offlineMode) refresh()
+                }
                 is OfflineEdits.FinishResult.Failed -> _state.update { s ->
                     val now = s.editEntries.firstOrNull { it.id == entry.id }
                     s.copy(
@@ -1695,13 +1800,6 @@ class FilesViewModel(
 
     /** The copy on this phone of a single offline file, for the Offline screen. */
     suspend fun offlineFile(uri: String): File? = offline.localCopy(uri)
-
-    suspend fun shareLink(
-        file: FileObject,
-        password: String = "",
-        expireSeconds: Int = 0,
-        downloads: Int = 0,
-    ): String = repo.createShare(file.path, password = password, expireSeconds = expireSeconds, downloads = downloads)
 
     /** Trash: put items back where they were. */
     fun restore(paths: List<String>) {

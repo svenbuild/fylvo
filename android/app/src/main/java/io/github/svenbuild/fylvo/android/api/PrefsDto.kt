@@ -90,6 +90,18 @@ data class SiteBasic(
 @Serializable
 data class UserSettings(
     @SerialName("disable_view_sync") val disableViewSync: Boolean = false,
+    /** Fylvo 1.6: the account has no password (then none can be changed). */
+    val passwordless: Boolean = false,
+    @SerialName("two_fa_enabled") val twoFaEnabled: Boolean = false,
+    /** Apps that may use the account (OAuth); revoked with their [OauthGrant.clientId]. */
+    @SerialName("oauth_grants") val oauthGrants: List<OauthGrant> = emptyList(),
+)
+
+@Serializable
+data class OauthGrant(
+    @SerialName("client_id") val clientId: String = "",
+    @SerialName("client_name") val clientName: String = "",
+    @SerialName("last_used_at") val lastUsedAt: String? = null,
 )
 
 /** Fylvo: `PATCH /file/metadata`. */
@@ -128,7 +140,67 @@ data class ShareInfo(
     val id: String = "",
     @SerialName("member_only") val memberOnly: Boolean = false,
     val owner: ShareOwner? = null,
+    /** Fylvo: name of the shared file or folder. */
+    val name: String = "",
+    /** 0 file, 1 folder. */
+    @SerialName("source_type") val sourceType: Int? = null,
+    val url: String = "",
+    val visited: Int = 0,
+    val downloaded: Int = 0,
+    /** Downloads left; null = no limit. Only when [unlocked]. */
+    @SerialName("remain_downloads") val remainDownloads: Int? = null,
+    /** Absolute end (RFC 3339); null = never. Only when [unlocked]. */
+    val expires: String? = null,
+    val expired: Boolean = false,
+    val unlocked: Boolean = false,
+    @SerialName("password_protected") val passwordProtected: Boolean = false,
+    @SerialName("created_at") val createdAt: String = "",
+    // Owner only (the server leaves these out for everyone else).
+    @SerialName("is_private") val isPrivate: Boolean = false,
+    /** The link's password, sent to its owner; kept in memory only. */
+    val password: String = "",
+    @SerialName("share_view") val shareView: Boolean = false,
+    @SerialName("show_readme") val showReadme: Boolean = false,
+    @SerialName("allow_upload") val allowUpload: Boolean = false,
+    @SerialName("hide_content") val hideContent: Boolean = false,
+    @SerialName("upload_limit") val uploadLimit: Long = 0,
+    val members: List<ShareMemberDto> = emptyList(),
+    /** With `owner_extended`: the shared item's folder (a single file: its parent). */
+    @SerialName("source_uri") val sourceUri: String = "",
+) {
+    val isFolder: Boolean get() = sourceType == 1
+}
+
+@Serializable
+data class ShareOwner(val id: String = "", val nickname: String = "")
+
+@Serializable
+data class ShareMemberDto(
+    @SerialName("user_id") val userId: String,
+    @SerialName("can_edit") val canEdit: Boolean = false,
 )
 
 @Serializable
-data class ShareOwner(val id: String = "")
+data class ShareListResponse(
+    val shares: List<ShareInfo> = emptyList(),
+    val pagination: Pagination? = null,
+)
+
+/** Fylvo: `GET /user/me`; [group] carries the account's group rights. */
+@Serializable
+data class Me(
+    val id: String = "",
+    val email: String = "",
+    val nickname: String = "",
+    /** "" none, "file" an uploaded picture, "gravatar" (never fetched by the app). */
+    val avatar: String = "",
+    val group: MeGroup? = null,
+)
+
+@Serializable
+data class MeGroup(
+    val id: String = "",
+    val name: String = "",
+    /** Base64 bit set of the group's rights (see util/Permissions). */
+    val permission: String? = null,
+)

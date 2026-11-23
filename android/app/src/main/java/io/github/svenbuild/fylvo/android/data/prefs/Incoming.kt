@@ -24,6 +24,10 @@ sealed interface Incoming {
     data object Favorites : Incoming
     /** Open a folder of My files (or show a file in its folder). */
     data class Open(val uri: String, val folder: Boolean) : Incoming
+    /** Fylvo 1.6: a share link of the signed-in server (the password stays in memory). */
+    data class ShareLink(val id: String, val password: String) : Incoming
+    /** Fylvo 1.6: a shared link that belongs to another server: only a message, no request. */
+    data object ForeignLink : Incoming
 }
 
 /** Fylvo: the app's own actions for shortcuts and the widget; only navigation, never a change. */
