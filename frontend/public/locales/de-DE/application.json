@@ -1218,7 +1218,7 @@
     "rename": "Umbenennen",
     "reconnect": "Neu verbinden",
     "disconnect": "Trennen",
-    "disconnectConfirm": "\"{{name}}\" trennen? Der Zugriff wird von diesem Server entfernt. Die Dateien beim Anbieter bleiben, wie sie sind.",
+    "disconnectConfirm": "\"{{name}}\" ({{account}}) trennen? Der Zugriff wird von diesem Server entfernt. Die Dateien beim Anbieter bleiben, wie sie sind.",
     "disconnected": "Speicher getrennt.",
     "statusReconnect": "Neu verbinden nötig",
     "statusReconnectDes": "Der Anbieter nimmt den Zugriff nicht mehr an. Bitte mit demselben Konto neu verbinden.",

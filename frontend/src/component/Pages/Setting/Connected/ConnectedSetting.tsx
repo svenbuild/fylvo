@@ -124,16 +124,16 @@ const useErrorText = () => {
 // address: started from another address it could not be completed. Returns that address
 // instead of leaving the page.
 const openProvider = (url: string): string | undefined => {
-  try {
-    const back = new URL(url).searchParams.get("redirect_uri");
-    const origin = back ? new URL(back).origin : undefined;
-    if (origin && origin != window.location.origin) {
-      return origin;
-    }
-  } catch (e) {
-    // Not a URL we can read; leave it to the provider.
+  const target = new URL(url);
+  if (target.protocol != "https:" && target.protocol != "http:") {
+    throw new Error("unexpected address");
   }
-  window.location.assign(url);
+  const back = target.searchParams.get("redirect_uri");
+  const origin = back ? new URL(back).origin : undefined;
+  if (origin && origin != window.location.origin) {
+    return origin;
+  }
+  window.location.assign(target.href);
   return undefined;
 };
 
@@ -157,6 +157,10 @@ interface FlowResult {
 // The finish step of a sign-in that is still running. It lives outside the component, so
 // leaving the tab and coming back while it runs shows its result and a fresh list.
 let finishRun: Promise<FlowResult> | undefined;
+
+// The sign-in start that is waiting for the server, also across leaving the tab: only one
+// at a time, since each start replaces the cookie of the one before.
+let authorizeRun: { key: string; done: Promise<unknown> } | undefined;
 
 const RenameDialog = ({
   storage,
@@ -277,6 +281,7 @@ const StorageRow = ({
   list,
   allowed,
   authorizing,
+  highlight,
   onRename,
   onReconnect,
   onDisconnected,
@@ -285,6 +290,8 @@ const StorageRow = ({
   list: ConnectedListResponse;
   allowed: boolean;
   authorizing?: string;
+  // Named in the address (?reconnect=<id>): scrolled to, its reconnect button stands out.
+  highlight?: boolean;
   onRename: (s: ConnectedStorage) => void;
   onReconnect: (s: ConnectedStorage) => void;
   onDisconnected: (id: string) => void;
@@ -294,9 +301,16 @@ const StorageRow = ({
   const [disconnecting, setDisconnecting] = useState(false);
   const needsReconnect = storage.status == ConnectedStatus.reconnect;
   const configured = list.providers.some((p) => p.type == storage.provider && p.configured);
+  const row = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (highlight) {
+      row.current?.scrollIntoView({ block: "center" });
+    }
+  }, [highlight]);
 
   const disconnect = () => {
-    dispatch(confirmOperation(t("connected.disconnectConfirm", { name: storage.name })))
+    dispatch(confirmOperation(t("connected.disconnectConfirm", { name: storage.name, account: storage.account })))
       .then(() => {
         setDisconnecting(true);
         return dispatch(sendConnectedDisconnect(storage.id))
@@ -308,6 +322,7 @@ const StorageRow = ({
 
   return (
     <Box
+      ref={row}
       sx={{
         display: "flex",
         flexWrap: "wrap",
@@ -336,9 +351,9 @@ const StorageRow = ({
             />
           )}
         </Box>
-        <NoWrapTypography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+        <Typography variant="caption" color="text.secondary" component="div" sx={{ overflowWrap: "anywhere" }}>
           {[providerName(list, storage.provider), storage.account].filter(Boolean).join(" · ")}
-        </NoWrapTypography>
+        </Typography>
         {needsReconnect && (
           <Typography variant="caption" color="text.secondary" component="div">
             {t("connected.statusReconnectDes")}
@@ -354,8 +369,9 @@ const StorageRow = ({
         {needsReconnect && allowed && configured && (
           <LoadingButton
             size="small"
-            variant="outlined"
+            variant={highlight ? "contained" : "outlined"}
             color="warning"
+            autoFocus={highlight}
             loading={authorizing == storage.id}
             disabled={!!authorizing}
             onClick={() => onReconnect(storage)}
@@ -390,6 +406,10 @@ const ConnectedSetting = () => {
   const errorText = useErrorText();
   const [finish, setFinish] = useQueryState("finish");
   const [flowError, setFlowError] = useQueryState("error");
+  // ?reconnect=<id> (from the apps): only points at the storage; starting a sign-in
+  // always takes a click.
+  const [reconnectParam, setReconnectParam] = useQueryState("reconnect");
+  const [highlight] = useState(reconnectParam);
   const [list, setList] = useState<ConnectedListResponse | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -398,22 +418,35 @@ const ConnectedSetting = () => {
   const [connectOpen, setConnectOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<ConnectedStorage | undefined>(undefined);
   // Provider type (connect) or connection id (reconnect) of the sign-in being started.
-  // One at a time: each start replaces the cookie of the one before.
-  const [authorizing, setAuthorizing] = useState<string | undefined>(undefined);
+  const [authorizing, setAuthorizing] = useState<string | undefined>(authorizeRun?.key);
   const handled = useRef(false);
+  const mounted = useRef(true);
   useResetOnBack(() => setAuthorizing(undefined));
+
+  useEffect(() => {
+    mounted.current = true;
+    // A start from before leaving the tab: wait for it; it does not leave the page any more.
+    authorizeRun?.done.finally(() => mounted.current && setAuthorizing(undefined));
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const isAdmin = useMemo(
     () => GroupBS(SessionManager.currentLoginOrNull()?.user).enabled(GroupPermission.is_admin),
     [],
   );
 
+  // The spinner shows only until the first list is there, so a refresh keeps open dialogs.
+  // After a failed refresh the old list is dropped, so no action works on stale data.
   const load = useCallback(() => {
-    setLoading(true);
     setLoadFailed(false);
     return dispatch(getConnectedStorages())
       .then((res) => setList(res))
-      .catch(() => setLoadFailed(true))
+      .catch(() => {
+        setList(undefined);
+        setLoadFailed(true);
+      })
       .finally(() => setLoading(false));
   }, [dispatch]);
 
@@ -424,6 +457,10 @@ const ConnectedSetting = () => {
       return;
     }
     handled.current = true;
+
+    if (reconnectParam) {
+      setReconnectParam(null);
+    }
 
     if (flowError) {
       setResult({
@@ -461,9 +498,17 @@ const ConnectedSetting = () => {
   }, []);
 
   const authorize = (provider: string, reconnect?: string) => {
-    setAuthorizing(reconnect ?? provider);
-    dispatch(sendConnectedAuthorize(provider, reconnect))
+    if (authorizeRun) {
+      return;
+    }
+    const key = reconnect ?? provider;
+    setAuthorizing(key);
+    const done = dispatch(sendConnectedAuthorize(provider, reconnect))
       .then((res) => {
+        if (!mounted.current) {
+          // The tab was left meanwhile: do not take the browser away from where it is now.
+          return;
+        }
         // On success the page is left; the state stays until the browser is gone.
         const origin = openProvider(res.url);
         if (origin) {
@@ -473,12 +518,19 @@ const ConnectedSetting = () => {
         }
       })
       .catch((e) => {
+        if (!mounted.current) {
+          return;
+        }
         setAuthorizing(undefined);
         setConnectOpen(false);
         setResult({ severity: "error", message: errorText(e) });
         // The refusal may come from a change elsewhere (permission, another tab).
         load();
+      })
+      .finally(() => {
+        authorizeRun = undefined;
       });
+    authorizeRun = { key, done };
   };
 
   const onRenamed = (storage: ConnectedStorage) => {
@@ -594,6 +646,7 @@ const ConnectedSetting = () => {
               list={list}
               allowed={allowed}
               authorizing={authorizing}
+              highlight={s.id == highlight}
               onRename={setRenameTarget}
               onReconnect={(r) => authorize(r.provider, r.id)}
               onDisconnected={onDisconnected}
@@ -604,7 +657,7 @@ const ConnectedSetting = () => {
           <Box sx={{ mt: 1 }}>
             <SecondaryLoadingButton
               variant="contained"
-              disabled={full}
+              disabled={full || !!authorizing}
               onClick={() => setConnectOpen(true)}
               startIcon={<Add />}
             >

@@ -1140,7 +1140,7 @@
     "rename": "Rename",
     "reconnect": "Reconnect",
     "disconnect": "Disconnect",
-    "disconnectConfirm": "Disconnect \"{{name}}\"? The access is removed from this server. Your files at the provider stay as they are.",
+    "disconnectConfirm": "Disconnect \"{{name}}\" ({{account}})? The access is removed from this server. Your files at the provider stay as they are.",
     "disconnected": "Storage disconnected.",
     "statusReconnect": "Reconnect needed",
     "statusReconnectDes": "The provider no longer accepts the access. Connect it again with the same account.",
