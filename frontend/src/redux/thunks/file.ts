@@ -338,11 +338,14 @@ export function goToParent(index: number, folder: FileResponse): AppThunk {
 }
 
 // Fylvo: a document of a connected storage's provider (for example a Google Sheet) opens at
-// the provider in a new tab.
+// the provider in a new tab. So does a row that names an address there as an extra way to
+// open it (a shortcut to a file).
 export function openAtProvider(index: number, file: FileResponse): AppThunk {
   return async (dispatch) => {
     dispatch(closeContextMenu({ index, value: undefined }));
-    const url = file.metadata?.[Metadata.connected_external_url];
+    // The first one that names an address, as the menu decides whether to show the entry.
+    const url =
+      file.metadata?.[Metadata.connected_external_url] || file.metadata?.[Metadata.connected_provider_url];
     if (url && /^https?:\/\//i.test(url)) {
       window.open(url, "_blank", "noopener,noreferrer");
     }

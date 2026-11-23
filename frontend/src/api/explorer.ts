@@ -217,6 +217,9 @@ export const Metadata = {
   connected_exports: "fylvo:exports",
   // Address of the item at the provider, to open it there.
   connected_external_url: "fylvo:external_url",
+  // Address at the provider of an item that can be used here as well (a shortcut to a file):
+  // an extra way to open it, not the only one.
+  connected_provider_url: "fylvo:provider_url",
   // The size is not known; do not show it.
   connected_size_unknown: "fylvo:size_unknown",
 

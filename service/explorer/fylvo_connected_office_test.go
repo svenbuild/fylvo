@@ -3,6 +3,7 @@ package explorer
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/boolset"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive/drivetest"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -448,10 +450,12 @@ func TestConnectedOfficeLastSaveIsKeptBesideAConflict(t *testing.T) {
 	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, first, firstToken, []byte("from the first window"))
 	require.Equal(t, http.StatusOK, rec.Code)
 	// A save while the window is still open is the conflict the editor asks about.
+	// What it wanted to save is beside the file from that moment on.
 	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, second, secondToken, []byte("from the second window"))
 	require.Equal(t, http.StatusConflict, rec.Code)
-	require.Equal(t, "Docs|letter.docx", names(""))
-	// The window is closed.
+	require.Equal(t, "Docs|letter (conflict).docx|letter.docx", names(""))
+	require.Equal(t, []byte("from the second window"), e.download(e.root+"/letter (conflict).docx"))
+	// The window is closed, with a little more in it: that goes into the same copy.
 	rec = e.officeExit(second, secondToken, []byte("from the second window, a little more"))
 	require.Equal(t, http.StatusOK, rec.Code)
 	var saved map[string]string
@@ -472,16 +476,17 @@ func TestConnectedOfficeLastSaveIsKeptBesideAConflict(t *testing.T) {
 	require.Equal(t, []byte("changed at the provider"), e.download(e.root+"/letter.docx"))
 
 	// The file was renamed while its window was open: for the editor a conflict, and
-	// at the end the copy lies where the file was opened, under the name it had.
+	// the copy lies where the file was opened, under the name the file has now.
 	inFolder, inFolderToken := open("/Docs/plan.v2.docx")
 	e.sim.Rename(planID, "final plan.docx")
 	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, inFolder, inFolderToken, []byte("an edit"))
 	require.Equal(t, http.StatusConflict, rec.Code)
+	require.Equal(t, "final plan (conflict).docx|final plan.docx", names("/Docs"))
 	rec = e.officeExit(inFolder, inFolderToken, []byte("an edit, kept"))
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, "final plan.docx|plan.v2 (conflict).docx", names("/Docs"))
+	require.Equal(t, "final plan (conflict).docx|final plan.docx", names("/Docs"))
 	require.Equal(t, []byte("a plan"), e.download(e.root+"/Docs/final plan.docx"))
-	require.Equal(t, []byte("an edit, kept"), e.download(e.root+"/Docs/plan.v2 (conflict).docx"))
+	require.Equal(t, []byte("an edit, kept"), e.download(e.root+"/Docs/final plan (conflict).docx"))
 
 	// The file is deleted while its window is open: the same.
 	gone, goneToken := open("/letter.docx")
@@ -527,12 +532,15 @@ func TestConnectedOfficeLastSaveSentTwice(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "letter (conflict).docx|letter.docx", fileNames(list.Files))
 
+	// Other content of the same window, before it read the file again, is a newer
+	// state of the same document: it takes the place of the first in the copy.
 	third := e.officeExit(session, token, []byte("what the user wrote, and more"))
 	require.Equal(t, http.StatusOK, third.Code)
 	e.m.Tree().Forget(e.id)
 	list, err = e.list(e.alex, e.root, 100, "")
 	require.NoError(t, err)
-	require.Equal(t, "letter (conflict 2).docx|letter (conflict).docx|letter.docx", fileNames(list.Files))
+	require.Equal(t, "letter (conflict).docx|letter.docx", fileNames(list.Files))
+	require.Equal(t, []byte("what the user wrote, and more"), e.download(e.root+"/letter (conflict).docx"))
 
 	// The window reads the file again, and then the first last save comes once more,
 	// late: it is still its copy. It is not stored over the file the window has read
@@ -546,8 +554,112 @@ func TestConnectedOfficeLastSaveSentTwice(t *testing.T) {
 	e.m.Tree().Forget(e.id)
 	list, err = e.list(e.alex, e.root, 100, "")
 	require.NoError(t, err)
-	require.Len(t, list.Files, 3)
+	require.Len(t, list.Files, 2)
 	require.Equal(t, []byte("changed at the provider"), e.download(e.root+"/letter.docx"))
+	require.Equal(t, []byte("what the user wrote, and more"), e.download(e.root+"/letter (conflict).docx"))
+}
+
+// What a real Office server does after it told its user of a conflict: it may send
+// nothing more, not even when the window is closed. So what a save could not put into
+// the file is beside the file from the first refusal on, whatever becomes of the window.
+func TestConnectedOfficeConflictIsKeptAtOnce(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	id := e.sim.AddFile("", "letter.docx", []byte("version one"))
+	open := func(path string) (session, token string) {
+		t.Helper()
+		res, err := e.officeSession(t, path, types.ViewerActionEdit)
+		require.NoError(t, err)
+		rec, _ := e.office(ConnectedOfficeGet, http.MethodGet, res.Session.ID, res.Session.AccessToken, nil)
+		require.Equal(t, http.StatusOK, rec.Code)
+		return res.Session.ID, res.Session.AccessToken
+	}
+	names := func() string {
+		t.Helper()
+		e.m.Tree().Forget(e.id)
+		res, err := e.list(e.alex, e.root, 100, "")
+		require.NoError(t, err)
+		return fileNames(res.Files)
+	}
+	save := func(session, token, body string) int {
+		t.Helper()
+		rec, _ := e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte(body))
+		return rec.Code
+	}
+	before := e.officeTemps()
+
+	// A save that goes through keeps nothing beside the file.
+	session, token := open("/letter.docx")
+	require.Equal(t, http.StatusOK, save(session, token, "version two"))
+	require.Equal(t, "letter.docx", names())
+
+	// The file changes elsewhere. The window saves: the editor is told of the conflict
+	// and asks its user. The window is then closed without another save.
+	e.sim.SetContent(id, []byte("changed at the provider"))
+	require.Equal(t, http.StatusConflict, save(session, token, "what the user wrote"))
+	require.Equal(t, "letter (conflict).docx|letter.docx", names())
+	require.Equal(t, []byte("what the user wrote"), e.download(e.root+"/letter (conflict).docx"))
+	require.Equal(t, []byte("changed at the provider"), e.download(e.root+"/letter.docx"))
+
+	// The user goes on typing and the editor saves again, and again: still the
+	// conflict, and the one copy holds the newest state. The same state sent again
+	// costs no upload.
+	require.Equal(t, http.StatusConflict, save(session, token, "what the user wrote, and more"))
+	require.Equal(t, "letter (conflict).docx|letter.docx", names())
+	require.Equal(t, []byte("what the user wrote, and more"), e.download(e.root+"/letter (conflict).docx"))
+	uploads := e.sim.Calls(drivetest.CallStart)
+	require.Equal(t, http.StatusConflict, save(session, token, "what the user wrote, and more"))
+	require.Equal(t, uploads, e.sim.Calls(drivetest.CallStart))
+	require.Equal(t, "letter (conflict).docx|letter.docx", names())
+
+	// The user lets the editor load the document again and works on from there. A
+	// conflict after that is another state, with a copy of its own.
+	rec, _ := e.office(ConnectedOfficeGet, http.MethodGet, session, token, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, http.StatusOK, save(session, token, "on top of what was loaded"))
+	e.sim.SetContent(id, []byte("changed once more"))
+	require.Equal(t, http.StatusConflict, save(session, token, "a second try"))
+	require.Equal(t, "letter (conflict 2).docx|letter (conflict).docx|letter.docx", names())
+	require.Equal(t, []byte("what the user wrote, and more"), e.download(e.root+"/letter (conflict).docx"))
+	require.Equal(t, []byte("a second try"), e.download(e.root+"/letter (conflict 2).docx"))
+
+	// Somebody took the copy for their own (changed it, here): it is left alone, and
+	// what the window saves next gets a new one.
+	e.sim.SetContent(e.sim.Find("", "letter (conflict 2).docx"), []byte("somebody's own by now"))
+	require.Equal(t, http.StatusConflict, save(session, token, "a third try"))
+	require.Equal(t, "letter (conflict 2).docx|letter (conflict 3).docx|letter (conflict).docx|letter.docx", names())
+	require.Equal(t, []byte("somebody's own by now"), e.download(e.root+"/letter (conflict 2).docx"))
+	require.Equal(t, []byte("a third try"), e.download(e.root+"/letter (conflict 3).docx"))
+
+	// A save the Office server marks as holding nothing of its user is the conflict
+	// and no copy.
+	other, otherToken := open("/letter.docx")
+	e.sim.SetContent(id, []byte("and again"))
+	e.officeHeaders = map[string]string{"X-COOL-WOPI-IsModifiedByUser": "false"}
+	require.Equal(t, http.StatusConflict, save(other, otherToken, "as it was read"))
+	e.officeHeaders = nil
+	require.Len(t, strings.Split(names(), "|"), 4)
+
+	// A copy that is edited and meets a conflict itself gets a further copy of the
+	// file, not a copy of a copy.
+	copyID := e.sim.Find("", "letter (conflict).docx")
+	require.NotEmpty(t, copyID)
+	ofCopy, ofCopyToken := open("/letter (conflict).docx")
+	e.sim.SetContent(copyID, []byte("the copy changed too"))
+	require.Equal(t, http.StatusConflict, save(ofCopy, ofCopyToken, "an edit of the copy"))
+	require.Equal(t, "letter (conflict 2).docx|letter (conflict 3).docx|letter (conflict 4).docx|letter (conflict).docx|letter.docx", names())
+	require.Equal(t, []byte("an edit of the copy"), e.download(e.root+"/letter (conflict 4).docx"))
+
+	// The storage is full: nothing can be kept, and the conflict is all there is.
+	full, fullToken := open("/letter.docx")
+	e.sim.SetContent(id, []byte("one last change"))
+	e.sim.SetFull(true)
+	require.Equal(t, http.StatusConflict, save(full, fullToken, "not kept"))
+	e.sim.SetFull(false)
+	require.Len(t, strings.Split(names(), "|"), 5)
+
+	// Nothing of a document is left on the server's own disk.
+	require.Equal(t, before, e.officeTemps())
 }
 
 // A last save through a window that never read the file: there is nothing of a user in
@@ -597,6 +709,8 @@ func TestConnectedOfficeLastSaveMeetsADeletionMidway(t *testing.T) {
 	e.sim.DeleteOnNextUpload(other)
 	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, res.Session.ID, res.Session.AccessToken, []byte("an edit"))
 	require.Equal(t, http.StatusConflict, rec.Code)
+	// What it wanted to save is kept all the same.
+	require.Equal(t, []byte("an edit"), e.download(e.root+"/other (conflict).docx"))
 }
 
 // Drive lets a file carry a name that Fylvo gives to nothing new. Such a file can be
@@ -870,4 +984,136 @@ func TestConnectedOfficeActionThatIsUsed(t *testing.T) {
 	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, res.Session.ID, res.Session.AccessToken, []byte("not stored"))
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 	require.Equal(t, []byte("a letter"), e.download(e.root+"/letter.docx"))
+}
+
+// The one copy of a conflict holds what the window sent last, and only as long as it is
+// the copy this window left: taken away, renamed or lost in the middle of an upload,
+// what the window sends goes into a new one.
+func TestConnectedOfficeConflictCopyIsFollowed(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	id := e.sim.AddFile("", "letter.docx", []byte("version one"))
+	res, err := e.officeSession(t, "/letter.docx", types.ViewerActionEdit)
+	require.NoError(t, err)
+	session, token := res.Session.ID, res.Session.AccessToken
+	read := func() {
+		t.Helper()
+		rec, _ := e.office(ConnectedOfficeGet, http.MethodGet, session, token, nil)
+		require.Equal(t, http.StatusOK, rec.Code)
+	}
+	names := func() string {
+		t.Helper()
+		e.m.Tree().Forget(e.id)
+		res, err := e.list(e.alex, e.root, 100, "")
+		require.NoError(t, err)
+		return fileNames(res.Files)
+	}
+	refused := func(body string) {
+		t.Helper()
+		rec, _ := e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte(body))
+		require.Equal(t, http.StatusConflict, rec.Code, body)
+	}
+	copyOf := func(name string) []byte { return e.download(e.root + "/" + name) }
+	read()
+	e.sim.SetContent(id, []byte("changed at the provider"))
+
+	// One state, another, and the first again (the user took a change back): the copy
+	// holds what came last, not what it once held.
+	refused("state A")
+	refused("state B")
+	refused("state A")
+	require.Equal(t, "letter (conflict).docx|letter.docx", names())
+	require.Equal(t, []byte("state A"), copyOf("letter (conflict).docx"))
+
+	// Somebody deletes the copy. The same state sent again is stored again.
+	e.sim.Delete(e.sim.Find("", "letter (conflict).docx"))
+	refused("state A")
+	require.Equal(t, "letter (conflict).docx|letter.docx", names())
+	require.Equal(t, []byte("state A"), copyOf("letter (conflict).docx"))
+
+	// Somebody renames the copy: it is theirs, with what it holds. The same state sent
+	// again gets a new one, and the next state goes into that.
+	e.sim.Rename(e.sim.Find("", "letter (conflict).docx"), "mine now.docx")
+	refused("state A")
+	require.Equal(t, "letter (conflict).docx|letter.docx|mine now.docx", names())
+	require.Equal(t, []byte("state A"), copyOf("letter (conflict).docx"))
+	refused("state C")
+	require.Equal(t, "letter (conflict).docx|letter.docx|mine now.docx", names())
+	require.Equal(t, []byte("state A"), copyOf("mine now.docx"))
+	require.Equal(t, []byte("state C"), copyOf("letter (conflict).docx"))
+	// And once more with a new state right after the rename.
+	e.sim.Rename(e.sim.Find("", "letter (conflict).docx"), "mine too.docx")
+	refused("state C2")
+	require.Equal(t, "letter (conflict).docx|letter.docx|mine now.docx|mine too.docx", names())
+	require.Equal(t, []byte("state C"), copyOf("mine too.docx"))
+	require.Equal(t, []byte("state C2"), copyOf("letter (conflict).docx"))
+	e.sim.Delete(e.sim.Find("", "mine too.docx"))
+
+	// The copy goes away in the middle of the upload that was to renew it: the state
+	// is stored in a new one, not lost.
+	e.sim.DeleteOnNextUpload(e.sim.Find("", "letter (conflict).docx"))
+	refused("state D")
+	require.Equal(t, "letter (conflict).docx|letter.docx|mine now.docx", names())
+	require.Equal(t, []byte("state D"), copyOf("letter (conflict).docx"))
+
+	// Somebody moves the copy into a folder: the same.
+	other := e.sim.AddFolder("", "Elsewhere")
+	e.sim.Move(e.sim.Find("", "letter (conflict).docx"), other)
+	refused("state D")
+	require.Equal(t, "Elsewhere|letter (conflict).docx|letter.docx|mine now.docx", names())
+	require.Equal(t, []byte("state D"), copyOf("letter (conflict).docx"))
+	require.Equal(t, []byte("state D"), copyOf("Elsewhere/letter (conflict).docx"))
+	e.sim.Delete(other)
+
+	// Many states later the window is closed, more than once. Each last save is
+	// answered as saved, and the first of them sent again, also after the window read
+	// the file anew, never goes over the file.
+	for i := 0; i < 12; i++ {
+		refused(fmt.Sprintf("state %d", i))
+	}
+	first := e.officeExit(session, token, []byte("the last state"))
+	require.Equal(t, http.StatusOK, first.Code)
+	for i := 0; i < 12; i++ {
+		rec := e.officeExit(session, token, []byte(fmt.Sprintf("a later last state %d", i)))
+		require.Equal(t, http.StatusOK, rec.Code)
+	}
+	rec := e.officeExit(session, token, []byte("the last state"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, first.Body.String(), rec.Body.String())
+	rec = e.officeExit(session, token, []byte("the last state of all"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []byte("the last state of all"), copyOf("letter (conflict).docx"))
+	read()
+	for i := 0; i < 12; i++ {
+		rec, _ := e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte(fmt.Sprintf("saved %d", i)))
+		require.Equal(t, http.StatusOK, rec.Code)
+	}
+	again := e.officeExit(session, token, []byte("the last state"))
+	require.Equal(t, http.StatusOK, again.Code)
+	require.JSONEq(t, first.Body.String(), again.Body.String())
+	require.Equal(t, []byte("saved 11"), e.download(e.root+"/letter.docx"))
+	require.Equal(t, "letter (conflict).docx|letter.docx|mine now.docx", names())
+
+	// After the window read the file again, a state it had before is a state of the
+	// new document: refused, it gets its own copy.
+	e.sim.SetContent(id, []byte("changed once more"))
+	refused("state A")
+	require.Equal(t, "letter (conflict 2).docx|letter (conflict).docx|letter.docx|mine now.docx", names())
+	require.Equal(t, []byte("state A"), copyOf("letter (conflict 2).docx"))
+	require.Equal(t, []byte("the last state of all"), copyOf("letter (conflict).docx"))
+
+	// Every numbered name is taken: the copy gets a name with the time in it.
+	for n := 3; n <= 20; n++ {
+		e.sim.AddFile("", fmt.Sprintf("letter (conflict %d).docx", n), []byte("in the way"))
+	}
+	read()
+	e.sim.SetContent(id, []byte("changed a last time"))
+	refused("state Z")
+	held := ""
+	for _, name := range strings.Split(names(), "|") {
+		if string(copyOf(name)) == "state Z" {
+			held = name
+		}
+	}
+	require.Regexp(t, `^letter \(conflict \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d\)\.docx$`, held)
 }

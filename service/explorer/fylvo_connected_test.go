@@ -667,10 +667,28 @@ func TestConnectedSharedItems(t *testing.T) {
 	viewOnly := e.sim.AddFile("", "minutes.txt", []byte("0123456789"))
 	e.sim.SetViewOnly(viewOnly)
 	e.sim.AddShortcut("", "Shared minutes", viewOnly)
+	e.sim.AddShortcut("", "Shared team", e.sim.AddFolder("", "Team"))
 
 	res, err := e.list(e.alex, e.root, 0, "")
 	require.NoError(t, err)
-	require.Equal(t, "Budget.gsheet|minutes.txt|Shared budget.gsheet|Shared minutes", fileNames(res.Files))
+	require.Equal(t, "Shared team|Team|Budget.gsheet|minutes.txt|Shared budget.gsheet|Shared minutes", fileNames(res.Files))
+	// The address at the provider is told for what opens only there. A link to a file
+	// that Fylvo can read has none of that kind (clients take it for "not to be opened
+	// here"); it tells where it opens at the provider as well. A file of the storage
+	// itself tells neither.
+	for _, f := range res.Files {
+		switch f.Name {
+		case "Budget.gsheet", "Shared budget.gsheet":
+			require.NotEmpty(t, f.Metadata[connectedMetaExternalURL], f.Name)
+			require.NotContains(t, f.Metadata, connectedMetaProviderURL, f.Name)
+		case "Shared minutes":
+			require.NotContains(t, f.Metadata, connectedMetaExternalURL, f.Name)
+			require.True(t, strings.HasPrefix(f.Metadata[connectedMetaProviderURL], "https://"), f.Name)
+		default:
+			require.NotContains(t, f.Metadata, connectedMetaExternalURL, f.Name)
+			require.NotContains(t, f.Metadata, connectedMetaProviderURL, f.Name)
+		}
+	}
 
 	export, err := e.urlOf(e.alex, e.root+"/Shared budget.gsheet", true)
 	require.NoError(t, err)

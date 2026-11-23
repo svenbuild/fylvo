@@ -98,11 +98,19 @@ type OfficeSession struct {
 	// folderID is the id of the folder the file was in when the session was opened,
 	// for a session that edits. A copy beside the file goes into that folder or nowhere.
 	folderID string
-	// kept are the copies made of last saves, by the checksum of their content: the
-	// same save sent again answers its copy and makes no second one. keptOrder is the
-	// order they were made in; the oldest gives way to a new one.
-	kept      map[[sha256.Size]byte]*Row
-	keptOrder [][sha256.Size]byte
+	// exits are the last saves of closing windows that went into a copy, by the
+	// checksum of their content, with the time they were answered with. The same last
+	// save sent again gets that answer and is stored nowhere, for as long as the
+	// session lives: its answer may not have arrived, and it must never go over the
+	// file, also not after the window read the file again.
+	exits map[[sha256.Size]byte]time.Time
+	// beside is the copy that holds what this session could not save since it last
+	// read the document, besidePath its address, besideSum the checksum of what this
+	// session put there. A further save that is refused goes into that copy, not into
+	// one more.
+	beside     *Row
+	besidePath string
+	besideSum  [sha256.Size]byte
 	// read tells that the file was read through this session at least once. Only then
 	// is there something of a user in what it saves.
 	read bool
@@ -463,6 +471,9 @@ func (m *Manager) OfficeRead(ctx context.Context, c *Conn, s *OfficeSession, lim
 	}
 	s.version = VersionID(c.ID, &Row{Item: *item})
 	s.read = true
+	// The editor starts again from what is stored. What it cannot save from here on
+	// is another state, and gets a copy of its own.
+	s.beside = nil
 	return nil
 }
 
@@ -527,21 +538,28 @@ func (m *Manager) OfficeSave(ctx context.Context, c *Conn, s *OfficeSession, bod
 }
 
 const (
-	// officeCopies is how many names are tried for a copy beside a file.
+	// officeCopies is how many numbered names are tried for a copy beside a file,
+	// before it gets a name with the time in it.
 	officeCopies = 20
-	// officeKept is how many copies a session remembers for a save that comes again.
-	officeKept = 8
+	// officeKeepTime is how long storing a copy may take.
+	officeKeepTime = 2 * time.Minute
 )
 
-// OfficeKeepBeside stores content as a new file beside the file of the session, in the
+// OfficeKeepBeside stores content as a file beside the file of the session, in the
 // folder the session was opened in: "letter (word).docx", or with a number when that
-// name is taken. It is for what an editor wanted to save when its file had changed and
-// nobody is left to ask (the window was closed): nothing is replaced, and nothing is
-// lost. The folder is the one the file was in, by its id: if another folder has its
-// path by now, nothing is put there. body is read from its start for every name that
-// is tried; sum is the SHA-256 of it. The same content sent again for the session
-// answers the copy that was made. The caller entered the session.
-func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSession, body io.ReadSeeker, size int64, sum [sha256.Size]byte, word string) (*Row, error) {
+// name is taken. It is for what an editor wanted to save when its file had changed:
+// the file is not replaced, and what the user wrote is not lost, whatever becomes of
+// the window. The copy carries the name the file has now. The folder is the one the
+// file was in, by its id: if another folder has its path by now, nothing is put there.
+// body is read from its start for every try; sum is the SHA-256 of it.
+//
+// Until the session reads the document again there is one copy: content that is
+// refused later takes the place of the earlier one in it, and the very content the
+// copy holds is not stored again. That goes for the copy as this session left it only;
+// one that somebody changed, renamed, moved or removed is theirs, and a new one is
+// made. exit marks the last save of a closing window (see OfficeExitKept). The caller
+// entered the session.
+func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSession, body io.ReadSeeker, size int64, sum [sha256.Size]byte, word string, exit bool) (*Row, error) {
 	if !s.Edit || s.folderID == "" || !s.read {
 		// Also for a session nothing was read through: what it sends is not a newer
 		// state of anything its user saw.
@@ -550,22 +568,82 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 	if s.closed.Load() || s.Conn != c.ID || s.Generation != c.Generation {
 		return nil, ErrOfficeGone
 	}
-	if row := s.kept[sum]; row != nil {
-		// The answer to the first time did not arrive. It is this.
+	// The Office server may hang up while the copy is on its way (it does not wait for
+	// ever, and a window that closes does not either). What it sent whole is stored
+	// all the same: not as long as the request lasts, but for a time of its own, and
+	// as long as the connection to the storage lasts.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), officeKeepTime)
+	defer cancel()
+	if c.live != nil {
+		defer context.AfterFunc(c.live.ctx, cancel)()
+	}
+	stored := func(row *Row, path string) (*Row, error) {
+		s.beside, s.besidePath, s.besideSum = row, path, sum
+		if exit {
+			if s.exits == nil {
+				s.exits = map[[sha256.Size]byte]time.Time{}
+			}
+			s.exits[sum] = row.ModTime
+		}
 		return row, nil
 	}
+	if s.beside != nil && VersionID(c.ID, s.beside) == "" {
+		// Without a marker for its state nothing would show that the copy is still as
+		// this session left it: a new one.
+		s.beside = nil
+	}
+	if s.beside != nil && sum == s.besideSum {
+		// The very content the copy holds, if the copy is still there as it was left:
+		// the same item in the same version, under its name in the folder of the file.
+		_, name := ParentOf(s.besidePath)
+		if row, err := m.tree.named(ctx, c, s.folderID, name); err == nil && row.ID == s.beside.ID &&
+			VersionID(c.ID, row) == VersionID(c.ID, s.beside) {
+			return stored(s.beside, s.besidePath)
+		}
+		s.beside = nil
+	}
+	if s.beside != nil {
+		// A state of the same document, newer than the one the copy holds: it takes
+		// its place there, if the copy is still the item, in the version and in the
+		// folder this session left it.
+		if _, err := body.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		row, err := m.Save(ctx, c, UploadRequest{
+			Path: s.besidePath, Size: size, Replace: true, Previous: VersionID(c.ID, s.beside),
+			PreviousRequired: true, Item: s.beside.ID, Folder: s.folderID,
+		}, body)
+		if err == nil {
+			return stored(row, s.besidePath)
+		}
+		// It did not go there, for whatever reason (the copy is somebody else's by
+		// now, it went away in the middle, the provider lost the upload): a new copy.
+		// At worst the same state is beside the file twice.
+		s.beside = nil
+	}
+
 	folder, name := ParentOf(s.Path)
+	if item, err := m.officeItem(ctx, c, s, false); err == nil {
+		// The name the file has now, if the file is still there.
+		name = item.Name
+	}
 	base, ext := name, ""
 	if dot := strings.LastIndex(name, "."); dot >= 0 {
 		base, ext = name[:dot], name[dot:]
 	}
 	// The file can carry a name Fylvo gives to nothing new (Drive allows more). The
-	// copy gets one that keeps the rules, as close to it as they allow.
-	base, ext = legalNamePart(base), legalNamePart(ext)
+	// copy gets one that keeps the rules, as close to it as they allow. A file that is
+	// such a copy itself gets a further copy of the file it came from, not a copy of
+	// a copy.
+	base, ext = unmarked(legalNamePart(base), word), legalNamePart(ext)
 	var err error
-	for n := 1; n <= officeCopies; n++ {
+	for n := 1; n <= officeCopies+1; n++ {
 		mark := " (" + word + ")"
-		if n > 1 {
+		switch {
+		case n > officeCopies:
+			// All the numbered names are taken. One that nothing else carries.
+			mark = " (" + word + " " + m.offices.now().UTC().Format("2006-01-02 15.04.05") + ")"
+		case n > 1:
 			mark = " (" + word + " " + strconv.Itoa(n) + ")"
 		}
 		path := besideName(base, mark, ext)
@@ -584,15 +662,7 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 		row, err = m.Save(ctx, c, UploadRequest{Path: path, Size: size, Folder: s.folderID}, body)
 		var app serializer.AppError
 		if err == nil {
-			if s.kept == nil {
-				s.kept = map[[sha256.Size]byte]*Row{}
-			}
-			if len(s.keptOrder) >= officeKept {
-				delete(s.kept, s.keptOrder[0])
-				s.keptOrder = s.keptOrder[1:]
-			}
-			s.kept[sum], s.keptOrder = row, append(s.keptOrder, sum)
-			return row, nil
+			return stored(row, path)
 		}
 		taken := errors.As(err, &app) && (app.Code == serializer.CodeObjectExist || app.Code == serializer.CodeNameCaseTaken)
 		if !taken && m.settled(c.AccountKey, s.folderID, besideName(base, mark, ext)) == nil {
@@ -604,10 +674,30 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 	return nil, err
 }
 
-// OfficeKept returns the copy that was made, through this session, of content with the
-// given checksum, nil when there is none. The caller entered the session.
-func (m *Manager) OfficeKept(s *OfficeSession, sum [sha256.Size]byte) *Row {
-	return s.kept[sum]
+// OfficeExitKept tells whether content with the given checksum was the last save of a
+// closing window of this session and went into a copy, and the time that save was
+// answered with. The caller entered the session.
+func (m *Manager) OfficeExitKept(s *OfficeSession, sum [sha256.Size]byte) (time.Time, bool) {
+	when, ok := s.exits[sum]
+	return when, ok
+}
+
+// unmarked takes the mark of a copy off the first part of a name: "letter (word)" and
+// "letter (word 2)" are "letter", and a name that is the mark alone is "".
+func unmarked(base, word string) string {
+	open := strings.LastIndex(base, "(")
+	if open < 0 || !strings.HasSuffix(base, ")") || (open > 0 && base[open-1] != ' ') {
+		return base
+	}
+	inner := base[open+1 : len(base)-1]
+	if number, numbered := strings.CutPrefix(inner, word+" "); numbered {
+		if n, err := strconv.Atoi(number); err != nil || n < 2 || strconv.Itoa(n) != number {
+			return base
+		}
+	} else if inner != word {
+		return base
+	}
+	return strings.TrimRight(base[:open], " ")
 }
 
 // legalNamePart makes a part of a name one that a new entry may carry: the characters

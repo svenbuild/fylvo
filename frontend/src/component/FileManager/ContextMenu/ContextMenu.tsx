@@ -134,6 +134,7 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
   let part1 =
     displayOpt.showOpen ||
     displayOpt.showOpenAtProvider ||
+    displayOpt.showAlsoAtProvider ||
     showOpenWithCascading ||
     showOpenWith ||
     displayOpt.showEnter ||
@@ -213,7 +214,7 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
           <ListItemText>{t("application:fileManager.open")}</ListItemText>
         </SquareMenuItem>
       )}
-      {displayOpt.showOpenAtProvider && (
+      {(displayOpt.showOpenAtProvider || displayOpt.showAlsoAtProvider) && (
         <SquareMenuItem onClick={() => dispatch(openAtProvider(fmIndex, targets[0]))}>
           <ListItemIcon>
             <Open fontSize="small" />

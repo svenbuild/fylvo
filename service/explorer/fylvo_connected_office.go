@@ -437,49 +437,51 @@ func ConnectedOfficePut(c *gin.Context) {
 		return
 	}
 
-	var body io.Reader = movingBody(c, c.Request.Body)
+	// A save can meet a conflict, and what the user wrote must not be lost with it: an
+	// editor that was told of a conflict once may never send that state again, not
+	// even when its window is closed. So every save is taken in whole first, and is
+	// kept as a copy beside the file if it cannot go into the file.
+	last, sum, err := spoolOffice(c, movingBody(c, c.Request.Body), size)
+	if err != nil {
+		connectedOfficeError(c, err)
+		return
+	}
+	defer func() {
+		_ = last.Close()
+		_ = os.Remove(last.Name())
+	}()
 	// The last save of a window that is closing: after it nobody is there to be asked.
-	// It is taken in whole first, so that it can still be kept if it meets a conflict.
-	var (
-		last *os.File
-		sum  [sha256.Size]byte
-	)
-	if officeExitSave(c) {
-		kept, digest, err := spoolOffice(c, body, size)
-		if err != nil {
-			connectedOfficeError(c, err)
-			return
-		}
-		defer func() {
-			_ = kept.Close()
-			_ = os.Remove(kept.Name())
-		}()
-		last, sum, body = kept, digest, kept
-		if beside := o.req.m.OfficeKept(o.session, sum); beside != nil {
-			// This very content went into a copy before, and the answer to that did
-			// not arrive. It is not stored a second time, and not over the file either
-			// (the window may have read the file again since).
-			c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(beside.ModTime)})
-			return
-		}
+	exit, typed := officeSaveKind(c)
+	if when, kept := o.req.m.OfficeExitKept(o.session, sum); exit && typed && kept {
+		// This very content was a last save before and went into a copy, and the
+		// answer to that did not arrive. It is not stored a second time, and not over
+		// the file either (the window may have read the file again since).
+		c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(when)})
+		return
 	}
 
-	row, err := o.req.m.OfficeSave(o.req.ctx, o.req.conn, o.session, body, size)
+	row, err := o.req.m.OfficeSave(o.req.ctx, o.req.conn, o.session, last, size)
 	var app serializer.AppError
 	if errors.As(err, &app) && app.Code == serializer.CodeStaleVersion {
-		if last != nil {
-			// What the user wrote is not thrown away with the window: it is stored as a
-			// new file beside the one that changed, and the editor is told it is saved.
-			beside, err := o.req.m.OfficeKeepBeside(o.req.ctx, o.req.conn, o.session, last, size, sum, officeConflictWord(o.req.user))
-			if err == nil {
+		if typed {
+			// What the user wrote is stored as a file beside the one that changed.
+			beside, err := o.req.m.OfficeKeepBeside(o.req.ctx, o.req.conn, o.session, last, size, sum, officeConflictWord(o.req.user), exit)
+			switch {
+			case err != nil:
+				// It could not be kept either (no room, the folder is gone): the
+				// conflict is all there is to say. The operator is told, for this is
+				// where what somebody wrote can be lost.
+				logging.FromContext(c).Warning("Connected storage: a save of an editor met a changed file and could not be kept as a copy: %s", connected.Public(c, err))
+			case exit:
+				// Nobody is left to ask: the editor is told it is saved.
 				logging.FromContext(c).Info("Connected storage: the last save of an editor met a changed file and was kept as a copy beside it.")
 				c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(beside.ModTime)})
 				return
+			default:
+				// The window is open: its user is asked, as below. The copy is there
+				// whatever the answer is, also none at all.
+				logging.FromContext(c).Info("Connected storage: a save of an editor met a changed file and was kept as a copy beside it.")
 			}
-			// It could not be kept either (no room, the folder is gone): the conflict
-			// is all there is to say. The operator is told, for this is where what
-			// somebody wrote is lost.
-			logging.FromContext(c).Warning("Connected storage: the last save of an editor met a changed file and could not be kept as a copy: %s", connected.Public(c, err))
 		}
 		// The file is no longer the version this editor read, or no longer where it
 		// was. The body is what the Office server understands as "the document
@@ -496,18 +498,18 @@ func ConnectedOfficePut(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(row.ModTime)})
 }
 
-// officeExitSave tells whether the Office server marks a save as the last one of a
-// document whose last window was closed, with changes of its user in it. (Set up to
-// save on every close, it also sends one for a window nobody typed in: there is
-// nothing of the user's to keep then.)
-func officeExitSave(c *gin.Context) bool {
+// officeSaveKind tells what the Office server says about a save: whether it is the last
+// one of a document whose last window was closed (exit), and whether changes of its
+// user are in it (typed; set up to save on every close, the Office server also sends
+// one for a window nobody typed in, and there is nothing of the user's to keep then).
+func officeSaveKind(c *gin.Context) (exit, typed bool) {
 	header := func(name string) string {
 		if v := c.GetHeader("X-COOL-WOPI-" + name); v != "" {
 			return v
 		}
 		return c.GetHeader("X-LOOL-WOPI-" + name)
 	}
-	return strings.EqualFold(header("IsExitSave"), "true") && !strings.EqualFold(header("IsModifiedByUser"), "false")
+	return strings.EqualFold(header("IsExitSave"), "true"), !strings.EqualFold(header("IsModifiedByUser"), "false")
 }
 
 // spoolOffice takes a body of the given size into a file of its own, to be read again,
@@ -545,7 +547,7 @@ func spoolOffice(c *gin.Context, body io.Reader, size int64) (kept *os.File, sum
 	return kept, sum, nil
 }
 
-// officeTempName starts the name of a document that is taken in for a last save.
+// officeTempName starts the name of a document that is taken in for a save.
 const officeTempName = "fylvo-office-"
 
 // officeConflictWord is the word in the name of a copy kept after a conflict, in the

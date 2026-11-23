@@ -3,6 +3,7 @@ package connected
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
@@ -707,4 +708,58 @@ func TestOfficeInfoWithoutAVersionForAMoment(t *testing.T) {
 	require.False(t, edit)
 	_, _, err = e.readOffice(s)
 	require.Equal(t, serializer.CodeConnectedUnsupported, codeOf(err))
+}
+
+// The mark of a copy is taken off a name before a further copy gets its own.
+func TestUnmarked(t *testing.T) {
+	for name, want := range map[string]string{
+		"letter":                       "letter",
+		"letter (conflict)":            "letter",
+		"letter (conflict 2)":          "letter",
+		"letter (conflict 17)":         "letter",
+		"letter (conflict) (conflict)": "letter (conflict)",
+		"(conflict)":                   "",
+		"(conflict 3)":                 "",
+		"letter(conflict)":             "letter(conflict)",
+		"letter (conflict 1)":          "letter (conflict 1)",
+		"letter (conflict 02)":         "letter (conflict 02)",
+		"letter (conflict x)":          "letter (conflict x)",
+		"letter (Konflikt)":            "letter (Konflikt)",
+		"letter (conflict) more":       "letter (conflict) more",
+		"letter (2)":                   "letter (2)",
+		"letter )":                     "letter )",
+		"":                             "",
+	} {
+		if got := unmarked(name, "conflict"); got != want {
+			t.Errorf("%q: got %q, want %q", name, got, want)
+		}
+	}
+	if got := besideName(unmarked("(conflict)", "conflict"), " (conflict 2)", ".docx"); got != "(conflict 2).docx" {
+		t.Errorf("a name that is the mark alone: %q", got)
+	}
+}
+
+// The Office server hangs up while the copy of a conflict is on its way: what it sent
+// whole is stored all the same.
+func TestOfficeCopyOutlivesItsRequest(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		id := e.sim.AddFile("", "letter.docx", []byte("version one"))
+		s, err := e.openOffice("letter.docx", true)
+		require.NoError(t, err)
+		_, _, err = e.readOffice(s)
+		require.NoError(t, err)
+		e.sim.SetContent(id, []byte("changed by somebody else"))
+
+		leave, err := e.f.OfficeEnter(e.ctx, s)
+		require.NoError(t, err)
+		defer leave()
+		gone, hangUp := context.WithCancel(e.ctx)
+		hangUp()
+		data := []byte("what the user wrote")
+		row, err := e.f.OfficeKeepBeside(gone, e.conn, s, bytes.NewReader(data), int64(len(data)), sha256.Sum256(data), "conflict", false)
+		require.NoError(t, err)
+		require.Equal(t, "letter (conflict).docx", row.Name)
+		require.Equal(t, data, e.content("letter (conflict).docx"))
+		require.Equal(t, []byte("changed by somebody else"), e.content("letter.docx"))
+	})
 }

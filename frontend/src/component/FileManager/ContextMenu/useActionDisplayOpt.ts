@@ -54,6 +54,9 @@ export interface DisplayOption {
   showOpen?: boolean;
   // Fylvo: a document of a connected storage's provider, opened there.
   showOpenAtProvider?: boolean;
+  // Fylvo: a row of a connected storage that can also be opened at the provider. Only an
+  // entry of the menu: what a double click does is not changed by it.
+  showAlsoAtProvider?: boolean;
   showOpenWithCascading?: () => boolean;
   showOpenWith?: () => boolean;
   showDownload?: boolean;
@@ -338,6 +341,8 @@ export const getActionOpt = (
       display.showOpenAtProvider = true;
       display.showOpenWith = () => false;
       display.showOpenWithCascading = () => false;
+    } else if (targets.length == 1 && targets[0].metadata?.[Metadata.connected_provider_url]) {
+      display.showAlsoAtProvider = true;
     }
     // A shortcut to a file is opened at the provider (when the server names the address there),
     // not with a viewer here.
