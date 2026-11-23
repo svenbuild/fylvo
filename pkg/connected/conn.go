@@ -127,6 +127,12 @@ func (m *Manager) Use(ctx context.Context, userID int, publicID string) (c *Conn
 		}, nil
 }
 
+// ended tells whether the connection this request was admitted to has ended since. The
+// context of the request follows a moment later; this is true at once.
+func (c *Conn) ended() bool {
+	return c.live != nil && c.live.ctx.Err() != nil
+}
+
 // closeLive stops everything running for a connection and forgets its open token. The
 // caller holds m.mu exclusively.
 func (m *Manager) closeLive(publicID string) {
