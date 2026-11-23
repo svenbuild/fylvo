@@ -1839,7 +1839,8 @@ class FilesViewModel(
      * a listing lands, so rows do not each pay a round trip as they scroll in.
      */
     private fun prefetchThumbs(files: List<FileObject>) {
-        val wanted = files.filter { !repo.hasNoThumb(it) }.take(PREFETCH_THUMBS)
+        // Fylvo 1.6: never ahead in a connected storage (each preview costs the provider a request).
+        val wanted = files.filter { !repo.hasNoThumb(it) && !Connected.isConnected(it.path) }.take(PREFETCH_THUMBS)
         if (wanted.isEmpty()) return
         viewModelScope.launch {
             val gate = kotlinx.coroutines.sync.Semaphore(PREFETCH_PARALLELISM)

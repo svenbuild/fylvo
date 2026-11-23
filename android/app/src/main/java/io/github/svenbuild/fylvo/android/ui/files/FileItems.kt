@@ -126,6 +126,17 @@ fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
 fun thumbCacheKey(thumbUrl: String?): String? =
     thumbUrl?.let { THUMB_ID.find(it)?.groupValues?.get(1) }?.let { "thumb:$it" }
 
+/**
+ * Fylvo 1.6: the key of [file]'s preview. In a connected storage the address changes daily and
+ * carries no stored id: the key is the storage, the file and its version (data/ConnectedThumbs).
+ */
+fun thumbCacheKey(file: FileObject, thumbUrl: String?): String? {
+    if (thumbUrl == null) return null
+    val storage = Connected.storageId(file.path) ?: return thumbCacheKey(thumbUrl)
+    if (file.id.isEmpty() || file.primaryEntity.isEmpty()) return null
+    return io.github.svenbuild.fylvo.android.data.ConnectedThumbs.key(storage, file.id, file.primaryEntity)
+}
+
 private val THUMB_ID = Regex("/file/content/([^/?]+)/")
 
 /**
@@ -156,11 +167,15 @@ fun FileThumb(
         contentAlignment = Alignment.Center,
     ) {
         if (thumbUrl != null) {
+            val context = LocalContext.current
+            val key = thumbCacheKey(file, thumbUrl)
             SubcomposeAsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
+                model = ImageRequest.Builder(context)
                     .data(thumbUrl)
-                    .memoryCacheKey(thumbCacheKey(thumbUrl))
-                    .diskCacheKey(thumbCacheKey(thumbUrl))
+                    .memoryCacheKey(key)
+                    .diskCacheKey(key)
+                    // Fylvo 1.6: a picture of a connected storage is noted, so disconnecting removes it.
+                    .listener(onSuccess = { _, _ -> key?.let { io.github.svenbuild.fylvo.android.data.ConnectedThumbs.loaded(context.applicationContext, it) } })
                     .crossfade(180)
                     .build(),
                 contentDescription = null,

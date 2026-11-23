@@ -195,6 +195,7 @@ class FylvoApp : Application(), ImageLoaderFactory {
             step { io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames() }
             step { io.github.svenbuild.fylvo.android.util.Connected.forgetNames() }
             step { fileRepository.forgetThumbs() }
+            step { io.github.svenbuild.fylvo.android.data.ConnectedThumbs.clear(this@FylvoApp) }
             // Fylvo: previews and images the account loaded (Coil keeps previews by their stored id, thumbCacheKey).
             step {
                 imageLoader.memoryCache?.clear()
