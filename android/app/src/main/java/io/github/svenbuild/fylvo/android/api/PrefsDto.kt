@@ -90,6 +90,18 @@ data class SiteBasic(
 @Serializable
 data class UserSettings(
     @SerialName("disable_view_sync") val disableViewSync: Boolean = false,
+    /** Fylvo 1.6: the account has no password (then none can be changed). */
+    val passwordless: Boolean = false,
+    @SerialName("two_fa_enabled") val twoFaEnabled: Boolean = false,
+    /** Apps that may use the account (OAuth); revoked with their [OauthGrant.clientId]. */
+    @SerialName("oauth_grants") val oauthGrants: List<OauthGrant> = emptyList(),
+)
+
+@Serializable
+data class OauthGrant(
+    @SerialName("client_id") val clientId: String = "",
+    @SerialName("client_name") val clientName: String = "",
+    @SerialName("last_used_at") val lastUsedAt: String? = null,
 )
 
 /** Fylvo: `PATCH /file/metadata`. */

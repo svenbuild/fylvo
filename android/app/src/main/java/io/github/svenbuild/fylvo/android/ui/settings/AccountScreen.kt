@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
@@ -85,6 +86,9 @@ fun AccountScreen(
     onOpenOffline: () -> Unit,
     /** Fylvo 1.6: Account › My shares. */
     onOpenShares: () -> Unit,
+    /** Fylvo 1.6: Account › profile and security. */
+    onOpenProfile: () -> Unit,
+    onOpenSecurity: () -> Unit,
     /** Fylvo: Account › Customise. */
     onOpenCustomize: () -> Unit,
     onBack: () -> Unit,
@@ -168,10 +172,13 @@ fun AccountScreen(
             val capacity by produceState<CapacityResponse?>(initialValue = null) {
                 value = app.fileRepository.capacity()
             }
+            // Fylvo 1.6: picture, name and e-mail; a tap opens the profile.
+            val me = app.account.state.collectAsState().value.me
             ListItem(
-                headlineContent = { Text(email.ifEmpty { stringResource(R.string.signed_in) }) },
-                supportingContent = { Text(serverUrl) },
-                leadingContent = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = onOpenProfile),
+                headlineContent = { Text(me?.nickname?.ifEmpty { null } ?: email.ifEmpty { stringResource(R.string.signed_in) }) },
+                supportingContent = { Text(listOf(me?.email ?: email, serverUrl).filter { it.isNotEmpty() }.distinct().joinToString("\n")) },
+                leadingContent = { AccountAvatar(40.dp) },
             )
             capacity?.let { cap ->
                 if (cap.total > 0) {
@@ -201,6 +208,12 @@ fun AccountScreen(
                     )
                 },
                 leadingContent = { Icon(Icons.Default.OfflinePin, contentDescription = null) },
+            )
+            ListItem(
+                modifier = Modifier.clickable(onClick = onOpenSecurity),
+                headlineContent = { Text(stringResource(R.string.security)) },
+                supportingContent = { Text(stringResource(R.string.security_hint)) },
+                leadingContent = { Icon(Icons.Outlined.Lock, contentDescription = null) },
             )
             // Fylvo 1.6: the account's own shares ("Shared by me").
             ListItem(

@@ -147,6 +147,8 @@ fun FilesScreen(
     var offlineOpen by remember { mutableStateOf(false) }
     /** Fylvo: Account › Customise. */
     var customizeOpen by rememberSaveable { mutableStateOf(false) }
+    /** Fylvo 1.6: Account › profile or security ([ACCOUNT_PROFILE], [ACCOUNT_SECURITY]). */
+    var accountPage by rememberSaveable { mutableStateOf<String?>(null) }
     /** Fylvo: a page of a place ([PAGE_FAVORITES], [PAGE_TAGS]) over the files, or null. */
     var page by rememberSaveable { mutableStateOf<String?>(null) }
     val searchFocus = remember { FocusRequester() }
@@ -623,6 +625,7 @@ fun FilesScreen(
         accountOpen = tab == io.github.svenbuild.fylvo.android.data.prefs.Place.Account || tab == io.github.svenbuild.fylvo.android.data.prefs.Place.Offline
         offlineOpen = tab == io.github.svenbuild.fylvo.android.data.prefs.Place.Offline
         customizeOpen = false
+        accountPage = null
         page = null
         when (tab) {
             io.github.svenbuild.fylvo.android.data.prefs.Place.Home -> viewModel.goHome()
@@ -1366,6 +1369,8 @@ fun FilesScreen(
             offlineCount = state.offlineRoots.size,
             onOpenOffline = { offlineOpen = true },
             onOpenShares = { page = PAGE_SHARES },
+            onOpenProfile = { accountPage = ACCOUNT_PROFILE },
+            onOpenSecurity = { accountPage = ACCOUNT_SECURITY },
             onOpenCustomize = { customizeOpen = true },
             // Account is a tab: back goes to the start tab like every other tab.
             onBack = { selectTab(startTab) },
@@ -1400,6 +1405,13 @@ fun FilesScreen(
             loadFailed = prefsState.loadFailed || prefsState.favoritesFailed,
             onRetry = { scope.launch { prefsRepo.refreshFavorites(); prefsRepo.refresh() } },
         )
+    }
+    // Fylvo 1.6: profile and security, over Account.
+    if (accountOpen && accountPage == ACCOUNT_PROFILE) {
+        io.github.svenbuild.fylvo.android.ui.settings.ProfilePage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) })
+    }
+    if (accountOpen && accountPage == ACCOUNT_SECURITY) {
+        io.github.svenbuild.fylvo.android.ui.settings.SecurityPage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) })
     }
     if (page == PAGE_SHARES) {
         SharesPage(onBack = { page = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) }, actions = shareActions)
@@ -1661,6 +1673,9 @@ private fun openWithSystem(context: Context, local: File) {
 /** Fylvo: the pages of places that are not folder listings. */
 internal const val PAGE_FAVORITES = "favorites"
 internal const val PAGE_TAGS = "tags"
+/** Fylvo 1.6: the pages over Account. */
+internal const val ACCOUNT_PROFILE = "profile"
+internal const val ACCOUNT_SECURITY = "security"
 /** Fylvo 1.6: "Shared by me", from the Shared tab or from Account. */
 internal const val PAGE_SHARES = "shares"
 /** Fylvo: [FilesUiState.origin] of a place opened from a page ("page:<page>"). */

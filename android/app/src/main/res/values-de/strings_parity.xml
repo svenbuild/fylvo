@@ -170,4 +170,46 @@
     <string name="activity_34">Zwei-Faktor-Anmeldung eingeschaltet</string>
     <string name="activity_35">Zwei-Faktor-Anmeldung ausgeschaltet</string>
     <string name="activity_36">Zugriff von %1$s entfernt</string>
+
+    <!-- Profil und Sicherheit -->
+    <string name="profile">Profil</string>
+    <string name="profile_name">Name</string>
+    <string name="profile_picture_change">Bild ändern</string>
+    <string name="profile_picture_hint">Ein quadratischer Ausschnitt eines Fotos</string>
+    <string name="profile_picture_saved">Bild gespeichert</string>
+    <string name="profile_picture_failed">Das Bild konnte nicht gespeichert werden.</string>
+    <string name="security">Sicherheit</string>
+    <string name="security_hint">Passwort, Zwei-Faktor-Anmeldung, Apps, Anmeldungen</string>
+    <string name="security_load_failed">Die Sicherheits-Einstellungen konnten nicht geladen werden.</string>
+    <string name="password_change">Passwort ändern</string>
+    <string name="password_current">Aktuelles Passwort</string>
+    <string name="password_new">Neues Passwort</string>
+    <string name="password_repeat">Neues Passwort wiederholen</string>
+    <string name="password_rule">Mindestens 6 Zeichen</string>
+    <string name="password_mismatch">Die Passwörter stimmen nicht überein</string>
+    <string name="password_current_wrong">Das aktuelle Passwort ist falsch.</string>
+    <string name="password_changed">Passwort geändert</string>
+    <string name="two_fa">Zwei-Faktor-Anmeldung</string>
+    <string name="two_fa_on">An: bei der Anmeldung wird ein Code aus einer Authenticator-App verlangt</string>
+    <string name="two_fa_off">Aus</string>
+    <string name="two_fa_turn_on">Einschalten</string>
+    <string name="two_fa_turn_off">Ausschalten</string>
+    <string name="two_fa_setup_text">Füge diesen Schlüssel in einer Authenticator-App hinzu (zum Beispiel mit dem Knopf), dann gib den sechsstelligen Code ein, den die App zeigt.</string>
+    <string name="two_fa_open_app">In Authenticator-App öffnen</string>
+    <string name="two_fa_no_app">Keine Authenticator-App auf diesem Handy. Tippe den Schlüssel von Hand in die App.</string>
+    <string name="two_fa_enter_code">Code aus der App</string>
+    <string name="two_fa_code">Code</string>
+    <string name="two_fa_code_wrong">Der Code ist falsch. Versuche den aktuellen.</string>
+    <string name="two_fa_expired">Das Einrichten hat zu lange gedauert. Beginne nochmals.</string>
+    <string name="two_fa_off_text">Gib einen aktuellen Code aus deiner Authenticator-App ein.</string>
+    <string name="two_fa_enabled">Zwei-Faktor-Anmeldung ist an</string>
+    <string name="two_fa_disabled">Zwei-Faktor-Anmeldung ist aus</string>
+    <string name="app_access">App-Zugriffe</string>
+    <string name="last_used">Zuletzt benutzt %1$s</string>
+    <string name="never_used">Nie benutzt</string>
+    <string name="revoke">Widerrufen</string>
+    <string name="revoke_title">Zugriff von %1$s widerrufen?</string>
+    <string name="revoke_text">Die App kann dein Konto nicht mehr benutzen, bis sie neu angemeldet wird.</string>
+    <string name="recent_sign_ins">Letzte Anmeldungen</string>
+    <string name="load_more">Mehr laden</string>
 </resources>

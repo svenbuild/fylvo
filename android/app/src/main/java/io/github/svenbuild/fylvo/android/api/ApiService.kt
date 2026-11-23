@@ -154,6 +154,31 @@ interface ApiService {
         @Body body: RequestBody,
     ): Response<ApiResponse<FileObject>>
 
+    // ---- Fylvo 1.6: account and security (design/android-parity-plan.md, 9). Calls that carry a
+    // password or a 2FA code go through ApiClient.authService (no redirects).
+
+    @GET("api/v4/user/setting")
+    suspend fun securitySettings(): Response<ApiResponse<UserSettings>>
+
+    /** Name, password (with the current one) or 2FA (always with its code); empty answer. */
+    @PATCH("api/v4/user/setting")
+    suspend fun patchUserSetting(@Body patch: JsonObject): Response<ApiResponse<Unit>>
+
+    /** A new 2FA secret (base32), valid for 10 minutes until confirmed with a code. */
+    @GET("api/v4/user/setting/2fa")
+    suspend fun twoFaSecret(): Response<ApiResponse<String>>
+
+    /** The account's sign-ins and security changes; [next] pages on. */
+    @GET("api/v4/user/setting/activity")
+    suspend fun accountActivity(@Query("next") next: Int? = null): Response<ApiResponse<ActivityList>>
+
+    @HTTP(method = "DELETE", path = "api/v4/session/oauth/grant/{id}")
+    suspend fun revokeGrant(@Path("id") clientId: String): Response<ApiResponse<Unit>>
+
+    /** A new profile picture (raw image bytes, `Content-Type` of the image). */
+    @PUT("api/v4/user/setting/avatar")
+    suspend fun uploadAvatar(@Body image: RequestBody): Response<ApiResponse<Unit>>
+
     // ---- Fylvo 1.6: versions, history, trash (design/android-parity-plan.md, 6 to 8).
 
     @POST("api/v4/file/version/current")

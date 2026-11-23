@@ -170,4 +170,46 @@
     <string name="activity_34">Two-factor sign-in turned on</string>
     <string name="activity_35">Two-factor sign-in turned off</string>
     <string name="activity_36">Removed the access of %1$s</string>
+
+    <!-- Profile and security -->
+    <string name="profile">Profile</string>
+    <string name="profile_name">Name</string>
+    <string name="profile_picture_change">Change picture</string>
+    <string name="profile_picture_hint">A square section of a photo</string>
+    <string name="profile_picture_saved">Picture saved</string>
+    <string name="profile_picture_failed">The picture could not be saved.</string>
+    <string name="security">Security</string>
+    <string name="security_hint">Password, two-factor sign-in, apps, sign-ins</string>
+    <string name="security_load_failed">The security settings could not be loaded.</string>
+    <string name="password_change">Change password</string>
+    <string name="password_current">Current password</string>
+    <string name="password_new">New password</string>
+    <string name="password_repeat">Repeat new password</string>
+    <string name="password_rule">At least 6 characters</string>
+    <string name="password_mismatch">The passwords do not match</string>
+    <string name="password_current_wrong">The current password is wrong.</string>
+    <string name="password_changed">Password changed</string>
+    <string name="two_fa">Two-factor sign-in</string>
+    <string name="two_fa_on">On: a code from an authenticator app is asked at sign-in</string>
+    <string name="two_fa_off">Off</string>
+    <string name="two_fa_turn_on">Turn on</string>
+    <string name="two_fa_turn_off">Turn off</string>
+    <string name="two_fa_setup_text">Add this key to an authenticator app (for example by opening it with the button), then enter the six-digit code the app shows.</string>
+    <string name="two_fa_open_app">Open in authenticator app</string>
+    <string name="two_fa_no_app">No authenticator app on this phone. Type the key into the app by hand.</string>
+    <string name="two_fa_enter_code">Code from the app</string>
+    <string name="two_fa_code">Code</string>
+    <string name="two_fa_code_wrong">The code is wrong. Try the current one.</string>
+    <string name="two_fa_expired">This setup took too long. Start again.</string>
+    <string name="two_fa_off_text">Enter a current code from your authenticator app.</string>
+    <string name="two_fa_enabled">Two-factor sign-in is on</string>
+    <string name="two_fa_disabled">Two-factor sign-in is off</string>
+    <string name="app_access">App access</string>
+    <string name="last_used">Last used %1$s</string>
+    <string name="never_used">Never used</string>
+    <string name="revoke">Revoke</string>
+    <string name="revoke_title">Revoke the access of %1$s?</string>
+    <string name="revoke_text">The app can no longer use your account until it is signed in again.</string>
+    <string name="recent_sign_ins">Recent sign-ins</string>
+    <string name="load_more">Load more</string>
 </resources>
