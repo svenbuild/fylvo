@@ -74,6 +74,11 @@ func (c *client) write(ctx context.Context, method, address string, header http.
 		header.Set("Content-Type", "application/json")
 	}
 	res, err := c.caller.Stream(ctx, method, address, header, bytes.NewReader(body), int64(len(body)), true)
+	if err == nil && res.StatusCode == http.StatusUnauthorized {
+		// Refused before anything was done, and Stream has asked for a new token: once more.
+		res.Body.Close()
+		res, err = c.caller.Stream(ctx, method, address, header, bytes.NewReader(body), int64(len(body)), true)
+	}
 	if err != nil {
 		return err
 	}

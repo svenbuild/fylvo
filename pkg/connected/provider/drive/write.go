@@ -41,7 +41,7 @@ func (c *client) create(ctx context.Context, parentID string, meta map[string]an
 	if err := c.change(c.keyed(ctx, parentID), http.MethodPost, c.api+"files?"+fileFields, meta, &f); err != nil {
 		return nil, err
 	}
-	return changed(&f)
+	return c.changed(&f)
 }
 
 func (c *client) Update(ctx context.Context, id string, change provider.Change) (*provider.Item, error) {
@@ -63,7 +63,7 @@ func (c *client) Update(ctx context.Context, id string, change provider.Change) 
 	if err := c.change(c.keyed(ctx, id), http.MethodPatch, address, meta, &f); err != nil {
 		return nil, err
 	}
-	return changed(&f)
+	return c.changed(&f)
 }
 
 func (c *client) Trash(ctx context.Context, id string) error {
@@ -74,8 +74,8 @@ func (c *client) Trash(ctx context.Context, id string) error {
 }
 
 // changed maps the answer of a call that changed an entry.
-func changed(f *file) (*provider.Item, error) {
-	item, ok := f.item()
+func (c *client) changed(f *file) (*provider.Item, error) {
+	item, ok := c.mapped(f)
 	if !ok {
 		// Trashed, or a Google type that has nothing to show.
 		return nil, &provider.Error{Kind: provider.KindNotFound}
@@ -128,7 +128,7 @@ func (c *client) ReplaceUpload(ctx context.Context, item *provider.Item, size in
 		return nil, &provider.Error{Kind: provider.KindForbidden}
 	}
 	id := item.ContentID()
-	c.remember(item)
+	c.Known(item)
 	return c.startUpload(c.keyed(ctx, id), http.MethodPatch, c.uploadAPI()+"/"+url.PathEscape(id), nil, size)
 }
 
