@@ -1,9 +1,13 @@
 import { ChevronLeft } from "@mui/icons-material";
-import { Box, IconButton, styled, useMediaQuery, useTheme } from "@mui/material";
+import { Box, IconButton, styled, Tooltip, useMediaQuery, useTheme } from "@mui/material";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { setDrawerOpen } from "../../../redux/globalStateSlice.ts";
 import { useAppDispatch } from "../../../redux/hooks.ts";
 import Logo from "../../Common/Logo.tsx";
+import CustomizeSidebarDialog from "../../FileManager/TreeView/CustomizeSidebarDialog.tsx";
+import Edit from "../../Icons/Edit.tsx";
 
 export const DrawerHeaderContainer = styled("div")(({ theme }) => ({
   display: "flex",
@@ -16,7 +20,11 @@ export const DrawerHeaderContainer = styled("div")(({ theme }) => ({
   justifyContent: "flex-end",
 }));
 
-const DrawerHeader = ({ disabled }: { disabled?: boolean }) => {
+// customize (Fylvo): a small pencil that opens the dialog for arranging the sidebar. Like the
+// button that closes the drawer it only shows while the pointer is over the header.
+const DrawerHeader = ({ disabled, customize }: { disabled?: boolean; customize?: boolean }) => {
+  const { t } = useTranslation("application");
+  const [customizeOpen, setCustomizeOpen] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const dispatch = useAppDispatch();
@@ -44,6 +52,22 @@ const DrawerHeader = ({ disabled }: { disabled?: boolean }) => {
           }}
         />
       </Box>
+      {customize && (
+        <Tooltip title={t("customize.editSidebar")}>
+          <IconButton
+            size="small"
+            aria-label={t("customize.editSidebar")}
+            onClick={() => setCustomizeOpen(true)}
+            sx={{
+              color: "text.secondary",
+              "&.Mui-focusVisible": { outline: "1px solid", outlineColor: "primary.main", outlineOffset: -1 },
+            }}
+          >
+            <Edit sx={{ fontSize: 16 }} />
+          </IconButton>
+        </Tooltip>
+      )}
+      {customize && <CustomizeSidebarDialog open={customizeOpen} onClose={() => setCustomizeOpen(false)} />}
       {!isMobile && (
         <IconButton
           aria-label="close drawer"
