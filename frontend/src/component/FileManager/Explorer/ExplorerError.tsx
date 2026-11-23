@@ -13,6 +13,7 @@ import ArrowLeft from "../../Icons/ArrowLeft.tsx";
 import LinkDismiss from "../../Icons/LinkDismiss.tsx";
 import LockClosed from "../../Icons/LockClosed.tsx";
 import { FmIndexContext } from "../FmIndexContext.tsx";
+import { useConnectedStorages } from "../Connected/useConnectedStorages.ts";
 
 interface ExplorerErrorProps {
   error?: Response<any>;
@@ -79,6 +80,10 @@ const ExplorerError = memo(
     const fs = useAppSelector((state) => state.fileManager[fmIndex].current_fs);
     const previousPath = useAppSelector((state) => state.fileManager[fmIndex].previous_path);
     const path = useAppSelector((state) => state.fileManager[fmIndex].path);
+    // Fylvo: a link into a connected storage that is no longer connected (for example a pin).
+    const connectedId = fs == Filesystem.connected && path ? new CrUri(path).id() : undefined;
+    const connectedStorages = useConnectedStorages(!!connectedId);
+    const connectedGone = !!connectedId && !!connectedStorages && !connectedStorages.some((c) => c.id == connectedId);
     const { t } = useTranslation("application");
     const appErr = useMemo(() => {
       if (error) {
@@ -96,6 +101,22 @@ const ExplorerError = memo(
     }, [navigate]);
 
     const innerError = () => {
+      if (connectedGone) {
+        return (
+          <Box sx={{ textAlign: "center", maxWidth: 420 }}>
+            <CloudOff sx={{ fontSize: 24 }} color={"action"} />
+            <Typography color={"text.secondary"}>{t("application:connected.storageGone")}</Typography>
+            <SecondaryButton
+              variant={"contained"}
+              color={"inherit"}
+              sx={{ mt: 1.5 }}
+              onClick={() => navigate("/settings?tab=connected")}
+            >
+              {t("application:connected.title")}
+            </SecondaryButton>
+          </Box>
+        );
+      }
       switch (error?.code) {
         case Code.AnonymouseAccessDenied:
           return (

@@ -1192,6 +1192,7 @@
     "downloadUnreadable_other": "{{count}} folders could not be read and are missing: {{names}}.",
     "andMore": "and {{count}} more",
     "downloadIncomplete": "Download finished, but not everything was downloaded. The log says what is missing.",
-    "archiveBroken": "The archive was broken off and is incomplete. Please download again."
+    "archiveBroken": "The archive was broken off and is incomplete. Please download again.",
+    "storageGone": "This storage is no longer connected. Remove the link in the sidebar, or connect the storage again."
   }
 }

@@ -1270,6 +1270,7 @@
     "downloadUnreadable_other": "{{count}} Ordner liessen sich nicht lesen und fehlen: {{names}}.",
     "andMore": "und {{count}} weitere",
     "downloadIncomplete": "Download beendet, aber nicht alles wurde heruntergeladen. Das Protokoll nennt, was fehlt.",
-    "archiveBroken": "Das Archiv wurde abgebrochen und ist unvollständig. Bitte nochmals herunterladen."
+    "archiveBroken": "Das Archiv wurde abgebrochen und ist unvollständig. Bitte nochmals herunterladen.",
+    "storageGone": "Dieser Speicher ist nicht mehr verbunden. Den Link in der Seitenleiste entfernen oder den Speicher neu verbinden."
   }
 }
