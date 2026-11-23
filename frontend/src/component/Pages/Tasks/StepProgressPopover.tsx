@@ -25,6 +25,9 @@ export const ProgressKeys = {
   imported: "imported",
   indexed: "indexed",
   rebuild_index: "rebuild_index",
+  // Fylvo: a copy between Fylvo and connected storages
+  copy_count: "copy_count",
+  copy_size: "copy_size",
 };
 
 const ProgressBar = ({ pkey, p }: { pkey: string; p: TaskProgress }) => {
@@ -34,6 +37,28 @@ const ProgressBar = ({ pkey, p }: { pkey: string; p: TaskProgress }) => {
       <StepProgressBar
         title={t("setting.relocatedEntities")}
         secondary={`${p.current} / ${p.total}`}
+        progress={(100 * p.current) / Math.max(p.total, 1)}
+      />
+    );
+  }
+
+  if (pkey == ProgressKeys.copy_count) {
+    return (
+      <StepProgressBar
+        indeterminate={p.total == 0}
+        title={t("setting.connectedCopyFiles")}
+        secondary={`${p.current} / ${p.total}`}
+        progress={(100 * p.current) / Math.max(p.total, 1)}
+      />
+    );
+  }
+
+  if (pkey == ProgressKeys.copy_size) {
+    return (
+      <StepProgressBar
+        indeterminate={p.total == 0}
+        title={t("setting.connectedCopySize")}
+        secondary={`${sizeToString(p.current)} / ${sizeToString(p.total)}`}
         progress={(100 * p.current) / Math.max(p.total, 1)}
       />
     );

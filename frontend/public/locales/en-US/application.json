@@ -463,6 +463,7 @@
     "ftsNotIndexed": "Not indexed"
   },
   "modals": {
+    "connectedCopyStarted": "The copy runs in the background. Its progress and report are in the background tasks.",
     "shareWithPeople": "Share folder with people",
     "shareModeLink": "Link",
     "shareModePeople": "People",
@@ -824,6 +825,30 @@
     "unknownSize": "Unknown file size"
   },
   "setting": {
+    "connectedCopyTo": "Copy <0></0>{{more}} to <1></1>",
+    "connectedCopying": "Copy",
+    "connectedCopyingDes": "Copy file by file. What is copied stays, also when the copy is stopped.",
+    "connectedCopyFiles": "Copied files",
+    "connectedCopySize": "Copied size",
+    "connectedCopyCounts": "{{copied}} copied, {{skipped}} passed over, {{failed}} failed.",
+    "connectedCopyStop": "Stop copying",
+    "connectedCopyStopConfirm": "Stop this copy? What is copied stays; the file under way is not kept.",
+    "connectedCopyEndedFull": "The copy ended because there is no room left at the target.",
+    "connectedCopyEndedStopped": "The copy was stopped before its end, or its connected storage was disconnected. Start it again to copy the rest: what is there already is passed over.",
+    "connectedCopyMore": "… and {{num}} more.",
+    "connectedCopyReason": {
+      "same": "Same name and same size already there, not copied",
+      "link": "Shortcut, not followed",
+      "duplicate": "Several entries of this name at the provider, not copied",
+      "no_export": "Document of the provider that cannot be exported, not copied",
+      "changed": "Changed while it was copied, not kept",
+      "full": "No room at the target",
+      "too_large": "Too large for the target",
+      "no_name": "No free name at the target",
+      "failed": "Failed",
+      "not_reached": "Not everything below was copied (limit of 20,000 entries, or a folder could not be read whole)",
+      "stopped": "Stopped"
+    },
     "treeView": "Tree view",
     "autoExpandTreeView": "Auto expand tree view",
     "autoExpandTreeViewDes": "When enabled, the file tree in the sidebar will follow the current directory and expand automatically.",

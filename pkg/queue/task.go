@@ -104,6 +104,8 @@ const (
 	RelocateTaskType              = "relocate"
 	RemoteDownloadTaskType        = "remote_download"
 	ImportTaskType                = "import"
+	// Fylvo: "Copy to" between Fylvo and connected storages.
+	ConnectedCopyTaskType = "connected_copy"
 
 	FullTextIndexTaskType       = "full_text_index"
 	FullTextCopyTaskType        = "full_text_copy"

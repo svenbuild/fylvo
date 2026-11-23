@@ -25,16 +25,19 @@ import FileIcon from "../../FileManager/Explorer/FileIcon.tsx";
 import Archive from "../../Icons/Archive.tsx";
 import ArchiveArrow from "../../Icons/ArchiveArrow.tsx";
 import ArrowImport from "../../Icons/ArrowImport.tsx";
+import CopyOutlined from "../../Icons/CopyOutlined.tsx";
 import TaskDetail from "./TaskDetail.tsx";
 import TaskSummaryStatus from "./TaskSummaryStatus.tsx";
 import TaskSummaryTitle from "./TaskSummaryTitle.tsx";
 
-const Accordion = styled((props: AccordionProps) => <MuiAccordion disableGutters elevation={0} square {...props} />)(({ theme }) => ({
-  borderRadius: theme.shape.borderRadius,
-  backgroundColor: theme.palette.background.paper,
-  "&::before": { display: "none" },
-  marginBottom: 4,
-}));
+const Accordion = styled((props: AccordionProps) => <MuiAccordion disableGutters elevation={0} square {...props} />)(
+  ({ theme }) => ({
+    borderRadius: theme.shape.borderRadius,
+    backgroundColor: theme.palette.background.paper,
+    "&::before": { display: "none" },
+    marginBottom: 4,
+  }),
+);
 
 const AccordionSummary = styled((props: AccordionSummaryProps) => <MuiAccordionSummary {...props} />)(() => ({
   flexDirection: "row-reverse",
@@ -64,9 +67,7 @@ export const SummaryButton = styled(DefaultButton)<{
   padding: "3px 9px",
   justifyContent: "flex-start",
   backgroundColor: expanded ? selectedSurface(theme) : "transparent",
-  borderRadius: expanded
-    ? `${theme.shape.borderRadius}px ${theme.shape.borderRadius}px 0 0`
-    : theme.shape.borderRadius,
+  borderRadius: expanded ? `${theme.shape.borderRadius}px ${theme.shape.borderRadius}px 0 0` : theme.shape.borderRadius,
   "&:hover": { backgroundColor: hoverSurface(theme) },
   "&::after": {
     content: '""',
@@ -94,6 +95,7 @@ const taskIconsMap: {
   [TaskType.create_archive]: Archive,
   [TaskType.extract_archive]: ArchiveArrow,
   [TaskType.import]: ArrowImport,
+  [TaskType.connected_copy]: CopyOutlined,
 };
 
 const TaskCard = ({ loading, showProgress, onLoad, task }: TaskCardProps) => {

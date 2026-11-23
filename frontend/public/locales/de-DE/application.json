@@ -499,6 +499,7 @@
     "ftsNotIndexed": "Nicht indexiert"
   },
   "modals": {
+    "connectedCopyStarted": "Das Kopieren läuft im Hintergrund. Fortschritt und Bericht stehen bei den Hintergrund-Aufgaben.",
     "shareWithPeople": "Ordner mit Personen teilen",
     "shareModeLink": "Link",
     "shareModePeople": "Personen",
@@ -881,6 +882,30 @@
     "unknownSize": "Unbekannte Dateigrösse"
   },
   "setting": {
+    "connectedCopyTo": "<0></0>{{more}} nach <1></1> kopieren",
+    "connectedCopying": "Kopieren",
+    "connectedCopyingDes": "Datei für Datei kopieren. Was kopiert ist, bleibt, auch wenn das Kopieren gestoppt wird.",
+    "connectedCopyFiles": "Kopierte Dateien",
+    "connectedCopySize": "Kopierte Grösse",
+    "connectedCopyCounts": "{{copied}} kopiert, {{skipped}} übersprungen, {{failed}} fehlgeschlagen.",
+    "connectedCopyStop": "Kopieren stoppen",
+    "connectedCopyStopConfirm": "Dieses Kopieren stoppen? Was kopiert ist, bleibt; die Datei, die gerade läuft, wird nicht behalten.",
+    "connectedCopyEndedFull": "Das Kopieren hat aufgehört, weil am Ziel kein Platz mehr ist.",
+    "connectedCopyEndedStopped": "Das Kopieren wurde vor dem Ende gestoppt, oder der verbundene Speicher wurde getrennt. Für den Rest einfach nochmals starten: Was schon da ist, wird übersprungen.",
+    "connectedCopyMore": "… und {{num}} weitere.",
+    "connectedCopyReason": {
+      "same": "Gleicher Name und gleiche Grösse schon vorhanden, nicht kopiert",
+      "link": "Verknüpfung, nicht verfolgt",
+      "duplicate": "Mehrere Einträge mit diesem Namen beim Anbieter, nicht kopiert",
+      "no_export": "Dokument des Anbieters ohne Export, nicht kopiert",
+      "changed": "Während des Kopierens geändert, nicht behalten",
+      "full": "Kein Platz am Ziel",
+      "too_large": "Zu gross für das Ziel",
+      "no_name": "Kein freier Name am Ziel",
+      "failed": "Fehlgeschlagen",
+      "not_reached": "Nicht alles darunter wurde kopiert (Grenze von 20’000 Einträgen, oder ein Ordner war nicht ganz lesbar)",
+      "stopped": "Gestoppt"
+    },
     "notifyStoragePolicyChange": "Benachrichtigen, wenn ich in Verzeichnisse mit unterschiedlichen Speicherrichtlinien wechsle",
     "notifyStoragePolicyChangeDes": "Wenn aktiviert, wird beim Betreten von Verzeichnissen mit gebundenen unterschiedlichen Speicherrichtlinien eine Benachrichtigung angezeigt.",
     "treeView": "Baumansicht",

@@ -332,8 +332,9 @@ export const getActionOpt = (
     display.showDirectLinkManagement = false;
     display.showCreateArchive = false;
     display.showResetThumb = false;
-    // Moves stay inside the storage; copies are not possible there.
-    display.showCopy = false;
+    // Moves stay inside the storage. A copy goes anywhere, as a task on the server; a name
+    // that stands for several entries cannot be copied.
+    display.showCopy = targets.every((f) => f.metadata?.[Metadata.connected_unsupported] === undefined);
     // Pinned as a link of the sidebar (see pinToSidebar); only folders that can be entered.
     display.showPin = display.showPin && folderEnterable(targets[0]);
     display.showOrganize = display.showPin || display.showMove || display.showChangeIcon;

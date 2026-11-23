@@ -88,6 +88,36 @@ const TaskSummaryTitle = ({ type, summary, isInDashboard = false }: TaskSummaryT
           }}
         />
       );
+    case TaskType.connected_copy:
+      return (
+        <Trans
+          i18nKey="setting.connectedCopyTo"
+          components={[
+            <span key={0}>
+              {summary?.props.src_multiple?.slice(0, 3).map((src) => (
+                <StyledFileBadge
+                  key={src}
+                  variant={"outlined"}
+                  simplifiedFile={{
+                    type: FileType.file,
+                    path: src,
+                  }}
+                />
+              ))}
+            </span>,
+            <StyledFileBadge
+              variant={"outlined"}
+              simplifiedFile={{
+                type: FileType.folder,
+                path: summary?.props.dst ? summary?.props.dst : newMyUri("").toString(),
+              }}
+            />,
+          ]}
+          values={{
+            more: (summary?.props.src_multiple?.length ?? 0) > 3 ? "..." : "",
+          }}
+        />
+      );
     case TaskType.import:
       return (
         <Trans

@@ -12,6 +12,7 @@ import {
   sendDeleteFiles,
   sendEmptyTrash,
   sendMetadataPatch,
+  sendConnectedCopy,
   sendMoveFile,
   sendRenameFile,
   sendRestoreFile,
@@ -31,7 +32,7 @@ import {
   Viewer,
 } from "../../api/explorer.ts";
 import { AppError, Code, Response } from "../../api/request.ts";
-import { DefaultCloseAction, ViewDstAction } from "../../component/Common/Snackbar/snackbar.tsx";
+import { DefaultCloseAction, ViewDstAction, ViewTaskAction } from "../../component/Common/Snackbar/snackbar.tsx";
 import { canShowInfo, getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { DeleteOption } from "../../component/FileManager/Dialogs/DeleteConfirmation.tsx";
 import { PathSelectionVariantOptions } from "../../component/FileManager/Dialogs/PathSelection.tsx";
@@ -898,6 +899,30 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
       dstUri.elements().length == 0
     ) {
       return dispatch(deleteFile(index, src));
+    }
+
+    // Fylvo: a copy from or into a connected storage is a task on the server, which checks
+    // where it goes (also into the folder it is in, where it makes "name (2)").
+    if (isCopy && (inConnectedStorage(dst) || src.some((f) => inConnectedStorage(f.path)))) {
+      if (!canCopyMoveTo(src, dst, isCopy)) {
+        enqueueSnackbar({
+          message: i18next.t("application:modals.cannotPerformAction"),
+          variant: "warning",
+          action: DefaultCloseAction,
+        });
+        return;
+      }
+      try {
+        await dispatch(sendConnectedCopy({ src: src.map((f) => f.path), dst }));
+        enqueueSnackbar({
+          message: i18next.t("application:modals.connectedCopyStarted"),
+          variant: "success",
+          action: ViewTaskAction(),
+        });
+      } catch (e) {
+        // Shown by the request.
+      }
+      return;
     }
 
     if (checkMovePrecondition(src, dst)) {

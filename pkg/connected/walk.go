@@ -87,6 +87,16 @@ func (s Scan) keeps(row *Row) bool {
 // below could not be read whole (it is too large, it went away, the provider did not
 // tell all of it), or when a folder has entries that are left out or that share a name.
 func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Order, size int, token string) (*Page, error) {
+	return t.walk(ctx, c, path, scan, o, size, token, walkTime)
+}
+
+// WalkWithin is a walk that starts anew and may take up to limit, for work on the
+// server that is not waited for by a client (a copy).
+func (t *Tree) WalkWithin(ctx context.Context, c *Conn, path string, scan Scan, o Order, size int, limit time.Duration) (*Page, error) {
+	return t.walk(ctx, c, path, scan, o, size, "", limit)
+}
+
+func (t *Tree) walk(ctx context.Context, c *Conn, path string, scan Scan, o Order, size int, token string, limit time.Duration) (*Page, error) {
 	if size <= 0 {
 		size = 100
 	}
@@ -115,7 +125,7 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 
 	// The time of a walk runs from here: the way to its folder is part of it.
 	asked := ctx
-	ctx, cancel := context.WithTimeout(ctx, walkTime)
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	// late tells that the walk ran out of its own time, while its client still waits.
 	// A provider call that was cut off by it may name its error as it likes.
@@ -193,13 +203,13 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 			}
 			if late() && f.id != parent.ContentID() {
 				// Out of time: what was found is the answer, marked as not all.
-				snap.incomplete, full = true, true
+				snap.incomplete, snap.missed, full = true, true, true
 				break
 			}
 			if below {
 				// A folder below that cannot be read whole, or not at all: the rest is
 				// still worth having.
-				snap.incomplete = true
+				snap.incomplete, snap.missed = true, true
 				continue
 			}
 			// The folder asked for itself (also when all the time went into it: nothing
@@ -209,11 +219,11 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 		}
 		if l.omitted > 0 {
 			snap.omitted += l.omitted
-			snap.incomplete = true
+			snap.incomplete, snap.missed = true, true
 		}
 		for _, e := range l.entries {
 			if seen++; seen > walkRows {
-				snap.incomplete, full = true, true
+				snap.incomplete, snap.missed, full = true, true, true
 				break
 			}
 			row := *e
@@ -253,7 +263,7 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 		changed = changed || r.changed
 	}
 	if changed {
-		snap.incomplete = true
+		snap.incomplete, snap.missed = true, true
 	}
 	id := ""
 	if len(snap.rows) > size {

@@ -42,7 +42,26 @@ export interface TaskSummary {
     // Fylvo: names an import skipped because they are there in other upper and lower case
     case_twins?: string[];
     case_twin_count?: number;
+    // Fylvo: the report of a copy between Fylvo and connected storages
+    connected_copy?: ConnectedCopyReport;
   };
+}
+
+// Fylvo: what a copy between Fylvo and connected storages did. Each note names an entry and
+// why it was not copied (or not reached).
+export interface ConnectedCopyReport {
+  copied: number;
+  skipped: number;
+  failed: number;
+  folders: number;
+  notes?: { path: string; reason: string }[];
+  notes_left?: number;
+  stopped?: string;
+}
+
+export interface ConnectedCopyService {
+  src: string[];
+  dst: string;
 }
 
 export enum DownloadTaskState {
@@ -141,6 +160,8 @@ export enum TaskType {
   full_text_change_owner = "full_text_change_owner",
   full_text_delete = "full_text_delete",
   full_text_rebuild = "full_text_rebuild",
+  // Fylvo: "Copy to" between Fylvo and connected storages.
+  connected_copy = "connected_copy",
 }
 
 export enum TaskStatus {

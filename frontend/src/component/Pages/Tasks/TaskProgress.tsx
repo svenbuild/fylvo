@@ -79,6 +79,18 @@ const stepOptions: {
       completedStep,
     ],
   ],
+  [TaskType.connected_copy]: [
+    // Master
+    [
+      queueingStep,
+      {
+        title: "setting.connectedCopying",
+        state: "",
+        description: "setting.connectedCopyingDes",
+        supportProgress: true,
+      },
+    ],
+  ],
   [TaskType.import]: [
     // Master
     [
