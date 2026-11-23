@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -315,50 +317,53 @@ fun ConnectedFileSheet(
     onDelete: () -> Unit = {},
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            FileThumb(file, null, size = 56.dp)
-            Column(Modifier.padding(start = 16.dp)) {
-                Text(file.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(connectedSubtitle(file), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Scrolls when the actions do not fit (landscape).
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                FileThumb(file, null, size = 56.dp)
+                Column(Modifier.padding(start = 16.dp)) {
+                    Text(file.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(connectedSubtitle(file), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
+            val note = when {
+                Connected.isUnusable(file) -> stringResource(R.string.connected_duplicate_note)
+                Connected.isLink(file) && Connected.readOnly(file) -> stringResource(R.string.connected_link_note)
+                Connected.isLink(file) -> stringResource(R.string.connected_link)
+                !file.isFolder && !Connected.canDownload(file) && Connected.externalUrl(file) == null -> stringResource(R.string.connected_not_downloadable)
+                else -> null
+            }
+            if (note != null) {
+                Text(
+                    note,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+            }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            if (Connected.canEnter(file)) SheetRow(Icons.Outlined.FolderOpen, stringResource(R.string.open_folder), onEnter)
+            Connected.externalUrl(file)?.takeIf { !Connected.isUnusable(file) }?.let { url ->
+                SheetRow(Icons.Outlined.Language, stringResource(R.string.connected_open_at_provider), onClick = { onOpenExternal(url) })
+            }
+            if (Connected.canDownload(file)) {
+                val export = Connected.exportExt(file)
+                SheetRow(
+                    Icons.AutoMirrored.Filled.OpenInNew,
+                    if (export != null) stringResource(R.string.connected_open_office, export) else stringResource(R.string.open),
+                    onOpen,
+                )
+                SheetRow(Icons.Default.Download, stringResource(R.string.download), onDownload)
+            }
+            // Writing as the row's bits allow (move stays inside the storage, delete goes to the provider's trash).
+            if (Connected.canRename(file)) {
+                SheetRow(Icons.AutoMirrored.Filled.DriveFileMove, stringResource(R.string.move_to), onMove)
+                SheetRow(Icons.Default.DriveFileRenameOutline, stringResource(R.string.rename), onRename)
+            }
+            if (Connected.canInfo(file)) SheetRow(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
+            if (Connected.canDelete(file)) SheetRow(Icons.Default.Delete, stringResource(R.string.connected_delete), onDelete, error = true)
+            Spacer(Modifier.height(24.dp))
         }
-        val note = when {
-            Connected.isUnusable(file) -> stringResource(R.string.connected_duplicate_note)
-            Connected.isLink(file) && Connected.readOnly(file) -> stringResource(R.string.connected_link_note)
-            Connected.isLink(file) -> stringResource(R.string.connected_link)
-            !file.isFolder && !Connected.canDownload(file) && Connected.externalUrl(file) == null -> stringResource(R.string.connected_not_downloadable)
-            else -> null
-        }
-        if (note != null) {
-            Text(
-                note,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            )
-        }
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-        if (Connected.canEnter(file)) SheetRow(Icons.Outlined.FolderOpen, stringResource(R.string.open_folder), onEnter)
-        Connected.externalUrl(file)?.takeIf { !Connected.isUnusable(file) }?.let { url ->
-            SheetRow(Icons.Outlined.Language, stringResource(R.string.connected_open_at_provider), onClick = { onOpenExternal(url) })
-        }
-        if (Connected.canDownload(file)) {
-            val export = Connected.exportExt(file)
-            SheetRow(
-                Icons.AutoMirrored.Filled.OpenInNew,
-                if (export != null) stringResource(R.string.connected_open_office, export) else stringResource(R.string.open),
-                onOpen,
-            )
-            SheetRow(Icons.Default.Download, stringResource(R.string.download), onDownload)
-        }
-        // Writing as the row's bits allow (move stays inside the storage, delete goes to the provider's trash).
-        if (Connected.canRename(file)) {
-            SheetRow(Icons.AutoMirrored.Filled.DriveFileMove, stringResource(R.string.move_to), onMove)
-            SheetRow(Icons.Default.DriveFileRenameOutline, stringResource(R.string.rename), onRename)
-        }
-        if (Connected.canInfo(file)) SheetRow(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
-        if (Connected.canDelete(file)) SheetRow(Icons.Default.Delete, stringResource(R.string.connected_delete), onDelete, error = true)
-        Spacer(Modifier.height(24.dp))
     }
 }
 

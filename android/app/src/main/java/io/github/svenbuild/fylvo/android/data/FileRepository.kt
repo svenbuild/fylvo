@@ -67,7 +67,7 @@ private const val CHUNK_TRIES = 5
 
 /** Fylvo: a chunk into a connected storage that may simply be sent again. */
 internal fun chunkRetryable(e: Throwable): Boolean =
-    e is java.io.IOException || (e is ApiException && (e.code == Connected.CODE_BUSY || e.code in 502..504))
+    e is java.io.IOException || (e is ApiException && (e.code == Connected.CODE_BUSY || e.code == 429 || e.code in 502..504))
 /** Fylvo: the server's answer when a file has no preview ("Entity not exist"). */
 private const val CODE_NO_THUMB = 40077
 

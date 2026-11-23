@@ -369,8 +369,14 @@ class FilesViewModel(
     private fun keepListed(files: List<FileObject>): Set<String> {
         val selected = _state.value.selected
         if (selected.isEmpty()) return selected
-        val paths = files.mapTo(HashSet()) { it.path }
-        return selected.filterTo(LinkedHashSet()) { it in paths }
+        val listed = files.associateBy { it.path }
+        // Fylvo: in a connected storage only the same row stays selected (same id), never a file
+        // that took its place under the same name.
+        val before = _state.value.files.associateBy { it.path }
+        return selected.filterTo(LinkedHashSet()) { path ->
+            val row = listed[path] ?: return@filterTo false
+            !Connected.isConnected(path) || before[path]?.id == row.id
+        }
     }
 
     fun loadMore() {
@@ -511,7 +517,8 @@ class FilesViewModel(
             }.onFailure { e ->
                 _state.value = _state.value.copy(recentLoading = false)
                 if (!handleSessionExpiry(e as? Exception ?: Exception(e))) {
-                    _state.value = _state.value.copy(snackbar = failure(e))
+                    // Fylvo: a waiting message (an upload's result) is not replaced.
+                    _state.update { it.copy(snackbar = it.snackbar ?: failure(e)) }
                 }
             }
         }
@@ -1058,7 +1065,8 @@ class FilesViewModel(
             }
             _state.update { it.copy(selected = it.selected - result.done.toSet(), snackbar = message) }
             if (result.error != null && handleSessionExpiry(result.error)) return@launch
-            refresh()
+            val shown = _state.value
+            if (!shown.home && shown.currentUri in folders) refresh()
         }
     }
 
@@ -1290,6 +1298,11 @@ class FilesViewModel(
                 throw e
             } catch (e: Exception) {
                 _state.update { it.copy(snackbar = failure(e)) }
+                // The folder may exist although the answer was lost: show the folder as it is now.
+                if (Connected.isConnected(parent)) {
+                    listingCache.remove(parent)
+                    if (parent == _state.value.currentUri) refresh()
+                }
                 false
             }
         }.await()

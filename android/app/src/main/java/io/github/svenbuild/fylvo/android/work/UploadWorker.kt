@@ -112,7 +112,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                         Resume.Later -> {
                             // Counted like a run without progress (network trouble too), so it cannot
                             // wait for ever; it then ends as unknown and is never sent again.
-                            val runs = batch.serverRetries + 1
+                            val runs = if (progressed) 1 else batch.serverRetries + 1
                             if (runs < MAX_IDLE_RUNS) {
                                 synchronized(lock) { batch = batch.copy(serverRetries = runs).also(queue::save) }
                                 return Result.retry()
@@ -229,7 +229,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                                             sessionId = null, targetUri = null, unknownOutcome = end == Resume.Unknown,
                                                         )
                                                     }
-                                                    lastError = outcome.message
+                                                    if (end != Resume.Done) lastError = outcome.message
                                                 }
                                             } else {
                                                 // Fylvo: a session that is gone stored nothing (40011): start afresh next run.

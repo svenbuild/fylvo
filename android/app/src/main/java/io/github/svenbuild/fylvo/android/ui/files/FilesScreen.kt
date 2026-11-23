@@ -146,9 +146,12 @@ fun FilesScreen(
     var pendingUpload by remember { mutableStateOf<PendingUpload?>(null) }
     val haptics = LocalHapticFeedback.current
 
+    /** Fylvo: the folder an upload was started in; kept when Android recreates the app behind the picker. */
+    var uploadTarget by rememberSaveable { mutableStateOf<String?>(null) }
     val uploadLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val parentUri = uploadTarget ?: state.currentUri
+        uploadTarget = null
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        val parentUri = state.currentUri
         val loaded = state.files.map { it.name }.toSet()
         // Fylvo: names and the upload list are read and written off the main thread; with a few
         // hundred picked photos that takes a moment and must not freeze the screen.
@@ -651,6 +654,7 @@ fun FilesScreen(
             if (!state.inConnected || Connected.canUploadTo(state.parent)) ListItem(
                 modifier = Modifier.clickable {
                     addSheetOpen = false
+                    uploadTarget = state.currentUri
                     uploadLauncher.launch(arrayOf("*/*"))
                 },
                 headlineContent = { Text(stringResource(R.string.upload_files)) },
