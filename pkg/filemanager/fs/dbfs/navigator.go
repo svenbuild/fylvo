@@ -2,6 +2,7 @@ package dbfs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -28,6 +29,7 @@ var (
 	ErrFileCountLimitedReached = serializer.NewError(serializer.CodeFileCountLimitedReached, "Walked file count reached limit", nil)
 	ErrSymbolicFolderFound     = serializer.NewError(serializer.CodeNoPermissionErr, "Symbolic folder cannot be walked into", nil)
 	ErrLoginRequired           = serializer.NewError(serializer.CodeCheckLogin, "Login required", nil)
+	errRecycledFile            = errors.New("file was already put back for reuse")
 
 	fullOrderByOption          = []string{"name", "size", "updated_at", "created_at"}
 	searchLimitedOrderByOption = []string{"created_at"}
@@ -254,6 +256,11 @@ func (b *baseNavigator) walkNext(ctx context.Context, root *File, next string, i
 	var model *ent.File
 	if root != nil {
 		model = root.Model
+		// Fylvo: a file that was put back for reuse (Recycle) while a walk still held it ends
+		// the walk with an error instead of a crash.
+		if model == nil {
+			return nil, errRecycledFile
+		}
 		if root.IsSymbolic() {
 			return nil, ErrSymbolicFolderFound
 		}

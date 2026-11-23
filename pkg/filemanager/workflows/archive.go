@@ -35,6 +35,7 @@ type (
 
 		l        logging.Logger
 		state    *CreateArchiveTaskState
+		secrets  *archiveSecrets
 		progress queue.Progresses
 		node     cluster.Node
 	}
@@ -51,7 +52,9 @@ type (
 		SlaveArchiveTaskID int                          `json:"slave__archive_task_id,omitempty"`
 		SlaveCompressState *SlaveCreateArchiveTaskState `json:"slave_compress_state,omitempty"`
 		Failed             int                          `json:"failed,omitempty"`
-		NodeState          `json:",inline"`
+		// Secrets: the passwords of Uris and Dst, sealed (Fylvo, see fylvo_archive_secrets.go).
+		Secrets   []byte `json:"secrets,omitempty"`
+		NodeState `json:",inline"`
 	}
 )
 
@@ -80,6 +83,9 @@ func NewCreateArchiveTask(ctx context.Context, src []string, dst string) (queue.
 		Uris:      src,
 		Dst:       dst,
 		NodeState: NodeState{},
+	}
+	if _, err := loadArchiveSecrets(ctx, &state.Secrets, nil, state.uriFields()...); err != nil {
+		return nil, err
 	}
 	stateBytes, err := json.Marshal(state)
 	if err != nil {
@@ -124,6 +130,11 @@ func (m *CreateArchiveTask) Do(ctx context.Context) (task.Status, error) {
 		return task.StatusError, fmt.Errorf("failed to unmarshal state: %w", err)
 	}
 	m.state = state
+	secrets, err := loadArchiveSecrets(ctx, &state.Secrets, nil, state.uriFields()...)
+	if err != nil {
+		return task.StatusError, fmt.Errorf("%w (%w)", err, queue.CriticalErr)
+	}
+	m.secrets = secrets
 
 	// select node
 	node, err := allocateNode(ctx, dep, &m.state.NodeState, types.NodeCapabilityCreateArchive)
@@ -178,6 +189,14 @@ func (m *CreateArchiveTask) Do(ctx context.Context) (task.Status, error) {
 }
 
 func (m *CreateArchiveTask) Cleanup(ctx context.Context) error {
+	// Fylvo: nothing to clean up if the state could not be read.
+	if m.state == nil {
+		return nil
+	}
+	// Fylvo: a finished task keeps no password.
+	forgetSecrets(&m.state.Secrets, nil, m.state.uriFields()...)
+	storeState(m.DBTask, m.state)
+
 	if m.state.SlaveCompressState != nil && m.state.SlaveCompressState.TempPath != "" && m.node != nil {
 		if err := m.node.CleanupFolders(context.Background(), m.state.SlaveCompressState.TempPath); err != nil {
 			m.l.Warning("Failed to cleanup slave temp folder %s: %s", m.state.SlaveCompressState.TempPath, err)
@@ -205,7 +224,7 @@ func (m *CreateArchiveTask) initializeTempFolder(ctx context.Context, dep depend
 }
 
 func (m *CreateArchiveTask) listEntitiesAndSendToSlave(ctx context.Context, dep dependency.Dep) (task.Status, error) {
-	uris, err := fs.NewUriFromStrings(m.state.Uris...)
+	uris, err := fs.NewUriFromStrings(m.secrets.uris(m.state.Uris)...)
 	if err != nil {
 		return task.StatusError, fmt.Errorf("failed to create uri from strings: %s (%w)", err, queue.CriticalErr)
 	}
@@ -302,7 +321,7 @@ func (m *CreateArchiveTask) createAndAwaitSlaveUploading(ctx context.Context, de
 	u := inventory.UserFromContext(ctx)
 
 	if m.state.SlaveUploadTaskID == 0 {
-		dst, err := fs.NewUriFromString(m.state.Dst)
+		dst, err := fs.NewUriFromString(m.secrets.uri(m.state.Dst))
 		if err != nil {
 			return task.StatusError, fmt.Errorf("failed to parse dst uri %q: %s (%w)", m.state.Dst, err, queue.CriticalErr)
 		}
@@ -370,7 +389,7 @@ func (m *CreateArchiveTask) completeUpload(ctx context.Context, dep dependency.D
 }
 
 func (m *CreateArchiveTask) createArchiveFile(ctx context.Context, dep dependency.Dep) (task.Status, error) {
-	uris, err := fs.NewUriFromStrings(m.state.Uris...)
+	uris, err := fs.NewUriFromStrings(m.secrets.uris(m.state.Uris)...)
 	if err != nil {
 		return task.StatusError, fmt.Errorf("failed to create uri from strings: %s (%w)", err, queue.CriticalErr)
 	}
@@ -431,7 +450,7 @@ func (m *CreateArchiveTask) uploadArchive(ctx context.Context, dep dependency.De
 
 	m.l.Info("Uploading archive file %s to %s...", zipFilePath, m.state.Dst)
 
-	uri, err := fs.NewUriFromString(m.state.Dst)
+	uri, err := fs.NewUriFromString(m.secrets.uri(m.state.Dst))
 	if err != nil {
 		return task.StatusError, fmt.Errorf(
 			"failed to parse dst uri %q: %s (%w)",
@@ -512,8 +531,8 @@ func (m *CreateArchiveTask) Summarize(hasher hashid.Encoder) *queue.Summary {
 		NodeID: m.state.NodeID,
 		Phase:  string(m.state.Phase),
 		Props: map[string]any{
-			SummaryKeySrcMultiple: m.state.Uris,
-			SummaryKeyDst:         m.state.Dst,
+			SummaryKeySrcMultiple: withoutSharePasswords(m.state.Uris),
+			SummaryKeyDst:         withoutSharePassword(m.state.Dst),
 			SummaryKeyFailed:      failed,
 		},
 	}
