@@ -161,6 +161,10 @@ type (
 		OrderBy        string `uri:"order_by" form:"order_by" json:"order_by"`
 		OrderDirection string `uri:"order_direction" form:"order_direction" json:"order_direction"`
 		NextPageToken  string `uri:"next_page_token" form:"next_page_token" json:"next_page_token"`
+		// Recursive asks for everything below the folder, not only what is in it. For
+		// folders of connected storages (Fylvo); the search of Fylvo's own files goes
+		// by the parameters in the address alone.
+		Recursive bool `uri:"recursive" form:"recursive" json:"recursive"`
 	}
 )
 
@@ -408,6 +412,10 @@ type (
 		SkipError         bool     `json:"skip_error"`
 		Archive           bool     `json:"archive"`
 		NoCache           bool     `json:"no_cache"`
+		// Export is the format a document that exists only at the provider of a
+		// connected storage is read in (Fylvo): "docx", "xlsx", "pptx", "svg" or "pdf",
+		// as the kind of document allows. Empty reads it in its usual format.
+		Export string `json:"export"`
 	}
 	FileURLResponse struct {
 		Urls    []manager.EntityUrl `json:"urls"`
