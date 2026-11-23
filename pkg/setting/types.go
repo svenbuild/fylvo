@@ -162,6 +162,7 @@ type ExplorerFrontendSettings struct {
 type MapProvider string
 
 const (
+	MapProviderNone          = MapProvider("none")
 	MapProviderOpenStreetMap = MapProvider("openstreetmap")
 	MapProviderGoogle        = MapProvider("google")
 	MapProviderMapbox        = MapProvider("mapbox")

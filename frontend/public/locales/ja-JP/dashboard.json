@@ -286,6 +286,7 @@
     "mapProvider": "地図プロバイダー",
     "mapProviderDes": "メディアの位置情報を表示する際に使用する地図プロバイダー。",
     "mapGoogle": "Google Maps (Leaflet)",
+    "mapNone": "オフ（地図なし）",
     "mapOpenStreetMap": "OpenStreetMap (Leaflet)",
     "mapboxMap": "OpenStreetMap (Mapbox)",
     "mapboxAccessToken": "Mapboxアクセストークン",
