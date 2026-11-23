@@ -95,7 +95,8 @@ export function setTargetPath(index: number, path: string): AppThunk {
   };
 }
 
-let generation = 0;
+// Fylvo: one counter per file manager, so a slow listing of one is not dropped by another.
+const generations: { [index: number]: number } = {};
 // Fylvo: the running search of a connected storage, by file manager.
 const connectedSearch: { [index: number]: AbortController | undefined } = {};
 export interface NavigateReconcileOptions {
@@ -181,12 +182,24 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
       fileManager,
       globalState: { sidebarOpen, imageViewer },
     } = getState();
-    const { path, list, pure_path } = fileManager[index];
+    const { path, list, pure_path, loading } = fileManager[index];
     if (!path) {
       return;
     }
+    // Fylvo: no next page while another listing replaces this one (its cursor belongs to the old).
+    if (opt?.next_page && loading) {
+      return;
+    }
 
-    const currentGeneration = ++generation;
+    const currentGeneration = (generations[index] = (generations[index] ?? 0) + 1);
+    // Fylvo: a search in a connected storage walks the folders on the server (everything below
+    // the folder, recursive); only a few such walks run at once there, so one that is no longer
+    // wanted (another search or folder) is stopped, which frees its place. Done before any wait,
+    // so an older call cannot stop a newer one.
+    connectedSearch[index]?.abort();
+    const recursive = inConnectedStorage(path) && new CrUri(path).is_search();
+    const abort = recursive ? new AbortController() : undefined;
+    connectedSearch[index] = abort;
     if (!opt?.next_page) {
       dispatch(setFmLoading({ index, value: true }));
     }
@@ -196,19 +209,15 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
       try {
         await dispatch(syncViewSettings(index));
       } catch (e) {}
+      // Fylvo: a newer listing started meanwhile.
+      if (currentGeneration != generations[index]) {
+        return;
+      }
     }
 
     const currentLogin = SessionManager.currentLoginOrNull();
     const currentView = localCustomView[pure_path ?? ""];
     let useCustomView = currentLogin?.user.disable_view_sync || currentView;
-
-    // Fylvo: a search in a connected storage walks the folders on the server (everything below
-    // the folder, recursive); only a few such walks run at once there, so one that is no longer
-    // wanted (another search or folder) is stopped, which frees its place.
-    connectedSearch[index]?.abort();
-    const recursive = inConnectedStorage(path) && new CrUri(path).is_search();
-    const abort = recursive ? new AbortController() : undefined;
-    connectedSearch[index] = abort;
 
     let listRes: ListResponse | null = null;
     try {
@@ -251,13 +260,13 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         opt?.next_page &&
         e instanceof AppError &&
         e.code == ConnectedCode.ListingGone &&
-        currentGeneration == generation
+        currentGeneration == generations[index]
       ) {
         // Fylvo: the server no longer keeps this listing (connected storage); start again.
         dispatch(setFmLoading({ index, value: false }));
         return dispatch(navigateReconcile(index));
       }
-      if (currentGeneration == generation) {
+      if (currentGeneration == generations[index]) {
         dispatch(
           setFmError({
             index,
@@ -267,13 +276,13 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         return;
       }
     } finally {
-      if (currentGeneration == generation) {
+      if (currentGeneration == generations[index]) {
         dispatch(setFmLoading({ index, value: false }));
       }
     }
 
     // Check if current request is stale
-    if (currentGeneration !== generation) {
+    if (currentGeneration !== generations[index]) {
       return;
     }
 

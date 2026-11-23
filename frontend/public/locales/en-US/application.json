@@ -1209,8 +1209,8 @@
     "nameTaken": "This name is already taken. Please choose another one.",
     "officeOneWindow": "When you edit in a connected storage, every editor window is a document of its own. Edit it in one window on one device only. If the document changed elsewhere in the meantime (another window, another device, at the provider), the editor says on saving that it changed in storage. Closing the window then tries to keep your unsaved changes as a copy next to the file (“Name (conflict)”); to be safe, download a copy in the editor first.",
     "searchIncomplete": "This search did not see everything (too many entries, it took too long, a folder could not be read, or something changed meanwhile), so results may be missing.",
-    "searchLinks_one": "{{count}} shortcut is shown but was not searched.",
-    "searchLinks_other": "{{count}} shortcuts are shown but were not searched.",
+    "searchLinks_one": "{{count}} shortcut was not followed during the search.",
+    "searchLinks_other": "{{count}} shortcuts were not followed during the search.",
     "downloadAs": "Download as",
     "usualFormat": "The usual format"
   }

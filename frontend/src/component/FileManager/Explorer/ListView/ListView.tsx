@@ -25,7 +25,6 @@ const ListView = React.forwardRef(
     const dispatch = useAppDispatch();
     const fmIndex = useContext(FmIndexContext);
     const recursion_limit_reached = useAppSelector((state) => state.fileManager[fmIndex].list?.recursion_limit_reached);
-    const connected = useAppSelector((state) => !!state.fileManager[fmIndex].list?.connected);
     const columnSetting = useAppSelector((state) => state.fileManager[fmIndex].listViewColumns);
     const customProps = useAppSelector((state) => state.siteConfig.explorer?.config?.custom_props);
 
@@ -88,7 +87,7 @@ const ListView = React.forwardRef(
         <ListHeader commitColumnSetting={commitColumnSetting} setColumns={setColumns} columns={columns} />
         <ListBody columns={columns} />
         <ConnectedOmitted sx={{ px: 1, py: 1 }} />
-        {recursion_limit_reached && !connected && (
+        {recursion_limit_reached && (
           <Box sx={{ px: 1, py: 1 }}>
             <SearchLimitReached />
           </Box>

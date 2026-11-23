@@ -145,6 +145,20 @@ const AdvanceSearch = () => {
     }
   }, [open]);
 
+  // Fylvo: a connected storage is searched by name and type only; other conditions leave the
+  // dialog when such a folder is the base.
+  const connectedBase = inConnectedStorage(conditions.find((c) => c.type == ConditionType.base)?.base_uri);
+  useEffect(() => {
+    if (connectedBase) {
+      const kept = conditions.filter((c) =>
+        [ConditionType.base, ConditionType.name, ConditionType.type].includes(c.type),
+      );
+      if (kept.length != conditions.length) {
+        setConditions(kept);
+      }
+    }
+  }, [connectedBase, conditions]);
+
   const onConditionRemove = (condition: Condition) => {
     setConditions(conditions.filter((c) => c !== condition));
   };
@@ -171,12 +185,7 @@ const AdvanceSearch = () => {
       showActions
       onAccept={submitSearch}
       showCancel
-      secondaryAction={
-        <AddCondition
-          onConditionAdd={onConditionAdd}
-          connected={inConnectedStorage(conditions.find((c) => c.type == ConditionType.base)?.base_uri)}
-        />
-      }
+      secondaryAction={<AddCondition onConditionAdd={onConditionAdd} connected={connectedBase} />}
       dialogProps={{
         open: open ?? false,
         onClose: onClose,

@@ -44,6 +44,12 @@ interface EmptyFileListProps {
 
 export const SearchLimitReached = () => {
   const { t } = useTranslation("application");
+  // Fylvo: a connected storage tells this with its own note (ConnectedIncomplete).
+  const fmIndex = useContext(FmIndexContext);
+  const connected = useAppSelector((state) => !!state.fileManager[fmIndex].list?.connected);
+  if (connected) {
+    return null;
+  }
   return (
     <Alert severity="warning">
       <AlertTitle> {t("fileManager.recursiveLimitReached")}</AlertTitle>
@@ -181,7 +187,6 @@ const EmptyFileList = memo(
     const currentFs = useAppSelector((state) => state.fileManager[fmIndex]?.current_fs);
     const search_params = useAppSelector((state) => state.fileManager[fmIndex]?.search_params);
     const recursion_limit_reached = useAppSelector((state) => state.fileManager[fmIndex].list?.recursion_limit_reached);
-    const connected = useAppSelector((state) => !!state.fileManager[fmIndex].list?.connected);
     const capability = useAppSelector((state) => state.fileManager[fmIndex].list?.props.capability);
 
     const parent = useAppSelector((state) => state.fileManager[fmIndex].list?.parent);
@@ -211,7 +216,7 @@ const EmptyFileList = memo(
         {currentFs == Filesystem.shared_with_me && (
           <>
             <SharedWithMeEmpty />
-            {recursion_limit_reached && !connected && <SearchLimitReached />}
+            {recursion_limit_reached && <SearchLimitReached />}
           </>
         )}
         {uploadOnly && (
@@ -244,7 +249,7 @@ const EmptyFileList = memo(
               />
             </Box>
             <ConnectedOmitted />
-            {recursion_limit_reached && !connected && <SearchLimitReached />}
+            {recursion_limit_reached && <SearchLimitReached />}
           </>
         )}
       </Box>

@@ -167,19 +167,23 @@ const loadConnectedImage = async (url: string, listed: () => boolean): Promise<b
 };
 
 // Fylvo: reloads the folder of a connected file whose preview was asked for an older version,
-// at most once per folder within half a minute (several rows of one listing, no loop).
+// at most once per folder within half a minute (several rows of one listing, no loop). Only a
+// plain listing of that folder is reloaded, not a search (that would walk all folders again);
+// false when nothing is reloaded for it.
 const staleRefreshes = new Map<string, number>();
 const staleRefreshPause = 30000;
-function refreshForNewVersion(index: number, file: FileResponse): AppThunk {
+function refreshForNewVersion(index: number, file: FileResponse): AppThunk<boolean> {
   return (dispatch, getState) => {
     const folder = new CrUri(file.path).parent().toString();
-    const shown = getState().fileManager[index].pure_path;
-    const last = staleRefreshes.get(folder) ?? 0;
-    if (!shown || new CrUri(shown).toString() != folder || Date.now() - last < staleRefreshPause) {
-      return;
+    const { path, pure_path } = getState().fileManager[index];
+    if (!path || !pure_path || new CrUri(path).is_search() || new CrUri(pure_path).toString() != folder) {
+      return false;
     }
-    staleRefreshes.set(folder, Date.now());
-    dispatch(refreshFileList(index));
+    if (Date.now() - (staleRefreshes.get(folder) ?? 0) >= staleRefreshPause) {
+      staleRefreshes.set(folder, Date.now());
+      dispatch(refreshFileList(index));
+    }
+    return true;
   };
 }
 
@@ -280,8 +284,12 @@ function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string |
       }
       // Fylvo: the file is another version at the provider by now: the folder is shown again
       // (the new row asks for its own preview), and nothing is remembered for this version.
-      if (connected && e instanceof AppError && e.code == Code.StaleVersion) {
-        dispatch(refreshForNewVersion(index, file));
+      if (
+        connected &&
+        e instanceof AppError &&
+        e.code == Code.StaleVersion &&
+        dispatch(refreshForNewVersion(index, file))
+      ) {
         return null;
       }
       // Fylvo: remembered for this version of the file only, in the thumbnail cache, and for a
