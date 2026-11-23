@@ -70,7 +70,12 @@ fun TextEditorScreen(viewModel: TextEditorViewModel, onClose: (wroteSomething: B
     val snackbar = remember { SnackbarHostState() }
 
     fun leave() {
-        if (viewModel.dirty && state.loadError == null && !state.loading) askLeave = true else onClose(state.wroteSomething)
+        when {
+            // A save on its way finishes first (its answer belongs to this file).
+            state.saving -> Unit
+            viewModel.dirty && state.loadError == null && !state.loading -> askLeave = true
+            else -> onClose(state.wroteSomething)
+        }
     }
     BackHandler { leave() }
 
@@ -142,7 +147,7 @@ fun TextEditorScreen(viewModel: TextEditorViewModel, onClose: (wroteSomething: B
             },
             dismissButton = {
                 Column(horizontalAlignment = Alignment.End) {
-                    TextButton(onClick = { askLeave = false; onClose(state.wroteSomething) }) {
+                    TextButton(enabled = !state.saving, onClick = { askLeave = false; onClose(state.wroteSomething) }) {
                         Text(stringResource(R.string.editor_discard), color = MaterialTheme.colorScheme.error)
                     }
                     TextButton(onClick = { askLeave = false }) { Text(stringResource(R.string.editor_keep_editing)) }

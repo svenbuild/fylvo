@@ -82,19 +82,25 @@ fun SharesPage(
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
     var reload by remember { mutableStateOf(0) }
+    /** Fylvo: a page that belongs to an older load (before a reload) is dropped. */
+    var generation by remember { mutableStateOf(0) }
+    var moreFailed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     suspend fun load(token: String?) {
+        val mine = if (token == null) ++generation else generation
         loading = true
         runCatching { app.shares.list(token) }
             .onSuccess { page ->
+                if (mine != generation) return@onSuccess
                 if (token == null) shares.clear()
                 shares.addAll(page.shares.filter { s -> shares.none { it.id == s.id } })
                 next = page.next
                 failed = false
+                moreFailed = false
             }
-            .onFailure { failed = true }
-        loading = false
+            .onFailure { if (mine == generation) { if (token == null) failed = true else moreFailed = true } }
+        if (mine == generation) loading = false
     }
     LaunchedEffect(reload) { load(null) }
 
@@ -117,9 +123,9 @@ fun SharesPage(
                     knownUri = null,
                     actions = actions,
                     onChanged = { reload++ },
-                    hasMore = next != null,
-                    loadingMore = loading,
-                    onMore = { scope.launch { load(next) } },
+                    next = next,
+                    moreFailed = moreFailed,
+                    onMore = { token -> scope.launch { load(token) } },
                     contentPadding = PaddingValues(bottom = 96.dp),
                 )
             }
@@ -164,9 +170,10 @@ private fun ShareList(
     knownUri: String?,
     actions: ShareActions,
     onChanged: () -> Unit,
-    hasMore: Boolean = false,
-    loadingMore: Boolean = false,
-    onMore: () -> Unit = {},
+    /** The token of the next page (null: none), loaded when the list end is reached. */
+    next: String? = null,
+    moreFailed: Boolean = false,
+    onMore: (String) -> Unit = {},
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     val context = LocalContext.current
@@ -193,9 +200,16 @@ private fun ShareList(
         items(shares, key = { it.id }) { share ->
             ShareRow(share) { target = share }
         }
-        if (hasMore) item {
-            LaunchedEffect(shares.size) { if (!loadingMore) onMore() }
-            Box(Modifier.fillMaxWidth().padding(16.dp)) { CircularProgressIndicator(Modifier.size(24.dp).align(Alignment.Center)) }
+        if (next != null) item(key = "more") {
+            // Each page token is asked for once; after a failure a tap asks again.
+            if (moreFailed) {
+                androidx.compose.material3.TextButton(onClick = { onMore(next) }, modifier = Modifier.padding(horizontal = 12.dp)) {
+                    Text(stringResource(R.string.retry))
+                }
+            } else {
+                LaunchedEffect(next) { onMore(next) }
+                Box(Modifier.fillMaxWidth().padding(16.dp)) { CircularProgressIndicator(Modifier.size(24.dp).align(Alignment.Center)) }
+            }
         }
     }
 

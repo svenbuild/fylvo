@@ -161,6 +161,7 @@ fun FilesScreen(
     // Fylvo 1.6: the account's group rights (null while not known: nothing that needs them is offered).
     val accountState by app.account.state.collectAsState()
     val groupShare = accountState.group(Permissions.GROUP_SHARE)
+    LaunchedEffect(state.currentUri, accountOpen) { if (accountState.me == null) runCatching { app.account.ensureLoaded() } }
     /** Fylvo: the file whose shares are listed ("Manage shares"). */
     var sharesOfTarget by remember { mutableStateOf<FileObject?>(null) }
     /** Fylvo 1.6: the file whose versions are listed, and "Empty trash" waiting for its yes. */
@@ -208,6 +209,8 @@ fun FilesScreen(
         val parentUri = uploadTarget ?: state.currentUri
         uploadTarget = null
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        // Fylvo 1.6: never into a link with a password (the upload queue is stored).
+        if (CrUri.hasSecret(parentUri)) return@rememberLauncherForActivityResult
         // Fylvo: the names on screen only when they are of the target folder.
         val loaded = if (parentUri == state.currentUri) state.files.map { it.name }.toSet() else emptySet()
         // Fylvo: names and the upload list are read and written off the main thread; with a few
@@ -1037,8 +1040,10 @@ fun FilesScreen(
             if (!state.inConnected || Connected.canUploadTo(state.parent)) ListItem(
                 modifier = Modifier.clickable {
                     addSheetOpen = false
-                    uploadTarget = state.currentUri
-                    uploadLauncher.launch(arrayOf("*/*"))
+                    if (!CrUri.hasSecret(state.currentUri)) {
+                        uploadTarget = state.currentUri
+                        uploadLauncher.launch(arrayOf("*/*"))
+                    }
                 },
                 headlineContent = { Text(stringResource(R.string.upload_files)) },
                 supportingContent = { Text(stringResource(R.string.into_folder, state.folderTitle())) },

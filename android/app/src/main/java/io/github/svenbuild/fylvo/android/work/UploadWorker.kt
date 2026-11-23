@@ -710,6 +710,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             /** Fylvo: the account at the moment the upload was confirmed (instead of the one now). */
             account: String? = null,
         ) {
+            // Fylvo 1.6: the queue is stored on disk; an address with a share password never goes in.
+            require(!io.github.svenbuild.fylvo.android.util.CrUri.hasSecret(parentUri)) { "No uploads into a link with a password" }
             if (uris.isEmpty()) return
             // Shared files (no folder listing here): two with the same name would race for one
             // address, so they get unique names. Picked files come already renamed by the screen,

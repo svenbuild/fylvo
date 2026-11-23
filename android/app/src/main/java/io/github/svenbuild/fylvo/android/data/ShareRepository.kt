@@ -28,6 +28,8 @@ data class LinkOptions(
     val showReadme: Boolean = false,
     val expireToChoose: Boolean = false,
     val downloadsToChoose: Boolean = false,
+    /** The unchanged end of an existing link; sent as the seconds left at the moment of sending. */
+    val keepEnd: Instant? = null,
 ) {
     val complete: Boolean get() = !expireToChoose && !downloadsToChoose
 
@@ -35,11 +37,11 @@ data class LinkOptions(
      * The request for [uri]. On an edit the server replaces every setting except the password, so
      * all are sent; members never (a link share has none, and an empty list would remove them).
      */
-    fun toRequest(uri: String, isFolder: Boolean, editing: Boolean): ShareCreateRequest = ShareCreateRequest(
+    fun toRequest(uri: String, isFolder: Boolean, editing: Boolean, now: Instant = Instant.now()): ShareCreateRequest = ShareCreateRequest(
         uri = uri,
         isPrivate = !editing && password.isNotEmpty(),
         password = if (editing) "" else password,
-        expire = expireSeconds?.coerceIn(1, MAX_EXPIRE_SECONDS)?.toInt() ?: 0,
+        expire = (keepEnd?.let { remainingSeconds(it, now) } ?: expireSeconds)?.coerceIn(1, MAX_EXPIRE_SECONDS)?.toInt() ?: 0,
         downloads = if (isFolder) 0 else downloads?.coerceAtLeast(1) ?: 0,
         shareView = isFolder && shareView,
         showReadme = isFolder && showReadme,
@@ -61,9 +63,11 @@ data class LinkOptions(
             val remaining = end?.let { remainingSeconds(it, now) }
             return LinkOptions(
                 expireSeconds = remaining?.takeIf { it > 0 },
+                keepEnd = end?.takeIf { remaining != null && remaining > 0 },
                 expireToChoose = share.expires != null && (remaining == null || remaining <= 0),
-                downloads = share.remainDownloads?.takeIf { it > 0 },
-                downloadsToChoose = share.remainDownloads != null && share.remainDownloads <= 0,
+                downloads = share.remainDownloads?.takeIf { it > 0 && !share.isFolder },
+                // A folder link has no download limit in the app (old links may carry one).
+                downloadsToChoose = !share.isFolder && share.remainDownloads != null && share.remainDownloads <= 0,
                 upload = when {
                     !share.allowUpload -> UploadMode.OFF
                     share.hideContent -> UploadMode.UPLOAD_ONLY
@@ -84,7 +88,7 @@ data class LinkOptions(
 }
 
 /** Fylvo: the account's own shares (list, edit, delete) and sharing with people. */
-class ShareRepository(private val api: ApiClient) {
+class ShareRepository(private val api: ApiClient, private val session: SessionManager) {
 
     companion object {
         /** App-side code: the last downloads were used up while the link was being edited. */
@@ -115,23 +119,26 @@ class ShareRepository(private val api: ApiClient) {
 
     /** Creates a link for [file]; the answer is the complete link. */
     suspend fun create(file: FileObject, options: LinkOptions): String =
-        api.service().createShare(options.toRequest(file.path, file.isFolder, editing = false)).unwrap()
+        // A password in the body: no redirects.
+        api.authService().createShare(options.toRequest(file.path, file.isFolder, editing = false), session.sessionTag()).unwrap()
 
     /**
      * Saves [options] for [share] of the file at [uri]. A download limit left as it was is read
      * again just before, so downloads made while the sheet was open are not given back.
      */
     suspend fun edit(share: ShareInfo, uri: String, options: LinkOptions): String {
-        val untouched = options.downloads != null && options.downloads == LinkOptions.of(share).downloads
+        val tag = session.sessionTag()
+        // An expired link has no info any more (404): its own list entry is the latest there is.
+        val untouched = !share.expired && options.downloads != null && options.downloads == LinkOptions.of(share).downloads
         val send = if (untouched) {
             val left = details(share.id).remainDownloads
             if (left != null && left <= 0) throw ApiException(CODE_NO_DOWNLOADS_LEFT, "No downloads left")
             options.copy(downloads = left)
         } else options
-        return api.service().editShare(share.id, send.toRequest(uri, share.isFolder, editing = true)).unwrap()
+        return api.service().editShare(share.id, send.toRequest(uri, share.isFolder, editing = true), tag).unwrap()
     }
 
-    suspend fun delete(id: String) = api.service().deleteShare(id).unwrapEmpty()
+    suspend fun delete(id: String) = api.service().deleteShare(id, session.sessionTag()).unwrapEmpty()
 
     /**
      * Fylvo: a share as its visitor sees it, unlocked with [password] when it fits (a wrong one

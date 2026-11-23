@@ -50,11 +50,6 @@ class AccountRepository(private val api: ApiClient, private val session: Session
         if (s.me == null || s.mapEnabled == null) refresh()
     }
 
-    /** The answer of a call made for [tag], kept only while that session is the current one. */
-    fun update(tag: SessionTag, change: (State) -> State) {
-        if (session.isCurrent(tag)) _state.value = change(_state.value)
-    }
-
     fun clear() {
         _state.value = State()
     }
@@ -69,39 +64,39 @@ class AccountRepository(private val api: ApiClient, private val session: Session
  * codes and the 2FA secret are only passed through, never kept; the requests that carry them use
  * the client without redirects.
  */
-class SecurityRepository(private val api: ApiClient, private val account: AccountRepository) {
+class SecurityRepository(private val api: ApiClient, private val account: AccountRepository, private val session: SessionManager) {
 
     suspend fun settings(): io.github.svenbuild.fylvo.android.api.UserSettings = api.service().securitySettings().unwrap()
 
     suspend fun setName(name: String) {
-        api.service().patchUserSetting(kotlinx.serialization.json.buildJsonObject { put("nick", kotlinx.serialization.json.JsonPrimitive(name)) }).unwrapEmpty()
+        api.service().patchUserSetting(session = session.sessionTag(), patch = kotlinx.serialization.json.buildJsonObject { put("nick", kotlinx.serialization.json.JsonPrimitive(name)) }).unwrapEmpty()
         account.refresh()
     }
 
     /** 40069: [current] is wrong. */
     suspend fun changePassword(current: String, new: String) {
-        api.authService().patchUserSetting(kotlinx.serialization.json.buildJsonObject {
+        api.authService().patchUserSetting(session = session.sessionTag(), patch = kotlinx.serialization.json.buildJsonObject {
             put("current_password", kotlinx.serialization.json.JsonPrimitive(current))
             put("new_password", kotlinx.serialization.json.JsonPrimitive(new))
         }).unwrapEmpty()
     }
 
-    suspend fun twoFaSecret(): String = api.authService().twoFaSecret().unwrap()
+    suspend fun twoFaSecret(): String = api.authService().twoFaSecret(session.sessionTag()).unwrap()
 
     /** Switches 2FA on or off; the code is always sent with it (the server needs both). 40022: wrong code. */
     suspend fun setTwoFa(on: Boolean, code: String) {
-        api.authService().patchUserSetting(kotlinx.serialization.json.buildJsonObject {
+        api.authService().patchUserSetting(session = session.sessionTag(), patch = kotlinx.serialization.json.buildJsonObject {
             put("two_fa_enabled", kotlinx.serialization.json.JsonPrimitive(on))
             put("two_fa_code", kotlinx.serialization.json.JsonPrimitive(code))
         }).unwrapEmpty()
     }
 
-    suspend fun revokeGrant(clientId: String) = api.service().revokeGrant(clientId).unwrapEmpty()
+    suspend fun revokeGrant(clientId: String) = api.service().revokeGrant(clientId, session.sessionTag()).unwrapEmpty()
 
     suspend fun signIns(next: Int? = null): io.github.svenbuild.fylvo.android.api.ActivityList = api.service().accountActivity(next).unwrap()
 
     suspend fun uploadAvatar(jpeg: ByteArray) {
-        api.service().uploadAvatar(jpeg.toRequestBody("image/jpeg".toMediaType())).unwrapEmpty()
+        api.service().uploadAvatar(jpeg.toRequestBody("image/jpeg".toMediaType()), session.sessionTag()).unwrapEmpty()
         account.refresh()
     }
 

@@ -1297,7 +1297,7 @@ class FilesViewModel(
         // Fylvo 1.6: a pasted link is offered to open (FilesScreen), never searched for.
         if (io.github.svenbuild.fylvo.android.util.ShareLinks.looksLikeLink(query)) {
             searchJob?.cancel()
-            _state.update { it.copy(files = emptyList(), loading = false) }
+            _state.update { it.copy(searchResults = emptyList(), searchNextToken = null, searchLoading = false, searchLoadingMore = false, searchError = null) }
             return
         }
         runSearch(debounceMs = 300)
@@ -1306,7 +1306,7 @@ class FilesViewModel(
     private fun searchUri(): String? {
         val s = _state.value
         val q = s.searchQuery?.trim().orEmpty()
-        if (q.isEmpty()) return null
+        if (q.isEmpty() || io.github.svenbuild.fylvo.android.util.ShareLinks.looksLikeLink(q)) return null
         val base = s.searchScope ?: CrUri.MY_PREFIX
         val encoded = java.net.URLEncoder.encode(q, "UTF-8").replace("+", "%20")
         return buildString {

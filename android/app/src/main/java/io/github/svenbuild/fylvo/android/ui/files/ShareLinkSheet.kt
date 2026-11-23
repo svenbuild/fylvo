@@ -125,7 +125,7 @@ fun ShareLinkSheet(
                         val label = if (days == 0) stringResource(R.string.never) else pluralStringResource(R.plurals.days, days, days)
                         val selected = !options.expireToChoose && if (days == 0) options.expireSeconds == null else options.expireSeconds == seconds
                         FilterChip(selected = selected, onClick = {
-                            options = options.copy(expireSeconds = seconds.takeIf { days > 0 }, expireToChoose = false)
+                            options = options.copy(expireSeconds = seconds.takeIf { days > 0 }, expireToChoose = false, keepEnd = null)
                         }, label = { Text(label) })
                     }
                     customExpiry?.takeIf { !options.expireToChoose }?.let { s ->
@@ -255,7 +255,7 @@ fun ShareLinkSheet(
                         // The end of the chosen day on this phone.
                         val end = day.plusDays(1).atStartOfDay(zone).toInstant()
                         val seconds = LinkOptions.remainingSeconds(end, Instant.now())
-                        options = options.copy(expireSeconds = seconds.coerceIn(1, LinkOptions.MAX_EXPIRE_SECONDS), expireToChoose = false)
+                        options = options.copy(expireSeconds = seconds.coerceIn(1, LinkOptions.MAX_EXPIRE_SECONDS), expireToChoose = false, keepEnd = null)
                     }
                     pickDate = false
                 }) { Text(stringResource(R.string.ok)) }

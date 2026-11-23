@@ -112,7 +112,7 @@ interface ApiService {
     ): Response<ApiResponse<TaskListResponse>>
 
     @PUT("api/v4/share")
-    suspend fun createShare(@Body request: ShareCreateRequest): Response<ApiResponse<String>>
+    suspend fun createShare(@Body request: ShareCreateRequest, @Tag session: SessionTag? = null): Response<ApiResponse<String>>
 
     // ---- Fylvo 1.6: managing own shares (design/android-parity-plan.md, 1 and 2).
 
@@ -126,10 +126,10 @@ interface ApiService {
 
     /** Replaces all settings of share [id] (the password stays); answers with the link. */
     @POST("api/v4/share/{id}")
-    suspend fun editShare(@Path("id") id: String, @Body request: ShareCreateRequest): Response<ApiResponse<String>>
+    suspend fun editShare(@Path("id") id: String, @Body request: ShareCreateRequest, @Tag session: SessionTag): Response<ApiResponse<String>>
 
     @HTTP(method = "DELETE", path = "api/v4/share/{id}")
-    suspend fun deleteShare(@Path("id") id: String): Response<ApiResponse<Unit>>
+    suspend fun deleteShare(@Path("id") id: String, @Tag session: SessionTag): Response<ApiResponse<Unit>>
 
     /**
      * One share; [password] unlocks a protected one (also needed by its owner for
@@ -152,6 +152,7 @@ interface ApiService {
         @Query("previous") previous: String?,
         @Query("previous_required") previousRequired: Boolean?,
         @Body body: RequestBody,
+        @Tag session: SessionTag,
     ): Response<ApiResponse<FileObject>>
 
     // ---- Fylvo 1.6: account and security (design/android-parity-plan.md, 9). Calls that carry a
@@ -162,30 +163,30 @@ interface ApiService {
 
     /** Name, password (with the current one) or 2FA (always with its code); empty answer. */
     @PATCH("api/v4/user/setting")
-    suspend fun patchUserSetting(@Body patch: JsonObject): Response<ApiResponse<Unit>>
+    suspend fun patchUserSetting(@Body patch: JsonObject, @Tag session: SessionTag): Response<ApiResponse<Unit>>
 
     /** A new 2FA secret (base32), valid for 10 minutes until confirmed with a code. */
     @GET("api/v4/user/setting/2fa")
-    suspend fun twoFaSecret(): Response<ApiResponse<String>>
+    suspend fun twoFaSecret(@Tag session: SessionTag): Response<ApiResponse<String>>
 
     /** The account's sign-ins and security changes; [next] pages on. */
     @GET("api/v4/user/setting/activity")
     suspend fun accountActivity(@Query("next") next: Int? = null): Response<ApiResponse<ActivityList>>
 
     @HTTP(method = "DELETE", path = "api/v4/session/oauth/grant/{id}")
-    suspend fun revokeGrant(@Path("id") clientId: String): Response<ApiResponse<Unit>>
+    suspend fun revokeGrant(@Path("id") clientId: String, @Tag session: SessionTag): Response<ApiResponse<Unit>>
 
     /** A new profile picture (raw image bytes, `Content-Type` of the image). */
     @PUT("api/v4/user/setting/avatar")
-    suspend fun uploadAvatar(@Body image: RequestBody): Response<ApiResponse<Unit>>
+    suspend fun uploadAvatar(@Body image: RequestBody, @Tag session: SessionTag): Response<ApiResponse<Unit>>
 
     // ---- Fylvo 1.6: versions, history, trash (design/android-parity-plan.md, 6 to 8).
 
     @POST("api/v4/file/version/current")
-    suspend fun setCurrentVersion(@Body request: VersionRequest): Response<ApiResponse<Unit>>
+    suspend fun setCurrentVersion(@Body request: VersionRequest, @Tag session: SessionTag): Response<ApiResponse<Unit>>
 
     @HTTP(method = "DELETE", path = "api/v4/file/version", hasBody = true)
-    suspend fun deleteVersion(@Body request: VersionRequest): Response<ApiResponse<Unit>>
+    suspend fun deleteVersion(@Body request: VersionRequest, @Tag session: SessionTag): Response<ApiResponse<Unit>>
 
     /** The history of an own file (or of a folder and the files directly in it); [next] pages on. */
     @GET("api/v4/file/activity")
@@ -193,7 +194,7 @@ interface ApiService {
 
     /** Empties the trash for good; runs on the server until it is done (can take a while). */
     @HTTP(method = "DELETE", path = "api/v4/file/trash")
-    suspend fun emptyTrash(): Response<ApiResponse<Unit>>
+    suspend fun emptyTrash(@Tag session: SessionTag): Response<ApiResponse<Unit>>
 
     /** A file with `extended_info` (shares, versions, storage used). */
     @GET("api/v4/file/info")

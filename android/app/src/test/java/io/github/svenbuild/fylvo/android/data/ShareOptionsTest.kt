@@ -23,7 +23,7 @@ class ShareOptionsTest {
         // Less than a second left: still sent as 1 (0 would clear the end).
         val almost = LinkOptions.of(ShareInfo(expires = "2026-11-23T10:00:00.400Z"), now)
         assertEquals(1L, almost.expireSeconds)
-        assertEquals(1, almost.toRequest("cloudreve://my/a", isFolder = false, editing = true).expire)
+        assertEquals(1, almost.toRequest("cloudreve://my/a", isFolder = false, editing = true, now = now).expire)
     }
 
     @Test fun expiredLinkMustGetANewEnd() {
@@ -105,5 +105,21 @@ class ShareOptionsTest {
         assertFalse(Navigation.atTabRoot(Where(uri = "cloudreve://shared_with_me", page = "shares"), Place.Shared, emptyList()))
         assertFalse(Navigation.atTabRoot(Where(account = true, page = "shares"), Place.Account, emptyList()))
         assertTrue(Navigation.atTabRoot(Where(account = true), Place.Account, emptyList()))
+    }
+
+    @Test fun unchangedEndIsCountedWhenSending() {
+        val o = LinkOptions.of(ShareInfo(expires = "2026-11-23T12:00:00Z"), now)
+        assertEquals(7200L, o.expireSeconds)
+        // Sent ten minutes later: the end stays the same.
+        assertEquals(6600, o.toRequest("cloudreve://my/a", false, true, now = now.plusSeconds(600)).expire)
+        // A new choice replaces it.
+        assertEquals(86400, o.copy(expireSeconds = 86400, keepEnd = null).toRequest("cloudreve://my/a", false, true, now = now.plusSeconds(600)).expire)
+    }
+
+    @Test fun folderLinksIgnoreOldDownloadLimits() {
+        val o = LinkOptions.of(ShareInfo(sourceType = 1, remainDownloads = 0), now)
+        assertFalse(o.downloadsToChoose)
+        assertTrue(o.complete)
+        assertNull(o.downloads)
     }
 }

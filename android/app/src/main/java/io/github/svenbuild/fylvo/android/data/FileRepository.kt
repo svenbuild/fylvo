@@ -85,7 +85,7 @@ class FileRepository(private val api: ApiClient) {
         orderDirection: String? = null,
         pageSize: Int = 50,
     ): ListFileResponse =
-        api.service().listFiles(
+        readService(uri).listFiles(
             uri = uri,
             pageSize = pageSize,
             nextPageToken = pageToken,
@@ -99,7 +99,7 @@ class FileRepository(private val api: ApiClient) {
      * replaced).
      */
     suspend fun folderIdMatches(uri: String, id: String): Boolean? = try {
-        val folder = api.service().fileInfo(uri).unwrap()
+        val folder = readService(uri).fileInfo(uri).unwrap()
         folder != null && folder.isFolder && folder.id == id
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
@@ -111,7 +111,13 @@ class FileRepository(private val api: ApiClient) {
     }
 
     /** Fylvo: one file or folder as the server describes it now. */
-    suspend fun folderInfo(uri: String): FileObject = api.service().fileInfo(uri).unwrap()
+    suspend fun folderInfo(uri: String): FileObject = readService(uri).fileInfo(uri).unwrap()
+
+    /**
+     * Fylvo 1.6: requests whose address carries a share password go through the client without
+     * redirects (a redirect could hand the address on to another server).
+     */
+    private suspend fun readService(uri: String): ApiService = if (CrUri.hasSecret(uri)) api.authService() else api.service()
 
     /** [entity] asks for that exact version of the file (empty = the current one). */
     suspend fun downloadUrl(uri: String, archive: Boolean = false, entity: String = ""): String =
@@ -121,7 +127,7 @@ class FileRepository(private val api: ApiClient) {
     suspend fun contentUrl(uri: String, entity: String = ""): String = signedUrl(uri, download = false, entity = entity)
 
     private suspend fun signedUrl(uri: String, download: Boolean, archive: Boolean = false, entity: String = ""): String {
-        val url = api.service().fileUrls(FileUrlRequest(listOf(uri), download = download, archive = archive, entity = entity))
+        val url = readService(uri).fileUrls(FileUrlRequest(listOf(uri), download = download, archive = archive, entity = entity))
             .unwrap().urls.firstOrNull()?.url
             // Fylvo: no address in the text (it may carry a share password).
             ?: throw ApiException(-1, "No URL returned")
@@ -223,7 +229,7 @@ class FileRepository(private val api: ApiClient) {
             thumbScope.async(start = CoroutineStart.LAZY) {
                 try {
                     try {
-                        api.service().thumb(uri).unwrap().url
+                        readService(uri).thumb(uri).unwrap().url
                     } catch (e: ApiException) {
                         if (e.code == CODE_NO_THUMB) null else throw e
                     }
