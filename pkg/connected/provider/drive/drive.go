@@ -48,6 +48,22 @@ var natives = map[string]string{
 	googleType + "spreadsheet":  "gsheet",
 	googleType + "presentation": "gslides",
 	googleType + "drawing":      "gdraw",
+	// Kinds without an export: they show in a listing and open at Google.
+	googleType + "form":   "gform",
+	googleType + "site":   "gsite",
+	googleType + "map":    "gmap",
+	googleType + "jam":    "gjam",
+	googleType + "script": "gscript",
+	googleType + "vid":    "gvid",
+}
+
+// nativeOf is the kind of an entry of Google's own that has no bytes. Whatever Google
+// invents next is "gapp": it is shown, so nobody takes a folder for emptier than it is.
+func nativeOf(mimeType string) string {
+	if native, known := natives[mimeType]; known {
+		return native
+	}
+	return "gapp"
 }
 
 // exports are the formats each kind of native document can be downloaded in.
@@ -384,8 +400,8 @@ type file struct {
 	} `json:"shortcutDetails"`
 }
 
-// item maps a Drive entry to an Item. ok is false for an entry that is not shown:
-// a trashed one, a Google type without content, or a shortcut to such a type.
+// item maps a Drive entry to an Item. ok is false for an entry that is not shown: a
+// trashed one, or a shortcut that names no target.
 func (f *file) item() (item provider.Item, ok bool) {
 	if f.Trashed || f.ID == "" {
 		return item, false
@@ -404,23 +420,14 @@ func (f *file) item() (item provider.Item, ok bool) {
 		}
 		target := f.Shortcut.TargetMimeType
 		if strings.HasPrefix(target, googleType) && target != folderType {
-			// A shortcut to a document that exists only at Google shows as such a
-			// document; one to a Google type without content is not shown.
-			native, known := natives[target]
-			if !known {
-				return item, false
-			}
-			item.Native = native
+			// A shortcut to something that exists only at Google shows as that.
+			item.Native = nativeOf(target)
 		}
 		item.IsDir = target == folderType
 		item.Link = &provider.Link{TargetID: f.Shortcut.TargetID, ResourceKey: f.Shortcut.TargetResourceKey}
 	case strings.HasPrefix(f.MimeType, googleType):
-		native, known := natives[f.MimeType]
-		if !known {
-			return item, false
-		}
 		// A native document has no bytes; every edit changes its time.
-		item.Native = native
+		item.Native = nativeOf(f.MimeType)
 		item.Version = timeVersion(f.ModifiedTime)
 	default:
 		item.Size = f.Size

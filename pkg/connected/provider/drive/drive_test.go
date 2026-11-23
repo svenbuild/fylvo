@@ -78,7 +78,10 @@ func TestChildrenPages(t *testing.T) {
 	assert.Equal(t, 4, s.Calls(drivetest.CallList))
 }
 
-func TestChildrenLeavesOutTrashedAndUnsupported(t *testing.T) {
+// Trashed entries are left out. Entries of Google's that have no bytes and no export (a
+// form, a site, whatever comes next) are listed, each as its kind, so a folder never
+// looks emptier than it is.
+func TestChildrenTrashedAndWithoutContent(t *testing.T) {
 	s, d, _ := setup(t)
 	gone := s.AddFile("", "gone.txt", []byte("x"))
 	s.Trash(gone)
@@ -89,11 +92,26 @@ func TestChildrenLeavesOutTrashedAndUnsupported(t *testing.T) {
 	s.AddFile("", "same", []byte("one"))
 	s.AddFile("", "same", []byte("two"))
 
+	s.AddOther("", "Later", "application/vnd.google-apps.something-new")
+
 	page, err := d.Children(context.Background(), s.RootID(), "")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"same", "same"}, names(page.Items))
-	assert.NotEqual(t, page.Items[0].ID, page.Items[1].ID)
+	assert.Equal(t, []string{"Survey", "Homepage", "Survey 2", "Survey link", "same", "same", "Later"}, names(page.Items))
+	kinds := make([]string, 0, len(page.Items))
+	for _, item := range page.Items {
+		kinds = append(kinds, item.Native)
+		assert.False(t, item.IsDir, item.Name)
+	}
+	assert.Equal(t, []string{"gform", "gsite", "gform", "gform", "", "", "gapp"}, kinds)
+	assert.NotNil(t, page.Items[3].Link, "a shortcut to a form is a link to a form")
+	assert.NotEqual(t, page.Items[4].ID, page.Items[5].ID)
 	assert.Empty(t, page.Next)
+
+	// There is nothing to read of such an entry.
+	_, err = d.Export(context.Background(), &page.Items[0], "pdf")
+	assert.Equal(t, provider.KindForbidden, provider.KindOf(err))
+	_, err = d.Open(context.Background(), &page.Items[0], "")
+	assert.Equal(t, provider.KindForbidden, provider.KindOf(err))
 }
 
 func TestMapping(t *testing.T) {
@@ -162,7 +180,7 @@ func TestVersionWithoutRevision(t *testing.T) {
 	assert.Empty(t, item.Version, "a time alone does not tell whether the bytes changed")
 }
 
-func TestGetTrashedAndUnsupported(t *testing.T) {
+func TestGetTrashedAndWithoutContent(t *testing.T) {
 	s, d, _ := setup(t)
 	ctx := context.Background()
 	id := s.AddFile("", "old.txt", []byte("x"))
@@ -170,9 +188,10 @@ func TestGetTrashedAndUnsupported(t *testing.T) {
 	_, err := d.Get(ctx, id)
 	assert.Equal(t, provider.KindNotFound, provider.KindOf(err))
 
-	form := s.AddOther("", "Survey", "application/vnd.google-apps.form")
-	_, err = d.Get(ctx, form)
-	assert.Equal(t, provider.KindNotFound, provider.KindOf(err))
+	form, err := d.Get(ctx, s.AddOther("", "Survey", "application/vnd.google-apps.form"))
+	require.NoError(t, err)
+	assert.Equal(t, "gform", form.Native)
+	assert.NotEmpty(t, form.WebURL)
 
 	_, err = d.Get(ctx, "missing")
 	assert.Equal(t, provider.KindNotFound, provider.KindOf(err))

@@ -81,8 +81,14 @@ func displayName(it *provider.Item) string {
 	return it.Name
 }
 
-// nativeKinds are the extensions of documents that exist only at the provider.
-var nativeKinds = map[string]bool{"gdoc": true, "gsheet": true, "gslides": true, "gdraw": true}
+// nativeKinds are the extensions of entries that exist only at the provider.
+var nativeKinds = func() map[string]bool {
+	kinds := map[string]bool{}
+	for _, kind := range provider.NativeKinds {
+		kinds[kind] = true
+	}
+	return kinds
+}()
 
 // plainName tells whether a name can be one element of a path.
 func plainName(name string) bool {

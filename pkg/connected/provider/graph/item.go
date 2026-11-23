@@ -36,7 +36,20 @@ type driveItem struct {
 }
 
 func (entry *driveItem) hidden() bool {
-	return entry.Deleted != nil || entry.Package != nil || (entry.SpecialFolder != nil && entry.SpecialFolder.Name == "vault")
+	return entry.Deleted != nil
+}
+
+// native is the kind of an entry that has no bytes to read and no children to list: a
+// OneNote notebook, or the Personal Vault, which stays locked for an app like this one.
+// Such an entry shows in a listing and opens at the provider.
+func (entry *driveItem) native() string {
+	switch {
+	case entry.SpecialFolder != nil && entry.SpecialFolder.Name == "vault":
+		return "vault"
+	case entry.Package != nil:
+		return "onenote"
+	}
+	return ""
 }
 
 func (entry *driveItem) asItem() *provider.Item {
@@ -53,12 +66,13 @@ func (entry *driveItem) asItem() *provider.Item {
 		item.Link = &provider.Link{TargetID: remote.ID, TargetDrive: remote.ParentReference.DriveID}
 		item.Size = remote.Size
 	}
-	item.IsDir = content.Folder != nil
+	item.Native = content.native()
+	item.IsDir = content.Folder != nil && item.Native == ""
 	item.ModTime = content.FileSystemInfo.LastModifiedDateTime
 	if item.ModTime.IsZero() {
 		item.ModTime = content.LastModifiedDateTime
 	}
-	if content.File != nil {
+	if content.File != nil && item.Native == "" {
 		item.Size = content.Size
 		item.Hash = content.File.Hashes.QuickXorHash
 		if item.Link == nil {
