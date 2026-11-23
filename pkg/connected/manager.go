@@ -300,6 +300,12 @@ func (m *Manager) List(ctx context.Context, userID int) ([]*Storage, error) {
 	return res, nil
 }
 
+// Has tells whether the account has a connection with this id.
+func (m *Manager) Has(ctx context.Context, userID int, publicID string) bool {
+	_, err := m.row(ctx, userID, publicID)
+	return err == nil
+}
+
 // row returns the connection of an account, ErrNoStorage when it has none with this id.
 func (m *Manager) row(ctx context.Context, userID int, publicID string) (*ent.ConnectedStorage, error) {
 	if !validPublicID(publicID) {

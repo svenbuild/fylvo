@@ -23,6 +23,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive/drivetest"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
@@ -459,6 +460,57 @@ func TestConnectedIsKeptFromTheDatabaseFileSystem(t *testing.T) {
 	require.Error(t, err)
 	_, err = (&FileThumbService{Uri: file}).Get(e.as(e.alex))
 	require.Equal(t, serializer.CodeEntityNotExist, connectedCode(err))
+
+	require.Error(t, (&DeleteFileService{Uris: []string{file}}).Restore(e.as(e.alex)))
+	require.Error(t, (&PinFileService{Uri: file, Name: "x"}).UnpinFile(e.as(e.alex)))
+	require.Error(t, (&PatchMetadataService{Uris: []string{file}, Patches: []fs.MetadataPatch{{Key: "tag:x", Value: "1"}}}).Patch(e.as(e.alex)))
+	require.Error(t, (&SetCurrentVersionService{Uri: file, Version: "x"}).Set(e.as(e.alex)))
+	require.Error(t, (&DeleteVersionService{Uri: file, Version: "x"}).Delete(e.as(e.alex)))
+	_, err = (&CreateViewerSessionService{Uri: file, ViewerID: "x", PreferredAction: types.ViewerActionView}).Create(e.as(e.alex))
+	require.Error(t, err)
+	_, err = (&CreateUploadSessionService{Uri: e.root + "/new.txt", Size: 3}).Create(e.as(e.alex))
+	require.Error(t, err)
+	require.Error(t, (&DeleteUploadSessionService{ID: "x", Uri: file}).Delete(e.as(e.alex)))
+	_, err = (&ArchiveListFilesService{Uri: file}).List(e.as(e.alex))
+	require.Error(t, err)
+	require.Error(t, (&ExplorerEventService{Uri: e.root}).HandleExplorerEventsPush(e.as(e.alex)))
+
+	// The task routes keep their sources as text until the task runs. An administrator,
+	// who may start every kind of task, connects a storage and tries them all: nothing is
+	// queued and nothing is created, also with a destination that is perfectly fine.
+	created, err := e.client.User.Create().SetEmail("admin@example.com").SetNick("admin").SetPassword("hash").
+		SetStatus(user.StatusActive).SetGroupID(1).SetSettings(&types.UserSetting{}).Save(e.ctx)
+	require.NoError(t, err)
+	admin := e.reload(created.ID)
+	own, err := e.m.Create(e.ctx, admin.ID, connected.ProviderDrive,
+		&connected.Identity{Key: "account-2", Label: "admin@example.com"}, connectedTestToken)
+	require.NoError(t, err)
+	ownFile := own.URI + "/notes.txt"
+	tasks, err := e.client.Task.Query().Count(e.ctx)
+	require.NoError(t, err)
+	files, err := e.client.File.Query().Count(e.ctx)
+	require.NoError(t, err)
+
+	_, err = (&ArchiveWorkflowService{Src: []string{ownFile}, Dst: "cloudreve://my"}).CreateExtractTask(e.as(admin))
+	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
+	_, err = (&ArchiveWorkflowService{Src: []string{"cloudreve://my/a.txt", ownFile}, Dst: "cloudreve://my/out.zip"}).CreateCompressTask(e.as(admin))
+	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
+	_, err = (&DownloadWorkflowService{Src: []string{ownFile}, Dst: "cloudreve://my"}).CreateDownloadTask(e.as(admin))
+	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
+	_, err = (&DownloadWorkflowService{SrcFile: ownFile, Dst: "cloudreve://my"}).CreateDownloadTask(e.as(admin))
+	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
+	// And as a destination, which the parser refuses.
+	_, err = (&ArchiveWorkflowService{Src: []string{"cloudreve://my/a.zip"}, Dst: own.URI}).CreateExtractTask(e.as(admin))
+	require.Error(t, err)
+	_, err = (&DownloadWorkflowService{Src: []string{"https://example.com/a.bin"}, Dst: own.URI}).CreateDownloadTask(e.as(admin))
+	require.Error(t, err)
+
+	after, err := e.client.Task.Query().Count(e.ctx)
+	require.NoError(t, err)
+	require.Equal(t, tasks, after, "no task was queued")
+	after, err = e.client.File.Query().Count(e.ctx)
+	require.NoError(t, err)
+	require.Equal(t, files, after, "no placeholder file was created")
 
 	// The storage at the provider was not touched by any of it.
 	res, err := e.list(e.alex, e.root, 0, "")

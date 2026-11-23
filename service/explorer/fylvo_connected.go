@@ -84,6 +84,17 @@ func connectedURIs(raws []string) ([]*fs.URI, error) {
 	return res, nil
 }
 
+// refuseConnectedSources is for the routes that keep addresses as plain text for later
+// (the sources of tasks): an address of a connected storage among them is refused now.
+func refuseConnectedSources(raws ...string) error {
+	for _, raw := range raws {
+		if _, ok := connectedURI(raw); ok {
+			return connected.ErrUnsupported
+		}
+	}
+	return nil
+}
+
 // connectedRequest is a request admitted to a connection.
 type connectedRequest struct {
 	m    *connected.Manager
