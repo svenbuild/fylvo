@@ -3,14 +3,18 @@ package connected
 import (
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"hash"
 	"io"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/graph"
@@ -91,6 +95,17 @@ type OfficeSession struct {
 	Path, Name string
 
 	itemID, resourceKey string
+	// folderID is the id of the folder the file was in when the session was opened,
+	// for a session that edits. A copy beside the file goes into that folder or nowhere.
+	folderID string
+	// kept are the copies made of last saves, by the checksum of their content: the
+	// same save sent again answers its copy and makes no second one. keptOrder is the
+	// order they were made in; the oldest gives way to a new one.
+	kept      map[[sha256.Size]byte]*Row
+	keptOrder [][sha256.Size]byte
+	// read tells that the file was read through this session at least once. Only then
+	// is there something of a user in what it saves.
+	read bool
 	// work is taken by the call that runs (OfficeEnter). It guards version.
 	work chan struct{}
 	// version (VersionID) is that of the bytes last handed out, or of the last save
@@ -226,6 +241,25 @@ func (m *Manager) OpenOffice(ctx context.Context, c *Conn, r OfficeRequest) (*Of
 		work: make(chan struct{}, 1),
 	}
 	s.Token = s.ID + "." + randomID() + randomID() + randomID() + randomID()
+	if s.Edit {
+		// The folder as it is now, by its id: a path can come to mean another folder.
+		// It is the folder of this session only if the file is in it: between the look
+		// at the file and this one another folder can have taken the path.
+		folderPath, _ := ParentOf(row.Path)
+		folder, err := m.tree.ResolveNow(ctx, c, folderPath)
+		if err != nil {
+			return nil, Error(ctx, err)
+		}
+		inside, err := m.tree.named(ctx, c, folder.ContentID(), row.Name)
+		switch {
+		case errors.Is(err, ErrNotFound), errors.Is(err, ErrAmbiguous), err == nil && inside.ID != row.ID:
+			// Moved in that moment. The caller asks again.
+			return nil, ErrBusy
+		case err != nil:
+			return nil, Error(ctx, err)
+		}
+		s.folderID = folder.ContentID()
+	}
 	if !m.offices.add(s, c) {
 		return nil, ErrBusy
 	}
@@ -428,15 +462,18 @@ func (m *Manager) OfficeRead(ctx context.Context, c *Conn, s *OfficeSession, lim
 		}
 	}
 	s.version = VersionID(c.ID, &Row{Item: *item})
+	s.read = true
 	return nil
 }
 
 // OfficeSave stores new content for the session's file, from one body of the given size.
 // The file is replaced only if the address the session was opened at still leads to its
 // item, in the version this session last read or saved. Otherwise the answer is
-// ErrStale, and stays so until the document is read again. A file that is no longer at
-// its address answers ErrTargetGone. The other errors are those of an upload
-// (ErrOutcomeUnknown included). The caller entered the session.
+// ErrStale, and stays so until the document is read again. That is also the answer for
+// a file that is no longer at its address (renamed, moved, deleted): for the editor all
+// of these are "the document changed in storage", which it can tell its user. The other
+// errors are those of an upload (ErrOutcomeUnknown included). The caller entered the
+// session.
 func (m *Manager) OfficeSave(ctx context.Context, c *Conn, s *OfficeSession, body io.Reader, size int64) (*Row, error) {
 	if !s.Edit {
 		return nil, ErrUnsupported
@@ -463,8 +500,21 @@ func (m *Manager) OfficeSave(ctx context.Context, c *Conn, s *OfficeSession, bod
 		Path: s.Path, Size: size, Replace: true, Previous: s.version, PreviousRequired: true, Item: s.itemID,
 	}, body)
 	var app serializer.AppError
-	if errors.As(err, &app) && app.Code == serializer.CodeStaleVersion {
+	if errors.As(err, &app) && (app.Code == serializer.CodeStaleVersion || app.Code == serializer.CodeUploadTargetGone ||
+		app.Code == serializer.CodeParentNotExist) {
+		// Also when the folder of the file is no longer at its path.
 		return conflict()
+	}
+	if errors.As(err, &app) && app.Code == serializer.CodeUploadSessionExpired {
+		// The provider lost the upload in its middle. That is a conflict when the file
+		// is the reason (it was deleted or changed after the look at it), and a failed
+		// save like any other when the file is as it was.
+		item, lookErr := m.officeItem(ctx, c, s, false)
+		var gone serializer.AppError
+		if (errors.As(lookErr, &gone) && gone.Code == serializer.CodeParentNotExist) ||
+			(lookErr == nil && VersionID(c.ID, &Row{Item: *item}) != s.version) {
+			return conflict()
+		}
 	}
 	if err != nil {
 		// Also after an unknown outcome the version stays what it was: if the save did
@@ -474,6 +524,124 @@ func (m *Manager) OfficeSave(ctx context.Context, c *Conn, s *OfficeSession, bod
 	}
 	s.version = VersionID(c.ID, row)
 	return row, nil
+}
+
+const (
+	// officeCopies is how many names are tried for a copy beside a file.
+	officeCopies = 20
+	// officeKept is how many copies a session remembers for a save that comes again.
+	officeKept = 8
+)
+
+// OfficeKeepBeside stores content as a new file beside the file of the session, in the
+// folder the session was opened in: "letter (word).docx", or with a number when that
+// name is taken. It is for what an editor wanted to save when its file had changed and
+// nobody is left to ask (the window was closed): nothing is replaced, and nothing is
+// lost. The folder is the one the file was in, by its id: if another folder has its
+// path by now, nothing is put there. body is read from its start for every name that
+// is tried; sum is the SHA-256 of it. The same content sent again for the session
+// answers the copy that was made. The caller entered the session.
+func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSession, body io.ReadSeeker, size int64, sum [sha256.Size]byte, word string) (*Row, error) {
+	if !s.Edit || s.folderID == "" || !s.read {
+		// Also for a session nothing was read through: what it sends is not a newer
+		// state of anything its user saw.
+		return nil, ErrUnsupported
+	}
+	if s.closed.Load() || s.Conn != c.ID || s.Generation != c.Generation {
+		return nil, ErrOfficeGone
+	}
+	if row := s.kept[sum]; row != nil {
+		// The answer to the first time did not arrive. It is this.
+		return row, nil
+	}
+	folder, name := ParentOf(s.Path)
+	base, ext := name, ""
+	if dot := strings.LastIndex(name, "."); dot >= 0 {
+		base, ext = name[:dot], name[dot:]
+	}
+	// The file can carry a name Fylvo gives to nothing new (Drive allows more). The
+	// copy gets one that keeps the rules, as close to it as they allow.
+	base, ext = legalNamePart(base), legalNamePart(ext)
+	var err error
+	for n := 1; n <= officeCopies; n++ {
+		mark := " (" + word + ")"
+		if n > 1 {
+			mark = " (" + word + " " + strconv.Itoa(n) + ")"
+		}
+		path := besideName(base, mark, ext)
+		if err = m.settled(c.AccountKey, s.folderID, path); err != nil {
+			// Closed for a while after a change there whose outcome stayed open: the
+			// next name.
+			continue
+		}
+		if folder != "" {
+			path = folder + "/" + path
+		}
+		if _, err = body.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		var row *Row
+		row, err = m.Save(ctx, c, UploadRequest{Path: path, Size: size, Folder: s.folderID}, body)
+		var app serializer.AppError
+		if err == nil {
+			if s.kept == nil {
+				s.kept = map[[sha256.Size]byte]*Row{}
+			}
+			if len(s.keptOrder) >= officeKept {
+				delete(s.kept, s.keptOrder[0])
+				s.keptOrder = s.keptOrder[1:]
+			}
+			s.kept[sum], s.keptOrder = row, append(s.keptOrder, sum)
+			return row, nil
+		}
+		taken := errors.As(err, &app) && (app.Code == serializer.CodeObjectExist || app.Code == serializer.CodeNameCaseTaken)
+		if !taken && m.settled(c.AccountKey, s.folderID, besideName(base, mark, ext)) == nil {
+			// Also a provider that is busy: the next name would fare no better.
+			return nil, err
+		}
+		// The name is taken, or was closed in the moment the copy was tried: the next one.
+	}
+	return nil, err
+}
+
+// OfficeKept returns the copy that was made, through this session, of content with the
+// given checksum, nil when there is none. The caller entered the session.
+func (m *Manager) OfficeKept(s *OfficeSession, sum [sha256.Size]byte) *Row {
+	return s.kept[sum]
+}
+
+// legalNamePart makes a part of a name one that a new entry may carry: the characters
+// no new name may have become "_", and nothing is left that is not plain text.
+func legalNamePart(part string) string {
+	return strings.Map(func(r rune) rune {
+		if strings.ContainsRune(`:*?"<>|/\`, r) || r < 0x20 || r == 0x7f {
+			return '_'
+		}
+		return r
+	}, part)
+}
+
+// besideName puts a mark between the name of a file and its extension. A name that
+// would get too long gives up the end of its first part, never the mark or the
+// extension.
+func besideName(base, mark, ext string) string {
+	if len(mark)+len(ext) >= maxNameLength {
+		// What follows the last dot is too long to be kept whole: it is no extension
+		// worth keeping, and gives way like the rest of the name.
+		base, ext = base+ext, ""
+	}
+	// A name may not start with a space or end with a space or a period.
+	base, ext = strings.TrimLeft(base, " "), strings.TrimRight(ext, " .")
+	for len(base)+len(mark)+len(ext) > maxNameLength && base != "" {
+		_, last := utf8.DecodeLastRuneInString(base)
+		base = base[:len(base)-last]
+	}
+	base = strings.TrimRight(base, " ")
+	if base == "" {
+		// A file whose name is its extension alone (".docx"): the mark is the name.
+		mark = strings.TrimLeft(mark, " ")
+	}
+	return base + mark + ext
 }
 
 // Save runs a whole upload from one body: the start, every chunk in its order, the

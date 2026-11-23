@@ -180,6 +180,8 @@ type Server struct {
 	thumbnailStatus   int
 	onThumbnail       func()
 	contentStatus     int
+	// changeOnStart runs once, under the lock, when the next upload session is opened.
+	changeOnStart func()
 
 	sessions    map[string]*session
 	full        bool
@@ -529,6 +531,24 @@ func (s *Server) Calls(kind Call) int {
 	return s.calls[kind]
 }
 
+// ChangeOnNextUpload gives a file new content the moment the next upload session is
+// opened: a change by somebody else after the server looked and before it stores.
+func (s *Server) ChangeOnNextUpload(id string, content []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.changeOnStart = func() { s.setContent(s.must(id), content) }
+}
+
+// DeleteOnNextUpload deletes a file the moment the next upload session is opened.
+func (s *Server) DeleteOnNextUpload(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.changeOnStart = func() {
+		delete(s.items, id)
+		s.order = slices.DeleteFunc(s.order, func(o string) bool { return o == id })
+	}
+}
+
 // SetQuota sets what About answers. limit 0 means a storage without a limit.
 func (s *Server) SetQuota(usage, limit int64) {
 	s.mu.Lock()
@@ -686,6 +706,11 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	case CallCreate:
 		s.create(w, r)
 	case CallStart:
+		if s.changeOnStart != nil {
+			change := s.changeOnStart
+			s.changeOnStart = nil
+			change()
+		}
 		s.start(w, r, id)
 	case CallRange, CallStatus:
 		s.put(w, r, id, kind == CallStatus)

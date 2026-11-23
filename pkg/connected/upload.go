@@ -105,6 +105,10 @@ type UploadRequest struct {
 	// Path is ErrStale; the item itself under another spelling of its name (it was
 	// renamed) is ErrTargetGone. Decided under the lock for changes, like the rest.
 	Item string
+	// Folder, if set, is the id the folder at the path must have. Another folder under
+	// that path (the one meant was renamed or moved, and another took its place) is
+	// ErrTargetGone: nothing is put into a folder the caller did not mean.
+	Folder string
 }
 
 // UploadInfo is a started upload.
@@ -451,6 +455,9 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 	if r.Item != "" && parent.Path != parentPath {
 		// The folders on the way are spelled otherwise by now (one was renamed where
 		// case does not count): the address the caller holds is no longer the item's.
+		return nil, ErrTargetGone
+	}
+	if r.Folder != "" && parent.ContentID() != r.Folder {
 		return nil, ErrTargetGone
 	}
 	u := &upload{
