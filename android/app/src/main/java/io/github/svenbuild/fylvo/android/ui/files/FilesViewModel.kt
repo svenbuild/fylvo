@@ -1284,6 +1284,8 @@ class FilesViewModel(
     // enabled FTS, and answered "feature not enabled" on a stock server.
 
     private var searchJob: Job? = null
+    /** Fylvo 1.6: counts every new or ended search; a later page counts only for its own one. */
+    private var searchRound = 0
 
     /** Opens search; scoped to the current folder when inside one, otherwise everywhere. */
     fun openSearch() {
@@ -1324,6 +1326,7 @@ class FilesViewModel(
         // Fylvo 1.6: a pasted link is offered to open (FilesScreen), never searched for.
         if (io.github.svenbuild.fylvo.android.util.ShareLinks.looksLikeLink(query)) {
             searchJob?.cancel()
+            searchRound++
             _state.update { it.copy(searchResults = emptyList(), searchNextToken = null, searchLoading = false, searchLoadingMore = false, searchError = null) }
             return
         }
@@ -1372,6 +1375,7 @@ class FilesViewModel(
 
     private fun runSearch(debounceMs: Long = 0) {
         searchJob?.cancel()
+        searchRound++
         val uri = searchUri()
         if (uri == null) {
             _state.value = _state.value.copy(searchResults = emptyList(), searchNextToken = null, searchLoading = false, searchLoadingMore = false, searchError = null)
@@ -1412,8 +1416,9 @@ class FilesViewModel(
         val uri = searchUri() ?: return
         if (s.searchLoadingMore || s.searchLoading) return
         _state.value = s.copy(searchLoadingMore = true)
-        // A category search has the same address for every text: the text and filters count too.
-        fun sameSearch() = searchUri() == uri && _state.value.searchQuery == s.searchQuery && _state.value.searchFilters == s.searchFilters
+        // The same search still (a category search has one address for every text; A, B, A again is a new one).
+        val round = searchRound
+        fun sameSearch() = searchRound == round && searchUri() == uri
         viewModelScope.launch {
             try {
                 if (uri.startsWith("fulltext:")) {
@@ -1447,6 +1452,7 @@ class FilesViewModel(
 
     fun clearSearch() {
         searchJob?.cancel()
+        searchRound++
         _state.value = _state.value.copy(
             searchQuery = null,
             searchScope = null,

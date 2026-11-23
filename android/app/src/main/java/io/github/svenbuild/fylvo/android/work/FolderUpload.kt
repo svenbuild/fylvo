@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import kotlinx.coroutines.flow.first
 
 /**
  * Fylvo 1.6: a whole folder of the phone uploaded into Fylvo (design/android-parity-plan.md, 15).
@@ -77,8 +78,11 @@ object FolderUpload {
      * starts gives it back at the next start) and stays in use until [done].
      */
     fun picked(context: Context, tree: Uri) {
-        synchronized(queuing) { queuing[tree.toString()] = (queuing[tree.toString()] ?: 0) + 1 }
-        keep(context, tree)
+        // Under the same lock as releaseFinished: a release decided just before never drops this pick's right.
+        synchronized(queuing) {
+            queuing[tree.toString()] = (queuing[tree.toString()] ?: 0) + 1
+            keep(context, tree)
+        }
     }
 
     /**
@@ -90,21 +94,36 @@ object FolderUpload {
             val n = (queuing[tree.toString()] ?: 0) - 1
             if (n > 0) queuing[tree.toString()] = n else queuing.remove(tree.toString())
         }
-        releaseFinished(context)
+        // Off the main thread (files and settings are read).
+        val app = context.applicationContext
+        Thread { runCatching { releaseFinished(app) } }.start()
     }
 
-    /** Gives back every kept right no stored upload batch needs any more. */
+    /** Gives back every kept right no pick, no stored upload batch and no folder sync needs any more. Off the main thread. */
     fun releaseFinished(context: Context) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val busy = synchronized(queuing) { queuing.keys.toSet() }
-        val trees = p.getStringSet(KEY, emptySet()).orEmpty()
-        if (trees.isEmpty()) return
-        val batches = File(context.filesDir, "upload_batches").listFiles { f -> f.name.endsWith(".json") }.orEmpty()
-            .mapNotNull { runCatching { it.readText() }.getOrNull() }
-        toRelease(trees, busy, batches).forEach { release(context, Uri.parse(it)) }
+        if (p.getStringSet(KEY, emptySet()).orEmpty().isEmpty()) return
+        // The folder sync holds its own right on its folder; the same folder picked here never takes it away.
+        val synced = runCatching {
+            kotlinx.coroutines.runBlocking { io.github.svenbuild.fylvo.android.data.SyncFolderSettings(context).snapshot.first().treeUri }
+        }.getOrNull()
+        synchronized(queuing) {
+            val trees = p.getStringSet(KEY, emptySet()).orEmpty()
+            val batches = File(context.filesDir, "upload_batches").listFiles { f -> f.name.endsWith(".json") }.orEmpty()
+                .mapNotNull { runCatching { it.readText() }.getOrNull() }
+            toRelease(trees, queuing.keys, batches).forEach { tree ->
+                if (tree == synced) forget(context, tree) else release(context, Uri.parse(tree))
+            }
+        }
     }
 
-    /** The kept [trees] no stored batch needs and that are not being queued ([busy]). */
+    /** [tree] is no longer kept for uploads; its right stays (someone else holds it). */
+    private fun forget(context: Context, tree: String) {
+        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        p.edit().putStringSet(KEY, p.getStringSet(KEY, emptySet()).orEmpty() - tree).apply()
+    }
+
+    /** The kept [trees] no stored batch needs and that are not in use otherwise ([busy]). */
     fun toRelease(trees: Set<String>, busy: Set<String>, batchTexts: List<String>): List<String> =
         trees.filter { it !in busy && !needed(it, batchTexts) }
 

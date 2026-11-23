@@ -48,6 +48,15 @@ class ConnectController(
     private val lock = Mutex()
     /** Raised by sign-out: an answer to a request sent before it is thrown away. */
     @Volatile private var generation = 0
+    /** Sign-out and every stored write take it: nothing is written back after a sign-out. */
+    private val gate = Any()
+
+    /** Stores [a] when no sign-out came since [round]; false: it belongs to nobody any more. */
+    private fun keep(round: Int, a: ConnectAttempt): Boolean = synchronized(gate) {
+        if (round != generation) return false
+        store.save(a)
+        true
+    }
 
     fun messageShown() {
         _message.value = null
@@ -76,7 +85,7 @@ class ConnectController(
                 _message.value = UiText.Res(R.string.connect_failed)
                 return@withLock null
             }
-            store.save(ConnectAttempt(server, account, res.attempt, verifier, provider, reconnect, clock()))
+            if (!keep(round, ConnectAttempt(server, account, res.attempt, verifier, provider, reconnect, clock()))) return@withLock null
             _ui.value = Ui.Waiting(provider)
             res.url
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -89,6 +98,7 @@ class ConnectController(
 
     /** A link back from the browser. */
     suspend fun onReturn(link: ConnectFlow.Return) = lock.withLock {
+        val round = generation
         val a = current() ?: return@withLock
         when (link) {
             ConnectFlow.Return.Front -> Unit
@@ -100,7 +110,7 @@ class ConnectController(
                 // The same link again after a yes whose answer was lost: the same save again (the
                 // server answers the same storage), never a new preview of a used code.
                 if (a.code == link.code && a.yes) return@withLock save(a)
-                store.save(a.copy(code = link.code))
+                if (!keep(round, a.copy(code = link.code))) return@withLock
                 preview(a.copy(code = link.code))
             }
         }
@@ -108,11 +118,12 @@ class ConnectController(
 
     /** The person's answer to the question. */
     suspend fun answer(yes: Boolean) = lock.withLock {
+        val round = generation
         val a = current() ?: return@withLock run { _ui.value = Ui.Idle }
         val code = a.code ?: return@withLock run { _ui.value = Ui.Idle }
         if (yes) {
             // The yes is stored before sending: after a restart the same save is sent again.
-            store.save(a.copy(yes = true))
+            if (!keep(round, a.copy(yes = true))) return@withLock
             save(a.copy(yes = true))
         } else {
             _ui.value = Ui.Busy
@@ -145,7 +156,7 @@ class ConnectController(
     }
 
     /** Sign-out: the attempt is dropped. */
-    fun clear() {
+    fun clear() = synchronized(gate) {
         generation++
         store.clear()
         _ui.value = Ui.Idle
@@ -172,13 +183,13 @@ class ConnectController(
             // Signed out meanwhile: the answer belongs to nobody any more.
             if (round != generation) return
             // A reconnect may save without asking (the server refuses another provider account).
-            if (a.reconnect != null) save(a.copy(yes = true).also(store::save))
+            if (a.reconnect != null) { if (keep(round, a.copy(yes = true))) save(a.copy(yes = true)) }
             else _ui.value = Ui.Confirm(p)
         } catch (e: kotlinx.coroutines.CancellationException) {
             stopped(round, a)
             throw e
         } catch (e: Exception) {
-            if (round == generation) handle(e, a, sentBefore = a.sent)
+            if (round == generation) handle(e, a, sentBefore = a.sent, round)
         }
     }
 
@@ -192,7 +203,7 @@ class ConnectController(
         val round = generation
         _ui.value = Ui.Busy
         val sentBefore = a.sent
-        store.save(a.copy(sent = true))
+        if (!keep(round, a.copy(sent = true))) return
         try {
             repo.save(code, a.verifier)
             if (round != generation) return
@@ -202,16 +213,16 @@ class ConnectController(
             stopped(round, a)
             throw e
         } catch (e: Exception) {
-            if (round == generation) handle(e, a.copy(sent = true), sentBefore)
+            if (round == generation) handle(e, a.copy(sent = true), sentBefore, round)
         }
     }
 
-    private suspend fun handle(e: Exception, a: ConnectAttempt, sentBefore: Boolean) {
+    private suspend fun handle(e: Exception, a: ConnectAttempt, sentBefore: Boolean, round: Int) {
         val api = e as? ApiException
         val code = if (e is java.io.IOException) null else api?.code ?: -1
         when (ConnectFlow.next(code, api?.reason, sentBefore)) {
             ConnectFlow.Next.KeepWaiting -> {
-                store.save(a.copy(code = null, yes = false, sent = false))
+                if (!keep(round, a.copy(code = null, yes = false, sent = false))) return
                 _ui.value = Ui.Waiting(a.provider)
             }
             ConnectFlow.Next.End -> {

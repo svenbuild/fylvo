@@ -97,7 +97,8 @@ fun PeopleSheet(target: PeopleTarget, onDone: (String?) -> Unit, onDismiss: () -
             val s = target.share ?: app.shares.sharesOf(target.uri).firstOrNull { it.memberOnly }
             share = s
             s?.let { LinkOptions.of(it) }?.let { expireSeconds = it.expireSeconds; expireToChoose = it.expireToChoose }
-            people.clear()
+            // The people picked here stay when there is no share yet (a retry after a failed save).
+            if (s != null || people.isEmpty()) people.clear()
             s?.members.orEmpty().forEach { m ->
                 val name = runCatching { app.shares.user(m.userId).nickname }.getOrNull().orEmpty()
                 people += Person(m.userId, name, m.canEdit)
@@ -128,9 +129,14 @@ fun PeopleSheet(target: PeopleTarget, onDone: (String?) -> Unit, onDismiss: () -
                         error = userError(it).resolve(context)
                         // A new share whose answer was lost may exist anyway: the next save edits it
                         // (never a second share). When that cannot be told, only a retry is offered.
-                        if (share == null) runCatching { app.shares.sharesOf(target.uri).firstOrNull { s -> s.memberOnly } }
-                            .onSuccess { found -> share = found }
-                            .onFailure { loadFailed = true }
+                        // Without a clear refusal the first request may still be running at the server:
+                        // only a fresh read (Retry) is offered, never a second save at once.
+                        if (share == null) {
+                            val clear = (it as? io.github.svenbuild.fylvo.android.data.ApiException)?.let { e -> !e.isTransient && e.code > 0 } == true
+                            runCatching { app.shares.sharesOf(target.uri).firstOrNull { s -> s.memberOnly } }
+                                .onSuccess { found -> share = found; if (found == null && !clear) loadFailed = true }
+                                .onFailure { loadFailed = true }
+                        }
                     }
                 }
             saving = false

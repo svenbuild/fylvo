@@ -64,6 +64,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
@@ -193,12 +194,20 @@ fun FilesScreen(
         if (tree == null || target == null || targetId == null || account == null || CrUri.hasSecret(target)) return@rememberLauncherForActivityResult
         folderReading = true
         scope.launch {
-            val scan = withContext(Dispatchers.IO) {
-                runCatching {
-                    context.contentResolver.takePersistableUriPermission(tree, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    io.github.svenbuild.fylvo.android.work.FolderUpload.picked(context, tree)
-                    io.github.svenbuild.fylvo.android.work.FolderUpload.scan(context, tree)
-                }.getOrNull()
+            val pick = java.util.concurrent.atomic.AtomicBoolean(false)
+            val scan = try {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(tree, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        io.github.svenbuild.fylvo.android.work.FolderUpload.picked(context, tree)
+                        pick.set(true)
+                        io.github.svenbuild.fylvo.android.work.FolderUpload.scan(context, tree)
+                    }.getOrNull()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // The screen went (e.g. turned) while reading: the pick ends, its right goes back.
+                if (pick.get()) io.github.svenbuild.fylvo.android.work.FolderUpload.done(context, tree)
+                throw e
             }
             folderReading = false
             if (scan == null || (scan.files.isEmpty() && scan.dirs.isEmpty())) {
@@ -1312,13 +1321,13 @@ fun FilesScreen(
             dismissButton = { androidx.compose.material3.TextButton(enabled = !emptying, onClick = { emptyTrashAsk = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
-    folderUploadAsk?.let { (scan, target, targetId, account) ->
+    folderUploadAsk?.let { ask ->
+        val (scan, target, targetId, account) = ask
         val many = scan.files.size >= io.github.svenbuild.fylvo.android.work.FolderUpload.MANY
+        // The question going away without an answer (cancel, or the screen turned) ends the pick.
+        DisposableEffect(ask) { onDispose { if (ask.ended.compareAndSet(false, true)) io.github.svenbuild.fylvo.android.work.FolderUpload.done(context, scan.tree) } }
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = {
-                folderUploadAsk = null
-                io.github.svenbuild.fylvo.android.work.FolderUpload.done(context, scan.tree)
-            },
+            onDismissRequest = { folderUploadAsk = null },
             title = { Text(stringResource(R.string.folder_upload_title, scan.name)) },
             text = {
                 Text(
@@ -1328,23 +1337,31 @@ fun FilesScreen(
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
+                    // Handed over: the queuing below ends the pick (also when it is stopped).
+                    if (!ask.ended.compareAndSet(false, true)) return@TextButton
                     folderUploadAsk = null
                     val tag = app.sessionManager.sessionTag()
-                    scope.launch {
+                    // Atomic: the body (and its finally) runs even when the screen goes at once.
+                    scope.launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
                         val folders = io.github.svenbuild.fylvo.android.work.FolderUpload
                         val groups = folders.groups(scan)
                         // Batches queued; the right of the tree stays in use (since the pick) until all are stored.
                         var queued = 0
+                        // The folders were made and every batch was tried (a tree of empty folders has none).
+                        var finished = false
                         try {
                             withContext(Dispatchers.IO) {
                                 runCatching {
                                     // Still the account and the folder that were chosen (nothing lands in one that took its place).
-                                    if (UploadWorker.currentAccount(app) != account || !app.sessionManager.isCurrent(tag)) return@runCatching
-                                    if (targetId != null && app.fileRepository.folderIdMatches(target, targetId) != true) return@runCatching
+                                    suspend fun targetSame() = UploadWorker.currentAccount(app) == account && app.sessionManager.isCurrent(tag) &&
+                                        (targetId == null || app.fileRepository.folderIdMatches(target, targetId) == true)
+                                    if (!targetSame()) return@runCatching
                                     // An existing folder of that name is filled up; files with a taken name get a new one.
                                     val root = CrUri.join(target, scan.name)
                                     app.fileRepository.mkdirs(root)
                                     scan.dirs.forEach { app.fileRepository.mkdirs(CrUri.join(root, it)) }
+                                    // Once more after making the folders: the target was not replaced meanwhile.
+                                    if (!targetSame()) return@runCatching
                                     groups.forEach { (dir, items) ->
                                         val parent = if (dir.isEmpty()) root else CrUri.join(root, dir)
                                         // Every batch checks its own folder by id before each file.
@@ -1355,6 +1372,7 @@ fun FilesScreen(
                                         if (!UploadWorker.enqueueSafely(context, items.map { it.uri }, parent, names, expectedParentId = parentId, account = account)) return@runCatching
                                         queued++
                                     }
+                                    finished = true
                                 }
                             }
                         } finally {
@@ -1362,21 +1380,18 @@ fun FilesScreen(
                         }
                         snackbar.showSnackbar(
                             when {
-                                queued == groups.size -> context.getString(R.string.folder_upload_started)
+                                finished -> context.getString(R.string.folder_upload_started)
                                 // Some batches go up: said so, a new try would upload them twice.
                                 queued > 0 -> context.getString(R.string.folder_upload_partly, queued, groups.size)
                                 else -> context.getString(R.string.folder_upload_failed)
                             },
                         )
-                        if (queued > 0) viewModel.refresh()
+                        if (finished || queued > 0) viewModel.refresh()
                     }
                 }) { Text(stringResource(R.string.upload)) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    folderUploadAsk = null
-                    io.github.svenbuild.fylvo.android.work.FolderUpload.done(context, scan.tree)
-                }) { Text(stringResource(R.string.cancel)) }
+                androidx.compose.material3.TextButton(onClick = { folderUploadAsk = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -1981,7 +1996,10 @@ internal data class FolderUploadAsk(
     val target: String,
     val targetId: String?,
     val account: String,
-)
+) {
+    /** Answered or gone: the pick is ended (or handed to the queuing) exactly once. */
+    val ended = java.util.concurrent.atomic.AtomicBoolean(false)
+}
 internal const val ACCOUNT_CONNECTED = "connected"
 /** Fylvo 1.6: "Shared by me", from the Shared tab or from Account. */
 internal const val PAGE_SHARES = "shares"
