@@ -35,7 +35,8 @@ func (c *Caller) Stream(ctx context.Context, method, address string, header http
 	token := ""
 	if withToken {
 		if token, err = c.Auth.Token(ctx, ""); err != nil {
-			return nil, err
+			// No token, no request: the provider was not asked anything.
+			return nil, notSent{err}
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

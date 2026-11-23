@@ -716,3 +716,57 @@ func TestWriteWhileAFolderIsRead(t *testing.T) {
 		t.Fatalf("no read is left noted: %d", len(tree.reads))
 	}
 }
+
+// Two accounts of Fylvo are connected to one account at the provider. One of them reads a
+// folder while the other writes to it: what the first read is from before the write, so
+// it is not kept, and what it had in memory before is dropped.
+func TestWriteThroughAnotherConnectionOfTheAccount(t *testing.T) {
+	p := &waitingProvider{memProvider: newMem(false), reading: make(chan struct{}), goOn: make(chan struct{})}
+	p.file("root", "old.txt", 1)
+	p.file("root", "other.txt", 1)
+	tree, ctx := NewTree(), context.Background()
+	reader := &Conn{ID: "reader", UserID: 1, Provider: ProviderDrive, Generation: 1, AccountKey: "drive|account-1", P: p}
+	writer := &Conn{ID: "writer", UserID: 2, Provider: ProviderDrive, Generation: 1, AccountKey: "drive|account-1", P: p}
+	stranger := &Conn{ID: "stranger", UserID: 3, Provider: ProviderDrive, Generation: 1, AccountKey: "drive|account-2", P: p}
+
+	first := make(chan *Page, 1)
+	go func() {
+		page, _ := tree.List(ctx, reader, "", Order{By: "name"}, 1, "")
+		first <- page
+	}()
+	<-p.reading
+	p.mu.Lock()
+	p.children["root"][0].Name = "new.txt"
+	p.mu.Unlock()
+	// A write of somebody with another account at the provider is not about this folder.
+	tree.Changed(stranger, "root")
+	tree.Changed(writer, "root")
+	close(p.goOn)
+
+	page := <-first
+	if page == nil || page.Next == "" {
+		t.Fatalf("the listing that began before the write is answered: %+v", page)
+	}
+	if _, err := tree.List(ctx, reader, "", Order{By: "name"}, 1, page.Next); !errors.Is(err, ErrListingGone) {
+		t.Fatalf("its next page is gone, got %v", err)
+	}
+	page, err := tree.List(ctx, reader, "", Order{By: "name"}, 10, "")
+	if err != nil || rowNames(page.Rows) != "new.txt|other.txt" {
+		t.Fatalf("the next listing shows the write: %v %v", page, err)
+	}
+
+	// And a listing that is in memory is dropped by a write through the other connection.
+	p.mu.Lock()
+	p.children["root"][0].Name = "newer.txt"
+	p.mu.Unlock()
+	tree.Changed(stranger, "root")
+	page, _ = tree.List(ctx, reader, "", Order{By: "name"}, 10, "")
+	if rowNames(page.Rows) != "new.txt|other.txt" {
+		t.Fatalf("another account changes nothing here: %v", rowNames(page.Rows))
+	}
+	tree.Changed(writer, "root")
+	page, _ = tree.List(ctx, reader, "", Order{By: "name"}, 10, "")
+	if rowNames(page.Rows) != "newer.txt|other.txt" {
+		t.Fatalf("the write is seen at once: %v", rowNames(page.Rows))
+	}
+}

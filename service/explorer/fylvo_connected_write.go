@@ -28,10 +28,18 @@ func addressKey(uri *fs.URI) (string, bool) {
 	return connectionOf(uri) + "\x00" + path, true
 }
 
+// idsByAddress are the ids of a request by the address their keys name. unclear are the
+// addresses that got two different ids.
+type idsByAddress struct {
+	ids     map[string]string
+	unclear map[string]bool
+}
+
 // byAddress sorts the ids by the address their keys name. A client may spell the key
-// of an address differently from the address it sends (escaped or not); two keys for
-// one address with different ids say nothing, and that address then has no id.
-func (ids connectedIDs) byAddress() map[string]string {
+// of an address differently from the address it sends (escaped or not). Two keys for
+// one address with different ids contradict each other: a change that names this
+// address is refused, also where an id would have been optional.
+func (ids connectedIDs) byAddress() idsByAddress {
 	sorted, unclear := make(map[string]string, len(ids)), map[string]bool{}
 	for raw, id := range ids {
 		uri, ok := connectedURI(raw)
@@ -47,19 +55,20 @@ func (ids connectedIDs) byAddress() map[string]string {
 		}
 		sorted[key] = id
 	}
-	for key := range unclear {
-		delete(sorted, key)
-	}
-	return sorted
+	return idsByAddress{ids: sorted, unclear: unclear}
 }
 
-// of returns the id sent for an address, "" when there is none.
-func (ids connectedIDs) of(sorted map[string]string, uri *fs.URI) string {
+// of returns the id sent for an address, "" when there is none, and an error when the
+// request names two.
+func (s idsByAddress) of(uri *fs.URI) (string, error) {
 	key, ok := addressKey(uri)
 	if !ok {
-		return ""
+		return "", nil
 	}
-	return sorted[key]
+	if s.unclear[key] {
+		return "", connected.ItemError(connected.ReasonChanged)
+	}
+	return s.ids[key], nil
 }
 
 // errConnectedBatch is the answer to a request that names more entries than one request
@@ -101,11 +110,15 @@ func connectedSources(c *gin.Context, uris []*fs.URI, ids connectedIDs) (*connec
 		if err == nil && len(uri.U.Query()) > 0 {
 			err = connected.ErrBadPath
 		}
+		id, idErr := sorted.of(uri)
+		if err == nil {
+			err = idErr
+		}
 		if err != nil {
 			req.done()
 			return nil, nil, connected.Error(c, err)
 		}
-		sources = append(sources, connected.Source{Path: path, ID: ids.of(sorted, uri)})
+		sources = append(sources, connected.Source{Path: path, ID: id})
 	}
 	return req, sources, nil
 }
@@ -146,7 +159,11 @@ func connectedRename(c *gin.Context, uri *fs.URI, s *RenameFileService) (*FileRe
 	}
 	defer req.done()
 
-	row, err := req.m.RenameEntry(req.ctx, req.conn, connected.Source{Path: req.path, ID: s.Ids.of(s.Ids.byAddress(), uri)}, s.NewName)
+	id, err := s.Ids.byAddress().of(uri)
+	if err != nil {
+		return nil, err
+	}
+	row, err := req.m.RenameEntry(req.ctx, req.conn, connected.Source{Path: req.path, ID: id}, s.NewName)
 	if err != nil {
 		return nil, connected.Error(c, err)
 	}

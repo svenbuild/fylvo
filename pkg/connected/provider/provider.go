@@ -190,6 +190,18 @@ func (e *Error) Error() string {
 }
 
 // KindOf returns the kind of a provider error, KindOther for everything else.
+// notSent is an error that came up before anything was sent to the provider.
+type notSent struct{ error }
+
+func (n notSent) Unwrap() error { return n.error }
+
+// Sent tells whether a failed call can have reached the provider. False only where that
+// is certain: the call ended before its request was handed to the network.
+func Sent(err error) bool {
+	var n notSent
+	return !errors.As(err, &n)
+}
+
 func KindOf(err error) Kind {
 	var e *Error
 	if errors.As(err, &e) {

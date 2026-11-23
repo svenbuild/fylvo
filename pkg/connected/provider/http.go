@@ -222,11 +222,17 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 		renewed  bool
 		tries    int
 	)
+	sent := false
 	for {
 		token, err := c.Auth.Token(ctx, rejected)
 		if err != nil {
+			if !sent {
+				// No token, no request: the provider was not asked anything.
+				return nil, notSent{err}
+			}
 			return nil, err
 		}
+		sent = true
 
 		var reader io.Reader
 		if body != nil {
