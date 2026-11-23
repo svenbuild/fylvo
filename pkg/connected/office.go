@@ -537,8 +537,13 @@ func (m *Manager) OfficeSave(ctx context.Context, c *Conn, s *OfficeSession, bod
 	return row, nil
 }
 
-// officeCopies is how many names are tried for a copy beside a file.
-const officeCopies = 20
+const (
+	// officeCopies is how many numbered names are tried for a copy beside a file,
+	// before it gets a name with the time in it.
+	officeCopies = 20
+	// officeKeepTime is how long storing a copy may take.
+	officeKeepTime = 2 * time.Minute
+)
 
 // OfficeKeepBeside stores content as a file beside the file of the session, in the
 // folder the session was opened in: "letter (word).docx", or with a number when that
@@ -563,6 +568,15 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 	if s.closed.Load() || s.Conn != c.ID || s.Generation != c.Generation {
 		return nil, ErrOfficeGone
 	}
+	// The Office server may hang up while the copy is on its way (it does not wait for
+	// ever, and a window that closes does not either). What it sent whole is stored
+	// all the same: not as long as the request lasts, but for a time of its own, and
+	// as long as the connection to the storage lasts.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), officeKeepTime)
+	defer cancel()
+	if c.live != nil {
+		defer context.AfterFunc(c.live.ctx, cancel)()
+	}
 	stored := func(row *Row, path string) (*Row, error) {
 		s.beside, s.besidePath, s.besideSum = row, path, sum
 		if exit {
@@ -579,9 +593,11 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 		s.beside = nil
 	}
 	if s.beside != nil && sum == s.besideSum {
-		// The very content the copy holds, if the copy is still there as it was left.
-		c.P.Known(&s.beside.Item)
-		if item, err := c.P.Get(ctx, s.beside.ID); err == nil && VersionID(c.ID, &Row{Item: *item}) == VersionID(c.ID, s.beside) {
+		// The very content the copy holds, if the copy is still there as it was left:
+		// the same item in the same version, under its name in the folder of the file.
+		_, name := ParentOf(s.besidePath)
+		if row, err := m.tree.named(ctx, c, s.folderID, name); err == nil && row.ID == s.beside.ID &&
+			VersionID(c.ID, row) == VersionID(c.ID, s.beside) {
 			return stored(s.beside, s.besidePath)
 		}
 		s.beside = nil
@@ -621,9 +637,13 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 	// a copy.
 	base, ext = unmarked(legalNamePart(base), word), legalNamePart(ext)
 	var err error
-	for n := 1; n <= officeCopies; n++ {
+	for n := 1; n <= officeCopies+1; n++ {
 		mark := " (" + word + ")"
-		if n > 1 {
+		switch {
+		case n > officeCopies:
+			// All the numbered names are taken. One that nothing else carries.
+			mark = " (" + word + " " + m.offices.now().UTC().Format("2006-01-02 15.04.05") + ")"
+		case n > 1:
 			mark = " (" + word + " " + strconv.Itoa(n) + ")"
 		}
 		path := besideName(base, mark, ext)

@@ -1031,13 +1031,23 @@ func TestConnectedOfficeConflictCopyIsFollowed(t *testing.T) {
 	require.Equal(t, "letter (conflict).docx|letter.docx", names())
 	require.Equal(t, []byte("state A"), copyOf("letter (conflict).docx"))
 
-	// Somebody renames the copy: it is theirs, with what it holds. The next state gets
-	// a new one.
+	// Somebody renames the copy: it is theirs, with what it holds. The same state sent
+	// again gets a new one, and the next state goes into that.
 	e.sim.Rename(e.sim.Find("", "letter (conflict).docx"), "mine now.docx")
+	refused("state A")
+	require.Equal(t, "letter (conflict).docx|letter.docx|mine now.docx", names())
+	require.Equal(t, []byte("state A"), copyOf("letter (conflict).docx"))
 	refused("state C")
 	require.Equal(t, "letter (conflict).docx|letter.docx|mine now.docx", names())
 	require.Equal(t, []byte("state A"), copyOf("mine now.docx"))
 	require.Equal(t, []byte("state C"), copyOf("letter (conflict).docx"))
+	// And once more with a new state right after the rename.
+	e.sim.Rename(e.sim.Find("", "letter (conflict).docx"), "mine too.docx")
+	refused("state C2")
+	require.Equal(t, "letter (conflict).docx|letter.docx|mine now.docx|mine too.docx", names())
+	require.Equal(t, []byte("state C"), copyOf("mine too.docx"))
+	require.Equal(t, []byte("state C2"), copyOf("letter (conflict).docx"))
+	e.sim.Delete(e.sim.Find("", "mine too.docx"))
 
 	// The copy goes away in the middle of the upload that was to renew it: the state
 	// is stored in a new one, not lost.
@@ -1046,15 +1056,33 @@ func TestConnectedOfficeConflictCopyIsFollowed(t *testing.T) {
 	require.Equal(t, "letter (conflict).docx|letter.docx|mine now.docx", names())
 	require.Equal(t, []byte("state D"), copyOf("letter (conflict).docx"))
 
-	// Many states later the window is closed. Its last save is answered as saved, and
-	// the same last save sent again, also after the window read the file anew, never
-	// goes over the file.
+	// Somebody moves the copy into a folder: the same.
+	other := e.sim.AddFolder("", "Elsewhere")
+	e.sim.Move(e.sim.Find("", "letter (conflict).docx"), other)
+	refused("state D")
+	require.Equal(t, "Elsewhere|letter (conflict).docx|letter.docx|mine now.docx", names())
+	require.Equal(t, []byte("state D"), copyOf("letter (conflict).docx"))
+	require.Equal(t, []byte("state D"), copyOf("Elsewhere/letter (conflict).docx"))
+	e.sim.Delete(other)
+
+	// Many states later the window is closed, more than once. Each last save is
+	// answered as saved, and the first of them sent again, also after the window read
+	// the file anew, never goes over the file.
 	for i := 0; i < 12; i++ {
 		refused(fmt.Sprintf("state %d", i))
 	}
 	first := e.officeExit(session, token, []byte("the last state"))
 	require.Equal(t, http.StatusOK, first.Code)
-	require.Equal(t, []byte("the last state"), copyOf("letter (conflict).docx"))
+	for i := 0; i < 12; i++ {
+		rec := e.officeExit(session, token, []byte(fmt.Sprintf("a later last state %d", i)))
+		require.Equal(t, http.StatusOK, rec.Code)
+	}
+	rec := e.officeExit(session, token, []byte("the last state"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, first.Body.String(), rec.Body.String())
+	rec = e.officeExit(session, token, []byte("the last state of all"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []byte("the last state of all"), copyOf("letter (conflict).docx"))
 	read()
 	for i := 0; i < 12; i++ {
 		rec, _ := e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte(fmt.Sprintf("saved %d", i)))
@@ -1072,5 +1100,20 @@ func TestConnectedOfficeConflictCopyIsFollowed(t *testing.T) {
 	refused("state A")
 	require.Equal(t, "letter (conflict 2).docx|letter (conflict).docx|letter.docx|mine now.docx", names())
 	require.Equal(t, []byte("state A"), copyOf("letter (conflict 2).docx"))
-	require.Equal(t, []byte("the last state"), copyOf("letter (conflict).docx"))
+	require.Equal(t, []byte("the last state of all"), copyOf("letter (conflict).docx"))
+
+	// Every numbered name is taken: the copy gets a name with the time in it.
+	for n := 3; n <= 20; n++ {
+		e.sim.AddFile("", fmt.Sprintf("letter (conflict %d).docx", n), []byte("in the way"))
+	}
+	read()
+	e.sim.SetContent(id, []byte("changed a last time"))
+	refused("state Z")
+	held := ""
+	for _, name := range strings.Split(names(), "|") {
+		if string(copyOf(name)) == "state Z" {
+			held = name
+		}
+	}
+	require.Regexp(t, `^letter \(conflict \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d\)\.docx$`, held)
 }
