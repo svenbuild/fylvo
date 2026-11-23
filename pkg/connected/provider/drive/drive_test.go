@@ -1,6 +1,7 @@
 package drive
 
 import (
+	"time"
 	"context"
 	"io"
 	"net/http"
@@ -400,8 +401,17 @@ func TestErrorReasons(t *testing.T) {
 		{404, "somethingNew", provider.KindNotFound},
 		{400, "invalid", provider.KindOther},
 	}
+	// "Slow down" answers are tried again a few times before they are reported.
+	base := provider.RetryBase
+	provider.RetryBase = time.Millisecond
+	defer func() { provider.RetryBase = base }()
 	for _, tc := range cases {
 		s.Fail(tc.status, tc.reason)
+		if tc.kind == provider.KindBusy {
+			for range provider.MaxTries {
+				s.Fail(tc.status, tc.reason)
+			}
+		}
 		_, err := d.Get(ctx, s.RootID())
 		var e *provider.Error
 		require.ErrorAs(t, err, &e, tc.reason)

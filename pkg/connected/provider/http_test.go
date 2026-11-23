@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 )
 
 // testAuth hands out tokens "token-1", "token-2", ...: a new one each time the current
@@ -86,6 +87,10 @@ func TestDoObeysRetryAfterAndClassifies(t *testing.T) {
 				return
 			}
 			_, _ = w.Write([]byte(`{}`))
+		case "/busy":
+			// A provider that reports "slow down" with a 403 and says so only in its body.
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`busy`))
 		case "/gone":
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"error":{"code":"itemNotFound","message":"secret detail"}}`))
@@ -98,6 +103,23 @@ func TestDoObeysRetryAfterAndClassifies(t *testing.T) {
 	c := &Caller{HTTP: plainClient(), Auth: &testAuth{}, AllowHTTP: true}
 	if err := c.JSON(context.Background(), http.MethodGet, api.URL+"/slow", nil, nil); err != nil || calls != 2 {
 		t.Fatalf("slow: %v after %d calls", err, calls)
+	}
+
+	// A "slow down" that only the classifier recognises is tried again, a bounded number
+	// of times, and then reported.
+	base := RetryBase
+	RetryBase = time.Millisecond
+	defer func() { RetryBase = base }()
+	busy := &Caller{HTTP: plainClient(), Auth: &testAuth{}, AllowHTTP: true,
+		Classify: func(status int, _ http.Header, body []byte) *Error {
+			if string(body) == "busy" {
+				return &Error{Kind: KindBusy, Code: "rateLimitExceeded"}
+			}
+			return nil
+		}}
+	calls = 0
+	if err := busy.JSON(context.Background(), http.MethodGet, api.URL+"/busy", nil, nil); KindOf(err) != KindBusy || calls != MaxTries+1 {
+		t.Fatalf("busy: %v after %d calls", err, calls)
 	}
 
 	err := c.JSON(context.Background(), http.MethodGet, api.URL+"/gone", nil, nil)

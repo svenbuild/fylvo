@@ -21,6 +21,8 @@ import (
 const (
 	// maxWait is the longest a call waits in total when the provider asks to slow down.
 	maxWait = 30 * time.Second
+	// MaxTries is how often a call is sent again because the provider asked to slow down.
+	MaxTries = 5
 	// maxRedirects is how often a content download may be sent on to another address.
 	maxRedirects = 3
 	// maxErrorBody is how much of an error answer is read to find the provider's code.
@@ -28,6 +30,10 @@ const (
 	// maxJSONBody bounds every JSON answer. A page of a listing is far below it.
 	maxJSONBody = 32 * 1024 * 1024
 )
+
+// RetryBase is the first wait before a call is sent again when the provider asked to slow
+// down without saying for how long. It doubles with every further try. Tests lower it.
+var RetryBase = time.Second
 
 // NewHTTPClient returns the HTTP client for talking to providers: no redirect is
 // followed by itself, and connections to private, loopback and link-local addresses
@@ -115,12 +121,12 @@ func (c *Caller) checkAddress(address string) error {
 	return nil
 }
 
-// retryAfter returns how long the provider asks to wait, 0 when it does not say.
-func retryAfter(h http.Header) time.Duration {
+// retryAfter returns how long the provider asks to wait. ok is false when it does not say.
+func retryAfter(h http.Header) (wait time.Duration, ok bool) {
 	if s, err := strconv.Atoi(strings.TrimSpace(h.Get("Retry-After"))); err == nil && s >= 0 {
-		return time.Duration(s) * time.Second
+		return time.Duration(s) * time.Second, true
 	}
-	return 0
+	return 0, false
 }
 
 // Do sends a call with the access token of the connection and returns the answer when
@@ -138,8 +144,9 @@ func (c *Caller) Do(ctx context.Context, method, address string, header http.Hea
 		rejected string
 		waited   time.Duration
 		renewed  bool
+		tries    int
 	)
-	for attempt := 0; ; attempt++ {
+	for {
 		token, err := c.Auth.Token(ctx, rejected)
 		if err != nil {
 			return nil, err
@@ -172,18 +179,23 @@ func (c *Caller) Do(ctx context.Context, method, address string, header http.Hea
 			return res, nil
 		}
 
-		switch {
-		case res.StatusCode == http.StatusUnauthorized && !renewed:
+		if res.StatusCode == http.StatusUnauthorized && !renewed {
 			res.Body.Close()
 			renewed, rejected = true, token
 			continue
-		case res.StatusCode == http.StatusTooManyRequests || res.StatusCode == http.StatusServiceUnavailable:
-			wait := retryAfter(res.Header)
-			if wait == 0 {
-				wait = time.Duration(1<<min(attempt, 4)) * time.Second
+		}
+
+		// "Slow down" comes as 429 or 503, and from some providers as a 403 that only
+		// its body tells apart. The call is tried again while the total wait stays small.
+		failure := c.classify(res)
+		res.Body.Close()
+		if KindOf(failure) == KindBusy {
+			wait, said := retryAfter(res.Header)
+			if !said {
+				wait = RetryBase << min(tries, 4)
 			}
-			if waited+wait <= maxWait {
-				res.Body.Close()
+			if waited+wait <= maxWait && tries < MaxTries {
+				tries++
 				waited += wait
 				select {
 				case <-time.After(wait):
@@ -193,10 +205,7 @@ func (c *Caller) Do(ctx context.Context, method, address string, header http.Hea
 				}
 			}
 		}
-
-		err = c.classify(res)
-		res.Body.Close()
-		return nil, err
+		return nil, failure
 	}
 }
 
