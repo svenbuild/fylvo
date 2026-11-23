@@ -64,6 +64,30 @@ export const inGroups = <T>(items: T[], size: number): T[][] => {
   return groups;
 };
 
+// Runs at most size of the given tasks at once, the others wait in order. For requests that make
+// the server ask the provider, which it does at most two at a time per account.
+export const limiter = (size: number) => {
+  let free = size;
+  const waiting: (() => void)[] = [];
+  return async <T>(task: () => Promise<T>): Promise<T> => {
+    if (free > 0) {
+      free--;
+    } else {
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    }
+    try {
+      return await task();
+    } finally {
+      const next = waiting.shift();
+      if (next) {
+        next();
+      } else {
+        free++;
+      }
+    }
+  };
+};
+
 // Address of the root of a connected storage, as the server builds it.
 export const connectedRootUri = (id: string) => `${CrUriPrefix}${id}@${ConnectedFileSystem}`;
 

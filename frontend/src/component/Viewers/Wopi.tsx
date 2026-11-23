@@ -10,6 +10,7 @@ import useActionDisplayOpt, { canUpdate } from "../FileManager/ContextMenu/useAc
 import { FileManagerIndex } from "../FileManager/FileManager.tsx";
 import ViewerDialog, { ViewerLoading } from "./ViewerDialog.tsx";
 import { inConnectedStorage } from "../../api/connected.ts";
+import { refreshFileList } from "../../redux/thunks/filemanager.ts";
 
 const WopiForm = ({
   replacedSrc,
@@ -119,7 +120,12 @@ const Wopi = () => {
 
   const onClose = useCallback(() => {
     dispatch(closeWopiViewer());
-  }, [dispatch]);
+    // Fylvo: on closing with unsaved changes after a conflict, the server puts them next to the
+    // file as a copy; the folder shows it.
+    if (connected) {
+      dispatch(refreshFileList(FileManagerIndex.main));
+    }
+  }, [dispatch, connected]);
 
   const openMore = useCallback(
     (e: React.MouseEvent<any>) => {

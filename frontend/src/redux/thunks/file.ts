@@ -91,6 +91,7 @@ import {
   folderEnterable,
   inConnectedStorage,
   inGroups,
+  limiter,
 } from "../../api/connected.ts";
 import { rowUnsupported } from "../../component/FileManager/Connected/ConnectedMark.tsx";
 import { BusyState, codeOf, ProviderGaveUp, retryBusy } from "../../component/FileManager/Connected/providerRetry.ts";
@@ -115,6 +116,10 @@ export const isMac = () => {
 
 export const isMacbook = isMac();
 
+// Fylvo: previews of connected storages asked at once, and the answer for a version without one.
+const connectedThumbs = limiter(2);
+const connectedNoPreview = 40077;
+
 export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promise<string | null>> {
   return async (dispatch, getState) => {
     const { fileManager } = getState();
@@ -126,18 +131,39 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
       }
     }
 
+    const request = () =>
+      dispatch(getFileThumb(getFileLinkedUri(file), getState().fileManager[index].list?.context_hint));
+    const connected = inConnectedStorage(file.path);
     try {
-      const thumb = await dispatch(getFileThumb(getFileLinkedUri(file), fileManager[index].list?.context_hint));
+      // Fylvo: in a connected storage the server asks the provider for each preview, so only a
+      // few go at once, and one that waited is dropped when its row is no longer listed.
+      const thumb = connected
+        ? await connectedThumbs(() =>
+            getState().fileManager[index].list?.files.some((f) => f.path == file.path)
+              ? request()
+              : Promise.resolve(undefined),
+          )
+        : await request();
+      if (!thumb) {
+        return null;
+      }
       dispatch(setThumbCache({ index, value: [file.path, thumb, file.primary_entity] }));
       return thumb.url;
     } catch (e) {
       // Fylvo: remembered for this version of the file only, in the thumbnail cache, and for a
       // minute (a busy server may have it later); the file entry itself is not touched (an answer
-      // that comes late must not bring back an older one).
+      // that comes late must not bring back an older one). A connected storage that has no
+      // preview for this version (40077) is not asked again for it.
+      const none = connected && e instanceof AppError && e.code == connectedNoPreview;
       dispatch(
         setThumbCache({
           index,
-          value: [file.path, { url: "", expires: dayjs().add(1, "minute").toISOString() }, file.primary_entity, true],
+          value: [
+            file.path,
+            { url: "", expires: none ? "" : dayjs().add(1, "minute").toISOString() },
+            file.primary_entity,
+            true,
+          ],
         }),
       );
       console.warn("Failed to load thumb", e);
