@@ -1285,3 +1285,77 @@ func TestConnectedOfficeState(t *testing.T) {
 	_, err = state(e.alex, session)
 	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
 }
+
+// A document that exists only at the provider is shown by the Office server in the format
+// it is exported in, read only: nothing of it is ever saved, and its export is gone with
+// the session.
+func TestConnectedOfficeViewOfADocumentOfTheProvider(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	id := e.sim.AddNative("", "Letter", "gdoc")
+	e.sim.AddNative("", "Budget", "gsheet")
+	e.sim.AddOther("", "Feedback", "application/vnd.google-apps.form")
+	views := func() int {
+		dir := util.DataPath(e.dep.SettingProvider().TempPath(e.ctx))
+		found, _ := filepath.Glob(filepath.Join(dir, "fylvo-view-*"))
+		return len(found)
+	}
+	before := views()
+
+	// Asked for editing, it is a session that only shows the export.
+	res, err := e.officeSession(t, "/Letter.gdoc", types.ViewerActionEdit)
+	require.NoError(t, err)
+	require.NotNil(t, res.Edit)
+	require.False(t, *res.Edit)
+	require.Contains(t, res.WopiSrc, officeAddress+"/view?")
+	require.Equal(t, before+1, views())
+	session, token := res.Session.ID, res.Session.AccessToken
+
+	rec, _ := e.office(ConnectedOfficeInfo, http.MethodGet, session, token, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var info WopiFileInfo
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
+	require.Equal(t, "Letter.docx", info.BaseFileName)
+	require.False(t, info.UserCanWrite)
+	require.True(t, info.ReadOnly)
+	require.Positive(t, info.Size)
+
+	rec, _ = e.office(ConnectedOfficeGet, http.MethodGet, session, token, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, info.Size, int64(rec.Body.Len()))
+	require.Contains(t, rec.Body.String(), "export of "+id)
+
+	// Nothing is saved, and the document at the provider is as it was.
+	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("not stored"))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	rec = e.officeExit(session, token, []byte("not stored either"))
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	listed, err := e.list(e.alex, e.root, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "Budget.gsheet|Feedback.gform|Letter.gdoc", fileNames(listed.Files))
+
+	// The export goes with the session.
+	s, err := e.m.Office(session, token)
+	require.NoError(t, err)
+	e.m.CloseOffice(s)
+	require.Equal(t, before, views())
+	// And with the connection.
+	res, err = e.officeSession(t, "/Letter.gdoc", types.ViewerActionView)
+	require.NoError(t, err)
+	require.Equal(t, before+1, views())
+	require.NoError(t, e.m.Disconnect(e.ctx, e.alex.ID, e.id))
+	require.Equal(t, before, views())
+}
+
+// Only where the Office server shows the format of the export, and only for documents
+// that have one.
+func TestConnectedOfficeViewOnlyWhereThereIsOne(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	e.sim.AddNative("", "Budget", "gsheet")
+	e.sim.AddOther("", "Feedback", "application/vnd.google-apps.form")
+	for _, path := range []string{"/Budget.gsheet", "/Feedback.gform"} {
+		_, err := e.officeSession(t, path, types.ViewerActionView)
+		require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err), path)
+	}
+}

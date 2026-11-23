@@ -10,7 +10,7 @@ import useActionDisplayOpt, { canUpdate } from "../FileManager/ContextMenu/useAc
 import { FileManagerIndex } from "../FileManager/FileManager.tsx";
 import ViewerDialog, { ViewerLoading } from "./ViewerDialog.tsx";
 import { ConnectedCode, getConnectedOfficeState, inConnectedStorage } from "../../api/connected.ts";
-import { FileResponse } from "../../api/explorer.ts";
+import { FileResponse, Metadata } from "../../api/explorer.ts";
 import { AppError, Code } from "../../api/request.ts";
 import { refreshFileList } from "../../redux/thunks/filemanager.ts";
 import { openViewers, openWopiViewer } from "../../redux/thunks/viewer.ts";
@@ -296,6 +296,11 @@ const Wopi = () => {
             viewerState={viewerState}
             replacedSrc={replacedSrc}
           />
+        )}
+        {connected && !!viewerState?.file?.metadata?.[Metadata.connected_export] && (
+          <Alert severity="info" sx={{ borderRadius: 0 }}>
+            {t("application:connected.officeViewOnly")}
+          </Alert>
         )}
         {connectedEdit && !noticeClosed && !conflict && (
           <Alert severity="warning" onClose={() => setNoticeClosed(true)} sx={{ borderRadius: 0 }}>

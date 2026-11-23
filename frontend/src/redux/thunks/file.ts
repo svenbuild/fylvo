@@ -86,7 +86,7 @@ import { downloadSingleFile } from "./download.ts";
 import { navigateReconcile, navigateToPath, refreshFileList, updateUserCapacity } from "./filemanager.ts";
 import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
-import { openViewer, openViewers } from "./viewer.ts";
+import { openViewer, openViewers, openWopiViewer } from "./viewer.ts";
 import {
   connectedBatchSize,
   connectedIds,
@@ -465,6 +465,9 @@ export function fileDoubleClicked(index: number, file: FileResponse, e?: React.M
       // Fylvo: a shortcut to a file has no "open" here; its address at the provider is the way
       // to open it.
       dispatch(openAtProvider(index, file));
+    } else if (actionOpt.viewInFylvo) {
+      // Fylvo: a document of the provider without an address there is shown here, read only.
+      dispatch(openWopiViewer(file, actionOpt.viewInFylvo));
     } else if (
       file.type == FileType.file &&
       actionOpt.showDownload &&

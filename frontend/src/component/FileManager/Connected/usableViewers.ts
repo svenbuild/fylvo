@@ -1,4 +1,4 @@
-import { inConnectedStorage } from "../../../api/connected.ts";
+import { exportFormats, inConnectedStorage } from "../../../api/connected.ts";
 import { FileResponse, FileType, Metadata, Viewer, ViewerType } from "../../../api/explorer.ts";
 import { fileExtension } from "../../../util";
 
@@ -17,6 +17,26 @@ const officeType = (file: FileResponse) => {
     return undefined;
   }
   return file.name.includes(".") ? fileExtension(file.name) ?? "" : "";
+};
+
+// Fylvo: the formats the Office viewer shows a document of the provider in (a Google Doc as
+// docx), read only: the server exports it once and shows that (openOfficeView on the server).
+const officeViewFormats = ["docx", "xlsx", "pptx"];
+
+// The Office viewer that shows a document of the provider in "In Fylvo ansehen", undefined
+// when the document has no such format or no Office viewer takes it.
+export const officeViewOf = (file: FileResponse, viewers: Viewer[]) => {
+  if (
+    !inConnectedStorage(file.path) ||
+    file.type != FileType.file ||
+    !file.metadata?.[Metadata.connected_export] ||
+    file.metadata?.[Metadata.connected_link] !== undefined ||
+    file.metadata?.[Metadata.connected_unsupported] !== undefined
+  ) {
+    return undefined;
+  }
+  const format = exportFormats(file).find((f) => officeViewFormats.includes(f));
+  return format ? viewers.find((v) => v.type == ViewerType.wopi && v.exts.includes(format)) : undefined;
 };
 
 // The Office editor needs the file itself: not a shortcut, a document of the provider or a row

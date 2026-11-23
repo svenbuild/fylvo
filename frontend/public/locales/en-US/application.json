@@ -1203,6 +1203,8 @@
       "other_address": "Connecting only works from the main address of this server. Please open the settings there."
     },
     "openAtProvider": "Open at provider",
+    "viewInFylvo": "View in Fylvo",
+    "officeViewOnly": "View of a converted version, editing only at Google",
     "rowDuplicate": "This name exists more than once at the provider, so it cannot be used here. Rename one of them at the provider.",
     "rowLink": "Shortcut at the provider, read only",
     "omitted_one": "{{count}} entry is not shown: its name cannot be used here.",
