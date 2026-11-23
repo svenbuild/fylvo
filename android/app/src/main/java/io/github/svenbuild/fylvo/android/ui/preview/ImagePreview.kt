@@ -119,7 +119,10 @@ fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit,
                 loading = { LoadingOverlay(null) },
                 onError = { state ->
                     val status = (state.result.throwable as? coil.network.HttpException)?.response?.code
-                    if (status != null) scope.launch { fullError = viewModel.contentFailed(file, status) }
+                    // Only the full image counts; a failed thumbnail says nothing about the file.
+                    if (status != null && fullUrl != null && state.result.request.data == fullUrl) {
+                        scope.launch { fullError = viewModel.contentFailed(file, status) }
+                    }
                 },
                 error = { FullWidthError(fullError?.asString() ?: stringResource(R.string.image_load_failed)) },
             )

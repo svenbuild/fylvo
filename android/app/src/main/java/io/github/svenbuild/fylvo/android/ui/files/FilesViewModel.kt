@@ -1564,6 +1564,8 @@ class FilesViewModel(
      * name sort is redone here case-insensitively; size and date come as-is.
      */
     private fun sortFiles(files: List<FileObject>): List<FileObject> {
+        // Fylvo: a connected listing keeps the server order (folders first, pages fit together).
+        if (Connected.isConnected(_state.value.currentUri)) return files
         val sort = _state.value.view.sort
         val byType = compareByDescending<FileObject> { it.isFolder }
         if (sort.by != SortBy.NAME) return files.sortedWith(byType)

@@ -34,8 +34,8 @@ object Connected {
     const val META_EXTERNAL_URL = "fylvo:external_url"
     const val META_SIZE_UNKNOWN = "fylvo:size_unknown"
 
-    /** Extensions the server gives Google's own documents (replaced by the export format). */
-    private val NATIVE_EXTENSIONS = listOf(".gdoc", ".gsheet", ".gslides", ".gdraw")
+    /** Extension the server gives a Google document, by its default export format (replaced on download). */
+    private val NATIVE_EXTENSION = mapOf("docx" to ".gdoc", "xlsx" to ".gsheet", "pptx" to ".gslides", "svg" to ".gdraw")
 
     fun isConnected(uri: String): Boolean = CrUri.root(uri).endsWith("@connected")
 
@@ -103,9 +103,8 @@ object Connected {
      */
     fun downloadName(file: FileObject): String {
         val ext = exportExt(file) ?: return file.name
-        val native = NATIVE_EXTENSIONS.firstOrNull { file.name.endsWith(it, ignoreCase = true) }
-        val stem = if (native != null) file.name.dropLast(native.length) else file.name
-        return "$stem.$ext"
+        // Exactly as the server: only the extension of this document type, case as it is.
+        return file.name.removeSuffix(NATIVE_EXTENSION[ext].orEmpty()) + ".$ext"
     }
 
     /** The server sorts connected listings by name, size and modification time only. */

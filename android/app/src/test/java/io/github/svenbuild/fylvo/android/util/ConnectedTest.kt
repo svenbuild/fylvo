@@ -111,7 +111,11 @@ class ConnectedTest {
         fun doc(name: String, export: String?) =
             FileObject(name = name, metadata = export?.let { mapOf(Connected.META_EXPORT to it) })
         assertEquals("Plan.docx", doc("Plan.gdoc", "docx").downloadName())
-        assertEquals("Slides.pptx", doc("Slides.GSLIDES", "pptx").downloadName())
+        assertEquals("Slides.pptx", doc("Slides.gslides", "pptx").downloadName())
+        // Like the server: only the extension of this type, case as it is.
+        assertEquals("Slides.GSLIDES.pptx", doc("Slides.GSLIDES", "pptx").downloadName())
+        // A shortcut named like another type keeps its name.
+        assertEquals("Budget.gdoc.xlsx", doc("Budget.gdoc", "xlsx").downloadName())
         assertEquals("Sketch.svg", doc("Sketch.gdraw", "svg").downloadName())
         // Without the known extension the format is added.
         assertEquals("Notes.docx", doc("Notes", "docx").downloadName())
