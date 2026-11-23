@@ -276,4 +276,21 @@
     <string name="people_end">Teilen beenden</string>
     <string name="people_end_title">Teilen mit Personen beenden?</string>
     <string name="people_expired">Diese Freigabe ist abgelaufen. Wähle, wie lange sie jetzt gelten soll.</string>
+
+    <string name="edit_fetching">Die Datei wird zum Bearbeiten geholt …</string>
+    <string name="no_app_for_file">Keine App auf diesem Handy öffnet diese Art von Datei.</string>
+
+    <!-- Ordner hochladen -->
+    <string name="folder_upload">Ordner hochladen</string>
+    <string name="folder_upload_title">\"%1$s\" hochladen?</string>
+    <plurals name="folder_upload_text">
+        <item quantity="one">%1$d Datei (%2$s) nach %3$s, mit ihren Ordnern. Ein vorhandener Ordner mit diesem Namen wird ergänzt; Dateien mit einem vergebenen Namen bekommen einen neuen.</item>
+        <item quantity="other">%1$d Dateien (%2$s) nach %3$s, mit ihren Ordnern. Ein vorhandener Ordner mit diesem Namen wird ergänzt; Dateien mit einem vergebenen Namen bekommen einen neuen.</item>
+    </plurals>
+    <string name="folder_upload_many">Das sind viele Dateien: das Hochladen kann lange dauern und braucht deine Verbindung.</string>
+    <string name="folder_upload_reading">Der Ordner wird gelesen …</string>
+    <string name="folder_upload_empty">Der Ordner ist leer.</string>
+    <string name="folder_upload_unreadable">Der Ordner konnte nicht gelesen werden.</string>
+    <string name="folder_upload_started">Der Ordner wird hochgeladen</string>
+    <string name="folder_upload_failed">Das Hochladen konnte nicht starten (der Zielordner hat sich geändert oder es gibt keine Verbindung).</string>
 </resources>

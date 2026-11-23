@@ -208,7 +208,9 @@ data class FilesUiState(
      * exists): in the person's own files, in a share with the right to change it (online only).
      */
     fun canEdit(file: FileObject): Boolean = !file.isFolder && !file.isUploading && !inTrash && file.id.isNotEmpty() &&
-        (editOf(file) != null || (isOffline(file) && if (offlineMode) !CrUri.isShare(file.path) else Permissions.canModifyFile(file)))
+        (editOf(file) != null || (isOffline(file) && if (offlineMode) !CrUri.isShare(file.path) else Permissions.canModifyFile(file)) ||
+            // Fylvo 1.6: also without keeping it offline (a working copy from the server).
+            (!offlineMode && !isOffline(file) && file.primaryEntity.isNotEmpty() && Permissions.canSaveContent(file)))
     /** Fylvo: kept on this phone, as a root or inside an offline folder (shown with a pin). */
     fun isOffline(file: FileObject): Boolean = offlineCoverage.isOffline(offlineUriOf(file))
     /** Fylvo: kept offline as its own root. */
@@ -1720,7 +1722,10 @@ class FilesViewModel(
      */
     fun startEditing(file: FileObject, open: (File) -> Unit) {
         viewModelScope.launch {
-            when (val result = edits.startEditing(file, _state.value.offlineMode)) {
+            // Fylvo 1.6: a file not kept offline gets its working copy from the server first.
+            val standalone = !_state.value.isOffline(file) && _state.value.editOf(file) == null
+            if (standalone) _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_fetching))) }
+            when (val result = edits.startEditing(file, _state.value.offlineMode, standalone)) {
                 is OfflineEdits.StartResult.Ready -> {
                     open(result.file)
                     edits.opened(result.entryId)
@@ -1736,8 +1741,11 @@ class FilesViewModel(
         _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_uploading_now))) }
         viewModelScope.launch {
             when (val result = edits.finish(entry.id)) {
-                OfflineEdits.FinishResult.Done ->
+                OfflineEdits.FinishResult.Done -> {
                     _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.edit_finished, entry.name))) }
+                    // Fylvo 1.6: the list shows the new version.
+                    if (!_state.value.offlineMode) refresh()
+                }
                 is OfflineEdits.FinishResult.Failed -> _state.update { s ->
                     val now = s.editEntries.firstOrNull { it.id == entry.id }
                     s.copy(

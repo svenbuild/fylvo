@@ -62,7 +62,14 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     /** One notification per batch: batches can run side by side. */
     private val notificationId = NOTIF_ID_BASE + (id.hashCode() and 0xFFFF)
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = try {
+        work()
+    } finally {
+        // Fylvo 1.6: the read right on an uploaded phone folder goes once no batch needs it.
+        runCatching { FolderUpload.releaseFinished(applicationContext) }
+    }
+
+    private suspend fun work(): Result {
         val app = applicationContext as FylvoApp
         val queue = queue(applicationContext)
         var batch = inputData.getString(KEY_BATCH_ID)?.let(queue::load)

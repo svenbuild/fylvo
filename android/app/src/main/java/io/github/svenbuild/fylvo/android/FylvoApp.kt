@@ -94,7 +94,11 @@ class FylvoApp : Application(), ImageLoaderFactory {
             this, apiClient, sessionManager, onSessionExpired = { endSession(expired = true) },
         )
         // Upload lists no job will finish any more; off the main thread.
-        Thread { runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cleanUpOldBatches(this) } }.start()
+        Thread {
+            runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cleanUpOldBatches(this) }
+            // Fylvo 1.6: read rights on uploaded phone folders that no batch needs any more.
+            runCatching { io.github.svenbuild.fylvo.android.work.FolderUpload.releaseFinished(this) }
+        }.start()
     }
 
     /** Fylvo 1.6: pictures of accounts; follows no redirect (never to a third-party service). */

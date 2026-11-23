@@ -276,4 +276,21 @@
     <string name="people_end">Stop sharing</string>
     <string name="people_end_title">Stop sharing with people?</string>
     <string name="people_expired">This share has ended. Choose how long it should last now.</string>
+
+    <string name="edit_fetching">Getting the file for editing…</string>
+    <string name="no_app_for_file">No app on this phone opens this kind of file.</string>
+
+    <!-- Folder upload -->
+    <string name="folder_upload">Upload a folder</string>
+    <string name="folder_upload_title">Upload \"%1$s\"?</string>
+    <plurals name="folder_upload_text">
+        <item quantity="one">%1$d file (%2$s) into %3$s, with its folders. An existing folder of that name is filled up; files with a taken name get a new name.</item>
+        <item quantity="other">%1$d files (%2$s) into %3$s, with their folders. An existing folder of that name is filled up; files with a taken name get a new name.</item>
+    </plurals>
+    <string name="folder_upload_many">That is a lot of files: the upload can take long and uses your connection.</string>
+    <string name="folder_upload_reading">Reading the folder…</string>
+    <string name="folder_upload_empty">The folder is empty.</string>
+    <string name="folder_upload_unreadable">The folder could not be read.</string>
+    <string name="folder_upload_started">The folder is being uploaded</string>
+    <string name="folder_upload_failed">The upload could not start (the target folder changed or there is no connection).</string>
 </resources>

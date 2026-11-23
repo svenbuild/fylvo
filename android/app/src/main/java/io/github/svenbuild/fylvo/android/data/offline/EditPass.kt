@@ -7,6 +7,7 @@ import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.ApiException
 import io.github.svenbuild.fylvo.android.data.FileRepository
 import io.github.svenbuild.fylvo.android.util.CrUri
+import io.github.svenbuild.fylvo.android.util.Connected
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -34,6 +35,9 @@ internal interface EditServer {
     /** The file at [uri]; null when it is clearly not there. Refusals throw [ApiException]. */
     suspend fun lookup(uri: String): FileObject?
 
+    /** Fylvo 1.6: the file with [id] wherever it is now; null when it is clearly gone. */
+    suspend fun lookupById(id: String): FileObject? = null
+
     /**
      * Uploads [file] as [name] into [folder]: with [previous] as a new version of exactly that
      * version of the file (previous_required), without as a new file that replaces nothing.
@@ -46,6 +50,8 @@ internal interface EditServer {
 
 internal class RepoEditServer(private val repo: FileRepository) : EditServer {
     override suspend fun lookup(uri: String): FileObject? = repo.lookup(uri)
+
+    override suspend fun lookupById(id: String): FileObject? = repo.fileById(id)
 
     override suspend fun upload(file: File, folder: String, name: String, lastModified: Long, previous: String, onSession: (String, String, String) -> Unit) {
         repo.uploadFile(
@@ -298,9 +304,19 @@ internal class EditPass(
      * address never receives the edit. This guard runs before every version upload, also when a
      * kept snapshot is sent again.
      */
-    private suspend fun sendSnapshot(entry: EditEntry, snapshot: EditSnapshot) {
-        val plan = if (entry.retired || entry.baseEntity.isEmpty()) TargetPlan.Conflict
-        else planTarget(entry, preflight(entry.uri), phase.decideGone)
+    private suspend fun sendSnapshot(given: EditEntry, snapshot: EditSnapshot) {
+        var entry = given
+        val plan = when {
+            entry.retired || entry.baseEntity.isEmpty() -> TargetPlan.Conflict
+            // Fylvo 1.6: a standalone copy has no synced index: its file is followed by id on the
+            // server (a rename or move is seen at once), and "not found" is decided right away.
+            entry.standalone && !Connected.isConnected(entry.uri) -> {
+                val pre = preflightById(entry)
+                entry = store.entry(entry.id) ?: entry
+                planTarget(entry, pre, decideGone = true)
+            }
+            else -> planTarget(entry, preflight(entry.uri), phase.decideGone || entry.standalone)
+        }
         when (plan) {
             TargetPlan.Version -> sendVersion(entry, snapshot)
             TargetPlan.Conflict -> sendConflict(entry, snapshot, private = false)
@@ -572,6 +588,21 @@ internal class EditPass(
     }
 
     /** The server's view of [uri] before an upload. */
+    /** Fylvo 1.6: [entry]'s file by id; a new address is taken over first. */
+    private suspend fun preflightById(entry: EditEntry): Preflight = try {
+        val found = server.lookupById(entry.fileId)
+        if (found != null && !found.isFolder && found.path.isNotEmpty() && CrUri.canonical(found.path) != CrUri.canonical(entry.uri)) {
+            put(entry.copy(uri = found.path))
+        }
+        preflightOf(found, null)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: ApiException) {
+        preflightOf(null, e.code)
+    } catch (_: Exception) {
+        Preflight.Unclear
+    }
+
     private suspend fun preflight(uri: String): Preflight = try {
         preflightOf(server.lookup(uri), null)
     } catch (e: CancellationException) {

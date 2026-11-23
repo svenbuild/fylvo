@@ -211,6 +211,10 @@ interface ApiService {
     @HTTP(method = "DELETE", path = "api/v4/file/trash")
     suspend fun emptyTrash(@Tag session: SessionTag): Response<ApiResponse<Unit>>
 
+    /** Fylvo 1.6: a file by its id (wherever it is now). */
+    @GET("api/v4/file/info")
+    suspend fun fileInfoById(@Query("id") id: String): Response<ApiResponse<FileObject>>
+
     /** A file with `extended_info` (shares, versions, storage used). */
     @GET("api/v4/file/info")
     suspend fun fileInfoExtended(@Query("uri") uri: String, @Query("extended") extended: Boolean = true): Response<ApiResponse<FileObject>>

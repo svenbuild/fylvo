@@ -114,6 +114,13 @@ class FileRepository(private val api: ApiClient) {
     suspend fun fullTextSearch(query: String, offset: Int): io.github.svenbuild.fylvo.android.api.FullTextResult =
         api.service().fullTextSearch(query, offset).unwrap()
 
+    /** Fylvo 1.6: the file with [id] wherever it is now; null when it is gone. Other refusals throw. */
+    suspend fun fileById(id: String): FileObject? = try {
+        api.service().fileInfoById(id).unwrap()
+    } catch (e: ApiException) {
+        if (e.code == ApiException.CODE_PATH_NOT_EXIST || e.code == 404 || e.code == 40044) null else throw e
+    }
+
     /** Fylvo: one file or folder as the server describes it now. */
     suspend fun folderInfo(uri: String): FileObject = readService(uri).fileInfo(uri).unwrap()
 

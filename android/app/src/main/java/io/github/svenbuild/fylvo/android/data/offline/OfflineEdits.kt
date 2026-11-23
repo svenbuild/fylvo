@@ -139,8 +139,19 @@ class OfflineEdits(
                 // An account move into this key that is not finished: its files are no orphans.
                 scanOrphans = !EditStore(context.filesDir, manager.emailKey()).let { it.accountKey != offline.accountKey && it.hasIndex() },
                 strayLabel = context.localized().getString(R.string.edit_stray_label),
-            ).run(only)
+            ).run(only).also { retireIdle(store) }
         }
+
+    /** Fylvo 1.6: standalone working copies that are on the server and left alone are finished. */
+    private fun retireIdle(store: EditStore) {
+        val now = System.currentTimeMillis()
+        store.load().entries.filter { it.standalone && it.active }.forEach { entry ->
+            val file = store.fileOf(entry)
+            val stat = file.takeIf { it.isFile }?.let { LocalStat(it.length(), it.lastModified()) }
+            val hash = stat?.let { EditStore.sha256(file) }
+            if (idleStandalone(entry, stat, hash, now)) retireLocked(store, entry)
+        }
+    }
 
     /** An edit check in [delayMs] (one waiting check covers every request). */
     suspend fun scheduleCheck(accountKey: String, delayMs: Long = EDIT_RECOVERY_DELAY_MS) {
@@ -192,17 +203,24 @@ class OfflineEdits(
      * "Bearbeiten": the working copy of [file], made from its synced copy when there is none yet
      * (an existing one is reopened, never copied over). [offlineMode]: the listing comes from the
      * phone, so it cannot be compared with the server's version.
+     * Fylvo 1.6: [standalone] makes the working copy from the server (the file is not kept
+     * offline): exactly its current version is downloaded.
      */
-    suspend fun startEditing(file: FileObject, offlineMode: Boolean): StartResult = withContext(Dispatchers.IO) {
+    suspend fun startEditing(file: FileObject, offlineMode: Boolean, standalone: Boolean = false): StartResult = withContext(Dispatchers.IO) {
         val (_, store) = stores() ?: return@withContext StartResult.NotReady
-        guarded(StartResult.NotReady) { lock.withLock { startLocked(store, file, offlineMode) } }
+        guarded(StartResult.NotReady) { lock.withLock { startLocked(store, file, offlineMode, standalone) } }
     }
 
-    private suspend fun startLocked(store: EditStore, file: FileObject, offlineMode: Boolean): StartResult {
+    private suspend fun startLocked(store: EditStore, file: FileObject, offlineMode: Boolean, standalone: Boolean = false): StartResult {
         run {
             store.load().entries.firstOrNull { it.active && it.fileId == file.id }?.let { existing ->
                 val local = store.fileOf(existing)
-                if (!existing.outdated && local.isFile) return StartResult.Ready(local, existing.id)
+                // Fylvo 1.6: a standalone copy with nothing new of its own, while the server has a
+                // newer version: it is finished, a fresh copy follows (like an outdated synced one).
+                val stale = existing.standalone && local.isFile && file.primaryEntity.isNotEmpty() &&
+                    file.primaryEntity != existing.baseEntity && existing.pending == null &&
+                    existing.refusedSnapshots.isEmpty() && !isChanged(existing, EditStore.sha256(local))
+                if (!existing.outdated && !stale && local.isFile) return StartResult.Ready(local, existing.id)
                 // Outdated (no unsaved change) or gone: it is finished, a fresh copy follows.
                 retireLocked(store, existing)
             }
@@ -213,7 +231,7 @@ class OfflineEdits(
             )
             publish(store.put(entry))
             val made = try {
-                makeCopy(store, entry, file, offlineMode)
+                if (standalone && !offlineMode) makeStandaloneCopy(store, entry, file) else makeCopy(store, entry, file, offlineMode)
             } catch (e: CancellationException) {
                 withContext(NonCancellable) { dropCreating(store, entry) }
                 throw e
@@ -232,6 +250,23 @@ class OfflineEdits(
     private fun dropCreating(store: EditStore, entry: EditEntry) {
         store.deleteFiles(entry)
         publish(store.remove(entry.id))
+    }
+
+    /** Fylvo 1.6: downloads exactly the file's current version into place; null when it has none. */
+    private suspend fun makeStandaloneCopy(store: EditStore, entry: EditEntry, file: FileObject): EditEntry? {
+        if (file.primaryEntity.isEmpty() || file.isFolder) return null
+        val url = repo.downloadUrl(file.path, entity = file.primaryEntity)
+        val tmp = store.creatingOf(entry)
+        store.tmpFolder()
+        repo.downloadToFile(url, tmp)
+        val hash = EditStore.sha256(tmp)
+        val dest = store.activeFileOf(entry)
+        dest.parentFile?.mkdirs()
+        if (!tmp.renameTo(dest)) return null
+        return entry.copy(
+            state = EditState.Editing, standalone = true, baseEntity = file.primaryEntity,
+            base = EditSnapshot(dest.length(), dest.lastModified(), hash),
+        )
     }
 
     /** Copies the synced copy (only when it is current) into place; null when it is not. */

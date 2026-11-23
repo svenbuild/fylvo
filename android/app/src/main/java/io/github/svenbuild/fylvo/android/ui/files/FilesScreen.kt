@@ -33,6 +33,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DriveFolderUpload
 import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.UploadFile
@@ -175,6 +176,33 @@ fun FilesScreen(
     var compressAsk by remember { mutableStateOf<List<FileObject>?>(null) }
     /** Fylvo 1.6: a folder being shared with people. */
     var peopleTarget by remember { mutableStateOf<PeopleTarget?>(null) }
+    /** Fylvo 1.6: a folder of the phone read for uploading, waiting for its yes (target, its id). */
+    var folderUploadAsk by remember { mutableStateOf<Triple<io.github.svenbuild.fylvo.android.work.FolderUpload.Scan, String, String?>?>(null) }
+    var folderUploadTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderReading by remember { mutableStateOf(false) }
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        val target = folderUploadTarget
+        folderUploadTarget = null
+        if (tree == null || target == null || CrUri.hasSecret(target)) return@rememberLauncherForActivityResult
+        folderReading = true
+        scope.launch {
+            val scan = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(tree, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    io.github.svenbuild.fylvo.android.work.FolderUpload.scan(context, tree)
+                }.getOrNull()
+            }
+            folderReading = false
+            if (scan == null || (scan.files.isEmpty() && scan.dirs.isEmpty())) {
+                io.github.svenbuild.fylvo.android.work.FolderUpload.release(context, tree)
+                snackbar.showSnackbar(context.getString(if (scan == null) R.string.folder_upload_unreadable else R.string.folder_upload_empty))
+                return@launch
+            }
+            // The target folder is taken by id now; it must still be the same when the upload starts.
+            val id = if (CrUri.isRoot(target)) null else runCatching { app.fileRepository.folderInfo(target).id }.getOrNull()
+            folderUploadAsk = Triple(scan, target, id)
+        }
+    }
     val groupArchive = accountState.group(Permissions.GROUP_ARCHIVE)
     // Fylvo 1.6: the text editor; its view model keeps the text when the phone is turned.
     val editor = androidx.lifecycle.viewmodel.compose.viewModel(key = "text-editor") {
@@ -1086,6 +1114,17 @@ fun FilesScreen(
                 supportingContent = { Text(stringResource(R.string.into_folder, state.folderTitle())) },
                 leadingContent = { Icon(Icons.Default.UploadFile, contentDescription = null) },
             )
+            // Fylvo 1.6: a whole folder of the phone (not into connected storages, like the web).
+            if (!state.inConnected && !state.offlineMode && Permissions.canAddTo(state.parent)) ListItem(
+                modifier = Modifier.clickable {
+                    addSheetOpen = false
+                    folderUploadTarget = state.currentUri
+                    runCatching { folderLauncher.launch(null) }
+                },
+                headlineContent = { Text(stringResource(R.string.folder_upload)) },
+                supportingContent = { Text(stringResource(R.string.into_folder, state.folderTitle())) },
+                leadingContent = { Icon(androidx.compose.material.icons.Icons.Default.DriveFolderUpload, contentDescription = null) },
+            )
             if (!state.inConnected || Connected.canCreateIn(state.parent)) ListItem(
                 modifier = Modifier.clickable {
                     addSheetOpen = false
@@ -1249,6 +1288,68 @@ fun FilesScreen(
                 }
             },
             dismissButton = { androidx.compose.material3.TextButton(enabled = !emptying, onClick = { emptyTrashAsk = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    folderUploadAsk?.let { (scan, target, targetId) ->
+        val many = scan.files.size >= io.github.svenbuild.fylvo.android.work.FolderUpload.MANY
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                folderUploadAsk = null
+                io.github.svenbuild.fylvo.android.work.FolderUpload.release(context, scan.tree)
+            },
+            title = { Text(stringResource(R.string.folder_upload_title, scan.name)) },
+            text = {
+                Text(
+                    pluralStringResource(R.plurals.folder_upload_text, scan.files.size, scan.files.size, formatSize(scan.bytes), CrUri.displayName(target)) +
+                        if (many) "\n\n" + stringResource(R.string.folder_upload_many) else "",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    folderUploadAsk = null
+                    val tag = app.sessionManager.sessionTag()
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) {
+                            runCatching {
+                                // Still the folder that was chosen (nothing lands in one that took its place).
+                                if (targetId != null && app.fileRepository.folderIdMatches(target, targetId) != true) return@runCatching false
+                                if (!app.sessionManager.isCurrent(tag)) return@runCatching false
+                                // An existing folder of that name is filled up; files with a taken name get a new one.
+                                val root = CrUri.join(target, scan.name)
+                                app.fileRepository.mkdirs(root)
+                                scan.dirs.forEach { app.fileRepository.mkdirs(CrUri.join(root, it)) }
+                                io.github.svenbuild.fylvo.android.work.FolderUpload.keep(context, scan.tree)
+                                io.github.svenbuild.fylvo.android.work.FolderUpload.groups(scan).forEach { (dir, items) ->
+                                    val parent = if (dir.isEmpty()) root else CrUri.join(root, dir)
+                                    val existing = viewModel.namesInFolder(parent)
+                                    val names = UploadWorker.uniqueWithinSelection(items.map { it.name }, existing)
+                                    UploadWorker.enqueueSafely(context, items.map { it.uri }, parent, names)
+                                }
+                                true
+                            }.getOrDefault(false)
+                        }
+                        io.github.svenbuild.fylvo.android.work.FolderUpload.releaseFinished(context)
+                        snackbar.showSnackbar(context.getString(if (ok) R.string.folder_upload_started else R.string.folder_upload_failed))
+                        if (ok) viewModel.refresh()
+                    }
+                }) { Text(stringResource(R.string.upload)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    folderUploadAsk = null
+                    io.github.svenbuild.fylvo.android.work.FolderUpload.release(context, scan.tree)
+                }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+    if (folderReading) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            text = { androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text(stringResource(R.string.folder_upload_reading), modifier = Modifier.padding(start = 16.dp))
+            } },
         )
     }
     peopleTarget?.let { t ->
@@ -1784,7 +1885,8 @@ private fun openWithSystem(context: Context, local: File) {
     try {
         context.startActivity(intent)
     } catch (_: ActivityNotFoundException) {
-        // No handler; the file stays in cache.
+        // Fylvo 1.6: no app for this kind of file: say so (the file stays in the cache).
+        android.widget.Toast.makeText(context, context.getString(R.string.no_app_for_file), android.widget.Toast.LENGTH_LONG).show()
     }
 }
 
