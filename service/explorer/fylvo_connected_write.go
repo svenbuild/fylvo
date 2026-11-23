@@ -31,6 +31,9 @@ func connectionOf(uri *fs.URI) string {
 // connectedSources turns the addresses of a change into sources. All of them have to be
 // in one connection, which the first address opens.
 func connectedSources(c *gin.Context, raws []string, uris []*fs.URI, ids connectedIDs) (*connectedRequest, []connected.Source, error) {
+	if len(uris) > connected.MaxBatch+1 {
+		return nil, nil, serializer.NewError(serializer.CodeParamErr, "Too many entries in one request", nil)
+	}
 	req, err := openConnected(c, uris[0])
 	if err != nil {
 		return nil, nil, err

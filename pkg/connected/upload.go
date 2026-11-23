@@ -40,6 +40,8 @@ const (
 	uploadKept = time.Hour
 	// parallelUploads is how many chunk requests pass bytes on to providers at once.
 	parallelUploads = 2
+	// maxSessions is how many uploads one account can have open at once.
+	maxSessions = 50
 	// uploadPrefix starts the id of every upload session of a connected storage.
 	uploadPrefix = "cu-"
 	// callTimeout bounds a call to the provider that has to finish although the client
@@ -50,8 +52,10 @@ const (
 var (
 	// uploadWait is how long a chunk request waits for one of the parallelUploads places.
 	uploadWait = 10 * time.Second
-	// uploadStall is how long a range may go without a byte moving before it ends.
+	// uploadStall is how long a range may go without a byte moving before it ends,
+	// uploadRange how long it may take in all.
 	uploadStall = 2 * time.Minute
+	uploadRange = 30 * time.Minute
 	// chunkSize is UploadChunkSize; tests make it smaller.
 	chunkSize int64 = UploadChunkSize
 )
@@ -146,8 +150,10 @@ type upload struct {
 	// work lets one request at a time pass bytes on, commit or cancel. It guards the
 	// fields below it.
 	work sync.Mutex
-	// next is the number of bytes the provider has.
-	next int64
+	// next is the number of bytes the provider has. sentTo is the end of the last range
+	// handed to it, whether it confirmed that range or not: it cannot have more.
+	next   int64
+	sentTo int64
 	// held are the bytes after next that were taken from the client but not passed on.
 	held []byte
 	// sum is the checksum of the first hashedTo bytes of the file, nil where the
@@ -226,6 +232,17 @@ func (s *uploads) add(u *upload, c *Conn) bool {
 	if c.ended() {
 		return false
 	}
+	open := 0
+	for _, other := range s.byID {
+		if other.user == u.user {
+			if state, _, _ := other.outcome(); state == UploadReceiving {
+				open++
+			}
+		}
+	}
+	if open >= maxSessions {
+		return false
+	}
 	s.byID[u.id] = u
 	if s.tidy == nil {
 		s.tidy = time.AfterFunc(tidyEvery, s.tidyUp)
@@ -248,11 +265,20 @@ func (s *uploads) sweep() (expired []*upload) {
 		case state != UploadReceiving && now.Sub(ended) > uploadKept:
 			delete(s.byID, id)
 		case state == UploadReceiving && now.Sub(touched) > uploadIdle && u.work.TryLock():
-			// A session a request works on is not idle, whatever its time says. It
-			// ends here and stays, like every ended one, for the state route to tell.
+			// A session a request works on is not idle, whatever its time says. With
+			// its lock held it is looked at again: a request can have ended or used
+			// it since. It ends here and stays, like every ended one, for the state
+			// route to tell.
 			u.mu.Lock()
-			u.state, u.err, u.ended = UploadFailed, ErrUploadGone, now
+			idle := u.state == UploadReceiving && now.Sub(u.touched) > uploadIdle
+			if idle {
+				u.state, u.err, u.ended = UploadFailed, ErrUploadGone, now
+			}
 			u.mu.Unlock()
+			if !idle {
+				u.work.Unlock()
+				continue
+			}
 			expired = append(expired, u)
 		}
 	}
@@ -349,15 +375,12 @@ func (u *upload) noteReceived() {
 // detached is for calls whose answer matters even when the client went away: they end
 // with the connection, or after callTimeout.
 func detached(ctx context.Context, live *liveConn) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), callTimeout)
 	if live == nil {
-		return ctx, cancel
+		return context.WithTimeout(context.WithoutCancel(ctx), callTimeout)
 	}
-	stop := context.AfterFunc(live.ctx, cancel)
-	return ctx, func() {
-		stop()
-		cancel()
-	}
+	// A child of the connection's own context: it ends at the very moment the
+	// connection does, not a moment later.
+	return context.WithTimeout(live.ctx, callTimeout)
 }
 
 // refused tells whether an error of a provider means it refused a write and stored
@@ -476,10 +499,11 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 	u.id = uploadPrefix + randomID() + randomID()
 	u.touched = m.uploads.now()
 	if !m.uploads.add(u, c) {
+		// The connection ended meanwhile, or the account has too many uploads open.
 		if u.up != nil {
 			_ = u.up.Cancel(ctx)
 		}
-		return nil, Error(ctx, context.Canceled)
+		return nil, ErrBusy
 	}
 	return &UploadInfo{ID: u.id, ChunkSize: chunkSize, Expires: u.touched.Add(uploadIdle)}, nil
 }
@@ -625,9 +649,14 @@ func (m *Manager) receive(ctx context.Context, u *upload, body io.Reader, start,
 			r:     io.MultiReader(bytes.NewReader(u.held), io.LimitReader(in, send-int64(len(u.held)))),
 			moved: func() { watch.Reset(uploadStall) },
 		}
+		// However it moves, a range is over after uploadRange: a client that sends a
+		// byte now and then must not keep a place for good.
+		limit := time.AfterFunc(uploadRange, stop)
+		u.sentTo = max(u.sentTo, u.next+send)
 		_, err := u.up.Send(sendCtx, u.next, r, send)
 		r.cut()
 		watch.Stop()
+		limit.Stop()
 		stop()
 		if err != nil {
 			return m.sendFailed(ctx, u, err)
@@ -662,16 +691,12 @@ type cutReader struct {
 	moved func()
 }
 
-func (c *cutReader) Read(p []byte) (n int, err error) {
-	defer func() {
-		c.mu.Lock()
-		c.read += int64(n)
-		c.mu.Unlock()
-		if c.moved != nil && n > 0 {
-			c.moved()
-		}
-	}()
-	return c.readLocked(p)
+func (c *cutReader) Read(p []byte) (int, error) {
+	n, err := c.readLocked(p)
+	if c.moved != nil && n > 0 {
+		c.moved()
+	}
+	return n, err
 }
 
 // handed returns how many bytes were read from it.
@@ -687,7 +712,10 @@ func (c *cutReader) readLocked(p []byte) (int, error) {
 	if c.done {
 		return 0, io.ErrUnexpectedEOF
 	}
-	return c.r.Read(p)
+	// Counted under the lock of the read: after cut, the count is what was handed over.
+	n, err := c.r.Read(p)
+	c.read += int64(n)
+	return n, err
 }
 
 func (c *cutReader) cut() {
@@ -704,6 +732,13 @@ func (m *Manager) sendFailed(ctx context.Context, u *upload, err error) error {
 	case provider.KindOf(err) == provider.KindReconnect || provider.KindOf(err) == provider.KindSetup:
 		// Refused before any byte was taken.
 		return Error(ctx, err)
+	case provider.KindOf(err) == provider.KindRetry:
+		// Refused before any byte was taken, and the reason is gone.
+		return ErrSendAgain
+	case provider.KindOf(err) == provider.KindOpen:
+		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+		u.held = nil
+		return ErrOutcomeUnknown
 	}
 	// Open what arrived: the provider is asked, and the client sends the chunk again.
 	u.recheck = true
@@ -730,7 +765,7 @@ func (m *Manager) reconcile(ctx context.Context, u *upload) error {
 		// Complete without the bytes held here: nothing about it is certain.
 		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
 		return ErrOutcomeUnknown
-	case n < u.next || n > u.next+int64(len(u.held))+chunkSize:
+	case n < u.next || n > u.sentTo:
 		// Less than it confirmed before, or more than it was sent.
 		return m.fail(ctx, u, Error(ctx, &provider.Error{Kind: provider.KindOther}))
 	}
@@ -806,9 +841,18 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 		return nil, ErrOutcomeUnknown
 	}
 
+	// The last range is a request to the provider like any other: it takes one of the
+	// places, which was given back while this waited for the lock.
+	release, err := m.uploads.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	tail := &cutReader{r: bytes.NewReader(u.held)}
+	u.sentTo = u.size
 	item, err := u.up.Send(callCtx, u.next, tail, int64(len(u.held)))
 	tail.cut()
+	left := tail.handed()
 	switch {
 	case err == nil && item != nil:
 		return m.finish(u, item, true)
@@ -817,6 +861,17 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	case provider.KindOf(err) == provider.KindReconnect || provider.KindOf(err) == provider.KindSetup:
 		// Refused before the tail was taken: the commit can be tried again.
 		return nil, Error(ctx, err)
+	case provider.KindOf(err) == provider.KindRetry:
+		// Refused before the tail was taken, for a reason that is gone.
+		return nil, ErrSendAgain
+	case provider.KindOf(err) == provider.KindOpen:
+		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+		u.held = nil
+		return nil, ErrOutcomeUnknown
+	case err != nil && left == 0:
+		// Not one byte of the tail left this server: nothing can have been stored.
+		// The last chunk can simply be sent again.
+		return nil, ErrSendAgain
 	}
 
 	// No receipt. The session at the provider may still tell; it is asked with time of
@@ -827,11 +882,15 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	switch {
 	case err == nil && done != nil:
 		return m.finish(u, done, true)
-	case err == nil && n >= u.next && n < u.size && tail.handed() < int64(len(u.held)):
+	case err == nil && n >= u.next && n < u.size && left < int64(len(u.held)):
 		// Not all of the tail left this server, so nothing was stored. What is missing
 		// is sent with the next try of the last chunk.
 		u.moveTo(n)
 		return nil, ErrSendAgain
+	case provider.KindOf(err) == provider.KindNotFound && left < int64(len(u.held)):
+		// Not all of the tail left, and the provider no longer knows the session:
+		// nothing was stored, and nothing will be.
+		return nil, m.fail(ctx, u, ErrUploadGone)
 	}
 	// All of the tail was handed over and no receipt came: the provider may be storing
 	// the file this very moment, whatever its session says. Nothing is sent again.

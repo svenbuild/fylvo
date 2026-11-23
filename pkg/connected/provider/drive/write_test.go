@@ -467,7 +467,8 @@ func TestRangeTokenRenewal(t *testing.T) {
 	s.Reject()
 	_, err = send(t, u, content, 0, 10)
 	noAddress(t, s, err)
-	assert.Equal(t, provider.KindOther, provider.KindOf(err))
+	// A plain "no" for a token that ran out: nothing was taken, and there is a new one.
+	assert.Equal(t, provider.KindRetry, provider.KindOf(err))
 	assert.Equal(t, 1, auth.Renewals())
 
 	received, _, err := u.State(ctx)

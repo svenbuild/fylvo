@@ -108,3 +108,17 @@ func TestMadeUpNamesWhereCaseDoesNotCount(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, serializer.CodeParamErr, codeOf(Error(ctx, results[0])))
 }
+
+// A move into the folder an entry is in already does nothing, however that folder is
+// spelled in the two addresses.
+func TestMoveIntoItsOwnFolderInAnotherSpelling(t *testing.T) {
+	f, s, c, ctx := oneDriveConn(t)
+	docs := s.AddFolder("", "Docs")
+	s.AddFile(docs, "a.txt", []byte("a"))
+
+	results, err := f.MoveEntries(ctx, c, []Source{source(t, f, ctx, c, "Docs/a.txt")}, Source{Path: "docs"})
+	require.NoError(t, err)
+	require.Equal(t, []error{nil}, results)
+	_, err = f.Tree().ResolveNow(ctx, c, "Docs/a.txt")
+	require.NoError(t, err)
+}

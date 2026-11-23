@@ -88,9 +88,8 @@ func (c *client) write(ctx context.Context, method, address string, header http.
 		header.Set("Content-Type", "application/json")
 	}
 	res, err := c.caller.Stream(ctx, method, address, header, bytes.NewReader(body), int64(len(body)), true)
-	if err == nil && res.StatusCode == http.StatusUnauthorized {
-		// Refused before anything was done, and Stream has asked for a new token: once more.
-		res.Body.Close()
+	if provider.KindOf(err) == provider.KindRetry {
+		// Refused before anything was done, and there is a new token: once more.
 		res, err = c.caller.Stream(ctx, method, address, header, bytes.NewReader(body), int64(len(body)), true)
 	}
 	if err != nil {
@@ -214,9 +213,11 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 			if err := decodeWrite(res, &entry); err != nil {
 				return nil, err
 			}
-			if entry.File != nil {
-				return writeResult(&entry)
+			if item, err := writeResult(&entry); err == nil && entry.File != nil && item.Version != "" {
+				return item, nil
 			}
+			// Not the answer for a stored file with a state: what was stored is open.
+			return nil, &provider.Error{Kind: provider.KindOpen, Status: res.StatusCode}
 		}
 	case http.StatusConflict:
 		failure := u.caller.Failure(res).(*provider.Error)

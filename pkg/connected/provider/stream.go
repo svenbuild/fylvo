@@ -53,10 +53,12 @@ func (c *Caller) Stream(ctx context.Context, method, address string, header http
 	if withToken && res.StatusCode == http.StatusUnauthorized {
 		// This attempt is over. The next call gets a new token; when there is none to
 		// get, that is the answer: the provider refused, and nothing was stored.
+		res.Body.Close()
 		if _, err := c.Auth.Token(ctx, token); err != nil {
-			res.Body.Close()
 			return nil, err
 		}
+		// A plain "no" for a token that ran out: nothing was taken, and there is a new one.
+		return nil, &Error{Kind: KindRetry, Status: http.StatusUnauthorized}
 	}
 	return res, nil
 }

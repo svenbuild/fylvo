@@ -937,3 +937,14 @@ func TestUploadFolderRenamedMeanwhile(t *testing.T) {
 		require.ErrorIs(t, err, ErrNotFound, "nothing was stored in the renamed folder")
 	})
 }
+
+// One account cannot pile up open uploads without end.
+func TestUploadSessionsPerAccount(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	for i := 0; i < maxSessions; i++ {
+		_, err := e.start(fmt.Sprintf("empty %d.txt", i), 0, UploadRequest{})
+		require.NoError(t, err)
+	}
+	_, err := e.start("one too many.txt", 0, UploadRequest{})
+	require.Equal(t, serializer.CodeConnectedBusy, codeOf(err))
+}

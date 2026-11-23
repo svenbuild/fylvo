@@ -203,3 +203,17 @@ func TestConnectedBatchNamesAnEntryOnce(t *testing.T) {
 	require.Equal(t, serializer.CodeParamErr, connectedCode(err))
 	require.Equal(t, "a.txt", e.names(t, e.root), "nothing was deleted")
 }
+
+// A request moves or deletes a bounded number of entries: each one costs calls to the
+// provider, and nobody waits for an answer that takes many minutes.
+func TestConnectedBatchSize(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "a.txt", []byte("a"))
+	uris := make([]string, 0, connected.MaxBatch+1)
+	for i := 0; i <= connected.MaxBatch; i++ {
+		uris = append(uris, e.root+"/a.txt")
+	}
+	err := (&DeleteFileService{Uris: uris, Ids: e.idsOf(t, e.root)}).Delete(e.as(e.alex))
+	require.Equal(t, serializer.CodeParamErr, connectedCode(err))
+	require.Equal(t, "a.txt", e.names(t, e.root))
+}

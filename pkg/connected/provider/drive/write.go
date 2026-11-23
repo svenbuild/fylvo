@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 )
@@ -19,6 +20,9 @@ const (
 	granularity = 256 * 1024
 	// maxReceipt bounds an answer that carries one file.
 	maxReceipt = 1024 * 1024
+	// writeTimeout bounds a call that changes something or opens an upload, from its
+	// start to the end of the answer.
+	writeTimeout = 2 * time.Minute
 )
 
 var _ provider.Writer = (*client)(nil)
@@ -31,7 +35,12 @@ func (c *client) CreateFolder(ctx context.Context, parentID, name string) (*prov
 }
 
 func (c *client) CreateEmpty(ctx context.Context, parentID, name string) (*provider.Item, error) {
-	return c.create(ctx, parentID, map[string]any{"name": name, "parents": []string{parentID}})
+	item, err := c.create(ctx, parentID, map[string]any{"name": name, "parents": []string{parentID}})
+	if err == nil && (item.IsDir || item.Native != "" || item.Link != nil) {
+		// Not the answer for a plain file: what was made is open.
+		return nil, &provider.Error{Kind: provider.KindOpen}
+	}
+	return item, err
 }
 
 // create adds an entry to a folder. Drive allows several entries with one name in a
@@ -89,6 +98,8 @@ func (c *client) changed(f *file) (*provider.Item, error) {
 // is never repeated anyway). A clear "slow down" is waited for and repeated, since
 // Drive did nothing then.
 func (c *client) change(ctx context.Context, method, address string, in, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
 	once := c.call
 	once.Classify = classifyOnce
 	err := once.JSON(ctx, method, address, in, out)
@@ -151,6 +162,10 @@ func (c *client) startUpload(ctx context.Context, method, address string, meta [
 		header.Set("Content-Type", "application/json; charset=UTF-8")
 	}
 	// Opening a session stores nothing, so Caller.Do may send it again after any failure.
+	// It has a time limit to the end of the answer: the caller holds the lock for
+	// changes of the account.
+	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
 	res, err := c.call.Do(ctx, method, address+"?uploadType=resumable&"+fileFields, header, meta)
 	if err != nil {
 		return nil, err
@@ -207,8 +222,9 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 		return nil, nil
 	case res.StatusCode == http.StatusOK || res.StatusCode == http.StatusCreated:
 		if end != u.size {
-			// A stored file where only a part was sent: what Drive did is open.
-			return nil, &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}
+			// A stored file where only a part was sent: what Drive did is open, and
+			// stays so.
+			return nil, &provider.Error{Kind: provider.KindOpen, Status: res.StatusCode}
 		}
 		return receipt(res)
 	case res.StatusCode >= 400:

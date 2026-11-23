@@ -169,6 +169,12 @@ const (
 	KindIncomplete
 	// KindUnsafe: an address handed out by the provider was refused.
 	KindUnsafe
+	// KindRetry: refused before anything was stored, for a reason that is gone by now
+	// (an access token that ran out and was renewed). The same call can be sent again.
+	KindRetry
+	// KindOpen: the provider answered in a way that leaves open what it stored, and
+	// asking it again cannot settle that.
+	KindOpen
 )
 
 // Error is an error of a provider. It never carries the provider's text: Code is the

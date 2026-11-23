@@ -32,6 +32,11 @@ var (
 // maxNameLength is the longest name an entry can get, in bytes, as for files of Fylvo.
 const maxNameLength = 255
 
+// MaxBatch is how many entries one request can move or delete. Each one costs calls to
+// the provider, under the lock of the account: a request that takes minutes holds up
+// every other change, and its answer may find nobody waiting for it.
+const MaxBatch = 100
+
 // Source names the entry a change is about: its path and the id the client has for the
 // row, from the listing it last saw.
 type Source struct {
@@ -254,8 +259,12 @@ func (m *Manager) move(ctx context.Context, c *Conn, w provider.Writer, src Sour
 		return err
 	}
 	parentPath, _ := ParentOf(src.Path)
-	if parentPath == dstPath {
-		// It is there already.
+	parent, err := m.folder(ctx, c, parentPath)
+	if err != nil {
+		return err
+	}
+	if parent.ContentID() == target.ContentID() {
+		// It is there already, however the two paths are spelled.
 		return nil
 	}
 	below := IsBelow(dstPath, src.Path)
@@ -264,10 +273,6 @@ func (m *Manager) move(ctx context.Context, c *Conn, w provider.Writer, src Sour
 	}
 	if row.IsDir && below {
 		return serializer.NewError(serializer.CodeParamErr, "A folder cannot be moved into itself", nil)
-	}
-	parent, err := m.folder(ctx, c, parentPath)
-	if err != nil {
-		return err
 	}
 	// Never onto a name that is taken: nothing is replaced, no folders are merged.
 	if err := m.nameFree(ctx, c, target.ContentID(), row.Name, ""); err != nil {

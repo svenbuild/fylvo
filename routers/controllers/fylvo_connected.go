@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"github.com/cloudreve/Cloudreve/v4/pkg/request"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/service/explorer"
 	"github.com/cloudreve/Cloudreve/v4/service/fylvo"
@@ -66,8 +65,8 @@ func FylvoConnectedCapacity(c *gin.Context) {
 func FylvoConnectedUploadChunk(c *gin.Context, service *explorer.UploadService) {
 	res, err := service.ConnectedUploadChunk(c)
 	if err != nil {
+		// What is left of the body is the server's to throw away, with its own limits.
 		c.JSON(200, serializer.Err(c, err))
-		request.BlackHole(c.Request.Body)
 		c.Abort()
 		return
 	}
