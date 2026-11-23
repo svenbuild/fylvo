@@ -349,6 +349,34 @@ fun FilesScreen(
     ).filter { it !is io.github.svenbuild.fylvo.android.data.prefs.Place.Storage || connectedState.storages.any { s -> s.id == it.id } } else emptyList()
     val showChips = !state.home && !inSearch && !state.selecting && state.currentUri == CrUri.MY_PREFIX
 
+    // Fylvo: Home from the account's building blocks (null: Home as before customisation).
+    val homeExtras = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.homeWidgets(prefsState.prefs.takeIf { prefsState.usable })?.let { widgets ->
+        HomeExtras(
+            widgets = widgets,
+            favorites = prefsState.favorites?.files.orEmpty(),
+            links = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.links(prefsState.prefs),
+            tags = prefsState.tags,
+            onOpenFavorite = { file ->
+                if (file.isFolder) viewModel.openPlace(file.path, origin = ORIGIN_HOME) else openFile(file, alone = true)
+            },
+            onFavoriteMore = { sheetTarget = it },
+            onAllFavorites = { page = PAGE_FAVORITES; scope.launch { prefsRepo.refresh() } },
+            onOpenLink = { link -> openChip(link, origin = ORIGIN_HOME) },
+            onOpenTag = { tag ->
+                viewModel.openPlace(io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.tagSearchUri(tag.name), title = tag.name, origin = ORIGIN_HOME)
+            },
+        )
+    }
+
+    // Fylvo: the account's start page ("My files" instead of Home), once per app start.
+    var startApplied by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(prefsState.prefs?.startPage, prefsState.usable) {
+        val prefs = prefsState.prefs.takeIf { prefsState.usable } ?: return@LaunchedEffect
+        if (startApplied) return@LaunchedEffect
+        startApplied = true
+        if (prefs.startPage == "my_files" && state.home && !inSearch) viewModel.openMyFiles()
+    }
+
     // ---- Fylvo: selection button and its menu ----------------------------------
     var menuOpen by remember { mutableStateOf(false) }
     /** Where the selection button is (window coordinates); the menu card grows out of it. */
@@ -603,6 +631,7 @@ fun FilesScreen(
                     onOpenFile = { openFile(it) },
                     onOpenRecent = { viewModel.openCategory(Category.RECENT) },
                     onFileMore = { sheetTarget = it },
+                    extras = homeExtras,
                 )
                 inSearch -> SearchResults(
                     state = state,

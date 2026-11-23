@@ -168,6 +168,18 @@ object MobilePrefs {
     fun mode(prefs: FylvoPrefs?): ThemeMode =
         if (prefs != null && "mode" in prefs.customized) ThemeMode.parse(prefs.appearance.mode) else ThemeMode.SYSTEM
 
+    /** The building blocks Home knows (design/customize-plan.md). */
+    val HOME_WIDGETS = setOf("recent", "favorites", "links", "tags", "storage")
+
+    /**
+     * The visible building blocks of Home in the account's order, or null while the account has
+     * not arranged Home (`home` not in `customized`): Home then looks as before customisation.
+     */
+    fun homeWidgets(prefs: FylvoPrefs?): List<String>? {
+        if (prefs == null || "home" !in prefs.customized) return null
+        return prefs.home.widgets.filter { !it.hidden && it.type in HOME_WIDGETS }.map { it.type }.distinct()
+    }
+
     /** The sidebar's shortcuts (in order), for tabs and the "links" widget. */
     fun links(prefs: FylvoPrefs?): List<Place.Link> =
         prefs?.sidebar?.items.orEmpty().filter { it.type == "link" && it.uri.isNotEmpty() }.map { Place.Link(it.uri, it.name) }

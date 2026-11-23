@@ -541,4 +541,5 @@
         <item quantity="one">%d favourite is not available any more (deleted or no longer shared).</item>
         <item quantity="other">%d favourites are not available any more (deleted or no longer shared).</item>
     </plurals>
+    <string name="home_links">Shortcuts</string>
 </resources>

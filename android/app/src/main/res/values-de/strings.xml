@@ -538,4 +538,5 @@
         <item quantity="one">%d Favorit ist nicht mehr verfügbar (gelöscht oder nicht mehr geteilt).</item>
         <item quantity="other">%d Favoriten sind nicht mehr verfügbar (gelöscht oder nicht mehr geteilt).</item>
     </plurals>
+    <string name="home_links">Verknüpfungen</string>
 </resources>

@@ -273,3 +273,19 @@ class SelectionStarTest {
         org.junit.Assert.assertFalse(io.github.svenbuild.fylvo.android.ui.files.SelectionAction.FAVORITE in trash)
     }
 }
+
+class HomeWidgetsTest {
+    @org.junit.Test
+    fun homeOnlyWhenArranged() {
+        val widgets = listOf(
+            io.github.svenbuild.fylvo.android.api.HomeWidget("favorites"),
+            io.github.svenbuild.fylvo.android.api.HomeWidget("recent"),
+            io.github.svenbuild.fylvo.android.api.HomeWidget("storage", hidden = true),
+            io.github.svenbuild.fylvo.android.api.HomeWidget("weather"),
+        )
+        val prefs = io.github.svenbuild.fylvo.android.api.FylvoPrefs(home = io.github.svenbuild.fylvo.android.api.FylvoPrefs.Home(widgets))
+        org.junit.Assert.assertNull(MobilePrefs.homeWidgets(prefs))
+        org.junit.Assert.assertNull(MobilePrefs.homeWidgets(null))
+        org.junit.Assert.assertEquals(listOf("favorites", "recent"), MobilePrefs.homeWidgets(prefs.copy(customized = listOf("home"))))
+    }
+}

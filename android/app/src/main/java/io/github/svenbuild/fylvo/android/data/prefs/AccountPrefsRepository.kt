@@ -105,7 +105,13 @@ class AccountPrefsRepository(
     private var lastLoad = 0L
 
     @Serializable
-    private data class Cached(val prefs: FylvoPrefs? = null, val accents: List<Accent> = emptyList(), val disableViewSync: Boolean = false)
+    private data class Cached(
+        val prefs: FylvoPrefs? = null,
+        val accents: List<Accent> = emptyList(),
+        val disableViewSync: Boolean = false,
+        val favorites: FavoritesList? = null,
+        val tags: List<TagInfo> = emptyList(),
+    )
 
     private val key = stringPreferencesKey("cache")
 
@@ -125,7 +131,10 @@ class AccountPrefsRepository(
         }
         _state.update {
             if (it.prefs != null) it.copy(restored = true)
-            else it.copy(prefs = cached?.prefs, accents = cached?.accents.orEmpty(), disableViewSync = cached?.disableViewSync ?: false, restored = true)
+            else it.copy(
+                prefs = cached?.prefs, accents = cached?.accents.orEmpty(), disableViewSync = cached?.disableViewSync ?: false,
+                favorites = cached?.favorites, tags = cached?.tags.orEmpty(), restored = true,
+            )
         }
     }
 
@@ -178,7 +187,7 @@ class AccountPrefsRepository(
         context.accountPrefsStore.edit { store ->
             // Only this account's entry; a copy of another account on this device is dropped.
             val entry = if (s.supported == false || s.prefs == null) emptyMap()
-            else mapOf(account to Cached(s.prefs, s.accents, s.disableViewSync))
+            else mapOf(account to Cached(s.prefs, s.accents, s.disableViewSync, s.favorites, s.tags))
             store[key] = api.json.encodeToString<Map<String, Cached>>(entry)
         }
     }
@@ -304,6 +313,7 @@ class AccountPrefsRepository(
             is Outcome.Found -> {
                 val tags = (call(tag) { api.service().tags(tag) } as? Outcome.Found)?.value
                 if (tags != null && session.isCurrent(tag)) _state.update { it.copy(tags = tags) }
+                saveCache(tag, accountKey())
                 null
             }
             is Outcome.Refused -> outcome.message
