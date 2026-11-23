@@ -147,6 +147,7 @@ func (m *Manager) closeLive(publicID string) {
 	}
 	m.tree.Forget(publicID)
 	m.uploads.close(publicID)
+	m.offices.close(publicID)
 }
 
 // Refused implements provider.Refusable: the provider refused a token it had handed out

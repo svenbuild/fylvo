@@ -156,12 +156,13 @@ func (m *Manager) folder(ctx context.Context, c *Conn, path string) (*Row, error
 	if err != nil {
 		return nil, err
 	}
+	if row.ViaLink {
+		// A link, or reached through one: read-only all the way down, whether it can
+		// be entered or not.
+		return nil, ErrUnsupported
+	}
 	if !row.Enterable() {
 		return nil, ErrNotFound
-	}
-	if row.ViaLink {
-		// Reached through a link: read-only all the way down.
-		return nil, ErrUnsupported
 	}
 	return row, nil
 }

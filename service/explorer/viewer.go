@@ -478,9 +478,17 @@ func (s *CreateViewerSessionService) Create(c *gin.Context) (*ViewerSessionRespo
 	m := manager.NewFileManager(dep, user)
 	defer m.Recycle()
 
-	uri, err := fs.NewUriFromString(s.Uri)
-	if err != nil {
-		return nil, serializer.NewError(serializer.CodeParamErr, "unknown uri", err)
+	// Fylvo: a file of a connected storage has its own kind of session (see below).
+	connectedUri, isConnected := connectedURI(s.Uri)
+	var (
+		uri *fs.URI
+		err error
+	)
+	if !isConnected {
+		uri, err = fs.NewUriFromString(s.Uri)
+		if err != nil {
+			return nil, serializer.NewError(serializer.CodeParamErr, "unknown uri", err)
+		}
 	}
 
 	// Find the given viewer
@@ -501,6 +509,9 @@ func (s *CreateViewerSessionService) Create(c *gin.Context) (*ViewerSessionRespo
 
 	if targetViewer == nil {
 		return nil, serializer.NewError(serializer.CodeParamErr, "unknown viewer id", err)
+	}
+	if isConnected {
+		return connectedViewerSession(c, connectedUri, s, targetViewer)
 	}
 
 	viewerSession, err := m.CreateViewerSession(c, uri, s.Version, targetViewer, s.PreferredAction)

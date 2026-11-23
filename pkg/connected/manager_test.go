@@ -6,16 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/ent"
-	"github.com/cloudreve/Cloudreve/v4/ent/enttest"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected/connectedtest"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/stretchr/testify/require"
@@ -62,10 +61,7 @@ const testRedirect = "https://cloud.example.com/api/v4/fylvo/connected/callback"
 
 func newManagerFixture(t *testing.T) *managerFixture {
 	logger := logging.NewConsoleLogger(logging.LevelError)
-	db := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "fylvo.db"))
-	t.Cleanup(func() { _ = db.Close() })
-	db, err := inventory.InitializeDBClient(logger, db, cache.NewMemoStore("", logger), "4.19.1")
-	require.NoError(t, err)
+	db := connectedtest.Database(t, logger, cache.NewMemoStore("", logger))
 
 	f := &managerFixture{db: db, provider: newFakeProvider(t), settings: &memSettings{values: map[string]string{}}}
 	spec := Specs()[ProviderDrive]
