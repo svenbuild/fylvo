@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fylvo, a private cloud for your own server</title>
+<meta name="description" content="A lean, private cloud for your own server: files, sharing, office and sync apps, in one container.">
+<link rel="icon" href="img/icon.svg">
+<style>
+  :root {
+    --ink: #0a0a0a; --rail: #000; --panel: #101010; --row: #1e1e22; --hair: #232326;
+    --text: #e9e9ec; --muted: #86868d; --accent: #7484F4; --tile: #111A2B;
+    --display: Bahnschrift, "DIN Alternate", "Avenir Next Condensed", "Roboto Condensed", "Arial Narrow", sans-serif;
+    --body: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    --mono: "Cascadia Mono", ui-monospace, Consolas, "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--ink); scroll-behavior: smooth; }
+  body { margin: 0; background: var(--ink); color: var(--text); font: 16px/1.55 var(--body); }
+  a { color: inherit; }
+  a:focus-visible, .row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .page { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+
+  /* top bar, built like the app's own header */
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 56px; border-bottom: 1px solid var(--hair); }
+  .brand { display: flex; align-items: center; gap: 9px; text-decoration: none; font: 600 17px var(--body); }
+  .brand img { width: 26px; height: 26px; border-radius: 7px; }
+  .bar nav { display: flex; gap: 4px; }
+  .bar nav a { padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 14px; color: var(--muted); }
+  .bar nav a:hover { background: var(--row); color: var(--text); }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 48px; align-items: end; padding: 84px 0 56px; }
+  h1 { margin: 0; font: 600 clamp(56px, 9.4vw, 132px)/.86 var(--display); font-stretch: 78%; letter-spacing: -.02em; }
+  h1 span { display: block; }
+  .say { font-size: 19px; line-height: 1.5; color: #c9c9cf; max-width: 34ch; margin: 0 0 26px; }
+  .go { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btn { display: inline-block; padding: 11px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; border: 1px solid var(--hair); background: var(--panel); }
+  .btn:hover { background: var(--row); }
+  .btn.main { background: var(--accent); border-color: var(--accent); color: #06070f; }
+  .btn.main:hover { background: #8a98f7; }
+
+  /* memory meter, borrowed from the storage meter in the app's sidebar */
+  .meter { margin-top: 34px; max-width: 420px; }
+  .meter .cap { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 7px; }
+  .meter .cap b { color: var(--text); font-weight: 600; }
+  .track { height: 6px; border-radius: 3px; background: var(--row); overflow: hidden; }
+  .track i { display: block; height: 100%; width: 2.5%; min-width: 9px; background: var(--accent); border-radius: 3px; }
+  .meter small { display: block; margin-top: 7px; font-size: 12.5px; color: var(--muted); }
+
+  .window { border: 1px solid var(--hair); border-radius: 10px; overflow: hidden; background: var(--rail); }
+  .window img { display: block; width: 100%; height: auto; }
+
+  /* the listing: features shown the way Fylvo shows files */
+  .listing { margin: 72px 0 0; border: 1px solid var(--hair); border-radius: 10px; overflow: hidden; display: grid; grid-template-columns: 232px minmax(0, 1fr); background: var(--ink); }
+  .tree { background: var(--rail); border-right: 1px solid var(--hair); padding: 14px 10px; font-size: 14px; }
+  .tree p { margin: 0 0 8px; padding: 0 10px; color: var(--muted); font-size: 12.5px; }
+  .tree a { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 6px; text-decoration: none; color: #bdbdc4; }
+  .tree a:hover { background: var(--panel); color: var(--text); }
+  .tree a.on { background: var(--row); color: var(--text); }
+  .tree svg, .name svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .tree .sep { height: 1px; background: var(--hair); margin: 12px 4px; }
+  .files h2 { margin: 0; padding: 16px 20px 14px; font: 600 15px var(--body); border-bottom: 1px solid var(--hair); display: flex; align-items: center; gap: 8px; }
+  .files h2 em { font-style: normal; color: var(--muted); font-weight: 400; }
+  .head, .row { display: grid; grid-template-columns: 210px minmax(0, 1fr) 150px; gap: 18px; padding: 0 20px; align-items: baseline; }
+  .head { font-size: 12.5px; color: var(--muted); padding-top: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--hair); }
+  .row { padding-top: 13px; padding-bottom: 13px; border-bottom: 1px solid #17171a; font-size: 15px; }
+  .row:last-child { border-bottom: 0; }
+  .row:hover { background: var(--panel); }
+  .name { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .name svg { color: var(--accent); position: relative; top: 1px; }
+  .what { color: #c4c4ca; }
+  .where { color: var(--muted); font-size: 13.5px; }
+
+  /* two screenshots, set off-grid like windows left open */
+  .pair { display: grid; grid-template-columns: 1.25fr 1fr; gap: 20px; margin-top: 20px; align-items: start; }
+  .pair figure { margin: 0; }
+  .pair figcaption { margin-top: 10px; font-size: 14px; color: var(--muted); max-width: 46ch; }
+  .pair figure:last-child { margin-top: 56px; }
+
+  /* install */
+  .install { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 56px; padding: 120px 0 0; align-items: start; }
+  h3 { margin: 0 0 16px; font: 600 clamp(38px, 5vw, 66px)/.92 var(--display); font-stretch: 78%; letter-spacing: -.015em; }
+  .install p, .apps > p { color: #c4c4ca; max-width: 44ch; margin: 0 0 14px; }
+  .install p a, .apps p a, .next a { color: var(--accent); text-underline-offset: 3px; }
+  .term { border: 1px solid var(--hair); border-radius: 10px; background: var(--rail); overflow: hidden; }
+  .term ol { list-style: none; margin: 0; padding: 0; counter-reset: n; }
+  .term li { counter-increment: n; display: grid; grid-template-columns: 44px minmax(0, 1fr); border-bottom: 1px solid var(--hair); }
+  .term li:last-child { border-bottom: 0; }
+  .term li::before { content: counter(n); display: grid; place-items: center; color: var(--muted); font: 13px var(--mono); border-right: 1px solid var(--hair); }
+  .term code { display: block; padding: 15px 18px; font: 14px/1.6 var(--mono); color: #dcdce2; white-space: normal; overflow-wrap: anywhere; }
+  .term .done { color: var(--muted); font-family: var(--body); font-size: 14.5px; white-space: normal; }
+  .next { margin: 18px 0 0; padding: 0; list-style: none; font-size: 15px; columns: 2; column-gap: 28px; }
+  .next li { padding: 5px 0; break-inside: avoid; }
+
+  /* apps, named like the files you download */
+  .apps { padding: 120px 0 0; }
+  .dl { margin-top: 30px; border-top: 1px solid var(--hair); }
+  .dl a { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto; gap: 18px; align-items: baseline; padding: 18px 4px; border-bottom: 1px solid var(--hair); text-decoration: none; }
+  .dl a:hover { background: var(--panel); }
+  .dl .f { font: 15.5px var(--mono); color: var(--text); overflow-wrap: anywhere; }
+  .dl .f b { color: var(--accent); font-weight: 400; }
+  .dl .n { color: #c4c4ca; font-size: 15px; }
+  .dl .t { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .dl .t.pre { color: #e3b566; }
+  .desk { margin-top: 44px; background: var(--tile); border-radius: 10px; padding: 34px 34px 0; overflow: hidden; }
+  .desk img { display: block; width: 100%; height: auto; border-radius: 8px 8px 0 0; }
+
+  footer { margin-top: 110px; border-top: 1px solid var(--hair); padding: 24px 0 56px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 28px; font-size: 14px; color: var(--muted); }
+  footer nav { display: flex; gap: 22px; }
+  footer a { text-decoration: none; }
+  footer a:hover { color: var(--text); }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; gap: 34px; padding: 52px 0 40px; align-items: start; }
+    .listing { grid-template-columns: 1fr; }
+    .tree { display: none; }
+    .install { grid-template-columns: 1fr; gap: 28px; padding-top: 84px; }
+    .apps { padding-top: 84px; }
+    .pair { grid-template-columns: 1fr; }
+    .pair figure:last-child { margin-top: 0; }
+  }
+  @media (max-width: 640px) {
+    .page { padding: 0 16px; }
+    .bar nav a:not(.keep) { display: none; }
+    .head { display: none; }
+    .row { grid-template-columns: 1fr; gap: 3px; padding: 14px 16px; }
+    .files h2 { padding: 14px 16px; }
+    .dl a { grid-template-columns: 1fr; gap: 4px; }
+    .next { columns: 1; }
+    .desk { padding: 18px 18px 0; }
+    footer { margin-top: 72px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="bar">
+    <a class="brand" href="#"><img src="img/icon.svg" alt="">Fylvo</a>
+    <nav>
+      <a href="#inside">What is inside</a>
+      <a href="#install">Install</a>
+      <a href="#apps">Apps</a>
+      <a class="keep" href="https://github.com/svenbuild/fylvo">GitHub</a>
+    </nav>
+  </div>
+
+  <div class="hero">
+    <h1><span>Your files.</span><span>Your cloud.</span></h1>
+    <div>
+      <p class="say">A lean, private cloud for your own server. Files, sharing, office and sync apps, in one container.</p>
+      <div class="go">
+        <a class="btn main" href="#install">Install Fylvo</a>
+        <a class="btn" href="https://github.com/svenbuild/fylvo">Read the source</a>
+      </div>
+      <div class="meter">
+        <div class="cap"><span>Memory under load</span><b>under 200 MB</b></div>
+        <div class="track"><i></i></div>
+        <small>Shown against the 8 GB of a small home server. No PHP, no separate database.</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="window"><img src="img/web-dark.png" alt="The Fylvo file list in the browser, dark theme"></div>
+
+  <div class="listing" id="inside">
+    <div class="tree">
+      <p>Fylvo</p>
+      <a class="on" href="#inside"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>What is inside</a>
+      <a href="#install"><svg viewBox="0 0 24 24"><path d="M4 6l5 5-5 5M12 17h8"/></svg>Install</a>
+      <a href="#apps"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>Apps</a>
+      <div class="sep"></div>
+      <a href="https://github.com/svenbuild/fylvo/blob/main/docs/self-hosting.md"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>Self-hosting guide</a>
+      <a href="https://github.com/svenbuild/fylvo/releases"><svg viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>Releases</a>
+    </div>
+    <div class="files">
+      <h2>What is inside <em>9 items</em></h2>
+      <div class="head"><span>Name</span><span>What you get</span><span>Where</span></div>
+      <div class="row"><span class="name"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Files</span><span class="what">Large uploads that resume, folders, search, tags, trash and version history</span><span class="where">Browser, all apps</span></div>
+      <div class="row"><span class="name"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Previews</span><span class="what">Photos including RAW and HEIC, videos, music, PDF, text and code, e-books</span><span class="where">Browser, Android</span></div>
+      <div class="row"><span class="name"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Sharing</span><span class="what">Links with password, expiry and download limit. Upload links for people without an account</span><span class="where">Browser, Android</span></div>
+      <div class="row"><span class="name"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Shared folders</span><span class="what">Share a folder with people on your server, and choose per person whether they read or edit</span><span class="where">Browser, all apps</span></div>
+      <div class="row"><span class="name"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Office</span><span class="what">Edit Word, Excel and PowerPoint files in the browser with Collabora Online</span><span class="where">Browser, optional</span></div>
+      <div class="row"><span class="name"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Connected storages</span><span class="what">Your Google Drive and OneDrive next to your own files. Copy between them</span><span class="where">Browser, Android</span></div>
+      <div class="row"><span class="name"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Sync</span><span class="what">Files on demand in the Windows Explorer, with an optional drive letter. WebDAV for everything else</span><span class="where">Windows, Linux</span></div>
+      <div class="row"><span class="name"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Phone</span><span class="what">Offline files, offline editing and folder sync</span><span class="where">Android</span></div>
+      <div class="row"><span class="name"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Security</span><span class="what">Two-factor login and passkeys. Nothing calls home. Registration closes after the first account</span><span class="where">Server</span></div>
+    </div>
+  </div>
+
+  <div class="pair">
+    <figure><div class="window"><img src="img/preview.png" alt="Photo gallery in Fylvo"></div><figcaption>The gallery shows photos by day. Thumbnails are made on your server, also for RAW and HEIC.</figcaption></figure>
+    <figure><div class="window"><img src="img/share.png" alt="Share dialog in Fylvo"></div><figcaption>A share link can carry a password, an expiry date and a download limit.</figcaption></figure>
+  </div>
+
+  <div class="install" id="install">
+    <div>
+      <h3>Three commands on a Linux machine</h3>
+      <p>You need <a href="https://docs.docker.com/engine/install/">Docker</a>. The first start takes about a minute.</p>
+      <p>The first account you create becomes the admin. After that, registration is closed.</p>
+    </div>
+    <div>
+      <div class="term">
+        <ol>
+          <li><code>mkdir ~/fylvo &amp;&amp; cd ~/fylvo</code></li>
+          <li><code>curl -fsSLO https://raw.githubusercontent.com/svenbuild/fylvo/main/docker-compose.yml</code></li>
+          <li><code>docker compose up -d</code></li>
+          <li><code class="done">Open http://localhost:5212 and create your account.</code></li>
+        </ol>
+      </div>
+      <ul class="next">
+        <li><a href="https://github.com/svenbuild/fylvo/blob/main/docs/self-hosting.md#1-https-with-a-reverse-proxy">Put it behind https</a></li>
+        <li><a href="https://github.com/svenbuild/fylvo/blob/main/docs/self-hosting.md#2-office-in-the-browser">Add office in the browser</a></li>
+        <li><a href="https://github.com/svenbuild/fylvo/blob/main/docs/self-hosting.md#3-backup-and-restore">Set up backup and restore</a></li>
+        <li><a href="https://github.com/svenbuild/fylvo/blob/main/docs/self-hosting.md#6-google-drive-and-onedrive">Connect Google Drive and OneDrive</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="apps" id="apps">
+    <h3>Apps that talk to your server only</h3>
+    <p>You type your server's address when you sign in. Updates for the apps come from your own server, not from a store.</p>
+    <div class="dl">
+      <a href="https://github.com/svenbuild/fylvo/releases"><span class="f">Fylvo-Android-<b>version</b>.apk</span><span class="n">Android 9 or newer</span><span class="t">Offline files, folder sync</span></a>
+      <a href="https://github.com/svenbuild/fylvo/releases"><span class="f">Fylvo-Desktop-<b>version</b>-windows-x64.zip</span><span class="n">Windows 10 2004 or newer</span><span class="t">Signed package</span></a>
+      <a href="https://github.com/svenbuild/fylvo/releases"><span class="f">Fylvo-Desktop-<b>version</b>.AppImage, .deb, .rpm</span><span class="n">Linux</span><span class="t pre">Preview</span></a>
+    </div>
+    <div class="desk"><img src="img/desktop.png" alt="Fylvo Desktop on Windows with two synced drives"></div>
+  </div>
+
+  <footer>
+    <span>Fylvo is a hobby project, used every day by its maintainer. GPL-3.0.</span>
+    <nav>
+      <a href="https://github.com/svenbuild/fylvo">GitHub</a>
+      <a href="https://github.com/svenbuild/fylvo/releases">Releases</a>
+      <a href="https://github.com/svenbuild/fylvo/blob/main/docs/self-hosting.md">Guide</a>
+    </nav>
+  </footer>
+</div>
+</body>
+</html>
