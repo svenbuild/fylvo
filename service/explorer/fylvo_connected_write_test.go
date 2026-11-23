@@ -59,7 +59,7 @@ func TestConnectedCreate(t *testing.T) {
 	_, err = (&CreateFileService{Uri: e.root + "/Budget.gsheet", Type: "file"}).Create(e.as(e.alex))
 	require.Equal(t, serializer.CodeObjectExist, connectedCode(err))
 	// Names Fylvo does not give, and places that do not exist.
-	for _, name := range []string{"a:b", "what?", "tab\there"} {
+	for _, name := range []string{"a:b", "star*", "tab\there"} {
 		_, err = (&CreateFileService{Uri: e.root + "/" + name, Type: "file"}).Create(e.as(e.alex))
 		require.Error(t, err, name)
 	}
