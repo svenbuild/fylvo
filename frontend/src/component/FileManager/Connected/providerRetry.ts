@@ -4,7 +4,7 @@ import { AppError } from "../../../api/request.ts";
 // Fylvo: rules for walking a connected storage, so the provider does not slow everybody
 // down: a request the provider calls too many (40923, HTTP 429 or 503) waits as long as
 // Retry-After says, else 2 seconds doubling up to 60; after 5 such answers in a row the
-// whole download stops.
+// whole download stops. A storage that needs a reconnect (40921) stops it at once.
 
 const firstWait = 2000;
 const longestWait = 60000;
@@ -17,34 +17,55 @@ class ContentBusy extends Error {
   }
 }
 
-// Thrown when the provider stayed busy: the download stops and says so.
+// Thrown when a download of a connected storage has to stop; message is the text key.
 export class ProviderGaveUp extends Error {
-  constructor() {
-    super("The storage provider stayed busy");
+  constructor(message: string = "application:connected.providerGaveUp") {
+    super(message);
     this.name = "ProviderGaveUp";
   }
 }
 
-// Shared by all requests of one download, so busy answers in a row count across files.
+// Shared by all requests of one download, so busy answers in a row count across files,
+// and so a cancel stops waiting and retrying.
 export interface BusyState {
   inARow: number;
   wait: number;
+  signal?: AbortSignal;
 }
 
-export const newBusyState = (): BusyState => ({ inARow: 0, wait: firstWait });
+export const newBusyState = (signal?: AbortSignal): BusyState => ({ inARow: 0, wait: firstWait, signal });
+
+const aborted = () => new DOMException("Aborted", "AbortError");
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(aborted());
+      return;
+    }
     const timer = setTimeout(resolve, ms);
     signal?.addEventListener("abort", () => {
       clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
+      reject(aborted());
     });
   });
 
+// Seconds or an HTTP date, as Retry-After may carry; undefined when there is none.
+const retryAfterMs = (value?: string | null): number | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const seconds = Number(value);
+  if (!isNaN(seconds)) {
+    return Math.max(0, seconds * 1000);
+  }
+  const date = Date.parse(value);
+  return isNaN(date) ? undefined : Math.max(0, date - Date.now());
+};
+
 // The code of a server error; a single failed address of POST /file/url comes wrapped in a
 // batch error (40081) with one entry.
-const codeOf = (e: unknown): number | undefined => {
+export const codeOf = (e: unknown): number | undefined => {
   if (!(e instanceof AppError)) {
     return undefined;
   }
@@ -61,16 +82,38 @@ export const errorMessage = (e: unknown): string => {
   return e instanceof Error ? e.message : String(e);
 };
 
+// How long to wait when e says "later", undefined when it says something else. HTTP 429
+// and 503 come as a content answer (ContentBusy) or as a failed API request.
+const busyWait = (e: unknown): { ms?: number } | undefined => {
+  if (e instanceof ContentBusy) {
+    return { ms: e.retryAfter };
+  }
+  if (codeOf(e) == ConnectedCode.Busy) {
+    return {};
+  }
+  const response = (e as { response?: { status?: number; headers?: Record<string, string> } })?.response;
+  if (response?.status == 429 || response?.status == 503) {
+    return { ms: retryAfterMs(response.headers?.["retry-after"]) };
+  }
+  return undefined;
+};
+
 // Runs request again while the provider is busy, under the rules above.
-export const retryBusy = async <T>(state: BusyState, request: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+export const retryBusy = async <T>(state: BusyState, request: () => Promise<T>): Promise<T> => {
   while (true) {
+    if (state.signal?.aborted) {
+      throw aborted();
+    }
     try {
       const res = await request();
       state.inARow = 0;
       state.wait = firstWait;
       return res;
     } catch (e) {
-      const busy = e instanceof ContentBusy || codeOf(e) == ConnectedCode.Busy;
+      if (codeOf(e) == ConnectedCode.Reconnect) {
+        throw new ProviderGaveUp("common:errors.40921");
+      }
+      const busy = busyWait(e);
       if (!busy) {
         throw e;
       }
@@ -78,9 +121,10 @@ export const retryBusy = async <T>(state: BusyState, request: () => Promise<T>, 
       if (state.inARow >= maxBusyInARow) {
         throw new ProviderGaveUp();
       }
-      const wait = e instanceof ContentBusy && e.retryAfter ? e.retryAfter * 1000 : state.wait;
+      // The provider's own wait is kept as it is; only the doubling has an upper bound.
+      const wait = busy.ms ?? state.wait;
       state.wait = Math.min(state.wait * 2, longestWait);
-      await sleep(Math.min(wait, longestWait), signal);
+      await sleep(wait, state.signal);
     }
   }
 };
@@ -89,8 +133,7 @@ export const retryBusy = async <T>(state: BusyState, request: () => Promise<T>, 
 export const fetchContent = async (url: string, signal?: AbortSignal): Promise<Response> => {
   const res = await fetch(url, { signal });
   if (res.status == 429 || res.status == 503) {
-    const after = parseInt(res.headers.get("Retry-After") ?? "", 10);
-    throw new ContentBusy(isNaN(after) ? undefined : after);
+    throw new ContentBusy(retryAfterMs(res.headers.get("Retry-After")));
   }
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`);

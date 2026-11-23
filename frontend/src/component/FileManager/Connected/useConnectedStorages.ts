@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ConnectedStorage, getConnectedStorages } from "../../../api/connected.ts";
 import { useAppDispatch } from "../../../redux/hooks.ts";
+import type { AppDispatch } from "../../../redux/store.ts";
 import { ConnectedChangedEvent } from "../../../api/request.ts";
 
 // Fylvo: the connected storages of the account, shared by the sidebar and the breadcrumb.
@@ -23,43 +24,52 @@ export const publishConnectedStorages = (next: ConnectedStorage[] | undefined) =
 };
 
 // enabled=false only listens and never asks the server (pages without connected storages).
+// Loads the list unless a load is running; an answer for a previous account is dropped.
+const load = (dispatch: AppDispatch) => {
+  if (loading) {
+    return;
+  }
+  const started = generation;
+  const request = dispatch(getConnectedStorages())
+    .then((res) => started == generation && publishConnectedStorages(res.storages))
+    .catch(() => {})
+    .finally(() => {
+      if (loading == request) {
+        loading = undefined;
+      }
+    });
+  loading = request;
+};
+
+// A storage was reported as needing a reconnect (any request answered 40921): load the list
+// again, once for the page, also when no part that shows it is open right now.
+let listening = false;
+const listenForChanges = (dispatch: AppDispatch) => {
+  if (listening) {
+    return;
+  }
+  listening = true;
+  window.addEventListener(ConnectedChangedEvent, () => {
+    if (storages) {
+      load(dispatch);
+    }
+  });
+};
+
+// enabled=false only listens and never asks the server (pages without connected storages).
 export const useConnectedStorages = (enabled = true) => {
   const dispatch = useAppDispatch();
   const [value, setValue] = useState(storages);
 
   useEffect(() => {
-    // A storage was reported as needing a reconnect: load the list again.
-    const onChanged = () => {
-      if (!enabled || loading) {
-        return;
-      }
-      const started = generation;
-      const request = dispatch(getConnectedStorages())
-        .then((res) => started == generation && publishConnectedStorages(res.storages))
-        .catch(() => {})
-        .finally(() => {
-          if (loading == request) {
-            loading = undefined;
-          }
-        });
-      loading = request;
-    };
-    window.addEventListener(ConnectedChangedEvent, onChanged);
     listeners.add(setValue);
-    if (enabled && !storages && !loading) {
-      const started = generation;
-      const request = dispatch(getConnectedStorages())
-        .then((res) => started == generation && publishConnectedStorages(res.storages))
-        .catch(() => {})
-        .finally(() => {
-          if (loading == request) {
-            loading = undefined;
-          }
-        });
-      loading = request;
+    if (enabled) {
+      listenForChanges(dispatch);
+      if (!storages) {
+        load(dispatch);
+      }
     }
     return () => {
-      window.removeEventListener(ConnectedChangedEvent, onChanged);
       listeners.delete(setValue);
     };
   }, [enabled]);

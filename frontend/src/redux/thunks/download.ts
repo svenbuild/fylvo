@@ -202,6 +202,9 @@ export function browserBatchDownload(files: FileResponse[]): AppThunk {
 
     try {
       const complete = await dispatch(startBrowserBatchDownloadTo(handle, downloadId, files));
+      if (complete === null) {
+        cancelled = true;
+      }
       dispatch(setBatchDownloadProgress({ id: downloadId, progress: { isDownloading: false } }));
       closeSnackbar(snackbarId);
       if (!cancelled && complete) {
@@ -233,7 +236,7 @@ export function browserBatchDownload(files: FileResponse[]): AppThunk {
       // Fylvo: the provider of a connected storage stayed busy; the log says what came through.
       if (e instanceof ProviderGaveUp) {
         enqueueSnackbar({
-          message: i18next.t("application:connected.providerGaveUp"),
+          message: i18next.t(e.message),
           variant: "error",
           persist: true,
           action: BatchDownloadIncompleteAction(downloadId),
@@ -249,9 +252,9 @@ function startBrowserBatchDownloadTo(
   handle: FileSystemDirectoryHandle,
   downloadId: string,
   files: FileResponse[],
-): AppThunk<Promise<boolean>> {
-  // Resolves true when everything was downloaded.
-  return async (dispatch, _getState): Promise<boolean> => {
+): AppThunk<Promise<boolean | null>> {
+  // Resolves true when everything was downloaded, null when the user declined to start.
+  return async (dispatch, _getState): Promise<boolean | null> => {
     let log = "";
     let failed = 0;
     let skipAll = false;
@@ -314,21 +317,26 @@ function startBrowserBatchDownloadTo(
     };
 
     // Fylvo: busy answers of a connected storage's provider, counted over the whole download.
-    const busy = newBusyState();
+    const busy = newBusyState(cancelSignals[downloadId].signal);
     const connected = files.some((f) => inConnectedStorage(f.path));
+    const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [] };
 
-    // Count total files and total expected bytes by walking the tree
+    // Walk the tree once: count files and bytes, and keep the rows of each folder for the
+    // download (Fylvo: so a connected storage is listed only once, and what was counted and
+    // asked about is what gets downloaded).
+    const folders: { children: FileResponse[]; relativePath: string }[] = [];
     await dispatch(
       walk(
         files,
-        async (children) => {
+        async (children, relativePath) => {
+          folders.push({ children, relativePath });
           const childFiles = children.filter((f) => f.type == FileType.file);
           totalFiles += childFiles.length;
           totalExpectedBytes += childFiles.reduce((sum, f) => sum + (f.size || 0), 0);
         },
         [],
         "",
-        undefined,
+        skipped,
         busy,
       ),
     );
@@ -339,7 +347,7 @@ function startBrowserBatchDownloadTo(
         await dispatch(confirmOperation(i18next.t("application:connected.manyFiles", { count: totalFiles })));
       } catch (e) {
         appendLog(i18next.t("modals.directoryDownloadCancelled"));
-        return false;
+        return null;
       }
     }
 
@@ -347,198 +355,192 @@ function startBrowserBatchDownloadTo(
 
     // get the files in the directory to compare with queue files
     const fsPaths = await getFileSystemDirectoryPaths(handle, "");
-    const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [] };
 
-    await dispatch(
-      walk(
-        files,
-        async (children, relativePath) => {
-          const childFiles = children.filter((f) => f.type == FileType.file);
-          // Names in this folder, so an exported document does not take the name of another file.
-          const takenNames = new Set(children.map((f) => f.name.toLowerCase()));
-          try {
-            // Fylvo: in a connected storage each address is asked for right before its file:
-            // it is valid for about an hour and only for the version of that moment.
-            const oneByOne = childFiles.some((f) => inConnectedStorage(f.path));
-            const entityUrls = oneByOne
-              ? undefined
-              : await dispatch(
-                  getFileEntityUrl({
-                    uris: childFiles.map((f) => getFileLinkedUri(f)),
-                    download: true,
-                    skip_error: true,
-                  }),
-                );
+    const downloadFolder = async (children: FileResponse[], relativePath: string) => {
+      const childFiles = children.filter((f) => f.type == FileType.file);
+      // Names in this folder, so an exported document does not take the name of another file.
+      const takenNames = new Set(children.map((f) => f.name.toLowerCase()));
+      try {
+        // Fylvo: in a connected storage each address is asked for right before its file:
+        // it is valid for about an hour and only for the version of that moment.
+        const oneByOne = childFiles.some((f) => inConnectedStorage(f.path));
+        const entityUrls = oneByOne
+          ? undefined
+          : await dispatch(
+              getFileEntityUrl({
+                uris: childFiles.map((f) => getFileLinkedUri(f)),
+                download: true,
+                skip_error: true,
+              }),
+            );
 
-            for (let i = 0; i < childFiles.length; i++) {
-              let url = entityUrls?.urls[i]?.url;
-              let urlError = "failed to get download url";
-              if (oneByOne) {
-                try {
-                  url = await retryBusy(
-                    busy,
-                    () => dispatch(getConnectedFileUrl(getFileLinkedUri(childFiles[i]))),
-                    cancelSignals[downloadId].signal,
-                  );
-                } catch (e) {
-                  if (e instanceof ProviderGaveUp || (e instanceof Error && e.name == "AbortError")) {
-                    throw e;
-                  }
-                  urlError = errorMessage(e);
-                }
+        for (let i = 0; i < childFiles.length; i++) {
+          const name =
+            (relativePath == "" ? "" : relativePath + "/") +
+            downloadFileName(childFiles[i], childFiles[i].name, takenNames);
+          if (fsPaths.has(name)) {
+            if (skipAll) {
+              appendLog(
+                i18next.t("modals.directoryDownloadSkipNotifiction", {
+                  name,
+                }),
+              );
+              filesCompleted++;
+              updateProgress(true);
+              continue;
+            }
+
+            if (overwriteAll) {
+              appendLog(
+                i18next.t("modals.directoryDownloadReplaceNotifiction", {
+                  name,
+                }),
+              );
+            } else {
+              // No overwrite options, ask for one
+              let overwriteOption = DownloadOverwriteOption.Skip;
+              try {
+                overwriteOption = (await dispatch(
+                  selectOption(getDownloadOverwriteOption(name), "fileManager.selectDirectoryDuplicationMethod"),
+                )) as DownloadOverwriteOption;
+              } catch (e) {
+                // User cancel, use skip option
+                overwriteOption = DownloadOverwriteOption.Skip;
               }
-              // Fylvo: an address the server could not give comes back empty.
-              if (!url) {
+
+              if (overwriteOption == DownloadOverwriteOption.Skip) {
                 appendLog(
-                  i18next.t("modals.directoryDownloadErrorNotification", {
-                    name: childFiles[i].name,
-                    msg: urlError,
+                  i18next.t("modals.directoryDownloadSkipNotifiction", {
+                    name,
                   }),
                 );
-                failed++;
                 filesCompleted++;
                 updateProgress(true);
                 continue;
-              }
-              const name =
-                (relativePath == "" ? "" : relativePath + "/") +
-                downloadFileName(childFiles[i], childFiles[i].name, takenNames);
-              if (fsPaths.has(name)) {
-                if (skipAll) {
-                  appendLog(
-                    i18next.t("modals.directoryDownloadSkipNotifiction", {
-                      name,
-                    }),
-                  );
-                  filesCompleted++;
-                  updateProgress(true);
-                  continue;
-                }
-
-                if (overwriteAll) {
-                  appendLog(
-                    i18next.t("modals.directoryDownloadReplaceNotifiction", {
-                      name,
-                    }),
-                  );
-                } else {
-                  // No overwrite options, ask for one
-                  let overwriteOption = DownloadOverwriteOption.Skip;
-                  try {
-                    overwriteOption = (await dispatch(
-                      selectOption(getDownloadOverwriteOption(name), "fileManager.selectDirectoryDuplicationMethod"),
-                    )) as DownloadOverwriteOption;
-                  } catch (e) {
-                    // User cancel, use skip option
-                    overwriteOption = DownloadOverwriteOption.Skip;
-                  }
-
-                  if (overwriteOption == DownloadOverwriteOption.Skip) {
-                    appendLog(
-                      i18next.t("modals.directoryDownloadSkipNotifiction", {
-                        name,
-                      }),
-                    );
-                    filesCompleted++;
-                    updateProgress(true);
-                    continue;
-                  } else if (overwriteOption == DownloadOverwriteOption.SkipAll) {
-                    appendLog(
-                      i18next.t("modals.directoryDownloadSkipNotifiction", {
-                        name,
-                      }),
-                    );
-                    skipAll = true;
-                    filesCompleted++;
-                    updateProgress(true);
-                    continue;
-                  } else if (overwriteOption == DownloadOverwriteOption.OverwriteAll) {
-                    appendLog(
-                      i18next.t("modals.directoryDownloadReplaceNotifiction", {
-                        name,
-                      }),
-                    );
-                    overwriteAll = true;
-                  } else {
-                    appendLog(
-                      i18next.t("modals.directoryDownloadReplaceNotifiction", {
-                        name,
-                      }),
-                    );
-                  }
-                }
-              }
-
-              appendLog(i18next.t("modals.directoryDownloadStarted", { name }));
-              currentFile = name;
-
-              updateProgress(true);
-              try {
-                // Fylvo: an error answer must not become the file; a busy provider is waited for.
-                const res = await retryBusy(
-                  busy,
-                  () => fetchContent(url!, cancelSignals[downloadId].signal),
-                  cancelSignals[downloadId].signal,
-                );
-
-                // Stream the response directly to disk to avoid buffering
-                // the entire file in memory
-                const reader = res.body?.getReader();
-                if (!reader) {
-                  throw new Error("Response body is not readable");
-                }
-
-                await streamFileToFileSystemDirectory(handle, reader, name, (bytes) => {
-                  totalBytes += bytes;
-                  updateProgress();
-                });
-                filesCompleted++;
-                updateProgress(true);
-                appendLog(i18next.t("modals.directoryDownloadFinished", { name }));
-              } catch (e) {
-                // User cancel download
-                if (e instanceof Error && e.name == "AbortError") {
-                  appendLog(i18next.t("modals.directoryDownloadCancelled"));
-                  throw e;
-                }
-                if (e instanceof ProviderGaveUp) {
-                  throw e;
-                }
-                failed++;
-                filesCompleted++;
-                updateProgress(true);
+              } else if (overwriteOption == DownloadOverwriteOption.SkipAll) {
                 appendLog(
-                  i18next.t("modals.directoryDownloadErrorNotification", {
-                    name: name,
-                    msg: (e as Error).message,
+                  i18next.t("modals.directoryDownloadSkipNotifiction", {
+                    name,
+                  }),
+                );
+                skipAll = true;
+                filesCompleted++;
+                updateProgress(true);
+                continue;
+              } else if (overwriteOption == DownloadOverwriteOption.OverwriteAll) {
+                appendLog(
+                  i18next.t("modals.directoryDownloadReplaceNotifiction", {
+                    name,
+                  }),
+                );
+                overwriteAll = true;
+              } else {
+                appendLog(
+                  i18next.t("modals.directoryDownloadReplaceNotifiction", {
+                    name,
                   }),
                 );
               }
             }
+          }
+
+          let url = entityUrls?.urls[i]?.url;
+          let urlError = "failed to get download url";
+          if (oneByOne) {
+            try {
+              url = await retryBusy(busy, () => dispatch(getConnectedFileUrl(getFileLinkedUri(childFiles[i]))));
+            } catch (e) {
+              if (e instanceof ProviderGaveUp || (e instanceof Error && e.name == "AbortError")) {
+                throw e;
+              }
+              urlError = errorMessage(e);
+            }
+          }
+          // Fylvo: an address the server could not give comes back empty.
+          if (!url) {
+            appendLog(
+              i18next.t("modals.directoryDownloadErrorNotification", {
+                name: childFiles[i].name,
+                msg: urlError,
+              }),
+            );
+            failed++;
+            filesCompleted++;
+            updateProgress(true);
+            continue;
+          }
+          appendLog(i18next.t("modals.directoryDownloadStarted", { name }));
+          currentFile = name;
+
+          updateProgress(true);
+          try {
+            // Fylvo: an error answer must not become the file; a busy provider is waited for.
+            const res = await retryBusy(busy, () => fetchContent(url!, cancelSignals[downloadId].signal));
+
+            // Stream the response directly to disk to avoid buffering
+            // the entire file in memory
+            const reader = res.body?.getReader();
+            if (!reader) {
+              throw new Error("Response body is not readable");
+            }
+
+            await streamFileToFileSystemDirectory(handle, reader, name, (bytes) => {
+              totalBytes += bytes;
+              updateProgress();
+            });
+            filesCompleted++;
+            updateProgress(true);
+            appendLog(i18next.t("modals.directoryDownloadFinished", { name }));
           } catch (e) {
+            // User cancel download
             if (e instanceof Error && e.name == "AbortError") {
+              appendLog(i18next.t("modals.directoryDownloadCancelled"));
               throw e;
             }
             if (e instanceof ProviderGaveUp) {
-              appendLog(i18next.t("application:connected.providerGaveUp"));
               throw e;
             }
-            failed += childFiles.length;
-            filesCompleted += childFiles.length;
+            failed++;
+            filesCompleted++;
             updateProgress(true);
             appendLog(
-              i18next.t("modals.directoryDownloadError", {
+              i18next.t("modals.directoryDownloadErrorNotification", {
+                name: name,
                 msg: (e as Error).message,
               }),
             );
           }
-        },
-        [],
-        "",
-        skipped,
-        busy,
-      ),
-    );
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name == "AbortError") {
+          throw e;
+        }
+        if (e instanceof ProviderGaveUp) {
+          throw e;
+        }
+        failed += childFiles.length;
+        filesCompleted += childFiles.length;
+        updateProgress(true);
+        appendLog(
+          i18next.t("modals.directoryDownloadError", {
+            msg: (e as Error).message,
+          }),
+        );
+      }
+    };
+    try {
+      for (const folder of folders) {
+        await downloadFolder(folder.children, folder.relativePath);
+      }
+    } catch (e) {
+      // Fylvo: the provider stayed busy or the storage needs a reconnect: say so, and what
+      // was left out up to here.
+      if (e instanceof ProviderGaveUp) {
+        appendLog(i18next.t(e.message));
+        skippedNotes(skipped).forEach(appendLog);
+      }
+      throw e;
+    }
 
     // Fylvo: say what was left out, so the download does not look complete.
     const notes = skippedNotes(skipped);
@@ -589,6 +591,7 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
     // Fylvo: busy answers of a connected storage's provider, counted over the whole download.
     const busy = newBusyState();
     const connected = files.some((f) => inConnectedStorage(f.path));
+    let stopReason = "";
     // Files and folders: an exported name must not take the path of a folder either.
     let allWalked: FileResponseWalked[];
     try {
@@ -599,8 +602,9 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
     } catch (e) {
       if (e instanceof ProviderGaveUp) {
         enqueueSnackbar({
-          message: i18next.t("application:connected.providerGaveUp"),
+          message: [i18next.t(e.message), ...skippedNotes(skipped)].join(" "),
           variant: "error",
+          persist: true,
           action: DefaultCloseAction,
         });
         return;
@@ -627,7 +631,7 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
     } = getState();
     // Fylvo: in a connected storage one address at a time, right before its file.
     const maxBatch = connected ? 1 : Math.min(10, max_batch_size ?? 1);
-    let gaveUp = false;
+
     let current = 0;
     // Paths in the archive, so an exported document does not take the path of another file.
     const takenNames = new Set(allWalked.map((f) => f.relativePath.toLowerCase()));
@@ -679,7 +683,7 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
               console.warn("Failed to get entity urls", e);
               if (e instanceof ProviderGaveUp) {
                 // The provider stayed busy: the archive ends here, the rest is named as missing.
-                gaveUp = true;
+                stopReason = e.message;
                 failedNames.push(...allFiles.slice(current - batch.length).map((f) => f.relativePath));
                 ctrl.close();
                 return;
@@ -700,7 +704,7 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
             console.warn("Failed to download", next.file.relativePath, e);
             failedNames.push(next.file.relativePath);
             if (e instanceof ProviderGaveUp) {
-              gaveUp = true;
+              stopReason = e.message;
               failedNames.push(...pending.map((p) => p.file.relativePath));
               failedNames.push(...allFiles.slice(current).map((f) => f.relativePath));
               ctrl.close();
@@ -729,8 +733,8 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
       }
       // Fylvo: name what is missing from the archive.
       const notes = skippedNotes(skipped);
-      if (gaveUp) {
-        notes.unshift(i18next.t("application:connected.providerGaveUp"));
+      if (stopReason) {
+        notes.unshift(i18next.t(stopReason));
       }
       if (failedNames.length > 0) {
         notes.push(

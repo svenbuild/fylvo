@@ -242,7 +242,10 @@ export function send<T = any>(
 
         // Fylvo: a connected storage needs to be connected again; whoever shows its state
         // (sidebar, breadcrumb, settings) loads the list again.
-        if (resp.data.code == ConnectedReconnectCode) {
+        if (
+          resp.data.code == ConnectedReconnectCode ||
+          Object.values(resp.data.aggregated_error ?? {}).some((inner) => inner.code == ConnectedReconnectCode)
+        ) {
           window.dispatchEvent(new Event(ConnectedChangedEvent));
         }
         throw new AppError(resp.data);
