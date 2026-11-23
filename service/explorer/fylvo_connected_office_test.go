@@ -1146,12 +1146,20 @@ func TestConnectedOfficeState(t *testing.T) {
 		return n
 	}
 
-	// Before it read anything, and while it can save: no conflict.
+	// Before it read anything, and while it can save: no conflict. A refused save of a
+	// window that read nothing holds nothing of its user, also when it cannot be kept.
 	got, err := state(e.alex, session)
 	require.NoError(t, err)
 	require.Equal(t, &ConnectedOfficeStateResponse{}, got)
+	e.sim.SetFull(true)
+	rec, _ := e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("nothing read"))
+	require.Equal(t, http.StatusConflict, rec.Code)
+	e.sim.SetFull(false)
+	got, err = state(e.alex, session)
+	require.NoError(t, err)
+	require.Equal(t, &ConnectedOfficeStateResponse{}, got)
 	read()
-	rec, _ := e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("version two"))
+	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("version two"))
 	require.Equal(t, http.StatusOK, rec.Code)
 	got, err = state(e.alex, session)
 	require.NoError(t, err)

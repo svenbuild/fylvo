@@ -337,14 +337,19 @@ func (m *Manager) OfficeConflict(userID int, id string) (*OfficeStanding, error)
 	if s == nil || s.User != userID || s.closed.Load() || !now.Before(s.Expires) {
 		return nil, ErrNoStorage
 	}
-	return &OfficeStanding{Fingerprint: s.Fingerprint, Copy: s.copy.Load(), Unkept: s.unkept.Load()}, nil
+	// The flag first: a copy that is stored in between (which clears the flag) is then
+	// seen, so a session that stays in conflict is never told as one that can save.
+	unkept := s.unkept.Load()
+	return &OfficeStanding{Fingerprint: s.Fingerprint, Copy: s.copy.Load(), Unkept: unkept}, nil
 }
 
 // OfficeNotKept notes that a save of the session was refused because its file changed,
 // and that what it wanted to save could not be kept as a copy. The caller entered the
 // session.
 func (m *Manager) OfficeNotKept(s *OfficeSession) {
-	if s.copy.Load() == nil {
+	// A session nothing was read through sends nothing of a user: there is nothing to
+	// have lost.
+	if s.read && s.copy.Load() == nil {
 		s.unkept.Store(true)
 	}
 }

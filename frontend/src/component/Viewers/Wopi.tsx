@@ -65,6 +65,8 @@ const officeStateOver: number[] = [
   Code.CodeLoginRequired,
   Code.CredentialInvalid,
   Code.PermissionDenied,
+  // The sign-in of this page may not read files.
+  40089,
   ConnectedCode.Unavailable,
 ];
 
@@ -340,9 +342,9 @@ const Wopi = () => {
         <Box
           onLoad={handleIframeOnload}
           component={"iframe"}
-          // Fylvo: a new session gets a frame of its own, so the document of the one before is
-          // gone at once (it may be one that can no longer save).
-          key={sessionId ?? "none"}
+          // Fylvo: a new session of a connected storage gets a frame of its own, so the document of
+          // the one before is gone at once (it may be one that can no longer save).
+          key={connected ? sessionId ?? "none" : "office"}
           id={"office_frame"}
           name={"office_frame"}
           sandbox={
