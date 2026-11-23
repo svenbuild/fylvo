@@ -1196,6 +1196,10 @@
     "storageGone": "This storage is no longer connected. Remove the link in the sidebar, or connect the storage again.",
     "manyFiles": "These are {{count}} files from a connected storage. Downloading them can take a while. Continue?",
     "providerGaveUp": "The storage provider stayed busy, so the download was stopped. What came through is kept; please try the rest later.",
-    "archiveBrokenAt": "It broke off at {{name}}."
+    "archiveBrokenAt": "It broke off at {{name}}.",
+    "downloadProviderOnly_one": "{{count}} entry only opens at the provider and has no file to download: {{names}}.",
+    "downloadProviderOnly_other": "{{count}} entries only open at the provider and have no file to download: {{names}}.",
+    "downloadNotReached_one": "{{count}} file was not downloaded any more.",
+    "downloadNotReached_other": "{{count}} files were not downloaded any more."
   }
 }

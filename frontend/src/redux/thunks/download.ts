@@ -331,12 +331,15 @@ function startBrowserBatchDownloadTo(
       const signal = cancelSignals[downloadId].signal;
       return busy ? retryBusy(busy, () => fetchContent(url, signal)) : fetchContent(url, signal);
     };
-    const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [] };
+    const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [], providerOnly: [] };
     // Fylvo: the provider stayed busy or the storage needs a reconnect: the log says so, and
     // names what was left out up to here.
     const logStop = (e: unknown) => {
       if (e instanceof ProviderGaveUp) {
         appendLog(i18next.t(e.message));
+        if (totalFiles > filesCompleted) {
+          appendLog(i18next.t("application:connected.downloadNotReached", { count: totalFiles - filesCompleted }));
+        }
         skippedNotes(skipped).forEach(appendLog);
       }
     };
@@ -407,6 +410,7 @@ function startBrowserBatchDownloadTo(
         for (let i = 0; i < childFiles.length; i++) {
           // A cancel during the destination scan or a question ends here, before any further one.
           if (cancelSignals[downloadId].signal.aborted) {
+            appendLog(i18next.t("modals.directoryDownloadCancelled"));
             throw new DOMException("Aborted", "AbortError");
           }
           const name =
@@ -614,6 +618,14 @@ const skippedNotes = (skipped: WalkSkipped): string[] => {
       }),
     );
   }
+  if (skipped.providerOnly.length > 0) {
+    notes.push(
+      i18next.t("application:connected.downloadProviderOnly", {
+        count: skipped.providerOnly.length,
+        names: shortList(skipped.providerOnly),
+      }),
+    );
+  }
   if (skipped.omitted > 0) {
     notes.push(i18next.t("application:connected.downloadOmitted", { count: skipped.omitted }));
   }
@@ -622,7 +634,7 @@ const skippedNotes = (skipped: WalkSkipped): string[] => {
 
 export function streamSaverDownload(files: FileResponse[]): AppThunk {
   return async (dispatch, getState) => {
-    const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [] };
+    const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [], providerOnly: [] };
     // Fylvo: busy answers of a connected storage's provider, counted over the whole download.
     const connected = files.some((f) => inConnectedStorage(f.path));
     // Ends waiting and retrying when the archive is no longer written (for example a cancel).

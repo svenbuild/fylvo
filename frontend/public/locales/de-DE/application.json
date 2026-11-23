@@ -1274,6 +1274,10 @@
     "storageGone": "Dieser Speicher ist nicht mehr verbunden. Den Link in der Seitenleiste entfernen oder den Speicher neu verbinden.",
     "manyFiles": "Das sind {{count}} Dateien aus einem verbundenen Speicher. Das Herunterladen kann dauern. Fortfahren?",
     "providerGaveUp": "Der Anbieter war dauerhaft ausgelastet, darum wurde der Download abgebrochen. Was schon da ist, bleibt; den Rest bitte später nochmals versuchen.",
-    "archiveBrokenAt": "Abgebrochen bei {{name}}."
+    "archiveBrokenAt": "Abgebrochen bei {{name}}.",
+    "downloadProviderOnly_one": "{{count}} Eintrag lässt sich nur beim Anbieter öffnen und hat keine Datei zum Herunterladen: {{names}}.",
+    "downloadProviderOnly_other": "{{count}} Einträge lassen sich nur beim Anbieter öffnen und haben keine Datei zum Herunterladen: {{names}}.",
+    "downloadNotReached_one": "{{count}} Datei wurde nicht mehr heruntergeladen.",
+    "downloadNotReached_other": "{{count}} Dateien wurden nicht mehr heruntergeladen."
   }
 }

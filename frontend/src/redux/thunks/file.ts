@@ -83,9 +83,9 @@ import { navigateToPath, refreshFileList, updateUserCapacity } from "./filemanag
 import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers } from "./viewer.ts";
-import { folderEnterable } from "../../api/connected.ts";
+import { ConnectedCode, folderEnterable } from "../../api/connected.ts";
 import { rowUnsupported } from "../../component/FileManager/Connected/ConnectedMark.tsx";
-import { BusyState, ProviderGaveUp, retryBusy } from "../../component/FileManager/Connected/providerRetry.ts";
+import { BusyState, codeOf, ProviderGaveUp, retryBusy } from "../../component/FileManager/Connected/providerRetry.ts";
 
 const contextMenuCloseAnimationDelay = 250;
 
@@ -1176,6 +1176,8 @@ export interface WalkSkipped {
   omitted: number;
   // Paths of folders whose listing failed (for example a busy provider).
   unreadable: string[];
+  // Paths of entries that only open at the provider and have no file (for example a form).
+  providerOnly: string[];
 }
 
 export function walk(
@@ -1188,16 +1190,15 @@ export function walk(
 ): AppThunk {
   return async (dispatch, _getState) => {
     const pathOf = (f: FileResponse) => (relativePath == "" ? "" : relativePath + "/") + f.name;
-    // Fylvo: a row of a connected storage that cannot be used is left out, as is a document
-    // of the provider that has no download format.
-    const leaveOut = (f: FileResponse) =>
-      rowUnsupported(f) ||
-      (f.type == FileType.file &&
-        f.metadata?.[Metadata.connected_external_url] !== undefined &&
-        !f.metadata?.[Metadata.connected_export]);
-    const usable = files.filter((f) => !leaveOut(f));
-    files.filter(leaveOut).forEach((f) => skipped?.names.push(pathOf(f)));
-    files = usable;
+    // Fylvo: a row of a connected storage that cannot be used is left out, as is an entry of
+    // the provider that has no file to download (it only opens there).
+    const providerOnly = (f: FileResponse) =>
+      f.type == FileType.file &&
+      f.metadata?.[Metadata.connected_external_url] !== undefined &&
+      !f.metadata?.[Metadata.connected_export];
+    files.filter(rowUnsupported).forEach((f) => skipped?.names.push(pathOf(f)));
+    files.filter((f) => !rowUnsupported(f) && providerOnly(f)).forEach((f) => skipped?.providerOnly.push(pathOf(f)));
+    files = files.filter((f) => !rowUnsupported(f) && !providerOnly(f));
     await callback(files, relativePath);
 
     for (const f of files) {
@@ -1224,6 +1225,8 @@ export function walk(
           const allChildren: FileResponse[] = [];
           let nextToken: string | undefined = undefined;
           let page: number | undefined = undefined;
+          let restarted = false;
+          let omittedHere = 0;
           while (true) {
             const list = () =>
               dispatch(
@@ -1236,10 +1239,29 @@ export function walk(
               );
             // Fylvo: a busy provider of a connected storage is waited for (see providerRetry);
             // other storages keep their own handling.
-            const children: ListResponse = busy ? await retryBusy(busy, list) : await list();
+            let children: ListResponse;
+            try {
+              children = busy ? await retryBusy(busy, list) : await list();
+            } catch (e) {
+              // Fylvo: the server no longer keeps the listing of a connected folder (40926):
+              // that folder starts again from its first page, once.
+              if (!restarted && (nextToken || page !== undefined) && codeOf(e) == ConnectedCode.ListingGone) {
+                restarted = true;
+                allChildren.length = 0;
+                nextToken = undefined;
+                page = undefined;
+                if (skipped) {
+                  skipped.omitted -= omittedHere;
+                }
+                omittedHere = 0;
+                continue;
+              }
+              throw e;
+            }
             allChildren.push(...children.files);
             if (skipped && !nextToken && page === undefined) {
-              skipped.omitted += children.connected?.omitted ?? 0;
+              omittedHere = children.connected?.omitted ?? 0;
+              skipped.omitted += omittedHere;
             }
             // Fylvo: a cursor listing (connected storages) goes on only by its token, also
             // when it names a total.
