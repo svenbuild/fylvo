@@ -159,6 +159,9 @@ func connectedCapability(row *connected.Row) *boolset.BooleanSet {
 		if row.IsDir {
 			flags[dbfs.NavigatorCapabilityListChildren] = row.Enterable()
 			flags[dbfs.NavigatorCapabilityEnterFolder] = row.Enterable()
+			// A folder is downloaded by the client, which lists it and fetches its files
+			// one by one. Not through a link: links can lead back up.
+			flags[dbfs.NavigatorCapabilityDownloadFile] = row.Enterable() && row.Link == nil
 		} else {
 			flags[dbfs.NavigatorCapabilityDownloadFile] = true
 		}

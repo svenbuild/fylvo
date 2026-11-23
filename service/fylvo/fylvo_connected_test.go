@@ -317,3 +317,61 @@ func TestConnectedSignInsSideBySide(t *testing.T) {
 	require.Equal(t, first.Name, cleared[0].Name)
 	require.Negative(t, cleared[0].MaxAge)
 }
+
+// A sidebar link into a connected storage goes away with the storage: when it is
+// disconnected, when the sidebar is read, and when a client saves a list that still has it.
+func TestConnectedSidebarLinksEndWithTheStorage(t *testing.T) {
+	e := newActivityEnv(t)
+	m := connected.For(e.dep)
+	token := `{"access_token":"access-1","token_type":"Bearer","refresh_token":"refresh-1","expiry":"2099-01-01T00:00:00Z"}`
+	storage, err := m.Create(e.ctx, e.owner.ID, connected.ProviderOneDrive,
+		&connected.Identity{Key: "account-1", Label: "user@example.com"}, token)
+	require.NoError(t, err)
+
+	link := storage.URI + "/Documents"
+	body := `{"sidebar":{"items":[{"type":"my_files"},{"type":"link","uri":"` + link + `","name":"Documents"},{"type":"trash"}]}}`
+	res, err := e.patch(e.owner, body)
+	require.NoError(t, err)
+	require.Contains(t, sidebarTypes(res.Sidebar.Items), "link:"+link)
+
+	// A link with a path that is none, into a storage the account has, is still refused.
+	_, err = e.patch(e.owner, `{"sidebar":{"items":[{"type":"link","uri":"`+storage.URI+`/a/../b","name":"x"}]}}`)
+	requireParamError(t, err)
+
+	require.NoError(t, ConnectedDisconnect(e.as(e.reload(e.owner)), storage.ID))
+	stored := e.reload(e.owner).Settings
+	require.Empty(t, stored.Pined, "the link was removed with the storage")
+	res, err = GetPrefs(e.as(e.reload(e.owner)))
+	require.NoError(t, err)
+	require.NotContains(t, sidebarTypes(res.Sidebar.Items), "link:"+link)
+
+	// A client that still has the old list saves it again: the dead link falls away,
+	// the rest is saved.
+	res, err = e.patch(e.owner, body)
+	require.NoError(t, err)
+	shown := sidebarTypes(res.Sidebar.Items)
+	require.NotContains(t, shown, "link:"+link)
+	require.Equal(t, "my_files", shown[0])
+	require.Empty(t, e.reload(e.owner).Settings.Pined)
+
+	// A link into a storage the account never had is not stored either, and no error:
+	// it cannot be told from one that was disconnected on another device.
+	res, err = e.patch(e.owner, `{"sidebar":{"items":[{"type":"my_files"},{"type":"link","uri":"cloudreve://aaaaaaaaaaaaaaaa@connected/Docs","name":"Docs"}]}}`)
+	require.NoError(t, err)
+	require.NotContains(t, sidebarTypes(res.Sidebar.Items), "link:cloudreve://aaaaaaaaaaaaaaaa@connected/Docs")
+	require.Empty(t, e.reload(e.owner).Settings.Pined)
+
+	// Should the tidying at disconnect ever fail, a link that is left over is not shown
+	// and does not keep the sidebar from being saved.
+	_, err = e.dep.UserClient().UpdateSettings(e.ctx, e.owner.ID, func(s *types.UserSetting) error {
+		s.Pined = append(s.Pined, types.PinedFile{Uri: link, Name: "Documents"})
+		return nil
+	})
+	require.NoError(t, err)
+	res, err = GetPrefs(e.as(e.reload(e.owner)))
+	require.NoError(t, err)
+	require.NotContains(t, sidebarTypes(res.Sidebar.Items), "link:"+link)
+	_, err = e.patch(e.owner, `{"sidebar":{"items":[{"type":"trash"},{"type":"my_files"}]}}`)
+	require.NoError(t, err)
+	require.Empty(t, e.reload(e.owner).Settings.Pined)
+}

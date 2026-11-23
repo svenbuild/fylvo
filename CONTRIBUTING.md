@@ -65,7 +65,9 @@ with that variable. An ordinary build contains none of it. The log says so at th
   the emulator sees it for a phone app.
 
 Never use such a build for a server with real data: the sign-in page lets anyone who can
-reach it choose the account.
+reach it choose the account. The simulated provider itself stores nothing, but the storages
+you connect to it are ordinary rows of the database: disconnect them, or use a data folder of
+its own, before an ordinary build runs on the same data.
 
 ## Pull requests
 

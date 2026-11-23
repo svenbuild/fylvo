@@ -248,7 +248,13 @@ func (s *ConnectedRenameService) Rename(c *gin.Context, id string) (*connected.S
 func ConnectedDisconnect(c *gin.Context, id string) error {
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
-	return connected.For(dep).Disconnect(c, user.ID, id)
+	if err := connected.For(dep).Disconnect(c, user.ID, id); err != nil {
+		return err
+	}
+	// The storage is gone. Sidebar links into it are tidied up as well; should that
+	// fail, they are left out when the sidebar is read or saved the next time.
+	_ = DropConnectedLinks(c, dep, user, id)
+	return nil
 }
 
 // ConnectedAdmin returns the setup of the providers for the operator.

@@ -215,7 +215,7 @@ func TestConnectedListAndInfo(t *testing.T) {
 	require.Empty(t, folder.PrimaryEntity)
 	require.True(t, can("Docs", dbfs.NavigatorCapabilityEnterFolder))
 	require.True(t, can("Docs", dbfs.NavigatorCapabilityListChildren))
-	require.False(t, can("Docs", dbfs.NavigatorCapabilityDownloadFile))
+	require.True(t, can("Docs", dbfs.NavigatorCapabilityDownloadFile), "a client downloads a folder by walking it")
 
 	file := byName["notes.txt"]
 	require.Equal(t, int64(5), file.Size)
@@ -763,6 +763,10 @@ func TestConnectedLinkMarks(t *testing.T) {
 	require.False(t, via)
 	link, via = marks(root, "Docs")
 	require.False(t, link || via)
+	for _, f := range root.Files {
+		// A folder is downloaded by walking it, which stops at links.
+		require.Equal(t, f.Name == "Docs", f.Capability.Enabled(int(dbfs.NavigatorCapabilityDownloadFile)), f.Name)
+	}
 
 	below, err := e.list(e.alex, e.root+"/Link to Docs", 0, "")
 	require.NoError(t, err)
