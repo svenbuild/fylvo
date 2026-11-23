@@ -98,6 +98,10 @@ jobs:
         run: |
           set -euo pipefail
           declare -A machine=([amd64]="X86-64" [arm64]="AArch64")
+          # The runner's disk is small: drop the build cache first, and each image after its check.
+          docker buildx prune -af > /dev/null 2>&1 || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
           for arch in amd64 arm64; do
             docker pull -q --platform "linux/$arch" "$IMAGE:$VERSION"
             id="$(docker create --platform "linux/$arch" "$IMAGE:$VERSION")"
@@ -106,6 +110,8 @@ jobs:
             readelf -h "fylvo-$arch" | grep -q "Machine:.*${machine[$arch]}" || { echo "linux/$arch holds a binary of another architecture" >&2; exit 1; }
             docker run --rm --platform "linux/$arch" --entrypoint /fylvo/fylvo "$IMAGE:$VERSION" --help > /dev/null
             rm "fylvo-$arch"
+            docker image rm -f "$IMAGE:$VERSION" > /dev/null
+            docker image prune -af > /dev/null
             echo "linux/$arch is fine"
           done
 
