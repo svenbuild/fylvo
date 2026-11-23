@@ -58,9 +58,16 @@ func connectedViewerSession(c *gin.Context, uri *fs.URI, s *CreateViewerSessionS
 	defer req.done()
 	// What the Office server does with this kind of file is settled before a session
 	// is opened: opening one can make another give way, which a request that cannot
-	// succeed must not do.
+	// succeed must not do. A document of the provider is shown in the format it is
+	// exported in, and only shown.
 	ext := util.Ext(req.path)
-	wantsEdit := s.PreferredAction == types.ViewerActionEdit && officeEdits(viewer, ext)
+	exported := false
+	if kind := strings.TrimPrefix(ext, "."); connected.ExportFormats[kind] != nil {
+		if format := connected.OfficeViewFormat(kind); format != "" {
+			ext, exported = format, true
+		}
+	}
+	wantsEdit := !exported && s.PreferredAction == types.ViewerActionEdit && officeEdits(viewer, ext)
 	if !wantsEdit && !officeAction(viewer, ext, types.ViewerActionView) {
 		// "Not supported" is the answer for a file that is there. One that is not is
 		// "not found", and a provider that cannot be asked says so itself.
@@ -80,6 +87,7 @@ func connectedViewerSession(c *gin.Context, uri *fs.URI, s *CreateViewerSessionS
 		Fingerprint: inventory.PasswordFingerprint(req.user),
 		TTL:         ttl,
 		MaxSize:     settings.MaxOnlineEditSize(c),
+		TempDir:     util.DataPath(settings.TempPath(c)),
 	})
 	if err != nil {
 		return nil, connected.Public(c, err)

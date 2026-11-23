@@ -9,6 +9,7 @@ import (
 	"errors"
 	"hash"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -75,6 +76,25 @@ type OfficeRequest struct {
 	TTL time.Duration
 	// MaxSize is the largest file that may be opened.
 	MaxSize int64
+	// TempDir is where the export of a document of the provider is kept while a
+	// session shows it.
+	TempDir string
+}
+
+// OfficeViewFormats are the formats a document of the provider is shown in by the Office
+// server, read only: an export into one of them is what the session reads.
+var OfficeViewFormats = []string{"docx", "xlsx", "pptx"}
+
+// OfficeViewFormat is the format a document of the provider is shown in, "" if none.
+func OfficeViewFormat(native string) string {
+	for _, f := range ExportFormats[native] {
+		for _, v := range OfficeViewFormats {
+			if f == v {
+				return f
+			}
+		}
+	}
+	return ""
 }
 
 // OfficeSession is one editor window on one file.
@@ -111,6 +131,9 @@ type OfficeSession struct {
 	beside     *Row
 	besidePath string
 	besideSum  [sha256.Size]byte
+	// view is set for a session on a document of the provider: an export of it, taken
+	// in when the session was opened, which the session shows and never saves.
+	view *officeView
 	// copy tells whoever asks from outside the session (OfficeConflict) what beside
 	// tells inside it: set while the session cannot save and its last state is in a copy.
 	// unkept is set while the session cannot save and what it wanted to save could not
@@ -149,6 +172,22 @@ type OfficeStanding struct {
 	Unkept bool
 }
 
+// officeView is the export a session on a document of the provider shows.
+type officeView struct {
+	path    string
+	size    int64
+	modTime time.Time
+	version string
+}
+
+// end ends the session: it takes no call any more, and an export it showed is removed.
+func (s *OfficeSession) end() {
+	s.closed.Store(true)
+	if s.view != nil {
+		_ = os.Remove(s.view.path)
+	}
+}
+
 // forgetBeside lets go of the copy of the session: the next state that is refused gets
 // a new one.
 func (s *OfficeSession) forgetBeside() {
@@ -180,7 +219,7 @@ func (o *offices) add(s *OfficeSession, c *Conn) bool {
 	for id, other := range o.byID {
 		switch {
 		case !now.Before(other.Expires):
-			other.closed.Store(true)
+			other.end()
 			delete(o.byID, id)
 		case other.User == s.User:
 			own = append(own, other)
@@ -212,7 +251,7 @@ func (o *offices) add(s *OfficeSession, c *Conn) bool {
 		if oldest < 0 {
 			return false
 		}
-		own[oldest].closed.Store(true)
+		own[oldest].end()
 		delete(o.byID, own[oldest].ID)
 		<-own[oldest].work
 		own = append(own[:oldest], own[oldest+1:]...)
@@ -228,7 +267,7 @@ func (o *offices) close(publicID string) {
 	defer o.mu.Unlock()
 	for id, s := range o.byID {
 		if s.Conn == publicID {
-			s.closed.Store(true)
+			s.end()
 			delete(o.byID, id)
 		}
 	}
@@ -248,6 +287,9 @@ func (m *Manager) OpenOffice(ctx context.Context, c *Conn, r OfficeRequest) (*Of
 	}
 	if err != nil {
 		return nil, Error(ctx, err)
+	}
+	if row.Native != "" && row.Unsupported == "" && row.Link == nil {
+		return m.openOfficeView(ctx, c, r, row)
 	}
 	if row.IsDir || row.Native != "" || row.Unsupported != "" || row.Link != nil {
 		return nil, ErrUnsupported
@@ -304,11 +346,67 @@ func (m *Manager) OpenOffice(ctx context.Context, c *Conn, r OfficeRequest) (*Of
 	return s, nil
 }
 
+// openOfficeView opens a session that shows a document of the provider, read only: the
+// document is exported into a temporary file now, checked against the version it was
+// exported in, and the session shows that file until it ends. Nothing is ever saved.
+func (m *Manager) openOfficeView(ctx context.Context, c *Conn, r OfficeRequest, row *Row) (*OfficeSession, error) {
+	format := OfficeViewFormat(row.Native)
+	if format == "" || r.TempDir == "" {
+		return nil, ErrUnsupported
+	}
+	body, err := m.OpenExport(ctx, c, row, format)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+	if err := os.MkdirAll(r.TempDir, 0o700); err != nil {
+		return nil, err
+	}
+	tmp, err := os.CreateTemp(r.TempDir, "fylvo-view-")
+	if err != nil {
+		return nil, err
+	}
+	n, err := io.Copy(tmp, io.LimitReader(body, r.MaxSize+1))
+	if err == nil && n > r.MaxSize {
+		err = ErrOfficeTooLarge
+	}
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(tmp.Name())
+		return nil, err
+	}
+	name := ExportName(row.Name, row.Native, format)
+	s := &OfficeSession{
+		ID:   officePrefix + randomID() + randomID(),
+		User: c.UserID, Fingerprint: r.Fingerprint, Conn: c.ID, Generation: c.Generation,
+		ViewerID: r.ViewerID, Expires: m.offices.now().Add(r.TTL),
+		Path: row.Path, Name: name,
+		itemID: row.ID, resourceKey: row.ResourceKey,
+		work: make(chan struct{}, 1),
+		view: &officeView{path: tmp.Name(), size: n, modTime: row.ModTime,
+			version: "export:" + row.Version + ":" + format},
+	}
+	s.Token = s.ID + "." + randomID() + randomID() + randomID() + randomID()
+	if !m.offices.add(s, c) {
+		s.end()
+		return nil, ErrBusy
+	}
+	return s, nil
+}
+
+// viewItem is the export a session shows, as the item the Office server is told of.
+func (s *OfficeSession) viewItem() *provider.Item {
+	return &provider.Item{ID: s.itemID, Name: s.Name, Size: s.view.size, ModTime: s.view.modTime,
+		Version: s.view.version}
+}
+
 // CloseOffice ends a session.
 func (m *Manager) CloseOffice(s *OfficeSession) {
 	m.offices.mu.Lock()
 	defer m.offices.mu.Unlock()
-	s.closed.Store(true)
+	s.end()
 	delete(m.offices.byID, s.ID)
 }
 
@@ -319,7 +417,14 @@ func (m *Manager) Office(id, token string) (*OfficeSession, error) {
 	s := m.offices.byID[id]
 	now := m.offices.now()
 	m.offices.mu.Unlock()
-	if s == nil || !now.Before(s.Expires) || subtle.ConstantTimeCompare([]byte(token), []byte(s.Token)) != 1 {
+	if s != nil && !now.Before(s.Expires) {
+		// An export a session showed is not kept until the next session is opened.
+		if s.view != nil {
+			m.CloseOffice(s)
+		}
+		return nil, ErrNoStorage
+	}
+	if s == nil || subtle.ConstantTimeCompare([]byte(token), []byte(s.Token)) != 1 {
 		return nil, ErrNoStorage
 	}
 	return s, nil
@@ -415,6 +520,12 @@ func (m *Manager) officeItem(ctx context.Context, c *Conn, s *OfficeSession, toR
 // connected storages, and the file as it is can be replaced. The caller entered the
 // session.
 func (m *Manager) OfficeInfo(ctx context.Context, c *Conn, s *OfficeSession) (item *provider.Item, edit bool, err error) {
+	if s.view != nil {
+		if s.closed.Load() || s.Conn != c.ID || s.Generation != c.Generation {
+			return nil, false, ErrOfficeGone
+		}
+		return s.viewItem(), false, nil
+	}
 	item, err = m.officeItem(ctx, c, s, false)
 	if err != nil {
 		return nil, false, err
@@ -444,6 +555,9 @@ func (m *Manager) OfficeRead(ctx context.Context, c *Conn, s *OfficeSession, lim
 	// nobody keeps a place for good by taking a document byte by byte.
 	ctx, stop := context.WithTimeout(ctx, OfficeReadTime)
 	defer stop()
+	if s.view != nil {
+		return m.officeReadView(ctx, c, s, begin, w)
+	}
 	item, err := m.officeItem(ctx, c, s, true)
 	if err != nil {
 		return err
@@ -534,6 +648,30 @@ func (m *Manager) OfficeRead(ctx context.Context, c *Conn, s *OfficeSession, lim
 	// is another state, and gets a copy of its own.
 	s.forgetBeside()
 	s.unkept.Store(false)
+	return nil
+}
+
+// officeReadView hands out the export a session shows.
+func (m *Manager) officeReadView(ctx context.Context, c *Conn, s *OfficeSession, begin func(*provider.Item), w io.Writer) error {
+	if s.closed.Load() || s.Conn != c.ID || s.Generation != c.Generation {
+		return ErrOfficeGone
+	}
+	f, err := os.Open(s.view.path)
+	if err != nil {
+		return ErrOfficeGone
+	}
+	defer f.Close()
+	begin(s.viewItem())
+	n, err := io.Copy(w, io.LimitReader(f, s.view.size))
+	if err != nil || n != s.view.size {
+		return ErrOfficeBroken
+	}
+	if flusher, ok := w.(interface{ Flush() error }); ok {
+		if err := flusher.Flush(); err != nil {
+			return ErrOfficeBroken
+		}
+	}
+	s.read = true
 	return nil
 }
 

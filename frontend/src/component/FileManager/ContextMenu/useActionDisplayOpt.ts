@@ -1,12 +1,12 @@
 import { canBeFavorite } from "../../../redux/thunks/fylvo.ts";
 import { useAppSelector } from "../../../redux/hooks.ts";
 import { useMemo } from "react";
-import { FileResponse, FileType, Metadata, NavigatorCapability } from "../../../api/explorer.ts";
+import { FileResponse, FileType, Metadata, NavigatorCapability, Viewer } from "../../../api/explorer.ts";
 import { GroupPermission } from "../../../api/user.ts";
 import { ContextMenuTypes } from "../../../redux/fileManagerSlice.ts";
 import { Viewers, ViewersByID } from "../../../redux/siteConfigSlice.ts";
 import { ExpandedViewerSetting } from "../../../redux/thunks/viewer.ts";
-import { usableViewers } from "../Connected/usableViewers.ts";
+import { officeViewOf, usableViewers } from "../Connected/usableViewers.ts";
 import { folderEnterable, inConnectedStorage } from "../../../api/connected.ts";
 import SessionManager from "../../../session";
 import { fileExtension } from "../../../util";
@@ -57,6 +57,9 @@ export interface DisplayOption {
   // Fylvo: a row of a connected storage that can also be opened at the provider: an entry of
   // the menu, and what a double click does when the row has no "open" of its own.
   showAlsoAtProvider?: boolean;
+  // Fylvo: the Office viewer that shows a document of the provider read only, in the format it
+  // is exported in ("In Fylvo ansehen").
+  viewInFylvo?: Viewer;
   showOpenWithCascading?: () => boolean;
   showOpenWith?: () => boolean;
   showDownload?: boolean;
@@ -344,6 +347,9 @@ export const getActionOpt = (
       display.showOpenWithCascading = () => false;
     } else if (targets.length == 1 && targets[0].metadata?.[Metadata.connected_provider_url]) {
       display.showAlsoAtProvider = true;
+    }
+    if (targets.length == 1) {
+      display.viewInFylvo = officeViewOf(targets[0], Object.values(ViewersByID));
     }
     // A shortcut to a file is opened at the provider (when the server names the address there),
     // not with a viewer here.

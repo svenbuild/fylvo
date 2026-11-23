@@ -28,7 +28,7 @@ import {
   restoreFile,
 } from "../../../redux/thunks/file.ts";
 import { refreshFileList, uploadClicked, uploadFromClipboard } from "../../../redux/thunks/filemanager.ts";
-import { openViewers } from "../../../redux/thunks/viewer.ts";
+import { openViewers, openWopiViewer } from "../../../redux/thunks/viewer.ts";
 import AppFolder from "../../Icons/AppFolder.tsx";
 import ArchiveArrow from "../../Icons/ArchiveArrow.tsx";
 import ArrowSync from "../../Icons/ArrowSync.tsx";
@@ -220,6 +220,19 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
             <Open fontSize="small" />
           </ListItemIcon>
           <ListItemText>{t("application:connected.openAtProvider")}</ListItemText>
+        </SquareMenuItem>
+      )}
+      {displayOpt.viewInFylvo && (
+        <SquareMenuItem
+          onClick={() => {
+            dispatch(closeContextMenu({ index: fmIndex, value: undefined }));
+            dispatch(openWopiViewer(targets[0], displayOpt.viewInFylvo!));
+          }}
+        >
+          <ListItemIcon>
+            <Open fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t("application:connected.viewInFylvo")}</ListItemText>
         </SquareMenuItem>
       )}
       {showOpenWithCascading && (

@@ -1281,6 +1281,8 @@
       "other_address": "Verbinden geht nur über die Hauptadresse dieses Servers. Bitte die Einstellungen dort öffnen."
     },
     "openAtProvider": "Beim Anbieter öffnen",
+    "viewInFylvo": "In Fylvo ansehen",
+    "officeViewOnly": "Ansicht einer umgewandelten Fassung, Bearbeiten nur bei Google",
     "rowDuplicate": "Diesen Namen gibt es beim Anbieter mehrfach, darum lässt er sich hier nicht verwenden. Bitte einen davon beim Anbieter umbenennen.",
     "rowLink": "Verknüpfung beim Anbieter, nur lesen",
     "omitted_one": "{{count}} Eintrag wird nicht angezeigt: sein Name lässt sich hier nicht verwenden.",
