@@ -286,12 +286,12 @@ func (c *client) Open(ctx context.Context, item *provider.Item, rangeHeader stri
 
 	content, err := c.call.Download(ctx, address, rangeHeader)
 	if err != nil && byRevision {
-		// Drive answers 404, or 403 without a more telling reason, for a revision it no
-		// longer serves. Rate limits, blocked files and a plain "you may not" keep
-		// their own kind: asking again would not help there.
+		// Drive answers 404, or 403 without any reason, for a revision it no longer
+		// serves. Rate limits, blocked files and every 403 that names a reason keep
+		// their own kind: asking for a new address would not help there.
 		var e *provider.Error
 		if errors.As(err, &e) && (e.Kind == provider.KindNotFound ||
-			(e.Kind == provider.KindForbidden && (e.Code == "forbidden" || e.Code == ""))) &&
+			(e.Kind == provider.KindForbidden && e.Code == "")) &&
 			(e.Status == http.StatusNotFound || e.Status == http.StatusForbidden) {
 			return nil, &provider.Error{Kind: provider.KindStale, Status: e.Status, Code: e.Code}
 		}

@@ -156,7 +156,7 @@ func TestRefusedRefresh(t *testing.T) {
 	require.Equal(t, provider.KindReconnect, provider.KindOf(err))
 	row, _ = f.storages.Get(ctx, 7, storage.ID)
 	require.Equal(t, inventory.ConnectedStatusReconnect, row.Status)
-	require.Error(t, opCtx.Err())
+	ends(t, opCtx)
 	_, _, _, err = f.Use(ctx, 7, storage.ID)
 	require.Equal(t, serializer.CodeConnectedReconnect, codeOf(err))
 	require.Equal(t, serializer.CodeConnectedReconnect, codeOf(Error(ctx, &provider.Error{Kind: provider.KindReconnect})))
@@ -184,7 +184,7 @@ func TestDisconnectStopsWhatRuns(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, f.Disconnect(ctx, 7, storage.ID))
-	require.Error(t, opCtx.Err(), "a request that was running is stopped")
+	ends(t, opCtx)
 	require.Empty(t, f.live)
 	require.Empty(t, f.Tree().listings)
 
@@ -279,4 +279,15 @@ func TestRefusedFreshTokenMarksReconnect(t *testing.T) {
 	require.Equal(t, inventory.ConnectedStatusReconnect, row.Status)
 	_, _, _, err = f.Use(ctx, 7, storage.ID)
 	require.ErrorIs(t, err, ErrReconnect)
+}
+
+// ends waits for the context of a request to end: it follows the end of its connection
+// a moment later.
+func ends(t *testing.T, ctx context.Context) {
+	t.Helper()
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("a request that was running was not stopped")
+	}
 }

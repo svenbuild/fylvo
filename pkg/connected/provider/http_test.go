@@ -352,3 +352,34 @@ func TestAuthErrorIsPassedOn(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// A call about an item in another drive that is refused twice says something about
+// that item: the connection is not told, and the answer is not "sign in again".
+func TestItemOnlyRefusal(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer api.Close()
+	auth := &testAuth{}
+	c := &Caller{HTTP: plainClient(), Auth: auth, AllowHTTP: true, ItemOnly: true}
+	_, err := c.Do(context.Background(), http.MethodGet, api.URL+"/x", nil, nil)
+	if KindOf(err) != KindForbidden || len(auth.refused) != 0 {
+		t.Fatalf("err %v, refused %v", err, auth.refused)
+	}
+}
+
+// A download is not held back to wait for the provider: what was checked before it
+// would be old by then.
+func TestDownloadDoesNotWait(t *testing.T) {
+	calls := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer api.Close()
+	c := &Caller{HTTP: plainClient(), Auth: &testAuth{}, AllowHTTP: true}
+	if _, err := c.Download(context.Background(), api.URL+"/file", ""); KindOf(err) != KindBusy || calls != 1 {
+		t.Fatalf("err %v after %d calls", err, calls)
+	}
+}

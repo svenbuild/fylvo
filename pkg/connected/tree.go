@@ -286,10 +286,15 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 	l.at = t.now()
 
 	t.mu.Lock()
+	defer t.mu.Unlock()
+	// The connection can have ended while the provider answered. What ended it marked
+	// it before it cleared this memory, so nothing of it comes back here.
+	if c.ended() {
+		return nil, context.Canceled
+	}
 	t.sweep()
 	t.makeRoom(len(l.entries))
 	t.listings[key] = l
-	t.mu.Unlock()
 	return l, nil
 }
 
@@ -540,11 +545,18 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 		// Only a listing with more than one page is kept.
 		id = randomID()
 		t.mu.Lock()
+		if c.ended() {
+			t.mu.Unlock()
+			return nil, context.Canceled
+		}
 		t.sweep()
 		t.makeRoom(len(rows))
 		snap.lastUsed = t.now()
 		t.snapshots[id] = snap
 		t.mu.Unlock()
+	}
+	if c.ended() {
+		return nil, context.Canceled
 	}
 	return snap.page(id, 0, size), nil
 }

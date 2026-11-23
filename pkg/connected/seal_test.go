@@ -163,3 +163,18 @@ func TestIDs(t *testing.T) {
 		t.Errorf("unexpected shape: %q %q", base, FileID("c1", direct))
 	}
 }
+
+// One slash at each end of a path is how addresses are written; more are empty names.
+func TestCheckPathEdges(t *testing.T) {
+	for raw, want := range map[string]string{"": "", "/": "", "/Docs": "Docs", "/Docs/": "Docs", "Docs/a b": "Docs/a b"} {
+		got, err := CheckPath(raw)
+		if err != nil || got != want {
+			t.Errorf("%q: %q, %v", raw, got, err)
+		}
+	}
+	for _, raw := range []string{"//", "//Docs", "/Docs//", "/Docs//a", "/Docs/../a"} {
+		if _, err := CheckPath(raw); err == nil {
+			t.Errorf("%q was accepted", raw)
+		}
+	}
+}

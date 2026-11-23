@@ -226,13 +226,27 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 	}
 	defer req.done()
 
-	order := connected.Order{By: s.OrderBy, Desc: s.OrderDirection == "desc"}
+	// What the request leaves out comes from the view stored for the storage, as for
+	// folders of Fylvo. Later pages are asked for the same way, so they agree.
+	view, _ := req.m.View(c, req.user.ID, req.conn.ID)
+	by, direction, size := s.OrderBy, s.OrderDirection, s.PageSize
+	if view != nil {
+		if by == "" {
+			by = view.Order
+		}
+		if direction == "" {
+			direction = view.OrderDirection
+		}
+		if size <= 0 {
+			size = view.PageSize
+		}
+	}
+	order := connected.Order{By: by, Desc: direction == "desc"}
 	switch order.By {
-	case "", "name", "size", "updated_at":
+	case "name", "size", "updated_at":
 	default:
 		order.By = "name"
 	}
-	size := s.PageSize
 	if size <= 0 {
 		size = 100
 	}
@@ -284,9 +298,7 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 			Capability: res.Props.Capability,
 		}
 	}
-	if view, err := req.m.View(c, req.user.ID, req.conn.ID); err == nil {
-		res.View = view
-	}
+	res.View = view
 	return res, nil
 }
 
@@ -519,6 +531,10 @@ func ServeConnectedContent(c *gin.Context) {
 		return
 	}
 
+	// The transfer ends when either side stands still for too long, so a place is
+	// never held by a download that no longer moves.
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
 	var content *provider.Content
 	if item.Native != "" {
 		content, err = conn.P.Export(ctx, item, grant.Export)
@@ -541,11 +557,42 @@ func ServeConnectedContent(c *gin.Context) {
 	}
 	c.Status(status)
 	c.Writer.WriteHeaderNow()
-	if _, err := io.Copy(c.Writer, content.Body); err != nil {
-		// The provider's stream broke off, or the client went away. An answer without
-		// a length would otherwise end like a complete one, and the client would keep
-		// a cut-off file for the whole.
+	if err := copyMoving(c.Writer, content.Body, stop); err != nil {
+		// The provider's stream broke off or stood still, or the client went away. An
+		// answer without a length would otherwise end like a complete one, and the
+		// client would keep a cut-off file for the whole.
 		panic(http.ErrAbortHandler)
+	}
+}
+
+// connectedIdle is how long a transfer may stand still, on either side, before it ends.
+var connectedIdle = 2 * time.Minute
+
+// copyMoving copies src to the client as long as both sides keep moving. stop ends the
+// read from the provider; it is called when no bytes came for connectedIdle. A client
+// that takes no bytes for that long ends the copy through the deadline of each write.
+func copyMoving(w gin.ResponseWriter, src io.Reader, stop func()) error {
+	out := http.NewResponseController(w)
+	watch := time.AfterFunc(connectedIdle, stop)
+	defer watch.Stop()
+
+	buf := make([]byte, 64*1024)
+	for {
+		n, err := src.Read(buf)
+		watch.Reset(connectedIdle)
+		if n > 0 {
+			// Not every writer can take a deadline (a recorder in a test cannot).
+			_ = out.SetWriteDeadline(time.Now().Add(connectedIdle))
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return werr
+			}
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
 	}
 }
 

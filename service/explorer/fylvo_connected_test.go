@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
@@ -682,4 +683,56 @@ func TestConnectedURLLooksAtTheFileAsItIs(t *testing.T) {
 	address, err := e.urlOf(e.alex, e.root+"/notes.txt", true)
 	require.NoError(t, err)
 	require.Equal(t, "second", e.fetch(address, "").Body.String())
+}
+
+// What a request leaves out of order and page size comes from the view stored for the
+// storage, for the first page and for the ones after it.
+func TestConnectedListFollowsTheStoredView(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "a.txt", []byte("1"))
+	e.sim.AddFile("", "b.txt", []byte("333"))
+	e.sim.AddFile("", "c.txt", []byte("22"))
+	view := &types.ExplorerView{PageSize: 2, Order: "size", OrderDirection: "desc"}
+	require.NoError(t, (&PatchViewService{Uri: e.root, View: view}).Patch(e.as(e.alex)))
+
+	first, err := (&ListFileService{Uri: e.root}).List(e.as(e.alex))
+	require.NoError(t, err)
+	require.Equal(t, "b.txt|c.txt", fileNames(first.Files))
+	require.Equal(t, 2, first.Pagination.PageSize)
+	second, err := (&ListFileService{Uri: e.root, NextPageToken: first.Pagination.NextPageToken}).List(e.as(e.alex))
+	require.NoError(t, err)
+	require.Equal(t, "a.txt", fileNames(second.Files))
+
+	// What the request says goes first.
+	named, err := (&ListFileService{Uri: e.root, OrderBy: "name", OrderDirection: "asc", PageSize: 10}).List(e.as(e.alex))
+	require.NoError(t, err)
+	require.Equal(t, "a.txt|b.txt|c.txt", fileNames(named.Files))
+}
+
+// stalled is a stream of a provider that sends a little and then nothing more.
+type stalled struct {
+	sent bool
+	stop chan struct{}
+}
+
+func (s *stalled) Read(p []byte) (int, error) {
+	if !s.sent {
+		s.sent = true
+		return copy(p, "the first bytes"), nil
+	}
+	<-s.stop
+	return 0, context.Canceled
+}
+
+// A transfer that stands still ends, so it does not hold its place for good.
+func TestConnectedTransferThatStandsStillEnds(t *testing.T) {
+	idle := connectedIdle
+	connectedIdle = 30 * time.Millisecond
+	defer func() { connectedIdle = idle }()
+
+	c, rec := gin.CreateTestContext(httptest.NewRecorder())
+	src := &stalled{stop: make(chan struct{})}
+	err := copyMoving(c.Writer, src, func() { close(src.stop) })
+	require.Error(t, err)
+	_ = rec
 }
