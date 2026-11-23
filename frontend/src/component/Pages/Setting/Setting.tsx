@@ -18,11 +18,14 @@ import PageHeader, { PageTabQuery } from "../PageHeader.tsx";
 import PreferenceSetting from "./PreferenceSetting.tsx";
 import ProfileSetting from "./ProfileSetting.tsx";
 import SecuritySetting from "./Security/SecuritySetting.tsx";
+import ConnectedSetting, { useConnectedTabVisible } from "./Connected/ConnectedSetting.tsx";
+import CloudOutlined from "../../Icons/CloudOutlined.tsx";
 
 export enum SettingPageTab {
   Profile = "profile",
   Preference = "preference",
   Security = "security",
+  Connected = "connected",
 }
 
 const Setting = () => {
@@ -31,6 +34,7 @@ const Setting = () => {
   const [tab, setTab] = useQueryState(PageTabQuery);
   const [loading, setLoading] = useState(true);
   const [setting, setSetting] = useState<UserSettings | undefined>(undefined);
+  const connectedVisible = useConnectedTabVisible(tab);
 
   useEffect(() => {
     setLoading(true);
@@ -65,8 +69,15 @@ const Setting = () => {
         },
       ],
     );
+    if (connectedVisible) {
+      res.push({
+        label: t("application:connected.title"),
+        value: SettingPageTab.Connected,
+        icon: <CloudOutlined />,
+      });
+    }
     return res;
-  }, [t]);
+  }, [t, connectedVisible]);
 
   return (
     <PageContainer compact contentWidth={780}>
@@ -123,6 +134,7 @@ const Setting = () => {
                   )}
                   {tab == SettingPageTab.Preference && <PreferenceSetting setting={setting} setSetting={setSetting} />}
                   {tab == SettingPageTab.Security && <SecuritySetting setting={setting} setSetting={setSetting} />}
+                  {tab == SettingPageTab.Connected && <ConnectedSetting />}
                 </Paper>
               )}
             </Box>

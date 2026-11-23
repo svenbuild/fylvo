@@ -1158,5 +1158,39 @@
     "device": "Gerät",
     "address": "IP-Adresse",
     "type_30_app": "Angemeldet mit {{target}}"
+  },
+  "connected": {
+    "title": "Verbundene Speicher",
+    "des": "Google Drive oder OneDrive als Ordner neben den eigenen Dateien. Die Dateien bleiben beim Anbieter und werden live gelesen.",
+    "connect": "Speicher verbinden",
+    "connectDes": "Anbieter wählen. Dort anmelden und den Zugriff erlauben, danach geht es hierher zurück.",
+    "empty": "Noch kein Speicher verbunden.",
+    "name": "Name",
+    "rename": "Umbenennen",
+    "reconnect": "Neu verbinden",
+    "disconnect": "Trennen",
+    "disconnectConfirm": "\"{{name}}\" trennen? Der Zugriff wird von diesem Server entfernt. Die Dateien beim Anbieter bleiben, wie sie sind.",
+    "disconnected": "Speicher getrennt.",
+    "statusReconnect": "Neu verbinden nötig",
+    "statusReconnectDes": "Der Anbieter nimmt den Zugriff nicht mehr an. Bitte mit demselben Konto neu verbinden.",
+    "finishing": "Verbindung wird abgeschlossen ...",
+    "connected": "\"{{name}}\" ist verbunden.",
+    "alreadyConnected": "Dieses Konto beim Anbieter ist schon verbunden.",
+    "finishFailed": "Das Verbinden hat nicht geklappt. Bitte nochmals beginnen.",
+    "full": "Es lassen sich höchstens {{max}} Speicher verbinden.",
+    "unavailable": "Verbundene Speicher sind auf diesem Server nicht verfügbar.",
+    "notAllowed": "Dieses Konto darf keine Speicher verbinden.",
+    "notAllowedWithStorages": "Dieses Konto darf verbundene Speicher nicht mehr nutzen. Trennen ist weiterhin möglich.",
+    "noProvider": "Auf diesem Server ist noch kein Anbieter eingerichtet. Bitte an die Verwaltung wenden.",
+    "noProviderAdmin": "Anbieter einrichten",
+    "flowError": {
+      "expired": "Die Anmeldung hat zu lange gedauert oder wurde schon verwendet. Bitte das Verbinden nochmals beginnen.",
+      "browser": "Die Anmeldung wurde in einem anderen Browser begonnen. Bitte das Verbinden in diesem Browser nochmals beginnen.",
+      "denied": "Der Zugriff wurde beim Anbieter nicht erlaubt. Es wurde nichts verbunden.",
+      "setup": "Der Anbieter hat die Einrichtung dieses Servers abgelehnt. Bitte an die Verwaltung wenden.",
+      "account": "Die Anmeldung gehört zu einem anderen Konto auf diesem Server. Bitte mit dem Konto anmelden, das das Verbinden begonnen hat, und nochmals versuchen.",
+      "provider": "Der Anbieter hat die Anmeldung nicht abgeschlossen. Bitte später nochmals versuchen."
+    },
+    "providerMissing": "Dieser Anbieter ist auf dem Server nicht mehr eingerichtet."
   }
 }

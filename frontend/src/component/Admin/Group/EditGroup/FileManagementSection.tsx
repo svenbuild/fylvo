@@ -20,6 +20,7 @@ import { DenseFilledTextField } from "../../../Common/StyledComponents";
 import SettingForm from "../../../Pages/Setting/SettingForm";
 import { NoMarginHelperText, SettingSection, SettingSectionContent } from "../../Settings/Settings";
 import { AnonymousGroupID } from "../GroupRow";
+import ConnectedStorageSwitch from "./ConnectedStorageSwitch";
 import { GroupSettingContext } from "./GroupSettingWrapper";
 
 const MonacoEditor = lazy(() => import("../../../Viewers/CodeViewer/MonacoEditor"));
@@ -185,6 +186,7 @@ const FileManagementSection = () => {
                 </FormControl>
               </SettingForm>
             </Collapse>
+            <ConnectedStorageSwitch />
             <SettingForm lgWidth={5}>
               <FormControl fullWidth>
                 <FormControlLabel

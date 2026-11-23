@@ -1399,5 +1399,26 @@
   },
   "vas": {
     "used": "Used"
+  },
+  "connected": {
+    "title": "Connected storages",
+    "des": "Users can show their Google Drive or OneDrive next to their own files. Register an OAuth client of this server at each provider you want to offer and enter it here. Which groups may connect storages is set per group.",
+    "callbackUrl": "Redirect URI",
+    "callbackUrlDes": "Enter this address as redirect URI at each provider. It is built from the first site URL.",
+    "copy": "Copy",
+    "copied": "Copied.",
+    "clientId": "Client ID",
+    "clientIdDes": "Leave empty and save to remove this provider.",
+    "clientSecret": "Client secret",
+    "clientSecretDes": "Stored encrypted. It cannot be shown again.",
+    "clientSecretSetDes": "A secret is stored and cannot be shown. Enter a new one only to replace it.",
+    "secretKept": "Stored, not shown",
+    "ready": "Ready",
+    "secretMissing": "Secret missing",
+    "notSetUp": "Not set up",
+    "driveDes": "In the Google Cloud console, enable the Google Drive API and create an OAuth client of type \"Web application\" with the redirect URI above.",
+    "onedriveDes": "In Microsoft Entra, register an app for personal and work accounts, add the redirect URI above for the platform \"Web\" and create a client secret.",
+    "allow": "Connect storages",
+    "allowDes": "Members can connect their Google Drive or OneDrive. A provider has to be set up in the settings first."
   }
 }

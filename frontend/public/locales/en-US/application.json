@@ -1080,5 +1080,39 @@
     "device": "Device",
     "address": "IP address",
     "type_30_app": "Signed in with {{target}}"
+  },
+  "connected": {
+    "title": "Connected storages",
+    "des": "Show your Google Drive or OneDrive as a folder next to your own files. The files stay at the provider and are read live.",
+    "connect": "Connect storage",
+    "connectDes": "Choose a provider. You sign in there and allow access, then you come back here.",
+    "empty": "No storage connected yet.",
+    "name": "Name",
+    "rename": "Rename",
+    "reconnect": "Reconnect",
+    "disconnect": "Disconnect",
+    "disconnectConfirm": "Disconnect \"{{name}}\"? The access is removed from this server. Your files at the provider stay as they are.",
+    "disconnected": "Storage disconnected.",
+    "statusReconnect": "Reconnect needed",
+    "statusReconnectDes": "The provider no longer accepts the access. Connect it again with the same account.",
+    "finishing": "Completing the connection...",
+    "connected": "\"{{name}}\" is connected.",
+    "alreadyConnected": "This account at the provider is already connected.",
+    "finishFailed": "Connecting did not work. Please start again.",
+    "full": "You can connect at most {{max}} storages.",
+    "unavailable": "Connected storages are not available on this server.",
+    "notAllowed": "Your account may not connect storages.",
+    "notAllowedWithStorages": "Your account may no longer use connected storages. You can still disconnect them.",
+    "noProvider": "No provider is set up on this server yet. Please ask the administrator.",
+    "noProviderAdmin": "Set up providers",
+    "flowError": {
+      "expired": "The sign-in took too long or was already used. Please start connecting again.",
+      "browser": "The sign-in was started in another browser. Please start connecting again in this browser.",
+      "denied": "Access was not allowed at the provider. Nothing was connected.",
+      "setup": "The provider refused the setup of this server. Please ask the administrator.",
+      "account": "The sign-in belongs to another account on this server. Sign in with the account that started connecting and try again.",
+      "provider": "The provider did not complete the sign-in. Please try again later."
+    },
+    "providerMissing": "This provider is no longer set up on this server."
   }
 }
