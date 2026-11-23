@@ -137,13 +137,7 @@ private fun TabItem(tab: Place, active: Boolean, modifier: Modifier, dot: Boolea
         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
     ) {
         Box {
-            val (icon, selectedIcon) = placeIcons(tab)
-            Icon(
-                if (active) selectedIcon else icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(22.dp),
-            )
+            PlaceIcon(tab, active = active, tint = iconTint, modifier = Modifier.size(22.dp))
             if (dot) {
                 Box(
                     Modifier

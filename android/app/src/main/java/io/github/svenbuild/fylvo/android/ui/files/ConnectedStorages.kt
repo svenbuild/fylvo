@@ -244,10 +244,9 @@ fun ConnectedSection(
                 )
             }),
             leadingContent = {
-                Icon(
-                    if (s.ok) Icons.Outlined.Cloud else Icons.Outlined.CloudOff, contentDescription = null,
-                    tint = if (s.ok) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                )
+                // Fylvo 1.6.2: the provider's logo; a storage in trouble keeps the crossed-out cloud.
+                if (s.ok) StorageIcon(s.provider, Icons.Outlined.Cloud, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                else Icon(Icons.Outlined.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.error)
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         )

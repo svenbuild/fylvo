@@ -334,4 +334,6 @@
     <string name="connected_no_provider">Auf diesem Server ist noch kein Anbieter eingerichtet. Bitte wende dich an die Verwaltung.</string>
     <string name="connected_empty">Noch kein Speicher verbunden.</string>
     <string name="connected_load_failed">Die verbundenen Speicher konnten nicht geladen werden.</string>
+    <!-- 1.6.2: Markenhinweis für die Logos der Anbieter (wie in der Web-App) -->
+    <string name="connected_trademarks">Google Drive ist eine Marke von Google LLC. Die Verwendung dieser Marke unterliegt den Google Permissions. OneDrive ist eine Marke der Microsoft-Unternehmensgruppe.</string>
 </resources>
