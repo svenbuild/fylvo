@@ -494,6 +494,9 @@ export function saveImage(
   };
 }
 
+// Fylvo: the answer of /file/info for a name that is not there in a connected storage.
+const connectedNotThere = 40016;
+
 export function saveFile(
   uri: string,
   data: any,
@@ -519,14 +522,15 @@ export function saveFile(
       }
     }
     // Fylvo: saving there replaces a file of that name, so a copy under a chosen name needs a
-    // free name. The version is still sent: should the name be taken meanwhile, the server
-    // answers "changed" (40076) instead of replacing that file.
+    // free name: only "not there" (40016) counts as free, any other answer stops. The version
+    // is still sent: should the name be taken meanwhile, the server answers "changed" (40076)
+    // instead of replacing that file.
     if (inConnectedStorage(uri) && (saveAsNew || asNew)) {
-      const taken = await dispatch(getFileInfo({ uri }, true)).then(
-        () => true,
+      const free = await dispatch(getFileInfo({ uri }, true)).then(
         () => false,
+        (e) => e instanceof AppError && e.code == connectedNotThere,
       );
-      if (taken) {
+      if (!free) {
         enqueueSnackbar({
           message: i18next.t("common:errors.40004"),
           variant: "warning",
@@ -535,10 +539,10 @@ export function saveFile(
         return;
       }
     }
-    // Fylvo: a connected storage keeps no empty replacement of a file; say so instead of
+    // Fylvo: a connected storage keeps no empty replacement of a file (a new one may be empty); say so instead of
     // sending it (the server would refuse it).
     const size = data instanceof Blob ? data.size : typeof data == "string" ? data.length : data?.byteLength;
-    if (inConnectedStorage(uri) && size === 0) {
+    if (inConnectedStorage(uri) && size === 0 && !saveAsNew && !asNew) {
       enqueueSnackbar({
         message: i18next.t("application:connected.emptySave"),
         variant: "warning",
@@ -553,7 +557,8 @@ export function saveFile(
             uri: uri,
             previous: version,
             // Fylvo: saving a file of a connected storage never brings back a deleted one.
-            previous_required: inConnectedStorage(uri) && !saveAsNew && !asNew && !!version ? true : undefined,
+            // (also when "overwrite" sends no version).
+            previous_required: inConnectedStorage(uri) && !saveAsNew && !asNew ? true : undefined,
           },
           data,
         ),
@@ -675,7 +680,8 @@ export function saveDrawIO(
       const {
         globalState: { drawIOViewer },
       } = getState();
-      if (drawIOViewer) {
+      // Fylvo: only while the editor still holds the file this save started from.
+      if (drawIOViewer && drawIOViewer.file.path == target.path) {
         dispatch(
           setDrawIOViewer({
             ...drawIOViewer,

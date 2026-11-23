@@ -10,7 +10,14 @@ import { getFileInfo } from "../../../api/api.ts";
 const defaultHost = "https://embed.diagrams.net";
 
 // Fylvo: the origin the editor's messages must come from.
-export const drawIOOrigin = (host?: string) => new URL(host ?? defaultHost).origin;
+// The host may be relative to this site; undefined when it is no address at all.
+export const drawIOOrigin = (host?: string) => {
+  try {
+    return new URL(host || defaultHost, window.location.href).origin;
+  } catch (_) {
+    return undefined;
+  }
+};
 
 export const generateIframeSrc = (
   host: string | undefined,
@@ -87,7 +94,9 @@ export const handleRemoteInvoke = async (
       break;
     case "getFileInfo":
       try {
-        const res = await dispatch(getFileInfo({ uri: viewerState.file.path }));
+        // Fylvo: the file the editor holds now (also after a save under a new name).
+        const current = dispatch((_d, getState) => getState().globalState.drawIOViewer?.file) ?? viewerState.file;
+        const res = await dispatch(getFileInfo({ uri: current.path }));
         if (res) {
           sendResponse(w, msg, [
             {

@@ -84,6 +84,9 @@ export default abstract class Chunk extends Base {
           break;
         }
         await new Promise((resolve) => setTimeout(resolve, firstWait));
+        if (this.canceledByUser) {
+          return false;
+        }
       }
     } catch (_) {
       // The server no longer knows the session (40016 or a restart): unknown as well.

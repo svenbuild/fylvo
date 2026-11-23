@@ -304,6 +304,10 @@ export default class UploadManager {
       const uploaders = await new Promise<Base[]>((resolve, reject) =>
         this.addFiles(items, this.currentPath as string, resolve, reject),
       );
+      // Fylvo: nothing left to upload (only folders into a connected storage).
+      if (uploaders.length == 0) {
+        return;
+      }
       this.o.onProactiveFileAdded && this.o.onProactiveFileAdded(uploaders);
     }
   };
