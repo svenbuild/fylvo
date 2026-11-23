@@ -4,7 +4,7 @@
     "files": [
       {
         "type": 0,
-        "id": "csb805eea99ef6d4081c85123c",
+        "id": "csd1f65e0d0a2f8ff4d1c4fd58",
         "name": "a.pdf",
         "created_at": "2026-01-01T09:00:10Z",
         "updated_at": "2026-01-01T09:00:10Z",
@@ -12,13 +12,13 @@
         "metadata": {
           "thumb:disabled": ""
         },
-        "path": "cloudreve://vlofovudkwiu84lr@connected/Docs/a.pdf",
+        "path": "cloudreve://wx0bhcodtk1ttelg@connected/Docs/a.pdf",
         "capability": "gAAI",
-        "primary_entity": "v08024cea9177c31b04312eee"
+        "primary_entity": "vadeb5f1985a50b95b689111b"
       },
       {
         "type": 0,
-        "id": "cs9f1fc82f6e08723d04e326fd",
+        "id": "cs8c806f3ca81f670acf249995",
         "name": "b.pdf",
         "created_at": "2026-01-01T09:00:11Z",
         "updated_at": "2026-01-01T09:00:11Z",
@@ -26,31 +26,31 @@
         "metadata": {
           "thumb:disabled": ""
         },
-        "path": "cloudreve://vlofovudkwiu84lr@connected/Docs/b.pdf",
+        "path": "cloudreve://wx0bhcodtk1ttelg@connected/Docs/b.pdf",
         "capability": "gAAI",
-        "primary_entity": "vb97a24b6491d9e452b87ffaf"
+        "primary_entity": "va8badfe75832beeee8205a7a"
       }
     ],
     "parent": {
       "type": 1,
-      "id": "cs0ce438d9c483068129a00993",
+      "id": "csd3a1980cbd77055685668684",
       "name": "Docs",
       "created_at": "2026-01-01T09:00:01Z",
       "updated_at": "2026-01-01T09:00:01Z",
       "size": 0,
       "metadata": {},
-      "path": "cloudreve://vlofovudkwiu84lr@connected/Docs",
-      "capability": "AAKI"
+      "path": "cloudreve://wx0bhcodtk1ttelg@connected/Docs",
+      "capability": "gAKI"
     },
     "pagination": {
       "page": 0,
       "page_size": 2,
       "total_items": 5,
-      "next_token": "24aab2f5125d0860749371ce.2",
+      "next_token": "e283e738703d0ec94dd69a65.2",
       "is_cursor": true
     },
     "props": {
-      "capability": "AAKI",
+      "capability": "gAKI",
       "max_page_size": 2000,
       "order_by_options": [
         "name",
@@ -65,7 +65,7 @@
     "context_hint": null,
     "mixed_type": false,
     "connected": {
-      "id": "vlofovudkwiu84lr",
+      "id": "wx0bhcodtk1ttelg",
       "provider": "drive",
       "read_only": true,
       "search": false,

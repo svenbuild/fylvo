@@ -107,6 +107,27 @@ class ConnectedTest {
     }
 
     @Test
+    fun entryWithoutFileContentOnlyOpensAtTheProvider() {
+        // A Google form (or OneNote notebook): an address at the provider, no export, no download bit.
+        val form = FileObject(
+            name = "Feedback.gform",
+            capability = "AAAI",
+            metadata = mapOf(
+                Connected.META_EXTERNAL_URL to "https://drive.example.com/forms/d/id7/edit",
+                Connected.META_SIZE_UNKNOWN to "1",
+            ),
+        )
+        assertEquals(Connected.Tap.BROWSER, Connected.tapAction(form))
+        assertFalse(Connected.canDownload(form))
+        assertNull(Connected.exportExt(form))
+        assertTrue(Connected.sizeUnknown(form))
+        // The same behind a shortcut.
+        val link = form.copy(metadata = form.metadata!! + (Connected.META_LINK to "1"))
+        assertEquals(Connected.Tap.BROWSER, Connected.tapAction(link))
+        assertFalse(Connected.canDownload(link))
+    }
+
+    @Test
     fun downloadNameKeepsOtherNames() {
         fun doc(name: String, export: String?) =
             FileObject(name = name, metadata = export?.let { mapOf(Connected.META_EXPORT to it) })
