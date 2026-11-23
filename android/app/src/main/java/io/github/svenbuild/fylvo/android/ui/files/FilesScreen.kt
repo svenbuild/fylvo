@@ -169,6 +169,11 @@ fun FilesScreen(
     /** Fylvo 1.6: the file whose versions are listed, and "Empty trash" waiting for its yes. */
     var versionsTarget by remember { mutableStateOf<FileObject?>(null) }
     var emptyTrashAsk by remember { mutableStateOf(false) }
+    /** Fylvo 1.6: an archive being looked into, one being extracted (target picker), files to pack. */
+    var archiveView by remember { mutableStateOf<FileObject?>(null) }
+    var extractPick by remember { mutableStateOf<FileObject?>(null) }
+    var compressAsk by remember { mutableStateOf<List<FileObject>?>(null) }
+    val groupArchive = accountState.group(Permissions.GROUP_ARCHIVE)
     // Fylvo 1.6: the text editor; its view model keeps the text when the phone is turned.
     val editor = androidx.lifecycle.viewmodel.compose.viewModel(key = "text-editor") {
         io.github.svenbuild.fylvo.android.ui.editor.TextEditorViewModel(app.texts, app.sessionManager) { f -> viewModel.state.value.editOf(f) != null }
@@ -191,6 +196,13 @@ fun FilesScreen(
             SelectionAction.MANAGE_SHARES.takeIf { file.shared == true && Permissions.canShare(file, groupShare) },
             // Not while an offline working copy is open (its base would go stale unnoticed).
             SelectionAction.VERSIONS.takeIf { Permissions.canManageVersions(file) && state.editOf(file) == null },
+            SelectionAction.VIEW_ARCHIVE.takeIf {
+                !file.isFolder && io.github.svenbuild.fylvo.android.data.ArchiveRepository.viewable(file.name) && Permissions.canArchiveFrom(listOf(file), groupArchive)
+            },
+            SelectionAction.EXTRACT.takeIf {
+                !file.isFolder && io.github.svenbuild.fylvo.android.data.ArchiveRepository.extractable(file.name) && Permissions.canArchiveFrom(listOf(file), groupArchive)
+            },
+            SelectionAction.COMPRESS.takeIf { Permissions.canArchiveFrom(listOf(file), groupArchive) && Permissions.canArchiveInto(state.parent) },
         )
     }
 
@@ -198,6 +210,9 @@ fun FilesScreen(
         when (action) {
             SelectionAction.MANAGE_SHARES -> sharesOfTarget = file
             SelectionAction.VERSIONS -> versionsTarget = file
+            SelectionAction.VIEW_ARCHIVE -> archiveView = file
+            SelectionAction.EXTRACT -> extractPick = file
+            SelectionAction.COMPRESS -> compressAsk = listOf(file)
             else -> Unit
         }
     }
@@ -554,6 +569,8 @@ fun FilesScreen(
                 selectedFiles.size == state.selected.size,
             groupShare = groupShare,
             more = selectedOne?.let(::moreActions).orEmpty(),
+            compress = selectedFiles.size > 1 && selectedFiles.size == state.selected.size &&
+                Permissions.canArchiveFrom(selectedFiles, groupArchive) && Permissions.canArchiveInto(state.parent),
             pinnable = selectedOne != null && selectedOne.owned == true &&
                 io.github.svenbuild.fylvo.android.data.prefs.FylvoActions.openAllowed(selectedOne.path) &&
                 io.github.svenbuild.fylvo.android.widget.FolderShortcuts.canPin(context),
@@ -597,7 +614,8 @@ fun FilesScreen(
             SelectionAction.UNFAVORITE -> setFavorite(targets, false)
             SelectionAction.COLOR -> colorTarget = targets
             SelectionAction.TAGS -> tagsTarget = targets
-            SelectionAction.MANAGE_SHARES, SelectionAction.VERSIONS -> one?.let { runMore(action, it) }
+            SelectionAction.MANAGE_SHARES, SelectionAction.VERSIONS, SelectionAction.VIEW_ARCHIVE, SelectionAction.EXTRACT -> one?.let { runMore(action, it) }
+            SelectionAction.COMPRESS -> if (targets.isNotEmpty()) compressAsk = targets
             SelectionAction.PIN_HOME -> one?.let { folder ->
                 scope.launch { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.pin(context, folder, prefsRepo.accountHash()) }
             }
@@ -1133,6 +1151,67 @@ fun FilesScreen(
             onDismiss = { linkPassword = null },
         )
     }
+    // Fylvo 1.6: archives.
+    fun startedTask(started: Boolean, e: Throwable?) {
+        scope.launch {
+            if (started) {
+                val r = snackbar.showSnackbar(context.getString(R.string.task_started), actionLabel = context.getString(R.string.tasks))
+                if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) { accountOpen = true; accountPage = ACCOUNT_TASKS }
+            } else if (e != null) snackbar.showSnackbar(io.github.svenbuild.fylvo.android.util.userError(e).resolve(context))
+        }
+    }
+    archiveView?.let { file ->
+        ArchivePage(
+            file = file,
+            canExtract = io.github.svenbuild.fylvo.android.data.ArchiveRepository.extractable(file.name),
+            onExtract = { archiveView = null; extractPick = file },
+            onClose = { archiveView = null },
+        )
+    }
+    extractPick?.let { file ->
+        // The archive's own folder when it may receive files, else My files.
+        val start = CrUri.parent(file.path).takeIf { Permissions.canArchiveInto(state.parent) && it == state.currentUri } ?: CrUri.MY_PREFIX
+        FolderPicker(
+            title = stringResource(R.string.archive_extract_to),
+            confirmLabel = R.string.archive_extract_here,
+            startUri = start,
+            excluded = emptySet(),
+            loadFolders = { viewModel.listFolders(it) },
+            onCreateFolder = { parent, name -> viewModel.createFolder(parent, name) },
+            canPick = { Permissions.canArchiveInto(viewModel.pickerFolder(it)) },
+            canCreateIn = { Permissions.canArchiveInto(viewModel.pickerFolder(it)) },
+            onPick = { dst ->
+                extractPick = null
+                scope.launch {
+                    runCatching { app.archives.extract(file.path, dst) }
+                        .onSuccess { startedTask(true, null) }
+                        .onFailure { startedTask(false, it) }
+                }
+            },
+            onDismiss = { extractPick = null },
+        )
+    }
+    compressAsk?.let { files ->
+        val fallback = stringResource(R.string.archive_default_name)
+        NameDialog(
+            title = stringResource(R.string.archive_compress),
+            label = stringResource(R.string.name),
+            confirm = stringResource(R.string.archive_compress_go),
+            initial = io.github.svenbuild.fylvo.android.data.ArchiveRepository.zipName(files.map { it.name }, fallback),
+            onConfirm = { name ->
+                compressAsk = null
+                val zip = name.trim().let { if (it.lowercase().endsWith(".zip")) it else "$it.zip" }
+                viewModel.clearSelection()
+                scope.launch {
+                    runCatching { app.archives.compress(files.map { it.path }, CrUri.join(state.currentUri, zip)) }
+                        .onSuccess { startedTask(true, null) }
+                        .onFailure { startedTask(false, it) }
+                }
+            },
+            onDismiss = { compressAsk = null },
+        )
+    }
+
     versionsTarget?.let { file ->
         VersionsSheet(
             file = file,
@@ -1390,6 +1469,7 @@ fun FilesScreen(
             onOpenShares = { page = PAGE_SHARES },
             onOpenProfile = { accountPage = ACCOUNT_PROFILE },
             onOpenSecurity = { accountPage = ACCOUNT_SECURITY },
+            onOpenTasks = { accountPage = ACCOUNT_TASKS },
             onOpenCustomize = { customizeOpen = true },
             // Account is a tab: back goes to the start tab like every other tab.
             onBack = { selectTab(startTab) },
@@ -1428,6 +1508,13 @@ fun FilesScreen(
     // Fylvo 1.6: profile and security, over Account.
     if (accountOpen && accountPage == ACCOUNT_PROFILE) {
         io.github.svenbuild.fylvo.android.ui.settings.ProfilePage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) })
+    }
+    if (accountOpen && accountPage == ACCOUNT_TASKS) {
+        TasksPage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) }, onOpenFolder = { uri ->
+            accountPage = null
+            accountOpen = false
+            viewModel.openPlace(uri)
+        })
     }
     if (accountOpen && accountPage == ACCOUNT_SECURITY) {
         io.github.svenbuild.fylvo.android.ui.settings.SecurityPage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) })
@@ -1695,6 +1782,7 @@ internal const val PAGE_TAGS = "tags"
 /** Fylvo 1.6: the pages over Account. */
 internal const val ACCOUNT_PROFILE = "profile"
 internal const val ACCOUNT_SECURITY = "security"
+internal const val ACCOUNT_TASKS = "tasks"
 /** Fylvo 1.6: "Shared by me", from the Shared tab or from Account. */
 internal const val PAGE_SHARES = "shares"
 /** Fylvo: [FilesUiState.origin] of a place opened from a page ("page:<page>"). */

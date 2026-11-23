@@ -297,11 +297,21 @@ data class TaskItem(
     val type: String = "",
     val error: String? = null,
     @SerialName("updated_at") val updatedAt: String = "",
+    /** Fylvo 1.6: what the task works on (`props.src`, `props.src_multiple`, `props.dst`) and its phase. */
+    @SerialName("created_at") val createdAt: String = "",
+    val summary: TaskSummary? = null,
+)
+
+@Serializable
+data class TaskSummary(
+    val phase: String = "",
+    val props: kotlinx.serialization.json.JsonObject? = null,
 )
 
 @Serializable
 data class TaskListResponse(
     val tasks: List<TaskItem> = emptyList(),
+    val pagination: Pagination? = null,
 )
 
 /** Fylvo: an Android release the server offers for in-app updates (data/AppUpdater). */
@@ -388,3 +398,19 @@ data class FullTextResult(val hits: List<FullTextHit> = emptyList(), val total: 
 
 @Serializable
 data class FullTextHit(val file: FileObject = FileObject(), val content: String = "")
+
+/** Fylvo 1.6: one entry of an archive's listing. */
+@Serializable
+data class ArchiveEntry(
+    val name: String = "",
+    val size: Long = 0,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("is_directory") val isDirectory: Boolean = false,
+)
+
+@Serializable
+data class ArchiveListing(val files: List<ArchiveEntry> = emptyList())
+
+/** Fylvo 1.6: sources and target of an archive task (never a password, see the plan). */
+@Serializable
+data class WorkflowRequest(val src: List<String>, val dst: String)

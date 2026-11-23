@@ -37,6 +37,10 @@ enum class SelectionAction(
     MANAGE_SHARES,
     /** Fylvo 1.6: older versions of an own file. */
     VERSIONS,
+    /** Fylvo 1.6: archives: look inside, extract all, pack the selection as a ZIP. */
+    VIEW_ARCHIVE,
+    EXTRACT,
+    COMPRESS,
 }
 
 /** Where the selection is made; decides together with the selected files which actions exist. */
@@ -64,6 +68,8 @@ data class SelectionContext(
     val groupShare: Boolean? = true,
     /** Fylvo 1.6: further actions for one selected file (the same list as its sheet's). */
     val more: List<SelectionAction> = emptyList(),
+    /** Fylvo 1.6: the selection (several items) can be packed as a ZIP. */
+    val compress: Boolean = false,
 )
 
 /**
@@ -149,7 +155,7 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
                     SelectionAction.DELETE.takeIf { canModify },
                 ),
                 menu = listOfNotNull(SelectionAction.SELECT_ALL) + customizeActions(selected, ctx) +
-                    listOfNotNull(SelectionAction.COPY.takeIf { canModify }),
+                    listOfNotNull(SelectionAction.COPY.takeIf { canModify }, SelectionAction.COMPRESS.takeIf { ctx.compress }),
             )
         }
     }

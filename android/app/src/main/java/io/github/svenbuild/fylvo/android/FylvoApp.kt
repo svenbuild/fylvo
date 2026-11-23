@@ -55,6 +55,9 @@ class FylvoApp : Application(), ImageLoaderFactory {
     /** Fylvo: the account's group rights and the server's explorer switches (memory only). */
     lateinit var account: io.github.svenbuild.fylvo.android.data.AccountRepository
         private set
+    /** Fylvo 1.6: archives and tasks. */
+    lateinit var archives: io.github.svenbuild.fylvo.android.data.ArchiveRepository
+        private set
     /** Fylvo 1.6: profile and security of the account. */
     lateinit var security: io.github.svenbuild.fylvo.android.data.SecurityRepository
         private set
@@ -78,6 +81,7 @@ class FylvoApp : Application(), ImageLoaderFactory {
         shares = io.github.svenbuild.fylvo.android.data.ShareRepository(apiClient, sessionManager)
         texts = io.github.svenbuild.fylvo.android.data.TextRepository(apiClient, fileRepository, cacheDir, sessionManager)
         history = io.github.svenbuild.fylvo.android.data.HistoryRepository(apiClient, sessionManager)
+        archives = io.github.svenbuild.fylvo.android.data.ArchiveRepository(apiClient, sessionManager)
         security = io.github.svenbuild.fylvo.android.data.SecurityRepository(apiClient, account, sessionManager)
         favoritesStore = FavoritesStore(this)
         taskNotifySettings = TaskNotifySettings(this)

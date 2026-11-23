@@ -236,4 +236,31 @@
     <string name="search_7_days">Letzte 7 Tage</string>
     <string name="search_30_days">Letzte 30 Tage</string>
     <string name="search_year">Letztes Jahr</string>
+
+    <!-- Archive und Aufgaben -->
+    <string name="archive_view">Inhalt ansehen</string>
+    <string name="archive_extract">Entpacken</string>
+    <string name="archive_extract_to">Entpacken nach</string>
+    <string name="archive_extract_here">Nach %s entpacken</string>
+    <string name="archive_compress">Als ZIP packen</string>
+    <string name="archive_compress_go">Packen</string>
+    <string name="archive_default_name">Archiv</string>
+    <string name="archive_empty">Dieser Ordner des Archivs ist leer</string>
+    <string name="tasks">Aufgaben</string>
+    <string name="tasks_hint">Packen, Entpacken und andere Arbeiten am Server</string>
+    <string name="tasks_none">Noch keine Aufgaben</string>
+    <string name="task_started">Die Aufgabe läuft am Server</string>
+    <string name="task_create_archive">Packen</string>
+    <string name="task_extract_archive">Entpacken</string>
+    <string name="task_relocate">Speicher wechseln</string>
+    <string name="task_import">Import</string>
+    <string name="task_remote_download">Download</string>
+    <string name="task_other">Aufgabe</string>
+    <string name="task_queued">Wartet</string>
+    <string name="task_running">Läuft</string>
+    <string name="task_done">Fertig</string>
+    <string name="task_to">nach %1$s</string>
+
+    <string name="task_status_failed">Fehlgeschlagen</string>
+    <string name="task_status_canceled">Abgebrochen</string>
 </resources>

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
@@ -89,6 +90,7 @@ fun AccountScreen(
     /** Fylvo 1.6: Account › profile and security. */
     onOpenProfile: () -> Unit,
     onOpenSecurity: () -> Unit,
+    onOpenTasks: () -> Unit,
     /** Fylvo: Account › Customise. */
     onOpenCustomize: () -> Unit,
     onBack: () -> Unit,
@@ -214,6 +216,12 @@ fun AccountScreen(
                 headlineContent = { Text(stringResource(R.string.security)) },
                 supportingContent = { Text(stringResource(R.string.security_hint)) },
                 leadingContent = { Icon(Icons.Outlined.Lock, contentDescription = null) },
+            )
+            ListItem(
+                modifier = Modifier.clickable(onClick = onOpenTasks),
+                headlineContent = { Text(stringResource(R.string.tasks)) },
+                supportingContent = { Text(stringResource(R.string.tasks_hint)) },
+                leadingContent = { Icon(Icons.Outlined.TaskAlt, contentDescription = null) },
             )
             // Fylvo 1.6: the account's own shares ("Shared by me").
             ListItem(

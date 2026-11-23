@@ -1269,6 +1269,9 @@ class FilesViewModel(
     fun pickerAllowsMoveInto(uri: String): Boolean =
         !Connected.isConnected(uri) || Connected.canCreateIn(pickerFolders[CrUri.canonical(uri)])
 
+    /** Fylvo 1.6: the folder [uri] as the picker listed it (its rights decide archive targets). */
+    fun pickerFolder(uri: String): FileObject? = pickerFolders[CrUri.canonical(uri)]
+
     /** Fylvo: the id of the folder [uri] as the picker listed it (sent with a move), or null. */
     fun pickerFolderId(uri: String): String? = pickerFolders[CrUri.canonical(uri)]?.id?.takeIf { it.isNotEmpty() }
 

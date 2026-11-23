@@ -109,7 +109,18 @@ interface ApiService {
     suspend fun listTasks(
         @Query("page_size") pageSize: Int = 20,
         @Query("category") category: String = "general",
+        @Query("next_page_token") nextPageToken: String? = null,
     ): Response<ApiResponse<TaskListResponse>>
+
+    /** Fylvo 1.6: the entries of a zip or 7z archive. */
+    @GET("api/v4/file/archive")
+    suspend fun archiveEntries(@Query("uri") uri: String): Response<ApiResponse<ArchiveListing>>
+
+    @POST("api/v4/workflow/extract")
+    suspend fun extractArchive(@Body request: WorkflowRequest, @Tag session: SessionTag): Response<ApiResponse<TaskItem>>
+
+    @POST("api/v4/workflow/archive")
+    suspend fun createArchive(@Body request: WorkflowRequest, @Tag session: SessionTag): Response<ApiResponse<TaskItem>>
 
     @PUT("api/v4/share")
     suspend fun createShare(@Body request: ShareCreateRequest, @Tag session: SessionTag? = null): Response<ApiResponse<String>>
