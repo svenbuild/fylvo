@@ -189,6 +189,10 @@ func (m *CreateArchiveTask) Do(ctx context.Context) (task.Status, error) {
 }
 
 func (m *CreateArchiveTask) Cleanup(ctx context.Context) error {
+	// Fylvo: nothing to clean up if the state could not be read.
+	if m.state == nil {
+		return nil
+	}
 	// Fylvo: a finished task keeps no password.
 	forgetSecrets(&m.state.Secrets, nil, m.state.uriFields()...)
 	storeState(m.DBTask, m.state)

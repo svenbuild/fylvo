@@ -137,6 +137,8 @@ func TestFinishedArchiveTasksForgetTheirPasswords(t *testing.T) {
 	}
 	finished := add(queue.ExtractArchiveTaskType, task.StatusCompleted,
 		&ExtractArchiveTaskState{Uri: shareSrc, Dst: shareDst, Password: archivePassword})
+	require.NoError(t, client.Task.UpdateOne(finished).SetPublicState(&types.TaskPublicState{
+		Error: "failed to get archive file " + shareSrc, ErrorHistory: []string{"retry " + shareDst}}).Exec(ctx))
 	failed := add(queue.CreateArchiveTaskType, task.StatusError,
 		&CreateArchiveTaskState{Uris: []string{shareSrc}, Dst: shareDst})
 	running := add(queue.ExtractArchiveTaskType, task.StatusSuspending,
@@ -148,6 +150,9 @@ func TestFinishedArchiveTasksForgetTheirPasswords(t *testing.T) {
 		reloaded, err := client.Task.Get(ctx, cleared.ID)
 		require.NoError(t, err)
 		requireNoSecret(t, reloaded.PrivateState)
+		public, err := json.Marshal(reloaded.PublicState)
+		require.NoError(t, err)
+		requireNoSecret(t, string(public))
 	}
 	// A task that still runs keeps them; it seals them when it runs next.
 	reloaded, err := client.Task.Get(ctx, running.ID)
@@ -162,4 +167,15 @@ func TestTaskErrorsHideSharePasswords(t *testing.T) {
 	public, err := json.Marshal(failing.Task.PublicState)
 	require.NoError(t, err)
 	requireNoSecret(t, string(public))
+}
+
+func TestArchiveTaskRefusesAnAddressItCannotRead(t *testing.T) {
+	ctx, _ := archiveSecretsEnv(t)
+	malformed := "cloudreve://Ab3d:" + sharePassword + "@share/%zz.zip"
+	_, err := NewExtractArchiveTask(ctx, malformed, shareDst, "", "", nil)
+	require.ErrorIs(t, err, errInvalidArchiveAddress)
+	requireNoSecret(t, err.Error())
+	_, err = NewCreateArchiveTask(ctx, []string{malformed}, shareDst)
+	require.ErrorIs(t, err, errInvalidArchiveAddress)
+	require.Empty(t, withoutSharePassword(malformed))
 }

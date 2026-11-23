@@ -567,6 +567,10 @@ func (m *ExtractArchiveTask) Progress(ctx context.Context) queue.Progresses {
 }
 
 func (m *ExtractArchiveTask) Cleanup(ctx context.Context) error {
+	// Fylvo: nothing to clean up if the state could not be read.
+	if m.state == nil {
+		return nil
+	}
 	// Fylvo: a finished task keeps no password.
 	forgetSecrets(&m.state.Secrets, &m.state.Password, &m.state.Uri, &m.state.Dst)
 	storeState(m.DBTask, m.state)

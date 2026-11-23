@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/task"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
+	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/queue"
 )
 
@@ -53,7 +55,12 @@ func loadArchiveSecrets(ctx context.Context, sealed *[]byte, password *string, u
 		secrets.Password, *password, moved = *password, "", true
 	}
 	for _, uri := range uris {
-		if clean, sharePassword := splitSharePassword(*uri); sharePassword != "" {
+		clean, sharePassword, err := splitSharePassword(*uri)
+		if err != nil {
+			// The address is not named: it can hold a password.
+			return nil, errInvalidArchiveAddress
+		}
+		if sharePassword != "" {
 			secrets.Shares[clean], *uri, moved = sharePassword, clean, true
 		}
 	}
@@ -102,23 +109,29 @@ func archiveSecretsBinding(ctx context.Context) []byte {
 	return connected.Context("archive task", strconv.Itoa(id))
 }
 
+var errInvalidArchiveAddress = errors.New("an address of the task is not valid")
+
 // splitSharePassword returns raw without the password of its user part, and that password.
-func splitSharePassword(raw string) (string, string) {
+func splitSharePassword(raw string) (string, string, error) {
 	u, err := url.Parse(raw)
-	if err != nil || u.User == nil {
-		return raw, ""
+	if err != nil {
+		return "", "", err
+	}
+	if u.User == nil {
+		return raw, "", nil
 	}
 	sharePassword, ok := u.User.Password()
 	if !ok {
-		return raw, ""
+		return raw, "", nil
 	}
 	u.User = url.User(u.User.Username())
-	return u.String(), sharePassword
+	return u.String(), sharePassword, nil
 }
 
-// withoutSharePassword returns raw without the password of its user part.
+// withoutSharePassword returns raw without the password of its user part, and nothing for
+// an address that cannot be read (it could hold one).
 func withoutSharePassword(raw string) string {
-	clean, _ := splitSharePassword(raw)
+	clean, _, _ := splitSharePassword(raw)
 	return clean
 }
 
@@ -167,12 +180,26 @@ func ForgetArchiveSecrets(ctx context.Context, client *ent.Client) error {
 	tasks, err := client.Task.Query().Where(
 		task.TypeIn(queue.ExtractArchiveTaskType, queue.CreateArchiveTaskType),
 		task.StatusIn(task.StatusCompleted, task.StatusError, task.StatusCanceled),
-	).Select(task.FieldID, task.FieldType, task.FieldPrivateState).All(ctx)
+	).Select(task.FieldID, task.FieldType, task.FieldPrivateState, task.FieldPublicState).All(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list archive tasks: %w", err)
 	}
 
+	var failed []error
 	for _, t := range tasks {
+		// Errors stored before they were masked can name an address with its password.
+		public, publicChanged := t.PublicState, false
+		if public != nil {
+			masked := logging.RedactText(public.Error)
+			publicChanged = masked != public.Error
+			public.Error = masked
+			for i, entry := range public.ErrorHistory {
+				masked = logging.RedactText(entry)
+				publicChanged = publicChanged || masked != entry
+				public.ErrorHistory[i] = masked
+			}
+		}
+
 		var cleared any
 		switch t.Type {
 		case queue.ExtractArchiveTaskType:
@@ -193,14 +220,19 @@ func ForgetArchiveSecrets(ctx context.Context, client *ent.Client) error {
 
 		res, err := json.Marshal(cleared)
 		if err != nil {
-			return err
-		}
-		if string(res) == t.PrivateState {
+			failed = append(failed, err)
 			continue
 		}
-		if err := client.Task.Update().Where(task.ID(t.ID)).SetPrivateState(string(res)).Exec(ctx); err != nil {
-			return fmt.Errorf("failed to clear the passwords of task %d: %w", t.ID, err)
+		if string(res) == t.PrivateState && !publicChanged {
+			continue
+		}
+		update := client.Task.Update().Where(task.ID(t.ID)).SetPrivateState(string(res))
+		if publicChanged {
+			update.SetPublicState(public)
+		}
+		if err := update.Exec(ctx); err != nil {
+			failed = append(failed, fmt.Errorf("failed to clear the passwords of task %d: %w", t.ID, err))
 		}
 	}
-	return nil
+	return errors.Join(failed...)
 }
