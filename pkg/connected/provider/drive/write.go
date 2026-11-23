@@ -85,7 +85,7 @@ func (c *client) Trash(ctx context.Context, id string) error {
 // changed maps the answer of a call that changed an entry.
 func (c *client) changed(f *file) (*provider.Item, error) {
 	item, ok := c.mapped(f)
-	if !ok {
+	if !ok || f.MimeType == "" {
 		// Drive said yes and sent nothing to go by: what it did is open.
 		return nil, &provider.Error{Kind: provider.KindOther}
 	}

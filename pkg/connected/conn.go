@@ -363,8 +363,10 @@ func Error(ctx context.Context, err error) error {
 		return ErrReconnect
 	case provider.KindSetup:
 		return ErrUnavailable
-	case provider.KindBusy, provider.KindIncomplete:
+	case provider.KindBusy, provider.KindIncomplete, provider.KindRetry:
 		return ErrBusy
+	case provider.KindOpen:
+		return ErrOutcomeUnknown
 	case provider.KindFull:
 		return ErrFull
 	case provider.KindForbidden:

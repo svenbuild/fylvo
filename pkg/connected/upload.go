@@ -553,6 +553,13 @@ func (m *Manager) UploadChunk(ctx context.Context, c *Conn, id string, index int
 		u.release()
 		m.uploads.touch(u)
 		u.work.Unlock()
+		// The connection can have ended in the moment between the look above and
+		// the unlock, when nobody could end the session: it is ended here.
+		if u.closed.Load() && u.work.TryLock() {
+			u.end(UploadFailed, nil, ErrUploadGone, m.uploads.now())
+			u.held = nil
+			u.work.Unlock()
+		}
 	}()
 	m.uploads.touch(u)
 
@@ -652,9 +659,10 @@ func (m *Manager) receive(ctx context.Context, u *upload, body io.Reader, start,
 		// However it moves, a range is over after uploadRange: a client that sends a
 		// byte now and then must not keep a place for good.
 		limit := time.AfterFunc(uploadRange, stop)
-		u.sentTo = max(u.sentTo, u.next+send)
 		_, err := u.up.Send(sendCtx, u.next, r, send)
 		r.cut()
+		// The provider cannot have more than what was handed to the network.
+		u.sentTo = max(u.sentTo, u.next+r.handed())
 		watch.Stop()
 		limit.Stop()
 		stop()
@@ -849,10 +857,10 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	}
 	defer release()
 	tail := &cutReader{r: bytes.NewReader(u.held)}
-	u.sentTo = u.size
 	item, err := u.up.Send(callCtx, u.next, tail, int64(len(u.held)))
 	tail.cut()
 	left := tail.handed()
+	u.sentTo = max(u.sentTo, u.next+left)
 	switch {
 	case err == nil && item != nil:
 		return m.finish(u, item, true)
@@ -882,7 +890,7 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	switch {
 	case err == nil && done != nil:
 		return m.finish(u, done, true)
-	case err == nil && n >= u.next && n < u.size && left < int64(len(u.held)):
+	case err == nil && n >= u.next && n <= u.sentTo && n < u.size && left < int64(len(u.held)):
 		// Not all of the tail left this server, so nothing was stored. What is missing
 		// is sent with the next try of the last chunk.
 		u.moveTo(n)
@@ -967,10 +975,16 @@ func (m *Manager) finish(u *upload, item *provider.Item, checksum bool) (*Row, e
 }
 
 // UploadStatus tells where an upload of the account stands.
-func (m *Manager) UploadStatus(userID int, id string) (*UploadStatus, error) {
+func (m *Manager) UploadStatus(ctx context.Context, userID int, id string) (*UploadStatus, error) {
 	u, err := m.uploads.find(userID, id)
 	if err != nil {
 		return nil, err
+	}
+	// Only while the storage is connected as it was when the upload started. It may
+	// need a new sign-in by now: the outcome of an upload is told all the same, it is
+	// what a client that lost an answer is waiting for.
+	if row, err := m.row(ctx, userID, u.conn); err != nil || row.Generation != u.generation {
+		return nil, ErrNoStorage
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()

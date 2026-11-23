@@ -47,6 +47,9 @@ func (c *client) CreateEmpty(ctx context.Context, parentID, name string) (*provi
 }
 
 func (c *client) Update(ctx context.Context, id string, change provider.Change) (*provider.Item, error) {
+	// No conflict behaviour is named: a change of an item is refused by Graph when the
+	// name is taken (409 nameAlreadyExists), and it is not known to take the annotation
+	// on this call. The check against real accounts looks at exactly this.
 	in := make(map[string]any)
 	if change.Name != "" {
 		in["name"] = change.Name
@@ -208,6 +211,11 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 			}
 		}
 	case http.StatusOK, http.StatusCreated:
+		if end != u.size {
+			// A stored file where only a part was sent: what was stored is open, and
+			// stays so.
+			return nil, &provider.Error{Kind: provider.KindOpen, Status: res.StatusCode}
+		}
 		if end == u.size {
 			var entry driveItem
 			if err := decodeWrite(res, &entry); err != nil {
@@ -245,6 +253,10 @@ func (u *upload) State(ctx context.Context) (int64, *provider.Item, error) {
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusNotFound {
 		return 0, nil, provider.ByStatus(res.StatusCode, res.Header, nil)
+	}
+	if res.StatusCode >= 400 {
+		// "Slow down" is told as such, so the client is asked to come back.
+		return 0, nil, u.caller.Failure(res)
 	}
 	if res.StatusCode != http.StatusOK {
 		return 0, nil, &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}

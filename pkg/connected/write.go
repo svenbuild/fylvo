@@ -93,24 +93,35 @@ func (m *Manager) folder(ctx context.Context, c *Conn, path string) (*Row, error
 
 // entry resolves the entry a change is about and makes sure it is the one the client
 // means and one that can be changed.
-func (m *Manager) entry(ctx context.Context, c *Conn, src Source) (*Row, error) {
+func (m *Manager) entry(ctx context.Context, c *Conn, src Source) (row, parent *Row, err error) {
 	if src.Path == "" {
 		// The root of a storage is not an entry of anything.
-		return nil, ErrUnsupported
+		return nil, nil, ErrUnsupported
 	}
 	// From the provider, not from a listing in memory: the entry at the path now is
-	// the one that is compared, also when another one was there seconds ago.
-	row, err := m.tree.ResolveNow(ctx, c, src.Path)
+	// the one that is compared, also when another one was there seconds ago. Its
+	// folder is found once and the entry looked up in it by the folder's id, so
+	// everything that follows is about that one folder, whatever becomes of the path.
+	parentPath, name := ParentOf(src.Path)
+	parent, err = m.tree.ResolveNow(ctx, c, parentPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	if !parent.Enterable() {
+		return nil, nil, ErrNotFound
+	}
+	row, err = m.tree.named(ctx, c, parent.ContentID(), name)
+	if err != nil {
+		return nil, nil, err
+	}
+	row.Path, row.ViaLink = joinPath(parentPath, row.Name), parent.ViaLink || row.Link != nil
 	if src.ID == "" || FileID(c.ID, row) != src.ID {
-		return nil, ItemError(ReasonChanged)
+		return nil, nil, ItemError(ReasonChanged)
 	}
 	if row.ReadOnly() {
-		return nil, ErrUnsupported
+		return nil, nil, ErrUnsupported
 	}
-	return row, nil
+	return row, parent, nil
 }
 
 // nameFree tells whether an entry can get name in the folder with the given id, asking
@@ -203,7 +214,7 @@ func (m *Manager) RenameEntry(ctx context.Context, c *Conn, src Source, newName 
 	}
 	defer m.writing(c)()
 
-	row, err := m.entry(ctx, c, src)
+	row, parent, err := m.entry(ctx, c, src)
 	if err != nil {
 		return nil, err
 	}
@@ -211,10 +222,6 @@ func (m *Manager) RenameEntry(ctx context.Context, c *Conn, src Source, newName 
 		return row, nil
 	}
 	parentPath, _ := ParentOf(src.Path)
-	parent, err := m.folder(ctx, c, parentPath)
-	if err != nil {
-		return nil, err
-	}
 	if err := m.nameFree(ctx, c, parent.ContentID(), newName, row.ID); err != nil {
 		return nil, err
 	}
@@ -254,12 +261,7 @@ func (m *Manager) MoveEntries(ctx context.Context, c *Conn, sources []Source, ds
 }
 
 func (m *Manager) move(ctx context.Context, c *Conn, w provider.Writer, src Source, dstPath string, target *Row) error {
-	row, err := m.entry(ctx, c, src)
-	if err != nil {
-		return err
-	}
-	parentPath, _ := ParentOf(src.Path)
-	parent, err := m.folder(ctx, c, parentPath)
+	row, parent, err := m.entry(ctx, c, src)
 	if err != nil {
 		return err
 	}
@@ -294,13 +296,10 @@ func (m *Manager) TrashEntries(ctx context.Context, c *Conn, sources []Source) (
 
 	results := make([]error, len(sources))
 	for i, src := range sources {
-		row, err := m.entry(ctx, c, src)
+		row, parent, err := m.entry(ctx, c, src)
 		if err == nil {
 			err = w.Trash(ctx, row.ID)
-			parentPath, _ := ParentOf(src.Path)
-			if parent, perr := m.tree.Resolve(ctx, c, parentPath); perr == nil {
-				m.tree.Changed(c, parent.ContentID())
-			}
+			m.tree.Changed(c, parent.ContentID())
 		}
 		results[i] = err
 	}

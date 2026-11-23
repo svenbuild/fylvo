@@ -203,7 +203,7 @@ func (e *uploadEnv) content(path string) []byte {
 }
 
 func (e *uploadEnv) status(id string) *UploadStatus {
-	st, err := e.f.UploadStatus(7, id)
+	st, err := e.f.UploadStatus(context.Background(), 7, id)
 	require.NoError(e.t, err)
 	return st
 }
@@ -666,7 +666,7 @@ func TestUploadBelongsToItsAccount(t *testing.T) {
 	conn, ctx := e.use(8, other.ID)
 
 	for _, id := range []string{info.ID, "cu-unknown"} {
-		_, err = e.f.UploadStatus(8, id)
+		_, err = e.f.UploadStatus(context.Background(), 8, id)
 		require.Equal(t, serializer.CodeParentNotExist, codeOf(err))
 		_, err = e.f.UploadConnection(8, id)
 		require.Equal(t, serializer.CodeParentNotExist, codeOf(err))
@@ -674,7 +674,7 @@ func TestUploadBelongsToItsAccount(t *testing.T) {
 		require.Equal(t, serializer.CodeParentNotExist, codeOf(err))
 		require.Equal(t, serializer.CodeParentNotExist, codeOf(e.f.CancelUpload(ctx, conn, id)))
 	}
-	_, err = e.f.UploadStatus(7, "cu-unknown")
+	_, err = e.f.UploadStatus(context.Background(), 7, "cu-unknown")
 	require.Equal(t, serializer.CodeParentNotExist, codeOf(err))
 
 	// Untouched by all of that.
@@ -693,9 +693,13 @@ func TestUploadEndsWithTheConnection(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NoError(t, e.f.Disconnect(context.Background(), 7, e.id))
-		st := e.status(info.ID)
-		require.Equal(t, UploadFailed, st.State)
-		require.ErrorIs(t, st.Err, ErrUploadGone)
+		// The session ended with its connection, and the state route no longer tells
+		// of it: the storage is none of the account's any more.
+		state, _, endErr := e.f.uploads.byID[info.ID].outcome()
+		require.Equal(t, UploadFailed, state)
+		require.ErrorIs(t, endErr, ErrUploadGone)
+		_, err = e.f.UploadStatus(context.Background(), 7, info.ID)
+		require.ErrorIs(t, err, ErrNoStorage)
 		_, err = e.chunk(info.ID, 1, data)
 		require.ErrorIs(t, err, ErrUploadGone)
 		if e.d != nil {
@@ -743,11 +747,11 @@ func TestUploadSessionsExpire(t *testing.T) {
 	// The outcome is told for an hour, an idle session lasts a day.
 	now = now.Add(59 * time.Minute)
 	sessions := len(e.f.uploads.byID)
-	_, err = e.f.UploadStatus(7, idle.ID)
+	_, err = e.f.UploadStatus(context.Background(), 7, idle.ID)
 	require.NoError(t, err)
 	require.Len(t, e.f.uploads.byID, sessions)
 	now = now.Add(2 * time.Minute)
-	_, err = e.f.UploadStatus(7, idle.ID)
+	_, err = e.f.UploadStatus(context.Background(), 7, idle.ID)
 	require.NoError(t, err)
 	require.Len(t, e.f.uploads.byID, sessions-1, "the ended session is gone")
 

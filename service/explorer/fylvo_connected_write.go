@@ -20,6 +20,10 @@ import (
 // the exact strings it sent as addresses.
 type connectedIDs map[string]string
 
+// errConnectedBatch is the answer to a request that names more entries than one request
+// moves or deletes.
+var errConnectedBatch = serializer.NewError(serializer.CodeParamErr, "Too many entries in one request", nil)
+
 // connectionOf returns the id of the connection an address names.
 func connectionOf(uri *fs.URI) string {
 	if uri.U.User == nil {
@@ -31,9 +35,6 @@ func connectionOf(uri *fs.URI) string {
 // connectedSources turns the addresses of a change into sources. All of them have to be
 // in one connection, which the first address opens.
 func connectedSources(c *gin.Context, raws []string, uris []*fs.URI, ids connectedIDs) (*connectedRequest, []connected.Source, error) {
-	if len(uris) > connected.MaxBatch+1 {
-		return nil, nil, serializer.NewError(serializer.CodeParamErr, "Too many entries in one request", nil)
-	}
 	req, err := openConnected(c, uris[0])
 	if err != nil {
 		return nil, nil, err
@@ -117,6 +118,9 @@ func connectedMove(c *gin.Context, uris []*fs.URI, dst *fs.URI, s *MoveFileServi
 	if s.Copy || dst == nil || len(uris) == 0 {
 		return connected.ErrUnsupported
 	}
+	if len(uris) > connected.MaxBatch {
+		return errConnectedBatch
+	}
 	req, sources, err := connectedSources(c, append(append([]string{}, s.Uris...), s.Dst), append(append([]*fs.URI{}, uris...), dst), s.Ids)
 	if err != nil {
 		return err
@@ -134,6 +138,9 @@ func connectedMove(c *gin.Context, uris []*fs.URI, dst *fs.URI, s *MoveFileServi
 
 // connectedDelete answers DELETE /file: the entries go into the trash of the provider.
 func connectedDelete(c *gin.Context, uris []*fs.URI, s *DeleteFileService) error {
+	if len(uris) > connected.MaxBatch {
+		return errConnectedBatch
+	}
 	req, sources, err := connectedSources(c, s.Uris, uris, s.Ids)
 	if err != nil {
 		return err

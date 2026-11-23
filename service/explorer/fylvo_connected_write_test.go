@@ -1,6 +1,7 @@
 package explorer
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
@@ -209,11 +210,22 @@ func TestConnectedBatchNamesAnEntryOnce(t *testing.T) {
 func TestConnectedBatchSize(t *testing.T) {
 	e := newConnectedEnv(t)
 	e.sim.AddFile("", "a.txt", []byte("a"))
-	uris := make([]string, 0, connected.MaxBatch+1)
-	for i := 0; i <= connected.MaxBatch; i++ {
-		uris = append(uris, e.root+"/a.txt")
+	e.sim.AddFolder("", "Docs")
+	ids := e.idsOf(t, e.root)
+	// As many different addresses as fit, and one more.
+	uris := []string{e.root + "/a.txt"}
+	for i := 1; i <= connected.MaxBatch; i++ {
+		uris = append(uris, fmt.Sprintf("%s/missing %d.txt", e.root, i))
 	}
-	err := (&DeleteFileService{Uris: uris, Ids: e.idsOf(t, e.root)}).Delete(e.as(e.alex))
+	err := (&DeleteFileService{Uris: uris, Ids: ids}).Delete(e.as(e.alex))
 	require.Equal(t, serializer.CodeParamErr, connectedCode(err))
-	require.Equal(t, "a.txt", e.names(t, e.root))
+	err = (&MoveFileService{Uris: uris, Dst: e.root + "/Docs", Ids: ids}).Move(e.as(e.alex))
+	require.Equal(t, serializer.CodeParamErr, connectedCode(err))
+	require.Equal(t, "Docs|a.txt", e.names(t, e.root), "nothing was touched")
+
+	// With one address less the request is taken: the one entry that exists is
+	// deleted, the others are told as not found, each by its address.
+	err = (&DeleteFileService{Uris: uris[:connected.MaxBatch], Ids: ids}).Delete(e.as(e.alex))
+	require.Equal(t, serializer.CodeBatchOperationNotFullyCompleted, connectedCode(err))
+	require.Equal(t, "Docs", e.names(t, e.root))
 }

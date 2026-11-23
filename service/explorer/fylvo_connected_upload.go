@@ -129,6 +129,9 @@ func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body
 		return nil, err
 	}
 	defer req.done()
+	// Whoever throws away what is left of the body after an error does not wait for a
+	// client that stands still.
+	defer func() { _ = http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(connectedIdle)) }()
 
 	info, err := req.m.StartUpload(req.ctx, req.conn, connected.UploadRequest{
 		Path:             req.path,
@@ -161,18 +164,28 @@ func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body
 // still in the middle of it: a client that stops sending must not hold one of the few
 // places for uploads.
 func movingBody(c *gin.Context, body io.Reader) io.Reader {
-	return &stallingReader{r: body, control: http.NewResponseController(c.Writer)}
+	return &stallingReader{r: body, control: http.NewResponseController(c.Writer), end: time.Now().Add(connectedBodyTime)}
 }
+
+// connectedBodyTime is how long the body of one request may take in all, however it moves.
+const connectedBodyTime = 30 * time.Minute
 
 type stallingReader struct {
 	r       io.Reader
 	control *http.ResponseController
+	// end is when the body has to be through: a client that sends a byte now and then
+	// stands still as far as everybody else is concerned.
+	end time.Time
 }
 
 func (s *stallingReader) Read(p []byte) (int, error) {
 	// Not every connection can take a deadline (a recorder in a test cannot). It is
 	// for this read only: what the request does after its body must not run into it.
-	_ = s.control.SetReadDeadline(time.Now().Add(connectedIdle))
+	deadline := time.Now().Add(connectedIdle)
+	if s.end.Before(deadline) {
+		deadline = s.end
+	}
+	_ = s.control.SetReadDeadline(deadline)
 	defer func() { _ = s.control.SetReadDeadline(time.Time{}) }()
 	return s.r.Read(p)
 }
@@ -193,20 +206,9 @@ func ConnectedUploadState(c *gin.Context, id string) (*ConnectedUploadStateRespo
 	if !mayUseConnected(user) {
 		return nil, connected.ErrNotAllowed
 	}
-	m := connected.For(dependency.FromContext(c))
-	status, err := m.UploadStatus(user.ID, id)
+	status, err := connected.For(dependency.FromContext(c)).UploadStatus(c, user.ID, id)
 	if err != nil {
 		return nil, err
-	}
-	// Only as long as the storage is connected as it was: after a disconnect or a new
-	// sign-in the session is none of this account's any more.
-	conn, _, done, err := m.Use(c, user.ID, status.Conn)
-	if err != nil {
-		return nil, err
-	}
-	defer done()
-	if conn.Generation != status.Generation {
-		return nil, connected.ErrNoStorage
 	}
 	res := &ConnectedUploadStateResponse{State: status.State, Received: status.Received}
 	if status.Row != nil {
