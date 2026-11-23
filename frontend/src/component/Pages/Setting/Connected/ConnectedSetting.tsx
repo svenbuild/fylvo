@@ -53,6 +53,7 @@ import DraggableDialog, { StyledDialogContentText } from "../../../Dialogs/Dragg
 import Add from "../../../Icons/Add.tsx";
 import ArrowSync from "../../../Icons/ArrowSync.tsx";
 import CloudOutlined from "../../../Icons/CloudOutlined.tsx";
+import ConnectedProviderIcon from "../../../FileManager/Connected/ConnectedProviderIcon.tsx";
 import Dismiss from "../../../Icons/Dismiss.tsx";
 import Edit from "../../../Icons/Edit.tsx";
 import SettingForm from "../SettingForm.tsx";
@@ -279,7 +280,7 @@ const ConnectDialog = ({
               sx={{ border: 1, borderColor: "divider", borderRadius: 1, mt: 1 }}
             >
               <ListItemIcon sx={{ minWidth: 34 }}>
-                <CloudOutlined fontSize="small" />
+                <ConnectedProviderIcon provider={p.type} fontSize="small" />
               </ListItemIcon>
               <ListItemText primary={p.name} slotProps={{ primary: { variant: "subtitle2" } }} />
               {authorizing == p.type && <CircularProgress size={18} />}
@@ -356,7 +357,11 @@ const StorageRow = ({
         py: 1,
       }}
     >
-      <CloudOutlined fontSize="small" sx={{ color: needsReconnect ? "warning.main" : "text.secondary", mr: 0.5 }} />
+      <ConnectedProviderIcon
+        provider={storage.provider}
+        fontSize="small"
+        sx={{ color: needsReconnect ? "warning.main" : "text.secondary", mr: 0.5 }}
+      />
       <Box sx={{ flex: "1 1 180px", minWidth: 0 }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
           <NoWrapTypography variant="subtitle2">{storage.name}</NoWrapTypography>

@@ -20,6 +20,7 @@ import { DenseFilledTextField, SquareChip } from "../../../Common/StyledComponen
 import CopyOutlined from "../../../Icons/CopyOutlined.tsx";
 import SettingForm from "../../../Pages/Setting/SettingForm.tsx";
 import { NoMarginHelperText, SettingSection, SettingSectionContent } from "../Settings.tsx";
+import ConnectedProviderIcon from "../../../FileManager/Connected/ConnectedProviderIcon.tsx";
 
 // Fylvo: the OAuth clients of this installation for connected storages. A secret can be
 // set, never read back; the server only says whether one is stored.
@@ -79,6 +80,7 @@ const ProviderForm = ({
   return (
     <SettingSection>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <ConnectedProviderIcon provider={provider} fontSize="small" sx={{ color: "text.secondary" }} />
         <Typography variant="h6">{providerTitle}</Typography>
         <SquareChip
           size="small"
