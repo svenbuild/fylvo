@@ -47,6 +47,9 @@ class FylvoApp : Application(), ImageLoaderFactory {
         private set
     lateinit var offlineEdits: OfflineEdits
         private set
+    /** Fylvo: the account's customisation (prefs, favourites, tags, accents). */
+    lateinit var accountPrefs: io.github.svenbuild.fylvo.android.data.prefs.AccountPrefsRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -61,6 +64,9 @@ class FylvoApp : Application(), ImageLoaderFactory {
         appUpdater = AppUpdater(this, apiClient)
         offlineManager = OfflineManager(this, sessionManager, favoritesStore)
         offlineEdits = OfflineEdits(this, offlineManager, fileRepository)
+        accountPrefs = io.github.svenbuild.fylvo.android.data.prefs.AccountPrefsRepository(
+            this, apiClient, sessionManager, onSessionExpired = { endSession(expired = true) },
+        )
         // Upload lists no job will finish any more; off the main thread.
         Thread { runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cleanUpOldBatches(this) } }.start()
     }
@@ -90,6 +96,8 @@ class FylvoApp : Application(), ImageLoaderFactory {
     suspend fun endSession(expired: Boolean = false) {
         // Runs to the end even when the caller's screen or search is cancelled meanwhile.
         withContext(NonCancellable) {
+            // Fylvo: first of all, no request of this session runs any more (nor its answer lands).
+            sessionManager.endGeneration()
             // Open uploads first, while the sign-in still works (their sessions are cancelled).
             if (!expired) {
                 withContext(Dispatchers.IO) {
@@ -112,6 +120,7 @@ class FylvoApp : Application(), ImageLoaderFactory {
             fileRepository.forgetThumbs()
             appUpdater.reset()
             favoritesStore.clear()
+            accountPrefs.clear()
             // Synced copies are read-only, the server has them. After an expired session they stay
             // for the same account (bound to it, see OfflineStore). Working copies are never deleted
             // here: a sign-out handles them first (signOut), after an expired session they stay

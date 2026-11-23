@@ -12,6 +12,9 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Streaming
+import retrofit2.http.PATCH
+import retrofit2.http.Tag
+import kotlinx.serialization.json.JsonObject
 import retrofit2.http.Url
 
 interface ApiService {
@@ -129,4 +132,48 @@ interface ApiService {
     @Streaming
     @GET("api/v4/fylvo/android/apk/{sha256}")
     suspend fun androidApk(@Path("sha256") sha256: String): Response<ResponseBody>
+
+    // ---- Fylvo: customisation (design/customize-plan.md). Calls carry the session they belong
+    // to ([SessionTag]); ApiClient drops them once that session ended.
+
+    @GET("api/v4/fylvo/prefs")
+    suspend fun prefs(@Tag session: SessionTag): Response<ApiResponse<FylvoPrefs>>
+
+    @PATCH("api/v4/fylvo/prefs")
+    suspend fun patchPrefs(@Body patch: JsonObject, @Tag session: SessionTag): Response<ApiResponse<FylvoPrefs>>
+
+    @HTTP(method = "DELETE", path = "api/v4/fylvo/prefs")
+    suspend fun resetPrefs(@Tag session: SessionTag): Response<ApiResponse<FylvoPrefs>>
+
+    @GET("api/v4/fylvo/favorites")
+    suspend fun favorites(@Tag session: SessionTag): Response<ApiResponse<FavoritesList>>
+
+    @PUT("api/v4/fylvo/favorites")
+    suspend fun addFavorites(@Body request: FavoritesAddRequest, @Tag session: SessionTag): Response<ApiResponse<FavoriteIds>>
+
+    @HTTP(method = "DELETE", path = "api/v4/fylvo/favorites", hasBody = true)
+    suspend fun removeFavorites(@Body request: FavoritesRemoveRequest, @Tag session: SessionTag): Response<ApiResponse<FavoriteIds>>
+
+    @GET("api/v4/fylvo/tags")
+    suspend fun tags(@Tag session: SessionTag): Response<ApiResponse<List<TagInfo>>>
+
+    @GET("api/v4/site/config/basic")
+    suspend fun siteBasic(@Tag session: SessionTag): Response<ApiResponse<SiteBasic>>
+
+    @GET("api/v4/user/setting")
+    suspend fun userSettings(@Tag session: SessionTag): Response<ApiResponse<UserSettings>>
+
+    @PATCH("api/v4/file/metadata")
+    suspend fun patchMetadata(@Body request: MetadataPatchRequest, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    @PATCH("api/v4/file/view")
+    suspend fun patchView(@Body request: ViewPatchRequest, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    /** The listing's whole `view`; without page size and sort, which would replace the stored ones. */
+    @GET("api/v4/file")
+    suspend fun folderView(@Query("uri") uri: String, @Tag session: SessionTag): Response<ApiResponse<FolderViewResponse>>
+
+    /** Fylvo: one share's public facts (member-only, owner); decides the star inside shares. */
+    @GET("api/v4/share/info/{id}")
+    suspend fun shareInfo(@Path("id") id: String, @Tag session: SessionTag): Response<ApiResponse<ShareInfo>>
 }

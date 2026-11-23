@@ -54,6 +54,7 @@ import io.github.svenbuild.fylvo.android.data.offline.EditEntry
 import io.github.svenbuild.fylvo.android.data.offline.EditState
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.ui.text.TextStyle
+import io.github.svenbuild.fylvo.android.ui.theme.rowExtra
 
 /**
  * Gestures a row or tile responds to. Fylvo: no menu button on rows any more; a long press
@@ -204,6 +205,8 @@ fun FileListItem(
     edit: EditEntry? = null,
 ) {
     val shape = RoundedCornerShape(12.dp)
+    // Fylvo: more room per row with the account's density "normal" or "comfortable".
+    val extra = io.github.svenbuild.fylvo.android.ui.theme.LocalListDensity.current.rowExtra
     val background by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
         animationSpec = tween(160), label = "rowBg",
@@ -215,7 +218,7 @@ fun FileListItem(
             .clip(shape)
             .background(background)
             .fileClicks(actions, selectionState(selecting, selected))
-            .padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = 0.dp),
+            .padding(start = 10.dp, top = 6.dp + extra, bottom = 6.dp + extra, end = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FileThumb(

@@ -137,6 +137,8 @@ fun FilesScreen(
     // Saveable: a language change restarts the activity and should land on the Account tab again.
     var accountOpen by rememberSaveable { mutableStateOf(false) }
     var offlineOpen by remember { mutableStateOf(false) }
+    /** Fylvo: Account › Customise. */
+    var customizeOpen by rememberSaveable { mutableStateOf(false) }
     val searchFocus = remember { FocusRequester() }
 
     val inSearch = state.searchQuery != null
@@ -369,6 +371,7 @@ fun FilesScreen(
         viewModel.clearSelection()
         accountOpen = tab == Tab.ACCOUNT
         offlineOpen = false
+        customizeOpen = false
         when (tab) {
             Tab.HOME -> viewModel.goHome()
             Tab.FILES -> viewModel.openMyFiles()
@@ -602,7 +605,7 @@ fun FilesScreen(
     // Fylvo: the one-time hint about long press and drag, on a quiet folder screen with files.
     val hintReady = !state.home && !inSearch && !state.inTrash && !state.offlineMode && !state.loading &&
         state.error == null && state.files.isNotEmpty() && !state.selecting && !menuOpen && state.snackbar == null &&
-        !accountOpen && !offlineOpen && preview == null && movePick == null && sheetTarget == null && !addSheetOpen &&
+        !accountOpen && !offlineOpen && !customizeOpen && preview == null && movePick == null && sheetTarget == null && !addSheetOpen &&
         !mkdirOpen && renameTarget == null && deleteTarget == null && deleteSelectedTarget == null &&
         deleteForeverTarget == null && shareTarget == null && detailsTarget == null && pendingUpload == null &&
         state.offlinePrompt == null && discardTarget == null && state.editPrompt == null && state.rootPrompt == null
@@ -851,7 +854,19 @@ fun FilesScreen(
         AccountScreen(
             offlineCount = state.offlineRoots.size,
             onOpenOffline = { offlineOpen = true },
+            onOpenCustomize = { customizeOpen = true },
             onBack = { accountOpen = false },
+            bottomBar = { BottomTabs(Tab.ACCOUNT, ::selectTab) },
+        )
+    }
+
+    AnimatedVisibility(
+        visible = customizeOpen,
+        enter = slideInHorizontally(tween(260)) { it / 3 } + fadeIn(tween(200)),
+        exit = slideOutHorizontally(tween(200)) { it / 3 } + fadeOut(tween(160)),
+    ) {
+        io.github.svenbuild.fylvo.android.ui.settings.CustomizeScreen(
+            onBack = { customizeOpen = false },
             bottomBar = { BottomTabs(Tab.ACCOUNT, ::selectTab) },
         )
     }

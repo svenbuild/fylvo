@@ -10,6 +10,11 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.material3.ColorScheme
+import io.github.svenbuild.fylvo.android.data.prefs.Accent
+import io.github.svenbuild.fylvo.android.data.prefs.Accents
+import io.github.svenbuild.fylvo.android.data.prefs.ThemeMode
 
 // Every overridden surface sets its matching `on*` colour. Overriding `surface` alone
 // leaves Material's defaults for text, which were tuned for a different surface and
@@ -18,7 +23,7 @@ import androidx.compose.ui.graphics.Color
 // Fylvo palette from design/style-guide.md: neutral near-black surfaces, grays carry the
 // interface, the indigo accent #7484F4 marks the primary action, focus, progress and links.
 // Selection fills (secondaryContainer) stay neutral gray, not accent.
-private val LightColors = lightColorScheme(
+internal val LightColors = lightColorScheme(
     primary = Color(0xFF5562D9),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFE3E6FD),
@@ -48,7 +53,7 @@ private val LightColors = lightColorScheme(
     inversePrimary = Color(0xFF7484F4),
 )
 
-private val DarkColors = darkColorScheme(
+internal val DarkColors = darkColorScheme(
     primary = Color(0xFF7484F4),
     onPrimary = Color(0xFF0A0A0A),
     primaryContainer = Color(0xFF2A3070),
@@ -80,13 +85,44 @@ private val DarkColors = darkColorScheme(
 )
 
 /**
- * Always the Fylvo palette, never Material You wallpaper colors, so the accent stays the
- * Fylvo indigo on every phone.
+ * Fylvo: the scheme for an accent other than the default. The surfaces stay the Fylvo ones; the
+ * accent colours and their text colours are derived (text on them by contrast).
+ */
+internal fun accentScheme(base: ColorScheme, accent: Accent, dark: Boolean): ColorScheme {
+    val main = if (dark) accent.dark else accent.light
+    val surface = base.surface.toArgb()
+    val container = Accents.mix(surface, main, if (dark) 0.30f else 0.16f)
+    val onContainer = if (dark) Accents.mix(main, 0xFFFFFFFF.toInt(), 0.75f) else Accents.mix(main, 0xFF000000.toInt(), 0.65f)
+    val c = Color(main)
+    val on = Color(Accents.onColor(main))
+    return base.copy(
+        primary = c, onPrimary = on,
+        secondary = c, onSecondary = on,
+        tertiary = c, onTertiary = on,
+        primaryContainer = Color(container), onPrimaryContainer = Color(onContainer),
+        tertiaryContainer = Color(container), onTertiaryContainer = Color(onContainer),
+        inversePrimary = Color(if (dark) accent.light else accent.dark),
+    )
+}
+
+/** Fylvo: the colour scheme for [dark] and [accent] (null or the default key: today's colours). */
+fun fylvoColorScheme(dark: Boolean, accent: Accent?): ColorScheme {
+    val base = if (dark) DarkColors else LightColors
+    return if (accent == null || Accents.isDefault(accent.key)) base else accentScheme(base, accent, dark)
+}
+
+/**
+ * Always the Fylvo palette, never Material You wallpaper colors. Fylvo: light or dark as the
+ * account chose ([mode]), otherwise like the device; [accent] one of the site's six colours.
  */
 @Composable
-fun FylvoTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    val scheme = if (dark) DarkColors else LightColors
+fun FylvoTheme(mode: ThemeMode = ThemeMode.SYSTEM, accent: Accent? = null, content: @Composable () -> Unit) {
+    val dark = when (mode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+    val scheme = fylvoColorScheme(dark, accent)
     // Edge-to-edge draws under the status bar, so its icons must follow our
     // surface, not the wallpaper: dark icons on the light theme and vice versa.
     val view = LocalView.current
@@ -101,3 +137,14 @@ fun FylvoTheme(content: @Composable () -> Unit) {
     }
     MaterialTheme(colorScheme = scheme, typography = FylvoTypography, content = content)
 }
+
+/** Fylvo: the account's list density, for rows and tiles (compact = the look before customisation). */
+val LocalListDensity = androidx.compose.runtime.staticCompositionLocalOf { io.github.svenbuild.fylvo.android.data.prefs.Density.COMPACT }
+
+/** Fylvo: extra vertical space of a list row per density. */
+val io.github.svenbuild.fylvo.android.data.prefs.Density.rowExtra: androidx.compose.ui.unit.Dp
+    get() = when (this) {
+        io.github.svenbuild.fylvo.android.data.prefs.Density.COMPACT -> androidx.compose.ui.unit.Dp(0f)
+        io.github.svenbuild.fylvo.android.data.prefs.Density.NORMAL -> androidx.compose.ui.unit.Dp(4f)
+        io.github.svenbuild.fylvo.android.data.prefs.Density.COMFORTABLE -> androidx.compose.ui.unit.Dp(8f)
+    }

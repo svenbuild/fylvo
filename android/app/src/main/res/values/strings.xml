@@ -495,4 +495,19 @@
     <string name="error_connected_export_too_large">This document is too large for the provider to export.</string>
     <string name="error_connected_daily_limit">The daily limit of the provider for this file is reached. Please try again tomorrow.</string>
     <string name="error_connected_too_large">This folder has too many entries to be shown in Fylvo.</string>
+    <string name="customize">Customise</string>
+    <string name="customize_entry_hint">Tabs, swipes, start page, look</string>
+    <string name="customize_save_failed">Could not save the change.</string>
+    <string name="customize_needs_server">Customising needs a newer Fylvo server.</string>
+    <string name="customize_loading">Loading the settings…</string>
+    <string name="customize_account_hint">These settings belong to your account and also apply on the web.</string>
+    <string name="customize_appearance">Appearance</string>
+    <string name="customize_accent">Accent colour</string>
+    <string name="customize_density">Density</string>
+    <string name="theme_system">Like device</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="density_compact">Compact</string>
+    <string name="density_normal">Normal</string>
+    <string name="density_comfortable">Roomy</string>
 </resources>

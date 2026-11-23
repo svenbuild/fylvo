@@ -27,6 +27,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import io.github.svenbuild.fylvo.android.ui.files.FilesScreen
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
 import io.github.svenbuild.fylvo.android.ui.login.LoginScreen
@@ -53,6 +54,12 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         val app = application as FylvoApp
         lifecycleScope.launch { runCatching { app.offlineEdits.start() } }
+        // Fylvo: settings changed on the web show up when coming back after a while.
+        lifecycleScope.launch {
+            if (app.sessionManager.isLoggedIn.first()) {
+                runCatching { app.accountPrefs.refresh(ifOlderThanMs = io.github.svenbuild.fylvo.android.data.prefs.AccountPrefsRepository.STALE_MS) }
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -120,7 +127,23 @@ fun App() {
         }
     }
 
-    FylvoTheme {
+    // Fylvo: the account's light/dark choice, accent and density (cached copy first, then the server).
+    val prefsState by app.accountPrefs.state.collectAsState()
+    LaunchedEffect(loggedIn) {
+        if (loggedIn == true) {
+            app.accountPrefs.restore()
+            app.accountPrefs.refresh()
+        }
+    }
+    val prefs = prefsState.prefs.takeIf { prefsState.usable }
+    val accent = prefs?.appearance?.accent?.let { key -> prefsState.accents.firstOrNull { it.key.equals(key, ignoreCase = true) } }
+    FylvoTheme(
+        mode = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.mode(prefs),
+        accent = accent,
+    ) {
+      androidx.compose.runtime.CompositionLocalProvider(
+        io.github.svenbuild.fylvo.android.ui.theme.LocalListDensity provides io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.density(prefs),
+      ) {
         // Android 13+ needs a runtime grant before sync/upload notifications
         // can post; ask once the session is known to be signed in.
         val notifPermission = rememberLauncherForActivityResult(
@@ -146,9 +169,11 @@ fun App() {
             null -> Unit // session store still loading; keep frame empty
             // Signing in flips loggedIn, which swaps in the files screen by itself.
             false -> LoginScreen(viewModel = viewModel(factory = factory), onLoggedIn = {})
-            true -> {
+            // Fylvo: the cached customisation is read first, so the screen does not flicker.
+            true -> if (prefsState.restored) {
                 FilesScreen(viewModel = viewModel(factory = factory))
             }
         }
+      }
     }
 }

@@ -32,6 +32,26 @@ fun normalizeServerUrl(url: String): String {
  */
 class SessionManager(private val context: Context) {
 
+    // Fylvo: the number of the session in this process. It changes at every sign-in and at the
+    // start of every session end; requests tagged with an older number are not sent (ApiClient),
+    // and answers to them are not taken over (AccountPrefsRepository).
+    private val generationCounter = java.util.concurrent.atomic.AtomicLong(1)
+    @Volatile private var ended = false
+
+    /** Fylvo: the tag for a request of the current session. */
+    fun sessionTag(): io.github.svenbuild.fylvo.android.api.SessionTag =
+        io.github.svenbuild.fylvo.android.api.SessionTag(generationCounter.get())
+
+    /** Fylvo: true while [tag]'s session is the signed-in one and not ending. */
+    fun isCurrent(tag: io.github.svenbuild.fylvo.android.api.SessionTag): Boolean =
+        !ended && tag.generation == generationCounter.get()
+
+    /** Fylvo: the session ends now; no tagged request runs any more until the next sign-in. */
+    fun endGeneration() {
+        ended = true
+        generationCounter.incrementAndGet()
+    }
+
     private object Keys {
         val serverUrl = stringPreferencesKey("server_url")
         val accessToken = stringPreferencesKey("access_token")
@@ -86,6 +106,8 @@ class SessionManager(private val context: Context) {
             it[Keys.userNick] = nick
             it[Keys.userId] = userId
         }
+        generationCounter.incrementAndGet()
+        ended = false
         notifyDocumentsRoots()
     }
 
@@ -107,6 +129,7 @@ class SessionManager(private val context: Context) {
     }
 
     suspend fun clear() {
+        endGeneration()
         context.sessionStore.edit { it.clear() }
         notifyDocumentsRoots()
     }
@@ -117,6 +140,7 @@ class SessionManager(private val context: Context) {
      * prefilled. Full sign-out uses [clear] instead.
      */
     suspend fun clearSession() {
+        endGeneration()
         context.sessionStore.edit {
             it.remove(Keys.accessToken)
             it.remove(Keys.refreshToken)

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -81,6 +82,8 @@ import java.util.Date
 fun AccountScreen(
     offlineCount: Int,
     onOpenOffline: () -> Unit,
+    /** Fylvo: Account › Customise. */
+    onOpenCustomize: () -> Unit,
     onBack: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -195,6 +198,12 @@ fun AccountScreen(
                     )
                 },
                 leadingContent = { Icon(Icons.Default.OfflinePin, contentDescription = null) },
+            )
+            ListItem(
+                modifier = Modifier.clickable(onClick = onOpenCustomize),
+                headlineContent = { Text(stringResource(R.string.customize)) },
+                supportingContent = { Text(stringResource(R.string.customize_entry_hint)) },
+                leadingContent = { Icon(Icons.Outlined.Palette, contentDescription = null) },
             )
             if (offlineCount > 0) {
                 SwitchRow(

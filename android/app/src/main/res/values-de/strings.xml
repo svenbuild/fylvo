@@ -492,4 +492,19 @@
     <string name="error_connected_export_too_large">Dieses Dokument ist zu gross, um es beim Anbieter umzuwandeln.</string>
     <string name="error_connected_daily_limit">Das Tageslimit des Anbieters für diese Datei ist erreicht. Bitte morgen nochmal versuchen.</string>
     <string name="error_connected_too_large">Dieser Ordner hat zu viele Einträge, um ihn in Fylvo zu zeigen.</string>
+    <string name="customize">Anpassen</string>
+    <string name="customize_entry_hint">Reiter, Wischen, Startseite, Aussehen</string>
+    <string name="customize_save_failed">Die Änderung konnte nicht gespeichert werden.</string>
+    <string name="customize_needs_server">Anpassen braucht einen neueren Fylvo-Server.</string>
+    <string name="customize_loading">Einstellungen werden geladen …</string>
+    <string name="customize_account_hint">Diese Einstellungen gehören zu deinem Konto und gelten auch im Web.</string>
+    <string name="customize_appearance">Aussehen</string>
+    <string name="customize_accent">Akzentfarbe</string>
+    <string name="customize_density">Dichte</string>
+    <string name="theme_system">Wie Gerät</string>
+    <string name="theme_light">Hell</string>
+    <string name="theme_dark">Dunkel</string>
+    <string name="density_compact">Kompakt</string>
+    <string name="density_normal">Normal</string>
+    <string name="density_comfortable">Luftig</string>
 </resources>

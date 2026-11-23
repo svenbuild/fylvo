@@ -84,12 +84,19 @@ class ApiClient(private val session: SessionManager) {
                 runBlocking { session.serverUrlNow() + "/" }.toHttpUrlOrNull()?.let(::originOf) == apiOrigin
             if (!sameOrigin) return@Interceptor chain.proceed(original)
 
+            // Fylvo: a request of an ended session never gets the token of the next one.
+            val tag = original.tag(SessionTag::class.java)
+            fun checkSession() {
+                if (tag != null && !session.isCurrent(tag)) throw java.io.IOException("Session ended")
+            }
             val token = runBlocking { freshAccessToken(baseUrl) }
+            checkSession()
             var response = chain.proceed(original.withBearer(token))
             if (token.isNotEmpty() && response.isLoginRequired()) {
                 val renewed = runBlocking { refresh(baseUrl, staleToken = token) }
                 if (renewed != null) {
                     response.close()
+                    checkSession()
                     response = chain.proceed(original.withBearer(renewed))
                 }
             }
@@ -139,6 +146,8 @@ class ApiClient(private val session: SessionManager) {
         if (current.isNotEmpty() && current != staleToken) return@withLock current
         val refreshToken = session.refreshTokenNow()
         if (refreshToken.isEmpty()) return@withLock null
+        // Fylvo: the new tokens belong to the session that asked for them.
+        val asked = session.sessionTag()
 
         val resp = runCatching {
             bareService(baseUrl).refreshToken(RefreshTokenRequest(refreshToken))
@@ -149,7 +158,7 @@ class ApiClient(private val session: SessionManager) {
         }
         val tokens = body.data
         // Signed out or signed in again while the request ran: drop the result.
-        if (session.refreshTokenNow() != refreshToken) return@withLock null
+        if (session.refreshTokenNow() != refreshToken || !session.isCurrent(asked)) return@withLock null
         session.saveTokens(tokens.accessToken, tokens.refreshToken, parseExpiresAt(tokens.accessExpires))
         tokens.accessToken
     }
