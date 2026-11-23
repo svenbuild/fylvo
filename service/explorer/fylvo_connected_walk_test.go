@@ -220,4 +220,13 @@ func TestConnectedExportFormats(t *testing.T) {
 		require.Equal(t, serializer.CodeConnectedUnsupported, refused(path, format), path)
 	}
 	require.Equal(t, serializer.CodeConnectedUnsupported, refused("/Budget.gsheet", "../etc"))
+
+	// Asked to be sent on to the address, with errors to be passed over: a format that
+	// is refused leaves no address to be sent to, so the error is the answer.
+	_, err = (&FileURLService{Uris: []string{e.root + "/Budget.gsheet"}, Download: true, Export: "docx", SkipError: true, Redirect: true}).Get(e.as(e.alex))
+	require.Error(t, err)
+	res := serializer.Err(e.as(e.alex), err)
+	entry, ok := res.AggregatedError.(map[string]serializer.Response)[e.root+"/Budget.gsheet"]
+	require.True(t, ok, "%+v", res.AggregatedError)
+	require.Equal(t, serializer.CodeConnectedUnsupported, entry.Code)
 }

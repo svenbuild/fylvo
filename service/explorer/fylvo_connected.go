@@ -456,6 +456,10 @@ func connectedURLs(c *gin.Context, uris []*fs.URI, s *FileURLService) (*FileURLR
 	}
 
 	if s.Redirect && len(uris) == 1 {
+		if res[0].Url == "" {
+			// Nowhere to send the client: the error is the answer, also with SkipError.
+			return nil, ae.Aggregate()
+		}
 		c.Redirect(http.StatusFound, res[0].Url)
 		return nil, nil
 	}

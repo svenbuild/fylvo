@@ -553,11 +553,31 @@ func TestWalkWhileThingsHappen(t *testing.T) {
 		first, err := tree.Walk(ctx, c, "", Scan{}, order, 2, "")
 		require.NoError(t, err)
 		require.Len(t, first.Rows, 2)
-		// The walk began before the write, so its first page is good. It is not kept.
+		// The walk began before the write, so its first page is an answer. But what
+		// was moved between two of its folders meanwhile may be in neither: it says
+		// that it may not have seen everything, and it is not kept.
+		require.True(t, first.Incomplete)
 		require.NotEmpty(t, first.Next)
 		require.Empty(t, tree.snapshots)
 		_, err = tree.Walk(ctx, c, "", Scan{}, order, 2, first.Next)
 		require.ErrorIs(t, err, ErrListingGone)
+	})
+
+	t.Run("a write while a walk of one page runs", func(t *testing.T) {
+		p, ids, tree, c := setup()
+		at(p, ids["Work"], func() error {
+			tree.Changed(c, ids["Docs"])
+			return nil
+		})
+		whole, err := tree.Walk(ctx, c, "", Scan{}, order, 100, "")
+		require.NoError(t, err)
+		require.Empty(t, whole.Next)
+		require.True(t, whole.Incomplete)
+		// Without a write it is complete.
+		p.before = nil
+		whole, err = tree.Walk(ctx, c, "", Scan{}, order, 100, "")
+		require.NoError(t, err)
+		require.False(t, whole.Incomplete)
 	})
 
 	t.Run("a write to the folder it is reading", func(t *testing.T) {
@@ -568,6 +588,7 @@ func TestWalkWhileThingsHappen(t *testing.T) {
 		})
 		first, err := tree.Walk(ctx, c, "", Scan{}, order, 2, "")
 		require.NoError(t, err)
+		require.True(t, first.Incomplete)
 		require.Empty(t, tree.snapshots)
 		_, err = tree.Walk(ctx, c, "", Scan{}, order, 2, first.Next)
 		require.ErrorIs(t, err, ErrListingGone)
@@ -581,6 +602,7 @@ func TestWalkWhileThingsHappen(t *testing.T) {
 		})
 		first, err := tree.Walk(ctx, c, "Docs", Scan{}, order, 2, "")
 		require.NoError(t, err)
+		require.False(t, first.Incomplete)
 		_, err = tree.Walk(ctx, c, "Docs", Scan{}, order, 2, first.Next)
 		require.NoError(t, err)
 	})
@@ -641,6 +663,19 @@ func TestWalkWhileThingsHappen(t *testing.T) {
 		require.ErrorIs(t, err, context.Canceled)
 		require.Equal(t, "known root|list root|known "+ids["Docs"]+"|list "+ids["Docs"], strings.Join(p.events, "|"), "the walk ends at the next folder")
 		require.Empty(t, tree.walks, "and its place is free")
+		require.Empty(t, tree.snapshots)
+	})
+
+	t.Run("the client gives up while the last folder cannot be read", func(t *testing.T) {
+		// A folder that is left out is left out for a client that is still there.
+		p, ids, tree, c := setup()
+		asked, gone := context.WithCancel(ctx)
+		at(p, ids["Deep"], func() error {
+			gone()
+			return &provider.Error{Kind: provider.KindForbidden}
+		})
+		_, err := tree.Walk(asked, c, "", Scan{}, order, 2, "")
+		require.ErrorIs(t, err, context.Canceled)
 		require.Empty(t, tree.snapshots)
 	})
 }

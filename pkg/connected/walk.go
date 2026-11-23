@@ -180,6 +180,11 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 				// time of the walk ran out in the same moment.
 				return nil, err
 			}
+			if gone := asked.Err(); gone != nil {
+				// The client left. Whatever the provider said about this folder, there
+				// is nobody to answer.
+				return nil, gone
+			}
 			below := f.id != parent.ContentID() && (errors.Is(err, ErrNotFound) || errors.Is(err, ErrTooLarge) ||
 				provider.KindOf(err) == provider.KindIncomplete || provider.KindOf(err) == provider.KindForbidden)
 			if (late() || below) && c.ended() {
@@ -234,30 +239,32 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 	sort.Slice(snap.rows, func(i, j int) bool { return snap.rows[i].Path < snap.rows[j].Path })
 	sortRows(snap.rows, o)
 
+	t.mu.Lock()
+	if c.ended() {
+		t.mu.Unlock()
+		return nil, context.Canceled
+	}
+	// A write through Fylvo to a folder the walk read, while it ran. An entry that was
+	// moved from a folder read later into one read before is in neither listing, so
+	// the walk says that it may not have seen everything. It is not kept either: it
+	// was ended before its first page, and its next page answers ErrListingGone.
+	changed := false
+	for _, r := range reads {
+		changed = changed || r.changed
+	}
+	if changed {
+		snap.incomplete = true
+	}
 	id := ""
 	if len(snap.rows) > size {
 		id = randomID()
-		t.mu.Lock()
-		if c.ended() {
-			t.mu.Unlock()
-			return nil, context.Canceled
-		}
-		changed := false
-		for _, r := range reads {
-			changed = changed || r.changed
-		}
-		// A write below the folder since the walk began ended it before its first
-		// page: it is not kept, and its next page answers ErrListingGone.
 		if !changed {
 			t.sweep()
 			t.makeRoom(snap.weight())
 			snap.lastUsed = t.now()
 			t.snapshots[id] = snap
 		}
-		t.mu.Unlock()
 	}
-	if c.ended() {
-		return nil, context.Canceled
-	}
+	t.mu.Unlock()
 	return snap.page(id, 0, size), nil
 }
