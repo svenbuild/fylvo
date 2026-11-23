@@ -20,7 +20,7 @@ on an official page.
   https://cloud.example.com/api/v4/fylvo/connected/callback
   ```
 
-  Fylvo also shows it in the admin panel, ready to copy.
+  Fylvo also shows it in the admin panel, ready to copy (step 6).
 - A Microsoft directory (Entra ID tenant). Since June 2024, Microsoft only accepts new app
   registrations inside a directory; a plain personal Microsoft account is not enough. If you
   have none, step 1 creates one.
@@ -99,16 +99,17 @@ Microsoft's default settings let only an admin approve them.
 
 ## 6. Enter it in Fylvo
 
-1. Sign in to Fylvo as admin, open the admin panel and its tab for connected storage. The
-   return address shown there is the one to enter at Microsoft.
-2. For OneDrive, paste the client ID (step 2) and the secret value (step 4), and save. Fylvo
-   keeps the secret but never shows it again; to change it, paste a new one.
-3. In the group settings, check that the groups whose members may connect a storage have
-   this right.
+1. Sign in to Fylvo as admin, open the admin panel, **Settings** > **Connected storages**. The
+   **Redirect URI** shown there is the return address to enter at Microsoft.
+2. Under OneDrive, paste the **Client ID** (step 2) and the secret value (step 4) as **Client
+   secret**, and click **Save**. The status reads **Ready**. Fylvo stores the secret encrypted
+   and never shows it again; to change it, enter a new one.
+3. **Groups** > edit each group whose members may connect a storage > switch on **Connect
+   storages**.
 
-To test, open your own settings, the tab for connected storage, and choose OneDrive. Sign in at
-Microsoft and allow access. You come back to Fylvo, and the drive appears as a folder next to
-your own files.
+To test, open your own **Settings** > **Connected storages** > **Connect storage** and choose
+OneDrive. Sign in at Microsoft and allow access. You come back to Fylvo, and the drive appears
+as a folder next to your own files.
 
 ## What users see
 
@@ -162,9 +163,9 @@ Existing connections keep working, users do not need to reconnect.
 | `AADSTS50011` "The redirect URI ... does not match" | The return address at Microsoft differs from the one Fylvo uses, even by `http`/`https`, `www` or a trailing `/` | Copy the address from the Fylvo admin panel into **Authentication** (step 3) |
 | `AADSTS50194` | The app accepts only accounts of your own directory | Change the app's supported account types to **Any Entra ID Tenant + Personal Microsoft accounts** ([how](https://learn.microsoft.com/en-us/entra/identity-platform/howto-modify-supported-accounts)), or register a new app (step 2) and enter its values |
 | `AADSTS50020` | The browser signed in with another account than intended, or the account type is wrong | Try again in a private window with the right account. If that fails, see `AADSTS50194`. |
-| `AADSTS7000215` "Invalid client secret" | The **Secret ID** was entered instead of the **Value**, or a typo | Create a new secret and enter its value (step 4) |
+| `AADSTS7000215` "Invalid client secret", or Fylvo says "The provider refused the setup of this server" | The **Secret ID** was entered instead of the **Value**, or a typo | Create a new secret and enter its value (step 4) |
 | `AADSTS7000222` "client secret keys ... are expired" | Secret older than its expiry date | [Renew the secret](#renew-the-secret) |
 | `AADSTS65001` | The user has not approved Fylvo, or their organisation requires an admin | Reconnect and click **Accept**; for work accounts the IT may have to approve |
 | "Need admin approval" | Work account whose organisation blocks user approval | The user's IT has to approve Fylvo, or the user connects a personal account |
 | `AADSTS700016` "Application ... was not found" | Client ID wrong, or app deleted | Copy the **Application (client) ID** again, or restore the app |
-| `AADSTS70008`, `AADSTS700082` or `invalid_grant` when Fylvo uses a connection | Unused for 90 days, sessions revoked by the user or an admin, or access removed | Reconnect in Fylvo |
+| Fylvo shows **Reconnect needed** for a connection (`AADSTS70008`, `AADSTS700082`, `invalid_grant`) | Unused for 90 days, sessions revoked by the user or an admin, or access removed | **Reconnect** in Fylvo |

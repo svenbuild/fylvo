@@ -31,7 +31,7 @@ official page.
   https://cloud.example.com/api/v4/fylvo/connected/callback
   ```
 
-  Fylvo also shows it in the admin panel, ready to copy.
+  Fylvo also shows it in the admin panel, ready to copy (step 8).
 
 **Cost:** standard use of the Google Drive API is free, no credit card or billing account is
 needed. Google plans to charge for use above its free
@@ -117,16 +117,17 @@ secret** (starts with `GOCSPX-`). Copy both now: Google shows the secret only th
 
 ## 8. Enter it in Fylvo
 
-1. Sign in to Fylvo as admin, open the admin panel and its tab for connected storage. The
-   return address shown there is the one to enter at Google.
-2. For Google Drive, paste the client ID and the client secret, and save. Fylvo keeps the secret but never shows it again; to
-   change it, paste a new one.
-3. In the group settings, check that the groups whose members may connect a storage have
-   this right.
+1. Sign in to Fylvo as admin, open the admin panel, **Settings** > **Connected storages**. The
+   **Redirect URI** shown there is the return address to enter at Google.
+2. Under Google Drive, paste the **Client ID** and the **Client secret**, and click **Save**.
+   The status reads **Ready**. Fylvo stores the secret encrypted and never shows it again; to
+   change it, enter a new one.
+3. **Groups** > edit each group whose members may connect a storage > switch on **Connect
+   storages**.
 
-To test, open your own settings, the tab for connected storage, and choose Google Drive. Sign in at
-Google and allow access. You come back to Fylvo, and the drive appears as a folder next to
-your own files.
+To test, open your own **Settings** > **Connected storages** > **Connect storage** and choose
+Google Drive. Sign in at Google and allow access. You come back to Fylvo, and the drive appears
+as a folder next to your own files.
 
 ## The warning page
 
@@ -182,10 +183,10 @@ before. You can restore it within about 30 days on the **Deleted credentials** p
 | Google refuses the return address in step 7 | Domain not in **Authorized domains**, or no https | Step 4 |
 | "Access blocked: Fylvo has not completed the Google verification process", `Error 403: access_denied` | App is still in **Testing** and the user is not a test user | Publish the app (step 6) |
 | Drive connections stop working after 7 days | App was in **Testing** when the user connected | Publish the app, then let users reconnect |
-| `Error 401: invalid_client` | Client ID or secret wrong | Enter both again, or create a new secret |
+| `Error 401: invalid_client`, or Fylvo says "The provider refused the setup of this server" | Client ID or secret wrong | Enter both again, or create a new secret |
 | `deleted_client` | Client deleted, also automatically after 6 months without use | Restore it on the **Deleted credentials** page, or create a new client |
 | Fylvo reports `accessNotConfigured` | Step 2 skipped | Enable the Google Drive API in the same project |
-| Fylvo reports `access_denied` | The user clicked **Cancel** | Connect again |
+| Fylvo says "Access was not allowed at the provider" | The user clicked **Cancel** | Connect again |
 | `admin_policy_enforced` | The admin of a school or company account blocks the app | The admin must allow Fylvo, or the user connects a private account |
-| `invalid_grant` when Fylvo uses a connection | The user removed the access at Google, or it was unused for 6 months | Reconnect in Fylvo |
+| Fylvo shows **Reconnect needed** for a connection | The user removed the access at Google, or it was unused for 6 months | **Reconnect** in Fylvo |
 | New users cannot connect, existing ones still can *(not confirmed)* | 100 users reached | Check the count under **Audience**. Only verification lifts the limit. |

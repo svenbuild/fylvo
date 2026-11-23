@@ -172,3 +172,8 @@ Optional. Users can connect their own Google Drive or OneDrive and see it as a f
 their files in Fylvo. For this, you register Fylvo once at each provider and enter the ID and
 secret in the admin panel: [Google Drive](connect-google-drive.md),
 [OneDrive](connect-onedrive.md). Both need Fylvo with https under a domain name (step 1).
+
+Fylvo checks every connection to a provider and refuses internal addresses. If the server goes
+out through a proxy (`HTTPS_PROXY`), the proxy decides which targets are reachable: Fylvo can
+only check the address and its own name lookup, so the proxy itself has to block internal
+addresses.
