@@ -29,7 +29,7 @@ account you register becomes the admin.
 The Docker image is built from the binaries in `release/`:
 
 ```bash
-scripts/build.sh
+scripts/build.sh                             # on an arm64 machine: FYLVO_ARCH=arm64 scripts/build.sh
 docker build -t fylvo:dev .
 ```
 

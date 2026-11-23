@@ -1,3 +1,8 @@
+import { StarBorder } from "@mui/icons-material";
+import { setFavorite } from "../../../redux/thunks/fylvo.ts";
+import StarFilled from "../../Icons/StarFilled.tsx";
+import Color from "../../Icons/Color.tsx";
+import FolderColorQuickAction from "../FileInfo/FolderColorQuickAction.tsx";
 import { Box, Divider, ListItemIcon, ListItemText, Menu, MenuItem, styled, Typography, useTheme } from "@mui/material";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -6,6 +11,7 @@ import { CreateNewDialogType } from "../../../redux/globalStateSlice.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { downloadFiles } from "../../../redux/thunks/download.ts";
 import {
+  applyIconColor,
   batchGetDirectLinks,
   createNew,
   deleteFile,
@@ -111,6 +117,11 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
   const parent = useAppSelector((state) => state.fileManager[fmIndex].list?.parent);
 
   const displayOpt = useActionDisplayOpt(targets, contextMenuType, parent, fmIndex);
+  const favorites = useAppSelector((state) => state.fylvo.prefs?.favorites);
+  const allFavorite = useMemo(
+    () => targets.length > 0 && targets.every((f) => favorites?.includes(f.id)),
+    [targets, favorites],
+  );
   const onClose = useCallback(() => {
     dispatch(closeContextMenu({ index: fmIndex, value: undefined }));
   }, [dispatch]);
@@ -135,7 +146,12 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
     displayOpt.showCopy ||
     displayOpt.showDirectLink;
   let part3 =
-    displayOpt.showTags || displayOpt.showOrganize || displayOpt.showMore || displayOpt.showNewFileFromTemplate;
+    displayOpt.showFavorite ||
+    displayOpt.showTags ||
+    displayOpt.showChangeFolderColor ||
+    displayOpt.showOrganize ||
+    displayOpt.showMore ||
+    displayOpt.showNewFileFromTemplate;
   let part4 = displayOpt.showInfo || displayOpt.showGoToParent || displayOpt.showGoToSharedLink;
   let part5 = displayOpt.showRestore || displayOpt.showDelete || displayOpt.showRefresh;
   const showDivider1 = part1 && part2;
@@ -292,6 +308,33 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
 
   const part3Elements = part3 ? (
     <>
+      {displayOpt.showFavorite && (
+        <SquareMenuItem
+          onClick={() => {
+            onClose();
+            dispatch(setFavorite(targets, !allFavorite));
+          }}
+        >
+          <ListItemIcon>{allFavorite ? <StarFilled fontSize="small" /> : <StarBorder fontSize="small" />}</ListItemIcon>
+          <ListItemText>{t(allFavorite ? "application:customize.unstar" : "application:customize.star")}</ListItemText>
+        </SquareMenuItem>
+      )}
+      {displayOpt.showChangeFolderColor && (
+        <CascadingSubmenu popupId={"color"} title={t("application:customize.color")} icon={<Color fontSize="small" />}>
+          <FolderColorQuickAction
+            file={targets[0]}
+            onColorChange={(color) => {
+              onClose();
+              dispatch(applyIconColor(fmIndex, targets, color, true));
+            }}
+            sx={{
+              maxWidth: "204px",
+              margin: (theme) => `0 ${theme.spacing(0.5)}`,
+              padding: (theme) => `${theme.spacing(0.5)} ${theme.spacing(1)}`,
+            }}
+          />
+        </CascadingSubmenu>
+      )}
       {displayOpt.showTags && (
         <CascadingSubmenu popupId={"tags"} title={t("application:fileManager.tags")} icon={<Tag fontSize="small" />}>
           <TagMenuItems displayOpt={displayOpt} targets={targets} />

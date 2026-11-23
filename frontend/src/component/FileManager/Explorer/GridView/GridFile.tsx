@@ -25,6 +25,7 @@ import { fileHovered, navigateReconcile } from "../../../../redux/thunks/fileman
 import FileIcon from "../FileIcon.tsx";
 import FileSmallIcon from "../FileSmallIcon.tsx";
 import FileTagSummary from "../FileTagSummary.tsx";
+import FavoriteMark from "../FavoriteMark.tsx";
 // @ts-ignore
 import Highlighter from "react-highlight-words";
 
@@ -405,6 +406,7 @@ const GridFile = memo((props: FileBlockProps) => {
                 </FileNameText>
               </Tooltip>
             )}
+            {!isEditing && !isLoadingIndicator && <FavoriteMark file={file} />}
             {!isEditing && !uploading && fileTag && fileTag.length > 0 && (
               <FileTagSummary sx={{ maxWidth: "50%" }} tags={fileTag} />
             )}

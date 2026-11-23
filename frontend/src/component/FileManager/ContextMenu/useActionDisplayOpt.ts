@@ -1,3 +1,5 @@
+import { canBeFavorite } from "../../../redux/thunks/fylvo.ts";
+import { useAppSelector } from "../../../redux/hooks.ts";
 import { useMemo } from "react";
 import { FileResponse, FileType, Metadata, NavigatorCapability } from "../../../api/explorer.ts";
 import { GroupPermission } from "../../../api/user.ts";
@@ -69,6 +71,7 @@ export interface DisplayOption {
   showMove?: boolean;
   showTags?: boolean;
   showChangeFolderColor?: boolean;
+  showFavorite?: boolean;
   showChangeIcon?: boolean;
   showCustomProps?: boolean;
 
@@ -276,7 +279,8 @@ export const getActionOpt = (
     display.showOpenWith = () =>
       !!(display.showOpen && viewerSetting && viewerSetting[firstFileSuffix ?? ""]?.length < 1);
   }
-  display.showOrganize = display.showPin || display.showMove || display.showChangeFolderColor || display.showChangeIcon;
+  // Fylvo: the folder color has its own entry in the menu.
+  display.showOrganize = display.showPin || display.showMove || display.showChangeIcon;
   display.showGoToSharedLink =
     targets.length == 1 && display.hasFile && targets[0].metadata && !!targets[0].metadata[Metadata.share_redirect];
   display.showInfo = targets.length == 1 && display.orCapability && canShowInfo(display.orCapability);
@@ -316,9 +320,14 @@ export const getActionOpt = (
 };
 
 const useActionDisplayOpt = (targets: FileResponse[], type?: string, parent?: FileResponse, fmIndex: number = 0) => {
+  const shareInfo = useAppSelector((state) => state.globalState.shareInfo);
   const opt = useMemo(() => {
-    return getActionOpt(targets, Viewers, type, parent, fmIndex);
-  }, [targets, type, parent, fmIndex]);
+    const display = getActionOpt(targets, Viewers, type, parent, fmIndex);
+    // Fylvo: the star, only where it can work.
+    display.showFavorite =
+      !display.hasTrashFile && targets.length > 0 && targets.every((f) => canBeFavorite(f, shareInfo));
+    return display;
+  }, [targets, type, parent, fmIndex, shareInfo]);
 
   return opt;
 };

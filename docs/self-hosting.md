@@ -95,29 +95,54 @@ settings in `.env`. Back up the whole folder. Stop Fylvo for the copy, so the da
 consistent; it takes as long as copying your files.
 
 ```bash
-cd ~/fylvo
-docker compose stop fylvo
-sudo sh -c "umask 077 && tar -czf $HOME/fylvo-backup-$(date +%F).tar.gz -C $HOME fylvo"
-docker compose start fylvo
+bash -euc '
+  cd ~/fylvo
+  B=$HOME/fylvo-backup-$(date +%F-%H%M%S).tar.gz
+  docker compose stop fylvo
+  trap "docker compose start fylvo" EXIT
+  sudo sh -c "umask 077 && tar -czf $B.part -C $HOME fylvo && mv $B.part $B"
+  echo "Backup: $B"
+'
 ```
 
-The archive holds all your files and settings, so only root may read it (`umask 077`); copy it
-with `sudo`.
+Fylvo is started again in any case; the backup is only made when Fylvo stopped. Each run makes a
+new file with date and time; a failed run leaves at most a `.part` file and reports an error. Run
+one backup at a time. The archive
+holds all your files and settings, so only root may read it (`umask 077`); copy it with `sudo`.
 
 Keep the backup on another disk or machine. For large amounts of data, a tool that copies only
 changes (`rsync`, `restic`, `borg`) is faster: stop Fylvo, copy the folder, start it again.
 
-Restore a backup:
+Restore a backup: the commands unpack it next to the current folder first and swap the two only
+when that worked. They stop at the first error; until the swap your current Fylvo is untouched.
+Unpacking needs free space for a second copy of your data.
 
 ```bash
-cd ~/fylvo && docker compose --profile office down
-cd ~ && sudo mv fylvo fylvo-old
-sudo tar -xzf ~/fylvo-backup-<date>.tar.gz -C ~
-cd ~/fylvo && docker compose up -d
+B=$HOME/fylvo-backup-<date and time>.tar.gz
+bash -euc '
+  cd ~
+  [ ! -e fylvo-old ] && [ ! -e fylvo-restore ] || { echo "Move ~/fylvo-old and ~/fylvo-restore away first."; exit 1; }
+  mkdir fylvo-restore
+  sudo tar -xzf "$1" -C fylvo-restore
+  sudo test -d fylvo-restore/fylvo/data
+  (cd fylvo && docker compose --profile office down)
+  sudo mv fylvo fylvo-old
+  sudo mv fylvo-restore/fylvo fylvo
+  rmdir fylvo-restore
+  cd fylvo && docker compose up -d
+' restore "$B"
 ```
 
-`--profile office` stops office too, if you use it; without office it changes nothing. With office,
-start with `docker compose --profile office up -d` in the last line.
+`--profile office` stops office too, if you use it; with office, start it again with
+`docker compose --profile office up -d`. If your user is not in the `docker` group, write
+`sudo docker compose` in the compose lines (also in the backup block).
+
+On a new server, with Docker installed and no `~/fylvo` yet, unpacking is enough:
+`B=~/fylvo-backup-<date and time>.tar.gz; sudo tar -xzf "$B" -C ~ && cd ~/fylvo && docker compose up -d`.
+Set up the reverse proxy of step 1 again.
+
+If an update is the problem, not the data: before `docker compose up -d`, set the image in
+`docker-compose.yml` to the version that worked, for example `ghcr.io/svenbuild/fylvo:1.0.0`.
 
 Sign in and open a few files. Delete `~/fylvo-old` when everything is there. A backup from an
 older Fylvo version starts with the current image too; Fylvo updates the database by itself.
@@ -153,13 +178,24 @@ a WebDAV account you create under "Connect & Mount" in the web app.
 
 **App updates from your server.** The apps ask your server for new versions. Each release has a
 file `fylvo-app-updates-<version>.tar.gz` with the new app packages in the layout Fylvo expects.
-Unpack it into the data folder:
+This replaces the app packages your server offers; if the download or the unpacking fails, the
+old ones stay:
 
 ```bash
-cd /tmp
-curl -fsSLO https://github.com/svenbuild/fylvo/releases/download/v1.0.0/fylvo-app-updates-1.0.0.tar.gz
-sudo tar --no-same-owner -xzf fylvo-app-updates-1.0.0.tar.gz -C ~/fylvo/data
-rm fylvo-app-updates-1.0.0.tar.gz
+V=1.0.0   # the release
+bash -euc '
+  T=$(mktemp -d); trap "rm -rf $T" EXIT
+  curl -fsSL -o $T/apps.tar.gz https://github.com/svenbuild/fylvo/releases/download/v$1/fylvo-app-updates-$1.tar.gz
+  mkdir $T/new && tar --no-same-owner -xzf $T/apps.tar.gz -C $T/new
+  cd ~/fylvo/data
+  sudo rm -rf android.old desktop.old
+  for d in android desktop; do
+    [ -d $T/new/$d ] || continue
+    [ ! -e $d ] || sudo mv $d $d.old
+    sudo cp -r $T/new/$d $d
+  done
+  sudo rm -rf android.old desktop.old
+' apps "$V"
 ```
 
 Signed-in apps find the update within a few hours and install it after asking (Android) or when

@@ -77,8 +77,7 @@ Linux adds its own check function (other thread).
   `16A089077B5D78CCAA8996BD51EE523CF0264D79`.
 - The password lives only in a password manager (and in the session that signs), never on the NAS or
   in the repo.
-- `build-msix.ps1 -Sign`: reads the password from a file given by path
-  (`-PasswordFile`), imports the PFX into `CurrentUser\My` for the moment of signing,
+- `build-msix.ps1 -SignPasswordFile <file>` (and `-SignPfx <path>`): reads the password from that file, imports the PFX into `CurrentUser\My` for the moment of signing,
   `signtool sign /fd SHA256 /sha1 <thumbprint>`, removes it again in `finally`. The password
   never appears in process arguments.
 - `desktop/install.ps1` (first install and the one-time move away from Developer Mode), runs

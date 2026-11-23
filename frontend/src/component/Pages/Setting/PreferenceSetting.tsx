@@ -17,12 +17,11 @@ import {
   useTheme,
 } from "@mui/material";
 import i18next from "i18next";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { sendUpdateUserSetting } from "../../../api/api.ts";
 import { UserSettings as UserSettingsType } from "../../../api/user.ts";
 import { languages } from "../../../i18n.ts";
-import { setPreferredTheme } from "../../../redux/globalStateSlice.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { clearLocalCustomView } from "../../../redux/thunks/filemanager.ts";
 import { selectLanguage } from "../../../redux/thunks/settings.ts";
@@ -35,8 +34,6 @@ import {
   SmallFormControlLabel,
 } from "../../Common/StyledComponents.tsx";
 import { SquareMenuItem } from "../../FileManager/ContextMenu/ContextMenu.tsx";
-import { ColorCircle, SelectorBox } from "../../FileManager/FileInfo/ColorCircle/CircleColorSelector.tsx";
-import { SwitchPopover } from "../../Frame/NavBar/DarkThemeSwitcher.tsx";
 import CheckboxChecked from "../../Icons/CheckboxChecked.tsx";
 import FolderArrowRightOutlined from "../../Icons/FolderArrowRightOutlined.tsx";
 import RectangleLandscapeSync from "../../Icons/RectangleLandscapeSync.tsx";
@@ -54,10 +51,6 @@ declare namespace Intl {
   function supportedValuesOf(input: Key): string[];
 }
 
-interface ThemeOption {
-  [key: string]: any;
-}
-
 const OutlinedSettingBox = styled(Box)(({ theme }) => ({
   borderRadius: theme.shape.borderRadius,
   padding: theme.spacing(1),
@@ -71,13 +64,10 @@ const PreferenceSetting = ({ setting, setSetting }: PreferenceSettingProps) => {
   const theme = useTheme();
   const dispatch = useAppDispatch();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const { themes } = useAppSelector((s) => s.siteConfig.basic.config);
 
   const [timeZoneValue, setTimeZoneValue] = useState(timeZone);
   const versionMaxRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
-  const preferredTheme = useAppSelector((state) => state.globalState.preferredTheme);
-  const defaultTheme = useAppSelector((state) => state.siteConfig.basic.config.default_theme);
   const [versionRetentionEnabled, setVersionRetentionEnabled] = useState(setting.version_retention_enabled);
   const [versionRetentionMax, setVersionRetentionMax] = useState(setting.version_retention_max);
   const [versionRetentionExts, setVersionRetentionExts] = useState<string[] | undefined>(setting.version_retention_ext);
@@ -115,23 +105,6 @@ const PreferenceSetting = ({ setting, setSetting }: PreferenceSettingProps) => {
     setTimeZoneValue(value);
     SessionManager.set(UserSettings.TimeZone, value);
     refreshTimeZone();
-  };
-
-  const themeOptions: ThemeOption = useMemo(() => {
-    if (themes) {
-      return JSON.parse(themes);
-    }
-
-    return {};
-  }, [themes]);
-
-  const applyTheme = (color: string) => {
-    dispatch(setPreferredTheme(color));
-    dispatch(
-      sendUpdateUserSetting({
-        preferred_theme: color,
-      }),
-    );
   };
 
   const saveVersionRetention = () => {
@@ -239,22 +212,6 @@ const PreferenceSetting = ({ setting, setSetting }: PreferenceSettingProps) => {
           </DenseSelect>
           <FormHelperText>{t("setting.timezoneDes")}</FormHelperText>
         </FormControl>
-      </SettingForm>
-      <SettingForm title={t("setting.darkMode")} lgWidth={12}>
-        <SwitchPopover />
-      </SettingForm>
-      <SettingForm title={t("setting.themeColor")} lgWidth={12}>
-        <SelectorBox sx={{ gap: 1 }}>
-          {Object.keys(themeOptions).map((color) => (
-            <ColorCircle
-              key={color}
-              size={22}
-              color={color}
-              onClick={() => applyTheme(color)}
-              selected={(preferredTheme && preferredTheme == color) || (!preferredTheme && defaultTheme == color)}
-            />
-          ))}
-        </SelectorBox>
       </SettingForm>
       <SettingForm title={t("setting.versionRetention")}>
         <OutlinedSettingBox sx={{ py: 0.5 }}>
