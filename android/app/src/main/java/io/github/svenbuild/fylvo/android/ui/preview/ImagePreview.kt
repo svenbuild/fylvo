@@ -32,6 +32,7 @@ import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
 import io.github.svenbuild.fylvo.android.ui.files.rememberThumbUrl
 import io.github.svenbuild.fylvo.android.ui.files.thumbCacheKey
+import io.github.svenbuild.fylvo.android.ui.files.thumbRequest
 import io.github.svenbuild.fylvo.android.util.asString
 import kotlinx.coroutines.launch
 
@@ -99,20 +100,16 @@ fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit,
     ) {
         val model = fullUrl ?: thumb
         if (model != null) {
+            val context = LocalContext.current
             SubcomposeAsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(model)
-                    // Fylvo: the preview is kept under its own key (thumbCacheKey), also while it
-                    // stands in for the full image.
-                    .placeholderMemoryCacheKey(thumbCacheKey(file, thumb) ?: thumb)
-                    .apply {
-                        if (model == thumb) {
-                            memoryCacheKey(thumbCacheKey(file, thumb))
-                            diskCacheKey(thumbCacheKey(file, thumb))
-                        }
-                    }
-                    .crossfade(true)
-                    .build(),
+                // Fylvo: the preview is kept under its own key (thumbCacheKey, the same way as the
+                // rows), also while it stands in for the full image.
+                model = remember(model, thumb, file.id, file.primaryEntity) {
+                    (if (model == thumb) thumbRequest(context, file, model) else ImageRequest.Builder(context).data(model))
+                        .placeholderMemoryCacheKey(thumbCacheKey(file, thumb) ?: thumb)
+                        .crossfade(true)
+                        .build()
+                },
                 contentDescription = file.name,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier

@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
@@ -140,6 +141,17 @@ fun thumbCacheKey(file: FileObject, thumbUrl: String?): String? {
 private val THUMB_ID = Regex("/file/content/([^/?]+)/")
 
 /**
+ * Fylvo 1.6: the request for [file]'s preview at [thumbUrl], kept under [thumbCacheKey]. A
+ * picture of a connected storage is noted for its storage before it is loaded, so disconnecting
+ * removes it (rows and the image viewer use this one way).
+ */
+fun thumbRequest(context: android.content.Context, file: FileObject, thumbUrl: String): ImageRequest.Builder {
+    val key = thumbCacheKey(file, thumbUrl)
+    if (key != null && Connected.isConnected(file.path)) io.github.svenbuild.fylvo.android.data.ConnectedThumbs.note(context, key)
+    return ImageRequest.Builder(context).data(thumbUrl).memoryCacheKey(key).diskCacheKey(key)
+}
+
+/**
  * Thumbnail when the server has one, otherwise the file-kind icon on a soft
  * tinted tile. Same shape in both cases so list rows stay aligned.
  */
@@ -168,16 +180,8 @@ fun FileThumb(
     ) {
         if (thumbUrl != null) {
             val context = LocalContext.current
-            val key = thumbCacheKey(file, thumbUrl)
             SubcomposeAsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(thumbUrl)
-                    .memoryCacheKey(key)
-                    .diskCacheKey(key)
-                    // Fylvo 1.6: a picture of a connected storage is noted, so disconnecting removes it.
-                    .listener(onSuccess = { _, _ -> key?.let { io.github.svenbuild.fylvo.android.data.ConnectedThumbs.loaded(context.applicationContext, it) } })
-                    .crossfade(180)
-                    .build(),
+                model = remember(file.id, file.primaryEntity, file.path, thumbUrl) { thumbRequest(context, file, thumbUrl).crossfade(180).build() },
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

@@ -123,7 +123,13 @@ class FylvoApp : Application(), ImageLoaderFactory {
 
     /** Fylvo: previews and the image viewer name the app to the server like every other request. */
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
-        .okHttpClient { OkHttpClient.Builder().addInterceptor(ApiClient.userAgent).build() }
+        .okHttpClient {
+            OkHttpClient.Builder().addInterceptor(ApiClient.userAgent)
+                // Fylvo 1.6: pictures of connected storages, two at a time, kept by version.
+                .addInterceptor(io.github.svenbuild.fylvo.android.data.ConnectedThumbs.limiter)
+                .addNetworkInterceptor(io.github.svenbuild.fylvo.android.data.ConnectedThumbs.keepLonger)
+                .build()
+        }
         .build()
 
     /**

@@ -15,7 +15,6 @@ import io.github.svenbuild.fylvo.android.api.RestoreFileRequest
 import io.github.svenbuild.fylvo.android.api.UploadSessionResponse
 import io.github.svenbuild.fylvo.android.util.Connected
 import io.github.svenbuild.fylvo.android.util.CrUri
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -70,8 +69,8 @@ internal fun chunkRetryable(e: Throwable): Boolean =
     e is java.io.IOException || (e is ApiException && (e.code == Connected.CODE_BUSY || e.code == 429 || e.code in 502..504))
 /** Fylvo: the server's answer when a file has no preview ("Entity not exist"). */
 private const val CODE_NO_THUMB = 40077
-/** Fylvo 1.6: answers after which a preview in a connected storage is not asked again (not supported, not found, connect again). */
-private val CONNECTED_NO_THUMB = setOf(40920, ApiException.CODE_PATH_NOT_EXIST, 40921)
+/** Fylvo 1.6: "not supported in a connected storage": no preview there, not asked again. */
+private const val CODE_CONNECTED_UNSUPPORTED = 40920
 
 /** Signed thumbnail URLs are refetched after this; servers typically sign for ~1 h. */
 const val THUMB_TTL_MS = 50L * 60 * 1000
@@ -220,9 +219,6 @@ class FileRepository(private val api: ApiClient) {
         }
     }
 
-    /** Fylvo 1.6: preview requests into connected storages, two at a time. */
-    private val connectedThumbGate = kotlinx.coroutines.sync.Semaphore(2)
-
     /** Fylvo: preview requests that outlive the screen that asked first (see [thumbUrl]). */
     private val thumbScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val thumbInFlight = ConcurrentHashMap<String, Deferred<String?>>()
@@ -239,22 +235,22 @@ class FileRepository(private val api: ApiClient) {
      * server makes a missing preview on the first request; two at once for the same file made it
      * twice, and the losing one deleted the winner's preview file.
      */
-    suspend fun thumbUrl(uri: String): String? {
-        // Per account: the same address of another account is another file.
-        val key = api.accountTag() + "|" + CrUri.canonical(uri)
+    suspend fun thumbUrl(uri: String, version: String = ""): String? {
+        // Per account: the same address of another account is another file. Fylvo 1.6: and per
+        // version, so a new version never takes the address asked for the one before.
+        val key = api.accountTag() + "|" + CrUri.canonical(uri) + "|" + version
         val connected = Connected.isConnected(uri)
         val request = thumbInFlight.computeIfAbsent(key) {
             thumbScope.async(start = CoroutineStart.LAZY) {
                 try {
                     try {
-                        // Fylvo 1.6: the server fetches at most two previews at a time from a
-                        // provider; the app never asks it for more than that at once.
-                        if (connected) connectedThumbGate.withPermit { readService(uri).thumb(uri).unwrap().url }
-                        else readService(uri).thumb(uri).unwrap().url
+                        // The address only; the picture behind it is loaded two at a time
+                        // (ConnectedThumbs.limiter), as the server fetches it from the provider then.
+                        readService(uri).thumb(uri).unwrap().url
                     } catch (e: ApiException) {
-                        // No preview for this version; in a connected storage also: not supported,
-                        // not found, connect again (asked again only after a new start).
-                        if (e.code == CODE_NO_THUMB || (connected && e.code in CONNECTED_NO_THUMB)) null else throw e
+                        // No preview for this version; in a connected storage also: not supported.
+                        // "Connect again" or "not found" are failures asked again later.
+                        if (e.code == CODE_NO_THUMB || (connected && e.code == CODE_CONNECTED_UNSUPPORTED)) null else throw e
                     }
                 } finally {
                     thumbInFlight.remove(key)
@@ -281,7 +277,7 @@ class FileRepository(private val api: ApiClient) {
             if (System.currentTimeMillis() - fetchedAt < THUMB_TTL_MS) return url
         }
         val url = try {
-            thumbUrl(file.path)
+            thumbUrl(file.path, file.primaryEntity)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {

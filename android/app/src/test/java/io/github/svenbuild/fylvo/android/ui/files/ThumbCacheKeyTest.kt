@@ -37,4 +37,16 @@ class ThumbCacheKeyTest {
         assertNull(thumbCacheKey(file.copy(primaryEntity = ""), today))
         assertNull(thumbCacheKey(file, null))
     }
+
+    @Test fun connectedPictureAddressAndBusyWait() {
+        val t = io.github.svenbuild.fylvo.android.data.ConnectedThumbs
+        assertEquals(true, t.isPicture("/api/v4/fylvo/connected/thumb/Al1t/thumb.jpg"))
+        assertEquals(false, t.isPicture("/api/v4/file/content/Ab3x/0/photo.jpg.jpg"))
+        // Retry-After in seconds, within 1 to 30; 5 when missing or not a number.
+        assertEquals(5_000L, t.retryAfterMs("5"))
+        assertEquals(5_000L, t.retryAfterMs(null))
+        assertEquals(5_000L, t.retryAfterMs("Wed, 21 Oct 2026 07:28:00 GMT"))
+        assertEquals(30_000L, t.retryAfterMs("600"))
+        assertEquals(1_000L, t.retryAfterMs("0"))
+    }
 }
