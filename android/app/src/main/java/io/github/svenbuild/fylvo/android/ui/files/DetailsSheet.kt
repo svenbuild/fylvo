@@ -53,7 +53,8 @@ fun DetailsSheet(file: FileObject, thumbUrl: String?, onDismiss: () -> Unit) {
                     DetailRow(stringResource(R.string.size), stringResource(R.string.size_with_bytes, formatSize(file.size), "%,d".format(file.size)))
                 }
                 DetailRow(stringResource(R.string.location), CrUri.displayPath(CrUri.parent(file.path)))
-                DetailRow(stringResource(R.string.modified), longDate(file.updatedAt))
+                // Fylvo: connected storages may not know the time (0001-01-01).
+                if (Connected.knownTime(file.updatedAt)) DetailRow(stringResource(R.string.modified), longDate(file.updatedAt))
                 // Fylvo: connected storages report no creation date (the server repeats the modification).
                 if (!Connected.isConnected(file.path)) DetailRow(stringResource(R.string.created), longDate(file.createdAt))
                 val w = file.metadata?.get("exif:x")

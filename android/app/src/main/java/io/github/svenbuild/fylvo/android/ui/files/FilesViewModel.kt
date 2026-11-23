@@ -688,17 +688,16 @@ class FilesViewModel(
      * connected storage the text says what it means, and a changed file refreshes the listing;
      * null elsewhere (the viewer keeps its own text).
      */
-    fun contentFailed(file: FileObject, status: Int): UiText? {
+    suspend fun contentFailed(file: FileObject, status: Int): UiText? {
         if (!Connected.isConnected(file.path)) return null
-        val normalized = Connected.normalize(ApiException(status, "HTTP $status"))
-        if (Connected.isChanged(normalized)) refreshIfShowing(file)
-        else if (Connected.isStorageTrouble(normalized)) connected.load()
-        return userError(normalized)
+        return userError(connectedError(file, ApiException(status, "HTTP $status")))
     }
 
     /** Fylvo: refreshes the listing when the folder of [file] is on screen. */
     private fun refreshIfShowing(file: FileObject) {
         val s = _state.value
+        // One refresh is enough (several viewer pages can report a change at once).
+        if (s.loading || s.revalidating) return
         if (!s.home && s.searchQuery == null && CrUri.canonical(s.currentUri) == CrUri.canonical(CrUri.parent(file.path))) refresh()
     }
 
@@ -794,7 +793,8 @@ class FilesViewModel(
                 val message = when {
                     saved == mine.size -> UiMessage(UiText.Plural(R.plurals.saved_files, saved, saved))
                     changedOne != null && changedCause != null -> downloadFailure(changedOne, changedCause).let {
-                        if (saved == 0) it else it.copy(long = true)
+                        // Some files were saved: the count stays the message, the changed one is to try again.
+                        if (saved == 0) it else UiMessage(UiText.Res(R.string.saved_some_files, saved, mine.size), long = true)
                     }
                     saved == 0 && failed != null -> lastFailed?.let { downloadFailure(it, failed) } ?: failure(failed, fallback = R.string.download_failed)
                     else -> UiMessage(UiText.Res(R.string.saved_some_files, saved, mine.size))
@@ -983,7 +983,9 @@ class FilesViewModel(
     /** Picking the active key again flips the direction, like the Files app. */
     fun sortBy(by: SortBy) {
         val cur = _state.value.view.sort
-        val next = if (cur.by == by) cur.copy(ascending = !cur.ascending)
+        // Fylvo: inside a connected storage a saved "created" sort counts as the "modified" it is shown as.
+        val shown = if (_state.value.inConnected) Connected.sortFor(cur.by) else cur.by
+        val next = if (shown == by) SortOrder(by, ascending = !cur.ascending)
         else SortOrder(by, ascending = by == SortBy.NAME)
         viewModelScope.launch { viewSettings.setSort(next) }
     }

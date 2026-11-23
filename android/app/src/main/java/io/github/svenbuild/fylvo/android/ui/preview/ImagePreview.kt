@@ -32,6 +32,7 @@ import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
 import io.github.svenbuild.fylvo.android.ui.files.rememberThumbUrl
 import io.github.svenbuild.fylvo.android.util.asString
+import kotlinx.coroutines.launch
 
 /**
  * Full-resolution image with pinch zoom, drag when zoomed, double-tap to
@@ -42,6 +43,7 @@ import io.github.svenbuild.fylvo.android.util.asString
 @Composable
 fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit, onDismiss: () -> Unit = {}) {
     val thumb = rememberThumbUrl(viewModel, file)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var fullFailed by remember(file.id) { mutableStateOf(false) }
     // Fylvo: inside a connected storage the reason is shown (provider busy, file changed).
     var fullError by remember(file.id) { mutableStateOf<io.github.svenbuild.fylvo.android.util.UiText?>(null) }
@@ -117,7 +119,7 @@ fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit,
                 loading = { LoadingOverlay(null) },
                 onError = { state ->
                     val status = (state.result.throwable as? coil.network.HttpException)?.response?.code
-                    fullError = status?.let { viewModel.contentFailed(file, it) }
+                    if (status != null) scope.launch { fullError = viewModel.contentFailed(file, status) }
                 },
                 error = { FullWidthError(fullError?.asString() ?: stringResource(R.string.image_load_failed)) },
             )

@@ -66,7 +66,11 @@ object Connected {
     fun externalUrl(file: FileObject): String? =
         file.metadata?.get(META_EXTERNAL_URL)?.takeIf { it.startsWith("https://", ignoreCase = true) }
 
-    fun sizeUnknown(file: FileObject): Boolean = file.metadata?.containsKey(META_SIZE_UNKNOWN) == true
+    /** No size to show: the server does not know it, or the row stands for several items (duplicate). */
+    fun sizeUnknown(file: FileObject): Boolean = file.metadata?.containsKey(META_SIZE_UNKNOWN) == true || isUnusable(file)
+
+    /** A time of `0001-01-01` means the provider gave none (the root of a storage): not shown. */
+    fun knownTime(iso: String): Boolean = iso.isNotEmpty() && !iso.startsWith("0001-")
 
     // ---- what a row allows ----------------------------------------------------
 

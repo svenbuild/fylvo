@@ -142,8 +142,11 @@ class ConnectedStorages(
             capacityAt[s.id] = now
             scope.launch {
                 val capacity = repo.capacity(s.id)
-                if (capacity == null) capacityAt.remove(s.id)
-                else _state.update { it.copy(capacity = it.capacity + (s.id to capacity)) }
+                if (capacity == null) {
+                    // An old figure is not shown as if it were current.
+                    capacityAt.remove(s.id)
+                    _state.update { it.copy(capacity = it.capacity - s.id) }
+                } else _state.update { it.copy(capacity = it.capacity + (s.id to capacity)) }
             }
         }
     }
@@ -280,11 +283,12 @@ fun ConnectedBanner(omitted: Int) {
 /** Fylvo: the row's second line inside a connected storage. */
 @Composable
 fun connectedSubtitle(file: FileObject): String {
-    val date = formatDate(file.updatedAt)
+    val date = if (Connected.knownTime(file.updatedAt)) formatDate(file.updatedAt) else ""
     return when {
         Connected.isUnusable(file) -> stringResource(R.string.connected_duplicate_subtitle)
         Connected.isLink(file) -> listOf(stringResource(R.string.connected_link), date).filter { it.isNotEmpty() }.joinToString(" · ")
         file.isFolder || Connected.sizeUnknown(file) -> date
+        date.isEmpty() -> formatSize(file.size)
         else -> subtitleFor(file.size, file.updatedAt, false)
     }
 }

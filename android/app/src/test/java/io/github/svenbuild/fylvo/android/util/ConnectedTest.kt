@@ -206,6 +206,13 @@ class ConnectedTest {
     }
 
     @Test
+    fun aTimeOfTheYearOneIsUnknown() {
+        assertFalse(Connected.knownTime("0001-01-01T00:00:00Z"))
+        assertFalse(Connected.knownTime(""))
+        assertTrue(Connected.knownTime(row("notes.txt").updatedAt))
+    }
+
+    @Test
     fun noSearchInsideConnectedStorages() {
         assertFalse(CrUri.isSearchScope("cloudreve://abc@connected"))
         assertFalse(CrUri.isSearchScope("cloudreve://abc@connected/Docs"))
