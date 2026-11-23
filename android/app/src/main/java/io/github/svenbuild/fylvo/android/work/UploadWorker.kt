@@ -205,7 +205,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                                         sessionId = null, targetUri = null, interrupted = false, unknownOutcome = end == Resume.Unknown,
                                                     )
                                                 }
-                                                if (end != Resume.Done) lastError = outcome.message
+                                                if (end == Resume.Done) progressed = true else lastError = outcome.message
                                             }
                                         }
                                         // Fylvo: never sent again, the file on the phone stays as it is.
@@ -229,7 +229,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                                             sessionId = null, targetUri = null, unknownOutcome = end == Resume.Unknown,
                                                         )
                                                     }
-                                                    if (end != Resume.Done) lastError = outcome.message
+                                                    if (end == Resume.Done) progressed = true else lastError = outcome.message
                                                 }
                                             } else {
                                                 // Fylvo: a session that is gone stored nothing (40011): start afresh next run.
@@ -258,9 +258,11 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                     synchronized(lock) { batch = batch.copy(serverRetries = runs).also(queue::save) }
                     return Result.retry()
                 }
+                var anyFailed = false
                 batch.items.forEachIndexed { i, item ->
                     if (item.state == UploadItem.State.Pending) {
                         val end = endSession(app, item, parentUri)
+                        if (end != Resume.Done) anyFailed = true
                         update(i) {
                             it.copy(
                                 state = if (end == Resume.Done) UploadItem.State.Done else UploadItem.State.Failed,
@@ -269,7 +271,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                         }
                     }
                 }
-                lastError = outcome.message
+                if (anyFailed) lastError = outcome.message
             }
         } catch (e: CancellationException) {
             // Stopped: by the person (cancel), or by the system, which runs the job again later.

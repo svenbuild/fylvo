@@ -152,7 +152,8 @@ fun FilesScreen(
         val parentUri = uploadTarget ?: state.currentUri
         uploadTarget = null
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        val loaded = state.files.map { it.name }.toSet()
+        // Fylvo: the names on screen only when they are of the target folder.
+        val loaded = if (parentUri == state.currentUri) state.files.map { it.name }.toSet() else emptySet()
         // Fylvo: names and the upload list are read and written off the main thread; with a few
         // hundred picked photos that takes a moment and must not freeze the screen.
         scope.launch {

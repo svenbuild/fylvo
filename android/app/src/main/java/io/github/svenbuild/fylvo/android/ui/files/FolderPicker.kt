@@ -66,7 +66,7 @@ fun FolderPicker(
     startUri: String,
     excluded: Set<String>,
     loadFolders: suspend (String) -> List<FileObject>,
-    /** Creates the folder; true when it worked (the list is loaded again then). */
+    /** Creates the folder (true when it worked); the list is loaded again after it. */
     onCreateFolder: suspend (parent: String, name: String) -> Boolean,
     onPick: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -195,7 +195,11 @@ fun FolderPicker(
             onConfirm = { name ->
                 mkdirOpen = false
                 val parent = current
-                scope.launch { if (onCreateFolder(parent, name) && parent == current) reload++ }
+                // Listed again after any try: a folder may exist although its answer was lost.
+                scope.launch {
+                    onCreateFolder(parent, name)
+                    if (parent == current) reload++
+                }
             },
             onDismiss = { mkdirOpen = false },
         )

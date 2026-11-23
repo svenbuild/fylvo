@@ -289,6 +289,8 @@ class FilesViewModel(
     /** [restart]: Fylvo, a connected listing starts again after its cursor expired (40926). */
     fun refresh(restart: Boolean = false) {
         val uri = _state.value.currentUri
+        // Fylvo: the rows on screen before the placeholder replaces them (ids for keepListed).
+        val shownBefore = _state.value.files
         val generation = ++refreshGeneration
         if (restart) restartedGeneration = generation
         val cached = listingCache[uri]?.takeIf { it.sortKey == _state.value.view.sort }
@@ -320,7 +322,7 @@ class FilesViewModel(
                     nextToken = res.pagination.nextToken,
                     parent = res.parent,
                     connected = res.connected,
-                    selected = keepListed(files),
+                    selected = keepListed(files, shownBefore),
                 )
                 prefetchThumbs(files)
             } catch (e: Exception) {
@@ -337,7 +339,7 @@ class FilesViewModel(
                 if (local != null && _state.value.currentUri == uri && generation == refreshGeneration) {
                     _state.value = _state.value.copy(
                         loading = false, revalidating = false, files = local, nextToken = null, parent = null, offlineMode = true,
-                        selected = keepListed(local),
+                        selected = keepListed(local, shownBefore),
                     )
                     return@launch
                 }
@@ -366,13 +368,13 @@ class FilesViewModel(
      * Fylvo: the selection after a real listing landed: only paths that are still listed. The
      * placeholder a refresh shows first never prunes it, so a selection survives a refresh.
      */
-    private fun keepListed(files: List<FileObject>): Set<String> {
+    private fun keepListed(files: List<FileObject>, shownBefore: List<FileObject>): Set<String> {
         val selected = _state.value.selected
         if (selected.isEmpty()) return selected
         val listed = files.associateBy { it.path }
-        // Fylvo: in a connected storage only the same row stays selected (same id), never a file
-        // that took its place under the same name.
-        val before = _state.value.files.associateBy { it.path }
+        // Fylvo: in a connected storage only the same row stays selected (same id as on screen when
+        // the refresh started), never a file that took its place under the same name.
+        val before = shownBefore.associateBy { it.path }
         return selected.filterTo(LinkedHashSet()) { path ->
             val row = listed[path] ?: return@filterTo false
             !Connected.isConnected(path) || before[path]?.id == row.id
@@ -569,7 +571,8 @@ class FilesViewModel(
     suspend fun namesInFolder(folderUri: String): Set<String> =
         runCatching { repo.namesIn(folderUri) }.getOrElse { e ->
             if (e is kotlinx.coroutines.CancellationException) throw e
-            _state.value.files.map { it.name }.toSet()
+            // Fylvo: the loaded names only when they are of that folder.
+            if (_state.value.currentUri == folderUri) _state.value.files.map { it.name }.toSet() else emptySet()
         }
 
     fun cancelUpload(context: android.content.Context, id: java.util.UUID) {
