@@ -34,7 +34,7 @@ import {
   walkAll,
   WalkSkipped,
 } from "./file.ts";
-import { downloadFileName, getConnectedFileUrl, inConnectedStorage } from "../../api/connected.ts";
+import { downloadFileName, exportFormats, getConnectedFileUrl, inConnectedStorage } from "../../api/connected.ts";
 import {
   askAboveFiles,
   errorMessage,
@@ -839,7 +839,33 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
   };
 }
 
-export function downloadSingleFile(file: FileResponse, preferredEntity?: string): AppThunk {
+// Fylvo: downloads a provider's document of a connected storage in a format the user picks; the
+// usual one is offered first.
+export function downloadInFormat(index: number, file: FileResponse): AppThunk {
+  return async (dispatch) => {
+    dispatch(closeContextMenu({ index, value: undefined }));
+    const formats = exportFormats(file);
+    let format: string;
+    try {
+      format = await dispatch(
+        selectOption(
+          formats.map((f, i) => ({
+            value: f,
+            name: f.toUpperCase(),
+            description: i == 0 ? i18next.t("application:connected.usualFormat") : "",
+          })),
+          "application:connected.downloadAs",
+        ),
+      );
+    } catch (e) {
+      // Cancelled.
+      return;
+    }
+    await dispatch(downloadSingleFile(file, undefined, format));
+  };
+}
+
+export function downloadSingleFile(file: FileResponse, preferredEntity?: string, exportFormat?: string): AppThunk {
   return async (dispatch, _getState) => {
     const isSharedFile = file.metadata?.[Metadata.share_redirect] ?? false;
     if (isSharedFile) {
@@ -852,6 +878,7 @@ export function downloadSingleFile(file: FileResponse, preferredEntity?: string)
           uris: [getFileLinkedUri(file)],
           entity: preferredEntity,
           download: true,
+          export: exportFormat,
         }),
       ),
       "application:fileManager.preparingDownload",

@@ -283,7 +283,11 @@ export function sendSignout(req: RefreshTokenRequest): ThunkResponse<string> {
   };
 }
 
-export function getFileList(req: ListFileService, skipSnackbar = true): ThunkResponse<ListResponse> {
+export function getFileList(
+  req: ListFileService,
+  skipSnackbar = true,
+  signal?: AbortSignal,
+): ThunkResponse<ListResponse> {
   return async (dispatch, _getState) => {
     return await dispatch(
       send(
@@ -291,6 +295,7 @@ export function getFileList(req: ListFileService, skipSnackbar = true): ThunkRes
         {
           params: req,
           method: "GET",
+          signal,
         },
         {
           ...defaultOpts,
@@ -301,13 +306,15 @@ export function getFileList(req: ListFileService, skipSnackbar = true): ThunkRes
   };
 }
 
-export function getFileThumb(path: string, contextHint?: string): ThunkResponse<FileThumbResponse> {
+// Fylvo: entity names the version the preview is for (a connected storage answers 40076 when the
+// file is another version by now).
+export function getFileThumb(path: string, contextHint?: string, entity?: string): ThunkResponse<FileThumbResponse> {
   return async (dispatch, _getState) => {
     return await dispatch(
       send(
         "/file/thumb",
         {
-          params: { uri: path },
+          params: { uri: path, entity },
           method: "GET",
           headers: contextHint
             ? {

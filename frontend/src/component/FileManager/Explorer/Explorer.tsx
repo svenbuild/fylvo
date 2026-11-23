@@ -21,7 +21,7 @@ import GalleryView from "./GalleryView/GalleryView.tsx";
 import { ListViewColumn } from "./ListView/Column.tsx";
 import ListView from "./ListView/ListView.tsx";
 import SingleFileView from "./SingleFileView.tsx";
-import { ConnectedOmitted } from "../Connected/ConnectedMark.tsx";
+import { ConnectedIncomplete, ConnectedOmitted } from "../Connected/ConnectedMark.tsx";
 
 export const ExplorerPage = {
   Error: 1,
@@ -141,6 +141,10 @@ const Explorer = () => {
                 <CircularProgress />
               </Box>
             )}
+            {(index == ExplorerPage.GridView ||
+              index == ExplorerPage.ListView ||
+              index == ExplorerPage.GalleryView ||
+              index == ExplorerPage.Empty) && <ConnectedIncomplete sx={{ px: 2, pt: 1 }} />}
             {index == ExplorerPage.GridView && <GridView />}
             {index == ExplorerPage.SingleFileView && <SingleFileView />}
             {index == ExplorerPage.Empty && <EmptyFileList />}

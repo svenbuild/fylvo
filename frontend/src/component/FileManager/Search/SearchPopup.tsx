@@ -223,14 +223,12 @@ const SearchPopup = () => {
 
     const res: string[] = [];
     const current = new CrUri(path ?? defaultPath);
-    // Fylvo: a connected storage cannot be searched yet.
-    const searchable = current.fs() != Filesystem.connected;
     // current folder - not currently in root
-    if (searchable && !current.is_root()) {
+    if (!current.is_root()) {
       res.push(current.toString());
     }
     // current root - not in single file view
-    if (searchable && !single_file_view) {
+    if (!single_file_view) {
       res.push(current.base());
     }
     // my files - user login and not my fs

@@ -61,6 +61,28 @@ export const ConnectedOmitted = ({ sx }: { sx?: SxProps<Theme> }) => {
   );
 };
 
+// A note above a search result of a connected storage that did not see everything, and how many
+// shortcuts it showed without searching them.
+export const ConnectedIncomplete = ({ sx }: { sx?: SxProps<Theme> }) => {
+  const { t } = useTranslation("application");
+  const fmIndex = useContext(FmIndexContext);
+  const info = useAppSelector((state) => state.fileManager[fmIndex].list?.connected);
+  const links = info?.links ?? 0;
+  const incomplete = !!info?.incomplete;
+  if (!incomplete && links <= 0) {
+    return null;
+  }
+  return (
+    <Box sx={sx}>
+      <Alert severity="info">
+        {incomplete && t("connected.searchIncomplete")}
+        {incomplete && links > 0 && " "}
+        {links > 0 && t("connected.searchLinks", { count: links })}
+      </Alert>
+    </Box>
+  );
+};
+
 // The name of "delete": in a connected storage it moves to the provider's trash.
 export const deleteLabel = (targets: FileResponse[]) =>
   targets.some((f) => inConnectedStorage(f.path))

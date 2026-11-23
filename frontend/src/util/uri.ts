@@ -94,9 +94,8 @@ export default class CrUri {
   }
 
   public setSearchParam(param: SearchParam): this {
-    this.url.searchParams.forEach((_, k) => {
-      this.url.searchParams.delete(k);
-    });
+    // Fylvo: all of the old query goes (deleting while iterating skipped keys).
+    this.url.search = "";
     if (param.name) {
       if (this.fs() == Filesystem.trash) {
         this.addQuery(UriQuery.metadata_prefix + Metadata.restore_uri, encodeURI(param.name.join(" ")));

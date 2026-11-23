@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { closeContextMenu } from "../../../redux/fileManagerSlice.ts";
 import { CreateNewDialogType } from "../../../redux/globalStateSlice.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
-import { downloadFiles } from "../../../redux/thunks/download.ts";
+import { downloadFiles, downloadInFormat } from "../../../redux/thunks/download.ts";
 import {
   applyIconColor,
   batchGetDirectLinks,
@@ -62,6 +62,7 @@ import OrganizeMenuItems from "./OrganizeMenuItems.tsx";
 import TagMenuItems from "./TagMenuItems.tsx";
 import useActionDisplayOpt from "./useActionDisplayOpt.ts";
 import { deleteLabel } from "../Connected/ConnectedMark.tsx";
+import { exportFormats } from "../../../api/connected.ts";
 
 export const SquareMenu = styled(Menu)(() => ({
   "& .MuiPaper-root": {
@@ -243,6 +244,14 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
             <Download fontSize="small" />
           </ListItemIcon>
           <ListItemText>{t("application:fileManager.download")}</ListItemText>
+        </SquareMenuItem>
+      )}
+      {displayOpt.showDownload && targets.length == 1 && exportFormats(targets[0]).length > 1 && (
+        <SquareMenuItem onClick={() => dispatch(downloadInFormat(fmIndex, targets[0]))}>
+          <ListItemIcon>
+            <Download fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t("application:connected.downloadAs")}</ListItemText>
         </SquareMenuItem>
       )}
       {displayOpt.showExtractArchive && (
