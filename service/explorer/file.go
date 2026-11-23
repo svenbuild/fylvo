@@ -551,6 +551,10 @@ type (
 	FileThumbParameterCtx struct{}
 	FileThumbService      struct {
 		Uri string `form:"uri" binding:"required"`
+		// Entity is the version of the file the client shows: the "primary_entity" of
+		// its row. For files of connected storages (Fylvo), where the content can change
+		// at the provider between a listing and this call.
+		Entity string `form:"entity"`
 	}
 	FileThumbResponse struct {
 		Url     string     `json:"url"`
@@ -562,7 +566,7 @@ type (
 func (s *FileThumbService) Get(c *gin.Context) (*FileThumbResponse, error) {
 	// Fylvo: the preview of a file in a connected storage is the provider's own.
 	if connectedUri, ok := connectedURI(s.Uri); ok {
-		return connectedThumb(c, connectedUri)
+		return connectedThumb(c, connectedUri, s.Entity)
 	}
 
 	dep := dependency.FromContext(c)
