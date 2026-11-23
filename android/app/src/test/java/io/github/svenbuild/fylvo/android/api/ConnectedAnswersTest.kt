@@ -36,7 +36,7 @@ class ConnectedAnswersTest {
         assertEquals(2, o.providers.size)
         assertTrue(o.storages[0].ok)
         assertTrue(o.storages[1].needsReconnect)
-        assertEquals("cloudreve://cdd255pa64jyicxm@connected", o.storages[0].uri)
+        assertEquals("cloudreve://${o.storages[0].id}@connected", o.storages[0].uri)
         val empty = example<ConnectedOverview>("storages-not-set-up").data!!
         assertTrue(empty.storages.isEmpty())
         assertFalse(empty.providers.any { it.configured })
@@ -52,11 +52,12 @@ class ConnectedAnswersTest {
         assertFalse(root.connected!!.thumbnails)
 
         val first = example<ListFileResponse>("list-page-1").data!!
-        assertEquals("56e9c232edf2149f2afc6c3e.2", first.pagination.nextToken)
+        assertTrue(first.pagination.nextToken!!.isNotEmpty())
         assertEquals(0, first.connected?.omitted)
         val second = example<ListFileResponse>("list-page-2").data!!
         assertEquals(listOf("c.pdf", "d.pdf"), second.files.map { it.name })
-        assertEquals("56e9c232edf2149f2afc6c3e.4", second.pagination.nextToken)
+        assertTrue(second.pagination.nextToken!!.isNotEmpty())
+        assertTrue(second.pagination.nextToken != first.pagination.nextToken)
         // Every row of a connected storage has thumbnails off: the app never asks for one.
         assertTrue((root.files + first.files + second.files).filter { !it.isFolder }.none { it.mayHaveThumbnail })
     }

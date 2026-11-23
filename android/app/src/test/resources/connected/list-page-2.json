@@ -4,7 +4,7 @@
     "files": [
       {
         "type": 0,
-        "id": "cs72762fbe75c272df62808f1b",
+        "id": "cs8c7b0d0c35210e6e3bd4a124",
         "name": "c.pdf",
         "created_at": "2026-01-01T09:00:12Z",
         "updated_at": "2026-01-01T09:00:12Z",
@@ -12,13 +12,13 @@
         "metadata": {
           "thumb:disabled": ""
         },
-        "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs/c.pdf",
+        "path": "cloudreve://ivopvq20ydatxs4a@connected/Docs/c.pdf",
         "capability": "gAAI",
-        "primary_entity": "vbbb29d21e51083291564bf8f"
+        "primary_entity": "v85760750aefc615f6020a974"
       },
       {
         "type": 0,
-        "id": "cs1a5ebbda5c486b63fe50833b",
+        "id": "csbdc981e703c0b422f1b6ed06",
         "name": "d.pdf",
         "created_at": "2026-01-01T09:00:13Z",
         "updated_at": "2026-01-01T09:00:13Z",
@@ -26,27 +26,27 @@
         "metadata": {
           "thumb:disabled": ""
         },
-        "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs/d.pdf",
+        "path": "cloudreve://ivopvq20ydatxs4a@connected/Docs/d.pdf",
         "capability": "gAAI",
-        "primary_entity": "v4cdb9c96cde43ea814f4bff7"
+        "primary_entity": "v8ba808e62c3f804a520f4cc7"
       }
     ],
     "parent": {
       "type": 1,
-      "id": "",
+      "id": "cs234cdb6bd14bfc7691183542",
       "name": "Docs",
-      "created_at": "0001-01-01T00:00:00Z",
-      "updated_at": "0001-01-01T00:00:00Z",
+      "created_at": "2026-01-01T09:00:01Z",
+      "updated_at": "2026-01-01T09:00:01Z",
       "size": 0,
-      "metadata": null,
-      "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs",
+      "metadata": {},
+      "path": "cloudreve://ivopvq20ydatxs4a@connected/Docs",
       "capability": "AAKI"
     },
     "pagination": {
       "page": 0,
       "page_size": 2,
       "total_items": 5,
-      "next_token": "56e9c232edf2149f2afc6c3e.4",
+      "next_token": "0b3b8c613ad307e1e08a2c8c.4",
       "is_cursor": true
     },
     "props": {
@@ -65,7 +65,7 @@
     "context_hint": null,
     "mixed_type": false,
     "connected": {
-      "id": "nvgt4tqg126n0ast",
+      "id": "ivopvq20ydatxs4a",
       "provider": "drive",
       "read_only": true,
       "search": false,

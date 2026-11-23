@@ -164,25 +164,27 @@ class ConnectedTest {
     @Test
     fun rootNamesFromTheOverviewTellEqualNamesApart() {
         val overview = example<ConnectedOverview>("storages").data!!
+        val (first, second) = overview.storages
         Connected.nameStorages(overview.storages)
-        assertEquals("Google Drive (user@example.com)", CrUri.rootLabel("cloudreve://cdd255pa64jyicxm@connected/Docs"))
-        assertEquals("Google Drive (alex@example.com)", CrUri.displayName("cloudreve://6yrc882vbxzwnba1@connected"))
+        assertEquals("Google Drive (${first.account})", CrUri.rootLabel(first.uri + "/Docs"))
+        assertEquals("Google Drive (${second.account})", CrUri.displayName(second.uri))
         // A storage that is gone loses its name.
-        Connected.nameStorages(overview.storages.take(1).map { it.copy(account = "user@example.com") })
-        assertEquals("Google Drive", CrUri.rootLabel("cloudreve://cdd255pa64jyicxm@connected"))
-        assertEquals("Connected storage", CrUri.rootLabel("cloudreve://6yrc882vbxzwnba1@connected"))
+        Connected.nameStorages(listOf(first))
+        assertEquals("Google Drive", CrUri.rootLabel(first.uri))
+        assertEquals("Connected storage", CrUri.rootLabel(second.uri))
     }
 
     @Test
     fun rootNameFromTheListingUntilTheOverviewIsThere() {
-        Connected.nameFromListing("cloudreve://nvgt4tqg126n0ast@connected", root.parent?.name)
-        assertEquals("Google Drive", CrUri.rootLabel("cloudreve://nvgt4tqg126n0ast@connected/Docs"))
+        val rootUri = root.parent!!.path
+        Connected.nameFromListing(rootUri, root.parent?.name)
+        assertEquals("Google Drive", CrUri.rootLabel("$rootUri/Docs"))
         // Only a root listing names its storage.
         Connected.nameFromListing("cloudreve://other@connected/Docs", "Docs")
         assertEquals("Connected storage", CrUri.rootLabel("cloudreve://other@connected"))
         // The overview wins.
-        Connected.nameStorages(listOf(ConnectedStorage(id = "nvgt4tqg126n0ast", name = "Drive", uri = "cloudreve://nvgt4tqg126n0ast@connected")))
-        assertEquals("Drive", CrUri.rootLabel("cloudreve://nvgt4tqg126n0ast@connected"))
+        Connected.nameStorages(listOf(ConnectedStorage(id = "x", name = "Drive", uri = rootUri)))
+        assertEquals("Drive", CrUri.rootLabel(rootUri))
     }
 
     @Test

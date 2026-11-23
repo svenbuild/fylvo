@@ -4,7 +4,7 @@
     "files": [
       {
         "type": 0,
-        "id": "cs14b71c37c4f4df5b3f361503",
+        "id": "cs6e905ade36e24a230737ec51",
         "name": "a.pdf",
         "created_at": "2026-01-01T09:00:10Z",
         "updated_at": "2026-01-01T09:00:10Z",
@@ -12,13 +12,13 @@
         "metadata": {
           "thumb:disabled": ""
         },
-        "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs/a.pdf",
+        "path": "cloudreve://ivopvq20ydatxs4a@connected/Docs/a.pdf",
         "capability": "gAAI",
-        "primary_entity": "v31b91d762ba9b543134bc62a"
+        "primary_entity": "v9e07b2119229f729174fcaca"
       },
       {
         "type": 0,
-        "id": "cs511808cb1acc1c5862af001c",
+        "id": "csbf01a43633c3fc7a58dd88eb",
         "name": "b.pdf",
         "created_at": "2026-01-01T09:00:11Z",
         "updated_at": "2026-01-01T09:00:11Z",
@@ -26,27 +26,27 @@
         "metadata": {
           "thumb:disabled": ""
         },
-        "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs/b.pdf",
+        "path": "cloudreve://ivopvq20ydatxs4a@connected/Docs/b.pdf",
         "capability": "gAAI",
-        "primary_entity": "ve6dd0dcf7a169bf3480b0a20"
+        "primary_entity": "v81b635897fbb34335498f28a"
       }
     ],
     "parent": {
       "type": 1,
-      "id": "cse172955ee25049642a7f44c9",
+      "id": "cs234cdb6bd14bfc7691183542",
       "name": "Docs",
       "created_at": "2026-01-01T09:00:01Z",
       "updated_at": "2026-01-01T09:00:01Z",
       "size": 0,
       "metadata": {},
-      "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs",
+      "path": "cloudreve://ivopvq20ydatxs4a@connected/Docs",
       "capability": "AAKI"
     },
     "pagination": {
       "page": 0,
       "page_size": 2,
       "total_items": 5,
-      "next_token": "56e9c232edf2149f2afc6c3e.2",
+      "next_token": "0b3b8c613ad307e1e08a2c8c.2",
       "is_cursor": true
     },
     "props": {
@@ -65,7 +65,7 @@
     "context_hint": null,
     "mixed_type": false,
     "connected": {
-      "id": "nvgt4tqg126n0ast",
+      "id": "ivopvq20ydatxs4a",
       "provider": "drive",
       "read_only": true,
       "search": false,
