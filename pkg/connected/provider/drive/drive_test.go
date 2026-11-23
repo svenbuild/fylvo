@@ -1,11 +1,11 @@
 package drive
 
 import (
-	"time"
 	"context"
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive/drivetest"
@@ -268,8 +268,13 @@ func TestOpen(t *testing.T) {
 	_, err = d.Open(ctx, item, "")
 	assert.Equal(t, provider.KindStale, provider.KindOf(err))
 
-	// A rate limit on a revision stays a rate limit.
-	s.Fail(http.StatusForbidden, "userRateLimitExceeded")
+	// A rate limit on a revision stays a rate limit, also after the tries it gets.
+	base := provider.RetryBase
+	provider.RetryBase = time.Millisecond
+	defer func() { provider.RetryBase = base }()
+	for range provider.MaxTries + 1 {
+		s.Fail(http.StatusForbidden, "userRateLimitExceeded")
+	}
 	_, err = d.Open(ctx, item, "")
 	assert.Equal(t, provider.KindBusy, provider.KindOf(err))
 

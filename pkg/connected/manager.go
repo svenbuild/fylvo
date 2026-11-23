@@ -111,6 +111,8 @@ type Manager struct {
 	live   map[string]*liveConn
 	// tree reads the folders of all connections.
 	tree *Tree
+	// usage remembers the fill level of connections for a short while (under liveMu).
+	usage map[string]usage
 	// leaving counts, per account, the deletions of that account that are under way.
 	leaving map[int]int
 }
@@ -133,6 +135,7 @@ func NewManager(o ManagerOptions) *Manager {
 		leaving:  map[int]int{},
 		live:     map[string]*liveConn{},
 		tree:     NewTree(),
+		usage:    map[string]usage{},
 	}
 }
 
@@ -475,6 +478,29 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 		return storageOf(renewed), nil
 	}
 
+	return m.createLocked(ctx, userID, granted.Provider, granted.Identity, granted.Token, props)
+}
+
+// Create stores a new connection of an account from a token its provider granted. The
+// sign-in flow ends here; other callers are tests and tools that hold such a token.
+func (m *Manager) Create(ctx context.Context, userID int, kind string, identity *Identity, token string) (*Storage, error) {
+	if m.specs[kind] == nil {
+		return nil, serializer.NewError(serializer.CodeParamErr, "Unknown provider", nil)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.createLocked(ctx, userID, kind, identity, token, &types.ConnectedStorageProps{
+		DriveID:   identity.Props["drive_id"],
+		DriveType: identity.Props["drive_type"],
+	})
+}
+
+// createLocked stores a new connection. The caller holds m.mu.
+func (m *Manager) createLocked(ctx context.Context, userID int, kind string, identity *Identity, token string,
+	props *types.ConnectedStorageProps) (*Storage, error) {
+	if m.leaving[userID] > 0 {
+		return nil, flowError(ErrFlowExpired)
+	}
 	rows, err := m.storages.ListByUser(ctx, userID)
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to list connected storages", err)
@@ -483,23 +509,23 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 		return nil, serializer.NewError(serializer.CodeParamErr, "Too many connected storages", nil)
 	}
 	for _, row := range rows {
-		if row.Provider == granted.Provider && row.AccountKey == granted.Identity.Key {
+		if row.Provider == kind && row.AccountKey == identity.Key {
 			return nil, serializer.NewError(serializer.CodeObjectExist, "This account is already connected", nil)
 		}
 	}
 
 	publicID := newPublicID()
-	secret, err := m.sealer.Seal(ctx, PurposeToken, tokenContext(publicID, userID, granted.Provider), []byte(granted.Token))
+	secret, err := m.sealer.Seal(ctx, PurposeToken, tokenContext(publicID, userID, kind), []byte(token))
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to seal the token", err)
 	}
 	row, err := m.storages.Create(ctx, &inventory.CreateConnectedStorageArgs{
 		UserID:     userID,
 		PublicID:   publicID,
-		Provider:   granted.Provider,
-		Name:       m.specs[granted.Provider].Name,
-		Account:    granted.Identity.Label,
-		AccountKey: granted.Identity.Key,
+		Provider:   kind,
+		Name:       m.specs[kind].Name,
+		Account:    identity.Label,
+		AccountKey: identity.Key,
 		Secret:     secret,
 		Props:      props,
 	})

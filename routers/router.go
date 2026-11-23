@@ -478,6 +478,16 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 		// connected. It carries no sign-in; a cookie ties it to the browser that started.
 		v4.GET("fylvo/connected/callback", controllers.FylvoConnectedCallback)
 
+		// Fylvo: content of a file in a connected storage. The grant in the path is the
+		// permission, checked in full on every request. Served like other file content:
+		// in a sandbox, since it can be anything, and readable for players and viewers.
+		connectedContent := v4.Group("fylvo/connected/content", middleware.ContentCORS())
+		{
+			connectedContent.OPTIONS("*option", middleware.ContentCORS())
+			connectedContent.GET(":grant/:name", middleware.Sandbox(), controllers.FylvoConnectedContent)
+			connectedContent.HEAD(":grant/:name", controllers.FylvoConnectedContent)
+		}
+
 		// 回调接口
 		callback := v4.Group("callback")
 		{
@@ -890,6 +900,10 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				fylvoConnected.GET("",
 					middleware.RequiredScopes(types.ScopeFilesRead),
 					controllers.FylvoConnectedList,
+				)
+				fylvoConnected.GET(":id/capacity",
+					middleware.RequiredScopes(types.ScopeFilesRead),
+					controllers.FylvoConnectedCapacity,
 				)
 				manage := fylvoConnected.Group("", middleware.RequiredScopes(types.ScopeUserSecurityInfoWrite))
 				manage.POST("authorize",

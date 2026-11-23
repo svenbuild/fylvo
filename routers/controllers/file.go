@@ -161,7 +161,7 @@ func FileURL(c *gin.Context) {
 	service := ParametersFromContext[*explorer.FileURLService](c, explorer.FileURLParameterCtx{})
 	resp, err := service.Get(c)
 	if err != nil {
-		c.JSON(200, serializer.Err(c, err))
+		c.JSON(200, fylvoErr(c, err))
 		c.Abort()
 		return
 	}
@@ -392,7 +392,7 @@ func GetFileInfo(c *gin.Context) {
 	service := ParametersFromContext[*explorer.GetFileInfoService](c, explorer.GetFileInfoParameterCtx{})
 	resp, err := service.Get(c)
 	if err != nil {
-		c.JSON(200, serializer.Err(c, err))
+		c.JSON(200, fylvoErr(c, err))
 		c.Abort()
 		return
 	}
