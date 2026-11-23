@@ -184,6 +184,7 @@ func ConnectedStart(c *gin.Context) {
 	}
 	page := newConnectedPage(c, dep)
 	if !appSigninHere(c, dep) || !underFirstAddress(c, dep) {
+		unreadBody(c)
 		page.unavailable()
 		return
 	}
@@ -214,6 +215,7 @@ func ConnectedStart(c *gin.Context) {
 	// as much is read as the form of the page can be.
 	if !m.OwnsTicket(ticket, cookie) || !ownOrigin(c, primarySiteURL(c, dep)) ||
 		!strings.HasPrefix(c.ContentType(), "application/x-www-form-urlencoded") {
+		unreadBody(c)
 		page.invalid()
 		return
 	}
@@ -254,6 +256,15 @@ func ConnectedStart(c *gin.Context) {
 		page.confirm(view, cookie, true)
 	default:
 		page.invalid()
+	}
+}
+
+// unreadBody marks the answer to a POST whose body is not read: the connection ends with
+// it. Otherwise the server would first take in what the client still sends of that body,
+// and wait for it, before it answers.
+func unreadBody(c *gin.Context) {
+	if c.Request.Method == http.MethodPost {
+		c.Header("Connection", "close")
 	}
 }
 

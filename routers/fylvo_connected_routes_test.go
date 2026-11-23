@@ -1,12 +1,15 @@
 package routers
 
 import (
+	"bufio"
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
@@ -70,6 +73,23 @@ func TestConnectedPagesNeedNoSession(t *testing.T) {
 	rec = request("GET", start, map[string]string{"Sec-Purpose": "prefetch", "Authorization": "Bearer not-a-token"})
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Empty(t, rec.Body.String())
+
+	// A POST that is not the button is answered at once. The server does not wait for
+	// a body the client announces and then does not send.
+	server := httptest.NewServer(engine)
+	defer server.Close()
+	conn, err := net.Dial("tcp", server.Listener.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+	_, err = conn.Write([]byte("POST " + start + " HTTP/1.1\r\nHost: cloud.example.com\r\n" +
+		"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: 100000\r\n" +
+		"Sec-Fetch-Site: same-origin\r\n\r\nconfirm="))
+	require.NoError(t, err)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	answer, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	require.NoError(t, err, "the answer waits for the rest of the body")
+	require.Equal(t, http.StatusGone, answer.StatusCode)
+	require.True(t, answer.Close, "the connection ends with the answer")
 
 	// The callback: a page for a sign-in from an app, the redirect into the web app
 	// for one from there.

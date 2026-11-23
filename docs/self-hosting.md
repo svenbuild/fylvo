@@ -232,7 +232,8 @@ FYLVO_CONNECTED_APP_SIGNIN=0
 If a proxy in front of Fylvo writes its own log, keep the secrets of a sign-in out of it. For
 addresses below `/api/v4/fylvo/connected/` do not log the path of `start/...`, the query of
 `callback`, the headers `Cookie`, `Set-Cookie`, `Authorization` and `Referer`, the `Location`
-of answers, or any request or answer body. Fylvo's own log replaces these values.
+of answers, or any request or answer body. Fylvo's own log leaves headers and bodies out and
+replaces the secret parts of addresses.
 
 Fylvo checks every connection to a provider and refuses internal addresses. If the server goes
 out through a proxy (`HTTPS_PROXY`), the proxy decides which targets are reachable: Fylvo can
