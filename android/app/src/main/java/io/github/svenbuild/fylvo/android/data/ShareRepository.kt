@@ -173,6 +173,24 @@ class ShareRepository(private val api: ApiClient, private val session: SessionMa
     /** What "show in folder" opens: a shared folder itself, a shared file's folder. */
     fun folderOf(share: ShareInfo, source: String): String = if (share.isFolder) source else CrUri.parent(source)
 
+    suspend fun user(id: String): io.github.svenbuild.fylvo.android.api.User = api.service().userInfo(id).unwrap()
+
+    suspend fun searchUsers(keyword: String): List<io.github.svenbuild.fylvo.android.api.User> = api.service().searchUsers(keyword).unwrap()
+
+    /**
+     * Fylvo 1.6: saves the people of the folder at [uri]: a new share with people, or [share] with
+     * the whole new list. Its end stays as it is (counted at sending) unless [newExpire] was chosen
+     * ([expireChanged]; null = no end).
+     */
+    suspend fun savePeople(uri: String, share: ShareInfo?, members: List<ShareMemberDto>, newExpire: Long?, expireChanged: Boolean): String {
+        val tag = session.sessionTag()
+        val expire = if (expireChanged || share == null) newExpire
+            else LinkOptions.of(share).let { o -> o.keepEnd?.let { LinkOptions.remainingSeconds(it, Instant.now()) } ?: o.expireSeconds }
+        val request = memberRequest(uri, share, members, expire)
+        return if (share == null) api.service().createShare(request, tag).unwrap()
+        else api.service().editShare(share.id, request, tag).unwrap()
+    }
+
     /** The owner's shares of the file at [uri] (`file/info?extended=true`). */
     suspend fun sharesOf(uri: String): List<ShareInfo> =
         api.service().fileInfoExtended(uri).unwrap().extendedInfo?.shares.orEmpty()

@@ -277,6 +277,14 @@ interface ApiService {
     @GET("api/v4/file")
     suspend fun folderView(@Query("uri") uri: String, @Tag session: SessionTag): Response<ApiResponse<FolderViewResponse>>
 
+    /** Fylvo 1.6: a person by id (name only, for share members). */
+    @GET("api/v4/user/info/{id}")
+    suspend fun userInfo(@Path("id") id: String): Response<ApiResponse<User>>
+
+    /** Fylvo 1.6: active accounts by name or e-mail (at least 2 characters, at most 10 answers). */
+    @GET("api/v4/user/search")
+    suspend fun searchUsers(@Query("keyword") keyword: String): Response<ApiResponse<List<User>>>
+
     /** Fylvo: the signed-in account with its group rights. */
     @GET("api/v4/user/me")
     suspend fun me(@Tag session: SessionTag): Response<ApiResponse<Me>>

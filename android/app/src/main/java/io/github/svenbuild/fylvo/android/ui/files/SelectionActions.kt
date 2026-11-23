@@ -38,6 +38,8 @@ enum class SelectionAction(
     /** Fylvo 1.6: older versions of an own file. */
     VERSIONS,
     /** Fylvo 1.6: archives: look inside, extract all, pack the selection as a ZIP. */
+    /** Fylvo 1.6: share a folder with chosen people. */
+    SHARE_PEOPLE,
     VIEW_ARCHIVE,
     EXTRACT,
     COMPRESS,

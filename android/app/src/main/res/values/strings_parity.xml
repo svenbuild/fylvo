@@ -263,4 +263,17 @@
 
     <string name="task_status_failed">Failed</string>
     <string name="task_status_canceled">Cancelled</string>
+
+    <!-- Share with people -->
+    <string name="share_with_people">Share with people</string>
+    <string name="people_add">Add a person (name or e-mail)</string>
+    <string name="people_read">Read</string>
+    <string name="people_edit">Edit</string>
+    <string name="people_remove">Remove</string>
+    <string name="people_unknown">Unknown person</string>
+    <string name="people_none">Nobody yet. Search for a person below.</string>
+    <string name="people_saved">Saved</string>
+    <string name="people_end">Stop sharing</string>
+    <string name="people_end_title">Stop sharing with people?</string>
+    <string name="people_expired">This share has ended. Choose how long it should last now.</string>
 </resources>

@@ -47,6 +47,7 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Palette
@@ -462,6 +463,7 @@ internal val SelectionAction.icon: ImageVector
         SelectionAction.PIN_HOME -> Icons.Outlined.AddToHomeScreen
         SelectionAction.MANAGE_SHARES -> Icons.Outlined.Link
         SelectionAction.VERSIONS -> Icons.Outlined.History
+        SelectionAction.SHARE_PEOPLE -> Icons.Outlined.GroupAdd
         SelectionAction.VIEW_ARCHIVE -> Icons.Outlined.Inventory2
         SelectionAction.EXTRACT -> Icons.Outlined.Unarchive
         SelectionAction.COMPRESS -> Icons.Outlined.Archive
@@ -493,6 +495,7 @@ internal fun SelectionAction.label(quick: Boolean): String = stringResource(
         SelectionAction.PIN_HOME -> R.string.pin_to_home_screen
         SelectionAction.MANAGE_SHARES -> R.string.manage_shares
         SelectionAction.VERSIONS -> R.string.versions
+        SelectionAction.SHARE_PEOPLE -> R.string.share_with_people
         SelectionAction.VIEW_ARCHIVE -> R.string.archive_view
         SelectionAction.EXTRACT -> R.string.archive_extract
         SelectionAction.COMPRESS -> R.string.archive_compress

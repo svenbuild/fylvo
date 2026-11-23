@@ -263,4 +263,17 @@
 
     <string name="task_status_failed">Fehlgeschlagen</string>
     <string name="task_status_canceled">Abgebrochen</string>
+
+    <!-- Mit Personen teilen -->
+    <string name="share_with_people">Mit Personen teilen</string>
+    <string name="people_add">Person hinzufügen (Name oder E-Mail)</string>
+    <string name="people_read">Lesen</string>
+    <string name="people_edit">Bearbeiten</string>
+    <string name="people_remove">Entfernen</string>
+    <string name="people_unknown">Unbekannte Person</string>
+    <string name="people_none">Noch niemand. Suche unten eine Person.</string>
+    <string name="people_saved">Gespeichert</string>
+    <string name="people_end">Teilen beenden</string>
+    <string name="people_end_title">Teilen mit Personen beenden?</string>
+    <string name="people_expired">Diese Freigabe ist abgelaufen. Wähle, wie lange sie jetzt gelten soll.</string>
 </resources>

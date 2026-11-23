@@ -173,6 +173,8 @@ fun FilesScreen(
     var archiveView by remember { mutableStateOf<FileObject?>(null) }
     var extractPick by remember { mutableStateOf<FileObject?>(null) }
     var compressAsk by remember { mutableStateOf<List<FileObject>?>(null) }
+    /** Fylvo 1.6: a folder being shared with people. */
+    var peopleTarget by remember { mutableStateOf<PeopleTarget?>(null) }
     val groupArchive = accountState.group(Permissions.GROUP_ARCHIVE)
     // Fylvo 1.6: the text editor; its view model keeps the text when the phone is turned.
     val editor = androidx.lifecycle.viewmodel.compose.viewModel(key = "text-editor") {
@@ -194,6 +196,7 @@ fun FilesScreen(
         if (state.offlineMode || file.isUploading || state.inTrash) return emptyList()
         return listOfNotNull(
             SelectionAction.MANAGE_SHARES.takeIf { file.shared == true && Permissions.canShare(file, groupShare) },
+            SelectionAction.SHARE_PEOPLE.takeIf { file.isFolder && Permissions.canShare(file, groupShare) },
             // Not while an offline working copy is open (its base would go stale unnoticed).
             SelectionAction.VERSIONS.takeIf { Permissions.canManageVersions(file) && state.editOf(file) == null },
             SelectionAction.VIEW_ARCHIVE.takeIf {
@@ -211,6 +214,7 @@ fun FilesScreen(
             SelectionAction.MANAGE_SHARES -> sharesOfTarget = file
             SelectionAction.VERSIONS -> versionsTarget = file
             SelectionAction.VIEW_ARCHIVE -> archiveView = file
+            SelectionAction.SHARE_PEOPLE -> peopleTarget = PeopleTarget(file.path, null)
             SelectionAction.EXTRACT -> extractPick = file
             SelectionAction.COMPRESS -> compressAsk = listOf(file)
             else -> Unit
@@ -614,7 +618,8 @@ fun FilesScreen(
             SelectionAction.UNFAVORITE -> setFavorite(targets, false)
             SelectionAction.COLOR -> colorTarget = targets
             SelectionAction.TAGS -> tagsTarget = targets
-            SelectionAction.MANAGE_SHARES, SelectionAction.VERSIONS, SelectionAction.VIEW_ARCHIVE, SelectionAction.EXTRACT -> one?.let { runMore(action, it) }
+            SelectionAction.MANAGE_SHARES, SelectionAction.VERSIONS, SelectionAction.VIEW_ARCHIVE, SelectionAction.EXTRACT,
+            SelectionAction.SHARE_PEOPLE -> one?.let { runMore(action, it) }
             SelectionAction.COMPRESS -> if (targets.isNotEmpty()) compressAsk = targets
             SelectionAction.PIN_HOME -> one?.let { folder ->
                 scope.launch { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.pin(context, folder, prefsRepo.accountHash()) }
@@ -1139,7 +1144,7 @@ fun FilesScreen(
             customizeOpen = false
             viewModel.openPlace(uri)
         },
-        editPeople = { _, _ -> },
+        editPeople = { share, uri -> sharesOfTarget = null; peopleTarget = PeopleTarget(uri, share) },
         message = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
         canEdit = groupShare == true,
     )
@@ -1244,6 +1249,13 @@ fun FilesScreen(
                 }
             },
             dismissButton = { androidx.compose.material3.TextButton(enabled = !emptying, onClick = { emptyTrashAsk = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    peopleTarget?.let { t ->
+        PeopleSheet(
+            target = t,
+            onDone = { msg -> peopleTarget = null; viewModel.refresh(); msg?.let { scope.launch { snackbar.showSnackbar(it) } } },
+            onDismiss = { peopleTarget = null },
         )
     }
     sharesOfTarget?.let { file ->
