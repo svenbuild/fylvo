@@ -36,12 +36,14 @@ const WopiForm = ({
   );
 };
 
-// Fylvo: reloads the main list when it shows folder.
+// Fylvo: reloads the main list when it shows folder; a later reload (later) only while nothing is
+// selected and the folder fits one page, so it does not undo what the user does meanwhile.
 const refreshFolderIfOpen =
-  (folder: string): AppThunk =>
+  (folder: string, later: boolean): AppThunk =>
   (dispatch, getState) => {
-    const path = getState().fileManager[FileManagerIndex.main].pure_path;
-    if (path && new CrUri(path).toString() == folder) {
+    const fm = getState().fileManager[FileManagerIndex.main];
+    const busy = Object.keys(fm.selected ?? {}).length > 0 || !!fm.list?.pagination?.next_token;
+    if (fm.pure_path && new CrUri(fm.pure_path).toString() == folder && !(later && busy)) {
       dispatch(refreshFileList(FileManagerIndex.main));
     }
   };
@@ -138,7 +140,7 @@ const Wopi = () => {
     if (connectedEdit && viewerState?.file) {
       const folder = new CrUri(viewerState.file.path).parent().toString();
       for (const delay of [0, 5000, 15000]) {
-        setTimeout(() => dispatch(refreshFolderIfOpen(folder)), delay);
+        setTimeout(() => dispatch(refreshFolderIfOpen(folder, delay > 0)), delay);
       }
     }
   }, [dispatch, connectedEdit, viewerState?.file]);

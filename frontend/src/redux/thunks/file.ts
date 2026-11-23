@@ -22,6 +22,7 @@ import {
   ConflictDetail,
   DirectLink,
   FileResponse,
+  FileThumbResponse,
   FileType,
   ListResponse,
   Metadata,
@@ -121,6 +122,9 @@ export const isMacbook = isMac();
 // at a time, a few times 5 seconds apart, before the row shows the address (the browser keeps the
 // image). The answer for a version without a preview: 40077.
 const connectedThumbs = limiter(2);
+// The address of a preview is cheap while the folder's listing is fresh; after that the server
+// looks the file up at the provider again, so those requests are limited as well.
+const connectedThumbAddresses = limiter(3);
 const connectedNoPreview = 40077;
 const connectedThumbTries = 3;
 const connectedThumbPause = 5000;
@@ -129,7 +133,12 @@ const connectedThumbTimeout = 30000;
 const imageLoads = (url: string) =>
   new Promise<boolean>((resolve) => {
     const img = new Image();
-    const timer = setTimeout(() => resolve(false), connectedThumbTimeout);
+    const timer = setTimeout(() => {
+      // Stopped, so its place is free only once nothing is loading any more.
+      img.onload = img.onerror = null;
+      img.src = "";
+      resolve(false);
+    }, connectedThumbTimeout);
     img.onload = () => {
       clearTimeout(timer);
       resolve(true);
@@ -188,20 +197,47 @@ function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string |
     }
 
     const connected = inConnectedStorage(file.path);
+    // Fylvo: still wanted: this version is listed somewhere and may have a preview.
+    const listed = () =>
+      getState().fileManager.some(
+        (fm) =>
+          fm.list?.files.some(
+            (f) =>
+              f.path == file.path &&
+              f.primary_entity == file.primary_entity &&
+              f.metadata?.[Metadata.thumbDisabled] === undefined,
+          ),
+      );
+    // Fylvo: an answer for an older version does not replace the one of the version listed now.
+    const outdated = () => {
+      const listedNow = getState().fileManager[index].list?.files.find((f) => f.path == file.path);
+      return !!listedNow && listedNow.primary_entity != file.primary_entity;
+    };
+    // Marks a waiting request that was dropped because its version is no longer listed.
+    const dropped = new Error("dropped");
     try {
-      const thumb = await dispatch(getFileThumb(getFileLinkedUri(file), fileManager[index].list?.context_hint));
+      let thumb: FileThumbResponse;
+      // Fylvo: a busy connected storage (40923) is asked again a few times, 5 seconds apart,
+      // while the version is still wanted.
+      for (let i = 0; ; i++) {
+        try {
+          const request = () => dispatch(getFileThumb(getFileLinkedUri(file), fileManager[index].list?.context_hint));
+          thumb = connected
+            ? await connectedThumbAddresses((waited) => (waited && !listed() ? Promise.reject(dropped) : request()))
+            : await request();
+          break;
+        } catch (e) {
+          const busy = connected && e instanceof AppError && e.code == ConnectedCode.Busy;
+          if (!busy || i + 1 >= connectedThumbTries) {
+            throw e;
+          }
+          await new Promise((resolve) => setTimeout(resolve, connectedThumbPause));
+          if (!listed()) {
+            return null;
+          }
+        }
+      }
       if (connected) {
-        // Still wanted: this version is listed somewhere and may have a preview.
-        const listed = () =>
-          getState().fileManager.some(
-            (fm) =>
-              fm.list?.files.some(
-                (f) =>
-                  f.path == file.path &&
-                  f.primary_entity == file.primary_entity &&
-                  f.metadata?.[Metadata.thumbDisabled] === undefined,
-              ),
-          );
         const loaded = await loadConnectedImage(thumb.url, listed);
         if (loaded === undefined) {
           return null;
@@ -210,9 +246,15 @@ function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string |
           throw new Error("The preview image did not load");
         }
       }
+      if (outdated()) {
+        return null;
+      }
       dispatch(setThumbCache({ index, value: [file.path, thumb, file.primary_entity] }));
       return thumb.url;
     } catch (e) {
+      if (e === dropped || outdated()) {
+        return null;
+      }
       // Fylvo: remembered for this version of the file only, in the thumbnail cache, and for a
       // minute (a busy server may have it later); the file entry itself is not touched (an answer
       // that comes late must not bring back an older one). A connected storage that has no
