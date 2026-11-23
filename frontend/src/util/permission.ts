@@ -3,7 +3,7 @@ import Boolset from "./boolset.ts";
 import CrUri, { Filesystem } from "./uri.ts";
 
 // Fylvo: the two places that decide what the current user may do with files. Outside shares ownership
-// decides. Inside a share the capability set sent by the backend decides:
+// decides. Inside a share or a connected storage the capability set sent by the backend decides:
 // - upload_file: add new files and folders (editors of member shares and visitors of upload links).
 // - rename_file: change existing files (only editors of member shares). Upload visitors never get it.
 function shareCapability(file: FileResponse, capability: number): boolean | undefined {
@@ -11,7 +11,9 @@ function shareCapability(file: FileResponse, capability: number): boolean | unde
   if (!file.path) {
     return undefined;
   }
-  if (new CrUri(file.path).fs() == Filesystem.share) {
+  // A connected storage (Fylvo) also tells per row what may be done; its rows are never owned.
+  const fs = new CrUri(file.path).fs();
+  if (fs == Filesystem.share || fs == Filesystem.connected) {
     return new Boolset(file.capability).enabled(capability);
   }
   return undefined;

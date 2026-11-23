@@ -83,6 +83,7 @@ import { navigateToPath, refreshFileList, updateUserCapacity } from "./filemanag
 import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers } from "./viewer.ts";
+import { folderEnterable } from "../../api/connected.ts";
 
 const contextMenuCloseAnimationDelay = 250;
 
@@ -251,7 +252,13 @@ export function fileClicked(index: number, file: FileResponse, e?: React.MouseEv
     const ctrlKeyPressed = e && (e.ctrlKey || e.metaKey || e.shiftKey);
     const isTrash = file.metadata && file.metadata[Metadata.restore_uri];
     const folderClickAction = SessionManager.getWithFallback(UserSettings.FolderClickAction);
-    if (file.type === FileType.folder && !ctrlKeyPressed && !isTrash && folderClickAction === "open") {
+    if (
+      file.type === FileType.folder &&
+      !ctrlKeyPressed &&
+      !isTrash &&
+      folderClickAction === "open" &&
+      folderEnterable(file)
+    ) {
       dispatch(openFile(index, file));
     } else {
       dispatch(selectFile(index, file, e));
@@ -1192,6 +1199,15 @@ export function walk(
               }),
             );
             allChildren.push(...children.files);
+            // Fylvo: a cursor listing (connected storages) goes on only by its token, also
+            // when it names a total.
+            if (children.pagination.is_cursor) {
+              nextToken = children.pagination.next_token;
+              if (!nextToken) {
+                break;
+              }
+              continue;
+            }
             if (children.pagination.total_items) {
               page = (page ?? 0) + 1;
             } else if (children.pagination.next_token) {

@@ -26,7 +26,7 @@ import { DialogSelectOption, setBatchDownloadLog, setBatchDownloadProgress } fro
 import { AppThunk } from "../store.ts";
 import { promiseId, selectOption } from "./dialog.ts";
 import { longRunningTaskWithSnackbar, refreshSingleFileSymbolicLinks, walk, walkAll } from "./file.ts";
-import { inConnectedStorage } from "../../api/connected.ts";
+import { downloadFileName, inConnectedStorage } from "../../api/connected.ts";
 
 enum MultipleDownloadOption {
   Browser,
@@ -306,7 +306,8 @@ function startBrowserBatchDownloadTo(
           );
 
           for (let i = 0; i < entityUrls.urls.length; i++) {
-            if (!entityUrls.urls[i]) {
+            // Fylvo: an address the server could not give comes back empty.
+            if (!entityUrls.urls[i]?.url) {
               appendLog(
                 i18next.t("modals.directoryDownloadErrorNotification", {
                   name: childFiles[i].name,
@@ -318,7 +319,7 @@ function startBrowserBatchDownloadTo(
               updateProgress(true);
               continue;
             }
-            const name = (relativePath == "" ? "" : relativePath + "/") + childFiles[i].name;
+            const name = (relativePath == "" ? "" : relativePath + "/") + downloadFileName(childFiles[i]);
             if (fsPaths.has(name)) {
               if (skipAll) {
                 appendLog(
@@ -393,6 +394,10 @@ function startBrowserBatchDownloadTo(
               const res = await fetch(entityUrls.urls[i].url, {
                 signal: cancelSignals[downloadId].signal,
               });
+              // Fylvo: an error answer must not become the file.
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+              }
 
               // Stream the response directly to disk to avoid buffering
               // the entire file in memory
@@ -489,12 +494,17 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
 
           for (let i = 0; i < entityUrls.urls.length; i++) {
             const url = entityUrls.urls[i];
-            if (!url) {
+            if (!url?.url) {
               continue;
             }
             const res = await fetch(url.url);
+            // Fylvo: an error answer must not become a file in the archive.
+            if (!res.ok) {
+              console.warn("Failed to download", batch[i].relativePath, res.status);
+              continue;
+            }
             const stream = () => res.body;
-            ctrl.enqueue({ name: batch[i].relativePath, stream });
+            ctrl.enqueue({ name: downloadFileName(batch[i], batch[i].relativePath), stream });
           }
         } catch (e) {
           console.warn("Failed to get entity urls", e);

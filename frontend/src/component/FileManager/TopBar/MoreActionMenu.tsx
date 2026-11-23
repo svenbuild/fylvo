@@ -89,7 +89,8 @@ const MoreActionMenu = ({ onClose, ...rest }: MenuProps) => {
           </SquareMenuItem>
         </>
       )}
-      {isLogin && (
+      {/* Fylvo: the server keeps no pins into a connected storage yet. */}
+      {isLogin && fs != Filesystem.connected && (
         <SquareMenuItem onClick={onPinClicked}>
           <ListItemIcon>
             <PinOutlined fontSize="small" />

@@ -324,6 +324,8 @@ export const getActionOpt = (
     display.showDirectLinkManagement = false;
     display.showCreateArchive = false;
     display.showResetThumb = false;
+    display.showPin = false;
+    display.showOrganize = display.showMove || display.showChangeIcon;
     if (targets.length == 1 && targets[0].metadata?.[Metadata.connected_external_url]) {
       display.showOpenAtProvider = true;
       display.showOpenWith = () => false;

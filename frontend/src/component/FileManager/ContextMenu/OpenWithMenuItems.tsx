@@ -10,6 +10,7 @@ import { Viewers } from "../../../redux/siteConfigSlice.ts";
 import { Viewer } from "../../../api/explorer.ts";
 import { ViewerIcon } from "../Dialogs/OpenWith.tsx";
 import { openViewer, openViewers } from "../../../redux/thunks/viewer.ts";
+import { usableViewers } from "../Connected/usableViewers.ts";
 
 const OpenWithMenuItems = ({ targets }: SubMenuItemsProps) => {
   const { rootPopupState } = useContext(CascadingContext);
@@ -41,7 +42,7 @@ const OpenWithMenuItems = ({ targets }: SubMenuItemsProps) => {
     }
 
     const firstFileSuffix = fileExtension(targets[0].name);
-    return Viewers[firstFileSuffix ?? ""];
+    return usableViewers(targets[0], Viewers[firstFileSuffix ?? ""]);
   }, [targets]);
 
   return (

@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import { getFileInfo, getFileList, getUserCapacity, sendPatchViewSync } from "../../api/api.ts";
 import { ExplorerView, FileResponse, FileType, ListResponse, Metadata } from "../../api/explorer.ts";
-import { ConnectedCode } from "../../api/connected.ts";
+import { ConnectedCode, inConnectedStorage } from "../../api/connected.ts";
 import { AppError } from "../../api/request.ts";
 import { getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { ListViewColumnSetting } from "../../component/FileManager/Explorer/ListView/Column.tsx";
@@ -653,7 +653,8 @@ export function openAdvancedSearch(index: number, initialKeywords?: string): App
     dispatch(
       setAdvanceSearch({
         open: true,
-        basePath: current_base ?? defaultPath,
+        // Fylvo: a connected storage cannot be searched yet; start in the own files.
+        basePath: current_base && !inConnectedStorage(current_base) ? current_base : defaultPath,
         nameCondition: initialKeywords != undefined ? initialKeywords.split(SPACE_RE).filter((x) => x) : undefined,
       }),
     );

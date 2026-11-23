@@ -1,6 +1,8 @@
 // Fylvo connected storages: Google Drive or OneDrive shown live next to the own files.
 // See service/fylvo/fylvo_connected.go on the server.
 import { CrUriPrefix } from "../util/uri.ts";
+import Boolset from "../util/boolset.ts";
+import { FileResponse, Metadata, NavigatorCapability } from "./explorer.ts";
 import { defaultOpts, send, ThunkResponse } from "./request.ts";
 
 // Filesystem name in the address of a connected storage: <scheme>://<id>@connected/<path>
@@ -13,6 +15,22 @@ export const inConnectedStorage = (path?: string) => {
   connectedPathPattern ??= new RegExp(`^${CrUriPrefix}[^/@?#]+@${ConnectedFileSystem}(?:[/?#]|$)`);
   return !!path && connectedPathPattern.test(path);
 };
+
+// Name under which a file is saved: a document of the provider (for example a Google Sheet)
+// downloads in the format named in its metadata, so it gets that extension.
+export const downloadFileName = (file: FileResponse, name: string = file.name) => {
+  const ext = file.metadata?.[Metadata.connected_export];
+  if (!ext) {
+    return name;
+  }
+  const dot = name.lastIndexOf(".");
+  return (dot > name.lastIndexOf("/") ? name.slice(0, dot) : name) + "." + ext;
+};
+
+// Whether a folder can be entered: rows of a connected storage say so in their capability
+// (a duplicate name or a shortcut into another drive cannot); other folders always can.
+export const folderEnterable = (folder: FileResponse) =>
+  !inConnectedStorage(folder.path) || new Boolset(folder.capability).enabled(NavigatorCapability.enter_folder);
 
 // Address of the root of a connected storage, as the server builds it.
 export const connectedRootUri = (id: string) => `${CrUriPrefix}${id}@${ConnectedFileSystem}`;

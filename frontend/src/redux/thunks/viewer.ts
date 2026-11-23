@@ -115,6 +115,11 @@ export function openViewer(
   forceNotOpenInNew?: boolean,
 ): AppThunk {
   return async (dispatch, getState) => {
+    // Fylvo: also for a viewer named in the address (?viewer=).
+    if (usableViewers(file, [viewer]).length == 0) {
+      enqueueSnackbar({ message: i18next.t("common:errors.40920"), variant: "warning", action: DefaultCloseAction });
+      return;
+    }
     if (!forceNotOpenInNew && viewer.type != ViewerType.custom && isTrueVal(viewer.props?.openInNew ?? "")) {
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.set("viewer", viewer.id ?? "");
