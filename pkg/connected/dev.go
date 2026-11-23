@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
@@ -59,8 +60,10 @@ type devProvider struct {
 	tokens *httptest.Server
 
 	mu sync.Mutex
-	// epoch rises when all access is ended: tokens of an earlier epoch are refused.
-	epoch int
+	// ended is when all access was last ended: tokens made before are refused. Tokens
+	// carry the time they were made, so the ones of an earlier run of the server go on
+	// working until then.
+	ended int64
 	n     int
 }
 
@@ -80,7 +83,7 @@ func (d *devProvider) token(kind, account string) string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.n++
-	return fmt.Sprintf("%s.%s.%d.%d", kind, account, d.epoch, d.n)
+	return fmt.Sprintf("%s.%s.%d.%d", kind, account, time.Now().UnixNano(), d.n)
 }
 
 // account returns the account a token of the given kind is for, "" for a token that is
@@ -90,10 +93,10 @@ func (d *devProvider) account(token, kind string) string {
 	if len(parts) != 4 || parts[0] != kind || devLabel(parts[1]) == "" {
 		return ""
 	}
-	epoch, err := strconv.Atoi(parts[2])
+	made, err := strconv.ParseInt(parts[2], 10, 64)
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if err != nil || epoch < d.epoch {
+	if err != nil || made <= d.ended {
 		return ""
 	}
 	return parts[1]
@@ -166,7 +169,7 @@ func (d *devProvider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "expire":
 		if r.Method == http.MethodPost {
 			d.mu.Lock()
-			d.epoch++
+			d.ended = time.Now().UnixNano()
 			d.mu.Unlock()
 			devPage(w, "<h1>Simulated provider</h1><p>All access was ended. Every connected sample storage now has to be connected again.</p>")
 			return
