@@ -202,8 +202,9 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 	}
 	if row.IsDir {
 		res.Type = int(types.FileTypeFolder)
-	} else {
-		// No thumbnails yet: clients do not ask for one when this is set.
+	} else if !connected.HasThumbnail(row) {
+		// The provider has no preview of this file: clients do not ask for one when
+		// this is set. For every other file they ask, whatever its kind.
 		res.Metadata[dbfs.ThumbDisabledKey] = ""
 	}
 	if row.Path == "" {
@@ -323,7 +324,10 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 			ID:       req.conn.ID,
 			Provider: req.conn.Provider,
 			ReadOnly: page.Parent.ViaLink || !connected.Writes(),
-			Omitted:  page.Omitted,
+			// Previews are there: a client asks for one for every file of the listing
+			// that is not marked as having none.
+			Thumbnails: true,
+			Omitted:    page.Omitted,
 		},
 	}
 	for _, row := range page.Rows {

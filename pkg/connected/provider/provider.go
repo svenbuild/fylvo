@@ -47,6 +47,9 @@ type Item struct {
 	// Link is set for an entry that points to another item: a Drive shortcut or a
 	// OneDrive item of another drive.
 	Link *Link
+	// Preview tells that the provider has a ready-made picture of the content (see
+	// Thumbnailer). Never set for a folder or a link.
+	Preview bool
 }
 
 // NativeKinds are all values of Item.Native. In Fylvo such an entry shows with its kind
@@ -135,6 +138,14 @@ type Provider interface {
 	About(ctx context.Context) (*Usage, error)
 	// CaseInsensitive tells whether names in a folder are unique without regard to case.
 	CaseInsensitive() bool
+}
+
+// Thumbnailer is a provider that makes previews of its files itself and hands them out.
+type Thumbnailer interface {
+	// Thumbnail starts a download of the preview of item, a picture that fits into a
+	// square of size pixels. KindNotFound when the provider has none; KindStale when
+	// it can tell that the content changed since item was read.
+	Thumbnail(ctx context.Context, item *Item, size int) (*Content, error)
 }
 
 // Kind classifies an error of a provider.

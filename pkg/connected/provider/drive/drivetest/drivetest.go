@@ -66,6 +66,8 @@ const (
 	// CallMedia is a download of content, of the current one or of a revision.
 	CallMedia  Call = "media"
 	CallExport Call = "export"
+	// CallThumbnail is a download of a preview from the link an entry carries.
+	CallThumbnail Call = "thumbnail"
 	// CallCreate makes a folder or a file without content.
 	CallCreate Call = "create"
 	// CallUpdate renames, moves or trashes an entry.
@@ -100,6 +102,27 @@ type entry struct {
 
 	// Shortcuts only: Drive keeps the target's type from when the shortcut was made.
 	target, targetType string
+
+	// thumbnail is the preview set for the entry, noThumbnail takes away the one Drive
+	// would make by itself (see preview).
+	thumbnail   []byte
+	noThumbnail bool
+}
+
+// preview is the picture Drive shows for the entry, nil when it has none. Like Drive
+// the simulator makes one of a picture by itself: the picture.
+func (e *entry) preview() []byte {
+	switch {
+	case e.noThumbnail:
+		return nil
+	case e.thumbnail != nil:
+		return e.thumbnail
+	case e.binary():
+		if kind := http.DetectContentType(e.content()); kind == "image/png" || kind == "image/jpeg" {
+			return e.content()
+		}
+	}
+	return nil
 }
 
 func (e *entry) content() []byte { return e.revisions[e.revision] }
@@ -148,6 +171,13 @@ type Server struct {
 	redirect       bool
 	calls          map[Call]int
 	usage, limit   int64
+
+	// thumbnailsAt replaces the host of preview links, thumbnailRedirect sends a request
+	// for a preview on to the content server, thumbnailSizes are the sizes asked for.
+	thumbnailsAt      string
+	thumbnailRedirect bool
+	thumbnailSizes    []string
+	thumbnailStatus   int
 
 	sessions    map[string]*session
 	full        bool
@@ -419,6 +449,46 @@ func (s *Server) BreakExports(on bool) {
 	s.breakExports = on
 }
 
+// SetThumbnail gives an entry a preview; nil takes away the one it has, also the one a
+// picture gets by itself.
+func (s *Server) SetThumbnail(id string, picture []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.must(id)
+	e.thumbnail, e.noThumbnail = picture, picture == nil
+}
+
+// ThumbnailsAt makes the preview links lead to another address than this server
+// ("https://lh3.example.com"), "" to this server again.
+func (s *Server) ThumbnailsAt(base string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.thumbnailsAt = base
+}
+
+// RedirectThumbnails makes a request for a preview answer with a redirect to the
+// content server.
+func (s *Server) RedirectThumbnails(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.thumbnailRedirect = on
+}
+
+// RefuseThumbnails makes every request for a preview answer with the given status, 0
+// to serve them again.
+func (s *Server) RefuseThumbnails(status int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.thumbnailStatus = status
+}
+
+// ThumbnailSizes returns the size suffixes ("s400") the previews were asked with.
+func (s *Server) ThumbnailSizes() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.thumbnailSizes...)
+}
+
 // Redirect makes downloads answer with a redirect to a second server that serves the
 // content, as Drive does at times.
 func (s *Server) Redirect(on bool) {
@@ -560,6 +630,11 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	defer s.mu.Unlock()
 
 	kind, id, rev, ok := route(r)
+	if picture, found := strings.CutPrefix(r.URL.Path, "/thumbnail/"); found && r.Method == http.MethodGet {
+		// The preview of an entry: "/thumbnail/<id>=s<size>".
+		kind, ok = CallThumbnail, true
+		id, rev, _ = strings.Cut(picture, "=")
+	}
 	if !ok {
 		writeError(w, http.StatusNotFound, "notFound", "Not Found")
 		return
@@ -616,7 +691,29 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		switch kind {
 		case CallGet:
-			writeJSON(w, s.file(e))
+			f := s.file(e)
+			if e.preview() != nil && strings.Contains(r.URL.Query().Get("fields"), "thumbnailLink") {
+				// Only for the asking, and with Drive's own default size.
+				base := s.thumbnailsAt
+				if base == "" {
+					base = s.api.URL
+				}
+				f["thumbnailLink"] = base + "/thumbnail/" + e.id + "=s220"
+			}
+			writeJSON(w, f)
+		case CallThumbnail:
+			s.thumbnailSizes = append(s.thumbnailSizes, rev)
+			switch picture := e.preview(); {
+			case s.thumbnailStatus != 0:
+				w.WriteHeader(s.thumbnailStatus)
+			case picture == nil || e.trashed:
+				http.NotFound(w, r)
+			case s.thumbnailRedirect:
+				http.Redirect(w, r, s.content.URL+"/thumbnail/"+e.id, http.StatusFound)
+			default:
+				w.Header().Set("Content-Type", http.DetectContentType(picture))
+				_, _ = w.Write(picture)
+			}
 		case CallMedia:
 			s.media(w, r, e, rev)
 		case CallExport:
@@ -700,6 +797,7 @@ func (s *Server) file(e *entry) map[string]any {
 		"version":      strconv.FormatInt(e.version, 10),
 		"trashed":      e.trashed,
 		"webViewLink":  "https://drive.example.com/file/d/" + e.id + "/view",
+		"hasThumbnail": e.preview() != nil,
 	}
 	if e.parent != "" {
 		f["parents"] = []string{e.parent}
@@ -753,6 +851,14 @@ func (s *Server) serveContent(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.contentTokens = append(s.contentTokens, r.Header.Get("Authorization"))
+	if id, found := strings.CutPrefix(r.URL.Path, "/thumbnail/"); found {
+		if e, ok := s.items[id]; ok && e.preview() != nil {
+			_, _ = w.Write(e.preview())
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/content/"), "/")
 	if len(parts) == 2 {
 		if e, ok := s.items[parts[0]]; ok {

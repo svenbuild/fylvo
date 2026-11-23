@@ -79,6 +79,19 @@ func TestConnectedExamples(t *testing.T) {
 	require.NoError(t, err)
 	x.Add("file-url", urls, nil)
 
+	// Previews: a picture has one (its row carries no "thumb:disabled"), a text has none.
+	e.sim.AddFile("", "photo.png", testPNG(1))
+	e.m.Tree().Forget(e.id)
+	photo, err := e.info(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	x.Add("info-file-with-preview", photo, nil)
+	preview, err := e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	x.Add("thumb", preview, nil)
+	_, err = e.thumb(e.alex, e.root+"/notes.txt")
+	require.Equal(t, serializer.CodeEntityNotExist, connectedCode(err))
+	x.Add("error-thumb-none", nil, err)
+
 	usage, err := ConnectedCapacity(e.as(e.alex), e.id)
 	require.NoError(t, err)
 	x.Add("capacity", usage, nil)

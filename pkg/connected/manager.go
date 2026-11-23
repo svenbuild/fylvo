@@ -91,6 +91,8 @@ type ManagerOptions struct {
 	Hooks Hooks
 	// UserExists tells whether an account (still) exists. nil: every account does.
 	UserExists func(ctx context.Context, userID int) bool
+	// ThumbDir is where previews fetched from providers are kept. "" keeps none.
+	ThumbDir string
 }
 
 // Manager keeps the connections of all accounts: who connected what, the sealed tokens
@@ -128,6 +130,8 @@ type Manager struct {
 	writes sync.Map
 	// unsettled are the names a change with an open outcome was about (see write.go).
 	unsettled openNames
+	// thumbs are the previews fetched from providers (see thumbs.go).
+	thumbs *thumbs
 }
 
 func NewManager(o ManagerOptions) *Manager {
@@ -152,6 +156,7 @@ func NewManager(o ManagerOptions) *Manager {
 		uploads:  newUploads(),
 		offices:  newOffices(),
 		usage:    map[string]usage{},
+		thumbs:   newThumbs(o.ThumbDir),
 	}
 }
 
@@ -867,6 +872,8 @@ func (m *Manager) takeBack(ctx context.Context, revokes ...revoke) {
 // returned, if anything, once it has released it.
 func (m *Manager) afterDelete(ctx context.Context, row *ent.ConnectedStorage) revoke {
 	m.closeLive(row.PublicID)
+	// The previews kept of its files go with the connection.
+	m.thumbs.drop(row.PublicID)
 	if m.hooks.Closed != nil {
 		m.hooks.Closed(row.PublicID, row.Generation)
 	}

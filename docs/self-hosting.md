@@ -230,10 +230,20 @@ FYLVO_CONNECTED_APP_SIGNIN=0
 ```
 
 If a proxy in front of Fylvo writes its own log, keep the secrets of a sign-in out of it. For
-addresses below `/api/v4/fylvo/connected/` do not log the path of `start/...`, the query of
-`callback`, the headers `Cookie`, `Set-Cookie`, `Authorization` and `Referer`, the `Location`
-of answers, or any request or answer body. Fylvo's own log leaves headers and bodies out and
-replaces the secret parts of addresses.
+addresses below `/api/v4/fylvo/connected/` do not log the path of `start/...`, `content/...`
+and `thumb/...`, the query of `callback`, the headers `Cookie`, `Set-Cookie`, `Authorization`
+and `Referer`, the `Location` of answers, or any request or answer body. Fylvo's own log leaves
+headers and bodies out and replaces the secret parts of addresses.
+
+Preview pictures of files in a connected storage are the provider's own. Fylvo fetches one
+when somebody looks at the file, never ahead, and keeps it in `data/connected-thumbs` so the
+provider is asked once per version of a file. The folder may grow to 256 MB; then the pictures
+used longest ago go first. Disconnecting a storage removes its pictures. To set another size
+in megabytes (`0` keeps none), add this to `.env` and start Fylvo again:
+
+```bash
+FYLVO_CONNECTED_THUMB_CACHE_MB=64
+```
 
 Fylvo checks every connection to a provider and refuses internal addresses. If the server goes
 out through a proxy (`HTTPS_PROXY`), the proxy decides which targets are reachable: Fylvo can

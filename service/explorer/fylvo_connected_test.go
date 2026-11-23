@@ -49,6 +49,8 @@ type connectedEnv struct {
 	// root is the address of the root of the storage Alex connected.
 	root string
 	id   string
+	// thumbDir is where previews fetched from the provider are kept.
+	thumbDir string
 }
 
 const connectedTestToken = `{"access_token":"access-1","token_type":"Bearer","refresh_token":"refresh-1","expiry":"2099-01-01T00:00:00Z"}`
@@ -69,7 +71,7 @@ func newConnectedEnv(t *testing.T) *connectedEnv {
 	ctx := context.WithValue(context.Background(), dependency.DepCtx{}, dep)
 	ctx = context.WithValue(ctx, logging.LoggerCtx{}, logger)
 
-	e := &connectedEnv{t: t, ctx: ctx, dep: dep, client: client, sim: drivetest.New(t)}
+	e := &connectedEnv{t: t, ctx: ctx, dep: dep, client: client, sim: drivetest.New(t), thumbDir: filepath.Join(t.TempDir(), "thumbs")}
 	specs := connected.Specs()
 	specs[connected.ProviderDrive].NewProvider = func(_ *http.Client, auth provider.Auth, _ map[string]string) provider.Provider {
 		return drive.New(drive.Options{HTTP: e.sim.Client(), Auth: auth, BaseURL: e.sim.URL()})
@@ -81,6 +83,7 @@ func newConnectedEnv(t *testing.T) *connectedEnv {
 		Sealer:   connected.DepSealer(dep),
 		Specs:    specs,
 		HTTP:     e.sim.Client(),
+		ThumbDir: e.thumbDir,
 	})
 	connected.Install(dep, e.m)
 

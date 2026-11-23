@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -15,7 +16,7 @@ import (
 const (
 	graphOrigin = "https://graph.microsoft.com"
 	apiPath     = "/v1.0"
-	itemFields  = "id,name,size,folder,file,package,deleted,specialFolder,fileSystemInfo,lastModifiedDateTime,cTag,eTag,parentReference,remoteItem,webUrl"
+	itemFields  = "id,name,size,folder,file,package,deleted,specialFolder,fileSystemInfo,lastModifiedDateTime,cTag,eTag,parentReference,remoteItem,webUrl,image,photo,video"
 )
 
 // Options configure a client for one connection.
@@ -215,6 +216,17 @@ func (c *client) Open(ctx context.Context, item *provider.Item, rangeHeader stri
 		return c.remote.Download(ctx, c.itemURL(item.Link.TargetDrive, item.ContentID())+"/content", rangeHeader)
 	}
 	return c.caller.Download(ctx, c.itemURL(c.driveID, item.ID)+"/content", rangeHeader)
+}
+
+// Thumbnail starts a download of the preview OneDrive has of item, which fits into a
+// square of size pixels. Graph answers with a redirect to an address of its own that
+// works without the token; Download follows it that way. KindNotFound when there is none.
+func (c *client) Thumbnail(ctx context.Context, item *provider.Item, size int) (*provider.Content, error) {
+	if item.IsDir || item.Link != nil {
+		return nil, &provider.Error{Kind: provider.KindNotFound}
+	}
+	box := strconv.Itoa(size)
+	return c.caller.Download(ctx, c.itemURL(c.driveID, item.ID)+"/thumbnails/0/c"+box+"x"+box+"/content", "")
 }
 
 func (c *client) Export(context.Context, *provider.Item, string) (*provider.Content, error) {

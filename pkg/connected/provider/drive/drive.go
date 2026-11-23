@@ -34,7 +34,7 @@ const (
 	maxNamedPages = 10
 
 	itemFields = "id,name,mimeType,size,modifiedTime,md5Checksum,headRevisionId,version,trashed," +
-		"webViewLink,resourceKey,capabilities(canReadRevisions)," +
+		"webViewLink,resourceKey,hasThumbnail,capabilities(canReadRevisions)," +
 		"shortcutDetails(targetId,targetMimeType,targetResourceKey)"
 
 	// resourceKeyHeader carries the resource key that some shared items need to be opened.
@@ -99,6 +99,9 @@ type client struct {
 	call provider.Caller
 	// api is the address of the Drive API, ending in a slash.
 	api string
+	// thumbnailHost is set for a simulated Drive, which serves its previews itself
+	// (see thumbnail.go).
+	thumbnailHost string
 
 	mu   sync.Mutex
 	root string
@@ -175,13 +178,17 @@ func New(o Options) provider.Provider {
 	if o.BaseURL != "" {
 		base, allowHTTP = strings.TrimSuffix(o.BaseURL, "/"), true
 	}
-	httpClient := o.HTTP
+	httpClient, thumbnailHost := o.HTTP, ""
 	if u, err := url.Parse(base); err == nil {
 		httpClient = withResourceKeys(o.HTTP, u.Host)
+		if o.BaseURL != "" {
+			thumbnailHost = u.Host
+		}
 	}
 	return &client{
-		call: provider.Caller{HTTP: httpClient, Auth: o.Auth, Classify: classify, AllowHTTP: allowHTTP},
-		api:  base + "/drive/v3/",
+		call:          provider.Caller{HTTP: httpClient, Auth: o.Auth, Classify: classify, AllowHTTP: allowHTTP},
+		api:           base + "/drive/v3/",
+		thumbnailHost: thumbnailHost,
 	}
 }
 
@@ -395,6 +402,7 @@ type file struct {
 	Trashed        bool   `json:"trashed"`
 	WebViewLink    string `json:"webViewLink"`
 	ResourceKey    string `json:"resourceKey"`
+	HasThumbnail   bool   `json:"hasThumbnail"`
 	Capabilities   *struct {
 		CanReadRevisions bool `json:"canReadRevisions"`
 	} `json:"capabilities"`
@@ -434,9 +442,11 @@ func (f *file) item() (item provider.Item, ok bool) {
 		// A native document has no bytes; every edit changes its time.
 		item.Native = nativeOf(f.MimeType)
 		item.Version = timeVersion(f.ModifiedTime)
+		item.Preview = f.HasThumbnail
 	default:
 		item.Size = f.Size
 		item.Hash = f.MD5Checksum
+		item.Preview = f.HasThumbnail
 		// Reading a revision by its id is for accounts that may see the revisions of
 		// the file. A file shared for viewing only is read as it is now, after its
 		// version was compared.

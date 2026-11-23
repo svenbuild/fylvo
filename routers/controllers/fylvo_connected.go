@@ -93,6 +93,11 @@ func FylvoConnectedContent(c *gin.Context) {
 	explorer.ServeConnectedContent(c)
 }
 
+// FylvoConnectedThumb serves the preview of a file in a connected storage.
+func FylvoConnectedThumb(c *gin.Context) {
+	explorer.ServeConnectedThumb(c)
+}
+
 // The calls of the Office server for a file in a connected storage.
 func FylvoConnectedOfficeInfo(c *gin.Context)  { explorer.ConnectedOfficeInfo(c) }
 func FylvoConnectedOfficeGet(c *gin.Context)   { explorer.ConnectedOfficeGet(c) }

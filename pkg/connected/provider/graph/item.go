@@ -24,6 +24,11 @@ type driveItem struct {
 			QuickXorHash string `json:"quickXorHash"`
 		} `json:"hashes"`
 	} `json:"file"`
+	// Image, Photo and Video are set for pictures and films. OneDrive has a preview
+	// of these; whether it has one of another file a listing does not tell.
+	Image         *struct{} `json:"image"`
+	Photo         *struct{} `json:"photo"`
+	Video         *struct{} `json:"video"`
 	SpecialFolder *struct {
 		Name string `json:"name"`
 	} `json:"specialFolder"`
@@ -79,6 +84,7 @@ func (entry *driveItem) asItem() *provider.Item {
 			// What a listing tells of the target of a link can be old: see Target.
 			item.ETag = content.ETag
 			item.Version = content.version()
+			item.Preview = content.Image != nil || content.Photo != nil || content.Video != nil
 		}
 	}
 	return item

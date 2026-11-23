@@ -96,6 +96,20 @@ func (m *Manager) SealGrant(ctx context.Context, g *Grant) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(sealed), nil
 }
 
+// SealGrantStable is SealGrant with an address part that is the same every time for the
+// same grant, so a client can keep what it loaded from that address.
+func (m *Manager) SealGrantStable(ctx context.Context, g *Grant) (string, error) {
+	plain, err := json.Marshal(g)
+	if err != nil {
+		return "", err
+	}
+	sealed, err := m.sealer.SealStable(ctx, PurposeGrant, grantContext, plain)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(sealed), nil
+}
+
 // OpenGrant reads a sealed grant and refuses one that has run out.
 func (m *Manager) OpenGrant(ctx context.Context, sealed string) (*Grant, error) {
 	raw, err := base64.RawURLEncoding.DecodeString(sealed)

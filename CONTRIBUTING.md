@@ -63,6 +63,7 @@ with that variable. An ordinary build contains none of it. The log says so at th
   "Allow" as one of two sample accounts, or "Deny".
 - Connecting from an app (`client: "app"`) works here over plain http too, so it can be tried
   on an emulator. An ordinary server offers it only with https.
+- The sample pictures have previews, as pictures have at a real provider.
 - `http://<your server>/api/v4/fylvo/dev/expire` ends all access, so every sample storage
   has to be connected again.
 - The browser has to reach the server under its first site address (admin area, "Site URL"):

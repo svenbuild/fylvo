@@ -1,7 +1,10 @@
 package graph_test
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -235,7 +238,7 @@ func TestRequestShapes(t *testing.T) {
 	c := graph.New(graph.Options{Auth: &auth{}, DriveID: "drive/part", BaseURL: s.URL, HTTP: s.Client()})
 	ctx := t.Context()
 	const drivePath = "/v1.0/drives/drive%2Fpart"
-	const fields = "id,name,size,folder,file,package,deleted,specialFolder,fileSystemInfo,lastModifiedDateTime,cTag,eTag,parentReference,remoteItem,webUrl"
+	const fields = "id,name,size,folder,file,package,deleted,specialFolder,fileSystemInfo,lastModifiedDateTime,cTag,eTag,parentReference,remoteItem,webUrl,image,photo,video"
 	selectItems := "?$select=" + url.QueryEscape(fields)
 	check := func(err error, path string) {
 		t.Helper()
@@ -363,4 +366,52 @@ func TestTarget(t *testing.T) {
 	gone.Link = &provider.Link{TargetID: "nothing", TargetDrive: link.Link.TargetDrive}
 	_, err = c.Target(ctx, &gone)
 	require.Equal(t, provider.KindNotFound, provider.KindOf(err))
+}
+
+// OneDrive has a preview of pictures and films. It is asked for by the id of the item,
+// in the size wanted, and comes from an address that works without the token.
+func TestThumbnail(t *testing.T) {
+	s := graphtest.New(t)
+	d := newClient(s, &auth{})
+	ctx := context.Background()
+	thumbs := d.(provider.Thumbnailer)
+
+	var img bytes.Buffer
+	require.NoError(t, png.Encode(&img, image.NewRGBA(image.Rect(0, 0, 8, 8))))
+	photo := s.AddFile(s.RootID(), "photo.png", img.Bytes())
+	notes := s.AddFile(s.RootID(), "notes.txt", []byte("notes"))
+	s.AddFolder(s.RootID(), "Photos")
+	s.AddRemote(s.RootID(), "shared.png", false, img.Bytes())
+
+	page, err := d.Children(ctx, s.RootID(), "")
+	require.NoError(t, err)
+	previews := map[string]bool{}
+	items := map[string]provider.Item{}
+	for _, item := range page.Items {
+		previews[item.Name], items[item.Name] = item.Preview, item
+	}
+	// Not for a link into another drive: what a listing tells of its target can be old.
+	require.Equal(t, map[string]bool{"photo.png": true, "notes.txt": false, "Photos": false, "shared.png": false}, previews)
+	got, err := d.Get(ctx, photo)
+	require.NoError(t, err)
+	require.True(t, got.Preview)
+	require.Empty(t, s.ThumbnailSizes())
+
+	item := items["photo.png"]
+	content, err := thumbs.Thumbnail(ctx, &item, 400)
+	require.NoError(t, err)
+	require.Equal(t, img.String(), readContent(t, content))
+	require.Equal(t, []string{"c400x400"}, s.ThumbnailSizes())
+	require.False(t, s.DownloadSawToken(), "the address of the picture works without the token")
+
+	// None: a file OneDrive has no picture of, one it has not made yet, a folder, a link.
+	for _, name := range []string{"notes.txt", "Photos", "shared.png"} {
+		item := items[name]
+		_, err = thumbs.Thumbnail(ctx, &item, 400)
+		require.Equal(t, provider.KindNotFound, provider.KindOf(err), name)
+	}
+	s.NoPreview(photo)
+	_, err = thumbs.Thumbnail(ctx, &item, 400)
+	require.Equal(t, provider.KindNotFound, provider.KindOf(err))
+	_ = notes
 }

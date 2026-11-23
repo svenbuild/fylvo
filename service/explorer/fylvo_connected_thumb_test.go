@@ -1,0 +1,262 @@
+package explorer
+
+import (
+	"bytes"
+	"image"
+	"image/color"
+	"image/png"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/cloudreve/Cloudreve/v4/ent"
+	"github.com/cloudreve/Cloudreve/v4/ent/group"
+	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/boolset"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive/drivetest"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
+	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+)
+
+// Fylvo: previews of files in a connected storage, from the route down to a simulated
+// Google Drive.
+
+func testPNG(shade uint8) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 6, 6))
+	img.Set(1, 1, color.RGBA{shade, shade, 0, 255})
+	var out bytes.Buffer
+	if err := png.Encode(&out, img); err != nil {
+		panic(err)
+	}
+	return out.Bytes()
+}
+
+func (e *connectedEnv) thumb(u *ent.User, uri string) (*FileThumbResponse, error) {
+	return (&FileThumbService{Uri: uri}).Get(e.as(u))
+}
+
+// picture loads the address of a preview, as a browser would: without a sign-in.
+func (e *connectedEnv) picture(address string) *httptest.ResponseRecorder {
+	e.t.Helper()
+	u, err := url.Parse(address)
+	require.NoError(e.t, err)
+	require.True(e.t, strings.HasPrefix(u.Path, connectedThumbPath), u.Path)
+	grant, name, _ := strings.Cut(strings.TrimPrefix(u.Path, connectedThumbPath), "/")
+	c, rec := e.request(nil, http.MethodGet, u.EscapedPath())
+	c.Params = gin.Params{{Key: "grant", Value: grant}, {Key: "name", Value: name}}
+	ServeConnectedThumb(c)
+	return rec
+}
+
+// keptPreviews are the files in the folder where previews are kept.
+func (e *connectedEnv) keptPreviews() []string {
+	var names []string
+	_ = filepath.WalkDir(e.thumbDir, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			rel, _ := filepath.Rel(e.thumbDir, path)
+			names = append(names, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	return names
+}
+
+func TestConnectedThumbnail(t *testing.T) {
+	e := newConnectedEnv(t)
+	photo := e.sim.AddFile("", "photo.png", testPNG(1))
+	e.sim.AddFile("", "notes.txt", []byte("notes"))
+	e.sim.AddFolder("", "Photos")
+	sheet := e.sim.AddNative("", "Budget", "gsheet")
+	e.sim.SetThumbnail(sheet, testPNG(9))
+	e.sim.AddShortcut("", "to photo", photo)
+
+	// The listing tells for which rows a client asks: for every file that is not
+	// marked as having no preview, whatever its kind.
+	res, err := e.list(e.alex, e.root, 100, "")
+	require.NoError(t, err)
+	require.True(t, res.Connected.Thumbnails)
+	asks := map[string]bool{}
+	for _, f := range res.Files {
+		_, disabled := f.Metadata[dbfs.ThumbDisabledKey]
+		asks[f.Name] = !disabled && f.Type == int(types.FileTypeFile)
+	}
+	require.Equal(t, map[string]bool{"photo.png": true, "notes.txt": false, "Photos": false, "Budget.gsheet": true, "to photo": false}, asks)
+	info, err := e.info(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	require.NotContains(t, info.Metadata, dbfs.ThumbDisabledKey)
+
+	// The address: one of this server, the same for the whole day, and made without
+	// asking the provider anything.
+	before := e.sim.Calls(drivetest.CallGet)
+	answer, err := e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	address, err := url.Parse(answer.Url)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(address.Path, "/api/v4/fylvo/connected/thumb/"))
+	require.True(t, strings.HasSuffix(address.Path, "/thumb.jpg"))
+	require.Empty(t, address.RawQuery)
+	require.NotContains(t, answer.Url, "photo")
+	require.Equal(t, StableThumbExpire(time.Now()).Unix(), answer.Expires.Unix())
+	again, err := e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	require.Equal(t, answer.Url, again.Url)
+	require.Equal(t, before, e.sim.Calls(drivetest.CallGet))
+	require.Zero(t, e.sim.Calls(drivetest.CallThumbnail))
+	require.Empty(t, e.keptPreviews(), "nothing is fetched before a client loads the picture")
+
+	// The picture, for the client to keep for a day at most.
+	rec := e.picture(answer.Url)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, testPNG(1), rec.Body.Bytes())
+	require.Equal(t, "image/png", rec.Header().Get("Content-Type"))
+	require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+	require.Regexp(t, `^private, max-age=(86400|8\d{4})$`, rec.Header().Get("Cache-Control"))
+	require.Equal(t, []string{"s400"}, e.sim.ThumbnailSizes(), "in the size of the installation's thumbnails")
+	// From then on it comes from disk: the provider is asked once per version.
+	for i := 0; i < 3; i++ {
+		rec = e.picture(answer.Url)
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Equal(t, testPNG(1), rec.Body.Bytes())
+	}
+	require.Equal(t, 1, e.sim.Calls(drivetest.CallThumbnail))
+	kept := e.keptPreviews()
+	require.Len(t, kept, 1)
+	require.True(t, strings.HasPrefix(kept[0], e.id+"/"))
+
+	// A document that exists only at Google has one too.
+	answer, err = e.thumb(e.alex, e.root+"/Budget.gsheet")
+	require.NoError(t, err)
+	rec = e.picture(answer.Url)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, testPNG(9), rec.Body.Bytes())
+
+	// No preview: the answer that makes a client stop asking for that version.
+	for _, path := range []string{"/notes.txt", "/Photos", "/to photo"} {
+		_, err = e.thumb(e.alex, e.root+path)
+		require.Equal(t, serializer.CodeEntityNotExist, connectedCode(err), path)
+	}
+	_, err = e.thumb(e.alex, e.root+"/missing.png")
+	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
+	// Somebody else's storage does not exist for this account.
+	_, err = e.thumb(e.sam, e.root+"/photo.png")
+	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
+}
+
+// A file the listing promised a preview of, and Drive then has none: the picture is
+// "not found", and the next question for its address says so without asking Drive again.
+func TestConnectedThumbnailThatIsNotThere(t *testing.T) {
+	e := newConnectedEnv(t)
+	photo := e.sim.AddFile("", "photo.png", testPNG(1))
+	answer, err := e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	e.sim.SetThumbnail(photo, nil)
+	asked := e.sim.Calls(drivetest.CallGet)
+
+	for i := 0; i < 3; i++ {
+		rec := e.picture(answer.Url)
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+		require.Empty(t, rec.Body.Bytes())
+	}
+	require.Equal(t, asked+1, e.sim.Calls(drivetest.CallGet), "asked once, then remembered")
+	_, err = e.thumb(e.alex, e.root+"/photo.png")
+	require.Equal(t, serializer.CodeEntityNotExist, connectedCode(err))
+	require.Empty(t, e.keptPreviews())
+
+	// The provider is slow or says "later": nothing is remembered, the client comes back.
+	other := e.sim.AddFile("", "other.png", testPNG(2))
+	_ = other
+	answer, err = e.thumb(e.alex, e.root+"/other.png")
+	require.NoError(t, err)
+	e.sim.RefuseThumbnails(http.StatusTooManyRequests)
+	rec := e.picture(answer.Url)
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Equal(t, "5", rec.Header().Get("Retry-After"))
+	require.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+	e.sim.RefuseThumbnails(0)
+	rec = e.picture(answer.Url)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, testPNG(2), rec.Body.Bytes())
+}
+
+// The address of a preview is for one state of one file of one account. It ends with
+// the password of the account, with the right of its group, and with the connection.
+func TestConnectedThumbnailAddressIsAGrant(t *testing.T) {
+	e := newConnectedEnv(t)
+	photo := e.sim.AddFile("", "photo.png", testPNG(1))
+	e.sim.AddFile("", "second.png", testPNG(2))
+	answer, err := e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	second, err := e.thumb(e.alex, e.root+"/second.png")
+	require.NoError(t, err)
+	require.NotEqual(t, answer.Url, second.Url)
+	require.Equal(t, http.StatusOK, e.picture(answer.Url).Code)
+	require.Equal(t, testPNG(2), e.picture(second.Url).Body.Bytes())
+
+	// Not the address of a download, and the other way round.
+	download, err := e.urlOf(e.alex, e.root+"/photo.png", false)
+	require.NoError(t, err)
+	swapped := strings.Replace(download, connectedContentPath, connectedThumbPath, 1)
+	require.Equal(t, http.StatusNotFound, e.picture(swapped).Code)
+	require.Equal(t, http.StatusNotFound, e.fetch(strings.Replace(answer.Url, connectedThumbPath, connectedContentPath, 1), "").Code)
+	// Nothing made up, and nothing changed.
+	base := answer.Url[:strings.LastIndex(answer.Url, "/")]
+	for _, bad := range []string{"", "AAAA", base[len(base)-40:], strings.Repeat("A", 200)} {
+		prefix := answer.Url[:strings.Index(answer.Url, connectedThumbPath)+len(connectedThumbPath)]
+		require.Equal(t, http.StatusNotFound, e.picture(prefix+bad+"/thumb.jpg").Code, bad)
+	}
+	flipped := []byte(base)
+	flipped[len(flipped)-10] ^= 1
+	require.Equal(t, http.StatusNotFound, e.picture(string(flipped)+"/thumb.jpg").Code)
+	// The name at the end is for the client only.
+	require.Equal(t, http.StatusOK, e.picture(base+"/whatever.png").Code)
+
+	// New content: the listing tells a new state, and the address is another one. The
+	// old address goes on showing the old state.
+	e.sim.SetContent(photo, testPNG(3))
+	e.m.Tree().Forget(e.id)
+	changed, err := e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	require.NotEqual(t, answer.Url, changed.Url)
+	require.Equal(t, testPNG(3), e.picture(changed.Url).Body.Bytes())
+	require.Equal(t, testPNG(1), e.picture(answer.Url).Body.Bytes())
+
+	// The group loses the right to use connected storages: the pictures on disk stay
+	// where they are and are handed to nobody.
+	g, err := e.client.Group.Query().Where(group.ID(2)).First(e.ctx)
+	require.NoError(t, err)
+	permissions := make(boolset.BooleanSet, len(*g.Permissions))
+	copy(permissions, *g.Permissions)
+	boolset.Set(types.GroupPermissionConnectedStorage, false, &permissions)
+	require.NoError(t, e.client.Group.Update().Where(group.ID(2)).SetPermissions(&permissions).Exec(e.ctx))
+	require.Equal(t, http.StatusNotFound, e.picture(answer.Url).Code)
+	boolset.Set(types.GroupPermissionConnectedStorage, true, &permissions)
+	require.NoError(t, e.client.Group.Update().Where(group.ID(2)).SetPermissions(&permissions).Exec(e.ctx))
+	require.Equal(t, http.StatusOK, e.picture(answer.Url).Code)
+
+	// A new password ends every address made before it.
+	require.NoError(t, e.client.User.UpdateOneID(e.alex.ID).SetPassword("another-hash").Exec(e.ctx))
+	require.Equal(t, http.StatusNotFound, e.picture(answer.Url).Code)
+	require.Equal(t, http.StatusNotFound, e.picture(changed.Url).Code)
+	e.alex = e.reload(e.alex.ID)
+	fresh, err := e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	require.NotEqual(t, changed.Url, fresh.Url)
+	require.Equal(t, http.StatusOK, e.picture(fresh.Url).Code)
+
+	// The connection ends: at once the address is worth nothing, also for a picture
+	// that was on disk, and what was kept of the storage is gone.
+	require.NotEmpty(t, e.keptPreviews())
+	require.NoError(t, e.m.Disconnect(e.ctx, e.alex.ID, e.id))
+	require.Equal(t, http.StatusNotFound, e.picture(fresh.Url).Code)
+	require.Empty(t, e.keptPreviews())
+	_, err = os.Stat(filepath.Join(e.thumbDir, e.id))
+	require.True(t, os.IsNotExist(err))
+}

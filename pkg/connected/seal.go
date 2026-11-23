@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hkdf"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -43,7 +44,8 @@ func NewSealer(master MasterKey) *Sealer {
 	return &Sealer{master: master}
 }
 
-func (s *Sealer) aead(ctx context.Context, purpose string) (cipher.AEAD, error) {
+// key derives the key for one use from the master key of the installation.
+func (s *Sealer) key(ctx context.Context, use string) ([]byte, error) {
 	master, err := s.master(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("master key: %w", err)
@@ -51,7 +53,11 @@ func (s *Sealer) aead(ctx context.Context, purpose string) (cipher.AEAD, error) 
 	if len(master) < 16 {
 		return nil, errors.New("master key is too short")
 	}
-	key, err := hkdf.Key(sha256.New, master, nil, keyInfo+purpose, 32)
+	return hkdf.Key(sha256.New, master, nil, keyInfo+use, 32)
+}
+
+func (s *Sealer) aead(ctx context.Context, purpose string) (cipher.AEAD, error) {
+	key, err := s.key(ctx, purpose)
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +80,28 @@ func (s *Sealer) Seal(ctx context.Context, purpose string, context, plain []byte
 	if _, err := rand.Read(out[1:]); err != nil {
 		return nil, err
 	}
+	return aead.Seal(out, out[1:1+nonceSize], plain, context), nil
+}
+
+// SealStable is Seal with a result that is the same every time for the same plain and
+// context, for a value that is part of an address a client is to keep (the grant of a
+// preview). The nonce is not random but a keyed hash of what is sealed, under a key of
+// its own: two different values get different nonces, the same value the same one, and
+// then the same result, which tells nobody anything new. Open reads both kinds.
+func (s *Sealer) SealStable(ctx context.Context, purpose string, context, plain []byte) ([]byte, error) {
+	aead, err := s.aead(ctx, purpose)
+	if err != nil {
+		return nil, err
+	}
+	nonceKey, err := s.key(ctx, purpose+" nonce")
+	if err != nil {
+		return nil, err
+	}
+	mac := hmac.New(sha256.New, nonceKey)
+	mac.Write(Context(string(context), string(plain)))
+	out := make([]byte, 1+nonceSize, 1+nonceSize+len(plain)+aead.Overhead())
+	out[0] = sealVersion
+	copy(out[1:], mac.Sum(nil))
 	return aead.Seal(out, out[1:1+nonceSize], plain, context), nil
 }
 

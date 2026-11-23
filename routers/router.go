@@ -510,6 +510,13 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			connectedContent.GET(":grant/:name", middleware.Sandbox(), controllers.FylvoConnectedContent)
 			connectedContent.HEAD(":grant/:name", controllers.FylvoConnectedContent)
 		}
+		// Fylvo: the preview of a file in a connected storage. As above the grant in the
+		// path is the permission; the picture comes from the provider or from disk.
+		connectedThumb := v4.Group("fylvo/connected/thumb", middleware.ContentCORS())
+		{
+			connectedThumb.OPTIONS("*option", middleware.ContentCORS())
+			connectedThumb.GET(":grant/:name", middleware.Sandbox(), controllers.FylvoConnectedThumb)
+		}
 
 		// 回调接口
 		callback := v4.Group("callback")

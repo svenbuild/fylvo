@@ -40,9 +40,22 @@ type item struct {
 	fileTime, itemTime      time.Time
 	target                  *item
 	deleted                 bool
+	// noPreview: a picture OneDrive has made no preview of (yet).
+	noPreview bool
 }
 
 func (i *item) isFolder() bool { return i.kind == folder || i.kind == vault }
+
+// preview is the picture OneDrive shows for the item, nil when it has none. Like
+// OneDrive the simulator has one of every picture: the picture itself.
+func (i *item) preview() []byte {
+	if i.kind == file && !i.noPreview {
+		if kind := http.DetectContentType(i.content); kind == "image/png" || kind == "image/jpeg" {
+			return i.content
+		}
+	}
+	return nil
+}
 
 // Server holds the test drive and the separate host for downloads and uploads.
 type Server struct {
@@ -61,6 +74,8 @@ type Server struct {
 	tokens        []string
 	calls         map[string]int
 	downloadAuth  bool
+
+	thumbnailSizes []string
 
 	uploads       map[string]*uploadSession
 	uploadNumber  int
@@ -137,6 +152,20 @@ func (s *Server) Calls(kind string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls[kind]
+}
+
+// NoPreview takes the preview of a picture away, as while OneDrive has not made it yet.
+func (s *Server) NoPreview(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.items[id].noPreview = true
+}
+
+// ThumbnailSizes returns the sizes ("c400x400") the previews were asked in.
+func (s *Server) ThumbnailSizes() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.thumbnailSizes...)
 }
 
 // DownloadSawToken tells whether any request to the download host had Authorization.

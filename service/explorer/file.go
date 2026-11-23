@@ -552,10 +552,9 @@ type (
 
 // Get redirect to thumb file.
 func (s *FileThumbService) Get(c *gin.Context) (*FileThumbResponse, error) {
-	// Fylvo: no thumbnails for connected storages yet. The answer tells a client not to
-	// ask again for this version.
-	if _, ok := connectedURI(s.Uri); ok {
-		return nil, fs.ErrEntityNotExist
+	// Fylvo: the preview of a file in a connected storage is the provider's own.
+	if connectedUri, ok := connectedURI(s.Uri); ok {
+		return connectedThumb(c, connectedUri)
 	}
 
 	dep := dependency.FromContext(c)

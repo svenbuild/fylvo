@@ -43,6 +43,7 @@ func TestLoggingHidesSecrets(t *testing.T) {
 	engine.GET("/api/v4/file/content/:id/:speed/:name", func(c *gin.Context) { c.Status(http.StatusOK) })
 	engine.GET("/api/v4/fylvo/connected/start/:ticket", func(c *gin.Context) { c.Status(http.StatusOK) })
 	engine.POST("/api/v4/fylvo/connected/start/:ticket", func(c *gin.Context) { c.Status(http.StatusSeeOther) })
+	engine.GET("/api/v4/fylvo/connected/thumb/:grant/:name", func(c *gin.Context) { c.Status(http.StatusOK) })
 	engine.GET("/s/:id/:password/panic", func(c *gin.Context) { panic("boom") })
 	engine.GET("/s/:id/:password/gone", func(c *gin.Context) {
 		panic(&net.OpError{Op: "write", Err: os.NewSyscallError("write", errors.New("broken pipe"))})
@@ -62,6 +63,9 @@ func TestLoggingHidesSecrets(t *testing.T) {
 		// Fylvo: the ticket of connecting a storage from an app, also spelled with escapes.
 		"/api/v4/fylvo/connected/start/ticketAbCdEf0123456789-_ticketAbCdEf0123456",
 		"/api/v4/fylvo/connected/st%61rt/ticketEscaped0123456789-_ticketAbCdEf012345",
+		// Fylvo: the grant in the address of a preview, also spelled with escapes.
+		"/api/v4/fylvo/connected/thumb/grantOfAPreviewAbCdEf0123456789-_AbCdEf/thumb.jpg",
+		"/api/v4/fylvo/connected/th%75mb/grantEscapedAbCdEf0123456789-_AbCdEf/thumb.jpg",
 	} {
 		engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
 	}
@@ -71,7 +75,7 @@ func TestLoggingHidesSecrets(t *testing.T) {
 	out := buf.String()
 	for _, s := range []string{"wopitoken-0b7d1c2e.Xy9AbCdEf", "sigsecret77", "sharepw55", "resetsecret99",
 		"AbCd1234", "shortsig", "panictoken", "panicpw", "encodedpw", "gonepw",
-		"ticketAbCdEf", "ticketEscaped", "ticketPosted"} {
+		"ticketAbCdEf", "ticketEscaped", "ticketPosted", "grantOfAPreview", "grantEscaped"} {
 		assert.NotContains(t, out, s)
 	}
 	// The lines stay useful: method, status, path and the parameter names.
@@ -85,6 +89,7 @@ func TestLoggingHidesSecrets(t *testing.T) {
 		`Panic recovered in GET /s/Ab/***/panic: boom`,
 		`Connection lost in GET /s/Ab/***/gone:`,
 		`GET`, `"/api/v4/fylvo/connected/start/***"`,
+		`"/api/v4/fylvo/connected/thumb/***/thumb.jpg"`,
 	} {
 		assert.Contains(t, out, s)
 	}

@@ -72,6 +72,12 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 				http.Redirect(w, r, s.download.URL+"/"+url.PathEscape(entry.id), http.StatusFound)
 				return
 			}
+		case "thumbnail":
+			s.thumbnailSizes = append(s.thumbnailSizes, route.name)
+			if entry.kind == file && !entry.deleted && entry.preview() != nil {
+				http.Redirect(w, r, s.download.URL+"/thumbnail/"+url.PathEscape(entry.id), http.StatusFound)
+				return
+			}
 		}
 	}
 	notFound(w)
@@ -107,6 +113,9 @@ func parseRoute(u *url.URL) apiRoute {
 		return apiRoute{kind: "item", drive: drive, id: id, name: name, named: true}
 	case len(parts) == 6 && !isNamed && (parts[5] == "children" || parts[5] == "content" || parts[5] == "createUploadSession"):
 		return apiRoute{kind: parts[5], drive: drive, id: id}
+	case len(parts) == 9 && !isNamed && parts[5] == "thumbnails" && parts[6] == "0" && parts[8] == "content":
+		// The preview of an item in a size: ".../thumbnails/0/c400x400/content".
+		return apiRoute{kind: "thumbnail", drive: drive, id: id, name: parts[7]}
 	case len(parts) == 7 && isNamed && (parts[6] == "content" || parts[6] == "createUploadSession"):
 		name, named := strings.CutSuffix(parts[5], ":")
 		if named && name != "" {
@@ -187,7 +196,8 @@ func (s *Server) serveDownload(w http.ResponseWriter, r *http.Request) {
 		s.serveUpload(w, r, id)
 		return
 	}
-	id := strings.TrimPrefix(r.URL.Path, "/")
+	id, picture := strings.CutPrefix(r.URL.Path, "/thumbnail/")
+	id = strings.TrimPrefix(id, "/")
 	s.mu.Lock()
 	s.downloadAuth = s.downloadAuth || r.Header.Get("Authorization") != ""
 	var content []byte
@@ -195,6 +205,10 @@ func (s *Server) serveDownload(w http.ResponseWriter, r *http.Request) {
 	found := entry != nil && entry.kind == file && !entry.deleted
 	if found {
 		content = entry.content
+		if picture {
+			content = entry.preview()
+			found = content != nil
+		}
 	}
 	s.mu.Unlock()
 
@@ -218,6 +232,9 @@ func itemJSON(entry *item) map[string]any {
 		result["folder"] = struct{}{}
 	case entry.kind == file:
 		result["file"] = map[string]any{"hashes": map[string]string{"quickXorHash": entry.hash}}
+		if entry.preview() != nil {
+			result["image"] = map[string]int{"width": 1, "height": 1}
+		}
 		result["cTag"] = entry.cTag
 		result["fileSystemInfo"] = map[string]any{"lastModifiedDateTime": entry.fileTime}
 	case entry.kind == remote:

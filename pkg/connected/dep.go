@@ -2,12 +2,14 @@ package connected
 
 import (
 	"context"
+	"path/filepath"
 	"sync"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
+	"github.com/cloudreve/Cloudreve/v4/pkg/util"
 )
 
 // managers holds the Manager of each running server, by the database client of the
@@ -32,6 +34,8 @@ func For(dep dependency.Dep) *Manager {
 			u, err := dep.UserClient().GetByID(ctx, userID)
 			return err == nil && u != nil
 		},
+		// Below the data folder of the installation. Made when the first preview is kept.
+		ThumbDir: filepath.Join(util.RelativePath(util.DataFolder), thumbFolder),
 	}
 	devOptions(&options)
 	actual, loaded := managers.LoadOrStore(key, NewManager(options))
@@ -40,6 +44,10 @@ func For(dep dependency.Dep) *Manager {
 	}
 	return actual.(*Manager)
 }
+
+// thumbFolder is the folder below the data folder of the installation where previews of
+// files in connected storages are kept.
+const thumbFolder = "connected-thumbs"
 
 // Install makes m the Manager of a server. For tests that bring their own providers.
 func Install(dep dependency.Dep, m *Manager) {
