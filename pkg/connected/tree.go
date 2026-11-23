@@ -90,6 +90,28 @@ var nativeKinds = func() map[string]bool {
 	return kinds
 }()
 
+// nativeKindOf tells whether a name ends in the extension of an entry that exists only
+// at the provider, and which. Where names are told apart without regard to case, so is
+// the extension.
+func nativeKindOf(name string, fold bool) (string, bool) {
+	dot := strings.LastIndex(name, ".")
+	if dot <= 0 {
+		return "", false
+	}
+	kind := name[dot+1:]
+	if fold {
+		kind = strings.ToLower(kind)
+	}
+	return kind, nativeKinds[kind]
+}
+
+// hasNativeKind tells whether a name could be taken for an entry that exists only at the
+// provider, in any spelling.
+func hasNativeKind(name string) bool {
+	_, ok := nativeKindOf(name, true)
+	return ok
+}
+
 // plainName tells whether a name can be one element of a path.
 func plainName(name string) bool {
 	if name == "" || name == "." || name == ".." {
@@ -378,13 +400,13 @@ func (t *Tree) named(ctx context.Context, c *Conn, folderID, name string) (*Row,
 
 	// A document that exists only at the provider and shows under name: its own name
 	// is the part before the extension of its kind.
-	if dot := strings.LastIndex(name, "."); dot > 0 && nativeKinds[name[dot+1:]] {
-		items, err := c.P.Named(ctx, folderID, name[:dot])
+	if kind, ok := nativeKindOf(name, l.fold); ok {
+		items, err := c.P.Named(ctx, folderID, name[:len(name)-len(kind)-1])
 		if err != nil && provider.KindOf(err) != provider.KindNotFound {
 			return nil, err
 		}
 		for _, it := range items {
-			if it.Native == name[dot+1:] {
+			if it.Native == kind {
 				l.add(it)
 			}
 		}

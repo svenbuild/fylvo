@@ -258,7 +258,11 @@ func (m *Manager) move(ctx context.Context, c *Conn, w provider.Writer, src Sour
 		// It is there already.
 		return nil
 	}
-	if row.IsDir && IsBelow(dstPath, src.Path) {
+	below := IsBelow(dstPath, src.Path)
+	if c.P.CaseInsensitive() {
+		below = IsBelow(strings.ToLower(dstPath), strings.ToLower(src.Path))
+	}
+	if row.IsDir && below {
 		return serializer.NewError(serializer.CodeParamErr, "A folder cannot be moved into itself", nil)
 	}
 	parent, err := m.folder(ctx, c, parentPath)

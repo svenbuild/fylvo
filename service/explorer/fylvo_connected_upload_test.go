@@ -253,3 +253,21 @@ func TestConnectedPutContentNeedsALength(t *testing.T) {
 	require.Empty(t, e.names(t, e.root), "nothing was created")
 	require.Zero(t, e.sim.Calls(drivetest.CallCreate))
 }
+
+// A chunk has to say how long it is, and be that long.
+func TestConnectedChunkNeedsItsLength(t *testing.T) {
+	e := newConnectedEnv(t)
+	data := uploadPayload(1000)
+	session, err := (&CreateUploadSessionService{Uri: e.root + "/a.bin", Size: int64(len(data))}).Create(e.as(e.alex))
+	require.NoError(t, err)
+
+	c := e.withBody(e.alex, http.MethodPost, data)
+	c.Request.ContentLength = -1
+	c.Request.Header.Del("Content-Length")
+	_, err = (&UploadService{ID: session.SessionID, Index: 0}).ConnectedUploadChunk(c)
+	require.Equal(t, serializer.CodeInvalidContentLength, connectedCode(err))
+	state, err := ConnectedUploadState(e.as(e.alex), session.SessionID)
+	require.NoError(t, err)
+	require.Equal(t, connected.UploadReceiving, state.State)
+	require.Zero(t, state.Received)
+}

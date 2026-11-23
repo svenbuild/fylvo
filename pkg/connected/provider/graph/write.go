@@ -22,6 +22,8 @@ const (
 	// writeTimeout bounds a call that changes something, from its start to the end of
 	// the answer.
 	writeTimeout = 2 * time.Minute
+	// decodeTimeout bounds the reading of a small JSON answer.
+	decodeTimeout = 30 * time.Second
 )
 
 var _ provider.Writer = (*client)(nil)
@@ -36,7 +38,12 @@ func (c *client) CreateFolder(ctx context.Context, parentID, name string) (*prov
 func (c *client) CreateEmpty(ctx context.Context, parentID, name string) (*provider.Item, error) {
 	address := c.itemURL(c.driveID, parentID) + ":/" + segment(name) + ":/content" +
 		selectQuery(itemFields) + "&" + conflictBehavior + "=fail"
-	return c.writeItem(ctx, http.MethodPut, address, nil)
+	item, err := c.writeItem(ctx, http.MethodPut, address, nil)
+	if err == nil && (item.IsDir || item.Native != "" || item.Version == "") {
+		// An answer that does not show a file: what was made is open.
+		return nil, &provider.Error{Kind: provider.KindOther}
+	}
+	return item, err
 }
 
 func (c *client) Update(ctx context.Context, id string, change provider.Change) (*provider.Item, error) {
@@ -111,6 +118,10 @@ func (c *client) write(ctx context.Context, method, address string, header http.
 }
 
 func decodeWrite(res *http.Response, out any) error {
+	// A provider that sends its headers and then stalls must not hold what waits for
+	// this answer: the body is closed when it takes too long.
+	stalled := time.AfterFunc(decodeTimeout, func() { res.Body.Close() })
+	defer stalled.Stop()
 	if err := json.NewDecoder(io.LimitReader(res.Body, maxWriteJSON)).Decode(out); err != nil {
 		return &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}
 	}

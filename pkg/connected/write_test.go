@@ -87,3 +87,24 @@ func TestWritesWhereCaseDoesNotCount(t *testing.T) {
 	_, err = f.Tree().Resolve(ctx, c, "Docs/Notes.txt")
 	require.ErrorIs(t, err, ErrNotFound)
 }
+
+// Names Fylvo makes up for entries without bytes ("Notes.onenote") are names like any
+// other where case does not count: nothing is created beside one in another spelling,
+// and a folder is not moved into itself under another spelling of its name.
+func TestMadeUpNamesWhereCaseDoesNotCount(t *testing.T) {
+	f, s, c, ctx := oneDriveConn(t)
+	s.AddNotebook("", "Notes")
+
+	_, err := f.CreateEntry(ctx, c, "Notes.ONENOTE", false, true)
+	require.Equal(t, serializer.CodeNameCaseTaken, codeOf(Error(ctx, err)))
+	_, err = f.CreateEntry(ctx, c, "Notes.onenote", false, true)
+	require.Equal(t, serializer.CodeObjectExist, codeOf(Error(ctx, err)))
+
+	_, err = f.CreateEntry(ctx, c, "Docs", true, true)
+	require.NoError(t, err)
+	_, err = f.CreateEntry(ctx, c, "Docs/Old", true, true)
+	require.NoError(t, err)
+	results, err := f.MoveEntries(ctx, c, []Source{source(t, f, ctx, c, "Docs")}, Source{Path: "docs/old"})
+	require.NoError(t, err)
+	require.Equal(t, serializer.CodeParamErr, codeOf(Error(ctx, results[0])))
+}

@@ -50,6 +50,8 @@ const (
 var (
 	// uploadWait is how long a chunk request waits for one of the parallelUploads places.
 	uploadWait = 10 * time.Second
+	// uploadStall is how long a range may go without a byte moving before it ends.
+	uploadStall = 2 * time.Minute
 	// chunkSize is UploadChunkSize; tests make it smaller.
 	chunkSize int64 = UploadChunkSize
 )
@@ -231,9 +233,9 @@ func (s *uploads) add(u *upload, c *Conn) bool {
 	return true
 }
 
-// sweep drops the sessions whose outcome is old, and the ones nobody used for too long,
-// which it returns: they still have to be cancelled at the provider, which the caller
-// does without holding s.mu.
+// sweep drops the sessions whose outcome is old, and ends the ones nobody used for too
+// long, which it returns: they still have to be cancelled at the provider, which the
+// caller does without holding s.mu.
 func (s *uploads) sweep() (expired []*upload) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -246,8 +248,11 @@ func (s *uploads) sweep() (expired []*upload) {
 		case state != UploadReceiving && now.Sub(ended) > uploadKept:
 			delete(s.byID, id)
 		case state == UploadReceiving && now.Sub(touched) > uploadIdle && u.work.TryLock():
-			// A session a request works on is not idle, whatever its time says.
-			delete(s.byID, id)
+			// A session a request works on is not idle, whatever its time says. It
+			// ends here and stays, like every ended one, for the state route to tell.
+			u.mu.Lock()
+			u.state, u.err, u.ended = UploadFailed, ErrUploadGone, now
+			u.mu.Unlock()
 			expired = append(expired, u)
 		}
 	}
@@ -257,7 +262,7 @@ func (s *uploads) sweep() (expired []*upload) {
 // cancelAll ends sessions that were taken out of use, whose work locks the caller holds.
 func cancelAll(expired []*upload) {
 	for _, u := range expired {
-		u.end(UploadFailed, nil, ErrUploadGone, time.Now())
+		u.held = nil
 		if u.up != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 			_ = u.up.Cancel(ctx)
@@ -281,6 +286,7 @@ func (s *uploads) close(publicID string) {
 		u.closed.Store(true)
 		if u.work.TryLock() {
 			u.end(UploadFailed, nil, ErrUploadGone, now)
+			u.held = nil
 			u.work.Unlock()
 		}
 	}
@@ -545,13 +551,17 @@ func (m *Manager) UploadChunk(ctx context.Context, c *Conn, id string, index int
 		}
 	}
 
-	release, err := m.uploads.acquire(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 	if u.hashedTo < end {
-		if err := m.receive(ctx, u, body, start, length); err != nil {
+		// One of the few places is held while bytes are passed on, and given back
+		// before the commit: that one waits for the lock of the account, which can
+		// take a while, and holds at most the tail.
+		release, err := m.uploads.acquire(ctx)
+		if err != nil {
+			return nil, err
+		}
+		err = m.receive(ctx, u, body, start, length)
+		release()
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -607,9 +617,18 @@ func (m *Manager) receive(ctx context.Context, u *upload, body io.Reader, start,
 	held := u.held
 	if send > 0 {
 		// What is held is less than one step of the granularity, so it all goes first.
-		r := &cutReader{r: io.MultiReader(bytes.NewReader(u.held), io.LimitReader(in, send-int64(len(u.held))))}
-		_, err := u.up.Send(ctx, u.next, r, send)
+		// The range ends when no byte moved for too long: a provider that stops
+		// reading, or a client that stops sending, must not hold the session and a place.
+		sendCtx, stop := context.WithCancel(ctx)
+		watch := time.AfterFunc(uploadStall, stop)
+		r := &cutReader{
+			r:     io.MultiReader(bytes.NewReader(u.held), io.LimitReader(in, send-int64(len(u.held)))),
+			moved: func() { watch.Reset(uploadStall) },
+		}
+		_, err := u.up.Send(sendCtx, u.next, r, send)
 		r.cut()
+		watch.Stop()
+		stop()
 		if err != nil {
 			return m.sendFailed(ctx, u, err)
 		}
@@ -638,9 +657,31 @@ type cutReader struct {
 	mu   sync.Mutex
 	r    io.Reader
 	done bool
+	// read counts the bytes handed over. moved, if set, is told about each read.
+	read  int64
+	moved func()
 }
 
-func (c *cutReader) Read(p []byte) (int, error) {
+func (c *cutReader) Read(p []byte) (n int, err error) {
+	defer func() {
+		c.mu.Lock()
+		c.read += int64(n)
+		c.mu.Unlock()
+		if c.moved != nil && n > 0 {
+			c.moved()
+		}
+	}()
+	return c.readLocked(p)
+}
+
+// handed returns how many bytes were read from it.
+func (c *cutReader) handed() int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.read
+}
+
+func (c *cutReader) readLocked(p []byte) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.done {
@@ -714,6 +755,7 @@ func (u *upload) moveTo(n int64) {
 // stored. The caller holds u.work.
 func (m *Manager) fail(ctx context.Context, u *upload, err error) error {
 	u.end(UploadFailed, nil, err, m.uploads.now())
+	u.held = nil
 	if u.up != nil {
 		callCtx, cancel := detached(ctx, u.live)
 		defer cancel()
@@ -732,12 +774,20 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	defer m.writing(c)()
 	defer m.tree.Changed(c, u.folderID)
 
+	// The wait for the lock can have been long. A storage that was disconnected or
+	// connected again meanwhile gets nothing: the tail never leaves this server.
+	if c.ended() || u.closed.Load() {
+		return nil, m.fail(ctx, u, ErrUploadGone)
+	}
 	if err := m.unchanged(ctx, c, u); err != nil {
 		return nil, err
 	}
 
 	callCtx, cancel := detached(ctx, u.live)
 	defer cancel()
+	if callCtx.Err() != nil {
+		return nil, m.fail(ctx, u, ErrUploadGone)
+	}
 	if u.up == nil {
 		item, err := w.CreateEmpty(callCtx, u.folderID, u.name)
 		switch {
@@ -756,7 +806,9 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 		return nil, ErrOutcomeUnknown
 	}
 
-	item, err := u.up.Send(callCtx, u.next, bytes.NewReader(u.held), int64(len(u.held)))
+	tail := &cutReader{r: bytes.NewReader(u.held)}
+	item, err := u.up.Send(callCtx, u.next, tail, int64(len(u.held)))
+	tail.cut()
 	switch {
 	case err == nil && item != nil:
 		return m.finish(u, item, true)
@@ -767,17 +819,22 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 		return nil, Error(ctx, err)
 	}
 
-	// No receipt. The session at the provider may still tell.
-	n, done, err := u.up.State(callCtx)
+	// No receipt. The session at the provider may still tell; it is asked with time of
+	// its own, since the send can have used up all of its.
+	probeCtx, cancelProbe := detached(ctx, u.live)
+	defer cancelProbe()
+	n, done, err := u.up.State(probeCtx)
 	switch {
 	case err == nil && done != nil:
 		return m.finish(u, done, true)
-	case err == nil && n >= u.next && n < u.size:
-		// The tail did not arrive completely, so nothing was stored. What is missing
+	case err == nil && n >= u.next && n < u.size && tail.handed() < int64(len(u.held)):
+		// Not all of the tail left this server, so nothing was stored. What is missing
 		// is sent with the next try of the last chunk.
 		u.moveTo(n)
 		return nil, ErrSendAgain
 	}
+	// All of the tail was handed over and no receipt came: the provider may be storing
+	// the file this very moment, whatever its session says. Nothing is sent again.
 	u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
 	return nil, ErrOutcomeUnknown
 }
@@ -787,9 +844,23 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 // still be free. A change ends the upload; an error of the provider leaves it open for
 // another try. The caller holds the lock of the connection.
 func (m *Manager) unchanged(ctx context.Context, c *Conn, u *upload) error {
+	// The folder at the path must still be the one the upload started in: renamed or
+	// replaced meanwhile, the file would end up somewhere else than its address says.
+	parentPath, _ := ParentOf(u.path)
+	parent, err := m.folder(ctx, c, parentPath)
+	switch {
+	case errors.Is(err, ErrNotFound) || errors.Is(err, ErrAmbiguous) || errors.Is(err, ErrUnsupported):
+		return m.fail(ctx, u, ErrNoStorage)
+	case err != nil:
+		return err
+	case parent.ContentID() != u.folderID:
+		return m.fail(ctx, u, ErrNoStorage)
+	}
+
 	if u.replace == "" {
-		if c.P.CaseInsensitive() {
-			// Such a provider keeps names unique itself and refuses the commit.
+		if c.P.CaseInsensitive() && !hasNativeKind(u.name) {
+			// Such a provider keeps names unique itself and refuses the commit. Not
+			// the names Fylvo makes up for entries without bytes: those it does not know.
 			return nil
 		}
 		err := m.nameFree(ctx, c, u.folderID, u.name, "")

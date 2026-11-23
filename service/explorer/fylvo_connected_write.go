@@ -1,6 +1,8 @@
 package explorer
 
 import (
+	"strings"
+
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
@@ -37,11 +39,15 @@ func connectedSources(c *gin.Context, raws []string, uris []*fs.URI, ids connect
 	seen := map[string]bool{}
 	for i, uri := range uris {
 		path, err := connected.CheckPath(uri.U.Path)
-		if err == nil && seen[path] {
+		key := path
+		if req.conn.P.CaseInsensitive() {
+			key = strings.ToLower(path)
+		}
+		if err == nil && seen[key] {
 			// One entry named twice: which of the two results would be whose?
 			err = connected.ErrBadPath
 		}
-		seen[path] = true
+		seen[key] = true
 		if err == nil && connectionOf(uri) != req.conn.ID {
 			// Nothing works across two storages.
 			err = connected.ErrUnsupported

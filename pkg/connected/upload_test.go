@@ -321,7 +321,7 @@ func TestUploadBrokenChunk(t *testing.T) {
 		{"after one step of Drive", 256 * 1024, 1},
 		{"after one step of OneDrive", 320 * 1024, 1},
 		{"in the first chunk", 4321, 0},
-		{"in the tail", 500, 2},
+		// A break in the tail is another matter: see the tests of the tail below.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			forBoth(t, func(t *testing.T, e *uploadEnv) {
@@ -753,9 +753,8 @@ func TestUploadSessionsExpire(t *testing.T) {
 
 	require.Zero(t, e.d.Calls(drivetest.CallCancel))
 	now = now.Add(uploadIdle)
-	_, err = e.f.UploadStatus(7, idle.ID)
-	require.Equal(t, serializer.CodeParentNotExist, codeOf(err))
-	require.Empty(t, e.f.uploads.byID)
+	// An idle session ends as failed and is told as such for an hour, like any other.
+	require.Equal(t, UploadFailed, e.status(idle.ID).State)
 	// The provider is told in the background, not while a request waits.
 	require.Eventually(t, func() bool { return e.d.Calls(drivetest.CallCancel) == 1 }, 5*time.Second, 10*time.Millisecond,
 		"cancelled at the provider")
@@ -849,4 +848,92 @@ func TestNewNames(t *testing.T) {
 	for _, name := range []string{"", ".", "..", "a/b", "a:b", "what?", " report", "report ", "report.", strings.Repeat("a", 256)} {
 		require.ErrorIs(t, checkNewName(name), ErrIllegalName, "%q", name)
 	}
+}
+
+// isLastRange tells whether a request to the provider carries the last range of an upload.
+func isLastRange(r *http.Request, size int) bool {
+	return r.Method == http.MethodPut && strings.HasSuffix(strings.SplitN(r.Header.Get("Content-Range"), "/", 2)[0], fmt.Sprintf("-%d", size-1))
+}
+
+// The whole tail left this server and no answer came. Whatever the provider's session
+// says a moment later, the file may be on its way into the storage: the outcome is
+// unknown, and nothing is sent a second time.
+func TestUploadTailHandedOverWithoutAnAnswer(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		data := payload(testChunk + 1000)
+		info, err := e.start("a.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+		_, err = e.chunk(info.ID, 0, data)
+		require.NoError(t, err)
+
+		// The provider takes every byte of the tail and then the connection breaks. Its
+		// session still says "not complete" when it is asked.
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if isLastRange(r, len(data)) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				return nil, errors.New("connection reset")
+			}
+			return nil, nil
+		}
+		_, err = e.chunk(info.ID, 1, data)
+		require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+		e.http.hook = nil
+		require.Equal(t, UploadUnknown, e.status(info.ID).State)
+		sent := e.ranges()
+		_, err = e.chunk(info.ID, 1, data)
+		require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+		require.Equal(t, sent, e.ranges(), "nothing was sent again")
+	})
+}
+
+// Not one byte of the tail left: nothing can have been stored, so the last chunk is
+// simply sent again.
+func TestUploadTailNotHandedOver(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		data := payload(testChunk + 1000)
+		info, err := e.start("a.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+		_, err = e.chunk(info.ID, 0, data)
+		require.NoError(t, err)
+
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if isLastRange(r, len(data)) {
+				return nil, errors.New("no connection")
+			}
+			return nil, nil
+		}
+		_, err = e.chunk(info.ID, 1, data)
+		require.Equal(t, serializer.CodeConnectedBusy, codeOf(err))
+		e.http.hook = nil
+		require.Equal(t, UploadReceiving, e.status(info.ID).State)
+
+		row, err := e.chunk(info.ID, 1, data)
+		require.NoError(t, err)
+		require.NotNil(t, row)
+		require.Equal(t, data, e.content("a.bin"))
+	})
+}
+
+// The folder of an upload is renamed while the upload runs. The file does not end up
+// under an address other than the one the upload was started for.
+func TestUploadFolderRenamedMeanwhile(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		e.sim.AddFolder("", "A")
+		data := payload(testChunk + 1000)
+		info, err := e.start("A/file.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+		_, err = e.chunk(info.ID, 0, data)
+		require.NoError(t, err)
+
+		folder, err := e.f.Tree().Resolve(e.ctx, e.conn, "A")
+		require.NoError(t, err)
+		_, err = e.f.RenameEntry(e.ctx, e.conn, Source{Path: "A", ID: FileID(e.id, folder)}, "B")
+		require.NoError(t, err)
+
+		_, err = e.chunk(info.ID, 1, data)
+		require.Equal(t, serializer.CodeParentNotExist, codeOf(err))
+		require.Equal(t, UploadFailed, e.status(info.ID).State)
+		_, err = e.f.Tree().ResolveNow(e.ctx, e.conn, "B/file.bin")
+		require.ErrorIs(t, err, ErrNotFound, "nothing was stored in the renamed folder")
+	})
 }

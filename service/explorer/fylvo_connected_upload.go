@@ -86,7 +86,9 @@ func (service *UploadService) ConnectedUploadChunk(c *gin.Context) (*FileRespons
 	defer req.done()
 
 	body, length, err := request.SniffContentLength(c.Request)
-	if err != nil {
+	if err != nil || c.Request.ContentLength != length {
+		// The length of the body has to be known, and be the one that is announced: a
+		// body without one would be taken for an empty chunk.
 		return nil, connected.ErrChunkLength
 	}
 	row, err := req.m.UploadChunk(req.ctx, req.conn, service.ID, service.Index, movingBody(c, body), length)
@@ -118,7 +120,7 @@ func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body
 	}
 	// The length has to be known before anything is opened: a body of unknown length
 	// would be taken for an empty file.
-	if size < 0 || (size == 0 && c.Request.ContentLength != 0) {
+	if size < 0 || c.Request.ContentLength != size {
 		return nil, connected.ErrChunkLength
 	}
 	body = movingBody(c, body)
@@ -168,8 +170,10 @@ type stallingReader struct {
 }
 
 func (s *stallingReader) Read(p []byte) (int, error) {
-	// Not every connection can take a deadline (a recorder in a test cannot).
+	// Not every connection can take a deadline (a recorder in a test cannot). It is
+	// for this read only: what the request does after its body must not run into it.
 	_ = s.control.SetReadDeadline(time.Now().Add(connectedIdle))
+	defer func() { _ = s.control.SetReadDeadline(time.Time{}) }()
 	return s.r.Read(p)
 }
 

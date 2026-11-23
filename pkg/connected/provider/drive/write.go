@@ -155,8 +155,8 @@ func (c *client) startUpload(ctx context.Context, method, address string, meta [
 	if err != nil {
 		return nil, err
 	}
+	// Only the header matters. The body is not waited for.
 	location := res.Header.Get("Location")
-	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, maxReceipt))
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK || location == "" {
 		return nil, &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}
@@ -206,6 +206,10 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 		}
 		return nil, nil
 	case res.StatusCode == http.StatusOK || res.StatusCode == http.StatusCreated:
+		if end != u.size {
+			// A stored file where only a part was sent: what Drive did is open.
+			return nil, &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}
+		}
 		return receipt(res)
 	case res.StatusCode >= 400:
 		return nil, refusal(u.c.call.Failure(res))
