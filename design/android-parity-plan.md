@@ -30,7 +30,8 @@ und Paket 2, Version 1.6.0 (versionCode 12).
   (der Server speichert Quelle und Ziel der Aufgabe in seiner Datenbank).
 - **Keine Adressen im Log:** `userError` schreibt heute die Fehlermeldung ins Log, und manche
   Meldungen enthalten eine Adresse (`FileRepository.kt:144`). Log nur noch Fehlerart und Code;
-  Aufrufe mit Freigabe-Passwort laufen über den Client ohne Weiterleitungen.
+  Aufrufe mit Freigabe-Passwort und alle Konto-Aufrufe mit Passwort oder 2FA-Code laufen über den
+  vorhandenen Client ohne Weiterleitungen (`authService()`).
 - Kopierte Freigabe-Links werden in der Zwischenablage als vertraulich markiert
   (`ClipDescription.EXTRA_IS_SENSITIVE`). Das 2FA-Geheimnis wird nicht kopiert.
 - **Sitzung:** jede ändernde Aktion und jeder Entwurf gehört zur Sitzung, in der er begann
@@ -43,8 +44,8 @@ und Paket 2, Version 1.6.0 (versionCode 12).
 - `GET /api/v4/user/me` einmal pro Sitzung (und beim Öffnen von Konto): `id`, `nickname`, `avatar`,
   `group.permission` (Base64-Bitsatz). Gehalten im Speicher bei `SessionManager`/einem kleinen
   `AccountRepository`, mit der Sitzungsmarke (`SessionTag`) wie die Anpassungen. Fehlt die Antwort,
-  gelten die Gruppen-Rechte als unbekannt: dann bietet die App an, was sie heute anbietet (Teilen),
-  und neue, rechtepflichtige Dinge (Archive) erst nach der Antwort.
+  gelten die Gruppen-Rechte als unbekannt: dann erscheinen Teilen, Mit Personen teilen und Archive
+  nicht (erst nach der Antwort).
 - Gruppen-Bits (wie `frontend/src/api/user.ts`): 2 Teilen, 5 Archiv-Aufgaben, 7 fremde Freigaben
   öffnen. Datei-Bits (wie heute `Permissions`): 0 anlegen, 1 umbenennen, 6 hochladen (auch: Inhalt
   ersetzen), 7 herunterladen, 18 teilen, 20 Versionen. Rechte werden **je Aktion** geprüft, je eine
@@ -54,7 +55,7 @@ und Paket 2, Version 1.6.0 (versionCode 12).
     verbundenen Speichern `canModifyFile` (Bit 1) **und** Bit 6. Besucher eines Upload-Links haben
     nur Bit 6 und dürfen nicht ersetzen;
   - neue Textdatei: wie Inhalt speichern, aber am Ordner (also nicht in Upload-Links);
-  - Archiv packen/entpacken: Gruppen-Bit 5, lesbare Quellen (Bit 7), Ziel mit Bit 0;
+  - Archiv packen/entpacken: Gruppen-Bit 5, lesbare Quellen (Bit 7), Ziel mit Bit 0 und Bit 6;
   - Versionen: Besitz + Bit 20.
   Neue rechtepflichtige Aktionen erscheinen erst, wenn die Gruppen-Bits da sind.
 - `GET /site/config/explorer` liest zusätzlich `map_provider` und `full_text_search`.
@@ -135,13 +136,15 @@ wie `ShareSetting.tsx`:
 ### 4. Text- und Markdown-Dateien bearbeiten
 
 - **Wo:** in der Textvorschau oben ein Stift "Bearbeiten", wenn Inhalt speichern erlaubt ist (Rechte
-  oben; in verbundenen Speichern Bit 6 der Zeile und herunterladbar), die Datei höchstens 256 KB hat
+  oben, also auch in verbundenen Speichern Bit 1 und Bit 6, dazu herunterladbar), die Datei höchstens 256 KB hat
   und als UTF-8 lesbar ist, und keine Arbeitskopie der Offline-Bearbeitung offen ist (vor dem
   Speichern nochmals geprüft).
 - **Laden:** der Editor lädt selbst genau die Fassung `primary_entity` (`POST /file/url` mit
   `entity`) und merkt sie sich samt Datei-ID; kein Rückgriff auf eine ältere Offline-Kopie (die
   Vorschau darf das weiter, bleibt dann aber nur lesbar). Eine leere Datei ohne Fassung (z. B. im Web
-  angelegt) startet mit leerem Text; ihr erstes Speichern geht ohne `previous`.
+  angelegt) startet mit leerem Text; ihre `primary_entity` ist dann die kodierte Null-Fassung des
+  Servers und wird genauso als `previous` mit `previous_required=true` gesendet (im Emulator geprüft,
+  sonst vorher `GET /file/info` und bei neuer Fassung der Konflikt-Dialog).
 - **Editor:** ganze Seite, Textfeld mit `TextFieldState` (Code-Endungen in fester Schrift), oben
   Zurück, Name, "Speichern" (aktiv bei Änderungen). Markdown: Umschalter "Bearbeiten / Vorschau";
   die Vorschau mit einer gepflegten Compose-Bibliothek (`com.mikepenz:multiplatform-markdown-renderer`,
@@ -153,8 +156,8 @@ wie `ShareSetting.tsx`:
 - **Konflikt 40076:** Dialog "Die Datei wurde inzwischen geändert": "Als Kopie speichern", "Trotzdem
   überschreiben" (neu mit der dann aktuellen Fassung als `previous`, nach erneuter Prüfung, dass es
   dieselbe Datei-ID ist), "Abbrechen". 40904 (Datei weg): nur "Als Kopie speichern". "Als Kopie"
-  lädt den Text als neue Datei hoch (vorhandener Upload-Weg, der nur anlegt: belegter Name = 40004,
-  dann der nächste Name; wie das Web in verbundenen Speichern, `viewer.ts:511`), Name
+  lädt den Text als neue Datei hoch (vorhandener Upload-Weg, der nur anlegt: belegter Name = 40004 oder
+  40905, dann der nächste Name; wie das Web in verbundenen Speichern, `viewer.ts:511`), Name
   `<Name> (Kopie <Datum>).<ext>`. 40073 gesperrt, 40049 zu gross: Satz. 40927 (verbundener
   Speicher, Ausgang unbekannt): Entwurf bleibt, Hinweis, neu laden vor erneutem Versuch. Verbundene
   Speicher nehmen keine leere Datei an: Speichern bei leerem Text dort gesperrt, mit Satz.
@@ -242,7 +245,7 @@ wie `ShareSetting.tsx`:
 ### 11. Archive und Aufgaben
 
 - Aktionsblatt einer Datei mit Endung zip, gz, xz, tar, rar, 7z, bz2 (Gruppen-Bit 5, Datei-Bit 7):
-  "Entpacken" → Zielordner (vorhandene Ordnerauswahl, vorgewählt der aktuelle Ordner) →
+  "Entpacken" → Zielordner (vorhandene Ordnerauswahl, vorgewählt der aktuelle Ordner, wenn er Bit 0 hat, sonst Meine Dateien) →
   `POST /workflow/extract` (immer alles). **Kein Archiv-Passwort** in 1.6.0: der Server speichert
   es im Klartext im Zustand der Aufgabe (an den Haupt-Thread gemeldet).
 - Bei zip und 7z zusätzlich "Inhalt ansehen" (`GET /file/archive`, Sven wollte "hineinsehen"):
@@ -258,12 +261,12 @@ wie `ShareSetting.tsx`:
 
 ### 12. Mit Personen teilen
 
-- Aktionsblatt eines eigenen Ordners (Gruppen-Bit 2, nicht in verbundenen Speichern): "Mit Personen
+- Aktionsblatt eines eigenen Ordners (gleiche Rechte wie Teilen: Besitz, Gruppen-Bit 2, Datei-Bit 18; nicht in verbundenen Speichern): "Mit Personen
   teilen". Blatt: bestehende Mitglieder (aus der Mitglieder-Freigabe des Ordners in
   `extended_info.shares`, Namen über `GET /user/info/{id}`), je Person "Lesen" / "Bearbeiten",
   Entfernen; "Person hinzufügen": Suche ab 2 Zeichen (`GET /user/search`, ohne mich und vorhandene).
 - Speichern: neu `PUT /share {uri, member_only: true, members}`, sonst `POST /share/{id}` mit allen
-  Feldern (der Server ersetzt sie): die laufende Frist als Restsekunden, `share_view` und
+  Feldern (der Server ersetzt sie): die laufende Frist als Restsekunden (aufgerundet; eine abgelaufene muss neu gewählt werden), `share_view` und
   `show_readme` aus der Besitzer-Antwort, dazu die ganze Mitgliederliste. Alle entfernt → "Teilen
   beenden" löscht die Freigabe.
 
