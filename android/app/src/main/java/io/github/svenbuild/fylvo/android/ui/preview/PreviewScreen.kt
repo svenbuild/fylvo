@@ -125,6 +125,9 @@ fun PreviewScreen(
             PreviewPage(
                 file = files[page],
                 viewModel = viewModel,
+                active = page == pager.currentPage,
+                chromeVisible = chromeVisible,
+                onChromeChange = { chromeVisible = it },
                 onTap = { chromeVisible = !chromeVisible },
                 onOpenWith = { onOpenWith(files[page]) },
                 onDismiss = onClose,
@@ -209,13 +212,16 @@ internal fun chromeTopPadding(): androidx.compose.ui.unit.Dp =
 private fun PreviewPage(
     file: FileObject,
     viewModel: FilesViewModel,
+    active: Boolean,
+    chromeVisible: Boolean,
+    onChromeChange: (Boolean) -> Unit,
     onTap: () -> Unit,
     onOpenWith: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     when (previewKindOf(file)) {
-        PreviewKind.IMAGE -> ImagePreview(file, viewModel, onTap, onDismiss)
-        PreviewKind.VIDEO, PreviewKind.AUDIO -> MediaPreview(file, viewModel, onTap)
+        PreviewKind.IMAGE -> ImagePreview(file, viewModel, active, onTap, onDismiss)
+        PreviewKind.VIDEO, PreviewKind.AUDIO -> MediaPreview(file, viewModel, active, chromeVisible, onChromeChange)
         PreviewKind.PDF -> PdfPreview(file, viewModel, onTap)
         PreviewKind.TEXT -> TextPreview(file, viewModel)
         null -> NoPreview(file, onOpenWith)

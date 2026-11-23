@@ -1388,9 +1388,27 @@ class FilesViewModel(
         return Triple(res.hits.map { it.file }, res.hits.associate { it.file.path to it.content }, res.total)
     }
 
+    private fun localKinds(category: Category): Set<FileKind> = when (category) {
+        Category.IMAGES -> setOf(FileKind.IMAGE)
+        Category.VIDEOS -> setOf(FileKind.VIDEO)
+        Category.AUDIO -> setOf(FileKind.AUDIO)
+        else -> setOf(FileKind.DOCUMENT, FileKind.PDF, FileKind.SPREADSHEET, FileKind.PRESENTATION, FileKind.CODE)
+    }
+
     private fun runSearch(debounceMs: Long = 0) {
         searchJob?.cancel()
         searchRound++
+        // A kind chip inside a folder only filters the rows of that folder; nothing is searched.
+        val localKind = _state.value.searchType
+        if (localKind != null && _state.value.searchScope != null && !_state.value.searchFullText) {
+            val q = _state.value.searchQuery?.trim().orEmpty()
+            val rows = _state.value.files.filter { !it.isFolder && FileKind.of(it) in localKinds(localKind) }
+            _state.value = _state.value.copy(
+                searchResults = if (q.isEmpty()) rows else rows.filter { io.github.svenbuild.fylvo.android.util.SearchQuery.matches(it.name, q) },
+                searchNextToken = null, searchLoading = false, searchLoadingMore = false, searchError = null,
+            )
+            return
+        }
         val uri = searchUri()
         if (uri == null) {
             _state.value = _state.value.copy(searchResults = emptyList(), searchNextToken = null, searchLoading = false, searchLoadingMore = false, searchError = null)

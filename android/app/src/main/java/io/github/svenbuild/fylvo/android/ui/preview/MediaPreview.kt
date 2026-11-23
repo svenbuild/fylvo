@@ -35,9 +35,26 @@ import kotlinx.coroutines.launch
  * A failed signed URL or an ExoPlayer error used to leave a silent black
  * player — both surface via [FullWidthError] so the user can act on it.
  */
+@Composable
+fun MediaPreview(
+    file: FileObject,
+    viewModel: FilesViewModel,
+    active: Boolean,
+    chromeVisible: Boolean,
+    onChromeChange: (Boolean) -> Unit,
+) {
+    // Only the page on screen owns a player: neighbours stay empty, so two videos never sound at once.
+    if (active) ActiveMediaPreview(file, viewModel, chromeVisible, onChromeChange) else Box(Modifier.fillMaxSize())
+}
+
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun MediaPreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit) {
+private fun ActiveMediaPreview(
+    file: FileObject,
+    viewModel: FilesViewModel,
+    chromeVisible: Boolean,
+    onChromeChange: (Boolean) -> Unit,
+) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val url by produceState<Result<String>?>(initialValue = null, file.id) {
@@ -58,7 +75,7 @@ fun MediaPreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit)
         }
     }
 
-    DisposableEffect(player) { onDispose { player.release() } }
+    DisposableEffect(player) { onDispose { player.stop(); player.release() } }
 
     LaunchedEffect(url) {
         val u = url?.getOrNull() ?: return@LaunchedEffect
@@ -84,8 +101,9 @@ fun MediaPreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit)
                         this.player = player
                         setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                         setControllerVisibilityListener(
-                            PlayerView.ControllerVisibilityListener { onTap() }
+                            PlayerView.ControllerVisibilityListener { visibility -> onChromeChange(visibility == android.view.View.VISIBLE) }
                         )
+                        if (chromeVisible) showController() else hideController()
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
