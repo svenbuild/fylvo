@@ -325,6 +325,22 @@ func (s *Server) SetResourceKey(id, key string) {
 	s.must(id).resourceKey = key
 }
 
+// Find returns the id of the entry with the given name in a folder, "" when there is
+// none. parentID "" means the root.
+func (s *Server) Find(parentID, name string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if parentID == "" {
+		parentID = s.root
+	}
+	for _, id := range s.order {
+		if e := s.items[id]; e.parent == parentID && e.name == name && !e.trashed {
+			return id
+		}
+	}
+	return ""
+}
+
 // Rename gives an entry a new name.
 func (s *Server) Rename(id, name string) {
 	s.mu.Lock()

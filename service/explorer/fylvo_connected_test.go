@@ -671,6 +671,15 @@ func TestConnectedSharedItems(t *testing.T) {
 	res, err := e.list(e.alex, e.root, 0, "")
 	require.NoError(t, err)
 	require.Equal(t, "Budget.gsheet|minutes.txt|Shared budget.gsheet|Shared minutes", fileNames(res.Files))
+	// A link to a file can be opened at the provider, like a document that exists only
+	// there. A file of the storage itself has no address for that.
+	for _, f := range res.Files {
+		if _, link := f.Metadata[connectedMetaLink]; link || f.Name == "Budget.gsheet" {
+			require.NotEmpty(t, f.Metadata[connectedMetaExternalURL], f.Name)
+		} else {
+			require.NotContains(t, f.Metadata, connectedMetaExternalURL, f.Name)
+		}
+	}
 
 	export, err := e.urlOf(e.alex, e.root+"/Shared budget.gsheet", true)
 	require.NoError(t, err)

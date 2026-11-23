@@ -103,6 +103,11 @@ type OfficeSession struct {
 	// order they were made in; the oldest gives way to a new one.
 	kept      map[[sha256.Size]byte]*Row
 	keptOrder [][sha256.Size]byte
+	// beside is the copy that holds what this session could not save since it last
+	// read the document, besidePath its address. A further save that is refused goes
+	// into that copy, not into one more.
+	beside     *Row
+	besidePath string
 	// read tells that the file was read through this session at least once. Only then
 	// is there something of a user in what it saves.
 	read bool
@@ -463,6 +468,9 @@ func (m *Manager) OfficeRead(ctx context.Context, c *Conn, s *OfficeSession, lim
 	}
 	s.version = VersionID(c.ID, &Row{Item: *item})
 	s.read = true
+	// The editor starts again from what is stored. What it cannot save from here on
+	// is another state, and gets a copy of its own.
+	s.beside, s.besidePath = nil, ""
 	return nil
 }
 
@@ -535,13 +543,15 @@ const (
 
 // OfficeKeepBeside stores content as a new file beside the file of the session, in the
 // folder the session was opened in: "letter (word).docx", or with a number when that
-// name is taken. It is for what an editor wanted to save when its file had changed and
-// nobody is left to ask (the window was closed): nothing is replaced, and nothing is
-// lost. The folder is the one the file was in, by its id: if another folder has its
+// name is taken. It is for what an editor wanted to save when its file had changed:
+// the file is not replaced, and what the user wrote is not lost, whatever becomes of
+// the window. name is the name the file has now, empty for the one it was opened
+// under. The folder is the one the file was in, by its id: if another folder has its
 // path by now, nothing is put there. body is read from its start for every name that
 // is tried; sum is the SHA-256 of it. The same content sent again for the session
-// answers the copy that was made. The caller entered the session.
-func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSession, body io.ReadSeeker, size int64, sum [sha256.Size]byte, word string) (*Row, error) {
+// answers the copy that was made, and newer content that is refused before the
+// document is read again goes into that same copy. The caller entered the session.
+func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSession, body io.ReadSeeker, size int64, sum [sha256.Size]byte, name, word string) (*Row, error) {
 	if !s.Edit || s.folderID == "" || !s.read {
 		// Also for a session nothing was read through: what it sends is not a newer
 		// state of anything its user saw.
@@ -554,14 +564,59 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 		// The answer to the first time did not arrive. It is this.
 		return row, nil
 	}
-	folder, name := ParentOf(s.Path)
+	remember := func(row *Row) {
+		if s.kept == nil {
+			s.kept = map[[sha256.Size]byte]*Row{}
+		}
+		if len(s.keptOrder) >= officeKept {
+			delete(s.kept, s.keptOrder[0])
+			s.keptOrder = s.keptOrder[1:]
+		}
+		s.kept[sum], s.keptOrder = row, append(s.keptOrder, sum)
+	}
+	if s.beside != nil && VersionID(c.ID, s.beside) == "" {
+		// Without a marker for its state nothing would show that the copy is still as
+		// this session left it: a new one.
+		s.beside, s.besidePath = nil, ""
+	}
+	if s.beside != nil {
+		// A state of the same document, newer than the one the copy holds: it takes
+		// its place there. Only that copy as this session left it: one that somebody
+		// changed, renamed or removed since is theirs, and a new one is made.
+		if _, err := body.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+		row, err := m.Save(ctx, c, UploadRequest{
+			Path: s.besidePath, Size: size, Replace: true, Previous: VersionID(c.ID, s.beside),
+			PreviousRequired: true, Item: s.beside.ID, Folder: s.folderID,
+		}, body)
+		if err == nil {
+			// What the copy held before stays remembered as kept: it went into this
+			// copy, and the state that took its place there came after it.
+			remember(row)
+			s.beside = row
+			return row, nil
+		}
+		var app serializer.AppError
+		if !errors.As(err, &app) || (app.Code != serializer.CodeStaleVersion && app.Code != serializer.CodeUploadTargetGone &&
+			app.Code != serializer.CodeParentNotExist) {
+			return nil, err
+		}
+		s.beside, s.besidePath = nil, ""
+	}
+	folder, opened := ParentOf(s.Path)
+	if name == "" {
+		name = opened
+	}
 	base, ext := name, ""
 	if dot := strings.LastIndex(name, "."); dot >= 0 {
 		base, ext = name[:dot], name[dot:]
 	}
 	// The file can carry a name Fylvo gives to nothing new (Drive allows more). The
-	// copy gets one that keeps the rules, as close to it as they allow.
-	base, ext = legalNamePart(base), legalNamePart(ext)
+	// copy gets one that keeps the rules, as close to it as they allow. A file that is
+	// such a copy itself gets a further copy of the file it came from, not a copy of
+	// a copy.
+	base, ext = unmarked(legalNamePart(base), word), legalNamePart(ext)
 	var err error
 	for n := 1; n <= officeCopies; n++ {
 		mark := " (" + word + ")"
@@ -584,14 +639,8 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 		row, err = m.Save(ctx, c, UploadRequest{Path: path, Size: size, Folder: s.folderID}, body)
 		var app serializer.AppError
 		if err == nil {
-			if s.kept == nil {
-				s.kept = map[[sha256.Size]byte]*Row{}
-			}
-			if len(s.keptOrder) >= officeKept {
-				delete(s.kept, s.keptOrder[0])
-				s.keptOrder = s.keptOrder[1:]
-			}
-			s.kept[sum], s.keptOrder = row, append(s.keptOrder, sum)
+			remember(row)
+			s.beside, s.besidePath = row, path
 			return row, nil
 		}
 		taken := errors.As(err, &app) && (app.Code == serializer.CodeObjectExist || app.Code == serializer.CodeNameCaseTaken)
@@ -608,6 +657,24 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 // given checksum, nil when there is none. The caller entered the session.
 func (m *Manager) OfficeKept(s *OfficeSession, sum [sha256.Size]byte) *Row {
 	return s.kept[sum]
+}
+
+// unmarked takes the mark of a copy off the first part of a name: "letter (word)" and
+// "letter (word 2)" are "letter".
+func unmarked(base, word string) string {
+	open := strings.LastIndex(base, " (")
+	if open < 0 || !strings.HasSuffix(base, ")") {
+		return base
+	}
+	inner := base[open+2 : len(base)-1]
+	if number, numbered := strings.CutPrefix(inner, word+" "); numbered {
+		if n, err := strconv.Atoi(number); err != nil || n < 2 || strconv.Itoa(n) != number {
+			return base
+		}
+	} else if inner != word {
+		return base
+	}
+	return base[:open]
 }
 
 // legalNamePart makes a part of a name one that a new entry may carry: the characters

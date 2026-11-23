@@ -242,8 +242,8 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 	}
 	if row.Link != nil {
 		res.Metadata[connectedMetaLink] = "1"
-		if row.Link != nil && !row.Enterable() && row.IsDir {
-			// A folder in another drive: it opens at the provider.
+		if !row.Enterable() && (row.IsDir || row.WebURL != "") {
+			// A folder in another drive, or a link to a file: it opens at the provider.
 			res.Metadata[connectedMetaExternalURL] = row.WebURL
 		}
 		if row.Link != nil && !row.IsDir && row.Version == "" {
