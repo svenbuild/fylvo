@@ -64,6 +64,32 @@ export const inGroups = <T>(items: T[], size: number): T[][] => {
   return groups;
 };
 
+// Runs at most size of the given tasks at once, the others wait in order (a task is told whether
+// it waited). For requests that make the server ask the provider, which it does only a few at a
+// time.
+export const limiter = (size: number) => {
+  let free = size;
+  const waiting: (() => void)[] = [];
+  return async <T>(task: (waited: boolean) => Promise<T>): Promise<T> => {
+    const waited = free <= 0;
+    if (!waited) {
+      free--;
+    } else {
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    }
+    try {
+      return await task(waited);
+    } finally {
+      const next = waiting.shift();
+      if (next) {
+        next();
+      } else {
+        free++;
+      }
+    }
+  };
+};
+
 // Address of the root of a connected storage, as the server builds it.
 export const connectedRootUri = (id: string) => `${CrUriPrefix}${id}@${ConnectedFileSystem}`;
 
@@ -95,6 +121,8 @@ export const ConnectedMaxNameBytes = 64;
 export const ConnectedCode = {
   // Existing code: the account at the provider is already connected.
   ObjectExists: 40004,
+  // Existing code: no preview for this version of the file.
+  NoPreview: 40077,
   Unsupported: 40920,
   Reconnect: 40921,
   Unavailable: 40922,
