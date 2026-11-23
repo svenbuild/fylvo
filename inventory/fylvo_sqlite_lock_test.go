@@ -72,4 +72,8 @@ func TestSQLiteConnectionsWaitForALock(t *testing.T) {
 	var timeout int
 	require.NoError(t, db.QueryRow("PRAGMA busy_timeout").Scan(&timeout))
 	require.Equal(t, sqliteBusyTimeout, timeout)
+	// The other setting of every connection, run in the same statement.
+	var foreignKeys int
+	require.NoError(t, db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys))
+	require.Equal(t, 1, foreignKeys)
 }
