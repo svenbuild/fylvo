@@ -37,7 +37,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "notSupported", "This method is unavailable.")
+		s.serveWrite(w, r, route)
 		return
 	}
 
@@ -105,19 +105,28 @@ func parseRoute(u *url.URL) apiRoute {
 	case len(parts) == 6 && isNamed && parts[5] != "":
 		name, _ := url.PathUnescape(parts[5])
 		return apiRoute{kind: "item", drive: drive, id: id, name: name, named: true}
-	case len(parts) == 6 && !isNamed && (parts[5] == "children" || parts[5] == "content"):
+	case len(parts) == 6 && !isNamed && (parts[5] == "children" || parts[5] == "content" || parts[5] == "createUploadSession"):
 		return apiRoute{kind: parts[5], drive: drive, id: id}
-	default:
-		return apiRoute{}
+	case len(parts) == 7 && isNamed && (parts[6] == "content" || parts[6] == "createUploadSession"):
+		name, named := strings.CutSuffix(parts[5], ":")
+		if named && name != "" {
+			name, _ = url.PathUnescape(name)
+			return apiRoute{kind: parts[6], drive: drive, id: id, name: name, named: true}
+		}
 	}
+	return apiRoute{}
 }
 
 func (s *Server) named(parent *item, name string) *item {
-	if !parent.isFolder() || parent.deleted {
+	if parent == nil || !parent.isFolder() || parent.deleted {
 		return nil
 	}
+	return s.findChild(parent.id, name, "")
+}
+
+func (s *Server) findChild(parentID, name, exceptID string) *item {
 	for _, entry := range s.items {
-		if entry.parent == parent.id && !entry.deleted && strings.EqualFold(entry.name, name) {
+		if entry.parent == parentID && entry.id != exceptID && !entry.deleted && strings.EqualFold(entry.name, name) {
 			return entry
 		}
 	}
@@ -174,6 +183,10 @@ func (s *Server) serveQuota(w http.ResponseWriter) {
 }
 
 func (s *Server) serveDownload(w http.ResponseWriter, r *http.Request) {
+	if id, ok := strings.CutPrefix(r.URL.Path, "/upload/"); ok {
+		s.serveUpload(w, r, id)
+		return
+	}
 	id := strings.TrimPrefix(r.URL.Path, "/")
 	s.mu.Lock()
 	s.downloadAuth = s.downloadAuth || r.Header.Get("Authorization") != ""
