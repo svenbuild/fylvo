@@ -158,6 +158,10 @@ interface FlowResult {
 // leaving the tab and coming back while it runs shows its result and a fresh list.
 let finishRun: Promise<FlowResult> | undefined;
 
+// Counts renames and disconnects, also of a tab that was left meanwhile, so a list request
+// older than one of them is not shown.
+let listChanges = 0;
+
 // The sign-in start that is waiting for the server, also across leaving the tab: only one
 // at a time, since each start replaces the cookie of the one before.
 let authorizeRun: { key: string; done: Promise<unknown> } | undefined;
@@ -166,10 +170,13 @@ const RenameDialog = ({
   storage,
   onClose,
   onRenamed,
+  onFailed,
 }: {
   storage?: ConnectedStorage;
   onClose: () => void;
   onRenamed: (s: ConnectedStorage) => void;
+  // The list may be out of date (for example disconnected on another device).
+  onFailed: () => void;
 }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
@@ -195,7 +202,7 @@ const RenameDialog = ({
         onRenamed(res);
         onClose();
       })
-      .catch(() => {})
+      .catch(onFailed)
       .finally(() => setLoading(false));
   };
 
@@ -285,6 +292,7 @@ const StorageRow = ({
   onRename,
   onReconnect,
   onDisconnected,
+  onFailed,
 }: {
   storage: ConnectedStorage;
   list: ConnectedListResponse;
@@ -295,6 +303,7 @@ const StorageRow = ({
   onRename: (s: ConnectedStorage) => void;
   onReconnect: (s: ConnectedStorage) => void;
   onDisconnected: (id: string) => void;
+  onFailed: () => void;
 }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
@@ -309,14 +318,14 @@ const StorageRow = ({
       row.current?.scrollIntoView({ block: "center" });
       reconnectButton.current?.focus();
     }
-  }, [highlight]);
+  }, [highlight, needsReconnect]);
 
   const disconnect = () => {
     dispatch(confirmOperation(t("connected.disconnectConfirm", { name: storage.name, account: storage.account })))
       .then(() => {
         setDisconnecting(true);
         return dispatch(sendConnectedDisconnect(storage.id))
-          .then(() => onDisconnected(storage.id))
+          .then(() => onDisconnected(storage.id), onFailed)
           .finally(() => setDisconnecting(false));
       })
       .catch(() => {});
@@ -416,8 +425,6 @@ const ConnectedSetting = () => {
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  // Counts renames and disconnects, so a list request older than one of them is not shown.
-  const changes = useRef(0);
   const [finishing, setFinishing] = useState(false);
   const [result, setResult] = useState<FlowResult | undefined>(undefined);
   const [connectOpen, setConnectOpen] = useState(false);
@@ -450,10 +457,10 @@ const ConnectedSetting = () => {
   const load = useCallback((): Promise<void> => {
     // A shown error stays, with its retry button disabled, until the answer is there.
     setRefreshing(true);
-    const before = changes.current;
+    const before = listChanges;
     return dispatch(getConnectedStorages())
       .then((res) => {
-        if (changes.current != before) {
+        if (listChanges != before) {
           return load();
         }
         setList(res);
@@ -476,6 +483,10 @@ const ConnectedSetting = () => {
     if (reconnectParam) {
       setHighlight(reconnectParam);
       setReconnectParam(null);
+      if (handled.current) {
+        // The tab was open: its list may not know yet that the storage needs a reconnect.
+        load();
+      }
     }
   }, [reconnectParam]);
 
@@ -559,12 +570,12 @@ const ConnectedSetting = () => {
   };
 
   const onRenamed = (storage: ConnectedStorage) => {
-    changes.current++;
+    listChanges++;
     setList((l) => l && { ...l, storages: l.storages.map((s) => (s.id == storage.id ? storage : s)) });
   };
 
   const onDisconnected = (id: string) => {
-    changes.current++;
+    listChanges++;
     setList((l) => l && { ...l, storages: l.storages.filter((s) => s.id != id) });
     enqueueSnackbar({ message: t("connected.disconnected"), variant: "success", action: DefaultCloseAction });
   };
@@ -677,6 +688,7 @@ const ConnectedSetting = () => {
               onRename={setRenameTarget}
               onReconnect={(r) => authorize(r.provider, r.id)}
               onDisconnected={onDisconnected}
+              onFailed={load}
             />
           ))}
 
@@ -705,7 +717,12 @@ const ConnectedSetting = () => {
         onClose={() => setConnectOpen(false)}
         onConnect={(provider) => authorize(provider)}
       />
-      <RenameDialog storage={renameTarget} onClose={() => setRenameTarget(undefined)} onRenamed={onRenamed} />
+      <RenameDialog
+        storage={renameTarget}
+        onClose={() => setRenameTarget(undefined)}
+        onRenamed={onRenamed}
+        onFailed={load}
+      />
     </Stack>
   );
 };
