@@ -99,6 +99,9 @@ export function setTargetPath(index: number, path: string): AppThunk {
 const generations: { [index: number]: number } = {};
 // Fylvo: the running search of a connected storage, by file manager.
 const connectedSearch: { [index: number]: AbortController | undefined } = {};
+// Fylvo: the generation of a listing that replaces the shown one, while it is on its way (a next
+// page waits for it; the loading flag alone is also set by other work).
+const replacing: { [index: number]: number | undefined } = {};
 export interface NavigateReconcileOptions {
   next_page?: boolean;
   sync_view?: boolean;
@@ -182,16 +185,26 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
       fileManager,
       globalState: { sidebarOpen, imageViewer },
     } = getState();
-    const { path, list, pure_path, loading } = fileManager[index];
+    const { path, list, pure_path } = fileManager[index];
     if (!path) {
       return;
     }
     // Fylvo: no next page while another listing replaces this one (its cursor belongs to the old).
-    if (opt?.next_page && loading) {
+    if (opt?.next_page && replacing[index] !== undefined) {
       return;
     }
 
     const currentGeneration = (generations[index] = (generations[index] ?? 0) + 1);
+    if (!opt?.next_page) {
+      replacing[index] = currentGeneration;
+    }
+    // Ends this listing's loading (and its "replacing" mark).
+    const finish = () => {
+      dispatch(setFmLoading({ index, value: false }));
+      if (replacing[index] == currentGeneration) {
+        replacing[index] = undefined;
+      }
+    };
     // Fylvo: a search in a connected storage walks the folders on the server (everything below
     // the folder, recursive); only a few such walks run at once there, so one that is no longer
     // wanted (another search or folder) is stopped, which frees its place. Done before any wait,
@@ -263,11 +276,11 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         currentGeneration == generations[index]
       ) {
         // Fylvo: the server no longer keeps this listing (connected storage); start again.
-        dispatch(setFmLoading({ index, value: false }));
+        finish();
         return dispatch(navigateReconcile(index));
       }
       if (currentGeneration == generations[index]) {
-        dispatch(setFmLoading({ index, value: false }));
+        finish();
         dispatch(
           setFmError({
             index,
@@ -280,7 +293,7 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
       // Fylvo: a listing that arrived stays "loading" until it is shown (below), so nothing
       // pages with the old listing's cursor meanwhile.
       if (currentGeneration == generations[index] && !listRes) {
-        dispatch(setFmLoading({ index, value: false }));
+        finish();
       }
     }
 
@@ -341,7 +354,7 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
           // check if page is overflow
           const totalPages = Math.ceil(listRes.pagination.total_items / listRes.pagination.page_size) - 1;
           if (listRes.pagination.page > totalPages) {
-            dispatch(setFmLoading({ index, value: false }));
+            finish();
             dispatch(changePage(index, totalPages));
             return;
           }
@@ -358,7 +371,7 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         }
         dispatch(applyListResponse({ index, value: listRes }));
       }
-      dispatch(setFmLoading({ index, value: false }));
+      finish();
     }
   };
 }
@@ -596,7 +609,9 @@ export function resetFm(index: number): AppThunk {
     // Fylvo: a running search of this file manager is stopped and its answer dropped.
     connectedSearch[index]?.abort();
     connectedSearch[index] = undefined;
+    replacing[index] = undefined;
     generations[index] = (generations[index] ?? 0) + 1;
+    dispatch(setFmLoading({ index, value: false }));
     dispatch(resetFileManager(index));
     dispatch(resetDialogs());
   };
@@ -607,9 +622,14 @@ const SPACE_RE = / +(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/;
 
 export function quickSearch(index: number, base: string, keyword: string): AppThunk {
   return async (dispatch, _getState) => {
+    const names = keyword.split(SPACE_RE).filter((x) => x);
+    // Fylvo: nothing to search for (only spaces).
+    if (names.length == 0) {
+      return;
+    }
     const crUri = new CrUri(base);
     crUri.setSearchParam({
-      name: keyword.split(SPACE_RE).filter((x) => x),
+      name: names,
       case_folding: true,
     });
     dispatch(navigateToPath(index, crUri.toString()));

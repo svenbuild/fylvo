@@ -81,7 +81,7 @@ import { ConfigLoadState, Viewers } from "../siteConfigSlice.ts";
 import { AppThunk } from "../store.ts";
 import { confirmOperation, deleteConfirmation, renameForm, requestCreateNew, selectPath } from "./dialog.ts";
 import { downloadSingleFile } from "./download.ts";
-import { navigateToPath, refreshFileList, updateUserCapacity } from "./filemanager.ts";
+import { navigateReconcile, navigateToPath, refreshFileList, updateUserCapacity } from "./filemanager.ts";
 import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers } from "./viewer.ts";
@@ -175,15 +175,18 @@ const staleRefreshPause = 30000;
 function refreshForNewVersion(index: number, file: FileResponse): AppThunk<boolean> {
   return (dispatch, getState) => {
     const folder = new CrUri(file.path).parent().toString();
-    const { path, pure_path } = getState().fileManager[index];
+    const { path, pure_path, list } = getState().fileManager[index];
     if (!path || !pure_path || new CrUri(path).is_search() || new CrUri(pure_path).toString() != folder) {
       return false;
     }
-    if (Date.now() - (staleRefreshes.get(folder) ?? 0) < staleRefreshPause) {
+    // Not when more than the first page is shown: reloading would take the user back to the top.
+    const morePages = (list?.files.length ?? 0) > (list?.pagination?.page_size ?? Infinity);
+    if (morePages || Date.now() - (staleRefreshes.get(folder) ?? 0) < staleRefreshPause) {
       return false;
     }
     staleRefreshes.set(folder, Date.now());
-    dispatch(refreshFileList(index));
+    // Keeps the selection and an open menu (refreshFileList clears them).
+    dispatch(navigateReconcile(index));
     return true;
   };
 }
@@ -454,7 +457,12 @@ export function fileDoubleClicked(index: number, file: FileResponse, e?: React.M
       dispatch(openAtProvider(index, file));
     } else if (actionOpt.showOpen || actionOpt.showEnter) {
       dispatch(openFile(index, file));
-    } else if (file.type == FileType.file && actionOpt.showDownload) {
+    } else if (
+      file.type == FileType.file &&
+      actionOpt.showDownload &&
+      // Fylvo: a shortcut of a connected storage opens at the provider, it is not downloaded.
+      file.metadata?.[Metadata.connected_link] === undefined
+    ) {
       dispatch(downloadSingleFile(file));
     }
   };
