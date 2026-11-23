@@ -169,7 +169,7 @@ const loadConnectedImage = async (url: string, listed: () => boolean): Promise<b
 // Fylvo: reloads the folder of a connected file whose preview was asked for an older version,
 // at most once per folder within half a minute (several rows of one listing, no loop). Only a
 // plain listing of that folder is reloaded, not a search (that would walk all folders again);
-// false when nothing is reloaded for it.
+// false when nothing is reloaded (the caller then remembers the failure for a minute).
 const staleRefreshes = new Map<string, number>();
 const staleRefreshPause = 30000;
 function refreshForNewVersion(index: number, file: FileResponse): AppThunk<boolean> {
@@ -179,10 +179,11 @@ function refreshForNewVersion(index: number, file: FileResponse): AppThunk<boole
     if (!path || !pure_path || new CrUri(path).is_search() || new CrUri(pure_path).toString() != folder) {
       return false;
     }
-    if (Date.now() - (staleRefreshes.get(folder) ?? 0) >= staleRefreshPause) {
-      staleRefreshes.set(folder, Date.now());
-      dispatch(refreshFileList(index));
+    if (Date.now() - (staleRefreshes.get(folder) ?? 0) < staleRefreshPause) {
+      return false;
     }
+    staleRefreshes.set(folder, Date.now());
+    dispatch(refreshFileList(index));
     return true;
   };
 }

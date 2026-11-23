@@ -267,6 +267,7 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         return dispatch(navigateReconcile(index));
       }
       if (currentGeneration == generations[index]) {
+        dispatch(setFmLoading({ index, value: false }));
         dispatch(
           setFmError({
             index,
@@ -276,7 +277,9 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         return;
       }
     } finally {
-      if (currentGeneration == generations[index]) {
+      // Fylvo: a listing that arrived stays "loading" until it is shown (below), so nothing
+      // pages with the old listing's cursor meanwhile.
+      if (currentGeneration == generations[index] && !listRes) {
         dispatch(setFmLoading({ index, value: false }));
       }
     }
@@ -338,6 +341,7 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
           // check if page is overflow
           const totalPages = Math.ceil(listRes.pagination.total_items / listRes.pagination.page_size) - 1;
           if (listRes.pagination.page > totalPages) {
+            dispatch(setFmLoading({ index, value: false }));
             dispatch(changePage(index, totalPages));
             return;
           }
@@ -348,8 +352,13 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         if (timeDiff > 0 && timeDiff < 140) {
           await sleep(140 - timeDiff);
         }
+        // Fylvo: a newer listing started during the pause.
+        if (currentGeneration !== generations[index]) {
+          return;
+        }
         dispatch(applyListResponse({ index, value: listRes }));
       }
+      dispatch(setFmLoading({ index, value: false }));
     }
   };
 }
@@ -584,6 +593,10 @@ export function uploadFromClipboard(index: number): AppThunk {
 
 export function resetFm(index: number): AppThunk {
   return async (dispatch, _getState) => {
+    // Fylvo: a running search of this file manager is stopped and its answer dropped.
+    connectedSearch[index]?.abort();
+    connectedSearch[index] = undefined;
+    generations[index] = (generations[index] ?? 0) + 1;
     dispatch(resetFileManager(index));
     dispatch(resetDialogs());
   };
