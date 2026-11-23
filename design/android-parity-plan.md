@@ -72,7 +72,8 @@ und Paket 2, Version 1.6.0 (versionCode 12).
   `pagination.next_token` der Antwort (Test mit zwei Seiten). Zeile: Symbol nach Typ, Name, eine
   ruhige Zeile "läuft ab 12.12. · 14 Aufrufe · 3 Downloads", Schloss bei Passwort, "Mit n Personen"
   bei `member_only`, "Abgelaufen" grau. Leer: kurzer Satz.
-- **Tipp auf eine Zeile:** Aktionsblatt mit Link kopieren, Link teilen (Systemblatt), Bearbeiten,
+- **Tipp auf eine Zeile:** Aktionsblatt mit Link kopieren, Link teilen (Systemblatt), Bearbeiten
+  (nur mit bekanntem Gruppen-Bit 2, der Server prüft es auch beim Ändern; gilt für beide Eingänge),
   Im Ordner zeigen, Löschen (Rückfrage, `DELETE /share/{id}`). Den Pfad holt die App wie das Web
   (`share.ts:225`): `GET /share/info/{id}?owner_extended=true&password=<pw aus der Zeile>` (der
   Besitzer bekommt das Passwort in der Liste; nur im Speicher) → `source_uri`. Bei einer
@@ -96,7 +97,7 @@ wie `ShareSetting.tsx`:
 - Ablauf: Chips Nie, 1 Tag, 7 Tage, 30 Tage, "Datum ..." (Datumswahl, Ende des gewählten Tages in
   der Zeitzone des Geräts). Gesendet wird `expire` in Sekunden ab jetzt. Beim Bearbeiten ist die
   bestehende Frist als eigener Chip vorgewählt ("bis 12.12.") und wird als Restsekunden neu
-  gesendet; eine abgelaufene Frist muss neu gewählt werden.
+  gesendet (aufgerundet, nie 0, weil 0 die Frist löscht); eine abgelaufene Frist muss neu gewählt werden.
 - Downloads (nur Dateien): Unbegrenzt, 1, 5, 25, "Anzahl ..." (Zahl). Beim Bearbeiten ist die
   Restzahl als eigener Chip vorgewählt; ist sie 0, muss neu gewählt werden (0 hiesse unbegrenzt).
 - Nur Ordner: Hochladen Aus / Ansehen und hochladen / Nur hochladen (`allow_upload`,
@@ -144,7 +145,10 @@ wie `ShareSetting.tsx`:
   Vorschau darf das weiter, bleibt dann aber nur lesbar). Eine leere Datei ohne Fassung (z. B. im Web
   angelegt) startet mit leerem Text; ihre `primary_entity` ist dann die kodierte Null-Fassung des
   Servers und wird genauso als `previous` mit `previous_required=true` gesendet (im Emulator geprüft,
-  sonst vorher `GET /file/info` und bei neuer Fassung der Konflikt-Dialog).
+  sonst vorher `GET /file/info` und bei neuer Fassung der Konflikt-Dialog). Bekannte, bewusst
+  hingenommene Lücke: alle Dateien ohne Fassung haben dieselbe Null-Fassung; wird die leere Datei
+  zwischen Laden und Speichern durch eine andere leere ersetzt, trifft das Speichern diese. Verloren
+  geht dabei nichts, denn beide sind leer.
 - **Editor:** ganze Seite, Textfeld mit `TextFieldState` (Code-Endungen in fester Schrift), oben
   Zurück, Name, "Speichern" (aktiv bei Änderungen). Markdown: Umschalter "Bearbeiten / Vorschau";
   die Vorschau mit einer gepflegten Compose-Bibliothek (`com.mikepenz:multiplatform-markdown-renderer`,
@@ -245,7 +249,7 @@ wie `ShareSetting.tsx`:
 ### 11. Archive und Aufgaben
 
 - Aktionsblatt einer Datei mit Endung zip, gz, xz, tar, rar, 7z, bz2 (Gruppen-Bit 5, Datei-Bit 7):
-  "Entpacken" → Zielordner (vorhandene Ordnerauswahl, vorgewählt der aktuelle Ordner, wenn er Bit 0 hat, sonst Meine Dateien) →
+  "Entpacken" → Zielordner (vorhandene Ordnerauswahl, vorgewählt der aktuelle Ordner, wenn er als Ziel erlaubt ist (Bit 0 und Bit 6, dieselbe Regel wie oben), sonst Meine Dateien) →
   `POST /workflow/extract` (immer alles). **Kein Archiv-Passwort** in 1.6.0: der Server speichert
   es im Klartext im Zustand der Aufgabe (an den Haupt-Thread gemeldet).
 - Bei zip und 7z zusätzlich "Inhalt ansehen" (`GET /file/archive`, Sven wollte "hineinsehen"):
