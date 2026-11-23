@@ -424,7 +424,7 @@ const ConnectedSetting = () => {
           {result.message}
         </Alert>
       )}
-      <SettingForm title={t("connected.title")}>
+      <SettingForm title={t("connected.title")} lgWidth={12}>
         <Typography variant="caption" color="text.secondary" component="div">
           {t("connected.des")}
         </Typography>
