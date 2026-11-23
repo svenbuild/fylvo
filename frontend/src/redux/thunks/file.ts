@@ -119,27 +119,25 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
   return async (dispatch, getState) => {
     const { fileManager } = getState();
     const cache = fileManager[index].tree[file.path]?.thumb;
-    if (cache) {
+    // Fylvo: a thumbnail belongs to one version of the file (its address stays the same for a day).
+    if (cache && cache.entity == file.primary_entity) {
       if (!cache.expires || dayjs(cache.expires).isAfter(dayjs())) {
-        return cache.src;
+        return cache.failed ? null : cache.src;
       }
     }
 
     try {
       const thumb = await dispatch(getFileThumb(getFileLinkedUri(file), fileManager[index].list?.context_hint));
-      dispatch(setThumbCache({ index, value: [file.path, thumb] }));
+      dispatch(setThumbCache({ index, value: [file.path, thumb, file.primary_entity] }));
       return thumb.url;
     } catch (e) {
+      // Fylvo: remembered for this version of the file only, in the thumbnail cache, and for a
+      // minute (a busy server may have it later); the file entry itself is not touched (an answer
+      // that comes late must not bring back an older one).
       dispatch(
-        fileUpdated({
+        setThumbCache({
           index,
-          value: [
-            {
-              file: { ...file, metadata: { ...file.metadata, [Metadata.thumbDisabled]: "" } },
-              oldPath: file.path,
-              includeMetadata: true,
-            },
-          ],
+          value: [file.path, { url: "", expires: dayjs().add(1, "minute").toISOString() }, file.primary_entity, true],
         }),
       );
       console.warn("Failed to load thumb", e);

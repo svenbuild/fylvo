@@ -575,6 +575,11 @@ func (s *FileThumbService) Get(c *gin.Context) (*FileThumbResponse, error) {
 	}
 
 	expire := time.Now().Add(dep.SettingProvider().EntityUrlValidDuration(c))
+	// Fylvo: a stored thumbnail served by this server gets the same address for a whole day,
+	// so browsers and apps can keep the image (see StableThumbExpire).
+	if thumb.Entity().Type() == types.EntityTypeThumbnail && thumb.ShouldInternalProxy() {
+		expire = StableThumbExpire(time.Now())
+	}
 	thumbUrl, err := thumb.Url(c, entitysource.WithExpire(&expire))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get thumbnail url: %w", err)

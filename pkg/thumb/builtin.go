@@ -9,6 +9,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
 	"github.com/gofrs/uuid"
 	"image"
+	"image/color"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
@@ -25,6 +26,30 @@ const thumbTempFolder = "thumb"
 // pixel data, so a tiny file with huge dimensions can otherwise OOM-kill the
 // process. 64 MP covers any realistic camera output.
 const maxDecodePixels = 64 * 1000 * 1000
+
+// maxDecodeBytes caps the memory the decoder needs (Fylvo): 64 MP with 8 bytes per pixel (16-bit
+// RGBA) would need about 490 MiB, more than a small container has. Such images are left to vips.
+// The estimate errs on the high side; a 40 MP baseline or 8 MP progressive JPEG still goes through.
+const maxDecodeBytes = 160 << 20
+
+// bytesPerPixel is at most what the standard decoders allocate per pixel for a color model; head
+// is the start of the file. Grey PNGs with a transparent colour become RGBA; progressive JPEGs
+// (marker SOF2) keep 4-byte coefficients for up to 4 samples per pixel besides the pixels.
+func bytesPerPixel(m color.Model, head []byte) int64 {
+	if bytes.Contains(head, []byte{0xFF, 0xC2}) {
+		return 20
+	}
+	switch m {
+	case color.RGBA64Model, color.NRGBA64Model, color.Gray16Model:
+		return 8
+	case color.YCbCrModel:
+		return 3
+	}
+	if _, ok := m.(color.Palette); ok {
+		return 1
+	}
+	return 4
+}
 
 // BuiltinSupportedExts lists file extensions supported by the built-in
 // thumbnail generator. Extensions are lowercased and do not include the dot.
@@ -50,7 +75,8 @@ func NewThumbFromFile(file io.Reader, ext string) (*Thumb, error) {
 		return nil, fmt.Errorf("failed to read image config: %w (%w)", err, ErrPassThrough)
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 ||
-		int64(cfg.Width)*int64(cfg.Height) > maxDecodePixels {
+		int64(cfg.Width)*int64(cfg.Height) > maxDecodePixels ||
+		int64(cfg.Width)*int64(cfg.Height)*bytesPerPixel(cfg.ColorModel, hdr.Bytes()) > maxDecodeBytes {
 		return nil, fmt.Errorf("image dimensions too large (%dx%d): %w",
 			cfg.Width, cfg.Height, ErrPassThrough)
 	}
@@ -183,7 +209,13 @@ func (b Builtin) Generate(ctx context.Context, es entitysource.EntitySource, ext
 	}
 
 	defer thumbFile.Close()
-	if err := img.Save(thumbFile, b.settings.ThumbEncode(ctx)); err != nil {
+	encode := b.settings.ThumbEncode(ctx)
+	if encode.Format == "jpg" && !util.IsInExtensionListExt(jpegExts, ext) {
+		// Fylvo: PNG and GIF can be transparent. They are stored as PNG here; the pipeline turns
+		// an opaque one into a JPEG (toJPEGIfOpaque).
+		encode = &setting.ThumbEncode{Format: "png", Quality: encode.Quality}
+	}
+	if err := img.Save(thumbFile, encode); err != nil {
 		return &Result{Path: tempPath}, err
 	}
 

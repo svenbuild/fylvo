@@ -18,7 +18,26 @@ export default defineConfig({
       injectRegister: "auto",
       manifest: false,
       workbox: {
-        globIgnores: ["**/*leaflet*", "**/*mapbox*", "**/*Leaflet*", "**/*Mapbox*"],
+        // Fylvo: only the core of the app is fetched ahead (a few MB instead of about 29). Editors,
+        // viewers, diagrams and their workers come when first used; the server lets browsers keep
+        // them for a year (they have versioned names). See src/fylvoChunkReload.ts for updates.
+        globIgnores: [
+          "**/*leaflet*",
+          "**/*mapbox*",
+          "**/*Leaflet*",
+          "**/*Mapbox*",
+          "**/*monaco*",
+          "**/*mermaid*",
+          "**/*excalidraw*",
+          "**/*codemirror*",
+          "**/*.worker-*",
+          "**/Editor-*",
+          "**/Lightbox-*",
+          "**/Artplayer-*",
+          "**/AdminBundle-*",
+          "**/pdfjs/**",
+          "pdfviewer.html",
+        ],
         maximumFileSizeToCacheInBytes: 10000000,
         navigateFallbackDenylist: [/^\/pdfviewer.html/, /^\/api\/(.+)/, /^\/f\/(.+)/, /^\/s\/(.+)/],
       },

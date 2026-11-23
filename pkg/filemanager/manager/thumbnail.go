@@ -17,6 +17,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager/entitysource"
+	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/queue"
 	"github.com/cloudreve/Cloudreve/v4/pkg/thumb"
@@ -103,8 +104,11 @@ func (m *manager) Thumbnail(ctx context.Context, uri *fs.URI) (entitysource.Enti
 			return nil, fmt.Errorf("failed to get entity source: %w", err)
 		}
 
+		// Fylvo: the same name as for a stored thumbnail above, so the signed address of a new
+		// thumbnail is the same as on the next request.
+		thumbSource.Apply(entitysource.WithDisplayName(file.DisplayName() + ".jpg"))
 		return thumbSource, nil
-	} else {
+	} else if !isThumbPregen(ctx) {
 		// 4. If proxy generator not support, mark thumb as not available.
 		_ = disableThumb(ctx, m, uri)
 	}
@@ -118,9 +122,13 @@ func (m *manager) SubmitAndAwaitThumbnailTask(ctx context.Context, uri *fs.URI, 
 		return nil, fmt.Errorf("failed to get entity source: %w", err)
 	}
 
-	defer es.Close()
+	// Fylvo: the task closes the source when it is done with it, also when the caller stops
+	// waiting earlier (a closed browser tab, a time limit, shutdown), so it is never closed under
+	// the worker. For the same reason this file manager is not put back for reuse (Recycle).
+	m.keepForWorker = true
 	t := newGenerateThumbTask(ctx, m, uri, ext, es)
 	if err := m.dep.ThumbQueue(ctx).QueueTask(ctx, t); err != nil {
+		es.Close()
 		return nil, fmt.Errorf("failed to queue task: %w", err)
 	}
 
@@ -147,7 +155,11 @@ func (m *manager) generateThumb(ctx context.Context, uri *fs.URI, ext string, es
 			_ = os.Remove(res.Path)
 		}
 
-		if !errors.Is(err, context.Canceled) && !m.stateless {
+		// Fylvo: a file is marked as having no thumbnail only while it still has the version that
+		// failed, and never by the background maker: its failures (a busy or short-memory moment,
+		// a size limit that may be raised later) are left to the first view.
+		if !errors.Is(err, context.Canceled) && !m.stateless && !isThumbPregen(ctx) &&
+			m.isCurrentVersion(ctx, uri, es.Entity().ID()) {
 			if err := disableThumb(ctx, m, uri); err != nil {
 				m.l.Warning("Failed to disable thumb: %v", err)
 			}
@@ -198,8 +210,10 @@ func (m *manager) generateThumb(ctx context.Context, uri *fs.URI, ext string, es
 		// at once for the same file) can never clean up the file of the one that succeeded.
 		savePath, ok := util.UniqueThumbPath(path.Clean(util.ReplaceMagicVar(m.settings.ThumbEntitySuffix(ctx), fs.Separator, true, true, time.Now(), m.user.ID, uri.Name(), uri.Path(), es.Entity().Source())))
 		if !ok {
-			if err := disableThumb(ctx, m, uri); err != nil {
-				m.l.Warning("Failed to disable thumb: %v", err)
+			if !isThumbPregen(ctx) && m.isCurrentVersion(ctx, uri, es.Entity().ID()) {
+				if err := disableThumb(ctx, m, uri); err != nil {
+					m.l.Warning("Failed to disable thumb: %v", err)
+				}
 			}
 			return nil, fmt.Errorf("thumbnail file name too long")
 		}
@@ -210,6 +224,9 @@ func (m *manager) generateThumb(ctx context.Context, uri *fs.URI, ext string, es
 				SavePath:   savePath,
 				MimeType:   m.dep.MimeDetector(ctx).TypeByName("thumb.jpg"),
 				EntityType: &entityType,
+				// Fylvo: stored only while the file still has the version it was made from (checked
+				// under the file's lock), so a new version never gets the old version's thumbnail.
+				PreviousVersion: hashid.EncodeEntityID(m.hasher, es.Entity().ID()),
 			},
 			File:   thumbFile,
 			Seeker: thumbFile,
@@ -250,6 +267,8 @@ type (
 		m   *manager
 		uri *fs.URI
 		sig chan *generateRes
+		// pregen: asked by the background maker (Fylvo, fylvo_thumb_pregen.go).
+		pregen bool
 	}
 	generateRes struct {
 		thumbEntity fs.Entity
@@ -272,6 +291,8 @@ func newGenerateThumbTask(ctx context.Context, m *manager, uri *fs.URI, ext stri
 		m:   m,
 		uri: uri,
 		sig: make(chan *generateRes, 2),
+
+		pregen: isThumbPregen(ctx),
 	}
 
 	t.InMemoryTask.DBTask.Task.SetUser(m.user)
@@ -279,6 +300,7 @@ func newGenerateThumbTask(ctx context.Context, m *manager, uri *fs.URI, ext stri
 }
 
 func (m *GenerateThumbTask) Do(ctx context.Context) (task.Status, error) {
+	defer m.es.Close()
 	// Make sure user does not cancel request before we start generating thumb.
 	select {
 	case <-ctx.Done():
@@ -287,6 +309,12 @@ func (m *GenerateThumbTask) Do(ctx context.Context) (task.Status, error) {
 	default:
 	}
 
+	if m.pregen {
+		ctx = withThumbPregen(ctx)
+	}
+	// Fylvo: the source reads with the worker's context, not with the request that asked (which
+	// can be over, and its context reused, while this runs).
+	m.es.Apply(entitysource.WithContext(ctx))
 	res, err := m.m.generateThumb(ctx, m.uri, m.ext, m.es)
 	if err != nil {
 		if errors.Is(err, thumb.ErrNotAvailable) {
@@ -294,7 +322,8 @@ func (m *GenerateThumbTask) Do(ctx context.Context) (task.Status, error) {
 			return task.StatusCompleted, nil
 		}
 
-		return task.StatusError, err
+		// Fylvo: not tried again by the queue, the source is closed (the caller asks again).
+		return task.StatusError, fmt.Errorf("%w: %w", queue.CriticalErr, err)
 	}
 
 	m.sig <- &generateRes{res, nil}
@@ -326,4 +355,10 @@ func (m *manager) thumbFileGone(ctx context.Context, thumb fs.Entity) bool {
 
 	_, err = os.Stat(d.LocalPath(ctx, thumb.Source()))
 	return errors.Is(err, os.ErrNotExist)
+}
+
+// isCurrentVersion tells if the file at uri still has entityID as its current version (Fylvo).
+func (m *manager) isCurrentVersion(ctx context.Context, uri *fs.URI, entityID int) bool {
+	file, err := m.fs.Get(dbfs.WithBypassOwnerCheck(ctx), uri)
+	return err == nil && file.PrimaryEntityID() == entityID
 }

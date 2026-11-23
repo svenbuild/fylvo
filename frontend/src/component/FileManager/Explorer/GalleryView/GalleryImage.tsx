@@ -70,11 +70,6 @@ const GalleryImage = memo((props: FileBlockProps) => {
   const [thumbSrc, setThumbSrc] = useState<string | undefined | null>(noThumb ? null : undefined);
   const [imageLoading, setImageLoading] = useState(true);
 
-  const tryLoadThumbSrc = useCallback(async () => {
-    const thumbSrc = await dispatch(loadFileThumb(0, file));
-    setThumbSrc(thumbSrc);
-  }, [dispatch, file, setThumbSrc, setImageLoading]);
-
   const onImgLoadError = useCallback(() => {
     setImageLoading(false);
     setThumbSrc(null);
@@ -102,8 +97,15 @@ const GalleryImage = memo((props: FileBlockProps) => {
       return;
     }
 
-    tryLoadThumbSrc();
-  }, [inView]);
+    // Fylvo: loaded again for a new version of the file; the answer for an older one is dropped.
+    let cancelled = false;
+    dispatch(loadFileThumb(0, file)).then((src) => {
+      if (!cancelled) setThumbSrc(src);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [inView, file.primary_entity]);
 
   const onIconClick = useCallback(
     (e: React.MouseEvent<HTMLElement>) => {

@@ -7,6 +7,7 @@ import androidx.core.net.toUri
 import androidx.work.WorkManager
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.imageLoader
 import okhttp3.OkHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -145,6 +146,11 @@ class FylvoApp : Application(), ImageLoaderFactory {
             step { io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames() }
             step { io.github.svenbuild.fylvo.android.util.Connected.forgetNames() }
             step { fileRepository.forgetThumbs() }
+            // Fylvo: previews and images the account loaded (Coil keeps previews by their stored id, thumbCacheKey).
+            step {
+                imageLoader.memoryCache?.clear()
+                withContext(Dispatchers.IO) { imageLoader.diskCache?.clear() }
+            }
             step { appUpdater.reset() }
             step { favoritesStore.clear() }
             // Synced copies are read-only, the server has them. After an expired session they stay

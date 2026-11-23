@@ -44,11 +44,11 @@ func (s *fifoScheduler) Queue(task Task) error {
 	if atomic.LoadInt32(&s.stopFlag) == 1 {
 		return ErrQueueShutdown
 	}
+	s.Lock()
 	if s.capacity > 0 && s.count >= s.capacity {
+		s.Unlock()
 		return ErrMaxCapacity
 	}
-
-	s.Lock()
 	s.taskQueue.Push(task)
 	s.count++
 	s.Unlock()
@@ -62,10 +62,11 @@ func (s *fifoScheduler) Request() (Task, error) {
 		return nil, ErrQueueShutdown
 	}
 
+	s.Lock()
 	if s.count == 0 {
+		s.Unlock()
 		return nil, ErrNoTaskInQueue
 	}
-	s.Lock()
 	if s.taskQueue[s.taskQueue.Len()-1].ResumeTime() > time.Now().Unix() {
 		s.Unlock()
 		return nil, ErrNoTaskInQueue

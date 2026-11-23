@@ -215,6 +215,10 @@ type FileClient interface {
 	SetPrimaryEntity(ctx context.Context, file *ent.File, entity *ent.Entity) error
 	// UnlinkEntity unlinks an entity from a file
 	UnlinkEntity(ctx context.Context, entity *ent.Entity, file *ent.File, owner *ent.User) (StorageDiff, error)
+	// ThumbCandidates returns files without a thumbnail, newest first (Fylvo).
+	ThumbCandidates(ctx context.Context, after, before, limit int, disabledKey string) ([]*ent.File, error)
+	// MaxFileID returns the highest id of a file or folder (Fylvo).
+	MaxFileID(ctx context.Context) (int, error)
 	// StaleUploads returns placeholders of local uploads started before the given time (Fylvo).
 	StaleUploads(ctx context.Context, startedBefore time.Time) ([]*ent.Entity, error)
 	// RemoveMetadataIfValue removes a metadata entry only while it has the given value (Fylvo).
