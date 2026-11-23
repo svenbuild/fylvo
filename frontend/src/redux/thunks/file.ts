@@ -47,6 +47,7 @@ import { addRecentUsedColor, addUsedTags } from "../../session/utils.ts";
 import { fileExtension, getFileLinkedUri } from "../../util";
 import Boolset from "../../util/boolset.ts";
 import { canCopyMoveTo } from "../../util/permission.ts";
+import { rememberUndo } from "./undo.ts";
 import CrUri, { Filesystem } from "../../util/uri.ts";
 import {
   addSelected,
@@ -599,6 +600,7 @@ export function submitRenameFile(index: number, file: FileResponse, newName: str
         }),
       );
     } catch (e) {
+      rememberUndo({ kind: "none" });
       // Fylvo: in a connected storage the row may have changed at the provider; show its state.
       if (inConnectedStorage(file.path)) {
         dispatch(refreshFileList(index));
@@ -607,6 +609,10 @@ export function submitRenameFile(index: number, file: FileResponse, newName: str
     }
 
     if (newFile) {
+      // Fylvo: Ctrl+Z renames it back; not in a connected storage.
+      rememberUndo(
+        inConnectedStorage(file.path) ? { kind: "none" } : { kind: "rename", file: newFile, oldName: file.name },
+      );
       dispatch(
         fileUpdated({
           index,
@@ -749,6 +755,7 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
         if (!partialSuccess) {
           if (!connected) {
             dispatch(setFileDeleteModal({ index, value: [false, files, undefined, true] }));
+            rememberUndo({ kind: "none" });
             return;
           }
           // This group and the ones after it were not deleted.
@@ -766,6 +773,13 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
     }
 
     dispatch(setFileDeleteModal({ index, value: [false, files, undefined, true] }));
+
+    // Fylvo: only own files that went to the trash can come back with Ctrl+Z.
+    const toTrash =
+      !opt.unlink &&
+      !opt.skip_soft_delete &&
+      deleted.every((f) => new CrUri(f.path).fs() == Filesystem.my && !f.metadata?.[Metadata.restore_uri]);
+    rememberUndo(toTrash && deleted.length > 0 ? { kind: "trash", files: deleted } : { kind: "none" });
 
     await dispatch(processFileListDiff(FileManagerIndex.main, deleted));
     await dispatch(processFileListDiff(FileManagerIndex.selector, deleted, false));
@@ -971,6 +985,25 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
       success = false;
     }
 
+    // Fylvo: a move of own or shared files can be undone with Ctrl+Z; a copy, a restore from the
+    // trash, a failed move or one in a connected storage cannot.
+    const undoable =
+      success &&
+      !isCopy &&
+      !connected &&
+      !src.some((f) => f.metadata?.[Metadata.restore_uri] || inConnectedStorage(f.path));
+    rememberUndo(
+      undoable
+        ? {
+            kind: "move",
+            files: src.map((f) => ({
+              file: { ...f, path: new CrUri(dst).join(f.name).toString() },
+              from: new CrUri(f.path).parent().toString(),
+            })),
+          }
+        : { kind: "none" },
+    );
+
     if (isCopy) {
       if (dst == getState().fileManager[index].path) dispatch(refreshFileList(index));
     } else if (success) {
@@ -995,6 +1028,8 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
 export function restoreFile(index: number, src: FileResponse[]): AppThunk {
   return async (dispatch, _getState) => {
     dispatch(closeContextMenu({ index, value: undefined }));
+    // Fylvo: changes the files, cannot be undone with Ctrl+Z (not recorded while an undo runs).
+    rememberUndo({ kind: "none" });
 
     let success = true;
     try {
@@ -1030,6 +1065,8 @@ export function emptyTrash(index: number): AppThunk {
       return;
     }
 
+    // Fylvo: cannot be undone with Ctrl+Z.
+    rememberUndo({ kind: "none" });
     let success = true;
     try {
       await longRunningTaskWithSnackbar(dispatch(sendEmptyTrash()), "application:modals.processingDeletion");
@@ -1422,6 +1459,8 @@ export function submitCreateNew(index: number, name: string, type: number): AppT
         err_on_conflict: true,
       }),
     );
+    // Fylvo: a new file or folder cannot be undone with Ctrl+Z.
+    rememberUndo({ kind: "none" });
 
     // if name does not contain "/", append cache
     if (name.includes("/")) {

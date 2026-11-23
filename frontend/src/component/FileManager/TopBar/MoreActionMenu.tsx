@@ -3,6 +3,7 @@ import { usePopupState } from "material-ui-popup-state/hooks";
 import { useCallback, useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { clearSelected } from "../../../redux/fileManagerSlice.ts";
+import { setShortcutsDialog } from "../../../redux/globalStateSlice.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { createShareShortcut, isMacbook } from "../../../redux/thunks/file.ts";
 import { inverseSelection, pinCurrentView, refreshFileList, selectAll } from "../../../redux/thunks/filemanager.ts";
@@ -14,6 +15,7 @@ import Border from "../../Icons/Border.tsx";
 import BorderAll from "../../Icons/BorderAll.tsx";
 import BorderInside from "../../Icons/BorderInside.tsx";
 import FolderLink from "../../Icons/FolderLink.tsx";
+import Keyboard from "../../Icons/Keyboard.tsx";
 import PinOutlined from "../../Icons/PinOutlined.tsx";
 import { DenseDivider, SquareMenu, SquareMenuItem } from "../ContextMenu/ContextMenu.tsx";
 import { FmIndexContext } from "../FmIndexContext.tsx";
@@ -61,6 +63,11 @@ const MoreActionMenu = ({ onClose, ...rest }: MenuProps) => {
     onClose && onClose({}, "escapeKeyDown");
     dispatch(inverseSelection(fmIndex));
   }, [dispatch, onClose, fmIndex]);
+
+  const onShortcutsClicked = useCallback(() => {
+    onClose && onClose({}, "escapeKeyDown");
+    dispatch(setShortcutsDialog(true));
+  }, [dispatch, onClose]);
 
   const onRefreshClicked = useCallback(() => {
     onClose && onClose({}, "escapeKeyDown");
@@ -132,6 +139,15 @@ const MoreActionMenu = ({ onClose, ...rest }: MenuProps) => {
         </ListItemIcon>
         <ListItemText>{t("application:fileManager.invertSelection")}</ListItemText>
       </SquareMenuItem>
+      {!isMobile && <DenseDivider />}
+      {!isMobile && (
+        <SquareMenuItem onClick={onShortcutsClicked}>
+          <ListItemIcon>
+            <Keyboard fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t("application:shortcuts.title")}</ListItemText>
+        </SquareMenuItem>
+      )}
     </SquareMenu>
   );
 };

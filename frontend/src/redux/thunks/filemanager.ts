@@ -3,7 +3,6 @@ import { getFileInfo, getFileList, getUserCapacity, sendPatchViewSync } from "..
 import { ExplorerView, FileResponse, FileType, ListResponse, Metadata } from "../../api/explorer.ts";
 import { ConnectedCode, inConnectedStorage } from "../../api/connected.ts";
 import { AppError } from "../../api/request.ts";
-import { getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { ListViewColumnSetting } from "../../component/FileManager/Explorer/ListView/Column.tsx";
 import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
 import { getPaginationState } from "../../component/FileManager/Pagination/PaginationFooter.tsx";
@@ -55,10 +54,10 @@ import {
   setUploadFromClipboardDialog,
   setUploadRawFiles,
 } from "../globalStateSlice.ts";
-import { Viewers, ViewersByID } from "../siteConfigSlice.ts";
+import { ViewersByID } from "../siteConfigSlice.ts";
 import { AppThunk } from "../store.ts";
 import { promiseId } from "./dialog.ts";
-import { deleteFile, openFile, openFileContextMenu } from "./file.ts";
+import { openFile, openFileContextMenu } from "./file.ts";
 import { queueLoadShareInfo } from "./share.ts";
 import { openViewer } from "./viewer.ts";
 
@@ -743,16 +742,6 @@ export function selectAll(index: number): AppThunk {
       return;
     }
     dispatch(setSelected({ index, value: files }));
-  };
-}
-
-export function shortCutDelete(index: number): AppThunk {
-  return async (dispatch, getState) => {
-    const selected = Object.values(getState().fileManager[index].selected);
-    const actionOpt = getActionOpt(selected, Viewers);
-    if (actionOpt.showDelete) {
-      dispatch(deleteFile(index, selected));
-    }
   };
 }
 

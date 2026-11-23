@@ -284,6 +284,15 @@ export interface GlobalStateSlice {
   // OAuth consent flow
   oauthApp?: AppRegistration;
   oauthAppLoading?: boolean;
+
+  // Fylvo: files taken with Ctrl+C or Ctrl+X in the file manager, pasted with Ctrl+V.
+  fileClipboard?: FileClipboard;
+  shortcutsDialogOpen?: boolean;
+}
+
+export interface FileClipboard {
+  files: FileResponse[];
+  cut: boolean;
 }
 
 let preferred_theme: string | undefined = undefined;
@@ -390,6 +399,12 @@ export const globalStateSlice = createSlice({
     },
     setSearchPopup: (state, action: PayloadAction<boolean>) => {
       state.searchPopupOpen = action.payload;
+    },
+    setFileClipboard: (state, action: PayloadAction<FileClipboard | undefined>) => {
+      state.fileClipboard = action.payload;
+    },
+    setShortcutsDialog: (state, action: PayloadAction<boolean>) => {
+      state.shortcutsDialogOpen = action.payload;
     },
     setRemoteDownloadDialog: (state, action: PayloadAction<{ open: boolean; file?: FileResponse }>) => {
       state.remoteDownloadDialogOpen = action.payload.open;
@@ -939,6 +954,8 @@ export const {
   resetDialogs,
   setPolicyOptionCache,
   setSearchPopup,
+  setFileClipboard,
+  setShortcutsDialog,
   setExcalidrawViewer,
   closeExcalidrawViewer,
   setDirectLinkManagementDialog,

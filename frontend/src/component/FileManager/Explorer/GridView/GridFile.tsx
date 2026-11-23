@@ -155,6 +155,11 @@ export const useFileBlockState = (props: FileBlockProps) => {
   const isTouch = useMediaQuery("(pointer: coarse)");
   const fmIndex = useContext(FmIndexContext);
   const isSelected = useAppSelector((state) => state.fileManager[fmIndex].selected[file.path]);
+  // Fylvo: taken with Ctrl+X, shown paler until it is pasted.
+  const isCut = useAppSelector(
+    (state) =>
+      !!state.globalState.fileClipboard?.cut && state.globalState.fileClipboard.files.some((f) => f.path == file.path),
+  );
   const thumbWidth = useAppSelector((state) => state.siteConfig.explorer.config.thumbnail_width);
   const thumbHeight = useAppSelector((state) => state.siteConfig.explorer.config.thumbnail_height);
   const isLoadingIndicator = file.placeholder;
@@ -234,6 +239,7 @@ export const useFileBlockState = (props: FileBlockProps) => {
   const disabled = isLoadingIndicator || fileDisabled;
 
   return {
+    isCut,
     onClick,
     fmIndex,
     isSelected,
@@ -277,6 +283,7 @@ const GridFile = memo((props: FileBlockProps) => {
     setRefFunc,
     disabled,
     fileDisabled,
+    isCut,
     thumbWidth,
     thumbHeight,
   } = useFileBlockState(props);
@@ -350,7 +357,7 @@ const GridFile = memo((props: FileBlockProps) => {
     <>
       <StyledButtonBase
         onDoubleClick={onDoubleClicked}
-        transparent={isDragging || fileDisabled}
+        transparent={isDragging || fileDisabled || isCut}
         isDropOver={isDropOver && !isDragging}
         onContextMenu={onContextMenu}
         data-rect-id={index ?? ""}

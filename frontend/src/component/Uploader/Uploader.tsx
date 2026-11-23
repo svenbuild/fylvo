@@ -1,4 +1,5 @@
 import dayjs from "dayjs";
+import { rememberUndo } from "../../redux/thunks/undo.ts";
 import { useSnackbar } from "notistack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -81,6 +82,8 @@ const Uploader = () => {
       }
 
       tasks.forEach((t) => t.start());
+      // Fylvo: an upload cannot be undone with Ctrl+Z, and Ctrl+Z must not reach past it.
+      rememberUndo({ kind: "none" });
 
       dispatch(openUploadTaskList());
       setUploaders((uploaders) => {
