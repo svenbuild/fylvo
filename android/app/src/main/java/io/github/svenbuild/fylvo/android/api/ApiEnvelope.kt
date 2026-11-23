@@ -48,7 +48,10 @@ fun <T> decodeApiResponse(json: Json, dataSerializer: KSerializer<T>, text: Stri
         code == 0 -> json.decodeFromJsonElement(dataSerializer, dataElement)
         else -> runCatching { json.decodeFromJsonElement(dataSerializer, dataElement) }.getOrNull()
     }
-    return ApiResponse(code = code, msg = msg, data = data, innerCodes = innerCodes(obj), reason = reasonOf(obj))
+    return ApiResponse(
+        code = code, msg = msg, data = data, innerCodes = innerCodes(obj), reason = reasonOf(obj),
+        failedPaths = (obj["aggregated_error"] as? JsonObject)?.keys.orEmpty(),
+    )
 }
 
 /** Codes of the single failures inside `aggregated_error` (batch answer 40081). */
