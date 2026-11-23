@@ -223,6 +223,20 @@ export const router = createBrowserRouter([
             },
           },
           {
+            path: "/start",
+            async lazy() {
+              let { StartPage } = await import("../component/Pages/Pages");
+              return { Component: StartPage };
+            },
+          },
+          {
+            path: "/favorites",
+            async lazy() {
+              let { Favorites } = await import("../component/Pages/Pages");
+              return { Component: Favorites };
+            },
+          },
+          {
             path: "/tasks",
             async lazy() {
               let { TaskList } = await import("../component/Pages/Pages");

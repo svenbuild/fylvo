@@ -1,3 +1,5 @@
+import CustomizeSetting from "./CustomizeSetting.tsx";
+import Color from "../../Icons/Color.tsx";
 import { PersonOutline } from "@mui/icons-material";
 import { Box, Container, Paper } from "@mui/material";
 import { selectedSurface } from "../../../fylvoTheme.ts";
@@ -23,6 +25,7 @@ export enum SettingPageTab {
   Profile = "profile",
   Preference = "preference",
   Security = "security",
+  Customize = "customize",
 }
 
 const Setting = () => {
@@ -62,6 +65,11 @@ const Setting = () => {
           label: t("application:setting.security"),
           value: SettingPageTab.Security,
           icon: <LockClosedOutlined />,
+        },
+        {
+          label: t("application:customize.customize"),
+          value: SettingPageTab.Customize,
+          icon: <Color />,
         },
       ],
     );
@@ -123,6 +131,7 @@ const Setting = () => {
                   )}
                   {tab == SettingPageTab.Preference && <PreferenceSetting setting={setting} setSetting={setSetting} />}
                   {tab == SettingPageTab.Security && <SecuritySetting setting={setting} setSetting={setSetting} />}
+                  {tab == SettingPageTab.Customize && <CustomizeSetting />}
                 </Paper>
               )}
             </Box>

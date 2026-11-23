@@ -239,7 +239,8 @@ func (s *PatchUserSetting) Patch(c *gin.Context) error {
 	dep := dependency.FromContext(c)
 	u := inventory.UserFromContext(c)
 	userClient := dep.UserClient()
-	saveSetting := false
+	// Fylvo: the setting changes are applied to the stored value under the settings lock.
+	var changes []func(*types.UserSetting)
 
 	if s.Nick != nil {
 		if _, err := userClient.UpdateNickname(c, u, *s.Nick); err != nil {
@@ -248,38 +249,31 @@ func (s *PatchUserSetting) Patch(c *gin.Context) error {
 	}
 
 	if s.Language != nil {
-		u.Settings.Language = *s.Language
-		saveSetting = true
+		changes = append(changes, func(st *types.UserSetting) { st.Language = *s.Language })
 	}
 
 	if s.PreferredTheme != nil {
-		u.Settings.PreferredTheme = *s.PreferredTheme
-		saveSetting = true
+		changes = append(changes, func(st *types.UserSetting) { st.PreferredTheme = *s.PreferredTheme })
 	}
 
 	if s.VersionRetentionEnabled != nil {
-		u.Settings.VersionRetention = *s.VersionRetentionEnabled
-		saveSetting = true
+		changes = append(changes, func(st *types.UserSetting) { st.VersionRetention = *s.VersionRetentionEnabled })
 	}
 
 	if s.VersionRetentionExt != nil {
-		u.Settings.VersionRetentionExt = *s.VersionRetentionExt
-		saveSetting = true
+		changes = append(changes, func(st *types.UserSetting) { st.VersionRetentionExt = *s.VersionRetentionExt })
 	}
 
 	if s.VersionRetentionMax != nil {
-		u.Settings.VersionRetentionMax = *s.VersionRetentionMax
-		saveSetting = true
+		changes = append(changes, func(st *types.UserSetting) { st.VersionRetentionMax = *s.VersionRetentionMax })
 	}
 
 	if s.DisableViewSync != nil {
-		u.Settings.DisableViewSync = *s.DisableViewSync
-		saveSetting = true
+		changes = append(changes, func(st *types.UserSetting) { st.DisableViewSync = *s.DisableViewSync })
 	}
 
 	if s.ShareLinksInProfile != nil {
-		u.Settings.ShareLinksInProfile = types.ShareLinksInProfileLevel(*s.ShareLinksInProfile)
-		saveSetting = true
+		changes = append(changes, func(st *types.UserSetting) { st.ShareLinksInProfile = types.ShareLinksInProfileLevel(*s.ShareLinksInProfile) })
 	}
 
 	if s.CurrentPassword != nil && s.NewPassword != nil {
@@ -331,10 +325,17 @@ func (s *PatchUserSetting) Patch(c *gin.Context) error {
 		}
 	}
 
-	if saveSetting {
-		if err := userClient.SaveSettings(c, u); err != nil {
+	if len(changes) > 0 {
+		settings, err := userClient.UpdateSettings(c, u.ID, func(st *types.UserSetting) error {
+			for _, change := range changes {
+				change(st)
+			}
+			return nil
+		})
+		if err != nil {
 			return serializer.NewError(serializer.CodeDBError, "Failed to update user settings", err)
 		}
+		u.Settings = settings
 	}
 
 	return nil

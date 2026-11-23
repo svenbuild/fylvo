@@ -1,3 +1,4 @@
+import { loadTags } from "./fylvo.ts";
 import dayjs from "dayjs";
 import i18next from "i18next";
 import { closeSnackbar, enqueueSnackbar, SnackbarAction, SnackbarKey } from "notistack";
@@ -906,6 +907,8 @@ export function patchTags(index: number, files: FileResponse[], tags: Tag[]): Ap
     }
 
     addUsedTags(tags);
+    // Fylvo: the tag list in the sidebar follows.
+    dispatch(loadTags());
   };
 }
 

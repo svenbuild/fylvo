@@ -5,15 +5,13 @@ import { CascadingContext, CascadingMenuItem } from "./CascadingMenu.tsx";
 import { useTranslation } from "react-i18next";
 import { useAppDispatch } from "../../../redux/hooks.ts";
 import { closeContextMenu } from "../../../redux/fileManagerSlice.ts";
-import { applyIconColor, dialogBasedMoveCopy } from "../../../redux/thunks/file.ts";
+import { dialogBasedMoveCopy } from "../../../redux/thunks/file.ts";
 import { ListItemIcon, ListItemText } from "@mui/material";
 import FolderArrowRightOutlined from "../../Icons/FolderArrowRightOutlined.tsx";
 import { setChangeIconDialog, setPinFileDialog } from "../../../redux/globalStateSlice.ts";
 import { getFileLinkedUri } from "../../../util";
 import PinOutlined from "../../Icons/PinOutlined.tsx";
 import EmojiEdit from "../../Icons/EmojiEdit.tsx";
-import FolderColorQuickAction from "../FileInfo/FolderColorQuickAction.tsx";
-import { DenseDivider } from "./ContextMenu.tsx";
 
 export interface SubMenuItemsProps {
   displayOpt: DisplayOption;
@@ -38,8 +36,6 @@ const OrganizeMenuItems = ({ displayOpt, targets }: SubMenuItemsProps) => {
     },
     [dispatch, targets],
   );
-  const showDivider =
-    (displayOpt.showMove || displayOpt.showPin || displayOpt.showChangeIcon) && displayOpt.showChangeFolderColor;
   return (
     <>
       {displayOpt.showMove && (
@@ -83,18 +79,6 @@ const OrganizeMenuItems = ({ displayOpt, targets }: SubMenuItemsProps) => {
           </ListItemIcon>
           <ListItemText>{t("application:fileManager.customizeIcon")}</ListItemText>
         </CascadingMenuItem>
-      )}
-      {showDivider && <DenseDivider />}
-      {displayOpt.showChangeFolderColor && (
-        <FolderColorQuickAction
-          file={targets[0]}
-          onColorChange={(color) => onClick(() => dispatch(applyIconColor(0, targets, color, true)))()}
-          sx={{
-            maxWidth: "204px",
-            margin: (theme) => `0 ${theme.spacing(0.5)}`,
-            padding: (theme) => `${theme.spacing(0.5)} ${theme.spacing(1)}`,
-          }}
-        />
       )}
     </>
   );

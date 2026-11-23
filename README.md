@@ -23,7 +23,7 @@
 ## Why Fylvo
 
 - **Small.** One container with a built-in database. Under 200 MB of memory under load in our tests, no PHP, no separate database server.
-- **Private.** Nothing calls home. Registration closes after the first account, wrong passwords lock an address out for a while, passwords are stored with bcrypt.
+- **Private.** Nothing calls home. Only the map in the details of a photo with a location loads map tiles from OpenStreetMap (the admin panel can switch the map provider). Registration closes after the first account, wrong passwords lock an address out for a while, passwords are stored with bcrypt.
 - **Complete.** Web app, office in the browser, WebDAV, and apps for Android, Windows and Linux.
 
 ## Features
@@ -81,7 +81,7 @@ Next steps, in this order, are in the **[self-hosting guide](docs/self-hosting.m
 | App | Get it | Notes |
 | --- | --- | --- |
 | Android | `Fylvo-Android-<version>.apk` from the [releases](https://github.com/svenbuild/fylvo/releases) | Android 9 or newer, not in the Play Store |
-| Windows | `Fylvo-Desktop-<version>-windows-x64.zip` from the releases | Windows 10 1903 or newer, signed package |
+| Windows | `Fylvo-Desktop-<version>-windows-x64.zip` from the releases | Windows 10 2004 or newer, signed package |
 | Linux | AppImage, `.deb` and `.rpm` from the releases | Preview |
 
 All apps connect to any Fylvo server: you type its address when you sign in. Your server can offer app updates to them, see [the guide](docs/self-hosting.md#5-connect-the-apps).

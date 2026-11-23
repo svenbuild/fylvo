@@ -19,8 +19,9 @@ const RowContainer = styled(Box, {
   disabled?: boolean;
 }>(({ theme, disabled, transparent, isDropOver, selected }) => {
   return {
-    minHeight: 32,
-    "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: 40 },
+    // Fylvo: the row height follows the density of the account (see applyDensity).
+    minHeight: "var(--fylvo-row-height, 32px)",
+    "@media (max-width: 599.95px), (pointer: coarse)": { minHeight: "max(40px, var(--fylvo-row-height, 32px))" },
     paddingRight: 32,
     borderBottom: `1px solid ${theme.palette.divider}`,
     display: "flex",
