@@ -148,7 +148,15 @@ func connectedCreate(c *gin.Context, uri *fs.URI, s *CreateFileService) (*FileRe
 	defer req.done()
 
 	dir := types.FileTypeFromString(s.Type) == types.FileTypeFolder
-	row, err := req.m.CreateEntry(req.ctx, req.conn, req.path, dir, s.ErrOnConflict)
+	var row *connected.Row
+	_, name := connected.ParentOf(req.path)
+	if blank, ok := connected.BlankDocument(name); ok && !dir {
+		// A new Office document is a real, empty one from the start: with no bytes at
+		// all the provider's own Office would refuse to open it.
+		row, err = req.m.CreateDocument(req.ctx, req.conn, req.path, blank, s.ErrOnConflict)
+	} else {
+		row, err = req.m.CreateEntry(req.ctx, req.conn, req.path, dir, s.ErrOnConflict)
+	}
 	if err != nil {
 		return nil, connected.Error(c, err)
 	}

@@ -1,6 +1,8 @@
 package explorer
 
 import (
+	"archive/zip"
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -444,4 +446,68 @@ func TestConnectedSaveToAnAddressThatIsNone(t *testing.T) {
 	_, err := (&FileUpdateService{Uri: e.root + "/notes.txt//"}).PutContent(e.withBody(e.alex, "PUT", []byte("other")), nil)
 	require.Error(t, err)
 	require.Equal(t, []byte("hello"), e.download(e.root+"/notes.txt"))
+}
+
+// A new Office document is a real, empty one from its first moment, not a file without
+// bytes: the provider's own Office opens it, also when nobody ever saved to it.
+func TestConnectedCreateOfficeDocument(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	create := func(path string, errOnConflict bool) (*FileResponse, error) {
+		return (&CreateFileService{Uri: e.root + path, Type: "file", ErrOnConflict: errOnConflict}).Create(e.as(e.alex))
+	}
+
+	for path, main := range map[string]string{
+		"/New.docx": "word/document.xml", "/Budget.xlsx": "xl/workbook.xml", "/Talk.PPTX": "ppt/presentation.xml",
+	} {
+		created, err := create(path, true)
+		require.NoError(t, err, path)
+		require.Positive(t, created.Size, path)
+		content := e.download(e.root + path)
+		require.EqualValues(t, created.Size, len(content))
+		z, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+		require.NoError(t, err, path)
+		var names []string
+		for _, f := range z.File {
+			names = append(names, f.Name)
+		}
+		require.Contains(t, names, main, path)
+	}
+	// It opens in the Office server for editing, like any document.
+	session, err := e.officeSession(t, "/New.docx", types.ViewerActionEdit)
+	require.NoError(t, err)
+	require.True(t, *session.Edit)
+
+	// Created again it is the file that is there, as it is: nothing is replaced. Asked
+	// for an error, it is the error of a taken name.
+	before := e.download(e.root + "/New.docx")
+	id := e.sim.Calls(drivetest.CallStart)
+	again, err := create("/New.docx", false)
+	require.NoError(t, err)
+	require.EqualValues(t, len(before), again.Size)
+	require.Equal(t, before, e.download(e.root+"/New.docx"))
+	require.Equal(t, id, e.sim.Calls(drivetest.CallStart), "nothing was uploaded for a name that is taken")
+	_, err = create("/New.docx", true)
+	require.Equal(t, serializer.CodeObjectExist, connectedCode(err))
+	// A folder under the name is not a document.
+	_, err = (&CreateFileService{Uri: e.root + "/Folder.docx", Type: "folder"}).Create(e.as(e.alex))
+	require.NoError(t, err)
+	_, err = create("/Folder.docx", false)
+	require.Equal(t, serializer.CodeObjectExist, connectedCode(err))
+
+	// Every other kind of file is created empty, as before, and a folder is a folder.
+	notes, err := create("/notes.txt", true)
+	require.NoError(t, err)
+	require.Zero(t, notes.Size)
+	old, err := create("/letter.doc", true)
+	require.NoError(t, err)
+	require.Zero(t, old.Size)
+
+	// The rules of every change hold: a name Fylvo does not give, and an installation
+	// that only reads.
+	_, err = create("/a:b.docx", true)
+	require.Equal(t, serializer.CodeIllegalObjectName, connectedCode(err))
+	t.Setenv(connected.EnvWrite, "")
+	_, err = create("/Later.docx", true)
+	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
 }

@@ -3,7 +3,6 @@
 package connected
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -300,36 +299,6 @@ func (s devSettings) Set(ctx context.Context, settings map[string]string) error 
 	return s.SettingStore.Set(ctx, kept)
 }
 
-// devDocx is a Word document with one line of text: the smallest package of parts a
-// word processor opens.
-func devDocx(text string) []byte {
-	var buf bytes.Buffer
-	z := zip.NewWriter(&buf)
-	for _, part := range [][2]string{
-		{"[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-			`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
-			`<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
-			`<Default Extension="xml" ContentType="application/xml"/>` +
-			`<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
-			`</Types>`},
-		{"_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-			`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-			`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
-			`</Relationships>`},
-		{"word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
-			`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>` +
-			`<w:p><w:r><w:t>` + html.EscapeString(text) + `</w:t></w:r></w:p>` +
-			`</w:body></w:document>`},
-	} {
-		w, err := z.Create(part[0])
-		if err == nil {
-			_, _ = w.Write([]byte(part[1]))
-		}
-	}
-	_ = z.Close()
-	return buf.Bytes()
-}
-
 // devSampleData fills the simulated storage with one of everything a client has to handle.
 func devSampleData(s *drivetest.Server) {
 	picture := func(c color.Color) []byte {
@@ -344,7 +313,7 @@ func devSampleData(s *drivetest.Server) {
 	s.AddFile(docs, "Notes.txt", []byte("Notes of Alex.\n"))
 	s.AddFile(docs, "Shopping list.md", []byte("# Shopping list\n\n- Bread\n- Apples\n"))
 	// A real Word document, to open in the Office server.
-	letter := s.AddFile(docs, "Letter.docx", devDocx("A letter of Alex."))
+	letter := s.AddFile(docs, "Letter.docx", wordDocument("A letter of Alex."))
 	s.AddNative(docs, "Budget", "gsheet")
 	s.AddNative(docs, "Letter", "gdoc")
 	s.AddNative(docs, "Talk", "gslides")

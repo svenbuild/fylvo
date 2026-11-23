@@ -1,6 +1,7 @@
 package connected
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -228,6 +229,20 @@ func rowOf(item *provider.Item, path string) *Row {
 	row := &Row{Item: *item, Path: path}
 	row.Name = name
 	return row
+}
+
+// CreateDocument makes a file with the given content at path: a new document that is
+// not empty from its first moment (see BlankDocument). Like CreateEntry it never
+// replaces anything: a file that is already there under the name is returned as it is,
+// unless errOnConflict asks for an error.
+func (m *Manager) CreateDocument(ctx context.Context, c *Conn, path string, content []byte, errOnConflict bool) (*Row, error) {
+	row, err := m.Save(ctx, c, UploadRequest{Path: path, Size: int64(len(content))}, bytes.NewReader(content))
+	var app serializer.AppError
+	if err != nil && !errOnConflict && errors.As(err, &app) && app.Code == serializer.CodeObjectExist {
+		// The name is taken. What is there decides, as for an empty file.
+		return m.CreateEntry(ctx, c, path, false, false)
+	}
+	return row, err
 }
 
 // CreateEntry makes a folder or an empty file at path. An entry that is already there
