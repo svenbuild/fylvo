@@ -18,7 +18,7 @@ export const inConnectedStorage = (path?: string) => {
 
 // Name under which a file is saved: a document of the provider (for example a Google Sheet)
 // downloads in the format named in its metadata, so it gets that extension. taken holds the
-// names already used in the same place; a name in it is not given twice (Budget.gsheet next
+// names already used in the same place, in lower case; a name in it is not given twice (Budget.gsheet next
 // to Budget.xlsx becomes "Budget (2).xlsx"). The chosen name is added to taken.
 export const downloadFileName = (file: FileResponse, name: string = file.name, taken?: Set<string>) => {
   const ext = file.metadata?.[Metadata.connected_export];
@@ -28,10 +28,11 @@ export const downloadFileName = (file: FileResponse, name: string = file.name, t
   const dot = name.lastIndexOf(".");
   const base = dot > name.lastIndexOf("/") ? name.slice(0, dot) : name;
   let res = `${base}.${ext}`;
-  for (let n = 2; taken?.has(res); n++) {
+  // Compared without regard to case: Windows and macOS keep only one of two such names.
+  for (let n = 2; taken?.has(res.toLowerCase()); n++) {
     res = `${base} (${n}).${ext}`;
   }
-  taken?.add(res);
+  taken?.add(res.toLowerCase());
   return res;
 };
 

@@ -192,14 +192,22 @@ export function browserBatchDownload(files: FileResponse[]): AppThunk {
     };
 
     try {
-      await dispatch(startBrowserBatchDownloadTo(handle, downloadId, files));
+      const complete = await dispatch(startBrowserBatchDownloadTo(handle, downloadId, files));
       dispatch(setBatchDownloadProgress({ id: downloadId, progress: { isDownloading: false } }));
       closeSnackbar(snackbarId);
-      if (!cancelled) {
+      if (!cancelled && complete) {
         enqueueSnackbar({
           message: i18next.t("fileManager.downloadComplete"),
           variant: "success",
           autoHideDuration: 5000,
+          action: BatchDownloadCompleteAction(downloadId),
+        });
+      } else if (!cancelled) {
+        // Fylvo: something is missing; the log names it.
+        enqueueSnackbar({
+          message: i18next.t("application:connected.downloadIncomplete"),
+          variant: "warning",
+          persist: true,
           action: BatchDownloadCompleteAction(downloadId),
         });
       } else {
@@ -223,8 +231,9 @@ function startBrowserBatchDownloadTo(
   handle: FileSystemDirectoryHandle,
   downloadId: string,
   files: FileResponse[],
-): AppThunk<Promise<void>> {
-  return async (dispatch, _getState): Promise<void> => {
+): AppThunk<Promise<boolean>> {
+  // Resolves true when everything was downloaded.
+  return async (dispatch, _getState): Promise<boolean> => {
     let log = "";
     let failed = 0;
     let skipAll = false;
@@ -299,7 +308,7 @@ function startBrowserBatchDownloadTo(
 
     // get the files in the directory to compare with queue files
     const fsPaths = await getFileSystemDirectoryPaths(handle, "");
-    const skipped: WalkSkipped = { names: [], omitted: 0 };
+    const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [] };
 
     await dispatch(
       walk(
@@ -307,7 +316,7 @@ function startBrowserBatchDownloadTo(
         async (children, relativePath) => {
           const childFiles = children.filter((f) => f.type == FileType.file);
           // Names in this folder, so an exported document does not take the name of another file.
-          const takenNames = new Set(children.map((f) => f.name));
+          const takenNames = new Set(children.map((f) => f.name.toLowerCase()));
           try {
             const entityUrls = await dispatch(
               getFileEntityUrl({
@@ -465,23 +474,39 @@ function startBrowserBatchDownloadTo(
     );
 
     // Fylvo: say what was left out, so the download does not look complete.
-    skippedNotes(skipped).forEach(appendLog);
-    if (failed === 0) {
+    const notes = skippedNotes(skipped);
+    notes.forEach(appendLog);
+    if (failed === 0 && notes.length == 0) {
       appendLog(i18next.t("fileManager.directoryDownloadFinished"));
-    } else {
+    } else if (failed > 0) {
       appendLog(i18next.t("fileManager.directoryDownloadFinishedWithError", { failed }));
     }
+    return failed === 0 && notes.length == 0;
   };
 }
+
+// Fylvo: at most ten names, then how many more.
+const shortList = (names: string[]) =>
+  names.length <= 10
+    ? names.join(", ")
+    : names.slice(0, 10).join(", ") + " " + i18next.t("application:connected.andMore", { count: names.length - 10 });
 
 // Fylvo: lines that name what a walk left out (see WalkSkipped).
 const skippedNotes = (skipped: WalkSkipped): string[] => {
   const notes: string[] = [];
+  if (skipped.unreadable.length > 0) {
+    notes.push(
+      i18next.t("application:connected.downloadUnreadable", {
+        count: skipped.unreadable.length,
+        names: shortList(skipped.unreadable),
+      }),
+    );
+  }
   if (skipped.names.length > 0) {
     notes.push(
       i18next.t("application:connected.downloadSkipped", {
         count: skipped.names.length,
-        names: skipped.names.join(", "),
+        names: shortList(skipped.names),
       }),
     );
   }
@@ -493,13 +518,13 @@ const skippedNotes = (skipped: WalkSkipped): string[] => {
 
 export function streamSaverDownload(files: FileResponse[]): AppThunk {
   return async (dispatch, getState) => {
-    const skipped: WalkSkipped = { names: [], omitted: 0 };
-    const allFiles = (
-      await longRunningTaskWithSnackbar(
-        dispatch(walkAll(files, skipped)),
-        "application:fileManager.preparingBathDownload",
-      )
-    ).filter((f) => f.type == FileType.file);
+    const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [] };
+    // Files and folders: an exported name must not take the path of a folder either.
+    const allWalked = await longRunningTaskWithSnackbar(
+      dispatch(walkAll(files, skipped)),
+      "application:fileManager.preparingBathDownload",
+    );
+    const allFiles = allWalked.filter((f) => f.type == FileType.file);
 
     const fileStream = streamSaver.createWriteStream(formatLocalTime(dayjs()) + ".zip");
     const {
@@ -512,7 +537,7 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
     const maxBatch = Math.min(10, max_batch_size ?? 1);
     let current = 0;
     // Paths in the archive, so an exported document does not take the path of another file.
-    const takenNames = new Set(allFiles.map((f) => f.relativePath));
+    const takenNames = new Set(allWalked.map((f) => f.relativePath.toLowerCase()));
     const pending: { file: FileResponseWalked; url: string }[] = [];
     const failedNames: string[] = [];
 
@@ -578,6 +603,16 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
         await longRunningTaskWithSnackbar(readableZipStream.pipeTo(fileStream), "fileManager.batchDownloadStarted");
       } catch (e) {
         console.log(e);
+        // Fylvo: a transfer broken off midway leaves an archive that cannot be opened.
+        if (!(e instanceof Error && e.name == "AbortError")) {
+          enqueueSnackbar({
+            message: i18next.t("application:connected.archiveBroken"),
+            variant: "error",
+            persist: true,
+            action: DefaultCloseAction,
+          });
+          return;
+        }
       }
       // Fylvo: name what is missing from the archive.
       const notes = skippedNotes(skipped);
@@ -585,7 +620,7 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
         notes.push(
           i18next.t("application:connected.downloadFailed", {
             count: failedNames.length,
-            names: failedNames.join(", "),
+            names: shortList(failedNames),
           }),
         );
       }

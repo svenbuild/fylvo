@@ -1265,6 +1265,11 @@
     "downloadOmitted_one": "{{count}} weiterer Eintrag liess sich wegen seines Namens nicht lesen.",
     "downloadOmitted_other": "{{count}} weitere Einträge liessen sich wegen ihrer Namen nicht lesen.",
     "downloadFailed_one": "{{count}} Datei fehlt im Archiv: {{names}}.",
-    "downloadFailed_other": "{{count}} Dateien fehlen im Archiv: {{names}}."
+    "downloadFailed_other": "{{count}} Dateien fehlen im Archiv: {{names}}.",
+    "downloadUnreadable_one": "{{count}} Ordner liess sich nicht lesen und fehlt: {{names}}.",
+    "downloadUnreadable_other": "{{count}} Ordner liessen sich nicht lesen und fehlen: {{names}}.",
+    "andMore": "und {{count}} weitere",
+    "downloadIncomplete": "Download beendet, aber nicht alles wurde heruntergeladen. Das Protokoll nennt, was fehlt.",
+    "archiveBroken": "Das Archiv wurde abgebrochen und ist unvollständig. Bitte nochmals herunterladen."
   }
 }

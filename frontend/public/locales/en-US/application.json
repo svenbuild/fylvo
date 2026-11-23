@@ -1187,6 +1187,11 @@
     "downloadOmitted_one": "{{count}} more entry could not be read because of its name.",
     "downloadOmitted_other": "{{count}} more entries could not be read because of their names.",
     "downloadFailed_one": "{{count}} file is missing from the archive: {{names}}.",
-    "downloadFailed_other": "{{count}} files are missing from the archive: {{names}}."
+    "downloadFailed_other": "{{count}} files are missing from the archive: {{names}}.",
+    "downloadUnreadable_one": "{{count}} folder could not be read and is missing: {{names}}.",
+    "downloadUnreadable_other": "{{count}} folders could not be read and are missing: {{names}}.",
+    "andMore": "and {{count}} more",
+    "downloadIncomplete": "Download finished, but not everything was downloaded. The log says what is missing.",
+    "archiveBroken": "The archive was broken off and is incomplete. Please download again."
   }
 }

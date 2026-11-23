@@ -1173,6 +1173,8 @@ export interface WalkSkipped {
   names: string[];
   // Entries the server could not list at all (their names cannot be names here).
   omitted: number;
+  // Paths of folders whose listing failed (for example a busy provider).
+  unreadable: string[];
 }
 
 export function walk(
@@ -1260,6 +1262,7 @@ export function walk(
           if (e instanceof Error && e.name == "AbortError") {
             return;
           }
+          skipped?.unreadable.push(pathOf(f));
         }
       }
     }
