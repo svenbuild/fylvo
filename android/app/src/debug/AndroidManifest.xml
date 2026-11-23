@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: the address of the development server's simulated provider, so opening a
+     document there in another app can be tried on an emulator (openAtProvider). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="drive.example.com" />
+        </intent>
+    </queries>
+</manifest>

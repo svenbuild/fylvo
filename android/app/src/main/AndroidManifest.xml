@@ -15,6 +15,44 @@
     <!-- In-app updates: hands the APK downloaded from the own server to the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Fylvo 1.6.3: the apps that take a provider's web address (a document opens in the
+         provider's app, ui/files/ConnectedStorages.kt openAtProvider). Android 11 and later show
+         an app only for the addresses named here: the providers' domains (no package names),
+         plus any web address to tell browsers apart. A SharePoint host stands for every
+         *.sharepoint.com (OneDrive for work). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="docs.google.com" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="drive.google.com" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="onedrive.live.com" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="1drv.ms" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="fylvo.sharepoint.com" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <application
         android:name=".FylvoApp"
         android:allowBackup="false"

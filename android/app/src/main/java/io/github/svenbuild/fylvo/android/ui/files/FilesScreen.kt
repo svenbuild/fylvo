@@ -454,7 +454,7 @@ fun FilesScreen(
                 // Fylvo: inside a connected storage the row's bits decide (Connected.tapAction).
                 Connected.isConnected(file.path) -> when (Connected.tapAction(file)) {
                     Connected.Tap.ENTER -> viewModel.navigateTo(file)
-                    Connected.Tap.BROWSER -> Connected.externalUrl(file)?.let { openInBrowser(context, it) }
+                    Connected.Tap.BROWSER -> Connected.externalUrl(file)?.let { openAtProvider(context, it) }
                     Connected.Tap.OPEN -> openFile(file)
                     Connected.Tap.SHEET -> sheetTarget = file
                 }
@@ -1422,7 +1422,7 @@ fun FilesScreen(
             onDismiss = { sheetTarget = null },
             onEnter = { sheetTarget = null; viewModel.navigateTo(file) },
             onOpen = { sheetTarget = null; openFile(file) },
-            onOpenExternal = { url -> sheetTarget = null; openInBrowser(context, url) },
+            onOpenExternal = { url -> sheetTarget = null; openAtProvider(context, url) },
             onDownload = { sheetTarget = null; viewModel.saveToDevice(context, file) },
             onDetails = { sheetTarget = null; detailsTarget = file },
             onRename = { sheetTarget = null; renameTarget = file },

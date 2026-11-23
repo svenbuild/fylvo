@@ -191,6 +191,53 @@ fun openInBrowser(context: Context, url: String) {
 }
 
 /**
+ * Fylvo 1.6.3: opens [url] of a provider (a document that exists only there, "open at the
+ * provider") in the provider's own app when one is installed that takes the address (Google
+ * Docs, Sheets, Slides, Drive; the Microsoft apps), else in the browser as before.
+ *
+ * A plain VIEW goes to the browser on Android 12 and later unless the app's links are verified
+ * or the user allowed them, which the provider apps often are not. So the app is chosen here:
+ * the apps that take this address, without those that take any web address (browsers) and
+ * without Fylvo; one is opened directly, several are offered to choose from, none: browser.
+ * No list of package names.
+ */
+fun openAtProvider(context: Context, url: String) {
+    val uri = Uri.parse(url)
+    val apps = runCatching { providerApps(context, uri) }.getOrDefault(emptyList())
+    val intents = apps.map { a ->
+        Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE).setClassName(a.packageName, a.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        when (intents.size) {
+            0 -> return openInBrowser(context, url)
+            1 -> context.startActivity(intents[0])
+            else -> context.startActivity(
+                Intent.createChooser(intents[0], null)
+                    .putExtra(Intent.EXTRA_INITIAL_INTENTS, intents.drop(1).toTypedArray())
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    } catch (_: ActivityNotFoundException) {
+        openInBrowser(context, url)
+    } catch (_: SecurityException) {
+        openInBrowser(context, url)
+    }
+}
+
+/** The activities other than browsers and Fylvo that take [uri] (see [openAtProvider]). */
+private fun providerApps(context: Context, uri: Uri): List<android.content.pm.ActivityInfo> {
+    val pm = context.packageManager
+    fun handlers(u: Uri) = pm.queryIntentActivities(
+        Intent(Intent.ACTION_VIEW, u).addCategory(Intent.CATEGORY_BROWSABLE),
+        android.content.pm.PackageManager.MATCH_ALL,
+    ).map { it.activityInfo }
+    // A browser takes any web address, also one no app could claim.
+    val browsers = handlers(Uri.parse("https://example.invalid/")).map { it.packageName }.toSet()
+    return handlers(uri).filter { it.packageName !in browsers && it.packageName != context.packageName && it.exported }
+        .distinctBy { it.packageName to it.name }
+}
+
+/**
  * Fylvo: the section "Connected storages" (on Home today; the customisation work may place it
  * elsewhere, one row per storage). Reloads when the app comes back to the foreground, so a
  * storage connected again in the web app shows as usable.
