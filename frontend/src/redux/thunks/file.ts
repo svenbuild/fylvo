@@ -1175,7 +1175,9 @@ export function walk(
     await callback(files, relativePath);
 
     for (const f of files) {
-      if (f.type == FileType.folder) {
+      // Fylvo: in a connected storage, folders that cannot be entered and shortcuts are not
+      // walked into (a shortcut can lead back to a folder above).
+      if (f.type == FileType.folder && folderEnterable(f) && !f.metadata?.[Metadata.connected_link]) {
         var uri = getFileLinkedUri(f);
         if (f.metadata && f.metadata[Metadata.share_redirect]) {
           if (!walkedSymbolicLinks.includes(uri)) {

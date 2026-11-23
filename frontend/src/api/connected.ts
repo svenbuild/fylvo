@@ -17,14 +17,21 @@ export const inConnectedStorage = (path?: string) => {
 };
 
 // Name under which a file is saved: a document of the provider (for example a Google Sheet)
-// downloads in the format named in its metadata, so it gets that extension.
-export const downloadFileName = (file: FileResponse, name: string = file.name) => {
+// downloads in the format named in its metadata, so it gets that extension. taken holds the
+// names already used in the same place; a name in it is not given twice (Budget.gsheet next
+// to Budget.xlsx becomes Budget.gsheet.xlsx). The chosen name is added to taken.
+export const downloadFileName = (file: FileResponse, name: string = file.name, taken?: Set<string>) => {
   const ext = file.metadata?.[Metadata.connected_export];
   if (!ext) {
     return name;
   }
   const dot = name.lastIndexOf(".");
-  return (dot > name.lastIndexOf("/") ? name.slice(0, dot) : name) + "." + ext;
+  let res = (dot > name.lastIndexOf("/") ? name.slice(0, dot) : name) + "." + ext;
+  if (taken?.has(res)) {
+    res = name + "." + ext;
+  }
+  taken?.add(res);
+  return res;
 };
 
 // Whether a folder can be entered: rows of a connected storage say so in their capability

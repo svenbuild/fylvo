@@ -8,9 +8,15 @@ import { useAppDispatch } from "../../../redux/hooks.ts";
 
 let storages: ConnectedStorage[] | undefined;
 let loading: Promise<unknown> | undefined;
+// Raised when the account changes, so an answer for the previous account is dropped.
+let generation = 0;
 const listeners = new Set<(s: ConnectedStorage[] | undefined) => void>();
 
 export const publishConnectedStorages = (next: ConnectedStorage[] | undefined) => {
+  if (!next) {
+    generation++;
+    loading = undefined;
+  }
   storages = next;
   listeners.forEach((l) => l(next));
 };
@@ -23,10 +29,16 @@ export const useConnectedStorages = (enabled = true) => {
   useEffect(() => {
     listeners.add(setValue);
     if (enabled && !storages && !loading) {
-      loading = dispatch(getConnectedStorages())
-        .then((res) => publishConnectedStorages(res.storages))
+      const started = generation;
+      const request = dispatch(getConnectedStorages())
+        .then((res) => started == generation && publishConnectedStorages(res.storages))
         .catch(() => {})
-        .finally(() => (loading = undefined));
+        .finally(() => {
+          if (loading == request) {
+            loading = undefined;
+          }
+        });
+      loading = request;
     }
     return () => {
       listeners.delete(setValue);

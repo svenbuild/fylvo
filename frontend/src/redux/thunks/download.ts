@@ -296,6 +296,8 @@ function startBrowserBatchDownloadTo(
     await dispatch(
       walk(files, async (children, relativePath) => {
         const childFiles = children.filter((f) => f.type == FileType.file);
+        // Names in this folder, so an exported document does not take the name of another file.
+        const takenNames = new Set(children.map((f) => f.name));
         try {
           const entityUrls = await dispatch(
             getFileEntityUrl({
@@ -319,7 +321,9 @@ function startBrowserBatchDownloadTo(
               updateProgress(true);
               continue;
             }
-            const name = (relativePath == "" ? "" : relativePath + "/") + downloadFileName(childFiles[i]);
+            const name =
+              (relativePath == "" ? "" : relativePath + "/") +
+              downloadFileName(childFiles[i], childFiles[i].name, takenNames);
             if (fsPaths.has(name)) {
               if (skipAll) {
                 appendLog(
@@ -470,44 +474,55 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
     } = getState();
     const maxBatch = Math.min(10, max_batch_size ?? 1);
     let current = 0;
+    // Paths in the archive, so an exported document does not take the path of another file.
+    const takenNames = new Set(allFiles.map((f) => f.relativePath));
 
     const readableZipStream = new (window as any).ZIP({
       start(_ctrl: any) {
         // ctrl.close()
       },
       async pull(ctrl: any) {
-        const batch = allFiles.slice(current, current + maxBatch);
-        current += batch.length;
-        if (batch.length == 0) {
-          ctrl.close();
-          return;
-        }
-
-        try {
-          const entityUrls = await dispatch(
-            getFileEntityUrl({
-              uris: batch.map((f) => getFileLinkedUri(f)),
-              skip_error: true,
-              download: true,
-            }),
-          );
-
-          for (let i = 0; i < entityUrls.urls.length; i++) {
-            const url = entityUrls.urls[i];
-            if (!url?.url) {
-              continue;
-            }
-            const res = await fetch(url.url);
-            // Fylvo: an error answer must not become a file in the archive.
-            if (!res.ok) {
-              console.warn("Failed to download", batch[i].relativePath, res.status);
-              continue;
-            }
-            const stream = () => res.body;
-            ctrl.enqueue({ name: downloadFileName(batch[i], batch[i].relativePath), stream });
+        // Fylvo: the archive asks for more only after an entry, so a batch in which every
+        // file failed goes on with the next one instead of ending the download.
+        while (true) {
+          const batch = allFiles.slice(current, current + maxBatch);
+          current += batch.length;
+          if (batch.length == 0) {
+            ctrl.close();
+            return;
           }
-        } catch (e) {
-          console.warn("Failed to get entity urls", e);
+
+          let added = 0;
+          try {
+            const entityUrls = await dispatch(
+              getFileEntityUrl({
+                uris: batch.map((f) => getFileLinkedUri(f)),
+                skip_error: true,
+                download: true,
+              }),
+            );
+
+            for (let i = 0; i < entityUrls.urls.length; i++) {
+              const url = entityUrls.urls[i];
+              if (!url?.url) {
+                continue;
+              }
+              const res = await fetch(url.url);
+              // Fylvo: an error answer must not become a file in the archive.
+              if (!res.ok) {
+                console.warn("Failed to download", batch[i].relativePath, res.status);
+                continue;
+              }
+              const stream = () => res.body;
+              ctrl.enqueue({ name: downloadFileName(batch[i], batch[i].relativePath, takenNames), stream });
+              added++;
+            }
+          } catch (e) {
+            console.warn("Failed to get entity urls", e);
+          }
+          if (added > 0) {
+            return;
+          }
         }
       },
     });
@@ -561,6 +576,17 @@ export function downloadSingleFile(file: FileResponse, preferredEntity?: string)
         });
         return readableStream.pipeTo(fileStream).finally(() => closeSnackbar(downloadingSnackbar));
       }
+    } else if (inConnectedStorage(file.path)) {
+      // Fylvo: the content of a connected storage can still fail at the provider after the
+      // address was given. As a download link, a failure stays a failed download and does
+      // not replace the page.
+      const link = document.createElement("a");
+      link.href = urlRes.urls[0].url;
+      link.download = "";
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     } else {
       window.location.assign(urlRes.urls[0].url);
     }

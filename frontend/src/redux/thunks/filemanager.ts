@@ -221,7 +221,14 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
       // sort by localCompare, if all files in current page is loaded, and sortBy is name.
       const sortBy = listRes.view ? listRes.view.order : currentView?.order;
       const orderDirection = listRes.view ? listRes.view.order_direction : currentView?.order_direction;
-      if (sortBy == "name" && !getPaginationState(list?.pagination).moreItems) {
+      // Fylvo: only a listing that is complete in this answer; a cursor listing continues in
+      // the server's order, which a local order of its first page would break.
+      if (
+        sortBy == "name" &&
+        !getPaginationState(list?.pagination).moreItems &&
+        !opt?.next_page &&
+        !listRes.pagination.next_token
+      ) {
         listRes.files = sortByLocalCompare(listRes.files, listRes.mixed_type, orderDirection == "desc");
       }
     } catch (e) {

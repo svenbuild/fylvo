@@ -7,7 +7,7 @@ import { ContextMenuTypes } from "../../../redux/fileManagerSlice.ts";
 import { Viewers, ViewersByID } from "../../../redux/siteConfigSlice.ts";
 import { ExpandedViewerSetting } from "../../../redux/thunks/viewer.ts";
 import { usableViewers } from "../Connected/usableViewers.ts";
-import { inConnectedStorage } from "../../../api/connected.ts";
+import { folderEnterable, inConnectedStorage } from "../../../api/connected.ts";
 import SessionManager from "../../../session";
 import { fileExtension } from "../../../util";
 import Boolset from "../../../util/boolset.ts";
@@ -324,8 +324,9 @@ export const getActionOpt = (
     display.showDirectLinkManagement = false;
     display.showCreateArchive = false;
     display.showResetThumb = false;
-    display.showPin = false;
-    display.showOrganize = display.showMove || display.showChangeIcon;
+    // Pinned as a link of the sidebar (see pinToSidebar); only folders that can be entered.
+    display.showPin = display.showPin && folderEnterable(targets[0]);
+    display.showOrganize = display.showPin || display.showMove || display.showChangeIcon;
     if (targets.length == 1 && targets[0].metadata?.[Metadata.connected_external_url]) {
       display.showOpenAtProvider = true;
       display.showOpenWith = () => false;
