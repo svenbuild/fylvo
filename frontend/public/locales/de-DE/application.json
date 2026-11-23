@@ -1271,6 +1271,8 @@
     "andMore": "und {{count}} weitere",
     "downloadIncomplete": "Download beendet, aber nicht alles wurde heruntergeladen. Das Protokoll nennt, was fehlt.",
     "archiveBroken": "Das Archiv wurde abgebrochen und ist unvollständig. Bitte nochmals herunterladen.",
-    "storageGone": "Dieser Speicher ist nicht mehr verbunden. Den Link in der Seitenleiste entfernen oder den Speicher neu verbinden."
+    "storageGone": "Dieser Speicher ist nicht mehr verbunden. Den Link in der Seitenleiste entfernen oder den Speicher neu verbinden.",
+    "manyFiles": "Das sind {{count}} Dateien aus einem verbundenen Speicher. Das Herunterladen kann dauern. Fortfahren?",
+    "providerGaveUp": "Der Anbieter war dauerhaft ausgelastet, darum wurde der Download abgebrochen. Was schon da ist, bleibt; den Rest bitte später nochmals versuchen."
   }
 }

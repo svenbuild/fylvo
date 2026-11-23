@@ -2,7 +2,7 @@
 // See service/fylvo/fylvo_connected.go on the server.
 import { CrUriPrefix } from "../util/uri.ts";
 import Boolset from "../util/boolset.ts";
-import { FileResponse, Metadata, NavigatorCapability } from "./explorer.ts";
+import { FileResponse, FileURLResponse, Metadata, NavigatorCapability } from "./explorer.ts";
 import { defaultOpts, send, ThunkResponse } from "./request.ts";
 
 // Filesystem name in the address of a connected storage: <scheme>://<id>@connected/<path>
@@ -165,6 +165,21 @@ export function sendConnectedRename(id: string, name: string): ThunkResponse<Con
 export function sendConnectedDisconnect(id: string): ThunkResponse {
   return async (dispatch) => {
     return await dispatch(send(`/fylvo/connected/${encodeURIComponent(id)}`, { method: "DELETE" }, defaultOpts));
+  };
+}
+
+// The download address of one file, for walking a connected storage: errors (also busy)
+// are thrown as the error of that file and shown by the caller, not as a message each.
+export function getConnectedFileUrl(uri: string): ThunkResponse<string | undefined> {
+  return async (dispatch) => {
+    const res = await dispatch(
+      send<FileURLResponse>(
+        "/file/url",
+        { method: "POST", data: { uris: [uri], download: true } },
+        { ...quietOpts(), skipBatchError: true },
+      ),
+    );
+    return res.urls[0]?.url;
   };
 }
 

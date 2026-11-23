@@ -85,6 +85,12 @@ import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers } from "./viewer.ts";
 import { folderEnterable } from "../../api/connected.ts";
 import { rowUnsupported } from "../../component/FileManager/Connected/ConnectedMark.tsx";
+import {
+  BusyState,
+  newBusyState,
+  ProviderGaveUp,
+  retryBusy,
+} from "../../component/FileManager/Connected/providerRetry.ts";
 
 const contextMenuCloseAnimationDelay = 250;
 
@@ -1183,12 +1189,19 @@ export function walk(
   walkedSymbolicLinks: string[] = [],
   relativePath: string = "",
   skipped?: WalkSkipped,
+  busy?: BusyState,
 ): AppThunk {
   return async (dispatch, _getState) => {
     const pathOf = (f: FileResponse) => (relativePath == "" ? "" : relativePath + "/") + f.name;
-    // Fylvo: a row of a connected storage that cannot be used is left out.
-    const usable = files.filter((f) => !rowUnsupported(f));
-    files.filter(rowUnsupported).forEach((f) => skipped?.names.push(pathOf(f)));
+    // Fylvo: a row of a connected storage that cannot be used is left out, as is a document
+    // of the provider that has no download format.
+    const leaveOut = (f: FileResponse) =>
+      rowUnsupported(f) ||
+      (f.type == FileType.file &&
+        f.metadata?.[Metadata.connected_external_url] !== undefined &&
+        !f.metadata?.[Metadata.connected_export]);
+    const usable = files.filter((f) => !leaveOut(f));
+    files.filter(leaveOut).forEach((f) => skipped?.names.push(pathOf(f)));
     files = usable;
     await callback(files, relativePath);
 
@@ -1217,13 +1230,16 @@ export function walk(
           let nextToken: string | undefined = undefined;
           let page: number | undefined = undefined;
           while (true) {
-            const children: ListResponse = await dispatch(
-              getFileList({
-                next_page_token: nextToken,
-                page,
-                uri,
-                page_size: 1000,
-              }),
+            // Fylvo: a busy provider of a connected storage is waited for (see providerRetry).
+            const children: ListResponse = await retryBusy(busy ?? newBusyState(), () =>
+              dispatch(
+                getFileList({
+                  next_page_token: nextToken,
+                  page,
+                  uri,
+                  page_size: 1000,
+                }),
+              ),
             );
             allChildren.push(...children.files);
             if (skipped && !nextToken && page === undefined) {
@@ -1256,11 +1272,14 @@ export function walk(
             }
           }
           const path = (relativePath == "" ? "" : relativePath + "/") + f.name;
-          await dispatch(walk(allChildren, callback, walkedSymbolicLinks, path, skipped));
+          await dispatch(walk(allChildren, callback, walkedSymbolicLinks, path, skipped, busy));
         } catch (e) {
           console.warn("Failed to load children", e);
           if (e instanceof Error && e.name == "AbortError") {
             return;
+          }
+          if (e instanceof ProviderGaveUp) {
+            throw e;
           }
           skipped?.unreadable.push(pathOf(f));
         }
@@ -1273,7 +1292,11 @@ export interface FileResponseWalked extends FileResponse {
   relativePath: string;
 }
 
-export function walkAll(files: FileResponse[], skipped?: WalkSkipped): AppThunk<Promise<FileResponseWalked[]>> {
+export function walkAll(
+  files: FileResponse[],
+  skipped?: WalkSkipped,
+  busy?: BusyState,
+): AppThunk<Promise<FileResponseWalked[]>> {
   return async (dispatch, _getState): Promise<FileResponseWalked[]> => {
     const allFiles: FileResponseWalked[] = [];
     await dispatch(
@@ -1291,6 +1314,7 @@ export function walkAll(files: FileResponse[], skipped?: WalkSkipped): AppThunk<
         [],
         "",
         skipped,
+        busy,
       ),
     );
     return allFiles;

@@ -28,6 +28,10 @@ export const defaultOpts: requestOpts = {
 
 export const ApiPrefix = "/api/v4";
 
+// Fylvo: see api/connected.ts (not imported here, it imports this module).
+export const ConnectedReconnectCode = 40921;
+export const ConnectedChangedEvent = "fylvo:connected-changed";
+
 const instance = axios.create({
   baseURL: ApiPrefix,
 });
@@ -236,6 +240,11 @@ export function send<T = any>(
             signOutLock = true;
         }
 
+        // Fylvo: a connected storage needs to be connected again; whoever shows its state
+        // (sidebar, breadcrumb, settings) loads the list again.
+        if (resp.data.code == ConnectedReconnectCode) {
+          window.dispatchEvent(new Event(ConnectedChangedEvent));
+        }
         throw new AppError(resp.data);
       }
       return resp.data.data;

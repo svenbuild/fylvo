@@ -25,7 +25,7 @@ import "../../util/zip.js";
 import { closeContextMenu } from "../fileManagerSlice.ts";
 import { DialogSelectOption, setBatchDownloadLog, setBatchDownloadProgress } from "../globalStateSlice.ts";
 import { AppThunk } from "../store.ts";
-import { promiseId, selectOption } from "./dialog.ts";
+import { confirmOperation, promiseId, selectOption } from "./dialog.ts";
 import {
   FileResponseWalked,
   longRunningTaskWithSnackbar,
@@ -34,7 +34,15 @@ import {
   walkAll,
   WalkSkipped,
 } from "./file.ts";
-import { downloadFileName, inConnectedStorage } from "../../api/connected.ts";
+import { downloadFileName, getConnectedFileUrl, inConnectedStorage } from "../../api/connected.ts";
+import {
+  askAboveFiles,
+  errorMessage,
+  fetchContent,
+  newBusyState,
+  ProviderGaveUp,
+  retryBusy,
+} from "../../component/FileManager/Connected/providerRetry.ts";
 
 enum MultipleDownloadOption {
   Browser,
@@ -222,6 +230,15 @@ export function browserBatchDownload(files: FileResponse[]): AppThunk {
     } catch (e) {
       closeSnackbar(snackbarId);
       dispatch(setBatchDownloadProgress({ id: downloadId, progress: { isDownloading: false } }));
+      // Fylvo: the provider of a connected storage stayed busy; the log says what came through.
+      if (e instanceof ProviderGaveUp) {
+        enqueueSnackbar({
+          message: i18next.t("application:connected.providerGaveUp"),
+          variant: "error",
+          persist: true,
+          action: BatchDownloadIncompleteAction(downloadId),
+        });
+      }
     } finally {
       window.removeEventListener("beforeunload", beforeUnloadHandler);
     }
@@ -296,14 +313,35 @@ function startBrowserBatchDownloadTo(
       }
     };
 
+    // Fylvo: busy answers of a connected storage's provider, counted over the whole download.
+    const busy = newBusyState();
+    const connected = files.some((f) => inConnectedStorage(f.path));
+
     // Count total files and total expected bytes by walking the tree
     await dispatch(
-      walk(files, async (children) => {
-        const childFiles = children.filter((f) => f.type == FileType.file);
-        totalFiles += childFiles.length;
-        totalExpectedBytes += childFiles.reduce((sum, f) => sum + (f.size || 0), 0);
-      }),
+      walk(
+        files,
+        async (children) => {
+          const childFiles = children.filter((f) => f.type == FileType.file);
+          totalFiles += childFiles.length;
+          totalExpectedBytes += childFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+        },
+        [],
+        "",
+        undefined,
+        busy,
+      ),
     );
+
+    // Fylvo: many files from a connected storage take a while; ask first.
+    if (connected && totalFiles >= askAboveFiles) {
+      try {
+        await dispatch(confirmOperation(i18next.t("application:connected.manyFiles", { count: totalFiles })));
+      } catch (e) {
+        appendLog(i18next.t("modals.directoryDownloadCancelled"));
+        return false;
+      }
+    }
 
     updateProgress(true);
 
@@ -319,21 +357,42 @@ function startBrowserBatchDownloadTo(
           // Names in this folder, so an exported document does not take the name of another file.
           const takenNames = new Set(children.map((f) => f.name.toLowerCase()));
           try {
-            const entityUrls = await dispatch(
-              getFileEntityUrl({
-                uris: childFiles.map((f) => getFileLinkedUri(f)),
-                download: true,
-                skip_error: true,
-              }),
-            );
+            // Fylvo: in a connected storage each address is asked for right before its file:
+            // it is valid for about an hour and only for the version of that moment.
+            const oneByOne = childFiles.some((f) => inConnectedStorage(f.path));
+            const entityUrls = oneByOne
+              ? undefined
+              : await dispatch(
+                  getFileEntityUrl({
+                    uris: childFiles.map((f) => getFileLinkedUri(f)),
+                    download: true,
+                    skip_error: true,
+                  }),
+                );
 
-            for (let i = 0; i < entityUrls.urls.length; i++) {
+            for (let i = 0; i < childFiles.length; i++) {
+              let url = entityUrls?.urls[i]?.url;
+              let urlError = "failed to get download url";
+              if (oneByOne) {
+                try {
+                  url = await retryBusy(
+                    busy,
+                    () => dispatch(getConnectedFileUrl(getFileLinkedUri(childFiles[i]))),
+                    cancelSignals[downloadId].signal,
+                  );
+                } catch (e) {
+                  if (e instanceof ProviderGaveUp || (e instanceof Error && e.name == "AbortError")) {
+                    throw e;
+                  }
+                  urlError = errorMessage(e);
+                }
+              }
               // Fylvo: an address the server could not give comes back empty.
-              if (!entityUrls.urls[i]?.url) {
+              if (!url) {
                 appendLog(
                   i18next.t("modals.directoryDownloadErrorNotification", {
                     name: childFiles[i].name,
-                    msg: "failed to get download url",
+                    msg: urlError,
                   }),
                 );
                 failed++;
@@ -415,13 +474,12 @@ function startBrowserBatchDownloadTo(
 
               updateProgress(true);
               try {
-                const res = await fetch(entityUrls.urls[i].url, {
-                  signal: cancelSignals[downloadId].signal,
-                });
-                // Fylvo: an error answer must not become the file.
-                if (!res.ok) {
-                  throw new Error(`HTTP ${res.status}`);
-                }
+                // Fylvo: an error answer must not become the file; a busy provider is waited for.
+                const res = await retryBusy(
+                  busy,
+                  () => fetchContent(url!, cancelSignals[downloadId].signal),
+                  cancelSignals[downloadId].signal,
+                );
 
                 // Stream the response directly to disk to avoid buffering
                 // the entire file in memory
@@ -443,6 +501,9 @@ function startBrowserBatchDownloadTo(
                   appendLog(i18next.t("modals.directoryDownloadCancelled"));
                   throw e;
                 }
+                if (e instanceof ProviderGaveUp) {
+                  throw e;
+                }
                 failed++;
                 filesCompleted++;
                 updateProgress(true);
@@ -458,6 +519,10 @@ function startBrowserBatchDownloadTo(
             if (e instanceof Error && e.name == "AbortError") {
               throw e;
             }
+            if (e instanceof ProviderGaveUp) {
+              appendLog(i18next.t("application:connected.providerGaveUp"));
+              throw e;
+            }
             failed += childFiles.length;
             filesCompleted += childFiles.length;
             updateProgress(true);
@@ -471,6 +536,7 @@ function startBrowserBatchDownloadTo(
         [],
         "",
         skipped,
+        busy,
       ),
     );
 
@@ -520,12 +586,36 @@ const skippedNotes = (skipped: WalkSkipped): string[] => {
 export function streamSaverDownload(files: FileResponse[]): AppThunk {
   return async (dispatch, getState) => {
     const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [] };
+    // Fylvo: busy answers of a connected storage's provider, counted over the whole download.
+    const busy = newBusyState();
+    const connected = files.some((f) => inConnectedStorage(f.path));
     // Files and folders: an exported name must not take the path of a folder either.
-    const allWalked = await longRunningTaskWithSnackbar(
-      dispatch(walkAll(files, skipped)),
-      "application:fileManager.preparingBathDownload",
-    );
+    let allWalked: FileResponseWalked[];
+    try {
+      allWalked = await longRunningTaskWithSnackbar(
+        dispatch(walkAll(files, skipped, busy)),
+        "application:fileManager.preparingBathDownload",
+      );
+    } catch (e) {
+      if (e instanceof ProviderGaveUp) {
+        enqueueSnackbar({
+          message: i18next.t("application:connected.providerGaveUp"),
+          variant: "error",
+          action: DefaultCloseAction,
+        });
+        return;
+      }
+      throw e;
+    }
     const allFiles = allWalked.filter((f) => f.type == FileType.file);
+    // Fylvo: many files from a connected storage take a while; ask first.
+    if (connected && allFiles.length >= askAboveFiles) {
+      try {
+        await dispatch(confirmOperation(i18next.t("application:connected.manyFiles", { count: allFiles.length })));
+      } catch (e) {
+        return;
+      }
+    }
 
     const fileStream = streamSaver.createWriteStream(formatLocalTime(dayjs()) + ".zip");
     const {
@@ -535,7 +625,9 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
         },
       },
     } = getState();
-    const maxBatch = Math.min(10, max_batch_size ?? 1);
+    // Fylvo: in a connected storage one address at a time, right before its file.
+    const maxBatch = connected ? 1 : Math.min(10, max_batch_size ?? 1);
+    let gaveUp = false;
     let current = 0;
     // Paths in the archive, so an exported document does not take the path of another file.
     const takenNames = new Set(allWalked.map((f) => f.relativePath.toLowerCase()));
@@ -559,23 +651,39 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
               return;
             }
             try {
-              const entityUrls = await dispatch(
-                getFileEntityUrl({
-                  uris: batch.map((f) => getFileLinkedUri(f)),
-                  skip_error: true,
-                  download: true,
-                }),
-              );
-              batch.forEach((file, i) => {
-                const url = entityUrls.urls[i]?.url;
+              if (connected) {
+                const url = await retryBusy(busy, () => dispatch(getConnectedFileUrl(getFileLinkedUri(batch[0]))));
                 if (url) {
-                  pending.push({ file, url });
+                  pending.push({ file: batch[0], url });
                 } else {
-                  failedNames.push(file.relativePath);
+                  failedNames.push(batch[0].relativePath);
                 }
-              });
+              } else {
+                const entityUrls = await dispatch(
+                  getFileEntityUrl({
+                    uris: batch.map((f) => getFileLinkedUri(f)),
+                    skip_error: true,
+                    download: true,
+                  }),
+                );
+                batch.forEach((file, i) => {
+                  const url = entityUrls.urls[i]?.url;
+                  if (url) {
+                    pending.push({ file, url });
+                  } else {
+                    failedNames.push(file.relativePath);
+                  }
+                });
+              }
             } catch (e) {
               console.warn("Failed to get entity urls", e);
+              if (e instanceof ProviderGaveUp) {
+                // The provider stayed busy: the archive ends here, the rest is named as missing.
+                gaveUp = true;
+                failedNames.push(...allFiles.slice(current - batch.length).map((f) => f.relativePath));
+                ctrl.close();
+                return;
+              }
               failedNames.push(...batch.map((f) => f.relativePath));
             }
             continue;
@@ -583,17 +691,21 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
 
           const next = pending.shift()!;
           try {
-            const res = await fetch(next.url);
-            // An error answer must not become a file in the archive.
-            if (!res.ok) {
-              throw new Error(`HTTP ${res.status}`);
-            }
+            // An error answer must not become a file in the archive; a busy provider is waited for.
+            const res = await retryBusy(busy, () => fetchContent(next.url));
             const stream = () => res.body;
             ctrl.enqueue({ name: downloadFileName(next.file, next.file.relativePath, takenNames), stream });
             return;
           } catch (e) {
             console.warn("Failed to download", next.file.relativePath, e);
             failedNames.push(next.file.relativePath);
+            if (e instanceof ProviderGaveUp) {
+              gaveUp = true;
+              failedNames.push(...pending.map((p) => p.file.relativePath));
+              failedNames.push(...allFiles.slice(current).map((f) => f.relativePath));
+              ctrl.close();
+              return;
+            }
           }
         }
       },
@@ -617,6 +729,9 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
       }
       // Fylvo: name what is missing from the archive.
       const notes = skippedNotes(skipped);
+      if (gaveUp) {
+        notes.unshift(i18next.t("application:connected.providerGaveUp"));
+      }
       if (failedNames.length > 0) {
         notes.push(
           i18next.t("application:connected.downloadFailed", {

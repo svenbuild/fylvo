@@ -1193,6 +1193,8 @@
     "andMore": "and {{count}} more",
     "downloadIncomplete": "Download finished, but not everything was downloaded. The log says what is missing.",
     "archiveBroken": "The archive was broken off and is incomplete. Please download again.",
-    "storageGone": "This storage is no longer connected. Remove the link in the sidebar, or connect the storage again."
+    "storageGone": "This storage is no longer connected. Remove the link in the sidebar, or connect the storage again.",
+    "manyFiles": "These are {{count}} files from a connected storage. Downloading them can take a while. Continue?",
+    "providerGaveUp": "The storage provider stayed busy, so the download was stopped. What came through is kept; please try the rest later."
   }
 }

@@ -57,6 +57,7 @@ import Dismiss from "../../../Icons/Dismiss.tsx";
 import Edit from "../../../Icons/Edit.tsx";
 import SettingForm from "../SettingForm.tsx";
 import { publishConnectedStorages } from "../../../FileManager/Connected/useConnectedStorages.ts";
+import { loadPrefs } from "../../../../redux/thunks/fylvo.ts";
 
 // The settings tab of connected storages: list, connect, rename, reconnect, disconnect.
 // The browser comes back here from the provider with ?finish=<code> or ?error=<value>.
@@ -591,6 +592,8 @@ const ConnectedSetting = () => {
   const onDisconnected = (id: string) => {
     listChanges++;
     setList((l) => l && { ...l, storages: l.storages.filter((s) => s.id != id) });
+    // The server drops the sidebar entries into it; show that at once.
+    dispatch(loadPrefs());
     enqueueSnackbar({ message: t("connected.disconnected"), variant: "success", action: DefaultCloseAction });
   };
 
