@@ -103,7 +103,11 @@ interface ApiService {
     suspend fun download(@Url url: String): Response<ResponseBody>
 
     @GET("api/v4/file/thumb")
-    suspend fun thumb(@Query("uri") uri: String): Response<ApiResponse<ThumbResponse>>
+    suspend fun thumb(
+        @Query("uri") uri: String,
+        /** Fylvo 1.6: in a connected storage, the version the row shows (40076 when it is not). */
+        @Query("entity") entity: String? = null,
+    ): Response<ApiResponse<ThumbResponse>>
 
     @GET("api/v4/workflow")
     suspend fun listTasks(
