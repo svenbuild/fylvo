@@ -1404,7 +1404,7 @@
     "used": "Used"
   },
   "connected": {
-    "trademarks": "Google Drive is a trademark of Google LLC. Use of this trademark is subject to Google Permissions.",
+    "trademarks": "Google Drive is a trademark of Google LLC. Use of this trademark is subject to Google Permissions. OneDrive is a trademark of the Microsoft group of companies.",
     "title": "Connected storages",
     "des": "Users can show their Google Drive or OneDrive next to their own files. Register an OAuth client of this server at each provider you want to offer and enter it here. Which groups may connect storages is set per group.",
     "callbackUrl": "Redirect URI",
