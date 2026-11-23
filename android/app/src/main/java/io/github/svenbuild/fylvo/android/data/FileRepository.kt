@@ -288,7 +288,7 @@ class FileRepository(private val api: ApiClient) {
 
     /** Fylvo: inside a connected storage a taken name is refused instead of numbered. */
     suspend fun mkdir(uri: String) {
-        api.service().createFile(CreateFileRequest(uri = uri, type = "folder", errOnConflict = Connected.isConnected(uri))).unwrapEmpty()
+        writeService(uri).createFile(CreateFileRequest(uri = uri, type = "folder", errOnConflict = Connected.isConnected(uri))).unwrapEmpty()
     }
 
     /**

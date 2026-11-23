@@ -66,7 +66,7 @@ fun UploadConflictDialog(
         },
         text = {
             Column {
-                Text(stringResource(R.string.upload_conflict_note))
+                Text(stringResource(if (connected) R.string.upload_conflict_note_connected else R.string.upload_conflict_note))
                 if (conflicts.size > 1) {
                     Text(
                         conflicts.take(5).joinToString("\n") + if (conflicts.size > 5) "\n…" else "",

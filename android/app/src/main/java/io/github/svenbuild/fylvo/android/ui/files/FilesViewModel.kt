@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
 import io.github.svenbuild.fylvo.android.R
@@ -352,7 +353,8 @@ class FilesViewModel(
                     nextToken = if (dropToken) null else _state.value.nextToken,
                     error = if (cached == null) userError(e) else null,
                     errorCode = if (cached == null) Connected.codeOf(e) else null,
-                    snackbar = if (cached != null) failure(e) else null,
+                    // Fylvo: a message still waiting (an upload's result) is not dropped.
+                    snackbar = if (cached != null) failure(e) else _state.value.snackbar,
                     // Fylvo: nothing listed to act on behind the error screen.
                     selected = if (cached == null) emptySet() else _state.value.selected,
                 )
@@ -547,6 +549,7 @@ class FilesViewModel(
         }
         _state.value = _state.value.copy(snackbar = UiMessage(message, long = Connected.isConnected(u.parentUri) && u.failed > 0))
         // Fylvo: a connected folder is listed again after any upload into it (an unknown outcome too).
+        if (Connected.isConnected(u.parentUri)) listingCache.remove(u.parentUri)
         if (u.uploaded > 0 || Connected.isConnected(u.parentUri)) {
             if (_state.value.home) loadRecent() else if (u.parentUri == _state.value.currentUri) refresh()
         }
@@ -1276,17 +1279,20 @@ class FilesViewModel(
             _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.error_bad_name))) }
             return false
         }
-        return try {
-            repo.mkdir(CrUri.join(parent, name))
-            listingCache.remove(parent)
-            if (parent == _state.value.currentUri) refresh()
-            true
-        } catch (e: CancellationException) {
-            throw e // the picker closed meanwhile: nothing to say
-        } catch (e: Exception) {
-            _state.update { it.copy(snackbar = failure(e)) }
-            false
-        }
+        // In the view model's scope: a confirmed folder is created also when the picker closes.
+        return viewModelScope.async {
+            try {
+                repo.mkdir(CrUri.join(parent, name))
+                listingCache.remove(parent)
+                if (parent == _state.value.currentUri) refresh()
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(snackbar = failure(e)) }
+                false
+            }
+        }.await()
     }
 
     fun rename(file: FileObject, newName: String) {
@@ -1298,6 +1304,7 @@ class FilesViewModel(
         viewModelScope.launch {
             // Fylvo: inside a connected storage the row's id goes along (taken from the row acted on).
             runCatching { repo.rename(file.path, newName, Connected.idsOf(listOf(file))) }
+                .also { if (Connected.isConnected(file.path)) listingCache.remove(CrUri.parent(file.path)) }
                 .onSuccess {
                     // Fylvo: the old name leaves the selection.
                     _state.value = _state.value.copy(selected = _state.value.selected - file.path)

@@ -503,4 +503,5 @@
     <string name="upload_outcome_unknown">%1$s: Es ist nicht bekannt, ob das Hochladen angekommen ist. Fylvo hat die Datei nicht nochmal gesendet; sie bleibt auf dem Handy. Bitte im Ordner nachsehen.</string>
     <string name="could_not_upload_reason">%1$s: %2$s</string>
     <string name="uploaded_some_failed_reason">%1$d hochgeladen, %2$d fehlgeschlagen. %3$s</string>
+    <string name="upload_conflict_note_connected">Beide behalten lädt unter neuem Namen hoch. Überspringen lässt diese Dateien weg.</string>
 </resources>

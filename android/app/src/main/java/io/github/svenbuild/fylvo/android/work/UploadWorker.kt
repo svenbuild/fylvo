@@ -88,6 +88,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             batch = batch.with(i, change)
             queue.save(batch)
         }
+        var progressed = false // a file finished in this run (read and written under [lock])
         try {
             // Sessions left by a run that was stopped half way. While our session exists, its
             // placeholder and lock hold the name, so nobody else can put a file there: if the file
@@ -98,7 +99,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 // Fylvo: a connected storage says itself where the upload stands (see resolveConnected).
                 if (item.state == UploadItem.State.Pending && item.sessionId != null && Connected.isConnected(parentUri)) {
                     when (val r = resolveConnected(app, item)) {
-                        Resume.Done -> update(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null) }
+                        Resume.Done -> {
+                            update(i) { it.copy(state = UploadItem.State.Done, sessionId = null, targetUri = null) }
+                            progressed = true
+                        }
                         Resume.Resend -> update(i) { it.copy(sessionId = null, targetUri = null, interrupted = true) }
                         Resume.Unknown -> update(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null, unknownOutcome = true) }
                         is Resume.Failed -> {
@@ -154,7 +158,6 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             // A network or server problem in one upload: the others finish the file they are on
             // (cancelling them could leave a session the list does not know), then the run stops.
             val stop = java.util.concurrent.atomic.AtomicReference<Outcome.TryLater?>(null)
-            var progressed = false // a file finished in this run (read and written under [lock])
 
             // Fylvo: one file at a time into a connected storage (the server talks to the provider with two).
             val lanes = if (Connected.isConnected(parentUri)) 1 else parallelUploads()
@@ -193,7 +196,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                             progressed = true
                                         }
                                         is Outcome.Failed -> {
-                                            val end = endSession(app, synchronized(lock) { batch.items[i] })
+                                            val end = endSession(app, synchronized(lock) { batch.items[i] }, parentUri)
                                             synchronized(lock) {
                                                 inFlight.remove(i)
                                                 update(i) {
@@ -217,7 +220,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                             if (!outcome.network && tries + 1 >= MAX_ATTEMPTS) {
                                                 // This one file keeps failing on the server: give it up
                                                 // alone, the others go on.
-                                                val end = endSession(app, synchronized(lock) { batch.items[i] })
+                                                val end = endSession(app, synchronized(lock) { batch.items[i] }, parentUri)
                                                 synchronized(lock) {
                                                     inFlight.remove(i)
                                                     update(i) {
@@ -257,7 +260,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 }
                 batch.items.forEachIndexed { i, item ->
                     if (item.state == UploadItem.State.Pending) {
-                        val end = endSession(app, item)
+                        val end = endSession(app, item, parentUri)
                         update(i) {
                             it.copy(
                                 state = if (end == Resume.Done) UploadItem.State.Done else UploadItem.State.Failed,
@@ -386,7 +389,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 null -> return Resume.Later
                 0, ApiException.CODE_UPLOAD_SESSION_EXPIRED, ApiException.CODE_PATH_NOT_EXIST -> Unit
                 // HTTP statuses of a proxy or a busy server (404 aside) and login trouble: ask again later.
-                ApiException.CODE_LOGIN_REQUIRED, Connected.CODE_BUSY, in 400..403, in 405..599, in 50000..59999 -> return Resume.Later
+                ApiException.CODE_LOGIN_REQUIRED, Connected.CODE_BUSY, ApiException.CODE_LOCK_CONFLICT,
+                in 400..403, in 405..599, in 50000..59999 -> return Resume.Later
                 else -> return Resume.Unknown
             }
             connectedResume(app.fileRepository.connected.uploadState(session)) ?: Resume.Later
@@ -407,9 +411,9 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
      * storage it is resolved first, so an upload that arrived counts as done and an unclear one
      * as unknown; elsewhere it is cancelled as before.
      */
-    private suspend fun endSession(app: FylvoApp, item: UploadItem): Resume {
+    private suspend fun endSession(app: FylvoApp, item: UploadItem, parentUri: String): Resume {
         if (item.sessionId == null) return Resume.Resend
-        if (!Connected.isConnected(item.targetUri.orEmpty())) {
+        if (!Connected.isConnected(parentUri)) {
             cancelSession(app, item)
             return Resume.Resend
         }
