@@ -35,6 +35,11 @@ func FylvoConnectedCallback(c *gin.Context) {
 	fylvo.ConnectedCallback(c)
 }
 
+// FylvoConnectedStart is the page an app sends the system browser to, and its button.
+func FylvoConnectedStart(c *gin.Context) {
+	fylvo.ConnectedStart(c)
+}
+
 // FylvoConnectedFinish completes connecting a storage.
 func FylvoConnectedFinish(c *gin.Context) {
 	service := ParametersFromContext[*fylvo.ConnectedFinishService](c, fylvo.ConnectedFinishParamCtx{})

@@ -215,7 +215,8 @@ func devOptions(o *ManagerOptions) {
 		if err := call(ctx, d.tokens.URL+"/whoami", &who); err != nil {
 			return nil, err
 		}
-		return &Identity{Key: who.Key, Label: who.Label}, nil
+		// Like Google: the address of the account is what an app shows before it stores.
+		return &Identity{Key: who.Key, Label: who.Label, Shown: who.Label, Kind: AccountAddress}, nil
 	}
 	spec.NewProvider = func(_ *http.Client, auth provider.Auth, _ map[string]string) provider.Provider {
 		return drive.New(drive.Options{HTTP: d.sim.Client(), Auth: auth, BaseURL: d.sim.URL()})

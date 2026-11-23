@@ -93,6 +93,9 @@ func TestConnectedOfficeEdit(t *testing.T) {
 	require.Equal(t, "/edit", src.Path)
 	require.True(t, strings.HasSuffix(src.Query().Get("WOPISrc"), "/api/v4/fylvo/connected/wopi/"+session), src.Query().Get("WOPISrc"))
 	require.NotContains(t, res.WopiSrc, token, "the token is not part of an address")
+	// The answer says that this session saves.
+	require.NotNil(t, res.Edit)
+	require.True(t, *res.Edit)
 
 	// CheckFileInfo.
 	rec, _ := e.office(ConnectedOfficeInfo, http.MethodGet, session, token, nil)
@@ -173,6 +176,9 @@ func TestConnectedOfficeOnlyForWhatItIsFor(t *testing.T) {
 		require.NoError(t, err, path)
 		src, _ := url.Parse(res.WopiSrc)
 		require.Equal(t, "/view", src.Path, path)
+		// The answer says that the session only shows, whatever was asked for.
+		require.NotNil(t, res.Edit, path)
+		require.False(t, *res.Edit, path)
 		rec, _ := e.office(ConnectedOfficeInfo, http.MethodGet, res.Session.ID, res.Session.AccessToken, nil)
 		var info WopiFileInfo
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &info))
@@ -208,6 +214,7 @@ func TestConnectedOfficeOnlyForWhatItIsFor(t *testing.T) {
 	t.Setenv(connected.EnvWrite, "")
 	res, err := e.officeSession(t, "/letter.docx", types.ViewerActionEdit)
 	require.NoError(t, err)
+	require.False(t, *res.Edit)
 	rec, _ := e.office(ConnectedOfficePut, http.MethodPost, res.Session.ID, res.Session.AccessToken, []byte("x"))
 	require.Equal(t, http.StatusForbidden, rec.Code)
 }

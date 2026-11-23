@@ -41,6 +41,9 @@ type (
 		Max       int                      `json:"max"`
 		Providers []connected.ProviderInfo `json:"providers"`
 		Storages  []*connected.Storage     `json:"storages"`
+		// AppSignin tells whether an app can connect storages through the address this
+		// request came under (see fylvo_connected_app.go).
+		AppSignin bool `json:"app_signin"`
 	}
 
 	ConnectedAuthorizeParamCtx struct{}
@@ -48,15 +51,28 @@ type (
 		Provider string `json:"provider" binding:"required"`
 		// Reconnect is the id of a connection whose token is to be renewed.
 		Reconnect string `json:"reconnect"`
+		// Client is "app" when an app asks, which opens the system browser for the
+		// sign-in. Challenge is then the hash of the secret the app keeps.
+		Client    string `json:"client"`
+		Challenge string `json:"challenge"`
 	}
 	ConnectedAuthorizeResponse struct {
-		// URL is the consent page of the provider, to be opened in this browser.
+		// URL is the consent page of the provider, to be opened in this browser. For an
+		// app: the start page of this installation, to be opened in the system browser.
 		URL string `json:"url"`
+		// Attempt is the id an app knows its sign-in by.
+		Attempt string `json:"attempt,omitempty"`
 	}
 
 	ConnectedFinishParamCtx struct{}
 	ConnectedFinishService  struct {
 		Code string `json:"code" binding:"required"`
+		// Verifier is the secret of the app that started the sign-in; the web app has none.
+		Verifier string `json:"verifier"`
+		// Preview asks who signed in at the provider and stores nothing. Cancel drops
+		// the result. Both are for sign-ins from apps.
+		Preview bool `json:"preview"`
+		Cancel  bool `json:"cancel"`
 	}
 
 	ConnectedRenameParamCtx struct{}
@@ -147,6 +163,7 @@ func ConnectedList(c *gin.Context) (*ConnectedListResponse, error) {
 		Max:       connected.MaxPerUser,
 		Providers: providers,
 		Storages:  storages,
+		AppSignin: appSigninHere(c, dep),
 	}, nil
 }
 
@@ -154,8 +171,19 @@ func ConnectedList(c *gin.Context) (*ConnectedListResponse, error) {
 func (s *ConnectedAuthorizeService) Authorize(c *gin.Context) (*ConnectedAuthorizeResponse, error) {
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
+	switch {
+	case s.Client != "" && s.Client != connectedClientApp:
+		return nil, paramError("unknown client")
+	case s.Client == "" && s.Challenge != "":
+		return nil, paramError("a challenge comes only from an app")
+	case s.Client != "" && !connected.ValidChallenge(s.Challenge):
+		return nil, paramError("invalid challenge")
+	}
 	if !mayConnectStorages(user) {
 		return nil, connected.ErrNotAllowed
+	}
+	if s.Client == connectedClientApp {
+		return s.authorizeApp(c, dep, user)
 	}
 	// The provider sends the browser back to the first site address, and the cookie
 	// of the sign-in is for one host. Started under another address of the
@@ -204,17 +232,22 @@ func setConnectedCookie(c *gin.Context, dep dependency.Dep, name, value string, 
 // redirect to the web app, which completes the sign-in as the signed-in account.
 func ConnectedCallback(c *gin.Context) {
 	dep := dependency.FromContext(c)
+	if connected.IsAppState(c.Query("state")) {
+		// A sign-in an app started ends on a page with the link back to the app.
+		connectedAppCallback(c, dep)
+		return
+	}
 	name := connectedCookieName(c.Request.URL.String())
 	cookie, _ := c.Cookie(name)
 	setConnectedCookie(c, dep, name, "", -1)
 
 	target := primarySiteURL(c, dep).ResolveReference(&url.URL{Path: connectedSettingsPage})
 	q := url.Values{"tab": {"connected"}}
-	finish, err := connected.For(dep).Callback(c, c.Query("state"), cookie, c.Query("code"), c.Query("error"))
+	out, err := connected.For(dep).Callback(c, c.Query("state"), cookie, c.Query("code"), c.Query("error"))
 	if err != nil {
 		q.Set("error", connected.FlowErrorCode(err))
 	} else {
-		q.Set("finish", finish)
+		q.Set("finish", out.Finish)
 	}
 	target.RawQuery = q.Encode()
 
@@ -223,14 +256,38 @@ func ConnectedCallback(c *gin.Context) {
 	c.Redirect(http.StatusFound, target.String())
 }
 
-// Finish stores the connection for the account that started the sign-in.
-func (s *ConnectedFinishService) Finish(c *gin.Context) (*connected.Storage, error) {
+// Finish stores the connection for the account that started the sign-in. For a sign-in
+// from an app it can also only show who signed in at the provider (a *connected.SignedIn),
+// or drop the result.
+func (s *ConnectedFinishService) Finish(c *gin.Context) (any, error) {
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
+	m := connected.For(dep)
+	if s.Preview && s.Cancel {
+		return nil, paramError("preview and cancel exclude each other")
+	}
+	if (s.Verifier != "" || s.Preview || s.Cancel) && !appSigninHere(c, dep) {
+		return nil, connected.ErrAppSigninOff
+	}
+	if s.Cancel {
+		// Dropping a result needs the account and the verifier, not the right to connect.
+		return nil, m.Cancel(user.ID, s.Code, s.Verifier)
+	}
 	if !mayConnectStorages(user) {
 		return nil, connected.ErrNotAllowed
 	}
-	return connected.For(dep).Finish(c, user.ID, s.Code)
+	if s.Preview {
+		signedIn, err := m.Preview(user.ID, s.Code, s.Verifier)
+		if err != nil {
+			return nil, err
+		}
+		return signedIn, nil
+	}
+	storage, err := m.Finish(c, user.ID, s.Code, s.Verifier)
+	if err != nil {
+		return nil, err
+	}
+	return storage, nil
 }
 
 // Rename changes the name of the connection with the given id.

@@ -101,6 +101,7 @@ func connectedViewerSession(c *gin.Context, uri *fs.URI, s *CreateViewerSessionS
 			Expires:     session.Expires.Add(-connectedSessionPadding).UnixMilli(),
 		},
 		WopiSrc: src.String(),
+		Edit:    &session.Edit,
 	}, nil
 }
 
