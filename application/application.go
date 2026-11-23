@@ -22,6 +22,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/email"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/onedrive"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/workflows"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -109,6 +110,11 @@ func (s *server) Start() error {
 
 		// Initialize email queue before user traffic starts.
 		_ = s.dep.EmailClient(context.Background())
+
+		// Fylvo: archive tasks that finished before they forgot their passwords at the end.
+		if err := workflows.ForgetArchiveSecrets(context.Background(), s.dep.DBClient()); err != nil {
+			s.logger.Warning("Failed to clear the passwords of finished archive tasks: %s", err)
+		}
 
 		// Start all queues
 		s.dep.MediaMetaQueue(context.Background()).Start()

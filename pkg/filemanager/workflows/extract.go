@@ -36,6 +36,7 @@ type (
 
 		l        logging.Logger
 		state    *ExtractArchiveTaskState
+		secrets  *archiveSecrets
 		progress queue.Progresses
 		node     cluster.Node
 	}
@@ -50,8 +51,10 @@ type (
 		SlaveTaskID     int      `json:"slave_task_id,omitempty"`
 		Password        string   `json:"password,omitempty"`
 		FileMask        []string `json:"file_mask,omitempty"`
-		NodeState       `json:",inline"`
-		Phase           ExtractArchiveTaskPhase `json:"phase,omitempty"`
+		// Secrets: Password and the passwords of Uri and Dst, sealed (Fylvo, see fylvo_archive_secrets.go).
+		Secrets   []byte `json:"secrets,omitempty"`
+		NodeState `json:",inline"`
+		Phase     ExtractArchiveTaskPhase `json:"phase,omitempty"`
 	}
 )
 
@@ -82,6 +85,9 @@ func NewExtractArchiveTask(ctx context.Context, src, dst, encoding, password str
 		NodeState: NodeState{},
 		Password:  password,
 		FileMask:  mask,
+	}
+	if _, err := loadArchiveSecrets(ctx, &state.Secrets, &state.Password, &state.Uri, &state.Dst); err != nil {
+		return nil, err
 	}
 	stateBytes, err := json.Marshal(state)
 	if err != nil {
@@ -128,6 +134,11 @@ func (m *ExtractArchiveTask) Do(ctx context.Context) (task.Status, error) {
 		return task.StatusError, fmt.Errorf("failed to unmarshal state: %w", err)
 	}
 	m.state = state
+	secrets, err := loadArchiveSecrets(ctx, &state.Secrets, &state.Password, &state.Uri, &state.Dst)
+	if err != nil {
+		return task.StatusError, fmt.Errorf("%w (%w)", err, queue.CriticalErr)
+	}
+	m.secrets = secrets
 
 	// select node
 	node, err := allocateNode(ctx, dep, &m.state.NodeState, types.NodeCapabilityExtractArchive)
@@ -170,7 +181,7 @@ func (m *ExtractArchiveTask) Do(ctx context.Context) (task.Status, error) {
 }
 
 func (m *ExtractArchiveTask) createSlaveExtractTask(ctx context.Context, dep dependency.Dep) (task.Status, error) {
-	uri, err := fs.NewUriFromString(m.state.Uri)
+	uri, err := fs.NewUriFromString(m.secrets.uri(m.state.Uri))
 	if err != nil {
 		return task.StatusError, fmt.Errorf("failed to parse src uri: %s (%w)", err, queue.CriticalErr)
 	}
@@ -208,9 +219,9 @@ func (m *ExtractArchiveTask) createSlaveExtractTask(ctx context.Context, dep dep
 		Entity:   entityModel,
 		Policy:   policy,
 		Encoding: m.state.Encoding,
-		Dst:      m.state.Dst,
+		Dst:      m.secrets.uri(m.state.Dst),
 		UserID:   user.ID,
-		Password: m.state.Password,
+		Password: m.secrets.Password,
 		FileMask: m.state.FileMask,
 	}
 
@@ -258,12 +269,12 @@ func (m *ExtractArchiveTask) awaitSlaveExtractComplete(ctx context.Context, dep 
 }
 
 func (m *ExtractArchiveTask) masterExtractArchive(ctx context.Context, dep dependency.Dep) (task.Status, error) {
-	uri, err := fs.NewUriFromString(m.state.Uri)
+	uri, err := fs.NewUriFromString(m.secrets.uri(m.state.Uri))
 	if err != nil {
 		return task.StatusError, fmt.Errorf("failed to parse src uri: %s (%w)", err, queue.CriticalErr)
 	}
 
-	dst, err := fs.NewUriFromString(m.state.Dst)
+	dst, err := fs.NewUriFromString(m.secrets.uri(m.state.Dst))
 	if err != nil {
 		return task.StatusError, fmt.Errorf("failed to parse dst uri: %s (%w)", err, queue.CriticalErr)
 	}
@@ -290,7 +301,7 @@ func (m *ExtractArchiveTask) masterExtractArchive(ctx context.Context, dep depen
 
 	defer es.Close()
 
-	m.l.Info("Extracting archive %q to %q", uri, m.state.Dst)
+	m.l.Info("Extracting archive %q to %q", m.state.Uri, m.state.Dst)
 	// Identify file format
 	format, readStream, err := archives.Identify(ctx, archiveFile.DisplayName(), es)
 	if err != nil {
@@ -344,11 +355,11 @@ func (m *ExtractArchiveTask) masterExtractArchive(ctx context.Context, dep depen
 				extractor = zipExtractor
 			}
 		}
-	} else if rarExtractor, ok := extractor.(archives.Rar); ok && m.state.Password != "" {
-		rarExtractor.Password = m.state.Password
+	} else if rarExtractor, ok := extractor.(archives.Rar); ok && m.secrets.Password != "" {
+		rarExtractor.Password = m.secrets.Password
 		extractor = rarExtractor
-	} else if sevenZipExtractor, ok := extractor.(archives.SevenZip); ok && m.state.Password != "" {
-		sevenZipExtractor.Password = m.state.Password
+	} else if sevenZipExtractor, ok := extractor.(archives.SevenZip); ok && m.secrets.Password != "" {
+		sevenZipExtractor.Password = m.secrets.Password
 		extractor = sevenZipExtractor
 	}
 
@@ -456,7 +467,7 @@ func (m *ExtractArchiveTask) masterExtractArchive(ctx context.Context, dep depen
 }
 
 func (m *ExtractArchiveTask) masterDownloadZip(ctx context.Context, dep dependency.Dep) (task.Status, error) {
-	uri, err := fs.NewUriFromString(m.state.Uri)
+	uri, err := fs.NewUriFromString(m.secrets.uri(m.state.Uri))
 	if err != nil {
 		return task.StatusError, fmt.Errorf("failed to parse src uri: %s (%w)", err, queue.CriticalErr)
 	}
@@ -530,8 +541,8 @@ func (m *ExtractArchiveTask) Summarize(hasher hashid.Encoder) *queue.Summary {
 		NodeID: m.state.NodeID,
 		Phase:  string(m.state.Phase),
 		Props: map[string]any{
-			SummaryKeySrc: m.state.Uri,
-			SummaryKeyDst: m.state.Dst,
+			SummaryKeySrc: withoutSharePassword(m.state.Uri),
+			SummaryKeyDst: withoutSharePassword(m.state.Dst),
 		},
 	}
 }
@@ -556,6 +567,10 @@ func (m *ExtractArchiveTask) Progress(ctx context.Context) queue.Progresses {
 }
 
 func (m *ExtractArchiveTask) Cleanup(ctx context.Context) error {
+	// Fylvo: a finished task keeps no password.
+	forgetSecrets(&m.state.Secrets, &m.state.Password, &m.state.Uri, &m.state.Dst)
+	storeState(m.DBTask, m.state)
+
 	if m.state.TempPath != "" {
 		time.Sleep(time.Duration(1) * time.Second)
 		return os.RemoveAll(m.state.TempPath)

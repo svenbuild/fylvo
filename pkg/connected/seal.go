@@ -19,6 +19,8 @@ const (
 	PurposeToken        = "token"
 	PurposeClientSecret = "client-secret"
 	PurposeGrant        = "grant"
+	// PurposeArchiveTask seals the passwords an archive task needs (pkg/filemanager/workflows).
+	PurposeArchiveTask = "archive-task"
 )
 
 const (
@@ -27,7 +29,7 @@ const (
 	// nonce made there never meets a random one under the same key.
 	sealStable = 2
 	nonceSize  = 12
-	keyInfo     = "fylvo connected storage v1 "
+	keyInfo    = "fylvo connected storage v1 "
 )
 
 // stableKey is added to a purpose for the keys of SealStable.

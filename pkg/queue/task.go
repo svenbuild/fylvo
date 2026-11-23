@@ -298,7 +298,8 @@ func (t *DBTask) OnError(err error, d time.Duration) {
 	defer t.mu.Unlock()
 
 	if t.Task != nil {
-		t.Task.PublicState.Error = err.Error()
+		// Fylvo: an error can name an address with the password of a share link.
+		t.Task.PublicState.Error = logging.RedactText(err.Error())
 		t.Task.PublicState.ExecutedDuration += d
 	}
 }
@@ -312,7 +313,7 @@ func (t *DBTask) OnRetry(err error) {
 			t.Task.PublicState.ErrorHistory = make([]string, 0)
 		}
 
-		t.Task.PublicState.ErrorHistory = append(t.Task.PublicState.ErrorHistory, err.Error())
+		t.Task.PublicState.ErrorHistory = append(t.Task.PublicState.ErrorHistory, logging.RedactText(err.Error()))
 		t.Task.PublicState.RetryCount++
 	}
 }
