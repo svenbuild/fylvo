@@ -99,6 +99,9 @@ fun FileActionSheet(
     onTags: () -> Unit = {},
     /** Fylvo: false for a favourite from the cached list (its path may be old). */
     canDownload: Boolean = true,
+    /** Fylvo 1.6: further actions after "Share link" (manage shares, versions, archives, ...). */
+    extras: List<SelectionAction> = emptyList(),
+    onExtra: (SelectionAction) -> Unit = {},
 ) {
     // Every action should be reachable without a second drag, so skip the half-open state.
     ModalBottomSheet(
@@ -161,6 +164,7 @@ fun FileActionSheet(
             else -> Unit
         }
         if (canShare) SheetAction(Icons.Default.Link, stringResource(R.string.share_link), onShare)
+        extras.forEach { action -> SheetAction(action.icon, action.label(quick = false), { onExtra(action) }) }
         if (canDownload) SheetAction(Icons.Default.Download, stringResource(if (file.isFolder) R.string.download_as_zip else R.string.download), onDownload)
         when {
             offlineCovered -> OfflineSwitchRow(checked = true, enabled = false, subtitle = stringResource(R.string.offline_covered), onToggle = {})
@@ -207,7 +211,7 @@ private fun OfflineSwitchRow(checked: Boolean, enabled: Boolean, subtitle: Strin
 }
 
 @Composable
-private fun SheetAction(
+internal fun SheetAction(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,

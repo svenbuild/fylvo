@@ -14,6 +14,8 @@ data class ConnectedOverview(
     val max: Int = 0,
     val providers: List<ConnectedProvider> = emptyList(),
     val storages: List<ConnectedStorage> = emptyList(),
+    /** Fylvo 1.6: the server lets apps connect storages (missing on older servers = no). */
+    @SerialName("app_signin") val appSignin: Boolean = false,
 )
 
 @Serializable
@@ -70,3 +72,36 @@ data class ConnectedListing(
     /** Entries the server leaves out because their names cannot be addressed. */
     val omitted: Int = 0,
 )
+
+/** Fylvo 1.6: connecting from the app (data/ConnectFlow). */
+@Serializable
+data class ConnectAuthorizeRequest(
+    val provider: String,
+    val reconnect: String? = null,
+    /** No default: the JSON leaves out fields that hold their default value. */
+    val client: String,
+    val challenge: String,
+)
+
+@Serializable
+data class ConnectAuthorizeResponse(val url: String = "", val attempt: String = "")
+
+@Serializable
+data class ConnectFinishRequest(
+    val code: String,
+    val verifier: String,
+    val preview: Boolean = false,
+    val cancel: Boolean = false,
+)
+
+/** Which provider account a sign-in brought; [accountKind] address, sign_in_name, name or none. */
+@Serializable
+data class ConnectPreview(
+    val provider: String = "",
+    val account: String = "",
+    @SerialName("account_kind") val accountKind: String = "",
+    val reconnect: String? = null,
+)
+
+@Serializable
+data class ConnectRenameRequest(val name: String)

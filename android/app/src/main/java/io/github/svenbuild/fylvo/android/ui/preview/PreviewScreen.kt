@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -98,6 +99,9 @@ fun PreviewScreen(
     /** Fylvo: hide actions the user may not take on this file (see util/Permissions). */
     canShare: (FileObject) -> Boolean,
     canDelete: (FileObject) -> Boolean,
+    /** Fylvo 1.6: the text editor may open this file (see TextEditorScreen). */
+    canEdit: (FileObject) -> Boolean = { false },
+    onEdit: (FileObject) -> Unit = {},
 ) {
     val pager = rememberPagerState(initialPage = startIndex.coerceIn(0, files.lastIndex)) { files.size }
     var chromeVisible by remember { mutableStateOf(true) }
@@ -155,6 +159,9 @@ fun PreviewScreen(
                     IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back)) }
                 },
                 actions = {
+                    if (previewKindOf(current) == PreviewKind.TEXT && canEdit(current)) {
+                        IconButton(onClick = { onEdit(current) }) { Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.edit)) }
+                    }
                     if (canShare(current)) {
                         IconButton(onClick = { onShare(current) }) { Icon(Icons.Default.Link, contentDescription = stringResource(R.string.copy_share_link)) }
                     }

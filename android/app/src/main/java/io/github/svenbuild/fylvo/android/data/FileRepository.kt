@@ -12,7 +12,6 @@ import io.github.svenbuild.fylvo.android.api.ListFileResponse
 import io.github.svenbuild.fylvo.android.api.MoveFileRequest
 import io.github.svenbuild.fylvo.android.api.RenameFileRequest
 import io.github.svenbuild.fylvo.android.api.RestoreFileRequest
-import io.github.svenbuild.fylvo.android.api.ShareCreateRequest
 import io.github.svenbuild.fylvo.android.api.UploadSessionResponse
 import io.github.svenbuild.fylvo.android.util.Connected
 import io.github.svenbuild.fylvo.android.util.CrUri
@@ -79,23 +78,6 @@ class FileRepository(private val api: ApiClient) {
     /** Fylvo: connected storages (Google Drive, OneDrive through the server). */
     val connected = ConnectedRepository(api)
 
-    private fun <T> Response<io.github.svenbuild.fylvo.android.api.ApiResponse<T>>.unwrap(): T {
-        if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
-        val body = body() ?: throw ApiException(-1, "Empty response")
-        if (body.code != 0 || body.data == null) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes, body.reason, body.failedPaths)
-        }
-        return body.data
-    }
-
-    private fun <T> Response<io.github.svenbuild.fylvo.android.api.ApiResponse<T>>.unwrapEmpty() {
-        if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
-        val body = body() ?: throw ApiException(-1, "Empty response")
-        if (body.code != 0) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes, body.reason, body.failedPaths)
-        }
-    }
-
     suspend fun list(
         uri: String,
         pageToken: String? = null,
@@ -103,7 +85,7 @@ class FileRepository(private val api: ApiClient) {
         orderDirection: String? = null,
         pageSize: Int = 50,
     ): ListFileResponse =
-        api.service().listFiles(
+        readService(uri).listFiles(
             uri = uri,
             pageSize = pageSize,
             nextPageToken = pageToken,
@@ -117,7 +99,7 @@ class FileRepository(private val api: ApiClient) {
      * replaced).
      */
     suspend fun folderIdMatches(uri: String, id: String): Boolean? = try {
-        val folder = api.service().fileInfo(uri).unwrap()
+        val folder = readService(uri).fileInfo(uri).unwrap()
         folder != null && folder.isFolder && folder.id == id
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
@@ -128,8 +110,25 @@ class FileRepository(private val api: ApiClient) {
         null
     }
 
+    /** Fylvo 1.6: full-text search, [offset] = hits already shown. */
+    suspend fun fullTextSearch(query: String, offset: Int): io.github.svenbuild.fylvo.android.api.FullTextResult =
+        api.service().fullTextSearch(query, offset).unwrap()
+
+    /** Fylvo 1.6: the file with [id] wherever it is now; null when it is gone. Other refusals throw. */
+    suspend fun fileById(id: String): FileObject? = try {
+        api.service().fileInfoById(id).unwrap()
+    } catch (e: ApiException) {
+        if (e.code == ApiException.CODE_PATH_NOT_EXIST || e.code == 404 || e.code == 40044) null else throw e
+    }
+
     /** Fylvo: one file or folder as the server describes it now. */
-    suspend fun folderInfo(uri: String): FileObject = api.service().fileInfo(uri).unwrap()
+    suspend fun folderInfo(uri: String): FileObject = readService(uri).fileInfo(uri).unwrap()
+
+    /**
+     * Fylvo 1.6: requests whose address carries a share password go through the client without
+     * redirects (a redirect could hand the address on to another server).
+     */
+    private suspend fun readService(uri: String): ApiService = if (CrUri.hasSecret(uri)) api.authService() else api.service()
 
     /** [entity] asks for that exact version of the file (empty = the current one). */
     suspend fun downloadUrl(uri: String, archive: Boolean = false, entity: String = ""): String =
@@ -139,9 +138,10 @@ class FileRepository(private val api: ApiClient) {
     suspend fun contentUrl(uri: String, entity: String = ""): String = signedUrl(uri, download = false, entity = entity)
 
     private suspend fun signedUrl(uri: String, download: Boolean, archive: Boolean = false, entity: String = ""): String {
-        val url = api.service().fileUrls(FileUrlRequest(listOf(uri), download = download, archive = archive, entity = entity))
+        val url = readService(uri).fileUrls(FileUrlRequest(listOf(uri), download = download, archive = archive, entity = entity))
             .unwrap().urls.firstOrNull()?.url
-            ?: throw ApiException(-1, "No URL returned for $uri")
+            // Fylvo: no address in the text (it may carry a share password).
+            ?: throw ApiException(-1, "No URL returned")
         return reachableUrl(url)
     }
 
@@ -240,7 +240,7 @@ class FileRepository(private val api: ApiClient) {
             thumbScope.async(start = CoroutineStart.LAZY) {
                 try {
                     try {
-                        api.service().thumb(uri).unwrap().url
+                        readService(uri).thumb(uri).unwrap().url
                     } catch (e: ApiException) {
                         if (e.code == CODE_NO_THUMB) null else throw e
                     }
@@ -290,22 +290,6 @@ class FileRepository(private val api: ApiClient) {
 
     private fun thumbKey(file: FileObject) = "${file.id}:${file.primaryEntity}"
 
-    /**
-     * Creates a share link. [expireSeconds] 0 = never; [password] empty = public.
-     * Mirrors the web app's link format: the password rides along as a path
-     * segment so the recipient does not have to type it.
-     */
-    suspend fun createShare(uri: String, password: String = "", expireSeconds: Int = 0, downloads: Int = 0): String {
-        val link = api.service().createShare(
-            ShareCreateRequest(uri = uri, password = password, expire = expireSeconds, downloads = downloads, isPrivate = password.isNotEmpty())
-        ).unwrap()
-        // PUT /share answers with the complete URL (`…/s/<id>[/<password>]`); older
-        // builds of this client assumed a bare id and produced a doubled URL.
-        if (link.startsWith("http")) return link
-        val base = api.serverBase().trimEnd('/')
-        return if (password.isEmpty()) "$base/s/$link" else "$base/s/$link/$password"
-    }
-
     /** Fylvo: inside a connected storage a taken name is refused instead of numbered. */
     suspend fun mkdir(uri: String) {
         writeService(uri).createFile(CreateFileRequest(uri = uri, type = "folder", errOnConflict = Connected.isConnected(uri))).unwrapEmpty()
@@ -325,7 +309,7 @@ class FileRepository(private val api: ApiClient) {
     }
 
     private suspend fun writeService(uri: String): ApiService =
-        if (Connected.isConnected(uri)) api.editService() else api.service()
+        if (Connected.isConnected(uri)) api.editService() else readService(uri)
 
     /** Subfolders of [uri] only, for the destination picker. */
     suspend fun listFolders(uri: String): List<FileObject> = listFoldersWithParent(uri).first
@@ -372,8 +356,10 @@ class FileRepository(private val api: ApiClient) {
         previous: String = "",
         previousRequired: Boolean = false,
         service: ApiService? = null,
+        /** Fylvo 1.6: the session the upload belongs to (not sent once it ended). */
+        tag: io.github.svenbuild.fylvo.android.api.SessionTag? = null,
     ): UploadSessionResponse =
-        (service ?: api.service()).createUploadSession(
+        (service ?: api.service()).createUploadSession(session = tag, request =
             CreateUploadSessionRequest(
                 uri = uri,
                 size = size,
@@ -490,6 +476,8 @@ class FileRepository(private val api: ApiClient) {
         previous: String = "",
         previousRequired: Boolean = false,
         strict: Boolean = false,
+        /** Fylvo 1.6: every request of this upload belongs to this session. */
+        tag: io.github.svenbuild.fylvo.android.api.SessionTag? = null,
         onSession: (sessionId: String, targetUri: String, entityId: String) -> Unit = { _, _, _ -> },
         onProgress: (sent: Long, total: Long) -> Unit = { _, _ -> },
     ): UploadSessionResponse {
@@ -510,6 +498,7 @@ class FileRepository(private val api: ApiClient) {
             previous = previous,
             previousRequired = previousRequired,
             service = svc,
+            tag = tag,
         )
 
         if (session.rapidUploaded) return session
@@ -554,10 +543,10 @@ class FileRepository(private val api: ApiClient) {
                     var retryAfter: Long? = null
                     try {
                         val resp = if (target.contains("/file/upload/")) {
-                            svc.uploadChunk(target, body)
+                            svc.uploadChunk(target, body, tag)
                         } else {
                             // Presigned third-party URLs are conventionally PUT.
-                            svc.uploadChunkPut(target, body)
+                            svc.uploadChunkPut(target, body, tag)
                         }
                         retryAfter = resp.headers()["Retry-After"]?.trim()?.toLongOrNull()
                         if (!resp.isSuccessful) {
@@ -583,7 +572,7 @@ class FileRepository(private val api: ApiClient) {
         }
 
         if (session.completeUrl.isNotEmpty()) {
-            val resp = svc.completeUpload(resolveUrl(session.completeUrl))
+            val resp = svc.completeUpload(resolveUrl(session.completeUrl), tag)
             if (!resp.isSuccessful) {
                 throw ApiException(resp.code(), "Upload completion failed: HTTP ${resp.code()}")
             }

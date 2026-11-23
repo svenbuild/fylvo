@@ -40,7 +40,7 @@ import io.github.svenbuild.fylvo.android.util.CrUri
 /** Fylvo: the page of a place that is not a folder listing (favourites, tags). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PlacePage(
+internal fun PlacePage(
     title: String,
     onBack: (() -> Unit)?,
     bottomBar: @Composable () -> Unit,

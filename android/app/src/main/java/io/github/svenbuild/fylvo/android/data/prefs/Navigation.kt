@@ -11,7 +11,7 @@ data class Where(
     val home: Boolean = false,
     val uri: String = CrUri.MY_PREFIX,
     val origin: String? = null,
-    /** A page over the files: "favorites" or "tags". */
+    /** A page over the files: "favorites", "tags" or "shares". */
     val page: String? = null,
     val account: Boolean = false,
     val offline: Boolean = false,
@@ -27,6 +27,8 @@ object Navigation {
     fun placeOf(where: Where, links: List<Place.Link>): Place = when {
         where.page == "favorites" -> Place.Favorites
         where.page == "tags" -> Place.Tags
+        // Fylvo 1.6: "Shared by me" belongs to Account when opened there, else to Shared.
+        where.page == "shares" -> if (where.account) Place.Account else Place.Shared
         where.account -> if (where.offline) Place.Offline else Place.Account
         where.home -> Place.Home
         where.uri == RECENT_URI -> Place.Recent
@@ -76,9 +78,9 @@ object Navigation {
         return when (tab) {
             Place.Home -> where.home
             Place.Favorites, Place.Tags -> true
-            Place.Account, Place.Offline -> true
+            Place.Account, Place.Offline -> where.page == null
             Place.Files -> !where.home && where.page == null && where.uri == CrUri.MY_PREFIX
-            Place.Shared -> where.uri == CrUri.SHARED_WITH_ME
+            Place.Shared -> where.page == null && where.uri == CrUri.SHARED_WITH_ME
             Place.Recent -> where.uri == RECENT_URI
             Place.Trash -> where.uri == TRASH_URI
             is Place.Category -> true

@@ -33,6 +33,21 @@ object CrUri {
     /** True inside a share: `cloudreve://<shareId>@share/...`. */
     fun isShare(uri: String): Boolean = root(uri).endsWith("@share")
 
+    /**
+     * Fylvo: the address carries a share password (`cloudreve://<id>:<pw>@share`). Such an address
+     * lives in memory only: nothing that is saved or handed on may take it (offline, favourites,
+     * places, shortcuts, widget, upload queue, saved screen state, logs).
+     */
+    fun hasSecret(uri: String): Boolean = isShare(uri) && ':' in root(uri).removePrefix(SCHEME).substringBefore('@')
+
+    /** Fylvo: the share id of a share address, without a password. */
+    fun shareId(uri: String): String? =
+        if (isShare(uri)) root(uri).removePrefix(SCHEME).substringBefore('@').substringBefore(':').takeIf { it.isNotEmpty() } else null
+
+    /** Fylvo: the root of share [id], with [password] when it has one. */
+    fun shareRoot(id: String, password: String = ""): String =
+        if (password.isEmpty()) "$SCHEME$id@share" else "$SCHEME$id:$password@share"
+
     fun parent(uri: String): String {
         val trimmed = uri.substringBefore('?').trimEnd('/')
         val root = root(trimmed)

@@ -95,6 +95,8 @@ data class FileObject(
     val owned: Boolean? = null,
     /** Fylvo: id of the file's current version (entity); changes with every new version. */
     @SerialName("primary_entity") val primaryEntity: String = "",
+    /** Fylvo: only from `file/info?extended=true`. */
+    @SerialName("extended_info") val extendedInfo: ExtendedInfo? = null,
 ) {
     val isFolder: Boolean get() = type == 1
 
@@ -269,10 +271,14 @@ data class ShareCreateRequest(
     val expire: Int = 0,
     @SerialName("share_view") val shareView: Boolean = false,
     @SerialName("show_readme") val showReadme: Boolean = false,
+    /** Fylvo: visitors of a folder link may upload; with [hideContent] they only upload. */
     @SerialName("allow_upload") val allowUpload: Boolean = false,
-    @SerialName("allow_edit") val allowEdit: Boolean = false,
-    @SerialName("preview_only") val previewOnly: Boolean = false,
-    @SerialName("upload_only") val uploadOnly: Boolean = false,
+    @SerialName("hide_content") val hideContent: Boolean = false,
+    /** Fylvo: bytes visitors may upload in total; 0 = no limit. */
+    @SerialName("upload_limit") val uploadLimit: Long = 0,
+    /** Fylvo: a share with chosen people only; [members] null keeps the existing ones on an edit. */
+    @SerialName("member_only") val memberOnly: Boolean = false,
+    val members: List<ShareMemberDto>? = null,
 )
 
 @Serializable
@@ -291,11 +297,21 @@ data class TaskItem(
     val type: String = "",
     val error: String? = null,
     @SerialName("updated_at") val updatedAt: String = "",
+    /** Fylvo 1.6: what the task works on (`props.src`, `props.src_multiple`, `props.dst`) and its phase. */
+    @SerialName("created_at") val createdAt: String = "",
+    val summary: TaskSummary? = null,
+)
+
+@Serializable
+data class TaskSummary(
+    val phase: String = "",
+    val props: kotlinx.serialization.json.JsonObject? = null,
 )
 
 @Serializable
 data class TaskListResponse(
     val tasks: List<TaskItem> = emptyList(),
+    val pagination: Pagination? = null,
 )
 
 /** Fylvo: an Android release the server offers for in-app updates (data/AppUpdater). */
@@ -312,4 +328,89 @@ data class AndroidRelease(
 @Serializable
 data class ExplorerConfig(
     val icons: kotlinx.serialization.json.JsonElement? = null,
+    /** Fylvo: "none" or empty = no map; the app then offers no map app either. */
+    @SerialName("map_provider") val mapProvider: String = "",
+    /** Fylvo: the server can search inside file contents (`GET /file/search`). */
+    @SerialName("full_text_search") val fullTextSearch: Boolean = false,
 )
+
+/** Fylvo: `extended_info` of `GET /file/info?extended=true`. */
+@Serializable
+data class ExtendedInfo(
+    /** The owner's shares of the file. */
+    val shares: List<ShareInfo> = emptyList(),
+    /** Stored versions (type 0), thumbnails (1) and live photos (2). */
+    val entities: List<EntityDto> = emptyList(),
+    @SerialName("storage_used") val storageUsed: Long = 0,
+)
+
+@Serializable
+data class EntityDto(
+    val id: String = "",
+    val size: Long = 0,
+    val type: Int = 0,
+    @SerialName("created_at") val createdAt: String = "",
+)
+
+/** Fylvo 1.6: one version (entity) of a file. */
+@Serializable
+data class VersionRequest(val uri: String, val version: String)
+
+/** Fylvo 1.6: a page of a file's or the account's history; [next] 0 = no more. */
+@Serializable
+data class ActivityList(
+    val entries: List<ActivityEntry> = emptyList(),
+    val next: Int = 0,
+)
+
+@Serializable
+data class ActivityEntry(
+    val id: Int = 0,
+    val type: Int = 0,
+    @SerialName("created_at") val createdAt: String = "",
+    val actor: ActivityUser? = null,
+    val guest: Boolean = false,
+    val system: Boolean = false,
+    /** "webdav", "office", "link", "system" or empty. */
+    val via: String = "",
+    val ip: String = "",
+    @SerialName("user_agent") val userAgent: String = "",
+    val content: ActivityContent? = null,
+)
+
+@Serializable
+data class ActivityUser(val id: String = "", val nickname: String = "")
+
+@Serializable
+data class ActivityContent(
+    val name: String = "",
+    @SerialName("old_name") val oldName: String = "",
+    @SerialName("is_folder") val isFolder: Boolean = false,
+    @SerialName("from_folder") val fromFolder: String = "",
+    @SerialName("to_folder") val toFolder: String = "",
+    val method: String = "",
+    val target: String = "",
+)
+
+/** Fylvo 1.6: hits of the full-text search; [FullTextHit.content] marks matches with `<em>`. */
+@Serializable
+data class FullTextResult(val hits: List<FullTextHit> = emptyList(), val total: Long = 0)
+
+@Serializable
+data class FullTextHit(val file: FileObject = FileObject(), val content: String = "")
+
+/** Fylvo 1.6: one entry of an archive's listing. */
+@Serializable
+data class ArchiveEntry(
+    val name: String = "",
+    val size: Long = 0,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("is_directory") val isDirectory: Boolean = false,
+)
+
+@Serializable
+data class ArchiveListing(val files: List<ArchiveEntry> = emptyList())
+
+/** Fylvo 1.6: sources and target of an archive task (never a password, see the plan). */
+@Serializable
+data class WorkflowRequest(val src: List<String>, val dst: String)

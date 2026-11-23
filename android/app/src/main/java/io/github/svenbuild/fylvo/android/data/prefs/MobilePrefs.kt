@@ -256,8 +256,9 @@ object MobilePrefs {
         val path = file.path
         if (Connected.isConnected(path)) return StarState.NONE
         if (path.startsWith(CrUri.MY_PREFIX + "/") && !CrUri.isRoot(path) && '?' !in path) return StarState.CAN_ADD
-        if (CrUri.isShare(path) && file.owned != true && '?' !in path) {
-            val shareId = CrUri.root(path).removePrefix("cloudreve://").substringBefore('@')
+        // Fylvo: a link with a password is never a member share (and its id goes out without it).
+        if (CrUri.isShare(path) && !CrUri.hasSecret(path) && file.owned != true && '?' !in path) {
+            val shareId = CrUri.shareId(path) ?: return StarState.NONE
             if (memberShare(shareId) == true) return StarState.CAN_ADD
         }
         return StarState.NONE

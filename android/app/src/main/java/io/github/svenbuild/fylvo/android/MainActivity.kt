@@ -72,6 +72,16 @@ class MainActivity : AppCompatActivity() {
     // or a folder. Only while signed in; the screen takes the request once (IncomingQueue).
     private fun handleShareIntent(intent: Intent?) {
         val app = application as FylvoApp
+        // Fylvo 1.6: the link back of a storage sign-in (fylvo://connected?...). Only exactly its
+        // forms are taken (data/ConnectFlow), and only for the attempt of this account.
+        if (intent?.action == Intent.ACTION_VIEW && intent.data?.scheme == "fylvo") {
+            val link = intent.dataString?.let(io.github.svenbuild.fylvo.android.data.ConnectFlow::parseReturn)
+            setIntent(Intent(this, MainActivity::class.java))
+            if (link != null) lifecycleScope.launch {
+                if (app.sessionManager.isLoggedIn.first()) runCatching { app.connect.onReturn(link) }
+            }
+            return
+        }
         if (intent?.action?.startsWith("io.github.svenbuild.fylvo.android.action.") == true) {
             lifecycleScope.launch {
                 if (!app.sessionManager.isLoggedIn.first()) return@launch
@@ -93,6 +103,23 @@ class MainActivity : AppCompatActivity() {
                 @Suppress("DEPRECATION")
                 intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
             else -> null
+        }
+        // Fylvo 1.6: a shared text with a link (no file): a share link of the signed-in server opens
+        // in the app; any other link only gets a message. The intent is cleared once handled.
+        if (intent?.action == Intent.ACTION_SEND && uris.isNullOrEmpty()) {
+            val url = intent.getStringExtra(Intent.EXTRA_TEXT)?.let(io.github.svenbuild.fylvo.android.util.ShareLinks::findUrl)
+            if (url != null) {
+                setIntent(Intent(this, MainActivity::class.java))
+                lifecycleScope.launch {
+                    if (!app.sessionManager.isLoggedIn.first()) return@launch
+                    val ref = io.github.svenbuild.fylvo.android.util.ShareLinks.parse(url, app.sessionManager.serverUrlNow())
+                    io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.session = app.sessionManager.sessionTag()
+                    io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value =
+                        ref?.let { io.github.svenbuild.fylvo.android.data.prefs.Incoming.ShareLink(it.id, it.password) }
+                            ?: io.github.svenbuild.fylvo.android.data.prefs.Incoming.ForeignLink
+                }
+                return
+            }
         }
         // Fylvo: only content:// documents of other apps, never file:// or our own providers.
         val accepted = uris.orEmpty().filter { UploadWorker.isForeignContentUri(this, it) }
@@ -162,6 +189,8 @@ fun App() {
             // Folders pinned for this account work again after a sign-in.
             runCatching { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.enableFor(context, app.accountPrefs.accountHash()) }
             runCatching { app.accountPrefs.refresh(ifOlderThanMs = io.github.svenbuild.fylvo.android.data.prefs.AccountPrefsRepository.STALE_MS) }
+            // Fylvo: the group rights decide which actions are offered.
+            runCatching { app.account.ensureLoaded() }
         }
     }
     val prefs = prefsState.prefs.takeIf { prefsState.usable }

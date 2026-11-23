@@ -34,6 +34,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -106,7 +112,11 @@ fun SearchResults(
     actionsFor: (FileObject) -> FileActions,
     /** Fylvo: swipe actions per row. */
     swipeFor: (FileObject) -> RowSwipe? = { null },
+    /** Fylvo 1.6: the server can search in contents; the account's tags for the filters. */
+    fullTextAvailable: Boolean = false,
+    tags: List<String> = emptyList(),
 ) {
+    var filtersOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier
@@ -115,11 +125,12 @@ fun SearchResults(
                 .padding(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (openedFrom != null) {
+            // Search in contents always covers the whole account: no folder choice then.
+            if (openedFrom != null && !state.searchFullText) {
                 FilterChip(
                     selected = state.searchScope != null,
                     onClick = { viewModel.setSearchScope(openedFrom) },
-                    label = { Text(CrUri.fileName(openedFrom)) },
+                    label = { Text(CrUri.displayName(openedFrom)) },
                 )
                 FilterChip(
                     selected = state.searchScope == null,
@@ -128,18 +139,50 @@ fun SearchResults(
                 )
                 Box(Modifier.size(8.dp))
             }
-            listOf(Category.IMAGES, Category.VIDEOS, Category.AUDIO, Category.DOCUMENTS).forEach { c ->
+            // Fylvo 1.6: search in contents (when the server has it), filters, then the kinds.
+            if (fullTextAvailable) {
                 FilterChip(
-                    selected = state.searchType == c,
-                    onClick = { viewModel.setSearchType(if (state.searchType == c) null else c) },
-                    label = { Text(stringResource(c.label)) },
+                    selected = state.searchFullText,
+                    onClick = { viewModel.setSearchFullText(!state.searchFullText) },
+                    label = { Text(stringResource(R.string.search_in_contents)) },
                 )
             }
+            if (!state.searchFullText) {
+                FilterChip(
+                    selected = state.searchFilters.any,
+                    enabled = state.searchType == null,
+                    onClick = { filtersOpen = true },
+                    leadingIcon = { Icon(Icons.Outlined.FilterList, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    label = {
+                        Text(if (state.searchFilters.any) stringResource(R.string.search_filters_n, state.searchFilters.count) else stringResource(R.string.search_filters))
+                    },
+                )
+                listOf(Category.IMAGES, Category.VIDEOS, Category.AUDIO, Category.DOCUMENTS).forEach { c ->
+                    FilterChip(
+                        selected = state.searchType == c,
+                        onClick = { viewModel.setSearchType(if (state.searchType == c) null else c) },
+                        label = { Text(stringResource(c.label)) },
+                    )
+                }
+            }
+        }
+        if (state.searchType != null && state.searchFilters.any && !state.searchFullText) {
+            Text(
+                stringResource(R.string.search_kind_replaces_filters),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
         }
 
+        if (filtersOpen) {
+            SearchFilterSheet(state.searchFilters, tags, onApply = viewModel::setSearchFilters, onDismiss = { filtersOpen = false })
+        }
         val query = state.searchQuery.orEmpty().trim()
+        // Filters or a kind alone are a search too (all images, all files over 100 MB, ...).
+        val filtering = !state.searchFullText && (state.searchFilters.any || state.searchType != null)
         when {
-            query.isEmpty() -> Hint(Icons.Outlined.Search, stringResource(R.string.search_hint))
+            query.isEmpty() && !filtering -> Hint(Icons.Outlined.Search, stringResource(R.string.search_hint))
             state.searchLoading && state.searchResults.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
@@ -152,7 +195,8 @@ fun SearchResults(
                         thumbUrl = rememberThumbUrl(viewModel, file),
                         selecting = false,
                         selected = false,
-                        subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
+                        subtitle = state.searchSnippets[file.path]?.let { io.github.svenbuild.fylvo.android.util.SearchQuery.snippet(it).first.take(120) }
+                            ?: "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                         actions = actionsFor(file),
                         edit = state.editOf(file),
                         swipe = swipeFor(file),
@@ -168,6 +212,87 @@ fun SearchResults(
             }
         }
     }
+}
+
+/** Fylvo 1.6: the search filters (type, size, date, tags) as chips on a sheet. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchFilterSheet(
+    filters: io.github.svenbuild.fylvo.android.util.SearchFilters,
+    tags: List<String>,
+    onApply: (io.github.svenbuild.fylvo.android.util.SearchFilters) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var f by remember { mutableStateOf(filters) }
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = { onApply(f); onDismiss() }) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+            FilterLabel(stringResource(R.string.search_filter_type))
+            FilterRow {
+                listOf(null to R.string.search_type_all, "file" to R.string.search_type_files, "folder" to R.string.search_type_folders).forEach { (v, label) ->
+                    FilterChip(selected = f.type == v, onClick = { f = f.copy(type = v) }, label = { Text(stringResource(label)) })
+                }
+            }
+            FilterLabel(stringResource(R.string.size))
+            FilterRow {
+                SIZE_RANGES.forEach { (range, label) ->
+                    FilterChip(
+                        selected = f.sizeMin == range.first && f.sizeMax == range.second,
+                        onClick = { f = f.copy(sizeMin = range.first, sizeMax = range.second) },
+                        label = { Text(stringResource(label)) },
+                    )
+                }
+            }
+            FilterLabel(stringResource(R.string.search_filter_modified))
+            FilterRow {
+                MODIFIED_DAYS.forEach { (days, label) ->
+                    val after = days?.let { java.time.LocalDate.now().minusDays(it.toLong()).atStartOfDay(java.time.ZoneId.systemDefault()).toEpochSecond() }
+                    FilterChip(
+                        selected = (days == null && f.updatedAfter == null) || (days != null && f.updatedAfter == after),
+                        onClick = { f = f.copy(updatedAfter = after) },
+                        label = { Text(stringResource(label)) },
+                    )
+                }
+            }
+            if (tags.isNotEmpty()) {
+                FilterLabel(stringResource(R.string.tags))
+                FilterRow {
+                    tags.forEach { tag ->
+                        FilterChip(
+                            selected = tag in f.tags,
+                            onClick = { f = f.copy(tags = if (tag in f.tags) f.tags - tag else f.tags + tag) },
+                            label = { Text(tag) },
+                        )
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.End) {
+                androidx.compose.material3.TextButton(onClick = { f = io.github.svenbuild.fylvo.android.util.SearchFilters() }) { Text(stringResource(R.string.search_filters_clear)) }
+                androidx.compose.material3.Button(onClick = { onApply(f); onDismiss() }) { Text(stringResource(R.string.search_filters_apply)) }
+            }
+        }
+    }
+}
+
+private const val MB = 1024L * 1024
+/** Size ranges as (min, max) in bytes. */
+private val SIZE_RANGES = listOf(
+    (null to null) to R.string.search_any,
+    (null to MB) to R.string.search_size_small,
+    (MB to 100 * MB) to R.string.search_size_medium,
+    (100 * MB to null) to R.string.search_size_large,
+    (1024 * MB to null) to R.string.search_size_huge,
+)
+/** Changed within the last n days (from the start of that day); null = any time. */
+private val MODIFIED_DAYS = listOf(null to R.string.search_any, 0 to R.string.search_today, 7 to R.string.search_7_days, 30 to R.string.search_30_days, 365 to R.string.search_year)
+
+@Composable
+private fun FilterLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 6.dp))
+}
+
+@Composable
+private fun FilterRow(content: @Composable () -> Unit) {
+    Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { content() }
 }
 
 @Composable

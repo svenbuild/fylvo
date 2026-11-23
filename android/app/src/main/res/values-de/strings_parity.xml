@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fylvo 1.6: mehr Funktionen der Web-App (design/android-parity-plan.md). -->
+<resources>
+    <string name="save">Speichern</string>
+
+    <!-- Freigaben -->
+    <string name="share_edit_link">Link bearbeiten</string>
+    <string name="share_until">bis %1$s</string>
+    <string name="share_pick_date">Datum …</string>
+    <string name="share_pick_count">Anzahl …</string>
+    <string name="share_expired_choose">Dieser Link ist abgelaufen. Wähle ein neues Ende, um ihn wieder einzuschalten.</string>
+    <string name="share_downloads_choose">Dieser Link hat keine Downloads mehr übrig. Wähle eine neue Grenze.</string>
+    <string name="share_uploads">Hochladen durch Besucher</string>
+    <string name="share_uploads_off">Aus</string>
+    <string name="share_view_and_upload">Ansehen und hochladen</string>
+    <string name="share_upload_only">Nur hochladen</string>
+    <string name="share_upload_limit">Grenze für Uploads</string>
+    <string name="share_gb">%1$d GB</string>
+    <string name="share_keep_view">Meine Ansicht übernehmen</string>
+    <string name="share_show_readme">README anzeigen</string>
+    <string name="share_password_rule">Nur Buchstaben und Ziffern, höchstens 32</string>
+    <string name="share_password_protected">Mit Passwort geschützt</string>
+    <string name="share_password_kept">Der Link behält sein Passwort. Um es zu ändern, lösche den Link und erstelle einen neuen.</string>
+    <string name="shared_by_me">Von mir geteilt</string>
+    <string name="my_shares">Meine Freigaben</string>
+    <string name="my_shares_hint">Links und Ordner, die du teilst</string>
+    <string name="shares_load_failed">Die Freigaben konnten nicht geladen werden. Prüfe die Verbindung.</string>
+    <string name="no_shares">Noch nichts geteilt</string>
+    <string name="no_shares_hint">Teile eine Datei oder einen Ordner mit einem Link, dann erscheint er hier.</string>
+    <string name="manage_shares">Freigaben verwalten</string>
+    <string name="copy_link">Link kopieren</string>
+    <string name="send_link">Link senden</string>
+    <string name="share_edit_people">Personen bearbeiten</string>
+    <string name="share_edit_reactivate">Bearbeiten und wieder einschalten</string>
+    <string name="share_reactivate_from_file">Ein abgelaufener Link lässt sich über die Datei selbst wieder einschalten (Freigaben verwalten).</string>
+    <string name="delete_share">Freigabe löschen</string>
+    <string name="delete_share_title">Freigabe löschen?</string>
+    <string name="delete_share_text">Der Link zu \"%1$s\" funktioniert dann nicht mehr. Die Datei selbst bleibt.</string>
+    <string name="delete_share_people_text">Die Personen sehen \"%1$s\" dann nicht mehr. Der Ordner selbst bleibt.</string>
+    <string name="share_deleted">Freigabe gelöscht</string>
+    <string name="share_expired">Abgelaufen</string>
+    <plurals name="share_people">
+        <item quantity="one">Mit %d Person</item>
+        <item quantity="other">Mit %d Personen</item>
+    </plurals>
+    <plurals name="share_views">
+        <item quantity="one">%d Aufruf</item>
+        <item quantity="other">%d Aufrufe</item>
+    </plurals>
+    <plurals name="share_downloads">
+        <item quantity="one">%d Download</item>
+        <item quantity="other">%d Downloads</item>
+    </plurals>
+    <plurals name="share_downloads_left">
+        <item quantity="one">noch %d</item>
+        <item quantity="other">noch %d</item>
+    </plurals>
+
+    <!-- Fehler -->
+    <string name="error_group_not_allowed">Dein Konto darf das nicht.</string>
+    <string name="error_share_password">Das Passwort dieser Freigabe ist falsch oder nicht mehr gültig.</string>
+
+    <!-- Freigabe-Links öffnen -->
+    <string name="open_share_link">Freigabe öffnen</string>
+    <string name="open_share_link_hint">Der Link gehört zu deinem Server</string>
+    <string name="link_not_own_server">Dieser Link gehört nicht zu deinem Server.</string>
+    <string name="link_not_allowed">Dein Konto darf keine Freigaben öffnen.</string>
+    <string name="link_password_needed">Diese Freigabe ist mit einem Passwort geschützt.</string>
+    <string name="link_password_wrong">Das Passwort passt nicht. Versuche es nochmals.</string>
+    <string name="link_upload_password">In einen Link mit Passwort kann die App nicht hochladen.</string>
+
+    <!-- Text-Editor -->
+    <string name="name">Name</string>
+    <string name="new_text_file">Neue Textdatei</string>
+    <string name="new_markdown_note">Neue Markdown-Notiz</string>
+    <string name="new_text_name">Neue Datei</string>
+    <string name="new_note_name">Notiz</string>
+    <string name="editor_preview">Vorschau</string>
+    <string name="editor_edit">Bearbeiten</string>
+    <string name="editor_saved">Gespeichert</string>
+    <string name="editor_not_text">Diese Datei ist kein reiner Text und lässt sich hier nicht bearbeiten.</string>
+    <string name="editor_too_large">Diese Datei ist zu gross, um sie am Handy zu bearbeiten (bis 256 KB).</string>
+    <string name="editor_working_copy">Diese Datei wird gerade in einer anderen App bearbeitet (Bearbeiten). Schliesse das zuerst ab.</string>
+    <string name="editor_empty_connected">Ein verbundener Speicher nimmt keine leere Datei an.</string>
+    <string name="editor_outcome_unknown">Es ist nicht bekannt, ob das Speichern beim Speicher angekommen ist. Dein Text bleibt hier; lade die Datei neu, bevor du nochmals speicherst.</string>
+    <string name="editor_unsaved_title">Änderungen speichern?</string>
+    <string name="editor_unsaved_text">Deine Änderungen sind noch nicht gespeichert.</string>
+    <string name="editor_discard">Verwerfen</string>
+    <string name="editor_keep_editing">Weiter bearbeiten</string>
+    <string name="editor_changed_title">Die Datei wurde inzwischen geändert</string>
+    <string name="editor_changed_text">Jemand hat während deiner Bearbeitung eine neuere Fassung gespeichert. Speichere deinen Text als Kopie, oder ersetze die neuere Fassung.</string>
+    <string name="editor_save_copy">Als Kopie speichern</string>
+    <string name="editor_overwrite">Trotzdem ersetzen</string>
+    <string name="editor_gone_title">Die Datei ist weg</string>
+    <string name="editor_gone_text">Die Datei wurde inzwischen gelöscht oder ersetzt. Speichere deinen Text als Kopie.</string>
+    <string name="editor_name_taken">Dieser Name ist schon vergeben. Wähle einen anderen.</string>
+
+    <!-- Versionen, Details, Verlauf, Papierkorb -->
+    <string name="versions">Versionen</string>
+    <string name="versions_load_failed">Die Versionen konnten nicht geladen werden.</string>
+    <string name="version_current">Aktuell</string>
+    <string name="version_restore">Zur aktuellen machen</string>
+    <string name="version_delete">Version löschen</string>
+    <string name="version_restore_title">Diese Version wiederherstellen?</string>
+    <string name="version_restore_text">Die Version vom %1$s wird zur aktuellen. Die anderen bleiben.</string>
+    <string name="version_delete_title">Diese Version löschen?</string>
+    <string name="version_delete_text">Die Version vom %1$s wird endgültig gelöscht.</string>
+    <string name="version_restored">Die Version ist wieder aktuell</string>
+    <string name="version_deleted">Version gelöscht</string>
+    <string name="storage_used_label">Belegter Speicher</string>
+    <plurals name="share_count">
+        <item quantity="one">%d Freigabe</item>
+        <item quantity="other">%d Freigaben</item>
+    </plurals>
+    <string name="history">Verlauf</string>
+    <string name="exif_title">Kamera</string>
+    <string name="exif_camera">Kamera</string>
+    <string name="exif_lens">Objektiv</string>
+    <string name="exif_aperture">Blende</string>
+    <string name="exif_exposure">Belichtung</string>
+    <string name="exif_iso">ISO</string>
+    <string name="exif_focal">Brennweite</string>
+    <string name="exif_taken">Aufgenommen</string>
+    <string name="exif_place">Ort</string>
+    <string name="exif_coordinates">Koordinaten</string>
+    <string name="open_in_map_app">In Karten-App öffnen</string>
+    <string name="empty_trash">Papierkorb leeren</string>
+    <string name="empty_trash_title">Papierkorb leeren?</string>
+    <string name="empty_trash_text">Alles im Papierkorb wird endgültig gelöscht und lässt sich nicht wiederherstellen.</string>
+    <string name="trash_emptied">Der Papierkorb ist leer</string>
+
+    <!-- Verlauf (wie in der Web-App) -->
+    <string name="activity_system">System</string>
+    <string name="activity_guest">Gast über Link</string>
+    <string name="activity_deleted_account">Gelöschtes Konto</string>
+    <string name="activity_someone">Jemand</string>
+    <string name="activity_share_link">Link</string>
+    <string name="activity_share_upload">Upload-Link</string>
+    <string name="activity_share_members">Personen</string>
+    <string name="activity_method_password">Passwort</string>
+    <string name="activity_method_2fa">Zwei-Faktor-Code</string>
+    <string name="activity_method_passkey">Passkey</string>
+    <string name="activity_method_app">App</string>
+    <string name="activity_windows_app">Windows-App</string>
+    <string name="activity_android_app">Android-App</string>
+    <string name="activity_on"> auf </string>
+    <string name="activity_unknown">Unbekannter Eintrag</string>
+    <string name="activity_1">%1$s hat %2$s erstellt.</string>
+    <string name="activity_2">%1$s hat %2$s hochgeladen.</string>
+    <string name="activity_3">%1$s hat eine neue Version von %2$s gespeichert.</string>
+    <string name="activity_4">%1$s hat %2$s in %3$s umbenannt.</string>
+    <string name="activity_5">%1$s hat %2$s nach %3$s verschoben.</string>
+    <string name="activity_6">%1$s hat %2$s nach %3$s kopiert.</string>
+    <string name="activity_7">%1$s hat %2$s in den Papierkorb gelegt.</string>
+    <string name="activity_8">%1$s hat %2$s aus dem Papierkorb wiederhergestellt.</string>
+    <string name="activity_9">%1$s hat %2$s endgültig gelöscht.</string>
+    <string name="activity_10">%1$s hat eine ältere Version von %2$s wiederhergestellt.</string>
+    <string name="activity_11">%1$s hat eine Version von %2$s gelöscht.</string>
+    <string name="activity_12">%1$s hat %2$s geteilt (%3$s).</string>
+    <string name="activity_13">%1$s hat die Freigabe von %2$s geändert (%3$s).</string>
+    <string name="activity_14">%1$s hat die Freigabe von %2$s gelöscht (%3$s).</string>
+    <string name="activity_15">%1$s hat %2$s heruntergeladen.</string>
+    <string name="activity_30">Angemeldet (%1$s)</string>
+    <string name="activity_30_app">Angemeldet mit %1$s</string>
+    <string name="activity_31">Anmeldung fehlgeschlagen (%1$s)</string>
+    <string name="activity_32">Anmeldung gesperrt nach zu vielen Fehlversuchen (%1$s)</string>
+    <string name="activity_33">Passwort geändert</string>
+    <string name="activity_33_admin">Passwort von der Verwaltung gesetzt</string>
+    <string name="activity_33_reset">Passwort über den Link per E-Mail zurückgesetzt</string>
+    <string name="activity_34">Zwei-Faktor-Anmeldung eingeschaltet</string>
+    <string name="activity_35">Zwei-Faktor-Anmeldung ausgeschaltet</string>
+    <string name="activity_36">Zugriff von %1$s entfernt</string>
+
+    <!-- Profil und Sicherheit -->
+    <string name="profile">Profil</string>
+    <string name="profile_name">Name</string>
+    <string name="profile_picture_change">Bild ändern</string>
+    <string name="profile_picture_hint">Ein quadratischer Ausschnitt eines Fotos</string>
+    <string name="profile_picture_saved">Bild gespeichert</string>
+    <string name="profile_picture_failed">Das Bild konnte nicht gespeichert werden.</string>
+    <string name="security">Sicherheit</string>
+    <string name="security_hint">Passwort, Zwei-Faktor-Anmeldung, Apps, Anmeldungen</string>
+    <string name="security_load_failed">Die Sicherheits-Einstellungen konnten nicht geladen werden.</string>
+    <string name="password_change">Passwort ändern</string>
+    <string name="password_current">Aktuelles Passwort</string>
+    <string name="password_new">Neues Passwort</string>
+    <string name="password_repeat">Neues Passwort wiederholen</string>
+    <string name="password_rule">Mindestens 6 Zeichen</string>
+    <string name="password_mismatch">Die Passwörter stimmen nicht überein</string>
+    <string name="password_current_wrong">Das aktuelle Passwort ist falsch.</string>
+    <string name="password_changed">Passwort geändert</string>
+    <string name="two_fa">Zwei-Faktor-Anmeldung</string>
+    <string name="two_fa_on">An: bei der Anmeldung wird ein Code aus einer Authenticator-App verlangt</string>
+    <string name="two_fa_off">Aus</string>
+    <string name="two_fa_turn_on">Einschalten</string>
+    <string name="two_fa_turn_off">Ausschalten</string>
+    <string name="two_fa_setup_text">Füge diesen Schlüssel in einer Authenticator-App hinzu (zum Beispiel mit dem Knopf), dann gib den sechsstelligen Code ein, den die App zeigt.</string>
+    <string name="two_fa_open_app">In Authenticator-App öffnen</string>
+    <string name="two_fa_no_app">Keine Authenticator-App auf diesem Handy. Tippe den Schlüssel von Hand in die App.</string>
+    <string name="two_fa_enter_code">Code aus der App</string>
+    <string name="two_fa_code">Code</string>
+    <string name="two_fa_code_wrong">Der Code ist falsch. Versuche den aktuellen.</string>
+    <string name="two_fa_expired">Das Einrichten hat zu lange gedauert. Beginne nochmals.</string>
+    <string name="two_fa_off_text">Gib einen aktuellen Code aus deiner Authenticator-App ein.</string>
+    <string name="two_fa_enabled">Zwei-Faktor-Anmeldung ist an</string>
+    <string name="two_fa_disabled">Zwei-Faktor-Anmeldung ist aus</string>
+    <string name="app_access">App-Zugriffe</string>
+    <string name="last_used">Zuletzt benutzt %1$s</string>
+    <string name="never_used">Nie benutzt</string>
+    <string name="revoke">Widerrufen</string>
+    <string name="revoke_title">Zugriff von %1$s widerrufen?</string>
+    <string name="revoke_text">Die App kann dein Konto nicht mehr benutzen, bis sie neu angemeldet wird.</string>
+    <string name="recent_sign_ins">Letzte Anmeldungen</string>
+    <string name="load_more">Mehr laden</string>
+
+    <string name="editor_saving_wait">Wird gespeichert … der Editor schliesst danach.</string>
+
+    <!-- Suche -->
+    <string name="search_in_contents">In Inhalten</string>
+    <string name="search_filters">Filter</string>
+    <string name="search_filters_n">Filter (%1$d)</string>
+    <string name="search_filters_clear">Zurücksetzen</string>
+    <string name="search_filters_apply">Anzeigen</string>
+    <string name="search_kind_replaces_filters">Eine Art zeigt alle Dateien dieser Art; die Filter gelten wieder, wenn sie aus ist.</string>
+    <string name="search_filter_type">Typ</string>
+    <string name="search_type_all">Alle</string>
+    <string name="search_type_files">Dateien</string>
+    <string name="search_type_folders">Ordner</string>
+    <string name="search_filter_modified">Geändert</string>
+    <string name="search_any">Egal</string>
+    <string name="search_size_small">Unter 1 MB</string>
+    <string name="search_size_medium">1 bis 100 MB</string>
+    <string name="search_size_large">Über 100 MB</string>
+    <string name="search_size_huge">Über 1 GB</string>
+    <string name="search_today">Heute</string>
+    <string name="search_7_days">Letzte 7 Tage</string>
+    <string name="search_30_days">Letzte 30 Tage</string>
+    <string name="search_year">Letztes Jahr</string>
+
+    <!-- Archive und Aufgaben -->
+    <string name="archive_view">Inhalt ansehen</string>
+    <string name="archive_extract">Entpacken</string>
+    <string name="archive_extract_to">Entpacken nach</string>
+    <string name="archive_extract_here">Nach %s entpacken</string>
+    <string name="archive_compress">Als ZIP packen</string>
+    <string name="archive_compress_go">Packen</string>
+    <string name="archive_default_name">Archiv</string>
+    <string name="archive_empty">Dieser Ordner des Archivs ist leer</string>
+    <string name="tasks">Aufgaben</string>
+    <string name="tasks_hint">Packen, Entpacken und andere Arbeiten am Server</string>
+    <string name="tasks_none">Noch keine Aufgaben</string>
+    <string name="task_started">Die Aufgabe läuft am Server</string>
+    <string name="task_create_archive">Packen</string>
+    <string name="task_extract_archive">Entpacken</string>
+    <string name="task_relocate">Speicher wechseln</string>
+    <string name="task_import">Import</string>
+    <string name="task_remote_download">Download</string>
+    <string name="task_other">Aufgabe</string>
+    <string name="task_queued">Wartet</string>
+    <string name="task_running">Läuft</string>
+    <string name="task_done">Fertig</string>
+    <string name="task_to">nach %1$s</string>
+
+    <string name="task_status_failed">Fehlgeschlagen</string>
+    <string name="task_status_canceled">Abgebrochen</string>
+
+    <!-- Mit Personen teilen -->
+    <string name="share_with_people">Mit Personen teilen</string>
+    <string name="people_add">Person hinzufügen (Name oder E-Mail)</string>
+    <string name="people_read">Lesen</string>
+    <string name="people_edit">Bearbeiten</string>
+    <string name="people_remove">Entfernen</string>
+    <string name="people_unknown">Unbekannte Person</string>
+    <string name="people_none">Noch niemand. Suche unten eine Person.</string>
+    <string name="people_saved">Gespeichert</string>
+    <string name="people_end">Teilen beenden</string>
+    <string name="people_end_title">Teilen mit Personen beenden?</string>
+    <string name="people_expired">Diese Freigabe ist abgelaufen. Wähle, wie lange sie jetzt gelten soll.</string>
+
+    <string name="edit_fetching">Die Datei wird zum Bearbeiten geholt …</string>
+    <string name="no_app_for_file">Keine App auf diesem Handy öffnet diese Art von Datei.</string>
+
+    <!-- Ordner hochladen -->
+    <string name="folder_upload">Ordner hochladen</string>
+    <string name="folder_upload_title">\"%1$s\" hochladen?</string>
+    <plurals name="folder_upload_text">
+        <item quantity="one">%1$d Datei (%2$s) nach %3$s, mit ihren Ordnern. Ein vorhandener Ordner mit diesem Namen wird ergänzt; Dateien mit einem vergebenen Namen bekommen einen neuen.</item>
+        <item quantity="other">%1$d Dateien (%2$s) nach %3$s, mit ihren Ordnern. Ein vorhandener Ordner mit diesem Namen wird ergänzt; Dateien mit einem vergebenen Namen bekommen einen neuen.</item>
+    </plurals>
+    <string name="folder_upload_many">Das sind viele Dateien: das Hochladen kann lange dauern und braucht deine Verbindung.</string>
+    <string name="folder_upload_reading">Der Ordner wird gelesen …</string>
+    <string name="folder_upload_empty">Der Ordner ist leer.</string>
+    <string name="folder_upload_unreadable">Der Ordner konnte nicht gelesen werden.</string>
+    <string name="folder_upload_started">Der Ordner wird hochgeladen</string>
+    <string name="folder_upload_failed">Das Hochladen konnte nicht starten (der Zielordner hat sich geändert oder es gibt keine Verbindung).</string>
+    <string name="folder_upload_partly">%1$d von %2$d Ordnern werden hochgeladen; die anderen konnten nicht starten. Ein neuer Versuch lädt auch die schon gestarteten nochmals hoch.</string>
+
+    <!-- Verbundene Speicher aus der App -->
+    <string name="connected_manage_hint">Verbinden, umbenennen, trennen</string>
+    <string name="connect_provider">%1$s verbinden</string>
+    <string name="connect_in_browser">Die Anmeldung öffnet sich im Browser</string>
+    <string name="connect_again">Neu verbinden</string>
+    <string name="disconnect">Trennen</string>
+    <string name="disconnect_title">%1$s trennen?</string>
+    <string name="disconnect_text">Fylvo vergisst diesen Speicher. Seine Dateien bleiben beim Anbieter; wartende Uploads dorthin werden abgebrochen.</string>
+    <string name="disconnected">Getrennt</string>
+    <string name="connect_name_rule">Gib einen Namen mit höchstens 64 Bytes ein.</string>
+    <string name="connect_waiting">Warte auf die Anmeldung</string>
+    <string name="connect_waiting_hint">Schliesse sie im Browser ab und tippe dort auf \"Zurück zu Fylvo\".</string>
+    <string name="connect_confirm_title">%1$s verbinden?</string>
+    <string name="connect_confirm_address">%1$s von %2$s mit deinem Fylvo-Konto %3$s verbinden?</string>
+    <string name="connect_confirm_sign_in">%1$s, angemeldet als %2$s, mit deinem Fylvo-Konto %3$s verbinden?</string>
+    <string name="connect_confirm_name">%1$s von \"%2$s\" mit deinem Fylvo-Konto %3$s verbinden? Der Anbieter nennt nur einen frei wählbaren Namen.</string>
+    <string name="connect_confirm_none">%1$s mit deinem Fylvo-Konto %2$s verbinden? Der Anbieter nennt das Konto nicht.</string>
+    <string name="connect_yes">Verbinden</string>
+    <string name="connect_no">Nein</string>
+    <string name="connect_saved">Der Speicher ist verbunden</string>
+    <string name="connect_reconnected">Der Speicher ist wieder verbunden</string>
+    <string name="connect_failed">Der Speicher konnte nicht verbunden werden.</string>
+    <string name="connect_exists">Dieses Konto ist schon verbunden.</string>
+    <string name="connect_other_account">Melde dich zum Neu-Verbinden mit demselben Konto wie vorher an.</string>
+    <string name="connect_too_many">Du hast so viele Speicher verbunden, wie erlaubt sind.</string>
+    <string name="connect_not_allowed">Dein Konto darf keine Speicher verbinden.</string>
+    <string name="connect_not_offered">Dieser Server lässt Apps keine Speicher verbinden. Nutze die Web-App.</string>
+    <string name="connect_storage_gone">Dieser Speicher ist nicht mehr verbunden.</string>
+    <string name="connect_https_only">Speicher lassen sich nur über eine sichere Verbindung (https) verbinden.</string>
+    <string name="connect_no_answer">Keine Antwort vom Server. Komm zur App zurück, um es nochmals zu versuchen.</string>
+    <string name="connect_link_denied">Die Anmeldung wurde beim Anbieter abgebrochen. Du kannst neu beginnen.</string>
+    <string name="connect_link_expired">Die Anmeldung hat zu lange gedauert. Beginne neu.</string>
+    <string name="connect_link_failed">Die Anmeldung hat nicht geklappt. Du kannst neu beginnen.</string>
+</resources>

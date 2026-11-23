@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fylvo 1.6: more of the web app's functions (design/android-parity-plan.md). -->
+<resources>
+    <string name="save">Save</string>
+
+    <!-- Shares -->
+    <string name="share_edit_link">Edit link</string>
+    <string name="share_until">until %1$s</string>
+    <string name="share_pick_date">Date…</string>
+    <string name="share_pick_count">Number…</string>
+    <string name="share_expired_choose">This link has expired. Choose a new end to switch it on again.</string>
+    <string name="share_downloads_choose">No downloads are left on this link. Choose a new limit.</string>
+    <string name="share_uploads">Uploads by visitors</string>
+    <string name="share_uploads_off">Off</string>
+    <string name="share_view_and_upload">View and upload</string>
+    <string name="share_upload_only">Upload only</string>
+    <string name="share_upload_limit">Upload limit</string>
+    <string name="share_gb">%1$d GB</string>
+    <string name="share_keep_view">Keep my view</string>
+    <string name="share_show_readme">Show README</string>
+    <string name="share_password_rule">Letters and digits only, up to 32</string>
+    <string name="share_password_protected">Protected with a password</string>
+    <string name="share_password_kept">The link keeps its password. To change it, delete the link and create a new one.</string>
+    <string name="shared_by_me">Shared by me</string>
+    <string name="my_shares">My shares</string>
+    <string name="my_shares_hint">Links and folders you share</string>
+    <string name="shares_load_failed">The shares could not be loaded. Check the connection.</string>
+    <string name="no_shares">Nothing shared yet</string>
+    <string name="no_shares_hint">Share a file or folder with a link, and it shows up here.</string>
+    <string name="manage_shares">Manage shares</string>
+    <string name="copy_link">Copy link</string>
+    <string name="send_link">Send link</string>
+    <string name="share_edit_people">Edit people</string>
+    <string name="share_edit_reactivate">Edit and switch on again</string>
+    <string name="share_reactivate_from_file">An expired link can be switched on again from the file itself (Manage shares).</string>
+    <string name="delete_share">Delete share</string>
+    <string name="delete_share_title">Delete share?</string>
+    <string name="delete_share_text">The link to \"%1$s\" stops working. The file itself stays.</string>
+    <string name="delete_share_people_text">The people stop seeing \"%1$s\". The folder itself stays.</string>
+    <string name="share_deleted">Share deleted</string>
+    <string name="share_expired">Expired</string>
+    <plurals name="share_people">
+        <item quantity="one">With %d person</item>
+        <item quantity="other">With %d people</item>
+    </plurals>
+    <plurals name="share_views">
+        <item quantity="one">%d view</item>
+        <item quantity="other">%d views</item>
+    </plurals>
+    <plurals name="share_downloads">
+        <item quantity="one">%d download</item>
+        <item quantity="other">%d downloads</item>
+    </plurals>
+    <plurals name="share_downloads_left">
+        <item quantity="one">%d left</item>
+        <item quantity="other">%d left</item>
+    </plurals>
+
+    <!-- Errors -->
+    <string name="error_group_not_allowed">Your account may not do this.</string>
+    <string name="error_share_password">The password of this share is wrong or no longer valid.</string>
+
+    <!-- Opening share links -->
+    <string name="open_share_link">Open share</string>
+    <string name="open_share_link_hint">The link belongs to your server</string>
+    <string name="link_not_own_server">This link does not belong to your server.</string>
+    <string name="link_not_allowed">Your account may not open shares.</string>
+    <string name="link_password_needed">This share is protected with a password.</string>
+    <string name="link_password_wrong">The password does not fit. Try again.</string>
+    <string name="link_upload_password">Uploading into a link with a password is not possible in the app.</string>
+
+    <!-- Text editor -->
+    <string name="name">Name</string>
+    <string name="new_text_file">New text file</string>
+    <string name="new_markdown_note">New Markdown note</string>
+    <string name="new_text_name">New file</string>
+    <string name="new_note_name">Note</string>
+    <string name="editor_preview">Preview</string>
+    <string name="editor_edit">Edit</string>
+    <string name="editor_saved">Saved</string>
+    <string name="editor_not_text">This file is not plain text and cannot be edited here.</string>
+    <string name="editor_too_large">This file is too large to edit on the phone (up to 256 KB).</string>
+    <string name="editor_working_copy">This file is being edited in another app (Edit). Finish that first.</string>
+    <string name="editor_empty_connected">A connected storage does not take an empty file.</string>
+    <string name="editor_outcome_unknown">It is not known whether the save reached the storage. Your text stays here; reload the file before saving again.</string>
+    <string name="editor_unsaved_title">Save changes?</string>
+    <string name="editor_unsaved_text">Your changes are not saved yet.</string>
+    <string name="editor_discard">Discard</string>
+    <string name="editor_keep_editing">Keep editing</string>
+    <string name="editor_changed_title">The file was changed meanwhile</string>
+    <string name="editor_changed_text">Someone saved a newer version while you were editing. Save your text as a copy, or replace the newer version.</string>
+    <string name="editor_save_copy">Save as copy</string>
+    <string name="editor_overwrite">Replace anyway</string>
+    <string name="editor_gone_title">The file is gone</string>
+    <string name="editor_gone_text">The file was deleted or replaced meanwhile. Save your text as a copy.</string>
+    <string name="editor_name_taken">This name is taken. Choose another one.</string>
+
+    <!-- Versions, details, history, trash -->
+    <string name="versions">Versions</string>
+    <string name="versions_load_failed">The versions could not be loaded.</string>
+    <string name="version_current">Current</string>
+    <string name="version_restore">Make current</string>
+    <string name="version_delete">Delete version</string>
+    <string name="version_restore_title">Make this version current?</string>
+    <string name="version_restore_text">The version of %1$s becomes the current one. The others stay.</string>
+    <string name="version_delete_title">Delete this version?</string>
+    <string name="version_delete_text">The version of %1$s is deleted for good.</string>
+    <string name="version_restored">The version is current again</string>
+    <string name="version_deleted">Version deleted</string>
+    <string name="storage_used_label">Storage used</string>
+    <plurals name="share_count">
+        <item quantity="one">%d share</item>
+        <item quantity="other">%d shares</item>
+    </plurals>
+    <string name="history">History</string>
+    <string name="exif_title">Camera</string>
+    <string name="exif_camera">Camera</string>
+    <string name="exif_lens">Lens</string>
+    <string name="exif_aperture">Aperture</string>
+    <string name="exif_exposure">Exposure</string>
+    <string name="exif_iso">ISO</string>
+    <string name="exif_focal">Focal length</string>
+    <string name="exif_taken">Taken</string>
+    <string name="exif_place">Place</string>
+    <string name="exif_coordinates">Coordinates</string>
+    <string name="open_in_map_app">Open in map app</string>
+    <string name="empty_trash">Empty trash</string>
+    <string name="empty_trash_title">Empty trash?</string>
+    <string name="empty_trash_text">Everything in the trash is deleted for good and cannot be restored.</string>
+    <string name="trash_emptied">The trash is empty</string>
+
+    <!-- Activity log (as in the web app) -->
+    <string name="activity_system">System</string>
+    <string name="activity_guest">A guest via link</string>
+    <string name="activity_deleted_account">A deleted account</string>
+    <string name="activity_someone">Someone</string>
+    <string name="activity_share_link">link</string>
+    <string name="activity_share_upload">upload link</string>
+    <string name="activity_share_members">people</string>
+    <string name="activity_method_password">password</string>
+    <string name="activity_method_2fa">two-factor code</string>
+    <string name="activity_method_passkey">passkey</string>
+    <string name="activity_method_app">app</string>
+    <string name="activity_windows_app">Windows app</string>
+    <string name="activity_android_app">Android app</string>
+    <string name="activity_on"> on </string>
+    <string name="activity_unknown">Unknown entry</string>
+    <string name="activity_1">%1$s created %2$s.</string>
+    <string name="activity_2">%1$s uploaded %2$s.</string>
+    <string name="activity_3">%1$s saved a new version of %2$s.</string>
+    <string name="activity_4">%1$s renamed %2$s to %3$s.</string>
+    <string name="activity_5">%1$s moved %2$s to %3$s.</string>
+    <string name="activity_6">%1$s copied %2$s to %3$s.</string>
+    <string name="activity_7">%1$s moved %2$s to the trash.</string>
+    <string name="activity_8">%1$s restored %2$s from the trash.</string>
+    <string name="activity_9">%1$s deleted %2$s for good.</string>
+    <string name="activity_10">%1$s restored an older version of %2$s.</string>
+    <string name="activity_11">%1$s deleted a version of %2$s.</string>
+    <string name="activity_12">%1$s shared %2$s (%3$s).</string>
+    <string name="activity_13">%1$s changed the share of %2$s (%3$s).</string>
+    <string name="activity_14">%1$s deleted the share of %2$s (%3$s).</string>
+    <string name="activity_15">%1$s downloaded %2$s.</string>
+    <string name="activity_30">Signed in (%1$s)</string>
+    <string name="activity_30_app">Signed in with %1$s</string>
+    <string name="activity_31">Failed sign-in (%1$s)</string>
+    <string name="activity_32">Sign-in blocked after too many failed attempts (%1$s)</string>
+    <string name="activity_33">Password changed</string>
+    <string name="activity_33_admin">Password set by the admin</string>
+    <string name="activity_33_reset">Password reset with the link by email</string>
+    <string name="activity_34">Two-factor sign-in turned on</string>
+    <string name="activity_35">Two-factor sign-in turned off</string>
+    <string name="activity_36">Removed the access of %1$s</string>
+
+    <!-- Profile and security -->
+    <string name="profile">Profile</string>
+    <string name="profile_name">Name</string>
+    <string name="profile_picture_change">Change picture</string>
+    <string name="profile_picture_hint">A square section of a photo</string>
+    <string name="profile_picture_saved">Picture saved</string>
+    <string name="profile_picture_failed">The picture could not be saved.</string>
+    <string name="security">Security</string>
+    <string name="security_hint">Password, two-factor sign-in, apps, sign-ins</string>
+    <string name="security_load_failed">The security settings could not be loaded.</string>
+    <string name="password_change">Change password</string>
+    <string name="password_current">Current password</string>
+    <string name="password_new">New password</string>
+    <string name="password_repeat">Repeat new password</string>
+    <string name="password_rule">At least 6 characters</string>
+    <string name="password_mismatch">The passwords do not match</string>
+    <string name="password_current_wrong">The current password is wrong.</string>
+    <string name="password_changed">Password changed</string>
+    <string name="two_fa">Two-factor sign-in</string>
+    <string name="two_fa_on">On: a code from an authenticator app is asked at sign-in</string>
+    <string name="two_fa_off">Off</string>
+    <string name="two_fa_turn_on">Turn on</string>
+    <string name="two_fa_turn_off">Turn off</string>
+    <string name="two_fa_setup_text">Add this key to an authenticator app (for example by opening it with the button), then enter the six-digit code the app shows.</string>
+    <string name="two_fa_open_app">Open in authenticator app</string>
+    <string name="two_fa_no_app">No authenticator app on this phone. Type the key into the app by hand.</string>
+    <string name="two_fa_enter_code">Code from the app</string>
+    <string name="two_fa_code">Code</string>
+    <string name="two_fa_code_wrong">The code is wrong. Try the current one.</string>
+    <string name="two_fa_expired">This setup took too long. Start again.</string>
+    <string name="two_fa_off_text">Enter a current code from your authenticator app.</string>
+    <string name="two_fa_enabled">Two-factor sign-in is on</string>
+    <string name="two_fa_disabled">Two-factor sign-in is off</string>
+    <string name="app_access">App access</string>
+    <string name="last_used">Last used %1$s</string>
+    <string name="never_used">Never used</string>
+    <string name="revoke">Revoke</string>
+    <string name="revoke_title">Revoke the access of %1$s?</string>
+    <string name="revoke_text">The app can no longer use your account until it is signed in again.</string>
+    <string name="recent_sign_ins">Recent sign-ins</string>
+    <string name="load_more">Load more</string>
+
+    <string name="editor_saving_wait">Saving… the editor closes when it is done.</string>
+
+    <!-- Search -->
+    <string name="search_in_contents">In contents</string>
+    <string name="search_filters">Filters</string>
+    <string name="search_filters_n">Filters (%1$d)</string>
+    <string name="search_filters_clear">Clear</string>
+    <string name="search_filters_apply">Show</string>
+    <string name="search_kind_replaces_filters">A kind shows all files of that kind; the filters wait until it is switched off.</string>
+    <string name="search_filter_type">Type</string>
+    <string name="search_type_all">All</string>
+    <string name="search_type_files">Files</string>
+    <string name="search_type_folders">Folders</string>
+    <string name="search_filter_modified">Modified</string>
+    <string name="search_any">Any</string>
+    <string name="search_size_small">Under 1 MB</string>
+    <string name="search_size_medium">1 to 100 MB</string>
+    <string name="search_size_large">Over 100 MB</string>
+    <string name="search_size_huge">Over 1 GB</string>
+    <string name="search_today">Today</string>
+    <string name="search_7_days">Last 7 days</string>
+    <string name="search_30_days">Last 30 days</string>
+    <string name="search_year">Last year</string>
+
+    <!-- Archives and tasks -->
+    <string name="archive_view">Show contents</string>
+    <string name="archive_extract">Extract</string>
+    <string name="archive_extract_to">Extract to</string>
+    <string name="archive_extract_here">Extract to %s</string>
+    <string name="archive_compress">Pack as ZIP</string>
+    <string name="archive_compress_go">Pack</string>
+    <string name="archive_default_name">Archive</string>
+    <string name="archive_empty">This folder of the archive is empty</string>
+    <string name="tasks">Tasks</string>
+    <string name="tasks_hint">Packing, extracting and other jobs on the server</string>
+    <string name="tasks_none">No tasks yet</string>
+    <string name="task_started">The task runs on the server</string>
+    <string name="task_create_archive">Pack</string>
+    <string name="task_extract_archive">Extract</string>
+    <string name="task_relocate">Move storage</string>
+    <string name="task_import">Import</string>
+    <string name="task_remote_download">Download</string>
+    <string name="task_other">Task</string>
+    <string name="task_queued">Waiting</string>
+    <string name="task_running">Running</string>
+    <string name="task_done">Done</string>
+    <string name="task_to">to %1$s</string>
+
+    <string name="task_status_failed">Failed</string>
+    <string name="task_status_canceled">Cancelled</string>
+
+    <!-- Share with people -->
+    <string name="share_with_people">Share with people</string>
+    <string name="people_add">Add a person (name or e-mail)</string>
+    <string name="people_read">Read</string>
+    <string name="people_edit">Edit</string>
+    <string name="people_remove">Remove</string>
+    <string name="people_unknown">Unknown person</string>
+    <string name="people_none">Nobody yet. Search for a person below.</string>
+    <string name="people_saved">Saved</string>
+    <string name="people_end">Stop sharing</string>
+    <string name="people_end_title">Stop sharing with people?</string>
+    <string name="people_expired">This share has ended. Choose how long it should last now.</string>
+
+    <string name="edit_fetching">Getting the file for editing…</string>
+    <string name="no_app_for_file">No app on this phone opens this kind of file.</string>
+
+    <!-- Folder upload -->
+    <string name="folder_upload">Upload a folder</string>
+    <string name="folder_upload_title">Upload \"%1$s\"?</string>
+    <plurals name="folder_upload_text">
+        <item quantity="one">%1$d file (%2$s) into %3$s, with its folders. An existing folder of that name is filled up; files with a taken name get a new name.</item>
+        <item quantity="other">%1$d files (%2$s) into %3$s, with their folders. An existing folder of that name is filled up; files with a taken name get a new name.</item>
+    </plurals>
+    <string name="folder_upload_many">That is a lot of files: the upload can take long and uses your connection.</string>
+    <string name="folder_upload_reading">Reading the folder…</string>
+    <string name="folder_upload_empty">The folder is empty.</string>
+    <string name="folder_upload_unreadable">The folder could not be read.</string>
+    <string name="folder_upload_started">The folder is being uploaded</string>
+    <string name="folder_upload_failed">The upload could not start (the target folder changed or there is no connection).</string>
+    <string name="folder_upload_partly">%1$d of %2$d folders are being uploaded; the others could not start. A new try uploads the started ones again too.</string>
+
+    <!-- Connected storages from the app -->
+    <string name="connected_manage_hint">Connect, rename, disconnect</string>
+    <string name="connect_provider">Connect %1$s</string>
+    <string name="connect_in_browser">The sign-in opens in the browser</string>
+    <string name="connect_again">Connect again</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="disconnect_title">Disconnect %1$s?</string>
+    <string name="disconnect_text">Fylvo forgets this storage. Its files stay with the provider; waiting uploads into it are cancelled.</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="connect_name_rule">Enter a name of up to 64 bytes.</string>
+    <string name="connect_waiting">Waiting for the sign-in</string>
+    <string name="connect_waiting_hint">Finish it in the browser, then tap \"Back to Fylvo\" there.</string>
+    <string name="connect_confirm_title">Connect %1$s?</string>
+    <string name="connect_confirm_address">Connect %1$s of %2$s with your Fylvo account %3$s?</string>
+    <string name="connect_confirm_sign_in">Connect %1$s, signed in as %2$s, with your Fylvo account %3$s?</string>
+    <string name="connect_confirm_name">Connect %1$s of \"%2$s\" with your Fylvo account %3$s? The provider only gives a freely chosen name.</string>
+    <string name="connect_confirm_none">Connect %1$s with your Fylvo account %2$s? The provider does not say which account it is.</string>
+    <string name="connect_yes">Connect</string>
+    <string name="connect_no">No</string>
+    <string name="connect_saved">The storage is connected</string>
+    <string name="connect_reconnected">The storage is connected again</string>
+    <string name="connect_failed">The storage could not be connected.</string>
+    <string name="connect_exists">This account is already connected.</string>
+    <string name="connect_other_account">To connect again, sign in with the same account as before.</string>
+    <string name="connect_too_many">You have connected as many storages as allowed.</string>
+    <string name="connect_not_allowed">Your account may not connect storages.</string>
+    <string name="connect_not_offered">This server does not let apps connect storages. Use the web app.</string>
+    <string name="connect_storage_gone">This storage is no longer connected.</string>
+    <string name="connect_https_only">Storages can be connected only over a secure (https) connection.</string>
+    <string name="connect_no_answer">No answer from the server. Come back to the app to try again.</string>
+    <string name="connect_link_denied">The sign-in was cancelled at the provider. You can start again.</string>
+    <string name="connect_link_expired">The sign-in took too long. Start again.</string>
+    <string name="connect_link_failed">The sign-in did not work. You can start again.</string>
+</resources>

@@ -246,7 +246,18 @@ fun ConnectedHomeSection(viewModel: FilesViewModel) {
     ConnectedSection(
         state = state,
         onOpen = { viewModel.openPlace(it.uri, origin = ORIGIN_HOME) },
-        onOpenWeb = { id -> scope.launch { openInBrowser(context, viewModel.connected.webSettingsUrl(id)) } },
+        onOpenWeb = { id ->
+            scope.launch {
+                val app = context.applicationContext as io.github.svenbuild.fylvo.android.FylvoApp
+                val overview = state.overview
+                // Fylvo 1.6: in the app when the server allows it (a reconnect of that storage, or the first provider).
+                val provider = id?.let { s -> overview?.storages?.firstOrNull { it.id == s }?.provider }
+                    ?: overview?.providers?.firstOrNull { it.configured }?.type
+                if (overview?.appSignin == true && provider != null && (id != null || overview.providers.count { it.configured } == 1)) {
+                    app.connect.start(provider, id)?.let { ConnectController.openInTab(context, it) }
+                } else openInBrowser(context, viewModel.connected.webSettingsUrl(id))
+            }
+        },
         onResume = { viewModel.connected.load() },
     )
 }
