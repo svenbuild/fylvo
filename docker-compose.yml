@@ -17,6 +17,7 @@ services:
       TZ: "${TZ:-UTC}"
       FYLVO_URL: "${FYLVO_URL:-}"
       FYLVO_OFFICE_URL: "${FYLVO_OFFICE_URL:-}"
+      FYLVO_CONNECTED_WRITE: "${FYLVO_CONNECTED_WRITE:-}"
       FYLVO_TRUSTED_PROXIES: "${FYLVO_TRUSTED_PROXIES:-}"
     volumes:
       - ./data:/fylvo/data

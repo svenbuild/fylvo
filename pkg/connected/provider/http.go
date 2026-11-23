@@ -222,11 +222,28 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 		renewed  bool
 		tries    int
 	)
+	// sent: a try of this call may have been carried out by the provider. A try that
+	// the provider answered with a plain "no" (401, 429, a 403 that says "slow down")
+	// leaves it as it was before.
+	sent := false
 	for {
 		token, err := c.Auth.Token(ctx, rejected)
 		if err != nil {
+			if !sent {
+				// No token, no request: the provider was not asked anything.
+				return nil, notSent{err}
+			}
 			return nil, err
 		}
+		if ctx.Err() != nil {
+			// Out of time before this try went out: it is as it was after the last one.
+			if !sent {
+				return nil, notSent{ctx.Err()}
+			}
+			return nil, ctx.Err()
+		}
+		before := sent
+		sent = true
 
 		var reader io.Reader
 		if body != nil {
@@ -265,6 +282,9 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 				// A new token for the next try, which the client makes: this one
 				// would read the bytes long after the caller looked at the file.
 				if _, err := c.Auth.Token(ctx, token); err != nil {
+					if !before {
+						return nil, notSent{err}
+					}
 					return nil, err
 				}
 				return nil, &Error{Kind: KindBusy, Status: res.StatusCode}
@@ -276,7 +296,8 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 				}
 				return nil, &Error{Kind: KindReconnect, Status: res.StatusCode}
 			}
-			renewed, rejected = true, token
+			// The provider refused this try outright: it carried nothing out.
+			renewed, rejected, sent = true, token, before
 			continue
 		}
 
@@ -289,6 +310,11 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 			if !said {
 				wait = RetryBase << min(tries, 4)
 			}
+			if res.StatusCode == http.StatusTooManyRequests || res.StatusCode == http.StatusForbidden {
+				// A plain "slow down" (a 403 only counts as busy when its body says
+				// so): this try was not carried out.
+				sent = before
+			}
 			if waited+wait <= maxWait && tries < MaxTries {
 				tries++
 				waited += wait
@@ -296,6 +322,9 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 				case <-time.After(wait):
 					continue
 				case <-ctx.Done():
+					if !sent {
+						return nil, notSent{ctx.Err()}
+					}
 					return nil, ctx.Err()
 				}
 			}

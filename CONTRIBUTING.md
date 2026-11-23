@@ -57,6 +57,8 @@ with that variable. An ordinary build contains none of it. The log says so at th
   pictures, Google documents, two entries with one name, shortcuts, a folder with 250 files).
   The data lives in memory and is the same after every start. OneDrive stays "not set up".
 - `FYLVO_DEV_STORAGE_FILES=50000` adds a folder with that many files, to try very large folders.
+- `FYLVO_CONNECTED_WRITE=1` lets the server change connected storages (upload, create, rename,
+  move, delete, save), as on any installation. Without it they are read-only.
 - Connecting works as with a real provider, but the sign-in page is one of the server:
   "Allow" as one of two sample accounts, or "Deny".
 - `http://<your server>/api/v4/fylvo/dev/expire` ends all access, so every sample storage

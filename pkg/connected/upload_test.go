@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -765,7 +766,7 @@ func TestUploadSessionsExpire(t *testing.T) {
 }
 
 func TestUploadReceiptMustMatch(t *testing.T) {
-	m := &Manager{uploads: newUploads()}
+	m := &Manager{uploads: newUploads(), tree: NewTree()}
 	sum := func(s string) string {
 		h := md5.Sum([]byte(s))
 		return hex.EncodeToString(h[:])
@@ -1137,4 +1138,493 @@ func TestCreateWhereALinkHasTheName(t *testing.T) {
 	e.d.AddShortcut("", "Team", target)
 	_, err := e.f.CreateEntry(e.ctx, e.conn, "Team", true, false)
 	require.ErrorIs(t, err, ErrNameTaken)
+}
+
+// A receipt the provider tells when it is asked is believed no more than one it answers
+// with: not for a file whose end never left this server.
+func TestUploadReceiptByAskingAfterAShortTail(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	data := payload(testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	_, err = e.chunk(info.ID, 0, data)
+	require.NoError(t, err)
+
+	sum := md5.Sum(data)
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		switch {
+		case isLastRange(r, len(data)):
+			// A part of the tail is read, then the provider fails.
+			_, _ = io.CopyN(io.Discard, r.Body, 100)
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{}, Body: http.NoBody}, nil
+		case r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes */"):
+			receipt := fmt.Sprintf(`{"id":"forged","name":"a.bin","mimeType":"application/octet-stream","size":"%d","md5Checksum":"%s"}`, len(data), hex.EncodeToString(sum[:]))
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+				Body: io.NopCloser(strings.NewReader(receipt))}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 1, data)
+	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	require.Equal(t, UploadUnknown, e.status(info.ID).State)
+}
+
+// Changes are switched off while an upload is open: nothing of it goes on to the
+// provider any more, not a range, not the last one, and no cancel either.
+func TestUploadStopsWhenChangesAreSwitchedOff(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	data := payload(2*testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	_, err = e.chunk(info.ID, 0, data)
+	require.NoError(t, err)
+
+	t.Setenv(EnvWrite, "")
+	sent := e.ranges()
+	for index := 1; index <= 2; index++ {
+		_, err = e.chunk(info.ID, index, data)
+		require.ErrorIs(t, err, ErrUnsupported)
+	}
+	require.NoError(t, e.f.CancelUpload(e.ctx, e.conn, info.ID))
+	require.Equal(t, UploadFailed, e.status(info.ID).State)
+	require.Equal(t, sent, e.ranges(), "no range was sent")
+	require.Zero(t, e.d.Calls(drivetest.CallCancel), "the provider was not told")
+	_, err = e.f.Tree().ResolveNow(e.ctx, e.conn, "a.bin")
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+// A clear "no" of the provider to an empty file leaves nothing open: the upload can be
+// tried again, and the name is not closed.
+func TestUploadEmptyFileClearlyRefused(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	info, err := e.start("empty.txt", 0, UploadRequest{})
+	require.NoError(t, err)
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/files") {
+			return &http.Response{StatusCode: http.StatusBadRequest, Header: http.Header{}, Body: http.NoBody}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 0, nil)
+	require.Error(t, err)
+	require.NotEqual(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	require.Equal(t, UploadReceiving, e.status(info.ID).State)
+	e.http.hook = nil
+
+	row, err := e.chunk(info.ID, 0, nil)
+	require.NoError(t, err)
+	require.NotNil(t, row)
+}
+
+// Two uploads are open for one new name. The first ends with an open outcome: the second
+// does not send its end while that name is closed, at either provider.
+func TestUploadSecondCommitWaitsForAnOpenOutcome(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		data := payload(testChunk + 1000)
+		first, err := e.start("a.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+		second, err := e.start("a.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+		for _, id := range []string{first.ID, second.ID} {
+			_, err = e.chunk(id, 0, data)
+			require.NoError(t, err)
+		}
+
+		// The whole tail of the first leaves, and no answer comes back.
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if isLastRange(r, len(data)) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				return nil, errors.New("connection reset")
+			}
+			return nil, nil
+		}
+		_, err = e.chunk(first.ID, 1, data)
+		require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+		e.http.hook = nil
+
+		sent := e.ranges()
+		_, err = e.chunk(second.ID, 1, data)
+		require.Equal(t, serializer.CodeConnectedBusy, codeOf(err))
+		require.Equal(t, UploadReceiving, e.status(second.ID).State)
+		require.Equal(t, sent, e.ranges(), "the second upload sent nothing")
+	})
+}
+
+// What a save can replace.
+func TestReplaceable(t *testing.T) {
+	file := func(change func(*Row)) *Row {
+		row := &Row{Item: provider.Item{ID: "f1", Name: "a.txt", Version: "v1", ETag: "e1"}}
+		change(row)
+		return row
+	}
+	for _, kind := range []string{ProviderDrive, ProviderOneDrive} {
+		c := &Conn{Provider: kind}
+		require.True(t, c.Replaceable(file(func(*Row) {})), kind)
+		require.False(t, c.Replaceable(file(func(r *Row) { r.IsDir = true })), kind)
+		require.False(t, c.Replaceable(file(func(r *Row) { r.Version = "" })), kind)
+		require.False(t, c.Replaceable(file(func(r *Row) { r.Native = "gdoc" })), kind)
+		require.False(t, c.Replaceable(file(func(r *Row) { r.ViaLink = true })), kind)
+		require.False(t, c.Replaceable(file(func(r *Row) { r.Unsupported = UnsupportedDuplicate })), kind)
+	}
+	// Without its tag a file at OneDrive cannot be replaced; Drive has no such tag.
+	require.False(t, (&Conn{Provider: ProviderOneDrive}).Replaceable(file(func(r *Row) { r.ETag = "" })))
+	require.True(t, (&Conn{Provider: ProviderDrive}).Replaceable(file(func(r *Row) { r.ETag = "" })))
+}
+
+// A call that never left this server (no token could be had) closes no name: the
+// provider was not asked anything.
+func TestNameStaysOpenWhenNothingWasSent(t *testing.T) {
+	require.True(t, unclear(errors.New("connection reset")))
+	require.True(t, unclear(&provider.Error{Kind: provider.KindBusy}))
+	require.True(t, unclear(&provider.Error{Kind: provider.KindOther, Status: 503}))
+	require.False(t, unclear(&provider.Error{Kind: provider.KindOther, Status: 400}))
+	require.False(t, unclear(&provider.Error{Kind: provider.KindBusy, Status: 429}))
+	require.False(t, unclear(nil))
+
+	// The provider's client marks what it never sent.
+	auth := failingAuth{err: &provider.Error{Kind: provider.KindBusy}}
+	call := provider.Caller{HTTP: http.DefaultClient, Auth: auth, AllowHTTP: true}
+	_, err := call.Do(context.Background(), http.MethodPost, "http://localhost:1/x", nil, nil)
+	require.Error(t, err)
+	require.False(t, provider.Sent(err))
+	require.Equal(t, provider.KindBusy, provider.KindOf(err), "it is still the error it was")
+	require.False(t, unclear(err))
+	_, err = call.Stream(context.Background(), http.MethodPut, "http://localhost:1/x", nil, nil, 0, true)
+	require.False(t, provider.Sent(err))
+}
+
+type failingAuth struct{ err error }
+
+func (f failingAuth) Token(context.Context, string) (string, error) { return "", f.err }
+
+// An upload of a new file whose outcome becomes open in the middle (the provider says
+// "stored" to a range that is not the last) closes its name like one at the commit.
+func TestUploadOpenOutcomeInTheMiddleClosesTheName(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	data := payload(2*testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes 0-") {
+			_, _ = io.Copy(io.Discard, r.Body)
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":"x"}`))}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 0, data)
+	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	e.http.hook = nil
+
+	_, err = e.start("A.bin", 1000, UploadRequest{})
+	require.ErrorIs(t, err, ErrBusy)
+	_, err = e.f.CreateEntry(e.ctx, e.conn, "a.bin", false, true)
+	require.ErrorIs(t, err, ErrBusy)
+}
+
+// renewalFails is an Auth whose first token the provider refuses and which then cannot
+// get a new one.
+type renewalFails struct{ asked int }
+
+func (r *renewalFails) Token(_ context.Context, rejected string) (string, error) {
+	r.asked++
+	if rejected != "" {
+		return "", &provider.Error{Kind: provider.KindBusy, Status: http.StatusServiceUnavailable}
+	}
+	return "old-token", nil
+}
+
+// The provider refuses the token (401) and no new one can be had: the call was not
+// carried out, whatever the error of the renewal looks like.
+func TestRefusedTokenIsAClearNo(t *testing.T) {
+	refuses := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
+	server := httptest.NewServer(refuses)
+	defer server.Close()
+
+	auth := &renewalFails{}
+	call := provider.Caller{HTTP: server.Client(), Auth: auth, AllowHTTP: true}
+	_, err := call.Do(context.Background(), http.MethodPost, server.URL+"/files", nil, []byte("{}"))
+	require.Error(t, err)
+	require.Equal(t, 2, auth.asked)
+	require.False(t, provider.Sent(err))
+	require.False(t, unclear(err))
+
+	_, err = call.Stream(context.Background(), http.MethodPut, server.URL+"/upload", nil, strings.NewReader("x"), 1, true)
+	require.Error(t, err)
+	require.False(t, provider.Sent(err))
+	require.False(t, unclear(err))
+}
+
+// A receipt that the provider tells when it is asked is no count of bytes: also one with
+// a size that would fit as "so much has arrived" ends the upload as unknown.
+func TestUploadReceiptIsNoOffset(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	data := payload(testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	_, err = e.chunk(info.ID, 0, data)
+	require.NoError(t, err)
+
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		switch {
+		case isLastRange(r, len(data)):
+			_, _ = io.CopyN(io.Discard, r.Body, 100)
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{}, Body: http.NoBody}, nil
+		case r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes */"):
+			// A stored file as large as what had arrived before the failure.
+			receipt := fmt.Sprintf(`{"id":"forged","name":"a.bin","mimeType":"application/octet-stream","size":"%d","md5Checksum":"00"}`, testChunk+100)
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+				Body: io.NopCloser(strings.NewReader(receipt))}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 1, data)
+	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	require.Equal(t, UploadUnknown, e.status(info.ID).State)
+	e.http.hook = nil
+	_, err = e.start("a.bin", 1000, UploadRequest{})
+	require.ErrorIs(t, err, ErrBusy, "the name is closed")
+}
+
+// The state of an upload names the kind of provider, so the file it tells carries the
+// same capability as in a listing.
+func TestUploadStatusNamesTheProvider(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		info, err := e.start("a.bin", 1000, UploadRequest{})
+		require.NoError(t, err)
+		require.Equal(t, e.kind, e.status(info.ID).Provider)
+	})
+}
+
+// The provider reads the whole end of the file, refuses the token (401), and no new one
+// can be had: the file was not stored, the upload stays open and its name too.
+func TestUploadLastRangeRefusedForItsToken(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		if e.kind == ProviderOneDrive {
+			// Its upload address takes no token, so it cannot be refused for one.
+			t.Skip()
+		}
+		data := payload(testChunk + 1000)
+		info, err := e.start("a.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+		_, err = e.chunk(info.ID, 0, data)
+		require.NoError(t, err)
+
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if isLastRange(r, len(data)) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: http.NoBody}, nil
+			}
+			return nil, nil
+		}
+		// No new token: the provider of tokens fails.
+		e.f.provider.tokenAnswer = func(w http.ResponseWriter) bool {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return true
+		}
+		_, err = e.chunk(info.ID, 1, data)
+		require.Error(t, err)
+		require.NotEqual(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+		require.Equal(t, UploadReceiving, e.status(info.ID).State)
+		e.http.hook = nil
+		e.f.provider.tokenAnswer = nil
+	})
+}
+
+// Names are compared through their capitals where case does not count.
+func TestFold(t *testing.T) {
+	require.Equal(t, Fold("Docs"), Fold("dOCS"))
+	require.Equal(t, Fold("\u03a3"), Fold("\u03c2"), "both small forms of the Greek sigma")
+	require.Equal(t, Fold("\u03a3"), Fold("\u03c3"))
+	require.NotEqual(t, Fold("a"), Fold("b"))
+}
+
+// "Slow down" and then no time left for the next try: the call was not carried out.
+func TestSlowDownThenOutOfTimeIsAClearNo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	call := provider.Caller{HTTP: server.Client(), Auth: fixedAuth("token"), AllowHTTP: true}
+	_, err := call.Do(ctx, http.MethodPost, server.URL+"/files", nil, []byte("{}"))
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.False(t, provider.Sent(err))
+	require.False(t, unclear(err))
+}
+
+type fixedAuth string
+
+func (f fixedAuth) Token(context.Context, string) (string, error) { return string(f), nil }
+
+// An upload whose outcome becomes open in its middle may have put a file into the
+// folder: the listing in memory is dropped, so the next look asks the provider.
+func TestUploadOpenOutcomeDropsTheListing(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	e.sim.AddFile("", "first.txt", []byte("1"))
+	page, err := e.f.Tree().List(e.ctx, e.conn, "", Order{By: "name"}, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "first.txt", rowNames(page.Rows))
+	// Appears at the provider without Fylvo knowing; the listing in memory hides it.
+	e.sim.AddFile("", "second.txt", []byte("2"))
+	page, err = e.f.Tree().List(e.ctx, e.conn, "", Order{By: "name"}, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "first.txt", rowNames(page.Rows))
+
+	data := payload(2*testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	page, err = e.f.Tree().List(e.ctx, e.conn, "", Order{By: "name"}, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "first.txt", rowNames(page.Rows), "still from memory")
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes 0-") {
+			_, _ = io.Copy(io.Discard, r.Body)
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":"x"}`))}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 0, data)
+	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	e.http.hook = nil
+
+	page, err = e.f.Tree().List(e.ctx, e.conn, "", Order{By: "name"}, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "first.txt|second.txt", rowNames(page.Rows))
+}
+
+// Drive answers the last range "stored" before it read a byte, with a receipt that tells
+// nothing: what it stored is open. The upload ends unknown, it is not sent again.
+func TestUploadStoredWithoutAReceiptToGoBy(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	data := payload(testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	_, err = e.chunk(info.ID, 0, data)
+	require.NoError(t, err)
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		if isLastRange(r, len(data)) {
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":"x"}`))}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 1, data)
+	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	require.Equal(t, UploadUnknown, e.status(info.ID).State)
+}
+
+// What a range that was refused outright had read on its way does not count as "the
+// provider can have it": a later claim of the provider is held against what was really
+// handed over to a request that was taken.
+func TestUploadRefusedRangeLeavesNothingAtTheProvider(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		data := payload(2*testChunk + 1000)
+		info, err := e.start("a.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+
+		// The whole first range is read, then: "slow down".
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes 0-") {
+				_, _ = io.Copy(io.Discard, r.Body)
+				return &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}, Body: http.NoBody}, nil
+			}
+			return nil, nil
+		}
+		_, err = e.chunk(info.ID, 0, data)
+		require.Equal(t, serializer.CodeConnectedBusy, codeOf(err))
+		e.http.hook = nil
+
+		u := e.f.uploads.byID[info.ID]
+		require.Zero(t, u.sentTo, "nothing of the refused range counts as sent")
+		row, err := e.send(info.ID, 0, data)
+		require.NoError(t, err)
+		require.NotNil(t, row)
+		require.Equal(t, data, e.content("a.bin"))
+	})
+}
+
+// A 403 that says "slow down" is as clear a "no" as a 429 when time runs out before
+// the next try.
+func TestSlowDownAs403ThenOutOfTimeIsAClearNo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	slowDown := func(status int, _ http.Header, _ []byte) *provider.Error {
+		return &provider.Error{Kind: provider.KindBusy, Status: status, Code: "rateLimitExceeded"}
+	}
+	call := provider.Caller{HTTP: server.Client(), Auth: fixedAuth("token"), AllowHTTP: true, Classify: slowDown}
+	_, err := call.Do(ctx, http.MethodPost, server.URL+"/files", nil, []byte("{}"))
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.False(t, provider.Sent(err))
+}
+
+// A range lost its answer, and Drive, asked what it has, says "stored" with a receipt
+// that tells nothing. The upload ends unknown and closes its name; it is not taken for
+// one that can simply go on or be cancelled.
+func TestUploadStoredSaysTheProbeWithoutAReceipt(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	data := payload(2*testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes 0-"):
+			_, _ = io.Copy(io.Discard, r.Body)
+			return nil, errors.New("connection reset")
+		case r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes */"):
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":"x"}`))}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 0, data)
+	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	require.Equal(t, UploadUnknown, e.status(info.ID).State)
+	e.http.hook = nil
+	require.ErrorIs(t, e.f.CancelUpload(e.ctx, e.conn, info.ID), ErrOutcomeUnknown, "a cancel does not make it failed")
+	_, err = e.start("a.bin", 1000, UploadRequest{})
+	require.ErrorIs(t, err, ErrBusy, "the name is closed")
+}
+
+// OneDrive refuses the address of an upload session (401): it took nothing of the range
+// and the session is gone. The upload fails, nothing is unknown, the name stays open.
+func TestUploadAddressRefusedAtOneDrive(t *testing.T) {
+	e := newUploadEnv(t, ProviderOneDrive)
+	data := payload(testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	_, err = e.chunk(info.ID, 0, data)
+	require.NoError(t, err)
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		if isLastRange(r, len(data)) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: http.NoBody}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 1, data)
+	require.Error(t, err)
+	require.NotEqual(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	e.http.hook = nil
+	require.Equal(t, UploadFailed, e.status(info.ID).State)
+	again, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err, "the name is not closed")
+	row, err := e.send(again.ID, 0, data)
+	require.NoError(t, err)
+	require.NotNil(t, row)
+}
+
+// Time runs out before a try is started: that try does not count as one that may have
+// been carried out.
+func TestOutOfTimeBeforeATryIsNoTry(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	call := provider.Caller{HTTP: http.DefaultClient, Auth: fixedAuth("token"), AllowHTTP: true}
+	_, err := call.Do(ctx, http.MethodPost, "http://localhost:1/files", nil, []byte("{}"))
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, provider.Sent(err))
 }

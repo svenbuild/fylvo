@@ -58,6 +58,14 @@ func shortHash(prefix string, fields ...string) string {
 	return prefix + hex.EncodeToString(h.Sum(nil))[:24]
 }
 
+// Fold makes a name comparable where case does not count. Lower case alone is not
+// enough: some letters have two small forms of one capital (the Greek sigma), and a
+// provider that compares by capitals takes them for one. So the name goes through its
+// capitals first.
+func Fold(name string) string {
+	return strings.ToLower(strings.ToUpper(name))
+}
+
 // FileID is the id clients see for a row, and send back to say which row they mean. It
 // follows the provider's id of the entry, so it survives a rename or a move. A row that
 // was reached through a link gets an id from its path instead: the same item reached two
