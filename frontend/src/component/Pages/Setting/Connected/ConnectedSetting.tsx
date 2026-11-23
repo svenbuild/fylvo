@@ -302,10 +302,12 @@ const StorageRow = ({
   const needsReconnect = storage.status == ConnectedStatus.reconnect;
   const configured = list.providers.some((p) => p.type == storage.provider && p.configured);
   const row = useRef<HTMLDivElement>(null);
+  const reconnectButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (highlight) {
       row.current?.scrollIntoView({ block: "center" });
+      reconnectButton.current?.focus();
     }
   }, [highlight]);
 
@@ -371,7 +373,7 @@ const StorageRow = ({
             size="small"
             variant={highlight ? "contained" : "outlined"}
             color="warning"
-            autoFocus={highlight}
+            ref={reconnectButton}
             loading={authorizing == storage.id}
             disabled={!!authorizing}
             onClick={() => onReconnect(storage)}
@@ -409,16 +411,21 @@ const ConnectedSetting = () => {
   // ?reconnect=<id> (from the apps): only points at the storage; starting a sign-in
   // always takes a click.
   const [reconnectParam, setReconnectParam] = useQueryState("reconnect");
-  const [highlight] = useState(reconnectParam);
+  const [highlight, setHighlight] = useState(reconnectParam);
   const [list, setList] = useState<ConnectedListResponse | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  // Counts renames and disconnects, so a list request older than one of them is not shown.
+  const changes = useRef(0);
   const [finishing, setFinishing] = useState(false);
   const [result, setResult] = useState<FlowResult | undefined>(undefined);
   const [connectOpen, setConnectOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<ConnectedStorage | undefined>(undefined);
+  // A start from before leaving the tab, taken once: its end clears the pending state.
+  const [pendingRun] = useState(() => authorizeRun);
   // Provider type (connect) or connection id (reconnect) of the sign-in being started.
-  const [authorizing, setAuthorizing] = useState<string | undefined>(authorizeRun?.key);
+  const [authorizing, setAuthorizing] = useState<string | undefined>(pendingRun?.key);
   const handled = useRef(false);
   const mounted = useRef(true);
   useResetOnBack(() => setAuthorizing(undefined));
@@ -426,7 +433,7 @@ const ConnectedSetting = () => {
   useEffect(() => {
     mounted.current = true;
     // A start from before leaving the tab: wait for it; it does not leave the page any more.
-    authorizeRun?.done.finally(() => mounted.current && setAuthorizing(undefined));
+    pendingRun?.done.finally(() => mounted.current && setAuthorizing(undefined));
     return () => {
       mounted.current = false;
     };
@@ -439,16 +446,38 @@ const ConnectedSetting = () => {
 
   // The spinner shows only until the first list is there, so a refresh keeps open dialogs.
   // After a failed refresh the old list is dropped, so no action works on stale data.
-  const load = useCallback(() => {
-    setLoadFailed(false);
+  // An open rename dialog closes when its storage is gone or may no longer be renamed.
+  const load = useCallback((): Promise<void> => {
+    // A shown error stays, with its retry button disabled, until the answer is there.
+    setRefreshing(true);
+    const before = changes.current;
     return dispatch(getConnectedStorages())
-      .then((res) => setList(res))
+      .then((res) => {
+        if (changes.current != before) {
+          return load();
+        }
+        setList(res);
+        setLoadFailed(false);
+        setRenameTarget((r) => (r && res.allowed && res.storages.some((s) => s.id == r.id) ? r : undefined));
+      })
       .catch(() => {
         setList(undefined);
+        setRenameTarget(undefined);
         setLoadFailed(true);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [dispatch]);
+
+  useEffect(() => {
+    // ?reconnect=<id> may also change while the tab is open.
+    if (reconnectParam) {
+      setHighlight(reconnectParam);
+      setReconnectParam(null);
+    }
+  }, [reconnectParam]);
 
   useEffect(() => {
     // Both values are read once and taken out of the address, so a reload does not
@@ -457,10 +486,6 @@ const ConnectedSetting = () => {
       return;
     }
     handled.current = true;
-
-    if (reconnectParam) {
-      setReconnectParam(null);
-    }
 
     if (flowError) {
       setResult({
@@ -534,10 +559,12 @@ const ConnectedSetting = () => {
   };
 
   const onRenamed = (storage: ConnectedStorage) => {
+    changes.current++;
     setList((l) => l && { ...l, storages: l.storages.map((s) => (s.id == storage.id ? storage : s)) });
   };
 
   const onDisconnected = (id: string) => {
+    changes.current++;
     setList((l) => l && { ...l, storages: l.storages.filter((s) => s.id != id) });
     enqueueSnackbar({ message: t("connected.disconnected"), variant: "success", action: DefaultCloseAction });
   };
@@ -585,7 +612,7 @@ const ConnectedSetting = () => {
             severity="error"
             sx={{ mt: 1 }}
             action={
-              <Button color="inherit" size="small" onClick={load}>
+              <Button color="inherit" size="small" disabled={refreshing} onClick={load}>
                 {t("connected.retry")}
               </Button>
             }
