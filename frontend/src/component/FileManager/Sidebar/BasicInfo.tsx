@@ -355,10 +355,10 @@ const BasicInfo = ({ target }: BasicInfoProps) => {
               }
             />
           )}
-          {showEncryptionStatus && encryptionStatus && (
+          {showEncryptionStatus && encryptionStatus && !inConnected && (
             <InfoRow title={t("application:fileManager.encryption")} content={encryptionStatus} />
           )}
-          {ftsEnabled && (
+          {ftsEnabled && !inConnected && (
             <InfoRow
               title={t("application:fileManager.ftsStatus")}
               content={

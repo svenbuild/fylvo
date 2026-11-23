@@ -95,6 +95,9 @@ const knownReasons = [
   "setup",
   "not_configured",
   "not_allowed",
+  // Started under another address than the main one (the same text as when the web app
+  // notices it itself, see openProvider).
+  "other_address",
 ];
 
 // Text for an error of authorize or finish: by data.reason, else by code, else general.
@@ -561,7 +564,7 @@ const ConnectedSetting = () => {
         if (origin) {
           setAuthorizing(undefined);
           setConnectOpen(false);
-          setResult({ severity: "error", message: t("connected.otherOrigin"), origin });
+          setResult({ severity: "error", message: t("connected.reason.other_address"), origin });
         }
       })
       .catch((e) => {

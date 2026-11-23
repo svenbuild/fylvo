@@ -1163,7 +1163,6 @@
     },
     "providerMissing": "This provider is no longer set up on this server.",
     "nameTooLong": "The name is too long.",
-    "otherOrigin": "Connecting only works from the main address of this server. Please open the settings there:",
     "retry": "Retry",
     "loadFailed": "The connected storages could not be loaded.",
     "reason": {
@@ -1175,7 +1174,8 @@
       "setup": "The provider refused the setup of this server. Please ask the administrator.",
       "not_configured": "This provider is not set up on this server.",
       "not_allowed": "Your account may not connect storages.",
-      "unavailable": "Connected storages are not available."
+      "unavailable": "Connected storages are not available.",
+      "other_address": "Connecting only works from the main address of this server. Please open the settings there."
     },
     "openAtProvider": "Open at provider",
     "rowDuplicate": "This name exists more than once at the provider, so it cannot be used here. Rename one of them at the provider.",

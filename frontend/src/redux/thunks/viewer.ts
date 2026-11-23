@@ -8,7 +8,7 @@ import { canUpdate, getActionOpt } from "../../component/FileManager/ContextMenu
 import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
 import SessionManager, { UserSettings } from "../../session";
 import { isTrueVal } from "../../session/utils.ts";
-import { inConnectedStorage } from "../../api/connected.ts";
+import { usableViewers } from "../../component/FileManager/Connected/usableViewers.ts";
 import { dataUrlToBytes, fileExtension, fileNameNoExt, getFileLinkedUri, sizeToString } from "../../util";
 import { base64Encode } from "../../util/base64.ts";
 import CrUri, { CrUriPrefix } from "../../util/uri.ts";
@@ -56,13 +56,6 @@ export const builtInViewers = {
   excalidraw: "excalidraw",
   archive: "archive",
 };
-
-// Fylvo: in a connected storage only viewers that read the file through its address work;
-// Office (WOPI sessions) and the archive viewer need a file of this server.
-export const usableViewers = (file: FileResponse, viewers?: Viewer[]) =>
-  inConnectedStorage(file.path)
-    ? (viewers ?? []).filter((v) => v.type != ViewerType.wopi && v.id != builtInViewers.archive)
-    : viewers ?? [];
 
 export function openViewers(
   index: number,

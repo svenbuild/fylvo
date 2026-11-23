@@ -10,6 +10,7 @@ import Data from "./Data.tsx";
 import MediaInfo from "./MediaInfo.tsx";
 import Tags from "./Tags.tsx";
 import { DisplayOption } from "../ContextMenu/useActionDisplayOpt.ts";
+import { inConnectedStorage } from "../../../api/connected.ts";
 
 export interface DetailsProps {
   inPhotoViewer?: boolean;
@@ -75,7 +76,10 @@ const Details = ({ target, inPhotoViewer, setTarget, targetDisplayOptions }: Det
         />
       )}
       <MediaInfo target={target} />
-      <CustomProps file={target} setTarget={setTarget} targetDisplayOptions={targetDisplayOptions} />
+      {/* Fylvo: a connected storage keeps no properties of this server. */}
+      {!inConnectedStorage(target.path) && (
+        <CustomProps file={target} setTarget={setTarget} targetDisplayOptions={targetDisplayOptions} />
+      )}
       <BasicInfo target={target} />
       <Tags target={target} />
       <Data target={target} />

@@ -5,7 +5,8 @@ import { FileResponse, FileType, Metadata, NavigatorCapability } from "../../../
 import { GroupPermission } from "../../../api/user.ts";
 import { ContextMenuTypes } from "../../../redux/fileManagerSlice.ts";
 import { Viewers, ViewersByID } from "../../../redux/siteConfigSlice.ts";
-import { ExpandedViewerSetting, usableViewers } from "../../../redux/thunks/viewer.ts";
+import { ExpandedViewerSetting } from "../../../redux/thunks/viewer.ts";
+import { usableViewers } from "../Connected/usableViewers.ts";
 import { inConnectedStorage } from "../../../api/connected.ts";
 import SessionManager from "../../../session";
 import { fileExtension } from "../../../util";

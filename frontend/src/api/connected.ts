@@ -7,8 +7,12 @@ import { defaultOpts, send, ThunkResponse } from "./request.ts";
 export const ConnectedFileSystem = "connected";
 
 // Whether an address lies in a connected storage.
-export const inConnectedStorage = (path?: string) => !!path && connectedPathPattern.test(path);
-const connectedPathPattern = new RegExp(`^${CrUriPrefix}[^/@?#]+@${ConnectedFileSystem}(?:[/?#]|$)`);
+// The pattern is built on first use: this module and util/uri.ts import each other.
+let connectedPathPattern: RegExp | undefined;
+export const inConnectedStorage = (path?: string) => {
+  connectedPathPattern ??= new RegExp(`^${CrUriPrefix}[^/@?#]+@${ConnectedFileSystem}(?:[/?#]|$)`);
+  return !!path && connectedPathPattern.test(path);
+};
 
 // Address of the root of a connected storage, as the server builds it.
 export const connectedRootUri = (id: string) => `${CrUriPrefix}${id}@${ConnectedFileSystem}`;
@@ -93,15 +97,16 @@ export interface ConnectedAdminRequest {
   client_secret?: string;
 }
 
-const quietOpts = {
+// Built on use: this module is part of an import cycle with ./request.ts.
+const quietOpts = () => ({
   ...defaultOpts,
   bypassSnackbar: () => true,
-};
+});
 
 // Errors are left to the caller.
 export function getConnectedStorages(): ThunkResponse<ConnectedListResponse> {
   return async (dispatch) => {
-    return await dispatch(send("/fylvo/connected", { method: "GET" }, quietOpts));
+    return await dispatch(send("/fylvo/connected", { method: "GET" }, quietOpts()));
   };
 }
 
@@ -110,7 +115,7 @@ export function getConnectedStorages(): ThunkResponse<ConnectedListResponse> {
 export function sendConnectedAuthorize(provider: string, reconnect?: string): ThunkResponse<{ url: string }> {
   return async (dispatch) => {
     return await dispatch(
-      send("/fylvo/connected/authorize", { method: "POST", data: { provider, reconnect } }, quietOpts),
+      send("/fylvo/connected/authorize", { method: "POST", data: { provider, reconnect } }, quietOpts()),
     );
   };
 }
@@ -118,7 +123,7 @@ export function sendConnectedAuthorize(provider: string, reconnect?: string): Th
 // Completes a sign-in. Errors are left to the caller, which shows its own text.
 export function sendConnectedFinish(code: string): ThunkResponse<ConnectedStorage> {
   return async (dispatch) => {
-    return await dispatch(send("/fylvo/connected/finish", { method: "POST", data: { code } }, quietOpts));
+    return await dispatch(send("/fylvo/connected/finish", { method: "POST", data: { code } }, quietOpts()));
   };
 }
 
@@ -139,7 +144,7 @@ export function sendConnectedDisconnect(id: string): ThunkResponse {
 // Errors are left to the caller.
 export function getConnectedAdmin(): ThunkResponse<ConnectedAdminResponse> {
   return async (dispatch) => {
-    return await dispatch(send("/admin/fylvo/connected", { method: "GET" }, quietOpts));
+    return await dispatch(send("/admin/fylvo/connected", { method: "GET" }, quietOpts()));
   };
 }
 

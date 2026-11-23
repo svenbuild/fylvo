@@ -1241,7 +1241,6 @@
     },
     "providerMissing": "Dieser Anbieter ist auf dem Server nicht mehr eingerichtet.",
     "nameTooLong": "Der Name ist zu lang.",
-    "otherOrigin": "Verbinden geht nur über die Hauptadresse dieses Servers. Bitte die Einstellungen dort öffnen:",
     "retry": "Nochmals versuchen",
     "loadFailed": "Die verbundenen Speicher konnten nicht geladen werden.",
     "reason": {
@@ -1253,7 +1252,8 @@
       "setup": "Der Anbieter hat die Einrichtung dieses Servers abgelehnt. Bitte an die Verwaltung wenden.",
       "not_configured": "Dieser Anbieter ist auf diesem Server nicht eingerichtet.",
       "not_allowed": "Dieses Konto darf keine Speicher verbinden.",
-      "unavailable": "Verbundene Speicher sind nicht verfügbar."
+      "unavailable": "Verbundene Speicher sind nicht verfügbar.",
+      "other_address": "Verbinden geht nur über die Hauptadresse dieses Servers. Bitte die Einstellungen dort öffnen."
     },
     "openAtProvider": "Beim Anbieter öffnen",
     "rowDuplicate": "Diesen Namen gibt es beim Anbieter mehrfach, darum lässt er sich hier nicht verwenden. Bitte einen davon beim Anbieter umbenennen.",
