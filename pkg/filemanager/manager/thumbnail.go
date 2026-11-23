@@ -103,6 +103,9 @@ func (m *manager) Thumbnail(ctx context.Context, uri *fs.URI) (entitysource.Enti
 			return nil, fmt.Errorf("failed to get entity source: %w", err)
 		}
 
+		// Fylvo: the same name as for a stored thumbnail above, so the signed address of a new
+		// thumbnail is the same as on the next request.
+		thumbSource.Apply(entitysource.WithDisplayName(file.DisplayName() + ".jpg"))
 		return thumbSource, nil
 	} else {
 		// 4. If proxy generator not support, mark thumb as not available.
@@ -147,7 +150,12 @@ func (m *manager) generateThumb(ctx context.Context, uri *fs.URI, ext string, es
 			_ = os.Remove(res.Path)
 		}
 
-		if !errors.Is(err, context.Canceled) && !m.stateless {
+		// Fylvo: a file is marked as having no thumbnail only while it still has the version that
+		// failed. The background maker marks it only when no generator handles it; other failures
+		// (a busy or short-memory moment) are left to the next try.
+		if !errors.Is(err, context.Canceled) && !m.stateless &&
+			(!isThumbPregen(ctx) || errors.Is(err, thumb.ErrNotAvailable)) &&
+			m.isCurrentVersion(ctx, uri, es.Entity().ID()) {
 			if err := disableThumb(ctx, m, uri); err != nil {
 				m.l.Warning("Failed to disable thumb: %v", err)
 			}
@@ -250,6 +258,8 @@ type (
 		m   *manager
 		uri *fs.URI
 		sig chan *generateRes
+		// pregen: asked by the background maker (Fylvo, fylvo_thumb_pregen.go).
+		pregen bool
 	}
 	generateRes struct {
 		thumbEntity fs.Entity
@@ -272,6 +282,8 @@ func newGenerateThumbTask(ctx context.Context, m *manager, uri *fs.URI, ext stri
 		m:   m,
 		uri: uri,
 		sig: make(chan *generateRes, 2),
+
+		pregen: isThumbPregen(ctx),
 	}
 
 	t.InMemoryTask.DBTask.Task.SetUser(m.user)
@@ -287,6 +299,9 @@ func (m *GenerateThumbTask) Do(ctx context.Context) (task.Status, error) {
 	default:
 	}
 
+	if m.pregen {
+		ctx = withThumbPregen(ctx)
+	}
 	res, err := m.m.generateThumb(ctx, m.uri, m.ext, m.es)
 	if err != nil {
 		if errors.Is(err, thumb.ErrNotAvailable) {
@@ -326,4 +341,10 @@ func (m *manager) thumbFileGone(ctx context.Context, thumb fs.Entity) bool {
 
 	_, err = os.Stat(d.LocalPath(ctx, thumb.Source()))
 	return errors.Is(err, os.ErrNotExist)
+}
+
+// isCurrentVersion tells if the file at uri still has entityID as its current version (Fylvo).
+func (m *manager) isCurrentVersion(ctx context.Context, uri *fs.URI, entityID int) bool {
+	file, err := m.fs.Get(dbfs.WithBypassOwnerCheck(ctx), uri)
+	return err == nil && file.PrimaryEntityID() == entityID
 }

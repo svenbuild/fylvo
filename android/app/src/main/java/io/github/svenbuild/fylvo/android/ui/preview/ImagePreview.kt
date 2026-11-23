@@ -31,6 +31,7 @@ import coil.request.ImageRequest
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
 import io.github.svenbuild.fylvo.android.ui.files.rememberThumbUrl
+import io.github.svenbuild.fylvo.android.ui.files.thumbCacheKey
 import io.github.svenbuild.fylvo.android.util.asString
 import kotlinx.coroutines.launch
 
@@ -101,7 +102,15 @@ fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit,
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(model)
-                    .placeholderMemoryCacheKey(thumb)
+                    // Fylvo: the preview is kept under its own key (thumbCacheKey), also while it
+                    // stands in for the full image.
+                    .placeholderMemoryCacheKey(thumbCacheKey(file))
+                    .apply {
+                        if (model == thumb) {
+                            memoryCacheKey(thumbCacheKey(file))
+                            diskCacheKey(thumbCacheKey(file))
+                        }
+                    }
                     .crossfade(true)
                     .build(),
                 contentDescription = file.name,

@@ -90,6 +90,8 @@ export interface FmTreeItem {
 export interface ThumbCache {
   src: string;
   expires?: string;
+  // Fylvo: the version (primary entity) the thumbnail was made for.
+  entity?: string;
 }
 
 export interface FileManagerArgsBase<T> {
@@ -280,16 +282,18 @@ export const fileManagerSlice = createSlice({
         state[index].list.pagination.next_token = undefined;
       }
     },
-    setThumbCache: (state, action: PayloadAction<FileManagerArgsBase<[string, FileThumbResponse]>>) => {
+    setThumbCache: (state, action: PayloadAction<FileManagerArgsBase<[string, FileThumbResponse, string?]>>) => {
       const index = action.payload.index;
       const path = action.payload.value[0];
       const thumb = action.payload.value[1];
+      const entity = action.payload.value[2];
       if (!state[index].tree[path]) {
         state[index].tree[path] = {};
       }
       state[index].tree[path].thumb = {
         src: thumb?.url,
         expires: thumb?.expires,
+        entity,
       };
     },
     clearSessionCache: (state, action: PayloadAction<FileManagerArgsBase<any>>) => {

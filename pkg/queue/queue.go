@@ -40,7 +40,10 @@ type (
 		metric       *metric
 		quit         chan struct{}
 		ready        chan struct{}
-		scheduler    Scheduler
+		// wake tells an idle worker that a task was queued (Fylvo), so it does not sleep out the
+		// pull interval first. Size 1: a pending signal is enough, more are dropped.
+		wake      chan struct{}
+		scheduler Scheduler
 		stopOnce     sync.Once
 		stopFlag     int32
 		rootCtx      context.Context
@@ -78,6 +81,7 @@ func New(l logging.Logger, taskClient inventory.TaskClient, registry TaskRegistr
 		scheduler:    NewFifoScheduler(0, l),
 		quit:         make(chan struct{}),
 		ready:        make(chan struct{}, 1),
+		wake:         make(chan struct{}, 1),
 		metric:       &metric{},
 		options:      o,
 		logger:       l,
@@ -203,6 +207,11 @@ func (q *queue) QueueTask(ctx context.Context, t Task) error {
 	q.logger.Info("New Task with type %q submitted to queue %q by %q", t.Type(), q.name, owner)
 	if q.registry != nil {
 		q.registry.Set(t.ID(), t)
+	}
+
+	select {
+	case q.wake <- struct{}{}:
+	default:
 	}
 
 	return nil
@@ -404,8 +413,10 @@ func (q *queue) start() {
 								close(tasks)
 								return
 							}
+						case <-q.wake:
+							// a task was queued
 						case <-time.After(q.taskPullInterval):
-							// sleep to fetch new Task
+							// sleep to fetch new Task (also for a task waiting to be retried)
 						}
 					}
 				}

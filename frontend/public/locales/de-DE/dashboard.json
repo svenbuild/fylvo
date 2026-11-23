@@ -472,6 +472,8 @@
     "thumbQuality": "Qualität",
     "thumbQualityDes": "Komprimierungsqualität in Prozent, nur gültig für jpg- und webp-Kodierung. ",
     "thumbGC": "GC nach Miniaturansichten-Generierung ausführen",
+    "thumbPregen": "Fehlende Vorschaubilder im Hintergrund erzeugen",
+    "thumbPregenDes": "Langsam, eines nach dem anderen, neueste Dateien zuerst. Office-Dokumente erst beim ersten Ansehen.",
     "captcha": "Captcha",
     "captchaType": "Captcha-Typ",
     "captchaTypeDes": "Captcha-Typ und -Anbieter auswählen.",

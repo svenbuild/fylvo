@@ -183,7 +183,13 @@ func (b Builtin) Generate(ctx context.Context, es entitysource.EntitySource, ext
 	}
 
 	defer thumbFile.Close()
-	if err := img.Save(thumbFile, b.settings.ThumbEncode(ctx)); err != nil {
+	encode := b.settings.ThumbEncode(ctx)
+	if encode.Format == "jpg" && !util.IsInExtensionListExt(jpegExts, ext) {
+		// Fylvo: PNG and GIF can be transparent. They are stored as PNG here; the pipeline turns
+		// an opaque one into a JPEG (toJPEGIfOpaque).
+		encode = &setting.ThumbEncode{Format: "png", Quality: encode.Quality}
+	}
+	if err := img.Save(thumbFile, encode); err != nil {
 		return &Result{Path: tempPath}, err
 	}
 

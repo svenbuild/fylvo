@@ -471,6 +471,8 @@
     "thumbQuality": "Quality",
     "thumbQualityDes": "Compression quality percentage, valid only for jpg and webp format.",
     "thumbGC": "Run GC after thumb generated",
+    "thumbPregen": "Make missing thumbnails in the background",
+    "thumbPregenDes": "Slowly, one at a time, newest files first. Office documents are left to the first view.",
     "captcha": "Captcha",
     "captchaType": "Captcha type",
     "captchaTypeDes": "Select captcha type and provider.",

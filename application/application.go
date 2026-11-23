@@ -20,6 +20,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/crontab"
 	"github.com/cloudreve/Cloudreve/v4/pkg/email"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/onedrive"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -56,6 +57,8 @@ type server struct {
 	// Fylvo: kept to stop them in order at shutdown.
 	cron     *cron.Cron
 	activity *activity.Recorder
+	// stopThumbPregen ends the background thumbnail maker (Fylvo).
+	stopThumbPregen context.CancelFunc
 }
 
 func (s *server) PrintBanner() {
@@ -118,6 +121,11 @@ func (s *server) Start() error {
 		}
 		c.Start()
 		s.cron = c
+
+		// Fylvo: thumbnails made ahead of time.
+		pregenCtx, stopPregen := context.WithCancel(context.Background())
+		s.stopThumbPregen = stopPregen
+		manager.StartThumbPregen(pregenCtx, s.dep)
 
 		// Start node pool
 		if _, err := s.dep.NodePool(context.Background()); err != nil {
@@ -191,6 +199,9 @@ func (s *server) Close() {
 	}
 
 	s.dep.EventHub().Close()
+	if s.stopThumbPregen != nil {
+		s.stopThumbPregen()
+	}
 
 	// Shutdown http server
 	if s.server != nil {

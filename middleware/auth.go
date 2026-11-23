@@ -35,7 +35,11 @@ func SignRequired(authInstance auth.Auth) gin.HandlerFunc {
 		case http.MethodPut, http.MethodPost, http.MethodPatch:
 			err = auth.CheckRequest(c, authInstance, c.Request)
 		default:
+			sign := c.Request.URL.Query().Get("sign")
 			err = auth.CheckURI(c, authInstance, c.Request.URL)
+			if err == nil {
+				auth.SetSignExpiry(c, sign)
+			}
 		}
 
 		if err != nil {

@@ -117,6 +117,13 @@ func (p pipeline) Generate(ctx context.Context, es entitysource.EntitySource, ex
 				continue
 			}
 
+			if err == nil && res != nil {
+				w, h := p.settings.ThumbSize(ctx)
+				if convErr := toJPEGIfOpaque(res.Path, p.settings.ThumbEncode(ctx), w, h); convErr != nil {
+					p.l.Warning("Failed to convert thumbnail of %s to JPEG, keeping PNG: %s", e.Source(), convErr)
+				}
+			}
+
 			return res, err
 		}
 	}

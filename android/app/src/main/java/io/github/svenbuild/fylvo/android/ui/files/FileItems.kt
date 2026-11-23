@@ -114,6 +114,14 @@ fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
 }
 
 /**
+ * Fylvo: the key Coil keeps a preview under (memory and disk), by file and version. The signed
+ * address changes from day to day and between app starts; the preview of one version does not.
+ * The address is still asked from the server first, which checks the access. The caches are
+ * cleared when the session ends (FylvoApp.endSession).
+ */
+fun thumbCacheKey(file: FileObject): String = "thumb:${file.id}:${file.primaryEntity}"
+
+/**
  * Thumbnail when the server has one, otherwise the file-kind icon on a soft
  * tinted tile. Same shape in both cases so list rows stay aligned.
  */
@@ -142,7 +150,12 @@ fun FileThumb(
     ) {
         if (thumbUrl != null) {
             SubcomposeAsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(thumbUrl).crossfade(180).build(),
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(thumbUrl)
+                    .memoryCacheKey(thumbCacheKey(file))
+                    .diskCacheKey(thumbCacheKey(file))
+                    .crossfade(180)
+                    .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

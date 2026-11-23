@@ -119,7 +119,8 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
   return async (dispatch, getState) => {
     const { fileManager } = getState();
     const cache = fileManager[index].tree[file.path]?.thumb;
-    if (cache) {
+    // Fylvo: a thumbnail belongs to one version of the file (its address stays the same for a day).
+    if (cache && cache.entity == file.primary_entity) {
       if (!cache.expires || dayjs(cache.expires).isAfter(dayjs())) {
         return cache.src;
       }
@@ -127,7 +128,7 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
 
     try {
       const thumb = await dispatch(getFileThumb(getFileLinkedUri(file), fileManager[index].list?.context_hint));
-      dispatch(setThumbCache({ index, value: [file.path, thumb] }));
+      dispatch(setThumbCache({ index, value: [file.path, thumb, file.primary_entity] }));
       return thumb.url;
     } catch (e) {
       dispatch(
