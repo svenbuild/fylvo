@@ -95,7 +95,13 @@ export function setTargetPath(index: number, path: string): AppThunk {
   };
 }
 
-let generation = 0;
+// Fylvo: one counter per file manager, so a slow listing of one is not dropped by another.
+const generations: { [index: number]: number } = {};
+// Fylvo: the running search of a connected storage, by file manager.
+const connectedSearch: { [index: number]: AbortController | undefined } = {};
+// Fylvo: the generation of a listing that replaces the shown one, while it is on its way (a next
+// page waits for it; the loading flag alone is also set by other work).
+const replacing: { [index: number]: number | undefined } = {};
 export interface NavigateReconcileOptions {
   next_page?: boolean;
   sync_view?: boolean;
@@ -183,8 +189,30 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
     if (!path) {
       return;
     }
+    // Fylvo: no next page while another listing replaces this one (its cursor belongs to the old).
+    if (opt?.next_page && replacing[index] !== undefined) {
+      return;
+    }
 
-    const currentGeneration = ++generation;
+    const currentGeneration = (generations[index] = (generations[index] ?? 0) + 1);
+    if (!opt?.next_page) {
+      replacing[index] = currentGeneration;
+    }
+    // Ends this listing's loading (and its "replacing" mark).
+    const finish = () => {
+      dispatch(setFmLoading({ index, value: false }));
+      if (replacing[index] == currentGeneration) {
+        replacing[index] = undefined;
+      }
+    };
+    // Fylvo: a search in a connected storage walks the folders on the server (everything below
+    // the folder, recursive); only a few such walks run at once there, so one that is no longer
+    // wanted (another search or folder) is stopped, which frees its place. Done before any wait,
+    // so an older call cannot stop a newer one.
+    connectedSearch[index]?.abort();
+    const recursive = inConnectedStorage(path) && new CrUri(path).is_search();
+    const abort = recursive ? new AbortController() : undefined;
+    connectedSearch[index] = abort;
     if (!opt?.next_page) {
       dispatch(setFmLoading({ index, value: true }));
     }
@@ -194,6 +222,10 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
       try {
         await dispatch(syncViewSettings(index));
       } catch (e) {}
+      // Fylvo: a newer listing started meanwhile.
+      if (currentGeneration != generations[index]) {
+        return;
+      }
     }
 
     const currentLogin = SessionManager.currentLoginOrNull();
@@ -203,18 +235,23 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
     let listRes: ListResponse | null = null;
     try {
       listRes = await dispatch(
-        getFileList({
-          next_page_token: opt && opt.next_page ? list?.pagination.next_token : undefined,
-          uri: path,
-          page: list?.pagination.page ?? undefined,
-          ...(useCustomView
-            ? {
-                page_size: currentView?.page_size ?? pageSize(fileManager[index]),
-                order_by: currentView?.order ?? fileManager[index].sortBy,
-                order_direction: currentView?.order_direction ?? fileManager[index].sortDirection,
-              }
-            : {}),
-        }),
+        getFileList(
+          {
+            next_page_token: opt && opt.next_page ? list?.pagination.next_token : undefined,
+            uri: path,
+            page: list?.pagination.page ?? undefined,
+            recursive: recursive || undefined,
+            ...(useCustomView
+              ? {
+                  page_size: currentView?.page_size ?? pageSize(fileManager[index]),
+                  order_by: currentView?.order ?? fileManager[index].sortBy,
+                  order_direction: currentView?.order_direction ?? fileManager[index].sortDirection,
+                }
+              : {}),
+          },
+          true,
+          abort?.signal,
+        ),
       );
 
       // DB sorting has limit on string comparison, so we need to
@@ -236,13 +273,14 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         opt?.next_page &&
         e instanceof AppError &&
         e.code == ConnectedCode.ListingGone &&
-        currentGeneration == generation
+        currentGeneration == generations[index]
       ) {
         // Fylvo: the server no longer keeps this listing (connected storage); start again.
-        dispatch(setFmLoading({ index, value: false }));
+        finish();
         return dispatch(navigateReconcile(index));
       }
-      if (currentGeneration == generation) {
+      if (currentGeneration == generations[index]) {
+        finish();
         dispatch(
           setFmError({
             index,
@@ -252,13 +290,15 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         return;
       }
     } finally {
-      if (currentGeneration == generation) {
-        dispatch(setFmLoading({ index, value: false }));
+      // Fylvo: a listing that arrived stays "loading" until it is shown (below), so nothing
+      // pages with the old listing's cursor meanwhile.
+      if (currentGeneration == generations[index] && !listRes) {
+        finish();
       }
     }
 
     // Check if current request is stale
-    if (currentGeneration !== generation) {
+    if (currentGeneration !== generations[index]) {
       return;
     }
 
@@ -314,6 +354,7 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
           // check if page is overflow
           const totalPages = Math.ceil(listRes.pagination.total_items / listRes.pagination.page_size) - 1;
           if (listRes.pagination.page > totalPages) {
+            finish();
             dispatch(changePage(index, totalPages));
             return;
           }
@@ -324,8 +365,13 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         if (timeDiff > 0 && timeDiff < 140) {
           await sleep(140 - timeDiff);
         }
+        // Fylvo: a newer listing started during the pause.
+        if (currentGeneration !== generations[index]) {
+          return;
+        }
         dispatch(applyListResponse({ index, value: listRes }));
       }
+      finish();
     }
   };
 }
@@ -560,6 +606,12 @@ export function uploadFromClipboard(index: number): AppThunk {
 
 export function resetFm(index: number): AppThunk {
   return async (dispatch, _getState) => {
+    // Fylvo: a running search of this file manager is stopped and its answer dropped.
+    connectedSearch[index]?.abort();
+    connectedSearch[index] = undefined;
+    replacing[index] = undefined;
+    generations[index] = (generations[index] ?? 0) + 1;
+    dispatch(setFmLoading({ index, value: false }));
     dispatch(resetFileManager(index));
     dispatch(resetDialogs());
   };
@@ -570,9 +622,14 @@ const SPACE_RE = / +(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/;
 
 export function quickSearch(index: number, base: string, keyword: string): AppThunk {
   return async (dispatch, _getState) => {
+    const names = keyword.split(SPACE_RE).filter((x) => x);
+    // Fylvo: nothing to search for (only spaces).
+    if (names.length == 0) {
+      return;
+    }
     const crUri = new CrUri(base);
     crUri.setSearchParam({
-      name: keyword.split(SPACE_RE).filter((x) => x),
+      name: names,
       case_folding: true,
     });
     dispatch(navigateToPath(index, crUri.toString()));
@@ -647,7 +704,12 @@ export function advancedSearch(index: number, conditions: Condition[]): AppThunk
     });
 
     const crUri = new CrUri(base);
-    crUri.setSearchParam(params);
+    // Fylvo: a connected storage is searched by name and type only.
+    crUri.setSearchParam(
+      inConnectedStorage(base)
+        ? { name: params.name, name_op_or: params.name_op_or, case_folding: params.case_folding, type: params.type }
+        : params,
+    );
     dispatch(navigateToPath(index, crUri.toString()));
     dispatch(closeAdvanceSearch());
   };
@@ -660,8 +722,7 @@ export function openAdvancedSearch(index: number, initialKeywords?: string): App
     dispatch(
       setAdvanceSearch({
         open: true,
-        // Fylvo: a connected storage cannot be searched yet; start in the own files.
-        basePath: current_base && !inConnectedStorage(current_base) ? current_base : defaultPath,
+        basePath: current_base ?? defaultPath,
         nameCondition: initialKeywords != undefined ? initialKeywords.split(SPACE_RE).filter((x) => x) : undefined,
       }),
     );

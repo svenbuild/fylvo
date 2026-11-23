@@ -339,6 +339,17 @@ export const getActionOpt = (
       display.showOpenWith = () => false;
       display.showOpenWithCascading = () => false;
     }
+    // A shortcut to a file is opened at the provider (when the server names the address there),
+    // not with a viewer here.
+    if (
+      targets.length == 1 &&
+      targets[0].type == FileType.file &&
+      targets[0].metadata?.[Metadata.connected_link] !== undefined
+    ) {
+      display.showOpen = false;
+      display.showOpenWith = () => false;
+      display.showOpenWithCascading = () => false;
+    }
   }
 
   display.showMore =

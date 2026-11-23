@@ -44,6 +44,12 @@ interface EmptyFileListProps {
 
 export const SearchLimitReached = () => {
   const { t } = useTranslation("application");
+  // Fylvo: a connected storage tells this with its own note (ConnectedIncomplete).
+  const fmIndex = useContext(FmIndexContext);
+  const connected = useAppSelector((state) => !!state.fileManager[fmIndex].list?.connected);
+  if (connected) {
+    return null;
+  }
   return (
     <Alert severity="warning">
       <AlertTitle> {t("fileManager.recursiveLimitReached")}</AlertTitle>

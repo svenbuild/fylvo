@@ -30,7 +30,7 @@ import {
   NewFileTemplate,
   Viewer,
 } from "../../api/explorer.ts";
-import { AppError, Response } from "../../api/request.ts";
+import { AppError, Code, Response } from "../../api/request.ts";
 import { DefaultCloseAction, ViewDstAction } from "../../component/Common/Snackbar/snackbar.tsx";
 import { canShowInfo, getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { DeleteOption } from "../../component/FileManager/Dialogs/DeleteConfirmation.tsx";
@@ -81,7 +81,7 @@ import { ConfigLoadState, Viewers } from "../siteConfigSlice.ts";
 import { AppThunk } from "../store.ts";
 import { confirmOperation, deleteConfirmation, renameForm, requestCreateNew, selectPath } from "./dialog.ts";
 import { downloadSingleFile } from "./download.ts";
-import { navigateToPath, refreshFileList, updateUserCapacity } from "./filemanager.ts";
+import { navigateReconcile, navigateToPath, refreshFileList, updateUserCapacity } from "./filemanager.ts";
 import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers } from "./viewer.ts";
@@ -166,6 +166,31 @@ const loadConnectedImage = async (url: string, listed: () => boolean): Promise<b
   return false;
 };
 
+// Fylvo: reloads the folder of a connected file whose preview was asked for an older version,
+// at most once per folder within half a minute (several rows of one listing, no loop). Only a
+// plain listing of that folder is reloaded, not a search (that would walk all folders again);
+// false when nothing is reloaded (the caller then remembers the failure for a minute).
+const staleRefreshes = new Map<string, number>();
+const staleRefreshPause = 30000;
+function refreshForNewVersion(index: number, file: FileResponse): AppThunk<boolean> {
+  return (dispatch, getState) => {
+    const folder = new CrUri(file.path).parent().toString();
+    const { path, pure_path, list } = getState().fileManager[index];
+    if (!path || !pure_path || new CrUri(path).is_search() || new CrUri(pure_path).toString() != folder) {
+      return false;
+    }
+    // Not when more than the first page is shown: reloading would take the user back to the top.
+    const morePages = (list?.files.length ?? 0) > (list?.pagination?.page_size ?? Infinity);
+    if (morePages || Date.now() - (staleRefreshes.get(folder) ?? 0) < staleRefreshPause) {
+      return false;
+    }
+    staleRefreshes.set(folder, Date.now());
+    // Keeps the selection and an open menu (refreshFileList clears them).
+    dispatch(navigateReconcile(index));
+    return true;
+  };
+}
+
 export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promise<string | null>> {
   return (dispatch) => {
     // Fylvo: callers for the same version of a connected file share one load.
@@ -221,7 +246,13 @@ function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string |
       for (let i = 0; ; i++) {
         try {
           const request = () =>
-            dispatch(getFileThumb(getFileLinkedUri(file), getState().fileManager[index].list?.context_hint));
+            dispatch(
+              getFileThumb(
+                getFileLinkedUri(file),
+                getState().fileManager[index].list?.context_hint,
+                connected ? file.primary_entity : undefined,
+              ),
+            );
           thumb = connected
             ? await connectedThumbAddresses((waited) => (waited && !listed() ? Promise.reject(dropped) : request()))
             : await request();
@@ -253,6 +284,16 @@ function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string |
       return thumb.url;
     } catch (e) {
       if (e === dropped || outdated()) {
+        return null;
+      }
+      // Fylvo: the file is another version at the provider by now: the folder is shown again
+      // (the new row asks for its own preview), and nothing is remembered for this version.
+      if (
+        connected &&
+        e instanceof AppError &&
+        e.code == Code.StaleVersion &&
+        dispatch(refreshForNewVersion(index, file))
+      ) {
         return null;
       }
       // Fylvo: remembered for this version of the file only, in the thumbnail cache, and for a
@@ -416,7 +457,12 @@ export function fileDoubleClicked(index: number, file: FileResponse, e?: React.M
       dispatch(openAtProvider(index, file));
     } else if (actionOpt.showOpen || actionOpt.showEnter) {
       dispatch(openFile(index, file));
-    } else if (file.type == FileType.file && actionOpt.showDownload) {
+    } else if (
+      file.type == FileType.file &&
+      actionOpt.showDownload &&
+      // Fylvo: a shortcut of a connected storage opens at the provider, it is not downloaded.
+      file.metadata?.[Metadata.connected_link] === undefined
+    ) {
       dispatch(downloadSingleFile(file));
     }
   };

@@ -41,6 +41,13 @@ export const downloadFileName = (file: FileResponse, name: string = file.name, t
 export const folderEnterable = (folder: FileResponse) =>
   !inConnectedStorage(folder.path) || new Boolset(folder.capability).enabled(NavigatorCapability.enter_folder);
 
+// The formats a provider's document downloads in, the usual one first; empty for other rows.
+export const exportFormats = (file: FileResponse) =>
+  (file.metadata?.[Metadata.connected_exports] ?? "")
+    .split(",")
+    .map((f) => f.trim())
+    .filter((f) => f);
+
 // Fylvo: changes in a connected storage name the rows the user saw: their ids by address.
 // Undefined outside connected storages.
 export const connectedIds = (files: FileResponse[], extra?: FileResponse) => {
