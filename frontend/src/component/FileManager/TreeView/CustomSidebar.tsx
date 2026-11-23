@@ -1,5 +1,5 @@
 import { SpaceDashboardOutlined } from "@mui/icons-material";
-import { Box, Typography } from "@mui/material";
+import { Box, IconButton, Tooltip, Typography } from "@mui/material";
 import { memo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -209,13 +209,18 @@ const CustomSidebar = memo(
     return (
       <>
         {items.map(render)}
-        <SideNavItem
-          level={0}
-          sx={{ mt: "8px", opacity: 0.8 }}
-          icon={<Edit fontSize="small" />}
-          label={t("customize.editSidebar")}
-          onClick={() => setCustomizeOpen(true)}
-        />
+        <Box sx={{ display: "flex", justifyContent: "flex-end", pr: "6px", mt: "2px" }}>
+          <Tooltip title={t("customize.editSidebar")}>
+            <IconButton
+              size="small"
+              aria-label={t("customize.editSidebar")}
+              onClick={() => setCustomizeOpen(true)}
+              sx={{ p: "4px", opacity: 0.55, "&:hover": { opacity: 1 } }}
+            >
+              <Edit sx={{ fontSize: 15 }} />
+            </IconButton>
+          </Tooltip>
+        </Box>
         <CustomizeSidebarDialog open={customizeOpen} onClose={() => setCustomizeOpen(false)} />
       </>
     );
