@@ -30,10 +30,18 @@ func TestDevProvider(t *testing.T) {
 		Settings: &memSettings{values: map[string]string{}},
 		Sealer:   testSealer(1),
 	}
+	stored := options.Settings.(*memSettings)
 	devOptions(&options)
 	m := NewManager(options)
-	secret := "simulated"
-	require.NoError(t, m.SetProvider(ctx, ProviderDrive, "simulated", &secret))
+	// The simulated provider shows as set up, and nothing of it is stored: a server
+	// started without it on the same data does not know it.
+	setup, err := m.Setup(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "simulated", setup[ProviderDrive].ClientID)
+	secret := "another"
+	require.NoError(t, m.SetProvider(ctx, ProviderDrive, "another", &secret))
+	require.Empty(t, stored.values[clientIDSetting(ProviderDrive)])
+	require.Empty(t, stored.values[clientSecretSetting(ProviderDrive)])
 
 	page := func(method, address string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()

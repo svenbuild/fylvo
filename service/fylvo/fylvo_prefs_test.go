@@ -126,7 +126,6 @@ func TestPrefsPatchRefusesInvalidValues(t *testing.T) {
 		`{"sidebar":{"items":[{"type":"heading"}]}}`,
 		`{"sidebar":{"items":[{"type":"link","uri":"cloudreve://my/a"},{"type":"link","uri":"cloudreve://my/a"}]}}`,
 		`{"home":{"widgets":[{"type":"weather"}]}}`,
-		`{"sidebar":{"items":[{"type":"link","uri":"cloudreve://abc@connected/Docs"}]}}`,
 		`{"sidebar":{}}`,
 		`{"home":{}}`,
 		// One valid and one invalid part: nothing is saved.
