@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	// maxPerUser is the most storages one account can connect.
-	maxPerUser = 10
+	// MaxPerUser is the most storages one account can connect.
+	MaxPerUser = 10
 	maxNameLen = 64
 )
 
@@ -360,7 +360,7 @@ func (m *Manager) Authorize(ctx context.Context, userID int, provider, reconnect
 		return "", "", err
 	}
 	if !ok {
-		return "", "", ErrUnavailable
+		return "", "", reasoned(serializer.CodeConnectedUnavailable, "The provider is not set up", ReasonNotConfigured)
 	}
 	client.Redirect = redirect
 
@@ -379,8 +379,8 @@ func (m *Manager) Authorize(ctx context.Context, userID int, provider, reconnect
 		if err != nil {
 			return "", "", serializer.NewError(serializer.CodeDBError, "Failed to list connected storages", err)
 		}
-		if len(rows) >= maxPerUser {
-			return "", "", serializer.NewError(serializer.CodeParamErr, "Too many connected storages", nil)
+		if len(rows) >= MaxPerUser {
+			return "", "", reasoned(serializer.CodeParamErr, "Too many connected storages", ReasonTooMany)
 		}
 	}
 
@@ -420,7 +420,7 @@ func flowError(err error) error {
 		code = serializer.CodeConnectedUnavailable
 	}
 	// The texts of these errors are fixed, nothing of a provider's answer is in them.
-	return serializer.NewError(code, err.Error(), nil)
+	return reasoned(code, err.Error(), FlowErrorCode(err))
 }
 
 func tokenContext(publicID string, userID int, provider string) []byte {
@@ -454,8 +454,8 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 			return nil, err
 		}
 		if row.AccountKey != granted.Identity.Key {
-			return nil, serializer.NewError(serializer.CodeParamErr,
-				"This is another account at the provider than the one the storage belongs to", nil)
+			return nil, reasoned(serializer.CodeParamErr,
+				"This is another account at the provider than the one the storage belongs to", ReasonOtherAccount)
 		}
 		secret, err := m.sealer.Seal(ctx, PurposeToken, tokenContext(row.PublicID, userID, row.Provider), []byte(granted.Token))
 		if err != nil {
@@ -511,12 +511,12 @@ func (m *Manager) createLocked(ctx context.Context, userID int, kind string, ide
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to list connected storages", err)
 	}
-	if len(rows) >= maxPerUser {
-		return nil, serializer.NewError(serializer.CodeParamErr, "Too many connected storages", nil)
+	if len(rows) >= MaxPerUser {
+		return nil, reasoned(serializer.CodeParamErr, "Too many connected storages", ReasonTooMany)
 	}
 	for _, row := range rows {
 		if row.Provider == kind && row.AccountKey == identity.Key {
-			return nil, serializer.NewError(serializer.CodeObjectExist, "This account is already connected", nil)
+			return nil, reasoned(serializer.CodeObjectExist, "This account is already connected", ReasonExists)
 		}
 	}
 

@@ -123,6 +123,7 @@ func TestProviderSetup(t *testing.T) {
 	}
 	_, _, err = f.Authorize(ctx, 7, ProviderDrive, "", testRedirect)
 	require.Equal(t, serializer.CodeConnectedUnavailable, codeOf(err), "no client set up yet")
+	require.Equal(t, ReasonNotConfigured, ReasonOf(err))
 
 	secret := "client-secret"
 	require.NoError(t, f.SetProvider(ctx, ProviderDrive, " client-id ", &secret))
@@ -192,6 +193,7 @@ func TestConnectListRenameDisconnect(t *testing.T) {
 	// The same provider account cannot be connected twice by one account.
 	_, err = f.connect(t, 7, "")
 	require.Equal(t, serializer.CodeObjectExist, codeOf(err))
+	require.Equal(t, ReasonExists, ReasonOf(err))
 
 	// Each account sees only its own connections.
 	list, err := f.List(ctx, 7)
@@ -251,6 +253,7 @@ func TestReconnect(t *testing.T) {
 	f.provider.account = "account-2"
 	_, err = f.connect(t, 7, storage.ID)
 	require.Equal(t, serializer.CodeParamErr, codeOf(err))
+	require.Equal(t, ReasonOtherAccount, ReasonOf(err))
 	row, err = f.storages.Get(ctx, 7, storage.ID)
 	require.NoError(t, err)
 	require.Equal(t, 2, row.Generation)
@@ -271,6 +274,7 @@ func TestReconnect(t *testing.T) {
 	require.NoError(t, err)
 	_, err = f.Finish(ctx, 7, finishB)
 	require.Error(t, err)
+	require.Equal(t, ReasonExpired, ReasonOf(err))
 	row, err = f.storages.Get(ctx, 7, storage.ID)
 	require.NoError(t, err)
 	require.Equal(t, 3, row.Generation)
@@ -348,7 +352,7 @@ func TestLimitPerUser(t *testing.T) {
 	secret := "client-secret"
 	require.NoError(t, f.SetProvider(ctx, ProviderDrive, "client-id", &secret))
 
-	for i := 0; i < maxPerUser; i++ {
+	for i := 0; i < MaxPerUser; i++ {
 		f.provider.account = "account-" + string(rune('a'+i))
 		_, err := f.connect(t, 7, "")
 		require.NoError(t, err)
@@ -356,6 +360,7 @@ func TestLimitPerUser(t *testing.T) {
 	f.provider.account = "one-more"
 	_, _, err := f.Authorize(ctx, 7, ProviderDrive, "", testRedirect)
 	require.Equal(t, serializer.CodeParamErr, codeOf(err))
+	require.Equal(t, ReasonTooMany, ReasonOf(err))
 }
 
 // While an account is being deleted nothing new is stored for it: a sign-in that completes

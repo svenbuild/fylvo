@@ -117,7 +117,7 @@ func openConnected(c context.Context, uri *fs.URI) (*connectedRequest, error) {
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	if !mayUseConnected(user) {
-		return nil, connected.ErrUnavailable
+		return nil, connected.ErrNotAllowed
 	}
 
 	path, err := connected.CheckPath(uri.U.Path)

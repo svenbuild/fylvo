@@ -314,6 +314,30 @@ func Error(err error) error {
 	return serializer.NewError(serializer.CodeInternalSetting, "The storage provider answered with an error", err)
 }
 
+// Reasons connecting a storage did not work, sent as data.reason.
+const (
+	// ReasonExpired: the sign-in was not completed in time or was already used.
+	ReasonExpired = "expired"
+	// ReasonAccount: another Fylvo account started the sign-in.
+	ReasonAccount = "account"
+	// ReasonOtherAccount: the storage was to be connected again, but with another
+	// account at the provider than the one it belongs to.
+	ReasonOtherAccount = "other_account"
+	// ReasonExists: this account at the provider is already connected.
+	ReasonExists = "exists"
+	// ReasonTooMany: the account has as many connected storages as it may have.
+	ReasonTooMany = "too_many"
+	// ReasonSetup: the provider refuses the client of the installation.
+	ReasonSetup = "setup"
+	// ReasonNotConfigured: the operator has not set the provider up.
+	ReasonNotConfigured = "not_configured"
+	// ReasonNotAllowed: the group of the account may not connect storages.
+	ReasonNotAllowed = "not_allowed"
+)
+
+// ErrNotAllowed is the answer for an account whose group may not connect storages.
+var ErrNotAllowed = reasoned(serializer.CodeConnectedUnavailable, "Connected storages are not available", ReasonNotAllowed)
+
 // Reasons an item cannot be used, sent with code 40925.
 const (
 	ReasonAmbiguous      = "ambiguous"
@@ -325,9 +349,19 @@ const (
 	ReasonTooLarge       = "too_large"
 )
 
-// ItemReason is the data of an answer with code 40925.
-type ItemReason struct {
+// ReasonData is the data of an error answer that says why as one word for programs.
+type ReasonData struct {
 	Reason string `json:"reason"`
+}
+
+// ErrResponse is the answer of the API for an error. Where connected storages know the
+// reason, it is sent as data.reason, so a client can show the right text.
+func ErrResponse(ctx context.Context, err error) serializer.Response {
+	res := serializer.Err(ctx, err)
+	if reason := ReasonOf(err); reason != "" {
+		res.Data = ReasonData{Reason: reason}
+	}
+	return res
 }
 
 // reasonError carries the reason inside the error of an item that cannot be used.
@@ -337,13 +371,19 @@ func (r reasonError) Error() string { return string(r) }
 
 // ItemError returns the error for an item that cannot be used, for the given reason.
 func ItemError(reason string) error {
-	return serializer.NewError(serializer.CodeConnectedItem, "This item cannot be used", reasonError(reason))
+	return reasoned(serializer.CodeConnectedItem, "This item cannot be used", reason)
 }
 
-// ReasonOf returns the reason of an error made by ItemError, or "".
+// reasoned returns an error of the API that also says, as one word for programs, why.
+// The routes of connected storages send that word as data.reason.
+func reasoned(code int, message, reason string) error {
+	return serializer.NewError(code, message, reasonError(reason))
+}
+
+// ReasonOf returns the reason an error of connected storages carries, or "".
 func ReasonOf(err error) string {
 	var app serializer.AppError
-	if errors.As(err, &app) && app.Code == serializer.CodeConnectedItem {
+	if errors.As(err, &app) {
 		if reason, ok := app.RawError.(reasonError); ok {
 			return string(reason)
 		}

@@ -10,14 +10,9 @@ import (
 
 // Fylvo connected storages.
 
-// fylvoErr is the answer for an error. "This item of a connected storage cannot be used"
-// also says why, so a client can show the right text.
+// fylvoErr is the answer for an error, with data.reason where connected storages know it.
 func fylvoErr(c *gin.Context, err error) serializer.Response {
-	res := serializer.Err(c, err)
-	if reason := connected.ReasonOf(err); reason != "" {
-		res.Data = connected.ItemReason{Reason: reason}
-	}
-	return res
+	return connected.ErrResponse(c, err)
 }
 
 func fylvoAnswer(c *gin.Context, data any, err error) {

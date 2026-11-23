@@ -34,7 +34,9 @@ type (
 		// Available is false when connected storages cannot work on this server.
 		Available bool `json:"available"`
 		// Allowed tells whether the group of the account may connect storages.
-		Allowed   bool                     `json:"allowed"`
+		Allowed bool `json:"allowed"`
+		// Max is the most storages one account can connect.
+		Max       int                      `json:"max"`
 		Providers []connected.ProviderInfo `json:"providers"`
 		Storages  []*connected.Storage     `json:"storages"`
 	}
@@ -140,6 +142,7 @@ func ConnectedList(c *gin.Context) (*ConnectedListResponse, error) {
 	return &ConnectedListResponse{
 		Available: true,
 		Allowed:   mayConnectStorages(user),
+		Max:       connected.MaxPerUser,
 		Providers: providers,
 		Storages:  storages,
 	}, nil
@@ -150,7 +153,7 @@ func (s *ConnectedAuthorizeService) Authorize(c *gin.Context) (*ConnectedAuthori
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	if !mayConnectStorages(user) {
-		return nil, connected.ErrUnavailable
+		return nil, connected.ErrNotAllowed
 	}
 
 	address, cookie, err := connected.For(dep).Authorize(c, user.ID, s.Provider, s.Reconnect, connectedCallbackURL(c, dep))
@@ -204,7 +207,7 @@ func (s *ConnectedFinishService) Finish(c *gin.Context) (*connected.Storage, err
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	if !mayConnectStorages(user) {
-		return nil, connected.ErrUnavailable
+		return nil, connected.ErrNotAllowed
 	}
 	return connected.For(dep).Finish(c, user.ID, s.Code)
 }
