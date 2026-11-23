@@ -92,32 +92,31 @@ fun AccountAvatar(size: androidx.compose.ui.unit.Dp, version: Int = 0) {
     val server by app.sessionManager.serverUrl.collectAsState(initial = "")
     val modifier = Modifier.size(size).clip(CircleShape)
     if (me != null && me.avatar == "file" && server.isNotEmpty()) {
-        // Its own loader that follows no redirect: a changed picture setting never leads to Gravatar.
-        val loader = remember {
-            coil.ImageLoader.Builder(app)
-                .okHttpClient {
-                    okhttp3.OkHttpClient.Builder()
-                        .followRedirects(false)
-                        .addInterceptor(io.github.svenbuild.fylvo.android.api.ApiClient.userAgent)
-                        .build()
-                }
-                .build()
-        }
+        // The app's loader for pictures of accounts follows no redirect (never to Gravatar); a
+        // failure shows the initial.
+        var broken by remember(me.id, version) { mutableStateOf(false) }
+        if (broken) return AvatarInitial(me, size, modifier)
         AsyncImage(
-            imageLoader = loader,
+            imageLoader = app.avatarLoader,
+            onError = { broken = true },
             model = "${server.trimEnd('/')}/api/v4/user/avatar/${me.id}?nocache=true&v=$version",
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = modifier,
         )
     } else {
-        Box(modifier.background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
-            Text(
-                (me?.nickname?.firstOrNull() ?: me?.email?.firstOrNull() ?: '?').uppercase(),
-                style = if (size > 48.dp) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
+        AvatarInitial(me, size, modifier)
+    }
+}
+
+@Composable
+private fun AvatarInitial(me: io.github.svenbuild.fylvo.android.api.Me?, size: androidx.compose.ui.unit.Dp, modifier: Modifier) {
+    Box(modifier.background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+        Text(
+            (me?.nickname?.firstOrNull() ?: me?.email?.firstOrNull() ?: '?').uppercase(),
+            style = if (size > 48.dp) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
     }
 }
 

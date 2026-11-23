@@ -93,6 +93,13 @@ class FylvoApp : Application(), ImageLoaderFactory {
         Thread { runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cleanUpOldBatches(this) } }.start()
     }
 
+    /** Fylvo 1.6: pictures of accounts; follows no redirect (never to a third-party service). */
+    val avatarLoader: ImageLoader by lazy {
+        ImageLoader.Builder(this)
+            .okHttpClient { OkHttpClient.Builder().followRedirects(false).addInterceptor(ApiClient.userAgent).build() }
+            .build()
+    }
+
     /** Fylvo: previews and the image viewer name the app to the server like every other request. */
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient { OkHttpClient.Builder().addInterceptor(ApiClient.userAgent).build() }

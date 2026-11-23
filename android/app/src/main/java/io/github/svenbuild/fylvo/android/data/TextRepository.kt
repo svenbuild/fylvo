@@ -108,8 +108,11 @@ class TextRepository(
         val made = try {
             files.uploadFile(tmp, parentUri, name, overwrite = false, tag = tag, onSession = { id, uri, _ -> started = id to uri })
         } catch (e: Exception) {
-            // A half done upload leaves a locked placeholder: cancel it.
-            started?.let { (id, uri) -> runCatching { files.deleteUploadSession(id, uri) } }
+            // A half done upload leaves a locked placeholder: cancel it (also when the edit was
+            // cancelled meanwhile), but only for the session it belongs to.
+            started?.let { (id, uri) ->
+                if (session.isCurrent(tag)) withContext(kotlinx.coroutines.NonCancellable) { runCatching { files.deleteUploadSession(id, uri) } }
+            }
             throw e
         } finally {
             tmp.delete()
@@ -118,7 +121,10 @@ class TextRepository(
         // editor goes on from exactly that version (a change by someone else meanwhile is a conflict).
         val uri = made.uri.ifEmpty { CrUri.join(parentUri, name) }
         val info = runCatching { files.folderInfo(uri) }.getOrNull()
-        return (info ?: FileObject(type = 0, name = CrUri.fileName(uri), path = uri))
+        // Only a file that still has the version just made is this file; otherwise (replaced in
+        // between) its id is not taken over, so "replace anyway" can never hit the other file.
+        val same = info != null && (made.entityId.isEmpty() || info.primaryEntity == made.entityId)
+        return (if (same) info!! else FileObject(type = 0, name = CrUri.fileName(uri), path = uri))
             .copy(primaryEntity = made.entityId.ifEmpty { info?.primaryEntity.orEmpty() })
     }
 

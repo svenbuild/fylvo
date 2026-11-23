@@ -76,7 +76,8 @@ fun TextEditorScreen(viewModel: TextEditorViewModel, onClose: (wroteSomething: B
     LaunchedEffect(state.saving, closeAfterSave) {
         if (closeAfterSave && !state.saving) {
             closeAfterSave = false
-            if (!viewModel.dirty) onClose(state.wroteSomething)
+            // Typed on while saving: ask instead of closing.
+            if (!viewModel.dirty) onClose(state.wroteSomething) else if (state.conflict == null) askLeave = true
         }
     }
     fun leave() {

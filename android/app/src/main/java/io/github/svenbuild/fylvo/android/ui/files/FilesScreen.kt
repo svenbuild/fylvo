@@ -354,10 +354,14 @@ fun FilesScreen(
                         if (inSearch) closeSearch()
                         CrUri.nameShare(d.root, d.name)
                         viewModel.openPlace(d.root)
-                        // A shared single file opens right away.
+                        // A shared single file opens right away: its preview, or its sheet when the app
+                        // has none (no download without asking). Only while still on that share.
                         if (!info.isFolder) {
-                            runCatching { app.fileRepository.list(d.root).files.firstOrNull { !it.isFolder } }
-                                .getOrNull()?.let { openFile(it, alone = true) }
+                            val single = runCatching { app.fileRepository.list(d.root).files.firstOrNull { !it.isFolder } }.getOrNull()
+                            if (single != null && app.sessionManager.isCurrent(tag) && viewModel.state.value.currentUri == d.root) {
+                                if (io.github.svenbuild.fylvo.android.ui.preview.previewKindOf(single) != null) openFile(single, alone = true)
+                                else sheetTarget = single
+                            }
                         }
                     }
                 }

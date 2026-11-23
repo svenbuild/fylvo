@@ -102,8 +102,6 @@ fun SharesPage(
                 moreFailed = false
             }
             .onFailure { if (mine == generation) { if (token == null) failed = true else moreFailed = true } }
-        // A failed reload with rows on screen: the footer offers to try again.
-        if (mine == generation && token == null && failed && shares.isNotEmpty()) next = null
         if (mine == generation) loading = false
     }
     LaunchedEffect(reload) { load(null) }
@@ -122,16 +120,24 @@ fun SharesPage(
                     title = stringResource(R.string.no_shares),
                     detail = stringResource(R.string.no_shares_hint),
                 )
-                else -> ShareList(
+                else -> Column(Modifier.fillMaxSize()) {
+                  // A failed reload with rows on screen: they may be old, a tap loads again.
+                  if (failed && !loading) {
+                      androidx.compose.material3.TextButton(onClick = { reload++ }, modifier = Modifier.padding(horizontal = 12.dp)) {
+                          Text(stringResource(R.string.shares_load_failed) + " " + stringResource(R.string.retry))
+                      }
+                  }
+                  ShareList(
                     shares = shares,
                     knownUri = null,
                     actions = actions,
                     onChanged = { reload++ },
                     next = next,
-                    moreFailed = moreFailed || (failed && !loading),
+                    moreFailed = moreFailed,
                     onMore = { token -> scope.launch { load(token) } },
                     contentPadding = PaddingValues(bottom = 96.dp),
-                )
+                  )
+                }
             }
         }
     }

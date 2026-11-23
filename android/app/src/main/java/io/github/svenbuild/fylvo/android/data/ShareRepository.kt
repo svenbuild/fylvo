@@ -135,7 +135,11 @@ class ShareRepository(private val api: ApiClient, private val session: SessionMa
             val left = try {
                 details(share.id).remainDownloads
             } catch (e: ApiException) {
-                if (e.code == 404) options.downloads else throw e
+                // 404 also means "no downloads left": only an end that has passed keeps the limit.
+                val ended = share.expires?.let { runCatching { OffsetDateTime.parse(it).toInstant() <= Instant.now() }.getOrNull() } == true
+                if (e.code == 404 && ended) options.downloads
+                else if (e.code == 404) throw ApiException(CODE_NO_DOWNLOADS_LEFT, "No downloads left")
+                else throw e
             }
             if (left != null && left <= 0) throw ApiException(CODE_NO_DOWNLOADS_LEFT, "No downloads left")
             options.copy(downloads = left)
