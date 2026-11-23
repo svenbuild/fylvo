@@ -210,7 +210,9 @@ fun FileListItem(
     subtitle: String = fileSubtitle(file),
     /** Fylvo: the file's working copy in use; shown as "Bearbeitet" with its state. */
     edit: EditEntry? = null,
-) {
+    /** Fylvo: what swiping the row does (account setting); null: no swiping. */
+    swipe: RowSwipe? = null,
+) = SwipeRow(swipe) {
     val shape = RoundedCornerShape(12.dp)
     // Fylvo: more room per row with the account's density "normal" or "comfortable".
     val extra = io.github.svenbuild.fylvo.android.ui.theme.LocalListDensity.current.rowExtra

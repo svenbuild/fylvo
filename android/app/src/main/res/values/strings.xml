@@ -542,4 +542,23 @@
         <item quantity="other">%d favourites are not available any more (deleted or no longer shared).</item>
     </plurals>
     <string name="home_links">Shortcuts</string>
+    <string name="customize_tabs">Bottom tabs</string>
+    <string name="add_tab">Add a tab</string>
+    <string name="tabs_hint">Up to five; Files and Account always stay.</string>
+    <string name="tabs_full">Five tabs is the most. Remove one to add another.</string>
+    <string name="remove_tab">Remove the tab %1$s</string>
+    <string name="move_up">Move %1$s up</string>
+    <string name="move_down">Move %1$s down</string>
+    <string name="customize_swipe">Swiping in lists</string>
+    <string name="swipe_right">Swipe right</string>
+    <string name="swipe_left">Swipe left</string>
+    <string name="swipe_none">Nothing</string>
+    <string name="customize_start">Start page</string>
+    <string name="customize_home_widgets">Home page</string>
+    <string name="customize_home_default">Home shows only Recent until you change something here or on the web.</string>
+    <string name="customize_view">Default view of My files</string>
+    <string name="customize_reset">Reset everything</string>
+    <string name="customize_reset_text">Tabs, swipes, start page, home page, sidebar, look and density go back to the defaults for your whole account, also on the web. Shortcuts, favourites and the view of folders stay.</string>
+    <string name="customize_reset_confirm">Reset</string>
+    <string name="view_saved_account">View saved for this folder; it also applies on the web.</string>
 </resources>

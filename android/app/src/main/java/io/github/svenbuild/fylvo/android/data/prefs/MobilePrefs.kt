@@ -144,6 +144,28 @@ object MobilePrefs {
         return SwipePrefs(left = read("left"), right = read("right"))
     }
 
+    /**
+     * The swipe [action] for one row, or null when it cannot do it there. [limited]: rows whose
+     * address may come from an older copy (Home, the favourites page): only removing the star,
+     * which works by id.
+     */
+    fun swipeAction(
+        action: SwipeAction,
+        star: StarState,
+        canShare: Boolean,
+        canOffline: Boolean,
+        canDelete: Boolean,
+        limited: Boolean,
+    ): SwipeAction? = action.takeIf {
+        when (action) {
+            SwipeAction.NONE -> false
+            SwipeAction.FAVORITE -> if (limited) star == StarState.CAN_REMOVE else star != StarState.NONE
+            SwipeAction.SHARE -> !limited && canShare
+            SwipeAction.OFFLINE -> !limited && canOffline
+            SwipeAction.DELETE -> !limited && canDelete
+        }
+    }
+
     // ---- writing mobile ----------------------------------------------------
 
     /** [current] with `v` and only the given parts replaced; fields of other versions stay. */

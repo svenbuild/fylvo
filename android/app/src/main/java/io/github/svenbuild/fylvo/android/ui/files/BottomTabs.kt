@@ -46,6 +46,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import io.github.svenbuild.fylvo.android.FylvoApp
+import io.github.svenbuild.fylvo.android.data.prefs.Place
 import io.github.svenbuild.fylvo.android.data.AppUpdater
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -56,14 +57,10 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
-/** Fylvo: the four places of the app, reachable from the floating bar at the bottom. */
-enum class Tab(@StringRes val label: Int, val icon: ImageVector, val selectedIcon: ImageVector) {
-    HOME(R.string.tab_home, Icons.Outlined.Home, Icons.Filled.Home),
-    FILES(R.string.tab_files, Icons.Outlined.Folder, Icons.Filled.Folder),
-    SHARED(R.string.tab_shared, Icons.Outlined.FolderShared, Icons.Filled.FolderShared),
-    ACCOUNT(R.string.tab_account, Icons.Outlined.AccountCircle, Icons.Filled.AccountCircle),
-}
-
+/**
+ * Fylvo: the bottom tabs. Which places and in which order comes from the account (`mobile.tabs`,
+ * see MobilePrefs); without customisation Home, Files, Shared and Account.
+ */
 private val BarShape = RoundedCornerShape(30.dp)
 private val PillInset = 5.dp
 
@@ -73,7 +70,7 @@ private val PillInset = 5.dp
  * the tapped tab with a soft spring; icon and label fade to the accent as it arrives.
  */
 @Composable
-fun BottomTabs(selected: Tab, onSelect: (Tab) -> Unit) {
+fun BottomTabs(tabs: List<Place>, selected: Place, onSelect: (Place) -> Unit) {
     val colors = MaterialTheme.colorScheme
     // Fylvo: a small dot on Account while an app update waits.
     val updater = (LocalContext.current.applicationContext as FylvoApp).appUpdater
@@ -95,9 +92,9 @@ fun BottomTabs(selected: Tab, onSelect: (Tab) -> Unit) {
                 .height(64.dp),
         ) {
             BoxWithConstraints(Modifier.fillMaxSize().padding(PillInset)) {
-                val tabWidth = maxWidth / Tab.entries.size
+                val tabWidth = maxWidth / tabs.size.coerceAtLeast(1)
                 val pillOffset by animateDpAsState(
-                    targetValue = tabWidth * selected.ordinal,
+                    targetValue = tabWidth * tabs.indexOf(selected).coerceAtLeast(0),
                     animationSpec = spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow),
                     label = "tabPill",
                 )
@@ -109,10 +106,10 @@ fun BottomTabs(selected: Tab, onSelect: (Tab) -> Unit) {
                         .background(colors.secondaryContainer, RoundedCornerShape(25.dp)),
                 )
                 Row(Modifier.fillMaxSize()) {
-                    Tab.entries.forEach { tab ->
+                    tabs.forEach { tab ->
                         TabItem(
                             tab, tab == selected, Modifier.weight(1f).fillMaxHeight(),
-                            dot = tab == Tab.ACCOUNT && updateWaiting,
+                            dot = tab == Place.Account && updateWaiting,
                         ) { onSelect(tab) }
                     }
                 }
@@ -122,7 +119,7 @@ fun BottomTabs(selected: Tab, onSelect: (Tab) -> Unit) {
 }
 
 @Composable
-private fun TabItem(tab: Tab, active: Boolean, modifier: Modifier, dot: Boolean = false, onClick: () -> Unit) {
+private fun TabItem(tab: Place, active: Boolean, modifier: Modifier, dot: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val iconTint by animateColorAsState(if (active) colors.primary else colors.onSurfaceVariant, label = "tabIcon")
     val labelColor by animateColorAsState(if (active) colors.onSurface else colors.onSurfaceVariant, label = "tabLabel")
@@ -140,8 +137,9 @@ private fun TabItem(tab: Tab, active: Boolean, modifier: Modifier, dot: Boolean 
         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
     ) {
         Box {
+            val (icon, selectedIcon) = placeIcons(tab)
             Icon(
-                if (active) tab.selectedIcon else tab.icon,
+                if (active) selectedIcon else icon,
                 contentDescription = null,
                 tint = iconTint,
                 modifier = Modifier.size(22.dp),
@@ -156,6 +154,10 @@ private fun TabItem(tab: Tab, active: Boolean, modifier: Modifier, dot: Boolean 
                 )
             }
         }
-        Text(stringResource(tab.label), style = MaterialTheme.typography.labelSmall, color = labelColor)
+        Text(
+            placeLabel(tab), style = MaterialTheme.typography.labelSmall, color = labelColor,
+            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 2.dp),
+        )
     }
 }

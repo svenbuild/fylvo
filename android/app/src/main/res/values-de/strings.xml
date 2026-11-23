@@ -539,4 +539,23 @@
         <item quantity="other">%d Favoriten sind nicht mehr verfügbar (gelöscht oder nicht mehr geteilt).</item>
     </plurals>
     <string name="home_links">Verknüpfungen</string>
+    <string name="customize_tabs">Reiter unten</string>
+    <string name="add_tab">Reiter hinzufügen</string>
+    <string name="tabs_hint">Bis zu fünf; Dateien und Account bleiben immer.</string>
+    <string name="tabs_full">Mehr als fünf Reiter gehen nicht. Entferne einen, um einen anderen hinzuzufügen.</string>
+    <string name="remove_tab">Reiter %1$s entfernen</string>
+    <string name="move_up">%1$s nach oben</string>
+    <string name="move_down">%1$s nach unten</string>
+    <string name="customize_swipe">Wischen in Listen</string>
+    <string name="swipe_right">Nach rechts wischen</string>
+    <string name="swipe_left">Nach links wischen</string>
+    <string name="swipe_none">Nichts</string>
+    <string name="customize_start">Startseite</string>
+    <string name="customize_home_widgets">Inhalt der Startseite</string>
+    <string name="customize_home_default">Home zeigt nur \"Zuletzt\", bis du hier oder im Web etwas änderst.</string>
+    <string name="customize_view">Standard-Ansicht von \"Meine Dateien\"</string>
+    <string name="customize_reset">Alles zurücksetzen</string>
+    <string name="customize_reset_text">Reiter, Wischen, Startseite, Inhalt der Startseite, Seitenleiste, Aussehen und Dichte gehen für dein ganzes Konto auf den Standard zurück, auch im Web. Verknüpfungen, Favoriten und die Ansicht der Ordner bleiben.</string>
+    <string name="customize_reset_confirm">Zurücksetzen</string>
+    <string name="view_saved_account">Ansicht für diesen Ordner gespeichert; sie gilt auch im Web.</string>
 </resources>

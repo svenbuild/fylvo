@@ -40,6 +40,7 @@ class ViewSettings(private val context: Context) {
         val sortBy = stringPreferencesKey("sort_by")
         val sortAsc = booleanPreferencesKey("sort_asc")
         val selectionHintShown = booleanPreferencesKey("selectionHintShown")
+        val viewSyncHintShown = booleanPreferencesKey("viewSyncHintShown")
     }
 
     val prefs: Flow<ViewPrefs> = context.viewStore.data.map { p ->
@@ -55,6 +56,13 @@ class ViewSettings(private val context: Context) {
 
     /** Fylvo: the one-time hint "long press to select, drag for several" was shown. */
     val selectionHintShown: Flow<Boolean> = context.viewStore.data.map { it[Keys.selectionHintShown] ?: false }
+
+    /** Fylvo: the note "view saved for the account, also on the web" was shown once. */
+    val viewSyncHintShown: Flow<Boolean> = context.viewStore.data.map { it[Keys.viewSyncHintShown] ?: false }
+
+    suspend fun setViewSyncHintShown() {
+        context.viewStore.edit { it[Keys.viewSyncHintShown] = true }
+    }
 
     suspend fun setSelectionHintShown() {
         context.viewStore.edit { it[Keys.selectionHintShown] = true }

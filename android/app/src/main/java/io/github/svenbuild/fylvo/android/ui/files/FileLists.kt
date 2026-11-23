@@ -71,6 +71,8 @@ internal fun FileList(
     viewModel: FilesViewModel,
     listState: LazyListState,
     actionsFor: (FileObject) -> FileActions,
+    /** Fylvo: swipe actions per row (list view only). */
+    swipeFor: (FileObject) -> RowSwipe? = { null },
 ) {
     val today = stringResource(R.string.today)
     val yesterday = stringResource(R.string.yesterday)
@@ -119,6 +121,7 @@ internal fun FileList(
                         offline = state.isOffline(file),
                         edit = state.editOf(file),
                         actions = actionsFor(file),
+                        swipe = swipeFor(file),
                         subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                     )
                 }
@@ -137,6 +140,7 @@ internal fun FileList(
                 offline = state.isOffline(file),
                 edit = state.editOf(file),
                 actions = actionsFor(file),
+                swipe = swipeFor(file),
                 subtitle = if (state.inTrash) {
                     trashSubtitle.format(formatDate(file.updatedAt), file.restoreUri?.let { CrUri.displayName(it) } ?: unknown)
                 } else {

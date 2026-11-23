@@ -129,3 +129,9 @@ fun PlaceChips(places: List<Place>, onOpen: (Place) -> Unit) {
         }
     }
 }
+
+/** Fylvo: keeps a place over a restart of the screen (by its key; a shortcut's name comes back from the sidebar). */
+val placeSaver = androidx.compose.runtime.saveable.Saver<Place?, String>(
+    save = { it?.key ?: "" },
+    restore = { Place.parse(it) },
+)

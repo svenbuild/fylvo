@@ -73,6 +73,8 @@ fun HomeScreen(
     onFileMore: (FileObject) -> Unit,
     /** Fylvo: the account's building blocks; null shows Home as before customisation. */
     extras: HomeExtras? = null,
+    /** Fylvo: swipe actions of the Recent rows (only removing the star there). */
+    swipeFor: (FileObject) -> RowSwipe? = { null },
 ) {
     // Home has no top app bar, so the Scaffold gives it no top inset: take the
     // status bar height here or the search field draws under the clock.
@@ -91,11 +93,11 @@ fun HomeScreen(
         }
 
         if (extras == null) {
-            RecentSection(state, viewModel, onOpenFile, onOpenRecent, onFileMore)
+            RecentSection(state, viewModel, onOpenFile, onOpenRecent, onFileMore, swipeFor)
         } else {
             extras.widgets.forEach { widget ->
                 when (widget) {
-                    "recent" -> RecentSection(state, viewModel, onOpenFile, onOpenRecent, onFileMore)
+                    "recent" -> RecentSection(state, viewModel, onOpenFile, onOpenRecent, onFileMore, swipeFor)
                     "favorites" -> FavoritesSection(extras)
                     "links" -> LinksSection(extras)
                     "tags" -> TagsSection(extras)
@@ -117,6 +119,7 @@ private fun RecentSection(
     onOpenFile: (FileObject) -> Unit,
     onOpenRecent: () -> Unit,
     onFileMore: (FileObject) -> Unit,
+    swipeFor: (FileObject) -> RowSwipe?,
 ) {
         SectionHeader(stringResource(R.string.category_recent), action = if (state.recent.isNotEmpty()) stringResource(R.string.see_all) to onOpenRecent else null)
         when {
@@ -149,6 +152,7 @@ private fun RecentSection(
                         longPressOnRow = true,
                     ),
                     subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
+                    swipe = swipeFor(file),
                 )
             }
         }

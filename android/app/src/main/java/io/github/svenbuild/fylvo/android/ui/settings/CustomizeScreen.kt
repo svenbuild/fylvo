@@ -63,8 +63,8 @@ import kotlinx.coroutines.launch
 fun CustomizeScreen(
     onBack: () -> Unit,
     bottomBar: @Composable () -> Unit,
-    /** Fylvo: the parts of later stages (tabs, swipes, start page, widgets, view, reset). */
-    more: @Composable (showMessage: (String?) -> Unit) -> Unit = {},
+    /** Ids of the connected storages (they can become tabs). */
+    storages: List<String> = emptyList(),
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as FylvoApp
@@ -118,7 +118,9 @@ fun CustomizeScreen(
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
             )
 
-            more(showMessage)
+            TabsSection(prefs, repo, storages, showMessage)
+            SwipeSection(prefs, repo, showMessage)
+            StartSection(prefs, repo, showMessage)
 
             CustomizeLabel(stringResource(R.string.customize_appearance))
             val mode = MobilePrefs.mode(prefs)
@@ -183,6 +185,8 @@ fun CustomizeScreen(
                     }
                 },
             )
+            ViewSection(prefs, state.disableViewSync, repo, showMessage)
+            ResetSection(repo, showMessage)
         }
     }
 }

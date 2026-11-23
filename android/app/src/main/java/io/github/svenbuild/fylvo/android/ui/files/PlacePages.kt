@@ -72,6 +72,8 @@ fun FavoritesPage(
     onBack: (() -> Unit)?,
     actionsFor: (FileObject) -> FileActions,
     bottomBar: @Composable () -> Unit,
+    /** Fylvo: swipe actions per row (only removing the star here). */
+    swipeFor: (FileObject) -> RowSwipe? = { null },
 ) {
     PlacePage(stringResource(R.string.favorites), onBack, bottomBar) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
@@ -99,6 +101,7 @@ fun FavoritesPage(
                             selected = false,
                             actions = actionsFor(file),
                             subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
+                            swipe = swipeFor(file),
                         )
                     }
                 }

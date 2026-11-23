@@ -340,14 +340,6 @@ fun FilesScreen(
         }
     }
     val connectedState by viewModel.connected.state.collectAsState()
-    val chips = if (prefsState.usable) io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.chips(
-        prefsState.prefs,
-        tabs = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.DEFAULT_TABS,
-        hasFavorites = prefsState.favoriteIds.isNotEmpty(),
-        hasTags = prefsState.tags.isNotEmpty(),
-        storages = connectedState.storages.map { it.id },
-    ).filter { it !is io.github.svenbuild.fylvo.android.data.prefs.Place.Storage || connectedState.storages.any { s -> s.id == it.id } } else emptyList()
-    val showChips = !state.home && !inSearch && !state.selecting && state.currentUri == CrUri.MY_PREFIX
 
     // Fylvo: Home from the account's building blocks (null: Home as before customisation).
     val homeExtras = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.homeWidgets(prefsState.prefs.takeIf { prefsState.usable })?.let { widgets ->
@@ -368,14 +360,6 @@ fun FilesScreen(
         )
     }
 
-    // Fylvo: the account's start page ("My files" instead of Home), once per app start.
-    var startApplied by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(prefsState.prefs?.startPage, prefsState.usable) {
-        val prefs = prefsState.prefs.takeIf { prefsState.usable } ?: return@LaunchedEffect
-        if (startApplied) return@LaunchedEffect
-        startApplied = true
-        if (prefs.startPage == "my_files" && state.home && !inSearch) viewModel.openMyFiles()
-    }
 
     // ---- Fylvo: selection button and its menu ----------------------------------
     var menuOpen by remember { mutableStateOf(false) }
@@ -383,6 +367,15 @@ fun FilesScreen(
     var fabAnchor by remember { mutableStateOf<Rect?>(null) }
     // The card closes with the selection.
     LaunchedEffect(state.selecting) { if (!state.selecting) menuOpen = false }
+    // Fylvo: when following the account's view starts or ends, the folder is listed again.
+    val followsView = prefsState.usable && !prefsState.disableViewSync && prefsState.prefs?.customized?.contains("view") == true
+    var followedBefore by remember { mutableStateOf(followsView) }
+    LaunchedEffect(followsView) {
+        if (followsView != followedBefore) {
+            followedBefore = followsView
+            if (!state.home) viewModel.refresh()
+        }
+    }
     // Inside a share: whether it is a member share (the star is offered only there).
     LaunchedEffect(state.currentUri, prefsState.usable) {
         if (prefsState.usable && CrUri.isShare(state.currentUri)) {
@@ -393,6 +386,7 @@ fun FilesScreen(
         if (!prefsState.usable || state.offlineMode || state.inTrash) io.github.svenbuild.fylvo.android.data.prefs.StarState.NONE
         else io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.starState(file, prefsState.favoriteIds) { prefsState.memberShares[it] }
     var colorTarget by remember { mutableStateOf<List<FileObject>?>(null) }
+
     var tagsTarget by remember { mutableStateOf<List<FileObject>?>(null) }
     /** Fylvo: shows the server's message (or a general one) when a change failed. */
     fun customizeResult(message: String?) {
@@ -403,6 +397,38 @@ fun FilesScreen(
             if (on) prefsRepo.addFavorites(files.filter { starOf(it) == io.github.svenbuild.fylvo.android.data.prefs.StarState.CAN_ADD }.map { it.path })
             else prefsRepo.removeFavorites(files.map { it.id }),
         )
+    }
+
+    /**
+     * Fylvo: what swiping [file]'s row does (account setting `mobile.swipe`). [limited]: Home and
+     * the favourites page, where only removing the star is offered.
+     */
+    fun swipeFor(file: FileObject, limited: Boolean = false): RowSwipe? {
+        val prefs = prefsState.prefs?.takeIf { prefsState.usable } ?: return null
+        val swipe = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.swipe(prefs.mobile)
+        if (swipe.left == io.github.svenbuild.fylvo.android.data.prefs.SwipeAction.NONE && swipe.right == io.github.svenbuild.fylvo.android.data.prefs.SwipeAction.NONE) return null
+        if (state.selecting || state.offlineMode || file.isUploading || Connected.isConnected(file.path)) return null
+        if (!limited && !inSearch && (state.inTrash || state.category == Category.SHARED_WITH_ME)) return null
+        val star = starOf(file)
+        fun allowed(action: io.github.svenbuild.fylvo.android.data.prefs.SwipeAction) = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.swipeAction(
+            action, star,
+            canShare = Permissions.canShareLink(file),
+            canOffline = state.offlineAllowed(file) && !state.offlineCovered(file),
+            canDelete = Permissions.canModifyFile(file),
+            limited = limited,
+        )
+        return RowSwipe(right = allowed(swipe.right), left = allowed(swipe.left), star = star) { action ->
+            when (action) {
+                io.github.svenbuild.fylvo.android.data.prefs.SwipeAction.FAVORITE ->
+                    setFavorite(listOf(file), star == io.github.svenbuild.fylvo.android.data.prefs.StarState.CAN_ADD)
+                io.github.svenbuild.fylvo.android.data.prefs.SwipeAction.SHARE -> shareLink(file)
+                io.github.svenbuild.fylvo.android.data.prefs.SwipeAction.OFFLINE -> viewModel.toggleOffline(file)
+                // Undo exists in My files; inside a share the usual question comes first.
+                io.github.svenbuild.fylvo.android.data.prefs.SwipeAction.DELETE ->
+                    if (CrUri.isShare(file.path)) deleteTarget = file else viewModel.delete(file)
+                io.github.svenbuild.fylvo.android.data.prefs.SwipeAction.NONE -> Unit
+            }
+        }
     }
 
     /** The listed rows of the selection; paths not listed (a refresh in progress) have none. */
@@ -466,41 +492,72 @@ fun FilesScreen(
         }
     }
 
+    // ---- Fylvo: the bottom tabs, from the account (mobile.tabs) ----------------------------
+    val links = if (prefsState.usable) io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.links(prefsState.prefs) else emptyList()
+    val tabs = if (prefsState.usable) io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.tabs(
+        prefsState.prefs?.mobile,
+        linkExists = { uri -> links.any { it.uri == uri } },
+        // Storages are known only once their list arrived; until then a storage tab stays.
+        storageExists = { id -> connectedState.overview == null || connectedState.storages.any { it.id == id } },
+    ).map { tab -> if (tab is io.github.svenbuild.fylvo.android.data.prefs.Place.Link) links.firstOrNull { it.uri == tab.uri } ?: tab else tab }
+    else io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.DEFAULT_TABS
+    val chips = if (prefsState.usable) io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.chips(
+        prefsState.prefs,
+        tabs = tabs,
+        hasFavorites = prefsState.favoriteIds.isNotEmpty(),
+        hasTags = prefsState.tags.isNotEmpty(),
+        storages = connectedState.storages.map { it.id },
+    ).filter { it !is io.github.svenbuild.fylvo.android.data.prefs.Place.Storage || connectedState.storages.any { s -> s.id == it.id } } else emptyList()
+    val showChips = !state.home && !inSearch && !state.selecting && state.currentUri == CrUri.MY_PREFIX
+    val startTab = io.github.svenbuild.fylvo.android.data.prefs.Navigation.startTab(prefsState.prefs?.startPage.takeIf { prefsState.usable }, tabs)
+    /** The tab tapped last; a place that is no tab of its own keeps it lit. */
+    var lastTab by rememberSaveable(stateSaver = placeSaver) { mutableStateOf<io.github.svenbuild.fylvo.android.data.prefs.Place?>(null) }
+    val where = io.github.svenbuild.fylvo.android.data.prefs.Where(
+        home = state.home, uri = state.currentUri, origin = state.origin, page = page, account = accountOpen, offline = offlineOpen,
+    )
     /** Fylvo: which tab of the bottom bar the screen belongs to. */
-    val currentTab = when {
-        accountOpen -> Tab.ACCOUNT
-        state.home -> Tab.HOME
-        // Fylvo: connected storages are reached from Home.
-        state.inConnected -> if (state.origin == CrUri.MY_PREFIX) Tab.FILES else Tab.HOME
-        // Fylvo: places opened from the chips above My files belong to Files.
-        state.origin == CrUri.MY_PREFIX -> Tab.FILES
-        state.category == Category.SHARED_WITH_ME || CrUri.isShare(state.currentUri) -> Tab.SHARED
-        state.category == null || state.category == Category.TRASH -> Tab.FILES
-        else -> Tab.HOME
-    }
-    val atTabRoot = state.category == Category.SHARED_WITH_ME ||
-        (!state.virtual && CrUri.isRoot(state.currentUri) && !CrUri.isShare(state.currentUri) && !state.inConnected)
+    val currentTab = io.github.svenbuild.fylvo.android.data.prefs.Navigation.activeTab(where, tabs, links, lastTab)
+    val atTabRoot = io.github.svenbuild.fylvo.android.data.prefs.Navigation.atTabRoot(where, currentTab, links)
 
-    fun selectTab(tab: Tab) {
+    fun selectTab(tab: io.github.svenbuild.fylvo.android.data.prefs.Place) {
         // Fylvo: a tab change ends a selection, also towards Account.
         viewModel.clearSelection()
-        accountOpen = tab == Tab.ACCOUNT
-        offlineOpen = false
+        lastTab = tab
+        accountOpen = tab == io.github.svenbuild.fylvo.android.data.prefs.Place.Account || tab == io.github.svenbuild.fylvo.android.data.prefs.Place.Offline
+        offlineOpen = tab == io.github.svenbuild.fylvo.android.data.prefs.Place.Offline
         customizeOpen = false
         page = null
         when (tab) {
-            Tab.HOME -> viewModel.goHome()
-            Tab.FILES -> viewModel.openMyFiles()
-            Tab.SHARED -> viewModel.openCategory(Category.SHARED_WITH_ME)
-            Tab.ACCOUNT -> Unit
+            io.github.svenbuild.fylvo.android.data.prefs.Place.Home -> viewModel.goHome()
+            io.github.svenbuild.fylvo.android.data.prefs.Place.Files -> viewModel.openMyFiles()
+            io.github.svenbuild.fylvo.android.data.prefs.Place.Shared -> viewModel.openCategory(Category.SHARED_WITH_ME)
+            io.github.svenbuild.fylvo.android.data.prefs.Place.Account, io.github.svenbuild.fylvo.android.data.prefs.Place.Offline -> Unit
+            io.github.svenbuild.fylvo.android.data.prefs.Place.Favorites -> { page = PAGE_FAVORITES; scope.launch { prefsRepo.refresh() } }
+            io.github.svenbuild.fylvo.android.data.prefs.Place.Tags -> { page = PAGE_TAGS; scope.launch { prefsRepo.refresh() } }
+            io.github.svenbuild.fylvo.android.data.prefs.Place.Recent -> viewModel.openCategory(Category.RECENT)
+            io.github.svenbuild.fylvo.android.data.prefs.Place.Trash -> viewModel.openCategory(Category.TRASH)
+            is io.github.svenbuild.fylvo.android.data.prefs.Place.Category -> viewModel.openCategory(categoryOf(tab))
+            is io.github.svenbuild.fylvo.android.data.prefs.Place.Link -> viewModel.openPlace(tab.uri, title = tab.name.takeIf { it.isNotEmpty() && CrUri.isSearch(tab.uri) })
+            is io.github.svenbuild.fylvo.android.data.prefs.Place.Storage -> viewModel.openPlace(storageUri(tab))
         }
     }
+    /** Fylvo: back at the top of a tab: to the start tab (at the start tab the app is left). */
+    val backToStart = io.github.svenbuild.fylvo.android.data.prefs.Navigation.backAtTabRoot(currentTab, startTab)
 
-    BackHandler(enabled = menuOpen || state.selecting || inSearch || !state.home) {
+    // Fylvo: the account's start tab, once per app start (an opened target is not thrown away).
+    var startApplied by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(prefsState.usable, startTab) {
+        if (startApplied || !prefsState.usable || prefsState.prefs == null) return@LaunchedEffect
+        startApplied = true
+        if (state.home && !inSearch && !accountOpen && page == null && startTab != io.github.svenbuild.fylvo.android.data.prefs.Place.Home) selectTab(startTab)
+    }
+
+    BackHandler(enabled = menuOpen || state.selecting || inSearch || !atTabRoot || backToStart != null) {
         when {
             menuOpen -> menuOpen = false
             state.selecting -> viewModel.clearSelection()
             inSearch -> closeSearch()
+            atTabRoot -> backToStart?.let(::selectTab)
             else -> goUp()
         }
     }
@@ -548,7 +605,7 @@ fun FilesScreen(
                     showBack = !atTabRoot,
                     showSort = !state.virtual,
                     viewMode = state.effectiveMode,
-                    sort = state.view.sort,
+                    sort = state.activeSort,
                     onBack = { goUp() },
                     onSearch = { openSearch() },
                     onToggleView = { viewModel.toggleViewMode() },
@@ -578,7 +635,7 @@ fun FilesScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
         // Fylvo: the tabs stay while selecting; a tab ends the selection.
-        bottomBar = { if (!inSearch) BottomTabs(currentTab, ::selectTab) },
+        bottomBar = { if (!inSearch) BottomTabs(tabs, currentTab, ::selectTab) },
     ) { padding ->
         // Spin the pull indicator only for a pull the user made; initial and
         // background loads have their own, quieter indicators.
@@ -632,11 +689,13 @@ fun FilesScreen(
                     onOpenRecent = { viewModel.openCategory(Category.RECENT) },
                     onFileMore = { sheetTarget = it },
                     extras = homeExtras,
+                    swipeFor = { swipeFor(it, limited = true) },
                 )
                 inSearch -> SearchResults(
                     state = state,
                     viewModel = viewModel,
                     listState = listState,
+                    swipeFor = { swipeFor(it) },
                     openedFrom = searchOpenedFrom,
                     actionsFor = { file ->
                         FileActions(
@@ -700,7 +759,7 @@ fun FilesScreen(
                     if (state.inConnected) ConnectedBanner(state.connected?.omitted ?: 0)
                     Box(Modifier.weight(1f)) {
                         if (state.effectiveMode == ViewMode.GRID) FileGrid(state, viewModel, gridState, ::actionsFor)
-                        else FileList(state, viewModel, listState, ::actionsFor)
+                        else FileList(state, viewModel, listState, ::actionsFor, swipeFor = { swipeFor(it) })
                     }
                 }
             } }
@@ -991,7 +1050,7 @@ fun FilesScreen(
             onOpenOffline = { offlineOpen = true },
             onOpenCustomize = { customizeOpen = true },
             onBack = { accountOpen = false },
-            bottomBar = { BottomTabs(Tab.ACCOUNT, ::selectTab) },
+            bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
         )
     }
 
@@ -1009,24 +1068,27 @@ fun FilesScreen(
             longPressOnRow = true,
         )
     }
+    /** As a tab: back goes to the start tab (none at the start tab); from a chip: back to the files. */
+    val pageBack: (() -> Unit)? = if (atTabRoot) backToStart?.let { start -> { selectTab(start) } } else ({ page = null })
     if (page == PAGE_FAVORITES) {
         FavoritesPage(
             favorites = prefsState.favorites,
             viewModel = viewModel,
-            onBack = { page = null },
+            onBack = pageBack,
             actionsFor = pageActions,
-            bottomBar = { BottomTabs(currentTab, ::selectTab) },
+            bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
+            swipeFor = { swipeFor(it, limited = true) },
         )
     }
     if (page == PAGE_TAGS) {
         TagsPage(
             tags = prefsState.tags,
-            onBack = { page = null },
+            onBack = pageBack,
             onOpen = { tag ->
                 page = null
                 viewModel.openPlace(io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.tagSearchUri(tag.name), title = tag.name, origin = PAGE_ORIGIN + PAGE_TAGS)
             },
-            bottomBar = { BottomTabs(currentTab, ::selectTab) },
+            bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
         )
     }
 
@@ -1037,7 +1099,8 @@ fun FilesScreen(
     ) {
         io.github.svenbuild.fylvo.android.ui.settings.CustomizeScreen(
             onBack = { customizeOpen = false },
-            bottomBar = { BottomTabs(Tab.ACCOUNT, ::selectTab) },
+            storages = connectedState.storages.map { it.id },
+            bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
         )
     }
 
@@ -1066,7 +1129,7 @@ fun FilesScreen(
             },
             onSyncNow = { viewModel.syncOfflineNow() },
             onRemove = { root -> viewModel.removeOffline(root.id, root.name) },
-            bottomBar = { BottomTabs(Tab.ACCOUNT, ::selectTab) },
+            bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
             edits = state.editEntries.filter(::needsAttention),
             onEditOpen = { entry -> scope.launch { viewModel.editedFile(entry)?.let { openWithSystem(context, it) } } },
             onEditFinish = viewModel::finishEditing,

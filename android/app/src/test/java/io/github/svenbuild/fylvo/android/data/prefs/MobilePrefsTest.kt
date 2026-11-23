@@ -289,3 +289,78 @@ class HomeWidgetsTest {
         org.junit.Assert.assertEquals(listOf("favorites", "recent"), MobilePrefs.homeWidgets(prefs.copy(customized = listOf("home"))))
     }
 }
+
+class NavigationTest {
+    private val tabs = listOf(Place.Home, Place.Files, Place.Favorites, Place.Account)
+    private val links = listOf(Place.Link("cloudreve://my/Projects", "Projects"), Place.Link("cloudreve://my?meta_tag%3AWork=", "Work"))
+
+    @org.junit.Test
+    fun activeTab() {
+        val n = Navigation
+        org.junit.Assert.assertEquals(Place.Home, n.activeTab(Where(home = true), tabs, links, null))
+        org.junit.Assert.assertEquals(Place.Files, n.activeTab(Where(uri = "cloudreve://my/Projects/a"), tabs, links, Place.Home))
+        org.junit.Assert.assertEquals(Place.Favorites, n.activeTab(Where(page = "favorites"), tabs, links, null))
+        // A place opened from the chips belongs to Files, one from Home to Home.
+        org.junit.Assert.assertEquals(Place.Files, n.activeTab(Where(uri = Navigation.TRASH_URI, origin = "cloudreve://my"), tabs, links, Place.Home))
+        org.junit.Assert.assertEquals(Place.Home, n.activeTab(Where(uri = "cloudreve://my?meta_tag%3AWork=", origin = "home"), tabs, links, Place.Files))
+        // Shared is no tab here: the last tab stays lit.
+        org.junit.Assert.assertEquals(Place.Home, n.activeTab(Where(uri = "cloudreve://shared_with_me"), tabs, links, Place.Home))
+        val withShared = listOf(Place.Home, Place.Files, Place.Shared, Place.Account)
+        org.junit.Assert.assertEquals(Place.Shared, n.activeTab(Where(uri = "cloudreve://abc@share/x"), withShared, links, Place.Home))
+        org.junit.Assert.assertEquals(Place.Account, n.activeTab(Where(account = true), tabs, links, null))
+        val withLink = listOf(Place.Files, links[0], Place.Account)
+        org.junit.Assert.assertEquals(links[0], n.activeTab(Where(uri = "cloudreve://my/Projects/sub"), withLink, links, null))
+    }
+
+    @org.junit.Test
+    fun tabRootsAndBack() {
+        val n = Navigation
+        org.junit.Assert.assertTrue(n.atTabRoot(Where(home = true), Place.Home, links))
+        org.junit.Assert.assertTrue(n.atTabRoot(Where(), Place.Files, links))
+        org.junit.Assert.assertFalse(n.atTabRoot(Where(uri = "cloudreve://my/a"), Place.Files, links))
+        org.junit.Assert.assertFalse(n.atTabRoot(Where(uri = Navigation.TRASH_URI, origin = "cloudreve://my"), Place.Files, links))
+        org.junit.Assert.assertTrue(n.atTabRoot(Where(uri = Navigation.TRASH_URI), Place.Trash, links))
+        // Start tab: My files when chosen, else Home, else the first tab.
+        org.junit.Assert.assertEquals(Place.Files, n.startTab("my_files", tabs))
+        org.junit.Assert.assertEquals(Place.Home, n.startTab("", tabs))
+        org.junit.Assert.assertEquals(Place.Favorites, n.startTab("home", listOf(Place.Favorites, Place.Files, Place.Account)))
+        // At the start tab back leaves the app, at another tab it goes to the start tab.
+        org.junit.Assert.assertNull(n.backAtTabRoot(Place.Files, Place.Files))
+        org.junit.Assert.assertEquals(Place.Home, n.backAtTabRoot(Place.Favorites, Place.Home))
+    }
+}
+
+class SwipeAndViewTest {
+    @org.junit.Test
+    fun swipeRules() {
+        val f = MobilePrefs::swipeAction
+        org.junit.Assert.assertEquals(SwipeAction.DELETE, f(SwipeAction.DELETE, StarState.NONE, false, false, true, false))
+        org.junit.Assert.assertNull(f(SwipeAction.DELETE, StarState.NONE, false, false, false, false))
+        org.junit.Assert.assertNull(f(SwipeAction.DELETE, StarState.NONE, true, true, true, true))
+        org.junit.Assert.assertNull(f(SwipeAction.SHARE, StarState.NONE, true, true, true, true))
+        org.junit.Assert.assertNull(f(SwipeAction.FAVORITE, StarState.CAN_ADD, true, true, true, true))
+        org.junit.Assert.assertEquals(SwipeAction.FAVORITE, f(SwipeAction.FAVORITE, StarState.CAN_REMOVE, true, true, true, true))
+        org.junit.Assert.assertEquals(SwipeAction.FAVORITE, f(SwipeAction.FAVORITE, StarState.CAN_ADD, false, false, false, false))
+        org.junit.Assert.assertNull(f(SwipeAction.NONE, StarState.CAN_ADD, true, true, true, false))
+    }
+
+    @org.junit.Test
+    fun viewKeepsOtherFields() {
+        val json = kotlinx.serialization.json.Json
+        val stored = json.parseToJsonElement("""{"page_size":200,"view":"gallery","thumbnail":true,"gallery_width":180,"columns":[{"type":1}]}""") as kotlinx.serialization.json.JsonObject
+        val grid = MobileView.withLayout(stored, "grid")
+        org.junit.Assert.assertEquals("gallery", (grid["view"] as kotlinx.serialization.json.JsonPrimitive).content)
+        org.junit.Assert.assertEquals(stored["columns"], grid["columns"])
+        org.junit.Assert.assertEquals(stored["thumbnail"], grid["thumbnail"])
+        org.junit.Assert.assertEquals("list", (MobileView.withLayout(stored, "list")["view"] as kotlinx.serialization.json.JsonPrimitive).content)
+        val sorted = MobileView.withSort(stored, "name", false)
+        org.junit.Assert.assertEquals("desc", (sorted["order_direction"] as kotlinx.serialization.json.JsonPrimitive).content)
+        org.junit.Assert.assertEquals(stored["view"], sorted["view"])
+        // Missing required fields are filled like the web app fills them.
+        val empty = MobileView.withLayout(kotlinx.serialization.json.JsonObject(emptyMap()), "grid")
+        org.junit.Assert.assertEquals(100, (empty["page_size"] as kotlinx.serialization.json.JsonPrimitive).content.toInt())
+        org.junit.Assert.assertEquals(110, (empty["gallery_width"] as kotlinx.serialization.json.JsonPrimitive).content.toInt())
+        org.junit.Assert.assertEquals(io.github.svenbuild.fylvo.android.data.ViewMode.GRID, MobileView.modeOf("gallery"))
+        org.junit.Assert.assertEquals(io.github.svenbuild.fylvo.android.data.SortOrder(io.github.svenbuild.fylvo.android.data.SortBy.SIZE, false), MobileView.sortOf("size", "desc"))
+    }
+}

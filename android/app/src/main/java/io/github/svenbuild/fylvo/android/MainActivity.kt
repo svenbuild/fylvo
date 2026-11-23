@@ -102,6 +102,11 @@ private class AppViewModelFactory(private val app: FylvoApp) : ViewModelProvider
                 app.viewSettings,
                 androidx.work.WorkManager.getInstance(app),
                 onSessionExpired = { app.endSession(expired = true) },
+                followAccountView = {
+                    val p = app.accountPrefs.state.value
+                    p.usable && !p.disableViewSync && p.prefs?.customized?.contains("view") == true
+                },
+                writeFolderView = { uri, change -> app.accountPrefs.writeView(uri, change) },
             ) as T
         else -> throw IllegalArgumentException("Unknown ViewModel ${modelClass.name}")
     }
