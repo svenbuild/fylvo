@@ -85,8 +85,14 @@ fun PeopleSheet(target: PeopleTarget, onDone: (String?) -> Unit, onDismiss: () -
     var expireSeconds by remember { mutableStateOf<Long?>(null) }
     var expireToChoose by remember { mutableStateOf(false) }
     var expireChanged by remember { mutableStateOf(false) }
+    // The existing share could not be read: saving might make a second one, so nothing is offered but a retry.
+    var loadFailed by remember { mutableStateOf(false) }
+    var loadRound by remember { mutableStateOf(0) }
 
-    LaunchedEffect(target) {
+    LaunchedEffect(target, loadRound) {
+        loading = true
+        loadFailed = false
+        error = null
         runCatching {
             val s = target.share ?: app.shares.sharesOf(target.uri).firstOrNull { it.memberOnly }
             share = s
@@ -96,7 +102,7 @@ fun PeopleSheet(target: PeopleTarget, onDone: (String?) -> Unit, onDismiss: () -
                 val name = runCatching { app.shares.user(m.userId).nickname }.getOrNull().orEmpty()
                 people += Person(m.userId, name, m.canEdit)
             }
-        }.onFailure { error = userError(it).resolve(context) }
+        }.onFailure { error = userError(it).resolve(context); loadFailed = true }
         loading = false
     }
     LaunchedEffect(query) {
@@ -116,7 +122,10 @@ fun PeopleSheet(target: PeopleTarget, onDone: (String?) -> Unit, onDismiss: () -
         scope.launch {
             runCatching { app.shares.savePeople(target.uri, share, people.map { ShareMemberDto(it.id, it.canEdit) }, expireSeconds, expireChanged) }
                 .onSuccess { onDone(context.getString(R.string.people_saved)) }
-                .onFailure { error = userError(it).resolve(context) }
+                .onFailure {
+                    if (it is io.github.svenbuild.fylvo.android.data.ShareEndPassed) expireToChoose = true
+                    else error = userError(it).resolve(context)
+                }
             saving = false
         }
     }
@@ -129,6 +138,11 @@ fun PeopleSheet(target: PeopleTarget, onDone: (String?) -> Unit, onDismiss: () -
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             if (loading) {
                 Box(Modifier.fillMaxWidth().padding(24.dp)) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
+            } else if (loadFailed) {
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 20.dp)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.End) {
+                    Button(onClick = { loadRound++ }) { Text(stringResource(R.string.retry)) }
+                }
             } else {
                 people.forEachIndexed { index, p ->
                     ListItem(

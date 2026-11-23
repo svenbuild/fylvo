@@ -211,9 +211,19 @@ class OfflineEdits(
         guarded(StartResult.NotReady) { lock.withLock { startLocked(store, file, offlineMode, standalone) } }
     }
 
-    private suspend fun startLocked(store: EditStore, file: FileObject, offlineMode: Boolean, standalone: Boolean = false): StartResult {
+    private suspend fun startLocked(store: EditStore, given: FileObject, offlineMode: Boolean, standalone: Boolean = false): StartResult {
         run {
-            store.load().entries.firstOrNull { it.active && it.fileId == file.id }?.let { existing ->
+            val existing = store.load().entries.firstOrNull { it.active && it.fileId == given.id }
+            // A standalone copy is compared with (and made from) the server's version now, never
+            // with a listing that may be older than the last upload.
+            val fromServer = !offlineMode && (standalone || existing?.standalone == true)
+            val file = if (fromServer) fresh(given) else given
+            if (file == null) {
+                // No answer now: a copy in use is reopened as it is, a new one waits for the server.
+                val local = existing?.let { store.fileOf(it) }
+                return if (existing != null && !existing.outdated && local?.isFile == true) StartResult.Ready(local, existing.id) else StartResult.NotReady
+            }
+            existing?.let { existing ->
                 val local = store.fileOf(existing)
                 // Fylvo 1.6: a standalone copy with nothing new of its own, while the server has a
                 // newer version: it is finished, a fresh copy follows (like an outdated synced one).
@@ -231,7 +241,8 @@ class OfflineEdits(
             )
             publish(store.put(entry))
             val made = try {
-                if (standalone && !offlineMode) makeStandaloneCopy(store, entry, file) else makeCopy(store, entry, file, offlineMode)
+                // A finished standalone copy is followed by a standalone one (the file is not kept offline).
+                if (fromServer) makeStandaloneCopy(store, entry, file) else makeCopy(store, entry, file, offlineMode)
             } catch (e: CancellationException) {
                 withContext(NonCancellable) { dropCreating(store, entry) }
                 throw e
@@ -245,6 +256,15 @@ class OfflineEdits(
             publish(store.put(made))
             return StartResult.Ready(store.fileOf(made), made.id)
         }
+    }
+
+    /** [file] as the server has it now (same id), or null when that cannot be told. */
+    private suspend fun fresh(file: FileObject): FileObject? = try {
+        repo.lookup(file.path)?.takeIf { it.id == file.id && !it.isFolder }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
     }
 
     private fun dropCreating(store: EditStore, entry: EditEntry) {

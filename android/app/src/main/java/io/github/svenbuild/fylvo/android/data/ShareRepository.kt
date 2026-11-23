@@ -87,10 +87,23 @@ data class LinkOptions(
     }
 }
 
+/** Fylvo 1.6: the end of a share passed while it was being edited; a new end must be chosen. */
+class ShareEndPassed : IllegalStateException("The share's end has passed")
+
 /** Fylvo: the account's own shares (list, edit, delete) and sharing with people. */
 class ShareRepository(private val api: ApiClient, private val session: SessionManager) {
 
     companion object {
+        /**
+         * The seconds left of [share]'s end at [now] (null: it has none). An end that passed is
+         * never sent as "no end": [ShareEndPassed], a new one must be chosen.
+         */
+        fun keptExpire(share: ShareInfo, now: Instant): Long? {
+            val o = LinkOptions.of(share, now)
+            if (o.expireToChoose) throw ShareEndPassed()
+            return o.keepEnd?.let { LinkOptions.remainingSeconds(it, now).takeIf { s -> s > 0 } ?: throw ShareEndPassed() } ?: o.expireSeconds
+        }
+
         /** App-side code: the last downloads were used up while the link was being edited. */
         const val CODE_NO_DOWNLOADS_LEFT = -40
 
@@ -184,8 +197,7 @@ class ShareRepository(private val api: ApiClient, private val session: SessionMa
      */
     suspend fun savePeople(uri: String, share: ShareInfo?, members: List<ShareMemberDto>, newExpire: Long?, expireChanged: Boolean): String {
         val tag = session.sessionTag()
-        val expire = if (expireChanged || share == null) newExpire
-            else LinkOptions.of(share).let { o -> o.keepEnd?.let { LinkOptions.remainingSeconds(it, Instant.now()) } ?: o.expireSeconds }
+        val expire = if (expireChanged || share == null) newExpire else keptExpire(share, Instant.now())
         val request = memberRequest(uri, share, members, expire)
         return if (share == null) api.service().createShare(request, tag).unwrap()
         else api.service().editShare(share.id, request, tag).unwrap()

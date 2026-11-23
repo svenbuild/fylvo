@@ -125,7 +125,8 @@ fun SearchResults(
                 .padding(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (openedFrom != null) {
+            // Search in contents always covers the whole account: no folder choice then.
+            if (openedFrom != null && !state.searchFullText) {
                 FilterChip(
                     selected = state.searchScope != null,
                     onClick = { viewModel.setSearchScope(openedFrom) },

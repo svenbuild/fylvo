@@ -97,6 +97,18 @@ class ShareOptionsTest {
         assertEquals(1, r.members?.size)
     }
 
+    @Test fun memberShareWhoseEndPassedIsNeverSentWithoutEnd() {
+        // Still running: the seconds left are sent again.
+        assertEquals(3600L, ShareRepository.keptExpire(ShareInfo(expires = "2026-11-23T11:00:00Z"), now))
+        // No end: stays without one.
+        assertNull(ShareRepository.keptExpire(ShareInfo(), now))
+        // Passed while the sheet was open (or already when it was read): a new end must be chosen.
+        for (s in listOf(ShareInfo(expires = "2026-11-23T10:00:00Z"), ShareInfo(expires = "2026-11-22T10:00:00Z", expired = true))) {
+            val thrown = runCatching { ShareRepository.keptExpire(s, now) }.exceptionOrNull()
+            assertTrue(thrown is ShareEndPassed)
+        }
+    }
+
     @Test fun sharedByMeBelongsToSharedOrAccount() {
         val tabs = listOf(Place.Home, Place.Files, Place.Shared, Place.Account)
         assertEquals(Place.Shared, Navigation.activeTab(Where(uri = "cloudreve://shared_with_me", page = "shares"), tabs, emptyList(), Place.Shared))

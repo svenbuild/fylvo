@@ -50,4 +50,11 @@ class StandaloneEditTest {
         // Another tree that only starts with the same text.
         assertFalse(FolderUpload.needed("content://com.android.externalstorage.documents/tree/primary%3AFo", listOf(batch)))
     }
+
+    @Test fun treeRightStaysWhileBatchesAreStillQueued() {
+        val tree = "content://com.android.externalstorage.documents/tree/primary%3AFotos"
+        // The first batch finished, the next one is not stored yet: the right stays while queuing.
+        assertEquals(emptyList<String>(), FolderUpload.toRelease(setOf(tree), busy = setOf(tree), batchTexts = emptyList()))
+        assertEquals(listOf(tree), FolderUpload.toRelease(setOf(tree), busy = emptySet(), batchTexts = emptyList()))
+    }
 }

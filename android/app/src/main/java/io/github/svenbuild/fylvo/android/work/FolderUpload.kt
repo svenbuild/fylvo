@@ -66,15 +66,32 @@ object FolderUpload {
         p.edit().putStringSet(KEY, p.getStringSet(KEY, emptySet()).orEmpty() - tree.toString()).apply()
     }
 
+    /** Trees whose batches are still being queued: their right stays even while no batch needs it yet. */
+    private val queuing = mutableSetOf<String>()
+
+    /** Marks [tree] as being queued until [done] is called (a finished first batch never frees it). */
+    fun queuing(tree: Uri) = synchronized(queuing) { queuing += tree.toString() }
+
+    /** All batches of [tree] are stored (or queuing stopped): from now on the usual rule applies. */
+    fun done(context: Context, tree: Uri) {
+        synchronized(queuing) { queuing -= tree.toString() }
+        releaseFinished(context)
+    }
+
     /** Gives back every kept right no stored upload batch needs any more. */
     fun releaseFinished(context: Context) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val busy = synchronized(queuing) { queuing.toSet() }
         val trees = p.getStringSet(KEY, emptySet()).orEmpty()
         if (trees.isEmpty()) return
         val batches = File(context.filesDir, "upload_batches").listFiles { f -> f.name.endsWith(".json") }.orEmpty()
             .mapNotNull { runCatching { it.readText() }.getOrNull() }
-        trees.filter { tree -> !needed(tree, batches) }.forEach { release(context, Uri.parse(it)) }
+        toRelease(trees, busy, batches).forEach { release(context, Uri.parse(it)) }
     }
+
+    /** The kept [trees] no stored batch needs and that are not being queued ([busy]). */
+    fun toRelease(trees: Set<String>, busy: Set<String>, batchTexts: List<String>): List<String> =
+        trees.filter { it !in busy && !needed(it, batchTexts) }
 
     /** A stored batch still holds a file of [tree] (its documents' addresses start with the tree's). */
     fun needed(tree: String, batchTexts: List<String>): Boolean {

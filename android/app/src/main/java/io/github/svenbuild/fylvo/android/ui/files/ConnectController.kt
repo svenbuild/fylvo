@@ -46,6 +46,8 @@ class ConnectController(
     private val _message = MutableStateFlow<UiText?>(null)
     val message: StateFlow<UiText?> = _message.asStateFlow()
     private val lock = Mutex()
+    /** Raised by sign-out: an answer to a request sent before it is thrown away. */
+    @Volatile private var generation = 0
 
     fun messageShown() {
         _message.value = null
@@ -64,13 +66,17 @@ class ConnectController(
         }
         store.clear()
         val verifier = ConnectFlow.newVerifier()
+        val round = generation
+        val account = api.accountTag()
         try {
             val res = repo.authorize(provider, reconnect, ConnectFlow.challenge(verifier))
+            // Signed out (or another account) while the answer was on its way: nothing is kept or opened.
+            if (round != generation || api.accountTag() != account || api.serverBase() != server) return@withLock null
             if (!ConnectFlow.validAttempt(res.attempt) || !ConnectFlow.validStart(res.url, allowHttp = BuildConfig.DEBUG)) {
                 _message.value = UiText.Res(R.string.connect_failed)
                 return@withLock null
             }
-            store.save(ConnectAttempt(server, api.accountTag(), res.attempt, verifier, provider, reconnect, clock()))
+            store.save(ConnectAttempt(server, account, res.attempt, verifier, provider, reconnect, clock()))
             _ui.value = Ui.Waiting(provider)
             res.url
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -91,6 +97,9 @@ class ConnectController(
                 if (link.attempt != a.attempt) return@withLock
                 // A second finish link waits until the first one is decided.
                 if (a.code != null && a.code != link.code) return@withLock
+                // The same link again after a yes whose answer was lost: the same save again (the
+                // server answers the same storage), never a new preview of a used code.
+                if (a.code == link.code && a.yes) return@withLock save(a)
                 store.save(a.copy(code = link.code))
                 preview(a.copy(code = link.code))
             }
@@ -118,8 +127,13 @@ class ConnectController(
         _ui.value = Ui.Idle
     }
 
-    /** At app start: a save that was said yes to but not answered is sent again. */
+    /**
+     * At app start and whenever the app comes back to the front: a save that was said yes to but
+     * not answered is sent again (likewise a preview without answer). Not while a question or a
+     * request is open.
+     */
     suspend fun resume() = lock.withLock {
+        if (_ui.value is Ui.Confirm || _ui.value is Ui.Busy) return@withLock
         val a = current() ?: return@withLock
         when {
             a.code != null && a.yes -> save(a)
@@ -130,6 +144,7 @@ class ConnectController(
 
     /** Sign-out: the attempt is dropped. */
     fun clear() {
+        generation++
         store.clear()
         _ui.value = Ui.Idle
         _message.value = null
@@ -157,7 +172,7 @@ class ConnectController(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            handle(e, a, sentBefore = false)
+            handle(e, a, sentBefore = a.sent)
         }
     }
 

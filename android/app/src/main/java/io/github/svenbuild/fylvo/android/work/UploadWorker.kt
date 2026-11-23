@@ -786,6 +786,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             }
             queue.delete(batchId)
             releaseUnused(context, queue, batch.items.map { it.uri })
+            runCatching { FolderUpload.releaseFinished(context) }
             File(context.cacheDir, "upload_staging").listFiles { f -> f.name.startsWith("$workId-") }?.forEach { it.delete() }
         }
 

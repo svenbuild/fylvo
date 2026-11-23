@@ -308,9 +308,10 @@ internal class EditPass(
         var entry = given
         val plan = when {
             entry.retired || entry.baseEntity.isEmpty() -> TargetPlan.Conflict
-            // Fylvo 1.6: a standalone copy has no synced index: its file is followed by id on the
-            // server (a rename or move is seen at once), and "not found" is decided right away.
-            entry.standalone && !Connected.isConnected(entry.uri) -> {
+            // Fylvo 1.6: a standalone copy has no synced index: its own file is followed by id on
+            // the server (a rename or move is seen at once), and "not found" is decided right away.
+            // The server finds files by id only for their owner: in a share the address is asked.
+            entry.standalone && CrUri.root(entry.uri) == CrUri.MY_PREFIX -> {
                 val pre = preflightById(entry)
                 entry = store.entry(entry.id) ?: entry
                 planTarget(entry, pre, decideGone = true)

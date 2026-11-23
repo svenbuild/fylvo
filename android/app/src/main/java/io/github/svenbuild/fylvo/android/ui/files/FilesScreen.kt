@@ -176,14 +176,21 @@ fun FilesScreen(
     var compressAsk by remember { mutableStateOf<List<FileObject>?>(null) }
     /** Fylvo 1.6: a folder being shared with people. */
     var peopleTarget by remember { mutableStateOf<PeopleTarget?>(null) }
-    /** Fylvo 1.6: a folder of the phone read for uploading, waiting for its yes (target, its id). */
-    var folderUploadAsk by remember { mutableStateOf<Triple<io.github.svenbuild.fylvo.android.work.FolderUpload.Scan, String, String?>?>(null) }
+    /** Fylvo 1.6: a folder of the phone read for uploading, waiting for its yes. */
+    var folderUploadAsk by remember { mutableStateOf<FolderUploadAsk?>(null) }
+    /** The target as chosen before the picker opened: address, folder id (empty for the root), account. */
     var folderUploadTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderUploadTargetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderUploadAccount by rememberSaveable { mutableStateOf<String?>(null) }
     var folderReading by remember { mutableStateOf(false) }
     val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         val target = folderUploadTarget
+        val targetId = folderUploadTargetId
+        val account = folderUploadAccount
         folderUploadTarget = null
-        if (tree == null || target == null || CrUri.hasSecret(target)) return@rememberLauncherForActivityResult
+        folderUploadTargetId = null
+        folderUploadAccount = null
+        if (tree == null || target == null || targetId == null || account == null || CrUri.hasSecret(target)) return@rememberLauncherForActivityResult
         folderReading = true
         scope.launch {
             val scan = withContext(Dispatchers.IO) {
@@ -198,9 +205,7 @@ fun FilesScreen(
                 snackbar.showSnackbar(context.getString(if (scan == null) R.string.folder_upload_unreadable else R.string.folder_upload_empty))
                 return@launch
             }
-            // The target folder is taken by id now; it must still be the same when the upload starts.
-            val id = if (CrUri.isRoot(target)) null else runCatching { app.fileRepository.folderInfo(target).id }.getOrNull()
-            folderUploadAsk = Triple(scan, target, id)
+            folderUploadAsk = FolderUploadAsk(scan, target, targetId.ifEmpty { null }, account)
         }
     }
     val groupArchive = accountState.group(Permissions.GROUP_ARCHIVE)
@@ -1118,8 +1123,22 @@ fun FilesScreen(
             if (!state.inConnected && !state.offlineMode && Permissions.canAddTo(state.parent)) ListItem(
                 modifier = Modifier.clickable {
                     addSheetOpen = false
-                    folderUploadTarget = state.currentUri
-                    runCatching { folderLauncher.launch(null) }
+                    val target = state.currentUri
+                    scope.launch {
+                        // The target is taken by id now (it must still be the same when the upload
+                        // starts); when its id cannot be read, nothing starts.
+                        val id = if (CrUri.isRoot(target)) "" else withContext(Dispatchers.IO) {
+                            runCatching { app.fileRepository.folderInfo(target).id }.getOrNull()?.takeIf { it.isNotEmpty() }
+                        }
+                        if (id == null) {
+                            snackbar.showSnackbar(context.getString(R.string.folder_upload_failed))
+                            return@launch
+                        }
+                        folderUploadTarget = target
+                        folderUploadTargetId = id
+                        folderUploadAccount = UploadWorker.currentAccount(app)
+                        runCatching { folderLauncher.launch(null) }
+                    }
                 },
                 headlineContent = { Text(stringResource(R.string.folder_upload)) },
                 supportingContent = { Text(stringResource(R.string.into_folder, state.folderTitle())) },
@@ -1290,7 +1309,7 @@ fun FilesScreen(
             dismissButton = { androidx.compose.material3.TextButton(enabled = !emptying, onClick = { emptyTrashAsk = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
-    folderUploadAsk?.let { (scan, target, targetId) ->
+    folderUploadAsk?.let { (scan, target, targetId, account) ->
         val many = scan.files.size >= io.github.svenbuild.fylvo.android.work.FolderUpload.MANY
         androidx.compose.material3.AlertDialog(
             onDismissRequest = {
@@ -1309,26 +1328,32 @@ fun FilesScreen(
                     folderUploadAsk = null
                     val tag = app.sessionManager.sessionTag()
                     scope.launch {
+                        val folders = io.github.svenbuild.fylvo.android.work.FolderUpload
+                        // Until every batch is stored, a finished first batch does not give the right back.
+                        folders.queuing(scan.tree)
                         val ok = withContext(Dispatchers.IO) {
                             runCatching {
-                                // Still the folder that was chosen (nothing lands in one that took its place).
+                                // Still the account and the folder that were chosen (nothing lands in one that took its place).
+                                if (UploadWorker.currentAccount(app) != account || !app.sessionManager.isCurrent(tag)) return@runCatching false
                                 if (targetId != null && app.fileRepository.folderIdMatches(target, targetId) != true) return@runCatching false
-                                if (!app.sessionManager.isCurrent(tag)) return@runCatching false
                                 // An existing folder of that name is filled up; files with a taken name get a new one.
                                 val root = CrUri.join(target, scan.name)
                                 app.fileRepository.mkdirs(root)
                                 scan.dirs.forEach { app.fileRepository.mkdirs(CrUri.join(root, it)) }
-                                io.github.svenbuild.fylvo.android.work.FolderUpload.keep(context, scan.tree)
-                                io.github.svenbuild.fylvo.android.work.FolderUpload.groups(scan).forEach { (dir, items) ->
+                                folders.keep(context, scan.tree)
+                                folders.groups(scan).forEach { (dir, items) ->
                                     val parent = if (dir.isEmpty()) root else CrUri.join(root, dir)
+                                    // Every batch checks its own folder by id before each file.
+                                    val parentId = app.fileRepository.folderInfo(parent).id
+                                    if (parentId.isEmpty()) return@runCatching false
                                     val existing = viewModel.namesInFolder(parent)
                                     val names = UploadWorker.uniqueWithinSelection(items.map { it.name }, existing)
-                                    UploadWorker.enqueueSafely(context, items.map { it.uri }, parent, names)
+                                    UploadWorker.enqueueSafely(context, items.map { it.uri }, parent, names, expectedParentId = parentId, account = account)
                                 }
                                 true
                             }.getOrDefault(false)
                         }
-                        io.github.svenbuild.fylvo.android.work.FolderUpload.releaseFinished(context)
+                        folders.done(context, scan.tree)
                         snackbar.showSnackbar(context.getString(if (ok) R.string.folder_upload_started else R.string.folder_upload_failed))
                         if (ok) viewModel.refresh()
                     }
@@ -1583,7 +1608,8 @@ fun FilesScreen(
             onOpenProfile = { accountPage = ACCOUNT_PROFILE },
             onOpenSecurity = { accountPage = ACCOUNT_SECURITY },
             onOpenTasks = { accountPage = ACCOUNT_TASKS },
-            onOpenConnected = if (connectedState.overview?.let { it.available && it.allowed } == true) ({ accountPage = ACCOUNT_CONNECTED }) else null,
+            // Also without the right to connect: storages connected before can still be disconnected.
+            onOpenConnected = if (connectedState.overview?.let { it.available && (it.allowed || it.storages.isNotEmpty()) } == true) ({ accountPage = ACCOUNT_CONNECTED }) else null,
             onOpenCustomize = { customizeOpen = true },
             // Account is a tab: back goes to the start tab like every other tab.
             onBack = { selectTab(startTab) },
@@ -1645,10 +1671,13 @@ fun FilesScreen(
     LaunchedEffect(connectMessage) {
         connectMessage?.let { snackbar.showSnackbar(it.resolve(context)); app.connect.messageShown() }
     }
-    LaunchedEffect(Unit) {
-        app.reloadConnected = { viewModel.connected.reload() }
-        // A sign-in that was said yes to, but whose answer was lost (the app was stopped): sent again.
-        runCatching { app.connect.resume() }
+    LaunchedEffect(Unit) { app.reloadConnected = { viewModel.connected.reload() } }
+    // A sign-in whose answer was lost (no network, or the app was stopped): sent again whenever
+    // the app comes back to the front; an attempt older than 20 minutes is dropped here too.
+    LifecycleResumeEffect(Unit) {
+        // Not cancelled on pause: a request in flight finishes (else the attempt would stay "busy").
+        scope.launch { runCatching { app.connect.resume() } }
+        onPauseOrDispose { }
     }
     if (accountOpen && accountPage == ACCOUNT_TASKS) {
         TasksPage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) }, onOpenFolder = { uri ->
@@ -1932,6 +1961,14 @@ internal const val PAGE_TAGS = "tags"
 internal const val ACCOUNT_PROFILE = "profile"
 internal const val ACCOUNT_SECURITY = "security"
 internal const val ACCOUNT_TASKS = "tasks"
+
+/** Fylvo 1.6: a phone folder waiting for its yes: target address, its id (null for the root), account. */
+internal data class FolderUploadAsk(
+    val scan: io.github.svenbuild.fylvo.android.work.FolderUpload.Scan,
+    val target: String,
+    val targetId: String?,
+    val account: String,
+)
 internal const val ACCOUNT_CONNECTED = "connected"
 /** Fylvo 1.6: "Shared by me", from the Shared tab or from Account. */
 internal const val PAGE_SHARES = "shares"

@@ -91,7 +91,7 @@ fun ConnectedPage(
                 return@Box
             }
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                state.storages.forEach { s ->
+                overview.storages.forEach { s ->
                     ListItem(
                         modifier = Modifier.clickable { target = s },
                         headlineContent = { Text(CrUri.rootLabel(s.uri), maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -108,7 +108,7 @@ fun ConnectedPage(
                         leadingContent = { Icon(if (s.ok) Icons.Outlined.Cloud else Icons.Outlined.CloudOff, contentDescription = null) },
                     )
                 }
-                if (overview.allowed && state.storages.size < overview.max.coerceAtLeast(1)) {
+                if (overview.allowed && overview.storages.size < overview.max.coerceAtLeast(1)) {
                     overview.providers.filter { it.configured }.forEach { p ->
                         ListItem(
                             modifier = Modifier.clickable(enabled = connectUi == ConnectController.Ui.Idle || connectUi is ConnectController.Ui.Waiting) { connect(p.type, null) },
@@ -135,9 +135,10 @@ fun ConnectedPage(
     target?.let { s ->
         ModalBottomSheet(onDismissRequest = { target = null }) {
             Text(CrUri.rootLabel(s.uri), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-            if (s.ok) SheetAction(Icons.Outlined.FolderOpen, stringResource(R.string.open), { target = null; onOpen(s) })
-            SheetAction(Icons.Outlined.DriveFileRenameOutline, stringResource(R.string.rename), { target = null; renaming = s })
-            SheetAction(
+            if (s.ok && overview?.allowed == true) SheetAction(Icons.Outlined.FolderOpen, stringResource(R.string.open), { target = null; onOpen(s) })
+            // Without the right to connect only open and disconnect are left (as on the server).
+            if (overview?.allowed == true) SheetAction(Icons.Outlined.DriveFileRenameOutline, stringResource(R.string.rename), { target = null; renaming = s })
+            if (overview?.allowed == true) SheetAction(
                 if (overview?.appSignin == true) Icons.Outlined.Sync else Icons.AutoMirrored.Outlined.OpenInNew,
                 stringResource(R.string.connect_again),
                 { target = null; connect(s.provider, s.id) },
@@ -180,10 +181,13 @@ fun ConnectedPage(
                 TextButton(onClick = {
                     removing = null
                     scope.launch {
-                        runCatching {
-                            app.connectRepo.disconnect(s.id)
-                            // Uploads waiting for this storage go too.
-                            io.github.svenbuild.fylvo.android.work.UploadWorker.cancelForRoot(context, CrUri.root(s.uri))
+                        // Off the main thread, and finished also when the page is left meanwhile.
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
+                            runCatching {
+                                app.connectRepo.disconnect(s.id)
+                                // Uploads waiting for this storage go too.
+                                io.github.svenbuild.fylvo.android.work.UploadWorker.cancelForRoot(context.applicationContext, CrUri.root(s.uri))
+                            }
                         }
                             .onSuccess { onMessage(context.getString(R.string.disconnected)); viewModel.connected.reload() }
                             .onFailure { onMessage(userError(it).resolve(context)) }
