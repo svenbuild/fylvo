@@ -34,8 +34,8 @@ func connectedUploadRequest(c context.Context, id string) (*connectedRequest, er
 	if err != nil {
 		return nil, err
 	}
-	uri, err := fs.NewAnyUriFromString(connected.RootURI(conn))
-	if err != nil {
+	uri, ok := connectedURI(connected.RootURI(conn))
+	if !ok {
 		return nil, connected.ErrNoStorage
 	}
 	return openConnected(c, uri)
