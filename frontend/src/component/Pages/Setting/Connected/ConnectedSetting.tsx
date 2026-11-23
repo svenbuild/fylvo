@@ -469,12 +469,18 @@ const ConnectedSetting = () => {
   // The spinner shows only until the first list is there, so a refresh keeps open dialogs.
   // After a failed refresh the old list is dropped, so no action works on stale data.
   // An open rename dialog closes when its storage is gone or may no longer be renamed.
+  const loadSeq = useRef(0);
   const load = useCallback((): Promise<void> => {
     // A shown error stays, with its retry button disabled, until the answer is there.
     setRefreshing(true);
     const before = listChanges;
+    // Only the newest request is applied, so an older answer cannot undo a newer one.
+    const seq = ++loadSeq.current;
     return dispatch(getConnectedStorages())
       .then((res) => {
+        if (seq != loadSeq.current) {
+          return;
+        }
         if (listChanges != before) {
           return load();
         }

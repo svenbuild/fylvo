@@ -85,12 +85,7 @@ import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers } from "./viewer.ts";
 import { folderEnterable } from "../../api/connected.ts";
 import { rowUnsupported } from "../../component/FileManager/Connected/ConnectedMark.tsx";
-import {
-  BusyState,
-  newBusyState,
-  ProviderGaveUp,
-  retryBusy,
-} from "../../component/FileManager/Connected/providerRetry.ts";
+import { BusyState, ProviderGaveUp, retryBusy } from "../../component/FileManager/Connected/providerRetry.ts";
 
 const contextMenuCloseAnimationDelay = 250;
 
@@ -1230,8 +1225,7 @@ export function walk(
           let nextToken: string | undefined = undefined;
           let page: number | undefined = undefined;
           while (true) {
-            // Fylvo: a busy provider of a connected storage is waited for (see providerRetry).
-            const children: ListResponse = await retryBusy(busy ?? newBusyState(), () =>
+            const list = () =>
               dispatch(
                 getFileList({
                   next_page_token: nextToken,
@@ -1239,8 +1233,10 @@ export function walk(
                   uri,
                   page_size: 1000,
                 }),
-              ),
-            );
+              );
+            // Fylvo: a busy provider of a connected storage is waited for (see providerRetry);
+            // other storages keep their own handling.
+            const children: ListResponse = busy ? await retryBusy(busy, list) : await list();
             allChildren.push(...children.files);
             if (skipped && !nextToken && page === undefined) {
               skipped.omitted += children.connected?.omitted ?? 0;

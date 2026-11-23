@@ -241,6 +241,13 @@ export function browserBatchDownload(files: FileResponse[]): AppThunk {
           persist: true,
           action: BatchDownloadIncompleteAction(downloadId),
         });
+      } else if (cancelled) {
+        enqueueSnackbar({
+          message: i18next.t("modals.directoryDownloadCancelled"),
+          variant: "warning",
+          autoHideDuration: 3000,
+          action: DefaultCloseAction,
+        });
       }
     } finally {
       window.removeEventListener("beforeunload", beforeUnloadHandler);
@@ -618,6 +625,8 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
     const stopped = new AbortController();
     const busy = connected ? newBusyState(stopped.signal) : undefined;
     let stopReason = "";
+    // The file whose content is being written into the archive.
+    let activeName = "";
     // Files and folders: an exported name must not take the path of a folder either.
     let allWalked: FileResponseWalked[];
     try {
@@ -722,11 +731,17 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
           const next = pending.shift()!;
           try {
             // An error answer must not become a file in the archive; a busy provider is waited for.
-            const res = busy ? await retryBusy(busy, () => fetchContent(next.url)) : await fetchContent(next.url);
+            const fetchOne = () => fetchContent(next.url, stopped.signal);
+            const res = busy ? await retryBusy(busy, fetchOne) : await fetchOne();
             const stream = () => res.body;
+            activeName = next.file.relativePath;
             ctrl.enqueue({ name: downloadFileName(next.file, next.file.relativePath, takenNames), stream });
             return;
           } catch (e) {
+            if (e instanceof Error && e.name == "AbortError") {
+              ctrl.close();
+              return;
+            }
             console.warn("Failed to download", next.file.relativePath, e);
             failedNames.push(next.file.relativePath);
             if (e instanceof ProviderGaveUp) {
@@ -746,17 +761,27 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
         await longRunningTaskWithSnackbar(readableZipStream.pipeTo(fileStream), "fileManager.batchDownloadStarted");
       } catch (e) {
         console.log(e);
+        // Ends the transfer that is running and every wait (Fylvo).
         stopped.abort();
-        // Fylvo: a transfer broken off midway leaves an archive that cannot be opened.
-        if (!(e instanceof Error && e.name == "AbortError")) {
-          enqueueSnackbar({
-            message: i18next.t("application:connected.archiveBroken"),
-            variant: "error",
-            persist: true,
-            action: DefaultCloseAction,
-          });
+        // A cancel by the user says nothing more.
+        if (e instanceof Error && e.name == "AbortError") {
           return;
         }
+        // Fylvo: a transfer broken off midway leaves an archive that cannot be opened; name the
+        // file it broke on and what was left out before.
+        enqueueSnackbar({
+          message: [
+            i18next.t("application:connected.archiveBroken"),
+            activeName ? i18next.t("application:connected.archiveBrokenAt", { name: activeName }) : "",
+            ...skippedNotes(skipped),
+          ]
+            .filter(Boolean)
+            .join(" "),
+          variant: "error",
+          persist: true,
+          action: DefaultCloseAction,
+        });
+        return;
       }
       // Fylvo: name what is missing from the archive.
       const notes = skippedNotes(skipped);
