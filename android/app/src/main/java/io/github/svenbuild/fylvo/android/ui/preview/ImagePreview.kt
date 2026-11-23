@@ -10,6 +10,9 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -26,7 +29,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
@@ -43,13 +46,14 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit, onDismiss: () -> Unit = {}) {
+fun ImagePreview(file: FileObject, viewModel: FilesViewModel, active: Boolean = true, onTap: () -> Unit, onDismiss: () -> Unit = {}) {
     val thumb = rememberThumbUrl(viewModel, file)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var fullFailed by remember(file.id) { mutableStateOf(false) }
     // Fylvo: inside a connected storage the reason is shown (provider busy, file changed).
     var fullError by remember(file.id) { mutableStateOf<io.github.svenbuild.fylvo.android.util.UiText?>(null) }
-    val fullUrl by produceState<String?>(initialValue = null, file.id) {
+    val fullUrl by produceState<String?>(initialValue = null, file.id, active) {
+        if (!active) return@produceState
         value = runCatching { viewModel.previewUrl(file) }.onFailure { e ->
             if (io.github.svenbuild.fylvo.android.util.Connected.isConnected(file.path)) {
                 fullError = io.github.svenbuild.fylvo.android.util.userError(e)
@@ -58,7 +62,12 @@ fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit,
         fullFailed = value == null
     }
 
+    var fullShown by remember(file.id) { mutableStateOf(false) }
+    var fullDecodeFailed by remember(file.id) { mutableStateOf(false) }
     var scale by remember(file.id) { mutableFloatStateOf(1f) }
+    // Zooming in once asks for the sharper decode (the file is on disk by then).
+    var zoomed by remember(file.id) { mutableStateOf(false) }
+    if (scale > 1f) zoomed = true
     var offset by remember(file.id) { mutableStateOf(Offset.Zero) }
     // Vertical drag at 1x slides the image away and closes the viewer (the Photos gesture).
     var dragY by remember(file.id) { mutableFloatStateOf(0f) }
@@ -98,44 +107,56 @@ fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit,
             ),
         contentAlignment = Alignment.Center,
     ) {
-        val model = fullUrl ?: thumb
-        if (model != null) {
-            val context = LocalContext.current
-            SubcomposeAsyncImage(
-                // Fylvo: the preview is kept under its own key (thumbCacheKey, the same way as the
-                // rows), also while it stands in for the full image.
-                model = remember(model, thumb, file.id, file.primaryEntity) {
-                    (if (model == thumb) thumbRequest(context, file, model) else ImageRequest.Builder(context).data(model))
-                        .placeholderMemoryCacheKey(thumbCacheKey(file, thumb) ?: thumb)
-                        .crossfade(true)
-                        .build()
+        val context = LocalContext.current
+        val layerModifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                val shrink = 1f - (kotlin.math.abs(dragY) / (dismissThresholdPx * 6f)).coerceIn(0f, 0.25f)
+                scaleX = scale * shrink
+                scaleY = scale * shrink
+                translationX = offset.x
+                translationY = offset.y + dragY
+                alpha = 1f - (kotlin.math.abs(dragY) / (dismissThresholdPx * 3f)).coerceIn(0f, 0.6f)
+            }
+        // Fylvo: the preview (usually cached by the list) is on screen at once and stays under the
+        // full picture until that one is decoded.
+        if (thumb != null) {
+            AsyncImage(
+                model = remember(thumb, file.id, file.primaryEntity) { thumbRequest(context, file, thumb).build() },
+                contentDescription = file.name,
+                contentScale = ContentScale.Fit,
+                modifier = layerModifier,
+            )
+        }
+        // Fylvo: the full picture is decoded smaller (the screen; up to 4096 px once zoomed in), never
+        // at its own size, and only on the page that is shown, so the neighbours do not take the line.
+        if (fullUrl != null && active) {
+            val screen = context.resources.displayMetrics
+            val limit = if (zoomed) 4096 else maxOf(screen.widthPixels, screen.heightPixels)
+            AsyncImage(
+                model = remember(fullUrl, limit) {
+                    ImageRequest.Builder(context).data(fullUrl).size(coil.size.Size(limit, limit)).crossfade(true).build()
                 },
                 contentDescription = file.name,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        val shrink = 1f - (kotlin.math.abs(dragY) / (dismissThresholdPx * 6f)).coerceIn(0f, 0.25f)
-                        scaleX = scale * shrink
-                        scaleY = scale * shrink
-                        translationX = offset.x
-                        translationY = offset.y + dragY
-                        alpha = 1f - (kotlin.math.abs(dragY) / (dismissThresholdPx * 3f)).coerceIn(0f, 0.6f)
-                    },
-                loading = { LoadingOverlay(null) },
+                modifier = layerModifier,
+                onSuccess = { fullShown = true },
                 onError = { state ->
                     val status = (state.result.throwable as? coil.network.HttpException)?.response?.code
-                    // Only the full image counts; a failed thumbnail says nothing about the file.
-                    if (status != null && fullUrl != null && state.result.request.data == fullUrl) {
-                        scope.launch { fullError = viewModel.contentFailed(file, status) }
-                    }
+                    if (status != null) scope.launch { fullError = viewModel.contentFailed(file, status) }
+                    fullDecodeFailed = true
                 },
-                error = { FullWidthError(fullError?.asString() ?: stringResource(R.string.image_load_failed)) },
             )
-        } else if (fullFailed) {
+        }
+        if (fullDecodeFailed || (fullFailed && thumb == null)) {
             FullWidthError(fullError?.asString() ?: stringResource(R.string.image_load_failed))
-        } else {
+        } else if (thumb == null && !fullShown) {
             LoadingOverlay(null)
+        } else if (active && !fullShown && !fullFailed) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp).size(28.dp),
+                strokeWidth = 3.dp,
+            )
         }
     }
 }

@@ -118,7 +118,7 @@ object CrUri {
     /** Fylvo: a search or filter (a query after the root), such as a tag search of the sidebar. */
     fun isSearch(uri: String): Boolean = '?' in uri
 
-    fun isSearchScope(uri: String): Boolean = !Connected.isConnected(uri) && (!isRoot(uri) || isShare(uri))
+    fun isSearchScope(uri: String): Boolean = !Connected.isConnected(uri)
 
     /** Display name of the folder at [uri]: its last segment, or the root's label. */
     fun displayName(uri: String): String = if (isRoot(uri)) rootLabel(uri) else fileName(uri)
