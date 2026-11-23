@@ -32,6 +32,10 @@ After 30 days the Azure services of the trial switch off. The directory and the 
 registration are not Azure services and should keep working. *Not confirmed on an official
 page.* Microsoft may block directories that stay unused for a long time.
 
+To be sure nothing is charged: after the sign-up, do not upgrade to pay-as-you-go and do not
+start any Azure service. If you already manage a directory (for example through Microsoft 365
+for business), you need neither the Azure account nor the credit card.
+
 ## 1. Get a directory
 
 Skip this if you already manage a Microsoft Entra directory (for example through Microsoft 365
