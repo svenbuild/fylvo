@@ -522,4 +522,23 @@
     <string name="could_not_upload_reason">%1$s: %2$s</string>
     <string name="uploaded_some_failed_reason">%1$d uploaded, %2$d failed. %3$s</string>
     <string name="upload_conflict_note_connected">Keep both uploads under a new name. Skip leaves these files out.</string>
+    <string name="favorite">Favourite</string>
+    <string name="add_to_favorites">Add to favourites</string>
+    <string name="remove_from_favorites">Remove from favourites</string>
+    <string name="folder_color">Colour</string>
+    <string name="color_default">No colour</string>
+    <string name="tags">Tags</string>
+    <string name="tags_none_yet">No tags yet. Add the first one below.</string>
+    <string name="tag_new">New tag</string>
+    <string name="tag_name">Name</string>
+    <string name="favorites">Favourites</string>
+    <string name="tab_offline">Offline</string>
+    <string name="no_favorites">No favourites yet</string>
+    <string name="no_favorites_hint">Mark files and folders with the star; they show up here.</string>
+    <string name="no_tags">No tags yet</string>
+    <string name="no_tags_hint">Give files a tag from their menu; your tags show up here.</string>
+    <plurals name="favorites_unavailable">
+        <item quantity="one">%d favourite is not available any more (deleted or no longer shared).</item>
+        <item quantity="other">%d favourites are not available any more (deleted or no longer shared).</item>
+    </plurals>
 </resources>

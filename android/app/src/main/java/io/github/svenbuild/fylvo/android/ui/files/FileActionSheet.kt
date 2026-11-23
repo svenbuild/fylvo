@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.FileCopy
@@ -87,6 +91,12 @@ fun FileActionSheet(
     onEdit: () -> Unit = {},
     onFinishEdit: () -> Unit = {},
     onDiscardEdit: () -> Unit = {},
+    /** Fylvo: the star of this file (add, remove or none) and its colour and tags. */
+    star: io.github.svenbuild.fylvo.android.data.prefs.StarState = io.github.svenbuild.fylvo.android.data.prefs.StarState.NONE,
+    onStar: (Boolean) -> Unit = {},
+    canEditMetadata: Boolean = false,
+    onColor: () -> Unit = {},
+    onTags: () -> Unit = {},
 ) {
     // Every action should be reachable without a second drag, so skip the half-open state.
     ModalBottomSheet(
@@ -141,6 +151,13 @@ fun FileActionSheet(
         onShowInFolder?.let { SheetAction(Icons.Default.FolderOpen, stringResource(R.string.show_in_folder), it) }
         if (canEdit) SheetAction(Icons.Outlined.Edit, stringResource(R.string.edit), onEdit)
         if (edited) SheetAction(Icons.Outlined.TaskAlt, stringResource(R.string.edit_finish), onFinishEdit)
+        when (star) {
+            io.github.svenbuild.fylvo.android.data.prefs.StarState.CAN_ADD ->
+                SheetAction(Icons.Outlined.StarOutline, stringResource(R.string.add_to_favorites), { onStar(true) })
+            io.github.svenbuild.fylvo.android.data.prefs.StarState.CAN_REMOVE ->
+                SheetAction(Icons.Default.Star, stringResource(R.string.remove_from_favorites), { onStar(false) })
+            else -> Unit
+        }
         if (canShare) SheetAction(Icons.Default.Link, stringResource(R.string.share_link), onShare)
         SheetAction(Icons.Default.Download, stringResource(if (file.isFolder) R.string.download_as_zip else R.string.download), onDownload)
         when {
@@ -157,6 +174,10 @@ fun FileActionSheet(
             SheetAction(Icons.AutoMirrored.Filled.DriveFileMove, stringResource(R.string.move_to), onMove)
             SheetAction(Icons.Default.FileCopy, stringResource(R.string.copy_to), onCopy)
             SheetAction(Icons.Default.DriveFileRenameOutline, stringResource(R.string.rename), onRename)
+        }
+        if (canEditMetadata) {
+            if (file.isFolder) SheetAction(Icons.Outlined.Palette, stringResource(R.string.folder_color), onColor)
+            SheetAction(Icons.AutoMirrored.Outlined.Label, stringResource(R.string.tags), onTags)
         }
         SheetAction(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
         if (edited) SheetAction(Icons.Outlined.EditOff, stringResource(R.string.edit_discard), onDiscardEdit, tint = MaterialTheme.colorScheme.error)

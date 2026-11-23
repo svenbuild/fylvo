@@ -519,4 +519,23 @@
     <string name="could_not_upload_reason">%1$s: %2$s</string>
     <string name="uploaded_some_failed_reason">%1$d hochgeladen, %2$d fehlgeschlagen. %3$s</string>
     <string name="upload_conflict_note_connected">Beide behalten lädt unter neuem Namen hoch. Überspringen lässt diese Dateien weg.</string>
+    <string name="favorite">Favorit</string>
+    <string name="add_to_favorites">Zu Favoriten</string>
+    <string name="remove_from_favorites">Aus Favoriten</string>
+    <string name="folder_color">Farbe</string>
+    <string name="color_default">Keine Farbe</string>
+    <string name="tags">Tags</string>
+    <string name="tags_none_yet">Noch keine Tags. Lege unten den ersten an.</string>
+    <string name="tag_new">Neuer Tag</string>
+    <string name="tag_name">Name</string>
+    <string name="favorites">Favoriten</string>
+    <string name="tab_offline">Offline</string>
+    <string name="no_favorites">Noch keine Favoriten</string>
+    <string name="no_favorites_hint">Markiere Dateien und Ordner mit dem Stern, dann erscheinen sie hier.</string>
+    <string name="no_tags">Noch keine Tags</string>
+    <string name="no_tags_hint">Gib Dateien über ihr Menü einen Tag, dann erscheinen deine Tags hier.</string>
+    <plurals name="favorites_unavailable">
+        <item quantity="one">%d Favorit ist nicht mehr verfügbar (gelöscht oder nicht mehr geteilt).</item>
+        <item quantity="other">%d Favoriten sind nicht mehr verfügbar (gelöscht oder nicht mehr geteilt).</item>
+    </plurals>
 </resources>

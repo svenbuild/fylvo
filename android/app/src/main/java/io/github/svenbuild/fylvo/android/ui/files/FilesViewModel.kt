@@ -115,7 +115,17 @@ data class RootEditPrompt(val rootId: String, val name: String, val entries: Lis
 /** One-off message for the snackbar, optionally with an action such as Undo. [long]: stays longer (hints). */
 data class UiMessage(val text: UiText, val actionLabel: UiText? = null, val action: (() -> Unit)? = null, val long: Boolean = false)
 
+/** Fylvo: [FilesUiState.origin] for "back to the home page". */
+const val ORIGIN_HOME = "home"
+
 data class FilesUiState(
+    /** Fylvo: title of a place opened from a chip or widget (a tag search, a shortcut). */
+    val placeTitle: String? = null,
+    /**
+     * Fylvo: where "up" leads from the top of the place on screen ([ORIGIN_HOME] or a URI); set
+     * when a place is opened from a chip, the home page or a page of the app.
+     */
+    val origin: String? = null,
     /** Landing page with Recent and Categories; false while browsing a folder or category. */
     val home: Boolean = true,
     val recent: List<FileObject> = emptyList(),
@@ -197,10 +207,10 @@ data class FilesUiState(
     val uploadsHere: List<UploadStatus> get() = uploads.filter { it.parentUri == currentUri }
     val category: Category? get() = Category.fromUri(currentUri)
     /** Category listings mix folders; the row subtitle names each file's folder. */
-    val virtual: Boolean get() = category != null
+    val virtual: Boolean get() = category != null || CrUri.isSearch(currentUri)
     val inTrash: Boolean get() = category == Category.TRASH
     /** Fylvo: may upload and create folders here (share capability or ownership). */
-    val canAddHere: Boolean get() = !home && category == null && !offlineMode && Permissions.canAddTo(parent)
+    val canAddHere: Boolean get() = !home && !virtual && !offlineMode && Permissions.canAddTo(parent)
     /** Effective display mode: galleries keep their own preference. */
     val effectiveMode: ViewMode get() = if (category?.gallery == true) view.galleryMode else view.mode
 }
@@ -465,7 +475,19 @@ class FilesViewModel(
         // Fylvo: a "Shared with me" entry opens the share it points to.
         file.sharedRedirect?.let { CrUri.nameShare(it, file.name) }
         val target = file.sharedRedirect ?: file.path
-        _state.value = _state.value.copy(currentUri = target, home = false, selected = emptySet())
+        val s = _state.value
+        // Fylvo: going deeper keeps the way back of the opened place; elsewhere it ends.
+        val origin = s.origin.takeIf { !s.home && !s.virtual && target.startsWith(s.currentUri) }
+        _state.value = s.copy(currentUri = target, home = false, selected = emptySet(), placeTitle = null, origin = origin)
+        refresh()
+    }
+
+    /**
+     * Fylvo: opens [uri] (a folder, a category, a search such as a tag) as a place of its own with
+     * [title]; "up" from its top leads to [origin] ([ORIGIN_HOME], a URI, or null for the usual way).
+     */
+    fun openPlace(uri: String, title: String? = null, origin: String? = null) {
+        _state.value = _state.value.copy(currentUri = uri, home = false, selected = emptySet(), placeTitle = title, origin = origin)
         refresh()
     }
 
@@ -476,6 +498,12 @@ class FilesViewModel(
         // Fylvo: from the top of a shared folder back to the list of shared folders.
         if (CrUri.isShare(s.currentUri) && CrUri.isRoot(s.currentUri)) {
             openCategory(Category.SHARED_WITH_ME)
+            return true
+        }
+        // Fylvo: back to where the place was opened from (chip, home, a page).
+        val origin = s.origin
+        if (origin != null && (CrUri.isRoot(s.currentUri) || s.virtual)) {
+            if (origin == ORIGIN_HOME) goHome() else openPlace(origin)
             return true
         }
         if (s.category == Category.TRASH) {
@@ -492,17 +520,17 @@ class FilesViewModel(
     }
 
     fun goHome() {
-        _state.value = _state.value.copy(home = true, currentUri = CrUri.MY_PREFIX, selected = emptySet())
+        _state.value = _state.value.copy(home = true, currentUri = CrUri.MY_PREFIX, selected = emptySet(), placeTitle = null, origin = null)
         loadRecent()
     }
 
     fun openMyFiles() {
-        _state.value = _state.value.copy(home = false, currentUri = CrUri.MY_PREFIX, selected = emptySet())
+        _state.value = _state.value.copy(home = false, currentUri = CrUri.MY_PREFIX, selected = emptySet(), placeTitle = null, origin = null)
         refresh()
     }
 
-    fun openCategory(category: Category) {
-        _state.value = _state.value.copy(home = false, currentUri = category.uri, selected = emptySet())
+    fun openCategory(category: Category, origin: String? = null) {
+        _state.value = _state.value.copy(home = false, currentUri = category.uri, selected = emptySet(), placeTitle = null, origin = origin)
         refresh()
     }
 

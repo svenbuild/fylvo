@@ -42,6 +42,10 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -445,6 +449,10 @@ private val SelectionAction.icon: ImageVector
         SelectionAction.EDIT -> Icons.Outlined.Edit
         SelectionAction.FINISH_EDIT -> Icons.Outlined.TaskAlt
         SelectionAction.DISCARD_EDIT -> Icons.Outlined.EditOff
+        SelectionAction.FAVORITE -> Icons.Outlined.StarOutline
+        SelectionAction.UNFAVORITE -> Icons.Default.Star
+        SelectionAction.COLOR -> Icons.Outlined.Palette
+        SelectionAction.TAGS -> Icons.AutoMirrored.Outlined.Label
     }
 
 /** [quick]: the short label of a quick button ("Move" instead of "Move to"). */
@@ -466,5 +474,9 @@ private fun SelectionAction.label(quick: Boolean): String = stringResource(
         SelectionAction.EDIT -> R.string.edit
         SelectionAction.FINISH_EDIT -> R.string.edit_finish
         SelectionAction.DISCARD_EDIT -> R.string.edit_discard
+        SelectionAction.FAVORITE -> R.string.add_to_favorites
+        SelectionAction.UNFAVORITE -> R.string.remove_from_favorites
+        SelectionAction.COLOR -> R.string.folder_color
+        SelectionAction.TAGS -> R.string.tags
     },
 )

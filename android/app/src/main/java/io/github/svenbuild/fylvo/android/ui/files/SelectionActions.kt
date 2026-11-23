@@ -1,6 +1,7 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
 import io.github.svenbuild.fylvo.android.api.FileObject
+import io.github.svenbuild.fylvo.android.data.prefs.StarState
 import io.github.svenbuild.fylvo.android.util.Permissions
 
 /** Fylvo: what can be done with the selected files, from the selection button. */
@@ -24,6 +25,12 @@ enum class SelectionAction(
     EDIT(server = false),
     FINISH_EDIT(server = false),
     DISCARD_EDIT(server = false),
+    /** Fylvo: star / unstar (fylvo/favorites). */
+    FAVORITE,
+    UNFAVORITE,
+    /** Fylvo: folder colour and tags (metadata, owner only). */
+    COLOR,
+    TAGS,
 }
 
 /** Where the selection is made; decides together with the selected files which actions exist. */
@@ -41,6 +48,30 @@ data class SelectionContext(
     val edited: Boolean = false,
     /** Fylvo: inside a connected storage (see connectedSelectionActions). */
     val connected: Boolean = false,
+    /** Fylvo: what the star can do for the whole selection (see starOfSelection). */
+    val star: StarState = StarState.NONE,
+    /** Fylvo: colour (folders) and tags can be changed for every selected file. */
+    val metadata: Boolean = false,
+)
+
+/**
+ * Fylvo: the star of a selection from the states of its rows: remove when every row is a
+ * favourite, add when every row can have one (some may be already), else nothing.
+ */
+fun starOfSelection(states: List<StarState>): StarState {
+    return when {
+        states.isEmpty() || states.any { it == StarState.NONE } -> StarState.NONE
+        states.all { it == StarState.CAN_REMOVE } -> StarState.CAN_REMOVE
+        else -> StarState.CAN_ADD
+    }
+}
+
+/** Fylvo: star, colour and tags for a selection of [selected] rows. */
+private fun customizeActions(selected: List<FileObject>, ctx: SelectionContext): List<SelectionAction> = listOfNotNull(
+    SelectionAction.FAVORITE.takeIf { ctx.star == StarState.CAN_ADD },
+    SelectionAction.UNFAVORITE.takeIf { ctx.star == StarState.CAN_REMOVE },
+    SelectionAction.COLOR.takeIf { ctx.metadata && selected.all { it.isFolder } },
+    SelectionAction.TAGS.takeIf { ctx.metadata },
 )
 
 /** [quick]: the small buttons left of the selection button, nearest first. [menu]: the card above it. */
@@ -87,6 +118,7 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
                 menu = listOfNotNull(
                     SelectionAction.SELECT_ALL,
                     SelectionAction.DETAILS,
+                ) + customizeActions(selected, ctx) + listOfNotNull(
                     SelectionAction.RENAME.takeIf { canModify },
                     SelectionAction.COPY.takeIf { canModify },
                     SelectionAction.MOVE.takeIf { canModify },
@@ -103,7 +135,8 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
                     SelectionAction.DOWNLOAD,
                     SelectionAction.DELETE.takeIf { canModify },
                 ),
-                menu = listOfNotNull(SelectionAction.SELECT_ALL, SelectionAction.COPY.takeIf { canModify }),
+                menu = listOfNotNull(SelectionAction.SELECT_ALL) + customizeActions(selected, ctx) +
+                    listOfNotNull(SelectionAction.COPY.takeIf { canModify }),
             )
         }
     }

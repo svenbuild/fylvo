@@ -244,3 +244,32 @@ class MobilePrefsTest {
         assertTrue(MobilePrefs.withTabs(null, emptyList())["tabs"] is JsonArray)
     }
 }
+
+class SelectionStarTest {
+    private val s = StarState.entries
+
+    @org.junit.Test
+    fun starOfASelection() {
+        org.junit.Assert.assertEquals(StarState.CAN_REMOVE, io.github.svenbuild.fylvo.android.ui.files.starOfSelection(listOf(StarState.CAN_REMOVE, StarState.CAN_REMOVE)))
+        org.junit.Assert.assertEquals(StarState.CAN_ADD, io.github.svenbuild.fylvo.android.ui.files.starOfSelection(listOf(StarState.CAN_REMOVE, StarState.CAN_ADD)))
+        org.junit.Assert.assertEquals(StarState.NONE, io.github.svenbuild.fylvo.android.ui.files.starOfSelection(listOf(StarState.CAN_ADD, StarState.NONE)))
+        org.junit.Assert.assertEquals(StarState.NONE, io.github.svenbuild.fylvo.android.ui.files.starOfSelection(emptyList()))
+        org.junit.Assert.assertEquals(3, s.size)
+    }
+
+    @org.junit.Test
+    fun menuOffersStarColourAndTags() {
+        val folder = io.github.svenbuild.fylvo.android.api.FileObject(type = 1, id = "a", name = "A", path = "cloudreve://my/A", owned = true)
+        val ctx = io.github.svenbuild.fylvo.android.ui.files.SelectionContext(star = StarState.CAN_ADD, metadata = true)
+        val menu = io.github.svenbuild.fylvo.android.ui.files.selectionActions(listOf(folder), ctx).menu
+        org.junit.Assert.assertTrue(io.github.svenbuild.fylvo.android.ui.files.SelectionAction.FAVORITE in menu)
+        org.junit.Assert.assertTrue(io.github.svenbuild.fylvo.android.ui.files.SelectionAction.COLOR in menu)
+        org.junit.Assert.assertTrue(io.github.svenbuild.fylvo.android.ui.files.SelectionAction.TAGS in menu)
+        val file = folder.copy(type = 0)
+        val menuFile = io.github.svenbuild.fylvo.android.ui.files.selectionActions(listOf(file), ctx.copy(star = StarState.CAN_REMOVE)).menu
+        org.junit.Assert.assertTrue(io.github.svenbuild.fylvo.android.ui.files.SelectionAction.UNFAVORITE in menuFile)
+        org.junit.Assert.assertFalse(io.github.svenbuild.fylvo.android.ui.files.SelectionAction.COLOR in menuFile)
+        val trash = io.github.svenbuild.fylvo.android.ui.files.selectionActions(listOf(file), ctx.copy(inTrash = true)).menu
+        org.junit.Assert.assertFalse(io.github.svenbuild.fylvo.android.ui.files.SelectionAction.FAVORITE in trash)
+    }
+}

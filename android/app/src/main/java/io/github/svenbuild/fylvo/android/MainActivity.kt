@@ -143,6 +143,7 @@ fun App() {
     ) {
       androidx.compose.runtime.CompositionLocalProvider(
         io.github.svenbuild.fylvo.android.ui.theme.LocalListDensity provides io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.density(prefs),
+        io.github.svenbuild.fylvo.android.ui.files.LocalFavoriteIds provides (if (prefs != null) prefsState.favoriteIds else emptySet()),
       ) {
         // Android 13+ needs a runtime grant before sync/upload notifications
         // can post; ask once the session is known to be signed in.
