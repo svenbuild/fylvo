@@ -28,11 +28,11 @@ import androidx.compose.runtime.setValue
 // ---- dialogs --------------------------------------------------------------
 
 @Composable
-internal fun ConfirmDeleteDialog(title: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+internal fun ConfirmDeleteDialog(title: String, onConfirm: () -> Unit, onDismiss: () -> Unit, note: String? = null) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { Text(stringResource(R.string.delete_to_trash_note)) },
+        text = { Text(note ?: stringResource(R.string.delete_to_trash_note)) },
         confirmButton = {
             TextButton(onClick = onConfirm) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
         },

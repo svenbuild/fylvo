@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
 import io.github.svenbuild.fylvo.android.R
@@ -40,6 +41,7 @@ import io.github.svenbuild.fylvo.android.data.ViewMode
 import io.github.svenbuild.fylvo.android.data.ViewPrefs
 import io.github.svenbuild.fylvo.android.data.ViewSettings
 import io.github.svenbuild.fylvo.android.util.Connected
+import io.github.svenbuild.fylvo.android.util.connectedBatches
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.ErrorText
 import io.github.svenbuild.fylvo.android.util.Permissions
@@ -287,6 +289,8 @@ class FilesViewModel(
     /** [restart]: Fylvo, a connected listing starts again after its cursor expired (40926). */
     fun refresh(restart: Boolean = false) {
         val uri = _state.value.currentUri
+        // Fylvo: the rows on screen before the placeholder replaces them (ids for keepListed).
+        val shownBefore = _state.value.files
         val generation = ++refreshGeneration
         if (restart) restartedGeneration = generation
         val cached = listingCache[uri]?.takeIf { it.sortKey == _state.value.view.sort }
@@ -318,7 +322,7 @@ class FilesViewModel(
                     nextToken = res.pagination.nextToken,
                     parent = res.parent,
                     connected = res.connected,
-                    selected = keepListed(files),
+                    selected = keepListed(files, shownBefore),
                 )
                 prefetchThumbs(files)
             } catch (e: Exception) {
@@ -335,7 +339,7 @@ class FilesViewModel(
                 if (local != null && _state.value.currentUri == uri && generation == refreshGeneration) {
                     _state.value = _state.value.copy(
                         loading = false, revalidating = false, files = local, nextToken = null, parent = null, offlineMode = true,
-                        selected = keepListed(local),
+                        selected = keepListed(local, shownBefore),
                     )
                     return@launch
                 }
@@ -351,7 +355,8 @@ class FilesViewModel(
                     nextToken = if (dropToken) null else _state.value.nextToken,
                     error = if (cached == null) userError(e) else null,
                     errorCode = if (cached == null) Connected.codeOf(e) else null,
-                    snackbar = if (cached != null) failure(e) else null,
+                    // Fylvo: a message still waiting (an upload's result) is not dropped.
+                    snackbar = if (cached != null) failure(e) else _state.value.snackbar,
                     // Fylvo: nothing listed to act on behind the error screen.
                     selected = if (cached == null) emptySet() else _state.value.selected,
                 )
@@ -363,11 +368,17 @@ class FilesViewModel(
      * Fylvo: the selection after a real listing landed: only paths that are still listed. The
      * placeholder a refresh shows first never prunes it, so a selection survives a refresh.
      */
-    private fun keepListed(files: List<FileObject>): Set<String> {
+    private fun keepListed(files: List<FileObject>, shownBefore: List<FileObject>): Set<String> {
         val selected = _state.value.selected
         if (selected.isEmpty()) return selected
-        val paths = files.mapTo(HashSet()) { it.path }
-        return selected.filterTo(LinkedHashSet()) { it in paths }
+        val listed = files.associateBy { it.path }
+        // Fylvo: in a connected storage only the same row stays selected (same id as on screen when
+        // the refresh started), never a file that took its place under the same name.
+        val before = shownBefore.associateBy { it.path }
+        return selected.filterTo(LinkedHashSet()) { path ->
+            val row = listed[path] ?: return@filterTo false
+            !Connected.isConnected(path) || before[path]?.id == row.id
+        }
     }
 
     fun loadMore() {
@@ -508,7 +519,8 @@ class FilesViewModel(
             }.onFailure { e ->
                 _state.value = _state.value.copy(recentLoading = false)
                 if (!handleSessionExpiry(e as? Exception ?: Exception(e))) {
-                    _state.value = _state.value.copy(snackbar = failure(e))
+                    // Fylvo: a waiting message (an upload's result) is not replaced.
+                    _state.update { it.copy(snackbar = it.snackbar ?: failure(e)) }
                 }
             }
         }
@@ -539,10 +551,15 @@ class FilesViewModel(
             u.failed == 0 -> UiText.Plural(R.plurals.uploaded_files, u.uploaded, u.uploaded)
             u.uploaded == 0 -> u.error?.let { UiText.Res(R.string.upload_failed_reason, it) }
                 ?: UiText.Res(R.string.upload_failed)
+            // Fylvo: in a connected folder the reason is told too (an unknown outcome must not get lost).
+            Connected.isConnected(u.parentUri) && u.error != null ->
+                UiText.Res(R.string.uploaded_some_failed_reason, u.uploaded, u.failed, u.error)
             else -> UiText.Res(R.string.uploaded_some_failed, u.uploaded, u.failed)
         }
-        _state.value = _state.value.copy(snackbar = UiMessage(message))
-        if (u.uploaded > 0) {
+        _state.value = _state.value.copy(snackbar = UiMessage(message, long = Connected.isConnected(u.parentUri) && u.failed > 0))
+        // Fylvo: a connected folder is listed again after any upload into it (an unknown outcome too).
+        if (Connected.isConnected(u.parentUri)) listingCache.remove(u.parentUri)
+        if (u.uploaded > 0 || Connected.isConnected(u.parentUri)) {
             if (_state.value.home) loadRecent() else if (u.parentUri == _state.value.currentUri) refresh()
         }
     }
@@ -554,7 +571,8 @@ class FilesViewModel(
     suspend fun namesInFolder(folderUri: String): Set<String> =
         runCatching { repo.namesIn(folderUri) }.getOrElse { e ->
             if (e is kotlinx.coroutines.CancellationException) throw e
-            _state.value.files.map { it.name }.toSet()
+            // Fylvo: the loaded names only when they are of that folder.
+            if (_state.value.currentUri == folderUri) _state.value.files.map { it.name }.toSet() else emptySet()
         }
 
     fun cancelUpload(context: android.content.Context, id: java.util.UUID) {
@@ -1023,6 +1041,39 @@ class FilesViewModel(
     }
 
     /**
+     * Fylvo: a move or delete inside a connected storage. The row ids are those taken when the
+     * action started ([ids]) or, if none were given, those of the listed rows. At most
+     * [Connected.BATCH_LIMIT] addresses per request, one request after the other; the first
+     * failure stops the rest. Afterwards the done paths leave the selection, the listings of the
+     * folders involved are dropped and the folder on screen is listed again from the start (a
+     * write ends its paging); the message counts only what was done.
+     */
+    private fun connectedWrite(
+        paths: List<String>,
+        ids: Map<String, String>?,
+        target: String?,
+        done: (Int) -> UiText,
+        send: suspend (List<String>, Map<String, String>) -> Unit,
+    ) {
+        val rowIds = ids ?: Connected.idsOf(_state.value.files.filter { it.path in paths })
+        viewModelScope.launch {
+            val result = connectedBatches(paths) { chunk -> send(chunk, rowIds.filterKeys { it in chunk }) }
+            val folders = paths.map(CrUri::parent).toSet() + listOfNotNull(target)
+            listingCache.keys.removeAll { it in folders }
+            val n = result.done.size
+            val message = when (val e = result.error) {
+                null -> UiMessage(done(n))
+                else -> if (n == 0) failure(e, paths)
+                else UiMessage(UiText.Res(R.string.connected_partly_done, n, paths.size, failure(e, paths).text), long = true)
+            }
+            _state.update { it.copy(selected = it.selected - result.done.toSet(), snackbar = message) }
+            if (result.error != null && handleSessionExpiry(result.error)) return@launch
+            val shown = _state.value
+            if (!shown.home && shown.currentUri in folders) refresh()
+        }
+    }
+
+    /**
      * Fylvo: a failed request on [paths]. A batch that failed only in part changed the folder
      * anyway, so the listing is reloaded too (the message stays).
      */
@@ -1052,9 +1103,21 @@ class FilesViewModel(
         }
     }
 
-    /** Move or copy [paths] into [dst]; the list refreshes and the cache for both folders is dropped. */
-    fun moveTo(paths: List<String>, dst: String, copy: Boolean) {
+    /**
+     * Move or copy [paths] into [dst]; the list refreshes and the cache for both folders is dropped.
+     * Fylvo: inside a connected storage [ids] are the row ids taken when the action started (the
+     * listed rows are asked otherwise) and [dstId] the id of the target folder as listed. Copy is
+     * never offered there.
+     */
+    fun moveTo(paths: List<String>, dst: String, copy: Boolean, ids: Map<String, String>? = null, dstId: String? = null) {
         if (paths.isEmpty()) return
+        if (Connected.isConnected(dst) || paths.any(Connected::isConnected)) {
+            val target = dstId?.takeIf { it.isNotEmpty() }?.let { mapOf(dst to it) }.orEmpty()
+            connectedWrite(paths, ids, dst, done = { n -> UiText.Plural(R.plurals.moved_items, n, n, CrUri.displayName(dst)) }) { chunk, chunkIds ->
+                repo.move(chunk, dst, copy = false, ids = chunkIds + target)
+            }
+            return
+        }
         viewModelScope.launch {
             runCatching { repo.move(paths, dst, copy) }
                 .onSuccess {
@@ -1073,7 +1136,32 @@ class FilesViewModel(
         }
     }
 
-    suspend fun listFolders(uri: String): List<FileObject> = repo.listFolders(uri)
+    /**
+     * Subfolders of [uri] for the folder picker. Fylvo: inside a connected storage only folders that
+     * may be entered, and the listed folder itself is kept for [pickerAllowsMoveInto].
+     */
+    suspend fun listFolders(uri: String): List<FileObject> {
+        if (!Connected.isConnected(uri)) return repo.listFolders(uri)
+        // Only what this listing says counts: an earlier one is forgotten first.
+        val key = CrUri.canonical(uri)
+        pickerFolders.remove(key)
+        val (folders, parent) = repo.listFoldersWithParent(uri)
+        if (parent != null) pickerFolders[key] = parent
+        return folders.filter(Connected::canEnter)
+    }
+
+    /**
+     * Fylvo: folders the picker listed inside connected storages, by address. A state map, so the
+     * picker's buttons follow when a listing arrives (written on the main thread by the picker).
+     */
+    private val pickerFolders = androidx.compose.runtime.mutableStateMapOf<String, FileObject>()
+
+    /** Fylvo: the picker may move into (and create in) [uri]: always outside connected storages. */
+    fun pickerAllowsMoveInto(uri: String): Boolean =
+        !Connected.isConnected(uri) || Connected.canCreateIn(pickerFolders[CrUri.canonical(uri)])
+
+    /** Fylvo: the id of the folder [uri] as the picker listed it (sent with a move), or null. */
+    fun pickerFolderId(uri: String): String? = pickerFolders[CrUri.canonical(uri)]?.id?.takeIf { it.isNotEmpty() }
 
     // ---- search -----------------------------------------------------------
     //
@@ -1188,34 +1276,80 @@ class FilesViewModel(
     /** Creates [name] under [parent]; refreshes if that is the folder on screen. */
     fun mkdirIn(parent: String, name: String) {
         if (name.isBlank()) return
-        viewModelScope.launch {
-            runCatching { repo.mkdir(CrUri.join(parent, name)) }
-                .onSuccess {
+        viewModelScope.launch { createFolder(parent, name) }
+    }
+
+    /**
+     * Fylvo: creates [name] under [parent] and tells whether it worked (the folder picker lists
+     * again only then). Inside a connected storage a name with "/" is refused (it would address a
+     * folder further down).
+     */
+    suspend fun createFolder(parent: String, name: String): Boolean {
+        if (name.isBlank()) return false
+        if (Connected.isConnected(parent) && '/' in name) {
+            _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.error_bad_name))) }
+            return false
+        }
+        // In the view model's scope: a confirmed folder is created also when the picker closes.
+        return viewModelScope.async {
+            try {
+                repo.mkdir(CrUri.join(parent, name))
+                listingCache.remove(parent)
+                if (parent == _state.value.currentUri) refresh()
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(snackbar = failure(e)) }
+                // The folder may exist although the answer was lost: show the folder as it is now.
+                if (Connected.isConnected(parent)) {
                     listingCache.remove(parent)
                     if (parent == _state.value.currentUri) refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = failure(it)) }
-        }
+                false
+            }
+        }.await()
     }
 
     fun rename(file: FileObject, newName: String) {
         if (newName.isBlank() || newName == file.name) return
+        if (Connected.isConnected(file.path) && '/' in newName) {
+            _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.error_bad_name))) }
+            return
+        }
         viewModelScope.launch {
-            runCatching { repo.rename(file.path, newName) }
+            // Fylvo: inside a connected storage the row's id goes along (taken from the row acted on).
+            runCatching { repo.rename(file.path, newName, Connected.idsOf(listOf(file))) }
+                .also { if (Connected.isConnected(file.path)) listingCache.remove(CrUri.parent(file.path)) }
                 .onSuccess {
                     // Fylvo: the old name leaves the selection.
                     _state.value = _state.value.copy(selected = _state.value.selected - file.path)
                     refresh()
                 }
-                .onFailure { _state.value = _state.value.copy(snackbar = failure(it, listOf(file.path))) }
+                .onFailure {
+                    _state.value = _state.value.copy(snackbar = failure(it, listOf(file.path)))
+                    // Fylvo: a row that changed meanwhile is shown as it is now.
+                    if (Connected.isConnected(file.path)) refresh()
+                }
         }
     }
 
-    fun delete(file: FileObject) = deletePaths(listOf(file.path))
+    fun delete(file: FileObject) = deletePaths(listOf(file.path), Connected.idsOf(listOf(file)))
 
-    /** Moves to trash and offers Undo, which restores from the trash by origin path. */
-    fun deletePaths(paths: List<String>) {
+    /**
+     * Moves to trash and offers Undo, which restores from the trash by origin path. Fylvo: inside a
+     * connected storage into the provider's trash, without Undo; [ids] as for [moveTo].
+     */
+    fun deletePaths(paths: List<String>, ids: Map<String, String>? = null) {
         if (paths.isEmpty()) return
+        if (paths.any(Connected::isConnected)) {
+            val storage = CrUri.rootLabel(paths[0])
+            connectedWrite(paths, ids, null, done = { n ->
+                if (n == 1) UiText.Res(R.string.connected_deleted_one, CrUri.fileName(paths[0]), storage)
+                else UiText.Res(R.string.connected_deleted_many, n, storage)
+            }) { chunk, chunkIds -> repo.delete(chunk, ids = chunkIds) }
+            return
+        }
         viewModelScope.launch {
             runCatching { repo.delete(paths) }
                 .onSuccess {

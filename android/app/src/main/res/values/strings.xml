@@ -495,4 +495,16 @@
     <string name="error_connected_export_too_large">This document is too large for the provider to export.</string>
     <string name="error_connected_daily_limit">The daily limit of the provider for this file is reached. Please try again tomorrow.</string>
     <string name="error_connected_too_large">This folder has too many entries to be shown in Fylvo.</string>
+    <!-- Fylvo: writing in connected storages -->
+    <string name="connected_delete">Move to trash</string>
+    <string name="connected_delete_note">It goes to the trash of %1$s. Restore it there if needed; Fylvo cannot.</string>
+    <string name="connected_deleted_one">%1$s moved to the trash of %2$s</string>
+    <string name="connected_deleted_many">%1$d items moved to the trash of %2$s</string>
+    <string name="connected_partly_done">%1$d of %2$d done. %3$s</string>
+    <string name="error_connected_full">The storage at the provider is full.</string>
+    <string name="error_connected_outcome_unknown">It is not known whether this change arrived. Fylvo did not repeat it; please look at the folder.</string>
+    <string name="upload_outcome_unknown">%1$s: it is not known whether the upload arrived. Fylvo did not send it again; the file stays on your phone. Please look at the folder.</string>
+    <string name="could_not_upload_reason">%1$s: %2$s</string>
+    <string name="uploaded_some_failed_reason">%1$d uploaded, %2$d failed. %3$s</string>
+    <string name="upload_conflict_note_connected">Keep both uploads under a new name. Skip leaves these files out.</string>
 </resources>

@@ -49,6 +49,7 @@ import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.UiText
 import io.github.svenbuild.fylvo.android.util.asString
 import io.github.svenbuild.fylvo.android.util.userError
+import kotlinx.coroutines.launch
 
 /**
  * Full-screen destination chooser for Move / Copy, drawn over the files
@@ -65,14 +66,19 @@ fun FolderPicker(
     startUri: String,
     excluded: Set<String>,
     loadFolders: suspend (String) -> List<FileObject>,
-    onCreateFolder: (parent: String, name: String) -> Unit,
+    /** Creates the folder (true when it worked); the list is loaded again after it. */
+    onCreateFolder: suspend (parent: String, name: String) -> Boolean,
     onPick: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** Fylvo: the listed folder may be picked / get a new folder (connected storages: by its bits). */
+    canPick: (String) -> Boolean = { true },
+    canCreateIn: (String) -> Boolean = { true },
 ) {
     var current by remember { mutableStateOf(startUri) }
     var folders by remember { mutableStateOf<List<FileObject>?>(null) }
     var error by remember { mutableStateOf<UiText?>(null) }
     var mkdirOpen by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var reload by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(current, reload) {
@@ -114,7 +120,7 @@ fun FolderPicker(
                             }
                         },
                         actions = {
-                            IconButton(onClick = { mkdirOpen = true }) {
+                            if (canCreateIn(current)) IconButton(onClick = { mkdirOpen = true }) {
                                 Icon(Icons.Default.CreateNewFolder, contentDescription = stringResource(R.string.new_folder))
                             }
                         },
@@ -127,7 +133,7 @@ fun FolderPicker(
                             .padding(16.dp),
                         horizontalArrangement = Arrangement.End,
                     ) {
-                        Button(onClick = { onPick(current) }, enabled = !isExcluded(current, excluded)) {
+                        Button(onClick = { onPick(current) }, enabled = !isExcluded(current, excluded) && canPick(current)) {
                             Text(stringResource(confirmLabel, CrUri.displayName(current)))
                         }
                     }
@@ -188,8 +194,12 @@ fun FolderPicker(
             confirm = stringResource(R.string.create),
             onConfirm = { name ->
                 mkdirOpen = false
-                onCreateFolder(current, name)
-                reload++
+                val parent = current
+                // Listed again after any try: a folder may exist although its answer was lost.
+                scope.launch {
+                    onCreateFolder(parent, name)
+                    if (parent == current) reload++
+                }
             },
             onDismiss = { mkdirOpen = false },
         )

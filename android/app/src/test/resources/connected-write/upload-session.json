@@ -1,0 +1,19 @@
+{
+  "code": 0,
+  "data": {
+    "session_id": "cu-c91294df6bd42e7a35cbd8f57eccf654b32b35516b669468",
+    "upload_id": "",
+    "chunk_size": 10485760,
+    "expires": 1795493076,
+    "storage_policy": {
+      "id": "connected",
+      "name": "Google Drive",
+      "type": "local",
+      "max_size": 0,
+      "relay": true
+    },
+    "uri": "cloudreve://gb6zyqzl9859nkg1@connected/Work/big.bin",
+    "callback_secret": ""
+  },
+  "msg": ""
+}
