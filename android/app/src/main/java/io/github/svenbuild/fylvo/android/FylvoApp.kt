@@ -115,6 +115,8 @@ class FylvoApp : Application(), ImageLoaderFactory {
                 WorkManager.getInstance(this@FylvoApp).cancelAllWork().result.get()
                 WorkManager.getInstance(this@FylvoApp).pruneWork()
             }
+            // Fylvo: whatever fails on the way, the session's tokens are removed at the end.
+            try {
             io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames()
             io.github.svenbuild.fylvo.android.util.Connected.forgetNames()
             fileRepository.forgetThumbs()
@@ -158,7 +160,9 @@ class FylvoApp : Application(), ImageLoaderFactory {
                 // Also removes cacheDir/updates, the downloaded app update.
                 cacheDir.listFiles()?.forEach { it.deleteRecursively() }
             }
-            if (expired) sessionManager.clearSession() else sessionManager.clear()
+            } finally {
+                if (expired) sessionManager.clearSession() else sessionManager.clear()
+            }
         }
     }
 }

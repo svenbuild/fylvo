@@ -74,10 +74,18 @@ fun FavoritesPage(
     bottomBar: @Composable () -> Unit,
     /** Fylvo: swipe actions per row (only removing the star here). */
     swipeFor: (FileObject) -> RowSwipe? = { null },
+    /** Fylvo: the list could not be loaded (no copy, no answer): a retry instead of a spinner. */
+    loadFailed: Boolean = false,
+    onRetry: () -> Unit = {},
 ) {
     PlacePage(stringResource(R.string.favorites), onBack, bottomBar) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
+                favorites == null && loadFailed -> EmptyState(
+                    icon = Icons.Outlined.StarOutline,
+                    title = stringResource(R.string.customize_load_failed),
+                    action = stringResource(R.string.retry) to onRetry,
+                )
                 favorites == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 favorites.files.isEmpty() && favorites.unavailable == 0 -> EmptyState(
                     icon = Icons.Outlined.StarOutline,

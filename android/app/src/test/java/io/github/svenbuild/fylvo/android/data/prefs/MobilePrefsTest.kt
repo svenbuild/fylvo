@@ -366,3 +366,15 @@ class SwipeAndViewTest {
         org.junit.Assert.assertEquals(io.github.svenbuild.fylvo.android.data.SortOrder(io.github.svenbuild.fylvo.android.data.SortBy.SIZE, false), MobileView.sortOf("size", "desc"))
     }
 }
+
+class PlainNameTest {
+    @org.junit.Test
+    fun sharedNamesStayInTheChosenFolder() {
+        val f = io.github.svenbuild.fylvo.android.work.UploadWorker::plainName
+        org.junit.Assert.assertEquals("photo.jpg", f("photo.jpg"))
+        org.junit.Assert.assertEquals(".._.._secret.txt", f("../../secret.txt"))
+        org.junit.Assert.assertEquals("a_b_c", f("a/b\\c"))
+        org.junit.Assert.assertEquals("upload.bin", f(".."))
+        org.junit.Assert.assertEquals("upload.bin", f("  "))
+    }
+}

@@ -104,11 +104,23 @@ fun CustomizeScreen(
             val prefs = state.prefs
             if (state.supported == false || prefs == null) {
                 Text(
-                    stringResource(if (state.supported == false) R.string.customize_needs_server else R.string.customize_loading),
+                    stringResource(
+                        when {
+                            state.supported == false -> R.string.customize_needs_server
+                            state.loadFailed -> R.string.customize_load_failed
+                            else -> R.string.customize_loading
+                        },
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(16.dp),
                 )
+                if (state.loadFailed && state.supported != false) {
+                    androidx.compose.material3.TextButton(
+                        onClick = { scope.launch { repo.refresh() } },
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    ) { Text(stringResource(R.string.retry)) }
+                }
                 return@Column
             }
             Text(

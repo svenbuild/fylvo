@@ -209,24 +209,22 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                 withMemory(permits) {
                                     // Another upload may have stopped the run while this one waited.
                                     if (stop.get() != null) return@withMemory
-                                    // Fylvo: the chosen folder is checked again before every file.
-                                    when (targetStillThere()) {
-                                        null -> {
-                                            stop.compareAndSet(null, Outcome.TryLater(targetChanged, network = true))
-                                            return@withMemory
-                                        }
-                                        false -> {
-                                            update(i) { it.copy(state = UploadItem.State.Failed) }
-                                            synchronized(lock) { lastError = targetChanged }
-                                            return@withMemory
-                                        }
-                                        true -> Unit
-                                    }
                                     synchronized(lock) { inFlight[i] = 0 }
                                     reportAll(item.name, i, 0, 0, force = true)
-                                    val outcome = uploadOne(app, item, parentUri, item.overwrite ?: batch.overwrite, onSession = { sessionId, targetUri, size ->
-                                        update(i) { it.copy(sessionId = sessionId, targetUri = targetUri, uploadSize = size) }
-                                    }) { sent, size -> reportAll(item.name, i, sent, size) }
+                                    val outcome = uploadOne(
+                                        app, item, parentUri, item.overwrite ?: batch.overwrite,
+                                        onSession = { sessionId, targetUri, size ->
+                                            update(i) { it.copy(sessionId = sessionId, targetUri = targetUri, uploadSize = size) }
+                                        },
+                                        // Fylvo: the chosen folder is checked right before every upload session.
+                                        beforeSend = {
+                                            when (targetStillThere()) {
+                                                null -> Outcome.TryLater(targetChanged, network = true)
+                                                false -> Outcome.Failed(targetChanged)
+                                                true -> null
+                                            }
+                                        },
+                                    ) { sent, size -> reportAll(item.name, i, sent, size) }
                                     when (outcome) {
                                         is Outcome.Done -> synchronized(lock) {
                                             inFlight.remove(i)
@@ -469,6 +467,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         parentUri: String,
         overwrite: Boolean,
         onSession: (String, String, Long) -> Unit,
+        /** Fylvo: asked right before the upload session is made; an outcome stops this file. */
+        beforeSend: suspend () -> Outcome? = { null },
         onProgress: (sent: Long, size: Long) -> Unit,
     ): Outcome {
         val uri = Uri.parse(item.uri)
@@ -490,6 +490,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                     R.string.could_not_upload_reason, item.name, applicationContext.localized().getString(R.string.error_bad_name),
                 )
             )
+        }
+        beforeSend()?.let { stop ->
+            tmp.delete()
+            return stop
         }
         return try {
             val mime = applicationContext.contentResolver.getType(uri)
@@ -865,9 +869,18 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         /** Display name of a picked document, as the picker shows it. */
         fun displayName(context: Context, uri: Uri): String {
             context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-                if (it.moveToFirst() && !it.isNull(0)) return it.getString(0)
+                if (it.moveToFirst() && !it.isNull(0)) return plainName(it.getString(0))
             }
-            return uri.lastPathSegment?.substringAfterLast('/') ?: "upload.bin"
+            return plainName(uri.lastPathSegment?.substringAfterLast('/') ?: "upload.bin")
+        }
+
+        /**
+         * Fylvo: a name another app gives a file, as one plain file name: no folder parts (so it
+         * always lands in the chosen folder), never "." or "..".
+         */
+        fun plainName(name: String): String {
+            val plain = name.replace('/', '_').replace('\\', '_').trim()
+            return if (plain.isEmpty() || plain == "." || plain == "..") "upload.bin" else plain
         }
 
         /**

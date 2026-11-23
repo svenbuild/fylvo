@@ -580,4 +580,5 @@
     </plurals>
     <string name="share_folder_unchecked">Dieser Ordner konnte nicht geprüft werden (keine Verbindung?). Bitte wähle ihn nochmals oder einen anderen.</string>
     <string name="share_chosen">Gewählt</string>
+    <string name="customize_load_failed">Die Einstellungen konnten nicht geladen werden. Prüfe die Verbindung.</string>
 </resources>

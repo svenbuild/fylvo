@@ -29,7 +29,12 @@ import java.io.File
 data class WidgetEntry(val name: String, val uri: String, val folder: Boolean, val color: String? = null)
 
 @Serializable
-private data class WidgetData(val account: String, val entries: List<WidgetEntry>)
+private data class WidgetData(
+    val account: String,
+    val entries: List<WidgetEntry>,
+    /** Signed in, but the server has no favourites (an older Fylvo): only search and upload. */
+    val unsupported: Boolean = false,
+)
 
 /**
  * Fylvo: the home screen widget: search and upload; taller, up to four favourites of My files.
@@ -67,7 +72,15 @@ object FylvoWidget {
         redrawAll(context)
     }
 
-    /** Sign-out, an older server: no names stay on the home screen. */
+    /** An older server: signed in, no favourites to show (no names stay either). */
+    fun noFavorites(context: Context) {
+        synchronized(lock) {
+            File(context.filesDir, FILE).writeText(json.encodeToString(WidgetData.serializer(), WidgetData("", emptyList(), unsupported = true)))
+        }
+        redrawAll(context)
+    }
+
+    /** Sign-out: no names stay on the home screen. */
     fun clear(context: Context) {
         synchronized(lock) { File(context.filesDir, FILE).delete() }
         redrawAll(context)
@@ -97,7 +110,10 @@ object FylvoWidget {
         views.setOnClickPendingIntent(R.id.widget_search, action(context, FylvoActions.SEARCH, 1))
         views.setOnClickPendingIntent(R.id.widget_upload, action(context, FylvoActions.UPLOAD, 2))
         views.setTextViewText(R.id.widget_fav_title, text.getString(R.string.favorites))
-        val tall = (manager.getAppWidgetOptions(id)?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT) ?: 0) >= TALL_DP
+        val height = manager.getAppWidgetOptions(id)?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT) ?: 0
+        val tall = height >= TALL_DP
+        // As many rows as fit below the search bar and the title (60 + 30 dp), 36 dp each.
+        val rows = ((height - 90) / 36).coerceIn(0, SLOTS)
         val stored = read(context)
         val slots = listOf(
             Triple(R.id.widget_fav1, R.id.widget_fav1_icon, R.id.widget_fav1_name),
@@ -105,12 +121,13 @@ object FylvoWidget {
             Triple(R.id.widget_fav3, R.id.widget_fav3_icon, R.id.widget_fav3_name),
             Triple(R.id.widget_fav4, R.id.widget_fav4_icon, R.id.widget_fav4_name),
         )
-        val entries = if (tall) stored?.entries.orEmpty() else emptyList()
+        val entries = if (tall) stored?.entries.orEmpty().take(rows) else emptyList()
         views.setViewVisibility(R.id.widget_fav_title, if (entries.isNotEmpty()) View.VISIBLE else View.GONE)
         // Tall but nothing to show: say why (signed out, or no favourites yet).
         val hint = when {
             !tall -> null
             stored == null -> text.getString(R.string.widget_signed_out)
+            stored.unsupported -> null
             entries.isEmpty() -> text.getString(R.string.no_favorites)
             else -> null
         }

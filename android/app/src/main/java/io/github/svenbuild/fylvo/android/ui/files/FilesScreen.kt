@@ -560,10 +560,19 @@ fun FilesScreen(
     val incoming by io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.collectAsState()
     val shareUris by io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.collectAsState()
     val pickToShare = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isNotEmpty()) io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value = uris
+        if (uris.isNotEmpty()) {
+            io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.session = app.sessionManager.sessionTag()
+            io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value = uris
+        }
     }
     LaunchedEffect(incoming, prefsState.supported, prefsState.prefs != null, prefsState.loadFailed) {
         val request = incoming ?: return@LaunchedEffect
+        // A request from before a sign-out or account change is dropped.
+        val requestSession = io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.session
+        if (requestSession == null || !app.sessionManager.isCurrent(requestSession)) {
+            io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = null
+            return@LaunchedEffect
+        }
         // Favourites: wait until it is known whether the server has them (cached copy or answer).
         if (request == io.github.svenbuild.fylvo.android.data.prefs.Incoming.Favorites && prefsState.supported == null && prefsState.prefs == null && !prefsState.loadFailed) return@LaunchedEffect
         io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = null
@@ -963,6 +972,7 @@ fun FilesScreen(
             onRestore = { sheetTarget = null; viewModel.restore(listOf(file.path)) },
             onDeleteForever = { sheetTarget = null; deleteForeverTarget = listOf(file.path) },
             canEdit = state.canEdit(file) && !limited,
+            canDownload = !limited,
             edited = state.editOf(file) != null,
             onEdit = { sheetTarget = null; editFile(file) },
             onFinishEdit = { sheetTarget = null; state.editOf(file)?.let(viewModel::finishEditing) },
@@ -1113,7 +1123,8 @@ fun FilesScreen(
             offlineCount = state.offlineRoots.size,
             onOpenOffline = { offlineOpen = true },
             onOpenCustomize = { customizeOpen = true },
-            onBack = { accountOpen = false },
+            // Account is a tab: back goes to the start tab like every other tab.
+            onBack = { backToStart?.let(::selectTab) ?: run { accountOpen = false } },
             bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
         )
     }
@@ -1142,6 +1153,8 @@ fun FilesScreen(
             actionsFor = pageActions,
             bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
             swipeFor = { swipeFor(it, limited = true) },
+            loadFailed = prefsState.loadFailed,
+            onRetry = { scope.launch { prefsRepo.refreshFavorites(); prefsRepo.refresh() } },
         )
     }
     if (page == PAGE_TAGS) {
@@ -1204,7 +1217,7 @@ fun FilesScreen(
     }
 
     // Fylvo: "Save in Fylvo" for shared files: the folder is chosen first.
-    shareUris?.let { uris ->
+    shareUris?.takeIf { io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.session?.let(app.sessionManager::isCurrent) == true }?.let { uris ->
         val shareStore = remember { io.github.svenbuild.fylvo.android.data.prefs.ShareTargetStore(context.applicationContext) }
         // First: whether the folder used last was read yet; second: that folder.
         val lastRead by produceState<Pair<Boolean, ShareTarget?>>(initialValue = false to null) {
@@ -1238,6 +1251,8 @@ fun FilesScreen(
                 onPick = { dst ->
                     pickingShareFolder = false
                     shareNotice = null
+                    // The old target is gone at once; Upload waits for the new one.
+                    choose(null)
                     if (CrUri.isRoot(dst)) {
                         choose(ShareTarget(CrUri.MY_PREFIX, null))
                     } else {
@@ -1285,8 +1300,11 @@ fun FilesScreen(
                             shareNotice = context.getString(R.string.share_folder_changed)
                             return@launch
                         }
-                        // Signed out or another account meanwhile: nothing is queued.
+                        // Signed out or another account meanwhile: nothing is queued. Closed or another
+                        // folder chosen while it was checked: nothing either.
                         if (!app.sessionManager.isCurrent(tag)) { closeShare(); return@launch }
+                        val stillChosen = io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.shareTarget.value == (target.uri to target.id)
+                        if (io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value !== uris || !stillChosen) { shareBusy = false; return@launch }
                         withContext(Dispatchers.IO) {
                             UploadWorker.enqueueSafely(context, uris, target.uri, expectedParentId = target.id, account = account)
                             if (target.id != null) shareStore.set(target.uri, target.id) else shareStore.set(target.uri, "")

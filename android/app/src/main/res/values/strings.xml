@@ -583,4 +583,5 @@
     </plurals>
     <string name="share_folder_unchecked">This folder could not be checked (no connection?). Please choose it again or pick another one.</string>
     <string name="share_chosen">Chosen</string>
+    <string name="customize_load_failed">Could not load the settings. Check the connection.</string>
 </resources>

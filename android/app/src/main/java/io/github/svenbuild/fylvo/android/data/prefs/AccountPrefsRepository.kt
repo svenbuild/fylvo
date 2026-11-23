@@ -162,7 +162,9 @@ class AccountPrefsRepository(
      */
     private suspend fun <T> queued(failed: T, block: suspend (SessionTag) -> T): T {
         val tag = session.sessionTag()
-        return queue.withLock { if (session.isCurrent(tag)) block(tag) else failed }
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            queue.withLock { if (session.isCurrent(tag)) block(tag) else failed }
+        }
     }
 
     private suspend fun loadLocked() {
@@ -198,7 +200,7 @@ class AccountPrefsRepository(
                 lastLoad = System.currentTimeMillis()
                 _state.update { AccountPrefsState(supported = false, restored = true) }
                 saveCache(tag, account)
-                local.withLock { runCatching { io.github.svenbuild.fylvo.android.widget.FylvoWidget.clear(context) } }
+                local.withLock { runCatching { io.github.svenbuild.fylvo.android.widget.FylvoWidget.noFavorites(context) } }
             }
             else -> if (session.isCurrent(tag)) _state.update { it.copy(loadFailed = true) }
         }
@@ -328,6 +330,9 @@ class AccountPrefsRepository(
 
     /** Fylvo: only the favourites and tags again (opening their pages), not the whole settings. */
     suspend fun refreshFavorites() = queued(Unit) { tag ->
+        // The ids (stars) first, then the list, so a favourite from elsewhere also shows its star.
+        val prefs = (call(tag) { api.service().prefs(tag) } as? Outcome.Found)?.value
+        if (prefs != null && session.isCurrent(tag)) _state.update { it.copy(prefs = prefs) }
         val favorites = (call(tag) { api.service().favorites(tag) } as? Outcome.Found)?.value
         val tags = (call(tag) { api.service().tags(tag) } as? Outcome.Found)?.value
         if (session.isCurrent(tag)) _state.update { it.copy(favorites = favorites ?: it.favorites, tags = tags ?: it.tags) }
@@ -374,7 +379,7 @@ class AccountPrefsRepository(
             is Outcome.Refused -> outcome.message
             else -> ""
         }
-        if (result == null) loadLocked()
+        if (result == null && uri == io.github.svenbuild.fylvo.android.util.CrUri.MY_PREFIX) loadLocked()
         result
     }
 

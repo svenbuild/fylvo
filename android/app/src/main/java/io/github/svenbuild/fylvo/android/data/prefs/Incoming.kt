@@ -98,6 +98,8 @@ class ShareTargetStore(private val context: Context) {
 /** Fylvo: requests that wait for the screen (process lifetime, survives a rebuilt activity). */
 object IncomingQueue {
     val pending = MutableStateFlow<Incoming?>(null)
+    /** The session the waiting request (and the share sheet) belongs to; another one drops them. */
+    @Volatile var session: io.github.svenbuild.fylvo.android.api.SessionTag? = null
     /** Files waiting in the sheet "Save in Fylvo" (kept while the screen is rebuilt). */
     val share = MutableStateFlow<List<Uri>?>(null)
     /** The folder chosen in that sheet (address and id; the id is null only for My files). */

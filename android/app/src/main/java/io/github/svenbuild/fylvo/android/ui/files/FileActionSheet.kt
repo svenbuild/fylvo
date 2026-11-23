@@ -97,6 +97,8 @@ fun FileActionSheet(
     canEditMetadata: Boolean = false,
     onColor: () -> Unit = {},
     onTags: () -> Unit = {},
+    /** Fylvo: false for a favourite from the cached list (its path may be old). */
+    canDownload: Boolean = true,
 ) {
     // Every action should be reachable without a second drag, so skip the half-open state.
     ModalBottomSheet(
@@ -159,7 +161,7 @@ fun FileActionSheet(
             else -> Unit
         }
         if (canShare) SheetAction(Icons.Default.Link, stringResource(R.string.share_link), onShare)
-        SheetAction(Icons.Default.Download, stringResource(if (file.isFolder) R.string.download_as_zip else R.string.download), onDownload)
+        if (canDownload) SheetAction(Icons.Default.Download, stringResource(if (file.isFolder) R.string.download_as_zip else R.string.download), onDownload)
         when {
             offlineCovered -> OfflineSwitchRow(checked = true, enabled = false, subtitle = stringResource(R.string.offline_covered), onToggle = {})
             !offlineAllowed -> Unit

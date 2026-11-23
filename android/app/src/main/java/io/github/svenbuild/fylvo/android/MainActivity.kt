@@ -75,8 +75,12 @@ class MainActivity : AppCompatActivity() {
         if (intent?.action?.startsWith("io.github.svenbuild.fylvo.android.action.") == true) {
             lifecycleScope.launch {
                 if (!app.sessionManager.isLoggedIn.first()) return@launch
+                val tag = app.sessionManager.sessionTag()
                 io.github.svenbuild.fylvo.android.data.prefs.FylvoActions.parse(intent, app.accountPrefs.accountHash())
-                    ?.let { io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = it }
+                    ?.let {
+                        io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.session = tag
+                        io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = it
+                    }
             }
             return
         }
@@ -95,6 +99,7 @@ class MainActivity : AppCompatActivity() {
         if (accepted.isNotEmpty()) {
             lifecycleScope.launch {
                 if (!app.sessionManager.isLoggedIn.first()) return@launch
+                io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.session = app.sessionManager.sessionTag()
                 io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value =
                     io.github.svenbuild.fylvo.android.data.prefs.Incoming.Share(accepted)
             }
