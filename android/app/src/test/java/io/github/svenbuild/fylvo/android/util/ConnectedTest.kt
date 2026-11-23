@@ -107,6 +107,27 @@ class ConnectedTest {
     }
 
     @Test
+    fun entryWithoutFileContentOnlyOpensAtTheProvider() {
+        // A Google form (or OneNote notebook): an address at the provider, no export, no download bit.
+        val form = FileObject(
+            name = "Feedback.gform",
+            capability = "AAAI",
+            metadata = mapOf(
+                Connected.META_EXTERNAL_URL to "https://drive.example.com/forms/d/id7/edit",
+                Connected.META_SIZE_UNKNOWN to "1",
+            ),
+        )
+        assertEquals(Connected.Tap.BROWSER, Connected.tapAction(form))
+        assertFalse(Connected.canDownload(form))
+        assertNull(Connected.exportExt(form))
+        assertTrue(Connected.sizeUnknown(form))
+        // The same behind a shortcut.
+        val link = form.copy(metadata = form.metadata!! + (Connected.META_LINK to "1"))
+        assertEquals(Connected.Tap.BROWSER, Connected.tapAction(link))
+        assertFalse(Connected.canDownload(link))
+    }
+
+    @Test
     fun downloadNameKeepsOtherNames() {
         fun doc(name: String, export: String?) =
             FileObject(name = name, metadata = export?.let { mapOf(Connected.META_EXPORT to it) })
@@ -207,6 +228,18 @@ class ConnectedTest {
         // The overview wins.
         Connected.nameStorages(listOf(ConnectedStorage(id = "x", name = "Drive", uri = rootUri)))
         assertEquals("Drive", CrUri.rootLabel(rootUri))
+    }
+
+    @Test
+    fun readOnlyComesFromTheBitsNotFromTheShortcutMark() {
+        // Stage 1: download, list, info and enter only.
+        assertTrue(Connected.readOnly(row("notes.txt")))
+        assertTrue(Connected.readOnly(row("Link to Docs")))
+        // A row with a write bit (rename, bit 1) is not read only, shortcut or not.
+        val renamable = FileObject(capability = "AgAI", metadata = mapOf(Connected.META_LINK to "1"))
+        assertFalse(Connected.readOnly(renamable))
+        // Rows reached through a shortcut are no shortcuts themselves.
+        assertFalse(Connected.isLink(FileObject(metadata = mapOf("fylvo:via_link" to "1"))))
     }
 
     @Test

@@ -314,6 +314,8 @@ func devSampleData(s *drivetest.Server) {
 	s.AddNative(docs, "Budget", "gsheet")
 	s.AddNative(docs, "Letter", "gdoc")
 	s.AddNative(docs, "Talk", "gslides")
+	// Something of Google's that has no export: it shows and opens at the provider.
+	s.AddOther(docs, "Feedback", "application/vnd.google-apps.form")
 	deep := s.AddFolder(s.AddFolder(s.AddFolder(docs, "Projects"), "2026"), "Garden")
 	s.AddFile(deep, "Plan.txt", []byte("Three beds, one path.\n"))
 
@@ -325,6 +327,15 @@ func devSampleData(s *drivetest.Server) {
 	many := s.AddFolder("", "Many files")
 	for i := 1; i <= 250; i++ {
 		s.AddFile(many, fmt.Sprintf("File %03d.txt", i), []byte(fmt.Sprintf("File number %d\n", i)))
+	}
+
+	// One more folder with as many files as asked for, to see how the server and the
+	// apps hold up with a very large one.
+	if n, err := strconv.Atoi(os.Getenv(DevEnv + "_FILES")); err == nil && n > 0 {
+		huge := s.AddFolder("", "Huge folder")
+		for i := 1; i <= n; i++ {
+			s.AddFile(huge, fmt.Sprintf("File %06d.txt", i), nil)
+		}
 	}
 
 	s.AddFolder("", "Empty folder")

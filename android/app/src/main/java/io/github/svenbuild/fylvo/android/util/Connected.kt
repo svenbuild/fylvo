@@ -56,8 +56,17 @@ object Connected {
     /** The name exists more than once in its folder: shown, nothing can be done with it. */
     fun isUnusable(file: FileObject): Boolean = file.metadata?.containsKey(META_UNSUPPORTED) == true
 
-    /** A shortcut (Drive) or an added shared item (OneDrive): read only. */
+    /**
+     * The row is itself a shortcut (Drive) or an added shared item (OneDrive). Says nothing about
+     * writing: that comes from the capability bits ([readOnly]). Rows reached through a shortcut
+     * further up carry `fylvo:via_link` instead and are shown like any other row.
+     */
     fun isLink(file: FileObject): Boolean = file.metadata?.containsKey(META_LINK) == true
+
+    /** No write bit of the row is set (create 0, rename 1, upload 6, delete 14). */
+    fun readOnly(file: FileObject): Boolean = WRITE_BITS.none { Permissions.enabled(file.capability, it) }
+
+    private val WRITE_BITS = listOf(0, 1, 6, 14)
 
     /** A Google document: downloads as this Office format. */
     fun exportExt(file: FileObject): String? = file.metadata?.get(META_EXPORT)?.takeIf { it.isNotBlank() }

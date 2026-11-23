@@ -189,7 +189,7 @@ func TestConnectedListAndInfo(t *testing.T) {
 
 	res, err := e.list(e.alex, e.root, 0, "")
 	require.NoError(t, err)
-	require.Equal(t, "Docs|Budget.gsheet|notes.txt|twice.txt", fileNames(res.Files))
+	require.Equal(t, "Docs|A form.gform|Budget.gsheet|notes.txt|twice.txt", fileNames(res.Files))
 	require.True(t, res.Pagination.IsCursor)
 	require.Empty(t, res.Pagination.NextPageToken)
 	require.Equal(t, 1, res.Connected.Omitted, "the name with a slash")
@@ -234,6 +234,18 @@ func TestConnectedListAndInfo(t *testing.T) {
 	require.Equal(t, "xlsx", native.Metadata[connectedMetaExport])
 	require.NotEmpty(t, native.Metadata[connectedMetaExternalURL])
 	require.Contains(t, native.Metadata, connectedMetaSizeUnknown)
+
+	// Something of the provider's that has no bytes and no export shows as a row that
+	// opens at the provider: nothing to download, and nothing is missing from the list.
+	form := byName["A form.gform"]
+	require.NotEmpty(t, form.Metadata[connectedMetaExternalURL])
+	require.NotContains(t, form.Metadata, connectedMetaExport)
+	require.False(t, can("A form.gform", dbfs.NavigatorCapabilityDownloadFile))
+	_, err = e.urlOf(e.alex, e.root+"/A form.gform", true)
+	require.Error(t, err)
+	sameForm, err := e.info(e.alex, e.root+"/A form.gform")
+	require.NoError(t, err)
+	require.Equal(t, form.ID, sameForm.ID)
 
 	dup := byName["twice.txt"]
 	require.Equal(t, connected.UnsupportedDuplicate, dup.Metadata[connectedMetaUnsupported])

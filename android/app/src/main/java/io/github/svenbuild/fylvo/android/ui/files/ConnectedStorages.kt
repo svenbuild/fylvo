@@ -318,7 +318,8 @@ fun ConnectedFileSheet(
         }
         val note = when {
             Connected.isUnusable(file) -> stringResource(R.string.connected_duplicate_note)
-            Connected.isLink(file) -> stringResource(R.string.connected_link_note)
+            Connected.isLink(file) && Connected.readOnly(file) -> stringResource(R.string.connected_link_note)
+            Connected.isLink(file) -> stringResource(R.string.connected_link)
             !file.isFolder && !Connected.canDownload(file) && Connected.externalUrl(file) == null -> stringResource(R.string.connected_not_downloadable)
             else -> null
         }
