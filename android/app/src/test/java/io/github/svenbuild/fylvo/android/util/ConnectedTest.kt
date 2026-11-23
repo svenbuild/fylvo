@@ -210,6 +210,18 @@ class ConnectedTest {
     }
 
     @Test
+    fun readOnlyComesFromTheBitsNotFromTheShortcutMark() {
+        // Stage 1: download, list, info and enter only.
+        assertTrue(Connected.readOnly(row("notes.txt")))
+        assertTrue(Connected.readOnly(row("Link to Docs")))
+        // A row with a write bit (rename, bit 1) is not read only, shortcut or not.
+        val renamable = FileObject(capability = "AgAI", metadata = mapOf(Connected.META_LINK to "1"))
+        assertFalse(Connected.readOnly(renamable))
+        // Rows reached through a shortcut are no shortcuts themselves.
+        assertFalse(Connected.isLink(FileObject(metadata = mapOf("fylvo:via_link" to "1"))))
+    }
+
+    @Test
     fun aTimeOfTheYearOneIsUnknown() {
         assertFalse(Connected.knownTime("0001-01-01T00:00:00Z"))
         assertFalse(Connected.knownTime(""))
