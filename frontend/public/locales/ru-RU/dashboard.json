@@ -286,6 +286,7 @@
     "mapProvider": "Поставщик карт",
     "mapProviderDes": "Поставщик карт, используемый для отображения информации о местоположении медиа.",
     "mapGoogle": "Google Maps (Leaflet)",
+    "mapNone": "Выключено (без карты)",
     "mapOpenStreetMap": "OpenStreetMap (Leaflet)",
     "mapboxMap": "OpenStreetMap (Mapbox)",
     "mapboxAccessToken": "Токен доступа Mapbox",

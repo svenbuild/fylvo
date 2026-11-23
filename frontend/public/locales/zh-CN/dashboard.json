@@ -286,6 +286,7 @@
     "mapProvider": "地图提供商",
     "mapProviderDes": "展示媒体位置信息时使用的地图提供商。",
     "mapGoogle": "Google Maps (Leaflet)",
+    "mapNone": "关闭（不显示地图）",
     "mapOpenStreetMap": "OpenStreetMap (Leaflet)",
     "mapboxMap": "OpenStreetMap (Mapbox)",
     "mapboxAccessToken": "Mapbox 密钥",

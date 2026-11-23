@@ -357,7 +357,7 @@ func (s *settingProvider) ViewerSessionTTL(ctx context.Context) int {
 
 func (s *settingProvider) MapSetting(ctx context.Context) *MapSetting {
 	return &MapSetting{
-		Provider:       MapProvider(s.getString(ctx, "map_provider", "openstreetmap")),
+		Provider:       MapProvider(s.getString(ctx, "map_provider", "none")),
 		GoogleTileType: MapGoogleTileType(s.getString(ctx, "map_google_tile_type", "roadmap")),
 		MapboxAK:       s.getString(ctx, "map_mapbox_ak", ""),
 	}

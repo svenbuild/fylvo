@@ -219,6 +219,15 @@ const FileSystemSection = () => {
               }
               value={values.map_provider}
             >
+              <SquareMenuItem value={"none"}>
+                <ListItemText
+                  slotProps={{
+                    primary: { variant: "body2" },
+                  }}
+                >
+                  {t("settings.mapNone")}
+                </ListItemText>
+              </SquareMenuItem>
               <SquareMenuItem value={"google"}>
                 <ListItemText
                   slotProps={{
