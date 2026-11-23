@@ -34,8 +34,10 @@ type Item struct {
 	Hash string
 	// ETag is the provider's tag for conditional requests on the item. May be empty.
 	ETag string
-	// Native is set for a document that exists only at the provider and has no bytes
-	// of its own: "gdoc", "gsheet", "gslides" or "gdraw".
+	// Native is set for an entry that exists only at the provider and has no bytes of
+	// its own. Some can be read in an export format ("gdoc", "gsheet", "gslides",
+	// "gdraw"); the others (a form, a notebook, see NativeKinds) can only be opened at
+	// the provider.
 	Native string
 	// WebURL opens the item at the provider.
 	WebURL string
@@ -45,6 +47,18 @@ type Item struct {
 	// Link is set for an entry that points to another item: a Drive shortcut or a
 	// OneDrive item of another drive.
 	Link *Link
+}
+
+// NativeKinds are all values of Item.Native. In Fylvo such an entry shows with its kind
+// as the extension of its name, which keeps it apart from a real file of the same name.
+var NativeKinds = []string{
+	// Google Drive, documents that can be exported.
+	"gdoc", "gsheet", "gslides", "gdraw",
+	// Google Drive, entries that open at Google only. "gapp" is any other kind of
+	// Google's that has no bytes.
+	"gform", "gsite", "gmap", "gjam", "gscript", "gvid", "gapp",
+	// OneDrive: a OneNote notebook, and the Personal Vault.
+	"onenote", "vault",
 }
 
 // Link is where a link points to.

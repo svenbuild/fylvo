@@ -314,6 +314,8 @@ func devSampleData(s *drivetest.Server) {
 	s.AddNative(docs, "Budget", "gsheet")
 	s.AddNative(docs, "Letter", "gdoc")
 	s.AddNative(docs, "Talk", "gslides")
+	// Something of Google's that has no export: it shows and opens at the provider.
+	s.AddOther(docs, "Feedback", "application/vnd.google-apps.form")
 	deep := s.AddFolder(s.AddFolder(s.AddFolder(docs, "Projects"), "2026"), "Garden")
 	s.AddFile(deep, "Plan.txt", []byte("Three beds, one path.\n"))
 

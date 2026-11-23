@@ -2,7 +2,7 @@
   "code": 0,
   "data": {
     "type": 0,
-    "id": "cs2bcbf36b87f2e203115d225f",
+    "id": "csf9988c2bea3ce7b223f9e389",
     "name": "Link to notes.txt",
     "created_at": "2026-01-01T09:00:09Z",
     "updated_at": "2026-01-01T09:00:09Z",
@@ -12,7 +12,7 @@
       "fylvo:size_unknown": "1",
       "thumb:disabled": ""
     },
-    "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Link%20to%20notes.txt",
+    "path": "cloudreve://vlofovudkwiu84lr@connected/Link%20to%20notes.txt",
     "capability": "gAAI",
     "extended_info": {
       "storage_policy": {

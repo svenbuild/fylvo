@@ -4,29 +4,29 @@
     "files": [
       {
         "type": 1,
-        "id": "csf8e8aebffe567bee91a0830d",
+        "id": "cs0ce438d9c483068129a00993",
         "name": "Docs",
         "created_at": "2026-01-01T09:00:01Z",
         "updated_at": "2026-01-01T09:00:01Z",
         "size": 0,
         "metadata": {},
-        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Docs",
+        "path": "cloudreve://vlofovudkwiu84lr@connected/Docs",
         "capability": "AAKI"
       },
       {
         "type": 1,
-        "id": "cs99b758c9fe028ff8797f9a16",
+        "id": "csfdff3d24d614a0cf36d99ddc",
         "name": "Empty",
         "created_at": "2026-01-01T09:00:02Z",
         "updated_at": "2026-01-01T09:00:02Z",
         "size": 0,
         "metadata": {},
-        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Empty",
+        "path": "cloudreve://vlofovudkwiu84lr@connected/Empty",
         "capability": "AAKI"
       },
       {
         "type": 1,
-        "id": "cs41b5e360f8a89fde43cd1c67",
+        "id": "cs70310d16f8a327b2dfab1314",
         "name": "Link to Docs",
         "created_at": "2026-01-01T09:00:08Z",
         "updated_at": "2026-01-01T09:00:08Z",
@@ -34,12 +34,12 @@
         "metadata": {
           "fylvo:link": "1"
         },
-        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Link%20to%20Docs",
+        "path": "cloudreve://vlofovudkwiu84lr@connected/Link%20to%20Docs",
         "capability": "AAKI"
       },
       {
         "type": 0,
-        "id": "cs0486e0f38acbd2cd1b299947",
+        "id": "cscc9cfd2f58bfcd987db65f7a",
         "name": "Budget.gsheet",
         "created_at": "2026-01-01T09:00:04Z",
         "updated_at": "2026-01-01T09:00:04Z",
@@ -50,13 +50,13 @@
           "fylvo:size_unknown": "1",
           "thumb:disabled": ""
         },
-        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Budget.gsheet",
+        "path": "cloudreve://vlofovudkwiu84lr@connected/Budget.gsheet",
         "capability": "gAAI",
-        "primary_entity": "v9e30db61b785d002ed979aa5"
+        "primary_entity": "v322beaab8f6e16b088510268"
       },
       {
         "type": 0,
-        "id": "cs2bcbf36b87f2e203115d225f",
+        "id": "csf9988c2bea3ce7b223f9e389",
         "name": "Link to notes.txt",
         "created_at": "2026-01-01T09:00:09Z",
         "updated_at": "2026-01-01T09:00:09Z",
@@ -66,12 +66,12 @@
           "fylvo:size_unknown": "1",
           "thumb:disabled": ""
         },
-        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Link%20to%20notes.txt",
+        "path": "cloudreve://vlofovudkwiu84lr@connected/Link%20to%20notes.txt",
         "capability": "gAAI"
       },
       {
         "type": 0,
-        "id": "cs376239f6bfef75129faab354",
+        "id": "cs75894977f9e52d0211dce30b",
         "name": "notes.txt",
         "created_at": "2026-01-01T09:00:03Z",
         "updated_at": "2026-01-01T09:00:03Z",
@@ -79,13 +79,13 @@
         "metadata": {
           "thumb:disabled": ""
         },
-        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/notes.txt",
+        "path": "cloudreve://vlofovudkwiu84lr@connected/notes.txt",
         "capability": "gAAI",
-        "primary_entity": "v3b6ff72cc10b614db8cbea94"
+        "primary_entity": "vf2487e51c306ccd4e74c2bf7"
       },
       {
         "type": 0,
-        "id": "csc577c3128445a3acfe0f028a",
+        "id": "cs0736d709cafc50e6a5c9a265",
         "name": "twice.txt",
         "created_at": "2026-01-01T09:00:06Z",
         "updated_at": "2026-01-01T09:00:06Z",
@@ -94,19 +94,19 @@
           "fylvo:unsupported": "duplicate",
           "thumb:disabled": ""
         },
-        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/twice.txt",
+        "path": "cloudreve://vlofovudkwiu84lr@connected/twice.txt",
         "capability": "AAAI"
       }
     ],
     "parent": {
       "type": 1,
-      "id": "csf83c4c99d4d46d8de36bd383",
+      "id": "csf5aa390bdd736534a2b2955f",
       "name": "Google Drive",
       "created_at": "0001-01-01T00:00:00Z",
       "updated_at": "0001-01-01T00:00:00Z",
       "size": 0,
       "metadata": {},
-      "path": "cloudreve://r0jnl8wzg2rvkcng@connected",
+      "path": "cloudreve://vlofovudkwiu84lr@connected",
       "capability": "AAKI"
     },
     "pagination": {
@@ -131,7 +131,7 @@
     "context_hint": null,
     "mixed_type": false,
     "connected": {
-      "id": "r0jnl8wzg2rvkcng",
+      "id": "vlofovudkwiu84lr",
       "provider": "drive",
       "read_only": true,
       "search": false,
