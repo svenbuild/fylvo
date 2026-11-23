@@ -65,6 +65,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -169,6 +171,16 @@ fun FilesScreen(
 
     LaunchedEffect(Unit) { if (!state.home) viewModel.refresh() }
 
+    // Fylvo: back from the web app after connecting a storage again: its folder is asked again.
+    // Only after a real pause, never on entering the screen (that would ask in a loop).
+    val reconnectShown by rememberUpdatedState(state.inConnected && state.errorCode == Connected.CODE_RECONNECT)
+    var wasPaused by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        if (wasPaused && reconnectShown) viewModel.refresh()
+        wasPaused = false
+        onPauseOrDispose { wasPaused = true }
+    }
+
     LaunchedEffect(state.snackbar) {
         val msg = state.snackbar ?: return@LaunchedEffect
         // Consume only after showing: clearing first would change this effect's
@@ -238,7 +250,8 @@ fun FilesScreen(
             sheetTarget = file
             return
         }
-        if (previewKindOf(file) == null) {
+        // Fylvo: a size the server does not know cannot be held to the preview limits.
+        if (previewKindOf(file) == null || Connected.sizeUnknown(file)) {
             openWithSystemApp(file)
             return
         }
@@ -526,13 +539,6 @@ fun FilesScreen(
                     CircularProgressIndicator()
                 }
                 state.error != null -> {
-                    // Fylvo: back from the web app after connecting again: the folder is asked again.
-                    if (state.inConnected && state.errorCode == Connected.CODE_RECONNECT) {
-                        androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
-                            viewModel.refresh()
-                            onPauseOrDispose { }
-                        }
-                    }
                     EmptyState(
                     icon = Icons.Outlined.FolderOpen,
                     title = stringResource(R.string.load_folder_failed),

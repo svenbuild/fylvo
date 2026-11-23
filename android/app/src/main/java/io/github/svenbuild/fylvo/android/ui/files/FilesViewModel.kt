@@ -683,6 +683,19 @@ class FilesViewModel(
         return normalized
     }
 
+    /**
+     * Fylvo: a viewer (image, video) got HTTP [status] for the content of [file]. Inside a
+     * connected storage the text says what it means, and a changed file refreshes the listing;
+     * null elsewhere (the viewer keeps its own text).
+     */
+    fun contentFailed(file: FileObject, status: Int): UiText? {
+        if (!Connected.isConnected(file.path)) return null
+        val normalized = Connected.normalize(ApiException(status, "HTTP $status"))
+        if (Connected.isChanged(normalized)) refreshIfShowing(file)
+        else if (Connected.isStorageTrouble(normalized)) connected.load()
+        return userError(normalized)
+    }
+
     /** Fylvo: refreshes the listing when the folder of [file] is on screen. */
     private fun refreshIfShowing(file: FileObject) {
         val s = _state.value
@@ -752,7 +765,8 @@ class FilesViewModel(
             var saved = 0
             var lastError: Exception? = null
             var lastFailed: FileObject? = null
-            var changed = false
+            var changedFile: FileObject? = null
+            var changedError: Exception? = null
             try {
                 for (file in mine) {
                     try {
@@ -763,7 +777,10 @@ class FilesViewModel(
                     } catch (e: Exception) {
                         lastError = e
                         lastFailed = file
-                        if (Connected.isConnected(file.path) && Connected.isChanged(Connected.normalize(e))) changed = true
+                        if (changedFile == null && Connected.isConnected(file.path) && Connected.isChanged(Connected.normalize(e))) {
+                            changedFile = file
+                            changedError = e
+                        }
                     } finally {
                         batchPaths -= file.path
                         clearDownloading(file.path)
@@ -772,11 +789,14 @@ class FilesViewModel(
                 val failed = lastError
                 // Fylvo: a file of a connected storage changed meanwhile: the listing is refreshed once
                 // and the message says to try again.
-                if (changed) mine.firstOrNull()?.let(::refreshIfShowing)
+                val changedOne = changedFile
+                val changedCause = changedError
                 val message = when {
                     saved == mine.size -> UiMessage(UiText.Plural(R.plurals.saved_files, saved, saved))
+                    changedOne != null && changedCause != null -> downloadFailure(changedOne, changedCause).let {
+                        if (saved == 0) it else it.copy(long = true)
+                    }
                     saved == 0 && failed != null -> lastFailed?.let { downloadFailure(it, failed) } ?: failure(failed, fallback = R.string.download_failed)
-                    changed -> UiMessage(UiText.Res(R.string.error_connected_changed), long = true)
                     else -> UiMessage(UiText.Res(R.string.saved_some_files, saved, mine.size))
                 }
                 _state.update { it.copy(snackbar = message) }
@@ -945,7 +965,8 @@ class FilesViewModel(
         val gallery = kind == FileKind.IMAGE || kind == FileKind.VIDEO
         return _state.value.files.filter {
             // Fylvo: inside a connected storage only rows that may be opened in the app.
-            !it.isFolder && !it.isUploading && (!Connected.isConnected(it.path) || Connected.tapAction(it) == Connected.Tap.OPEN) && if (gallery) FileKind.of(it).let { k -> k == FileKind.IMAGE || k == FileKind.VIDEO } else FileKind.of(it) == kind
+            !it.isFolder && !it.isUploading &&
+                (!Connected.isConnected(it.path) || (Connected.tapAction(it) == Connected.Tap.OPEN && !Connected.sizeUnknown(it))) && if (gallery) FileKind.of(it).let { k -> k == FileKind.IMAGE || k == FileKind.VIDEO } else FileKind.of(it) == kind
         }.ifEmpty { listOf(file) }
     }
 

@@ -42,10 +42,14 @@ fun MediaPreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit)
         value = runCatching { viewModel.previewUrl(file) }
     }
     var playerError by remember(file.id) { mutableStateOf<String?>(null) }
+    // Fylvo: what a refused content address means inside a connected storage.
+    var contentError by remember(file.id) { mutableStateOf<io.github.svenbuild.fylvo.android.util.UiText?>(null) }
     val player = remember(file.id) {
         ExoPlayer.Builder(context).build().also { p ->
             p.addListener(object : Player.Listener {
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    val status = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
+                    contentError = status?.let { viewModel.contentFailed(file, it) }
                     playerError = error.errorCodeName
                 }
             })
@@ -69,7 +73,7 @@ fun MediaPreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit)
     Box(Modifier.fillMaxSize()) {
         val loadError = remember(url) { url?.exceptionOrNull()?.let { userError(it) } }
         when {
-            playerError != null -> FullWidthError(stringResource(R.string.preview_load_failed, playerError.orEmpty()))
+            playerError != null -> FullWidthError(contentError?.asString() ?: stringResource(R.string.preview_load_failed, playerError.orEmpty()))
             loadError != null -> FullWidthError(loadError.asString())
             url == null -> LoadingOverlay(null)
             else -> AndroidView(

@@ -89,6 +89,24 @@ class ConnectedTest {
     }
 
     @Test
+    fun shortcutToAGoogleDocumentBehavesLikeTheDocument() {
+        val link = FileObject(
+            name = "Shared plan.gdoc",
+            capability = "gAAI",
+            metadata = mapOf(
+                Connected.META_LINK to "1",
+                Connected.META_EXPORT to "docx",
+                Connected.META_EXTERNAL_URL to "https://drive.example.com/document/d/id9/edit",
+                Connected.META_SIZE_UNKNOWN to "1",
+            ),
+        )
+        assertTrue(Connected.isLink(link))
+        assertEquals(Connected.Tap.BROWSER, Connected.tapAction(link))
+        assertEquals("Shared plan.docx", Connected.downloadName(link))
+        assertTrue(Connected.canDownload(link))
+    }
+
+    @Test
     fun downloadNameKeepsOtherNames() {
         fun doc(name: String, export: String?) =
             FileObject(name = name, metadata = export?.let { mapOf(Connected.META_EXPORT to it) })

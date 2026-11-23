@@ -489,7 +489,7 @@
     <string name="error_connected_listing_expired">The list has expired. Please refresh it.</string>
     <string name="error_connected_item">This item cannot be used.</string>
     <string name="error_connected_ambiguous">This name exists more than once in the folder. Rename one of them at the provider.</string>
-    <string name="error_connected_changed">The file has changed. The list was refreshed, please open it again.</string>
+    <string name="error_connected_changed">The file has changed. Please open it again from the list.</string>
     <string name="error_connected_forbidden">The provider does not allow access to this file.</string>
     <string name="error_connected_flagged">The provider has blocked this file.</string>
     <string name="error_connected_export_too_large">This document is too large for the provider to export.</string>

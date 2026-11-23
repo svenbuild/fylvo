@@ -486,7 +486,7 @@
     <string name="error_connected_listing_expired">Die Liste ist abgelaufen. Bitte neu laden.</string>
     <string name="error_connected_item">Dieser Eintrag lässt sich nicht benutzen.</string>
     <string name="error_connected_ambiguous">Diesen Namen gibt es im Ordner mehrmals. Benenne einen davon beim Anbieter um.</string>
-    <string name="error_connected_changed">Die Datei hat sich geändert. Die Liste ist neu geladen, bitte nochmal öffnen.</string>
+    <string name="error_connected_changed">Die Datei hat sich geändert. Bitte nochmal aus der Liste öffnen.</string>
     <string name="error_connected_forbidden">Der Anbieter erlaubt den Zugriff auf diese Datei nicht.</string>
     <string name="error_connected_flagged">Der Anbieter hat diese Datei gesperrt.</string>
     <string name="error_connected_export_too_large">Dieses Dokument ist zu gross, um es beim Anbieter umzuwandeln.</string>

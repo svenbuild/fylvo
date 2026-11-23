@@ -115,7 +115,11 @@ fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit,
                         alpha = 1f - (kotlin.math.abs(dragY) / (dismissThresholdPx * 3f)).coerceIn(0f, 0.6f)
                     },
                 loading = { LoadingOverlay(null) },
-                error = { FullWidthError(stringResource(R.string.image_load_failed)) },
+                onError = { state ->
+                    val status = (state.result.throwable as? coil.network.HttpException)?.response?.code
+                    fullError = status?.let { viewModel.contentFailed(file, it) }
+                },
+                error = { FullWidthError(fullError?.asString() ?: stringResource(R.string.image_load_failed)) },
             )
         } else if (fullFailed) {
             FullWidthError(fullError?.asString() ?: stringResource(R.string.image_load_failed))
