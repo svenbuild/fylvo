@@ -322,3 +322,36 @@ func TestRetriesAndTokenRenewal(t *testing.T) {
 	require.Equal(t, 1, a.renewals)
 	require.Equal(t, []string{"test-token-1", "test-token-1", "test-token-1", "test-token-2"}, s.Tokens())
 }
+
+// Target tells the state of the item a link points to, which lives in another drive.
+func TestTarget(t *testing.T) {
+	s := graphtest.New(t)
+	c := newClient(s, &auth{})
+	ctx := context.Background()
+	remote := s.AddRemote("", "Remote file", false, []byte("target"))
+
+	link, err := c.Get(ctx, remote)
+	require.NoError(t, err)
+	require.Empty(t, link.Version, "a listing does not tell the state of the target")
+	fresh, err := c.Target(ctx, link)
+	require.NoError(t, err)
+	require.Equal(t, remote, fresh.ID)
+	require.Equal(t, link.Link, fresh.Link)
+	require.EqualValues(t, 6, fresh.Size)
+	require.NotEmpty(t, fresh.Version)
+	content, err := c.Open(ctx, fresh, "")
+	require.NoError(t, err)
+	require.Equal(t, "target", readContent(t, content))
+
+	s.SetContent(remote, []byte("changed"))
+	again, err := c.Target(ctx, link)
+	require.NoError(t, err)
+	require.NotEqual(t, fresh.Version, again.Version)
+
+	_, err = c.Target(ctx, &provider.Item{ID: remote})
+	require.Equal(t, provider.KindNotFound, provider.KindOf(err), "not a link")
+	gone := *link
+	gone.Link = &provider.Link{TargetID: "nothing", TargetDrive: link.Link.TargetDrive}
+	_, err = c.Target(ctx, &gone)
+	require.Equal(t, provider.KindNotFound, provider.KindOf(err))
+}

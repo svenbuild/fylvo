@@ -198,11 +198,17 @@ var (
 	ErrFlowProvider = errors.New("the provider did not complete the sign-in")
 	ErrFlowSetup    = errors.New("the provider refused the client of this installation")
 	ErrFlowAccount  = errors.New("the sign-in belongs to another account")
+	// ErrFlowWait: access is being taken back at this provider right now. A sign-in
+	// that started now could be for the same account and lose its new token to that.
+	ErrFlowWait = errors.New("the provider is busy with another step, try again in a moment")
 )
 
 const (
 	stateLife  = 10 * time.Minute
 	finishLife = 5 * time.Minute
+	// maxStates is how many sign-ins one account can have under way. A further one
+	// takes the place of the oldest.
+	maxStates = 5
 )
 
 // Client is the OAuth client of the installation for one provider.
@@ -236,7 +242,7 @@ type Granted struct {
 	Provider  string
 	Identity  *Identity
 	Reconnect *Reconnect
-	// Token is the token as rclone keeps it (JSON).
+	// Token is the token in the JSON form it is stored in.
 	Token   string
 	Scopes  string
 	expires time.Time
@@ -254,6 +260,8 @@ type Flow struct {
 	granted map[string]*Granted
 	// exchanging counts the callbacks per provider that are talking to the provider.
 	exchanging map[string]int
+	// revoking counts, per provider, the tokens that are being taken back right now.
+	revoking map[string]int
 }
 
 func NewFlow(specs map[string]*Spec, client *http.Client) *Flow {
@@ -264,6 +272,7 @@ func NewFlow(specs map[string]*Spec, client *http.Client) *Flow {
 	return &Flow{
 		specs: specs, http: &fixed, now: time.Now,
 		states: map[string]*flowState{}, granted: map[string]*Granted{}, exchanging: map[string]int{},
+		revoking: map[string]int{},
 	}
 }
 
@@ -315,13 +324,32 @@ func (f *Flow) Begin(userID int, provider string, client Client, reconnect *Reco
 	}
 
 	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.sweep()
+	if f.revoking[provider] > 0 {
+		return "", "", ErrFlowWait
+	}
+	var (
+		open   int
+		oldest string
+	)
+	for k, s := range f.states {
+		if s.userID != userID {
+			continue
+		}
+		open++
+		if oldest == "" || s.expires.Before(f.states[oldest].expires) {
+			oldest = k
+		}
+	}
+	if open >= maxStates {
+		delete(f.states, oldest)
+	}
 	f.states[state] = &flowState{
 		userID: userID, provider: provider, verifier: verifier, browser: sha256.Sum256([]byte(cookie)),
 		redirect: client.Redirect, reconnect: reconnect, expires: f.now().Add(stateLife),
 		clientID: client.ID, clientAuth: client.Secret,
 	}
-	f.mu.Unlock()
 
 	return spec.AuthURL + "?" + q.Encode(), cookie, nil
 }
@@ -466,13 +494,56 @@ func (f *Flow) Finish(userID int, finish string) (*Granted, error) {
 	return g, nil
 }
 
-// Busy tells whether a sign-in at this provider is under way: started, talking to the
-// provider, or waiting to be stored. As long as one is, no token of that provider may be
-// revoked, because it is not yet known which provider account the sign-in is for.
+// Revoking asks whether a token of this provider may be taken back now. It may not while
+// a sign-in at the provider is under way (see busy). When it may, no sign-in at the
+// provider starts until done is called.
+func (f *Flow) Revoking(provider string) (done func(), ok bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sweep()
+	if f.busy(provider) {
+		return nil, false
+	}
+	f.revoking[provider]++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			f.mu.Lock()
+			f.revoking[provider]--
+			f.mu.Unlock()
+		})
+	}, true
+}
+
+// Forget drops the sign-ins of an account that are under way or wait to be stored.
+func (f *Flow) Forget(userID int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k, s := range f.states {
+		if s.userID == userID {
+			delete(f.states, k)
+		}
+	}
+	for k, g := range f.granted {
+		if g.UserID == userID {
+			delete(f.granted, k)
+		}
+	}
+}
+
+// Busy tells whether a sign-in at this provider is under way (see busy).
 func (f *Flow) Busy(provider string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sweep()
+	return f.busy(provider)
+}
+
+// busy tells whether a sign-in at this provider is under way: started, talking to the
+// provider, or waiting to be stored. As long as one is, no token of that provider may be
+// revoked, because it is not yet known which provider account the sign-in is for. The
+// caller holds f.mu.
+func (f *Flow) busy(provider string) bool {
 	if f.exchanging[provider] > 0 {
 		return true
 	}

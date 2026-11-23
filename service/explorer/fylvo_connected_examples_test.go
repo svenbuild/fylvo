@@ -111,7 +111,7 @@ func TestConnectedExamples(t *testing.T) {
 	storages := inventory.NewConnectedStorageClient(e.client)
 	row, err := storages.Get(e.ctx, e.alex.ID, e.id)
 	require.NoError(t, err)
-	_, err = storages.UpdateState(e.ctx, row.ID, row.Generation, inventory.ConnectedStatusReconnect, "refused", row.Props)
+	_, err = storages.UpdateStatus(e.ctx, row.ID, row.Generation, inventory.ConnectedStatusReconnect, "refused")
 	require.NoError(t, err)
 	_, err = e.list(e.alex, e.root, 0, "")
 	require.Equal(t, serializer.CodeConnectedReconnect, connectedCode(err))

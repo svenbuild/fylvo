@@ -122,7 +122,7 @@ func openConnected(c context.Context, uri *fs.URI) (*connectedRequest, error) {
 
 	path, err := connected.CheckPath(uri.U.Path)
 	if err != nil {
-		return nil, connected.Error(err)
+		return nil, connected.Error(c, err)
 	}
 	id := ""
 	if uri.U.User != nil {
@@ -240,7 +240,7 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 
 	page, err := req.m.Tree().List(req.ctx, req.conn, req.path, order, size, s.NextPageToken)
 	if err != nil {
-		return nil, connected.Error(err)
+		return nil, connected.Error(c, err)
 	}
 
 	parent := page.Parent
@@ -300,7 +300,7 @@ func connectedInfo(c *gin.Context, uri *fs.URI, extended bool) (*FileResponse, e
 
 	row, err := req.m.Tree().Resolve(req.ctx, req.conn, req.path)
 	if err != nil {
-		return nil, connected.Error(err)
+		return nil, connected.Error(c, err)
 	}
 	return connectedFile(req, row, extended), nil
 }
@@ -349,9 +349,22 @@ func connectedURL(c *gin.Context, uri *fs.URI, s *FileURLService, base *url.URL,
 
 	row, err := req.m.Tree().Resolve(req.ctx, req.conn, req.path)
 	if err != nil {
-		return "", connected.Error(err)
+		return "", connected.Error(c, err)
 	}
 	if row.IsDir || row.Unsupported != "" {
+		return "", fs.ErrEntityNotExist
+	}
+	if row.Link != nil {
+		// A listing does not tell the state of what a link points to.
+		target, err := req.conn.P.Target(req.ctx, &row.Item)
+		if err != nil {
+			return "", connected.Error(c, err)
+		}
+		row.Item = *target
+	}
+	if row.Version == "" {
+		// Without a marker for the state of the content an address could go on to
+		// deliver something else than it was made for.
 		return "", fs.ErrEntityNotExist
 	}
 	// The client names the version it means. It gets that one or nothing.
@@ -415,7 +428,7 @@ func ConnectedCapacity(c *gin.Context, id string) (*ConnectedCapacityResponse, e
 
 	usage, err := req.m.Capacity(req.ctx, req.conn)
 	if err != nil {
-		return nil, connected.Error(err)
+		return nil, connected.Error(c, err)
 	}
 	return &ConnectedCapacityResponse{Used: usage.Used, Total: usage.Total}, nil
 }
@@ -463,17 +476,23 @@ func ServeConnectedContent(c *gin.Context) {
 
 	item := grant.Item.ProviderItem()
 	// The file as it is now. A grant is for one state of one item: when the content
-	// changed since, the client has to ask for a new address.
-	if grant.Item.Version != "" {
-		current, err := conn.P.Get(ctx, item.ID)
-		if err != nil {
-			connectedContentError(c, err)
-			return
-		}
-		if current.Version != grant.Item.Version {
+	// changed since, the client has to ask for a new address. For a link that is the
+	// state of what it points to, and it must still point there.
+	current, err := conn.P.Get(ctx, item.ID)
+	if err == nil && item.Link != nil {
+		if current.Link == nil || *current.Link != *item.Link {
 			c.AbortWithStatus(http.StatusConflict)
 			return
 		}
+		current, err = conn.P.Target(ctx, current)
+	}
+	if err != nil {
+		connectedContentError(c, err)
+		return
+	}
+	if item.Version == "" || current.Version != item.Version {
+		c.AbortWithStatus(http.StatusConflict)
+		return
 	}
 
 	name := item.Name
@@ -482,7 +501,7 @@ func ServeConnectedContent(c *gin.Context) {
 		name = connected.ExportName(item.Name, item.Native, grant.Export)
 		content, err = conn.P.Export(ctx, item, grant.Export)
 	} else {
-		content, err = conn.P.Open(ctx, item, c.GetHeader("Range"))
+		content, err = conn.P.Open(ctx, item, singleRange(c.GetHeader("Range")))
 	}
 	if err != nil {
 		connectedContentError(c, err)
@@ -512,13 +531,32 @@ func ServeConnectedContent(c *gin.Context) {
 	if c.Request.Method == http.MethodHead {
 		return
 	}
-	_, _ = io.Copy(c.Writer, content.Body)
+	if _, err := io.Copy(c.Writer, content.Body); err != nil {
+		// The provider's stream broke off, or the client went away. An answer without
+		// a length would otherwise end like a complete one, and the client would keep
+		// a cut-off file for the whole.
+		panic(http.ErrAbortHandler)
+	}
+}
+
+// singleRange returns a Range header that asks for one range of bytes, and nothing for
+// any other: the whole file is then the answer, which every client can handle.
+func singleRange(header string) string {
+	spec, ok := strings.CutPrefix(header, "bytes=")
+	if !ok || strings.Contains(spec, ",") {
+		return ""
+	}
+	return header
 }
 
 func connectedContentError(c *gin.Context, err error) {
+	var failure *provider.Error
 	switch {
 	case errors.Is(err, context.Canceled):
 		c.AbortWithStatus(499)
+	case errors.As(err, &failure) && failure.Status == http.StatusRequestedRangeNotSatisfiable:
+		// A range past the end of the file, as a player may ask for.
+		c.AbortWithStatus(http.StatusRequestedRangeNotSatisfiable)
 	case provider.KindOf(err) == provider.KindNotFound:
 		c.AbortWithStatus(http.StatusNotFound)
 	case provider.KindOf(err) == provider.KindStale:

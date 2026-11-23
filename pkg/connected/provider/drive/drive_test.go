@@ -103,7 +103,6 @@ func TestMapping(t *testing.T) {
 	sheet := s.AddNative("", "Budget", "gsheet")
 	toFile := s.AddShortcut("", "report link", fileID)
 	toFolder := s.AddShortcut("", "Work link", folder)
-	s.SetResourceKey(fileID, "key-1")
 
 	f, err := d.Get(ctx, fileID)
 	require.NoError(t, err)
@@ -128,6 +127,7 @@ func TestMapping(t *testing.T) {
 	assert.Zero(t, doc.Size)
 	assert.Equal(t, "t:"+doc.ModTime.Format("2006-01-02T15:04:05.000Z"), doc.Version)
 
+	s.SetResourceKey(fileID, "key-1")
 	link, err := d.Get(ctx, toFile)
 	require.NoError(t, err)
 	assert.Equal(t, &provider.Link{TargetID: fileID, ResourceKey: "key-1"}, link.Link)
@@ -319,10 +319,12 @@ func TestOpenLinkSendsResourceKey(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "shared", read(t, c))
 
-	// Without the key the simulator, like Drive, does not find the file.
+	// Without the key the simulator, like Drive, does not find the file. A client that
+	// never saw the shortcut does not know the key.
 	noKey := *link
 	noKey.Link = &provider.Link{TargetID: target}
-	_, err = d.Open(ctx, &noKey, "")
+	other := New(Options{HTTP: s.Client(), Auth: &drivetest.Auth{}, BaseURL: s.URL()})
+	_, err = other.Open(ctx, &noKey, "")
 	assert.Equal(t, provider.KindNotFound, provider.KindOf(err))
 
 	// Through a redirect the key is needed only for the first call.
@@ -456,4 +458,65 @@ func TestRetriesAndRenewal(t *testing.T) {
 	assert.Equal(t, 2, auth.Renewals())
 
 	assert.Equal(t, []string{"token-1", "token-1", "token-1", "token-2", "token-2", "token-3"}, s.Tokens())
+}
+
+// A folder behind a shortcut can need a resource key for every call about it. The client
+// keeps the key from the shortcut and sends it for the folder's id.
+func TestFolderBehindShortcutWithResourceKey(t *testing.T) {
+	s, d, _ := setup(t)
+	ctx := context.Background()
+	shared := s.AddFolder("", "Shared")
+	s.AddFile(shared, "inside.txt", []byte("x"))
+	s.SetResourceKey(shared, "key-2")
+	s.AddShortcut("", "Shared link", shared)
+
+	// Not known yet: like Drive, the simulator shows nothing of the folder.
+	page, err := d.Children(ctx, shared, "")
+	require.NoError(t, err)
+	assert.Empty(t, page.Items)
+
+	// Walking there passes the shortcut, by a listing or by a lookup of its name.
+	links, err := d.Named(ctx, s.RootID(), "Shared link")
+	require.NoError(t, err)
+	require.Len(t, links, 1)
+	page, err = d.Children(ctx, links[0].ContentID(), "")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"inside.txt"}, names(page.Items))
+	found, err := d.Named(ctx, links[0].ContentID(), "inside.txt")
+	require.NoError(t, err)
+	assert.Len(t, found, 1)
+}
+
+// Target tells the state of what a shortcut points to, which a listing does not.
+func TestTarget(t *testing.T) {
+	s, d, _ := setup(t)
+	ctx := context.Background()
+	target := s.AddFile("", "shared.bin", []byte("0123456789"))
+	s.SetResourceKey(target, "key-1")
+	linkID := s.AddShortcut("", "shared link", target)
+
+	// A client that starts with nothing but the shortcut, as after a restart.
+	link := &provider.Item{ID: linkID, Name: "shared link", Link: &provider.Link{TargetID: target, ResourceKey: "key-1"}}
+	fresh, err := d.Target(ctx, link)
+	require.NoError(t, err)
+	assert.Equal(t, linkID, fresh.ID)
+	assert.Equal(t, link.Link, fresh.Link)
+	assert.Equal(t, int64(10), fresh.Size)
+	assert.NotEmpty(t, fresh.Revision)
+	assert.Equal(t, "r:"+fresh.Revision, fresh.Version)
+
+	// What Target returned reads exactly that content, also after the target changed.
+	s.SetContent(target, []byte("changed"))
+	c, err := d.Open(ctx, fresh, "bytes=2-4")
+	require.NoError(t, err)
+	assert.Equal(t, "234", read(t, c))
+	again, err := d.Target(ctx, link)
+	require.NoError(t, err)
+	assert.NotEqual(t, fresh.Version, again.Version)
+
+	s.Trash(target)
+	_, err = d.Target(ctx, link)
+	assert.Equal(t, provider.KindNotFound, provider.KindOf(err))
+	_, err = d.Target(ctx, &provider.Item{ID: target})
+	assert.Equal(t, provider.KindNotFound, provider.KindOf(err), "not a link")
 }

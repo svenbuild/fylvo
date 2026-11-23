@@ -13,6 +13,7 @@ import (
 
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
+	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 )
 
@@ -207,7 +208,7 @@ func (l *liveConn) refresh(ctx context.Context, current *Token) (*Token, error) 
 	case answer.Error == "invalid_grant":
 		// The provider no longer accepts the stored access: revoked, expired or unused
 		// for too long. Only signing in again helps.
-		l.markReconnect(ctx)
+		l.markReconnect(context.WithoutCancel(ctx))
 		return nil, &provider.Error{Kind: provider.KindReconnect, Status: res.StatusCode, Code: answer.Error}
 	case answer.Error == "invalid_client" || answer.Error == "unauthorized_client":
 		return nil, &provider.Error{Kind: provider.KindSetup, Status: res.StatusCode, Code: answer.Error}
@@ -230,12 +231,15 @@ func (l *liveConn) refresh(ctx context.Context, current *Token) (*Token, error) 
 	}
 
 	// Stored before anyone uses it: a provider that rotates refresh tokens must not be
-	// left with one only this process knows.
-	sealed, err := m.sealer.Seal(ctx, PurposeToken, tokenContext(l.id, l.userID, l.kind), []byte(renewed.String()))
+	// left with one only this process knows. So also when the request that asked for
+	// the token has gone away meanwhile.
+	storeCtx, cancelStore := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancelStore()
+	sealed, err := m.sealer.Seal(storeCtx, PurposeToken, tokenContext(l.id, l.userID, l.kind), []byte(renewed.String()))
 	if err != nil {
 		return nil, &provider.Error{Kind: provider.KindOther}
 	}
-	stored, err := m.storages.UpdateSecret(ctx, l.rowID, l.generation, sealed)
+	stored, err := m.storages.UpdateSecret(storeCtx, l.rowID, l.generation, sealed)
 	if err != nil {
 		return nil, &provider.Error{Kind: provider.KindBusy}
 	}
@@ -250,18 +254,17 @@ func (l *liveConn) refresh(ctx context.Context, current *Token) (*Token, error) 
 // markReconnect notes that the connection has to be connected again, for the generation
 // this token belongs to. A connection renewed meanwhile is left alone.
 func (l *liveConn) markReconnect(ctx context.Context) {
-	row, err := l.m.storages.Get(ctx, l.userID, l.id)
-	if err != nil || row.Generation != l.generation {
+	marked, err := l.m.storages.UpdateStatus(ctx, l.rowID, l.generation, inventory.ConnectedStatusReconnect,
+		"The provider no longer accepts the stored access.")
+	if err != nil || !marked {
 		return
 	}
-	_, _ = l.m.storages.UpdateState(ctx, l.rowID, l.generation, inventory.ConnectedStatusReconnect,
-		"The provider no longer accepts the stored access.", row.Props)
 	l.cancel()
 }
 
 // Error turns an error of a provider into the error the API reports. The provider's own
-// text is never part of it.
-func Error(err error) error {
+// text is never part of it; what has no answer of its own goes to the log.
+func Error(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -311,7 +314,8 @@ func Error(err error) error {
 	case provider.KindStale:
 		return serializer.NewError(serializer.CodeEntityNotExist, "This version is no longer available", nil)
 	}
-	return serializer.NewError(serializer.CodeInternalSetting, "The storage provider answered with an error", err)
+	logging.FromContext(ctx).Warning("Connected storage: %s", err)
+	return serializer.NewError(serializer.CodeInternalSetting, "The storage provider answered with an error", nil)
 }
 
 // Reasons connecting a storage did not work, sent as data.reason.
@@ -354,20 +358,13 @@ type ReasonData struct {
 	Reason string `json:"reason"`
 }
 
-// ErrResponse is the answer of the API for an error. Where connected storages know the
-// reason, it is sent as data.reason, so a client can show the right text.
-func ErrResponse(ctx context.Context, err error) serializer.Response {
-	res := serializer.Err(ctx, err)
-	if reason := ReasonOf(err); reason != "" {
-		res.Data = ReasonData{Reason: reason}
-	}
-	return res
-}
-
 // reasonError carries the reason inside the error of an item that cannot be used.
 type reasonError string
 
 func (r reasonError) Error() string { return string(r) }
+
+// ResponseData is what the answer of the API carries as data for such an error.
+func (r reasonError) ResponseData() any { return ReasonData{Reason: string(r)} }
 
 // ItemError returns the error for an item that cannot be used, for the given reason.
 func ItemError(reason string) error {

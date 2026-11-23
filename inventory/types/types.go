@@ -465,8 +465,6 @@ type ConnectedStorageProps struct {
 	Scopes string `json:"scopes,omitempty"`
 	// View is the view setting of the storage in the file list.
 	View *ExplorerView `json:"view,omitempty"`
-	// StatusFailures counts refused tokens in a row, see pkg/connected.
-	StatusFailures int `json:"status_failures,omitempty"`
 }
 
 const (

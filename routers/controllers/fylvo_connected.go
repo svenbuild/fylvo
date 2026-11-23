@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/service/explorer"
 	"github.com/cloudreve/Cloudreve/v4/service/fylvo"
@@ -10,14 +9,9 @@ import (
 
 // Fylvo connected storages.
 
-// fylvoErr is the answer for an error, with data.reason where connected storages know it.
-func fylvoErr(c *gin.Context, err error) serializer.Response {
-	return connected.ErrResponse(c, err)
-}
-
 func fylvoAnswer(c *gin.Context, data any, err error) {
 	if err != nil {
-		c.JSON(200, fylvoErr(c, err))
+		c.JSON(200, serializer.Err(c, err))
 		return
 	}
 	c.JSON(200, serializer.Response{Data: data})

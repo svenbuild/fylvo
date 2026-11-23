@@ -25,6 +25,10 @@ func For(dep dependency.Dep) *Manager {
 		Sealer: NewSealer(func(ctx context.Context) ([]byte, error) {
 			return dep.MasterEncryptKeyVault(ctx).GetMasterKey(ctx)
 		}),
+		UserExists: func(ctx context.Context, userID int) bool {
+			u, err := dep.UserClient().GetByID(ctx, userID)
+			return err == nil && u != nil
+		},
 	})
 	actual, _ := managers.LoadOrStore(dep, m)
 	return actual.(*Manager)

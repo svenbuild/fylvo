@@ -2,6 +2,7 @@ package connected
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"testing"
@@ -158,7 +159,7 @@ func TestRefusedRefresh(t *testing.T) {
 	require.Error(t, opCtx.Err())
 	_, _, _, err = f.Use(ctx, 7, storage.ID)
 	require.Equal(t, serializer.CodeConnectedReconnect, codeOf(err))
-	require.Equal(t, serializer.CodeConnectedReconnect, codeOf(Error(&provider.Error{Kind: provider.KindReconnect})))
+	require.Equal(t, serializer.CodeConnectedReconnect, codeOf(Error(ctx, &provider.Error{Kind: provider.KindReconnect})))
 
 	// Signing in again brings it back, with a provider client of its own.
 	f.provider.refuse = ""
@@ -220,6 +221,7 @@ func TestLateRefreshDoesNotOverwriteANewToken(t *testing.T) {
 }
 
 func TestErrorMapping(t *testing.T) {
+	ctx := context.Background()
 	cases := map[provider.Kind]int{
 		provider.KindNotFound:  serializer.CodeParentNotExist,
 		provider.KindExists:    serializer.CodeObjectExist,
@@ -231,17 +233,21 @@ func TestErrorMapping(t *testing.T) {
 		provider.KindStale:     serializer.CodeEntityNotExist,
 	}
 	for kind, code := range cases {
-		require.Equal(t, code, codeOf(Error(&provider.Error{Kind: kind, Code: "x"})), "kind %d", kind)
+		require.Equal(t, code, codeOf(Error(ctx, &provider.Error{Kind: kind, Code: "x"})), "kind %d", kind)
 	}
-	require.Equal(t, ReasonForbidden, ReasonOf(Error(&provider.Error{Kind: provider.KindForbidden})))
-	require.Equal(t, ReasonAmbiguous, ReasonOf(Error(ErrAmbiguous)))
-	require.Equal(t, ReasonTooLarge, ReasonOf(Error(ErrTooLarge)))
-	require.Equal(t, serializer.CodeParentNotExist, codeOf(Error(ErrNotFound)))
-	require.Equal(t, serializer.CodeConnectedListingGone, codeOf(Error(ErrListingGone)))
-	require.Equal(t, serializer.CodeParamErr, codeOf(Error(ErrBadPath)))
-	require.Equal(t, serializer.CodeConnectedBusy, codeOf(Error(context.DeadlineExceeded)))
-	require.Empty(t, ReasonOf(Error(ErrNotFound)))
-	require.NoError(t, Error(nil))
+	require.Equal(t, ReasonForbidden, ReasonOf(Error(ctx, &provider.Error{Kind: provider.KindForbidden})))
+	require.Equal(t, ReasonAmbiguous, ReasonOf(Error(ctx, ErrAmbiguous)))
+	require.Equal(t, ReasonTooLarge, ReasonOf(Error(ctx, ErrTooLarge)))
+	require.Equal(t, serializer.CodeParentNotExist, codeOf(Error(ctx, ErrNotFound)))
+	require.Equal(t, serializer.CodeConnectedListingGone, codeOf(Error(ctx, ErrListingGone)))
+	require.Equal(t, serializer.CodeParamErr, codeOf(Error(ctx, ErrBadPath)))
+	require.Equal(t, serializer.CodeConnectedBusy, codeOf(Error(ctx, context.DeadlineExceeded)))
+	require.Empty(t, ReasonOf(Error(ctx, ErrNotFound)))
+	require.NoError(t, Error(ctx, nil))
+	// What has no answer of its own shows nothing of itself to the client.
+	unknown := Error(ctx, errors.New("internal detail"))
+	require.Equal(t, serializer.CodeInternalSetting, codeOf(unknown))
+	require.NotContains(t, unknown.Error(), "internal detail")
 	// An error that already is one of the API is passed on as it is.
-	require.Equal(t, serializer.CodeConnectedReconnect, codeOf(Error(ErrReconnect)))
+	require.Equal(t, serializer.CodeConnectedReconnect, codeOf(Error(ctx, ErrReconnect)))
 }

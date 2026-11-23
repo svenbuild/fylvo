@@ -14,6 +14,9 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 )
 
+// listingWait is how long a listing waits for one of the parallelListings places.
+var listingWait = 10 * time.Second
+
 var (
 	// ErrNotFound: nothing is at the path.
 	ErrNotFound = errors.New("path does not exist")
@@ -36,6 +39,9 @@ const (
 	maxRows = 50000
 	// parallelListings is how many folders are read from providers at once.
 	parallelListings = 2
+	// maxPages is how many pages the provider may need for one folder. A real folder
+	// under maxRows stays far below it; a provider that keeps sending pages does not.
+	maxPages = 2000
 
 	// UnsupportedDuplicate marks a row that stands for several entries with one name.
 	UnsupportedDuplicate = "duplicate"
@@ -101,9 +107,15 @@ type listKey struct {
 type listing struct {
 	entries []*Row // Path and ViaLink are not set here
 	byName  map[string]*Row
+	// ids are the entries seen while the listing is read.
+	ids     map[string]bool
 	omitted int
 	fold    bool
 	at      time.Time
+}
+
+func newListing(fold bool) *listing {
+	return &listing{byName: map[string]*Row{}, ids: map[string]bool{}, fold: fold}
 }
 
 func (l *listing) find(name string) *Row {
@@ -118,6 +130,7 @@ type snapshot struct {
 	user     int
 	path     string
 	order    Order
+	parent   *Row
 	rows     []*Row
 	omitted  int
 	lastUsed time.Time
@@ -170,9 +183,14 @@ func joinPath(dir, name string) string {
 }
 
 // add puts an item into a listing under its name in Fylvo. An item that is already
-// there is counted once; another item with the same name turns the row into one that
-// stands for none of them.
+// there is counted once, also when it shows up a second time under another name (it was
+// renamed while the provider sent its pages); another item with the same name turns the
+// row into one that stands for none of them.
 func (l *listing) add(it provider.Item) {
+	if l.ids[it.ID] {
+		return
+	}
+	l.ids[it.ID] = true
 	name := displayName(&it)
 	if !plainName(name) {
 		l.omitted++
@@ -183,9 +201,6 @@ func (l *listing) add(it provider.Item) {
 		key = strings.ToLower(name)
 	}
 	if first, taken := l.byName[key]; taken {
-		if first.Unsupported == "" && first.ID == it.ID {
-			return
-		}
 		*first = Row{
 			Item:        provider.Item{Name: first.Name, IsDir: first.IsDir && it.IsDir},
 			Unsupported: UnsupportedDuplicate,
@@ -217,9 +232,13 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 		return l, nil
 	}
 
+	wait := time.NewTimer(listingWait)
+	defer wait.Stop()
 	select {
 	case t.sem <- struct{}{}:
 		defer func() { <-t.sem }()
+	case <-wait.C:
+		return nil, &provider.Error{Kind: provider.KindBusy}
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -228,9 +247,9 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 		return l, nil
 	}
 
-	l := &listing{byName: map[string]*Row{}, fold: c.P.CaseInsensitive()}
+	l := newListing(c.P.CaseInsensitive())
 	seen := 0
-	for page := ""; ; {
+	for page, pages := "", 0; ; pages++ {
 		p, err := c.P.Children(ctx, folderID, page)
 		if err != nil {
 			if provider.KindOf(err) == provider.KindNotFound {
@@ -245,11 +264,16 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 		for _, it := range p.Items {
 			l.add(it)
 		}
-		if p.Next == "" || p.Next == page {
+		if p.Next == "" {
 			break
+		}
+		if p.Next == page || pages >= maxPages {
+			// A provider that goes in circles has not told the whole folder.
+			return nil, &provider.Error{Kind: provider.KindIncomplete}
 		}
 		page = p.Next
 	}
+	l.ids = nil
 	l.at = t.now()
 
 	t.mu.Lock()
@@ -275,8 +299,9 @@ func (t *Tree) sweep() {
 	}
 }
 
-// makeRoom drops paged listings, the ones used longest ago first, until rows more fit
-// under the bound. Fresh listings go by themselves within seconds. The caller holds t.mu.
+// makeRoom drops what is in memory until rows more fit under the bound: first the fresh
+// listings, oldest first, which only save a question to the provider, then the paged
+// listings, the ones used longest ago first. The caller holds t.mu.
 func (t *Tree) makeRoom(rows int) {
 	total := rows
 	for _, l := range t.listings {
@@ -284,6 +309,19 @@ func (t *Tree) makeRoom(rows int) {
 	}
 	for _, s := range t.snapshots {
 		total += len(s.rows)
+	}
+	for total > maxRows && len(t.listings) > 0 {
+		var (
+			oldest listKey
+			found  bool
+		)
+		for k, l := range t.listings {
+			if !found || l.at.Before(t.listings[oldest].at) {
+				oldest, found = k, true
+			}
+		}
+		total -= len(t.listings[oldest].entries)
+		delete(t.listings, oldest)
 	}
 	for total > maxRows && len(t.snapshots) > 0 {
 		var oldest string
@@ -301,7 +339,7 @@ func (t *Tree) makeRoom(rows int) {
 // reading the whole folder. The answer follows the rules of a listing, so both ways
 // always agree.
 func (t *Tree) named(ctx context.Context, c *Conn, folderID, name string) (*Row, error) {
-	l := &listing{byName: map[string]*Row{}, fold: c.P.CaseInsensitive()}
+	l := newListing(c.P.CaseInsensitive())
 
 	// An entry that carries the name as it is.
 	items, err := c.P.Named(ctx, folderID, name)
@@ -487,7 +525,7 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 
 	snap := &snapshot{
 		key:  listKey{conn: c.ID, gen: c.Generation, folder: parent.ContentID()},
-		user: c.UserID, path: path, order: o, rows: rows, omitted: l.omitted,
+		user: c.UserID, path: path, order: o, parent: parent, rows: rows, omitted: l.omitted,
 	}
 	id := ""
 	if len(rows) > size {
@@ -500,14 +538,12 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 		t.snapshots[id] = snap
 		t.mu.Unlock()
 	}
-	page := snap.page(id, 0, size)
-	page.Parent = parent
-	return page, nil
+	return snap.page(id, 0, size), nil
 }
 
 func (s *snapshot) page(id string, offset, size int) *Page {
 	end := min(offset+size, len(s.rows))
-	page := &Page{Rows: s.rows[offset:end], Total: len(s.rows), Omitted: s.omitted}
+	page := &Page{Parent: s.parent, Rows: s.rows[offset:end], Total: len(s.rows), Omitted: s.omitted}
 	if end < len(s.rows) {
 		page.Next = id + "." + strconv.Itoa(end)
 	}

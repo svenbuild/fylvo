@@ -236,4 +236,7 @@ func TestConnectedNeedsGroupPermission(t *testing.T) {
 	_, err = (&ConnectedFinishService{Code: "anything"}).Finish(c)
 	require.Equal(t, serializer.CodeConnectedUnavailable, appCode(err))
 	require.Equal(t, connected.ReasonNotAllowed, connected.ReasonOf(err))
+	c, _ = e.as(alex, "PATCH", "/api/v4/fylvo/connected/aaaaaaaaaaaaaaaa")
+	_, err = (&ConnectedRenameService{Name: "Photos"}).Rename(c, "aaaaaaaaaaaaaaaa")
+	require.Equal(t, connected.ReasonNotAllowed, connected.ReasonOf(err))
 }

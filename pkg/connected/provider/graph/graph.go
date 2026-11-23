@@ -181,6 +181,32 @@ func (c *client) Get(ctx context.Context, id string) (*provider.Item, error) {
 	return nil, &provider.Error{Kind: provider.KindNotFound}
 }
 
+func (c *client) Target(ctx context.Context, link *provider.Item) (*provider.Item, error) {
+	if link.Link == nil {
+		return nil, &provider.Error{Kind: provider.KindNotFound}
+	}
+	var entry driveItem
+	address := c.itemURL(link.Link.TargetDrive, link.Link.TargetID) + selectQuery(itemFields)
+	if err := c.caller.JSON(ctx, http.MethodGet, address, nil, &entry); err != nil {
+		return nil, err
+	}
+	// The answer is the item itself, not a link to it.
+	if entry.hidden() || entry.RemoteItem != nil || (entry.Folder != nil) != link.IsDir {
+		return nil, &provider.Error{Kind: provider.KindNotFound}
+	}
+	fresh := *link
+	fresh.Size, fresh.Hash, fresh.Version = entry.Size, "", ""
+	fresh.ModTime = entry.FileSystemInfo.LastModifiedDateTime
+	if fresh.ModTime.IsZero() {
+		fresh.ModTime = entry.LastModifiedDateTime
+	}
+	if entry.File != nil {
+		fresh.Hash = entry.File.Hashes.QuickXorHash
+		fresh.Version = entry.version()
+	}
+	return &fresh, nil
+}
+
 func (c *client) Open(ctx context.Context, item *provider.Item, rangeHeader string) (*provider.Content, error) {
 	if item.IsDir {
 		return nil, &provider.Error{Kind: provider.KindForbidden}

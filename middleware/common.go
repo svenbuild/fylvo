@@ -167,6 +167,12 @@ func Recovery() gin.HandlerFunc {
 			if err == nil {
 				return
 			}
+			if err == http.ErrAbortHandler {
+				// Fylvo: a handler that gives up in the middle of an answer. The server
+				// then cuts the connection, so the client does not take what it got so
+				// far for the whole answer.
+				panic(err)
+			}
 			l := logging.FromContext(c)
 			path := logging.RedactURL(logPath(c.Request))
 			if ne, ok := err.(*net.OpError); ok && connectionLost(ne) {

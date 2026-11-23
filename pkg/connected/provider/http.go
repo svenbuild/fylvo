@@ -9,9 +9,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -39,29 +39,82 @@ var RetryBase = time.Second
 // followed by itself, and connections to private, loopback and link-local addresses
 // are refused at the moment of dialing, whatever name led there.
 func NewHTTPClient() *http.Client {
-	dialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
-	// Behind a proxy the server only ever dials the proxy, which does the rest.
-	if os.Getenv("HTTPS_PROXY") == "" && os.Getenv("https_proxy") == "" {
-		dialer.Control = func(network, address string, _ syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return request.ErrUnsafeURL
-			}
-			return request.CheckDialIP(net.ParseIP(host))
+	return newHTTPClient(http.ProxyFromEnvironment)
+}
+
+// newHTTPClient is NewHTTPClient with the function that names the proxy of a request.
+func newHTTPClient(proxy func(*http.Request) (*url.URL, error)) *http.Client {
+	g := &guard{proxy: proxy}
+	plain := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
+	checked := *plain
+	checked.Control = func(_, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return request.ErrUnsafeURL
 		}
+		return request.CheckDialIP(net.ParseIP(host))
+	}
+	g.base = &http.Transport{
+		Proxy: g.proxyOf,
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			// The proxy of the operator may well sit in the local network. Every other
+			// address is checked at the moment of dialing, whatever name led there.
+			if _, isProxy := g.proxies.Load(address); isProxy {
+				return plain.DialContext(ctx, network, address)
+			}
+			return checked.DialContext(ctx, network, address)
+		},
+		ForceAttemptHTTP2:     true,
+		MaxIdleConnsPerHost:   8,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
 	}
 	return &http.Client{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			DialContext:           dialer.DialContext,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConnsPerHost:   8,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   15 * time.Second,
-			ResponseHeaderTimeout: 60 * time.Second,
-		},
+		Transport:     g,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
+}
+
+// guard is the transport of NewHTTPClient. It knows which addresses are proxies, and it
+// looks at the target of a request that goes through one.
+type guard struct {
+	base  *http.Transport
+	proxy func(*http.Request) (*url.URL, error)
+	// proxies holds the addresses ("host:port") of the proxies requests were sent to.
+	proxies sync.Map
+}
+
+// defaultPorts are the ports of a proxy address that names none.
+var defaultPorts = map[string]string{"http": "80", "https": "443", "socks5": "1080", "socks5h": "1080"}
+
+func (g *guard) proxyOf(req *http.Request) (*url.URL, error) {
+	u, err := g.proxy(req)
+	if err != nil || u == nil {
+		return u, err
+	}
+	port := u.Port()
+	if port == "" {
+		port = defaultPorts[u.Scheme]
+	}
+	g.proxies.Store(net.JoinHostPort(u.Hostname(), port), struct{}{})
+	return u, nil
+}
+
+func (g *guard) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Through a proxy it is the proxy that looks the name up and dials, so the check at
+	// the dial sees nothing of the target. What the address itself tells is checked here.
+	if u, err := g.proxy(req); err == nil && u != nil {
+		host := req.URL.Hostname()
+		if ip := net.ParseIP(host); ip != nil {
+			if err := request.CheckDialIP(ip); err != nil {
+				return nil, err
+			}
+		} else if strings.EqualFold(host, "localhost") {
+			return nil, request.ErrUnsafeURL
+		}
+	}
+	return g.base.RoundTrip(req)
 }
 
 // Classifier turns an error answer of a provider into an Error. body is the start of
@@ -179,8 +232,12 @@ func (c *Caller) Do(ctx context.Context, method, address string, header http.Hea
 			return res, nil
 		}
 
-		if res.StatusCode == http.StatusUnauthorized && !renewed {
+		if res.StatusCode == http.StatusUnauthorized {
 			res.Body.Close()
+			if renewed {
+				// Refused with a token that is brand new: the account has to sign in again.
+				return nil, &Error{Kind: KindReconnect, Status: res.StatusCode}
+			}
 			renewed, rejected = true, token
 			continue
 		}

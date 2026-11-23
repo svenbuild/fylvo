@@ -110,6 +110,7 @@ type Server struct {
 	tokens         []string
 	contentTokens  []string
 	failRevisions  bool
+	breakExports   bool
 	redirect       bool
 	calls          map[Call]int
 	usage, limit   int64
@@ -332,6 +333,14 @@ func (s *Server) FailRevisions(fail bool) {
 	s.failRevisions = fail
 }
 
+// BreakExports makes exports break off in the middle: a part of the content is sent,
+// then the connection is cut.
+func (s *Server) BreakExports(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.breakExports = on
+}
+
 // Redirect makes downloads answer with a redirect to a second server that serves the
 // content, as Drive does at times.
 func (s *Server) Redirect(on bool) {
@@ -430,7 +439,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			id = s.root
 		}
 		e, found := s.items[id]
-		if !found {
+		if !found || !s.keyGiven(r, e) {
 			writeError(w, http.StatusNotFound, "notFound", "File not found: "+id+".")
 			return
 		}
@@ -445,12 +454,24 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// keyGiven tells whether the request carries the resource key of e, if e needs one.
+func (s *Server) keyGiven(r *http.Request, e *entry) bool {
+	return e.resourceKey == "" || strings.Contains(r.Header.Get("X-Goog-Drive-Resource-Keys"), e.id+"/"+e.resourceKey)
+}
+
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	match, err := parseQuery(query.Get("q"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid", "Invalid Value")
 		return
+	}
+	// A folder that needs a resource key shows nothing to a request without it.
+	for _, e := range s.items {
+		if strings.Contains(query.Get("q"), "'"+e.id+"' in parents") && !s.keyGiven(r, e) {
+			writeJSON(w, map[string]any{"files": []any{}})
+			return
+		}
 	}
 	size := s.pageSize
 	if n, err := strconv.Atoi(query.Get("pageSize")); err == nil && n > 0 {
@@ -535,10 +556,6 @@ func (s *Server) media(w http.ResponseWriter, r *http.Request, e *entry, rev str
 		writeError(w, http.StatusForbidden, "fileNotDownloadable", "Only files with binary content can be downloaded.")
 		return
 	}
-	if e.resourceKey != "" && !strings.Contains(r.Header.Get("X-Goog-Drive-Resource-Keys"), e.id+"/"+e.resourceKey) {
-		writeError(w, http.StatusNotFound, "notFound", "File not found: "+e.id+".")
-		return
-	}
 	if rev == "" {
 		rev = e.revision
 	} else if _, ok := e.revisions[rev]; !ok || s.failRevisions {
@@ -580,6 +597,11 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request, e *entry) {
 	for _, f := range formats {
 		if f == mimeType {
 			w.Header().Set("Content-Type", mimeType)
+			if s.breakExports {
+				_, _ = fmt.Fprintf(w, "export of %s", e.id)
+				w.(http.Flusher).Flush()
+				panic(http.ErrAbortHandler)
+			}
 			_, _ = fmt.Fprintf(w, "export of %s as %s", e.id, mimeType)
 			return
 		}
