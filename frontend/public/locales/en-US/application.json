@@ -1242,6 +1242,7 @@
     "cannotRename": "Only a single file that may be changed can be renamed.",
     "nothingToUndo": "Nothing to undo.",
     "cannotUndo": "The last action cannot be undone. Copies and final deletes cannot be undone.",
-    "notInTrash": "The files are no longer in the trash. Nothing was restored."
+    "notInTrash": "The files are no longer in the trash. Nothing was restored.",
+    "changedSince": "The files have changed since. Nothing was undone."
   }
 }

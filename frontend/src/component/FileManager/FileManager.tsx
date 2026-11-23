@@ -138,7 +138,16 @@ export const FileManager = ({ index = 0, initialPath, skipRender }: FileManagerP
       }
       if (action) {
         e.preventDefault();
-        action();
+        // After the action (for example a question that closed and took the focus with the
+        // deleted card), the file view takes the focus back if nothing else has it.
+        const view = e.currentTarget;
+        Promise.resolve(action()).finally(() =>
+          setTimeout(() => {
+            if (!document.activeElement || document.activeElement == document.body) {
+              view.focus({ preventScroll: true });
+            }
+          }, 300),
+        );
       }
     },
     [dispatch, index],

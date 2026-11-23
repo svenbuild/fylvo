@@ -599,6 +599,7 @@ export function submitRenameFile(index: number, file: FileResponse, newName: str
         }),
       );
     } catch (e) {
+      rememberUndo({ kind: "none" });
       // Fylvo: in a connected storage the row may have changed at the provider; show its state.
       if (inConnectedStorage(file.path)) {
         dispatch(refreshFileList(index));
@@ -607,7 +608,10 @@ export function submitRenameFile(index: number, file: FileResponse, newName: str
     }
 
     if (newFile) {
-      rememberUndo({ kind: "rename", file: newFile, oldName: file.name });
+      // Fylvo: Ctrl+Z renames it back; not in a connected storage.
+      rememberUndo(
+        inConnectedStorage(file.path) ? { kind: "none" } : { kind: "rename", file: newFile, oldName: file.name },
+      );
       dispatch(
         fileUpdated({
           index,
@@ -730,7 +734,6 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
     dispatch(setFileDeleteModalLoading({ index, value: true }));
 
     let deleted = files;
-    const deleteStarted = Date.now();
     // Fylvo: a connected storage takes at most 100 entries per request, each with its row id.
     const connected = files.some((f) => inConnectedStorage(f.path));
     const groups = connected ? inGroups(files, connectedBatchSize) : [files];
@@ -751,6 +754,7 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
         if (!partialSuccess) {
           if (!connected) {
             dispatch(setFileDeleteModal({ index, value: [false, files, undefined, true] }));
+            rememberUndo({ kind: "none" });
             return;
           }
           // This group and the ones after it were not deleted.
@@ -774,9 +778,7 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
       !opt.unlink &&
       !opt.skip_soft_delete &&
       deleted.every((f) => new CrUri(f.path).fs() == Filesystem.my && !f.metadata?.[Metadata.restore_uri]);
-    rememberUndo(
-      toTrash && deleted.length > 0 ? { kind: "trash", files: deleted, since: deleteStarted } : { kind: "none" },
-    );
+    rememberUndo(toTrash && deleted.length > 0 ? { kind: "trash", files: deleted } : { kind: "none" });
 
     await dispatch(processFileListDiff(FileManagerIndex.main, deleted));
     await dispatch(processFileListDiff(FileManagerIndex.selector, deleted, false));

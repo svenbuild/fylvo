@@ -1,6 +1,6 @@
 import i18next from "i18next";
 import { enqueueSnackbar } from "notistack";
-import { getFileList } from "../../api/api.ts";
+import { getFileInfo, getFileList } from "../../api/api.ts";
 import { FileResponse, Metadata } from "../../api/explorer.ts";
 import { DefaultCloseAction } from "../../component/Common/Snackbar/snackbar.tsx";
 import { getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
@@ -11,7 +11,7 @@ import { Viewers } from "../siteConfigSlice.ts";
 import { AppThunk } from "../store.ts";
 import { deleteFile, fileDoubleClicked, isMacbook, moveFiles, restoreFile, submitRenameFile } from "./file.ts";
 import { navigateToPath, refreshFileList } from "./filemanager.ts";
-import { takeUndo } from "./undo.ts";
+import { takeUndo, withoutRecording } from "./undo.ts";
 
 // Fylvo: the keyboard shortcuts of the file manager (see useFileShortcuts). They use the same
 // actions and the same rules as the menus: what the menu does not offer, a key does not do either.
@@ -143,14 +143,8 @@ export function goUp(index: number): AppThunk {
   };
 }
 
-// The same file, also when one address names the owner and the other does not.
-const samePlace = (a: string, b: string) => {
-  const x = new CrUri(a);
-  const y = new CrUri(b);
-  return x.fs() == y.fs() && x.elements().join("/") == y.elements().join("/");
-};
-
-// Ctrl+Z: undo the last own rename, move or delete to the trash. When in doubt it does nothing.
+// Ctrl+Z: undo the last own rename, move or delete to the trash. When in doubt it does nothing:
+// each file must still be the same one (same id) where the action left it.
 export function undoLast(index: number): AppThunk {
   return async (dispatch) => {
     const entry = takeUndo();
@@ -158,37 +152,62 @@ export function undoLast(index: number): AppThunk {
       hint("nothingToUndo", "info");
       return;
     }
-    switch (entry.kind) {
-      case "none":
-        hint("cannotUndo", "info");
-        return;
-      case "rename":
-        await dispatch(submitRenameFile(index, entry.file, entry.oldName));
-        break;
-      case "move": {
-        const from = [...new Set(entry.files.map((f) => f.from))];
-        for (const folder of from) {
-          const files = entry.files.filter((f) => f.from == folder).map((f) => f.file);
-          await dispatch(moveFiles(index, files, folder, false));
-        }
-        // The open folder may be the one they come back to.
-        dispatch(refreshFileList(index));
-        break;
-      }
-      case "trash":
-        await dispatch(restoreFromTrash(index, entry.files, entry.since));
-        break;
+    if (entry.kind == "none") {
+      hint("cannotUndo", "info");
+      return;
     }
-    // The undo itself is not undone again.
-    takeUndo();
+    const files = entry.kind == "rename" ? [entry.file] : entry.kind == "move" ? entry.files.map((f) => f.file) : [];
+    for (const file of files) {
+      if (!(await dispatch(stillThere(file)))) {
+        hint("changedSince");
+        return;
+      }
+    }
+    await withoutRecording(async () => {
+      switch (entry.kind) {
+        case "rename":
+          await dispatch(submitRenameFile(index, entry.file, entry.oldName));
+          break;
+        case "move": {
+          const from = [...new Set(entry.files.map((f) => f.from))];
+          for (const folder of from) {
+            const back = entry.files.filter((f) => f.from == folder).map((f) => f.file);
+            await dispatch(moveFiles(index, back, folder, false));
+          }
+          // The open folder may be the one they come back to.
+          dispatch(refreshFileList(index));
+          break;
+        }
+        case "trash":
+          await dispatch(restoreFromTrash(index, entry.files));
+          break;
+      }
+    });
   };
 }
 
-// The files deleted last are the newest in the trash. Each one must be found there, among the
-// entries that came there since the delete started (a minute of leeway for the clocks of browser
-// and server), or nothing is restored. So an older file from the same place never comes back
-// instead, for example when the delete was final.
-function restoreFromTrash(index: number, files: FileResponse[], since: number): AppThunk<Promise<void>> {
+// Whether the file at file.path is still the one with file.id.
+function stillThere(file: FileResponse): AppThunk<Promise<boolean>> {
+  return async (dispatch) => {
+    try {
+      const now = await dispatch(getFileInfo({ uri: file.path }, true));
+      return now.id == file.id;
+    } catch (e) {
+      return false;
+    }
+  };
+}
+
+// The same place, also when one address names the owner and the other does not.
+const samePlace = (a: string, b: string) => {
+  const x = new CrUri(a);
+  const y = new CrUri(b);
+  return x.fs() == y.fs() && x.elements().join("/") == y.elements().join("/");
+};
+
+// A file keeps its id in the trash. Each deleted file must be found there by its id and the place
+// it came from, or nothing is restored.
+function restoreFromTrash(index: number, files: FileResponse[]): AppThunk<Promise<void>> {
   return async (dispatch) => {
     let trashed: FileResponse[];
     try {
@@ -209,7 +228,7 @@ function restoreFromTrash(index: number, files: FileResponse[], since: number): 
     const found = files.map((f) =>
       trashed.find((t) => {
         const from = t.metadata?.[Metadata.restore_uri];
-        return !!from && samePlace(from, f.path) && Date.parse(t.updated_at) >= since - 60 * 1000;
+        return t.id == f.id && !!from && samePlace(from, f.path);
       }),
     );
     if (found.some((f) => !f)) {
