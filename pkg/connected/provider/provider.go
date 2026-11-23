@@ -39,6 +39,9 @@ type Item struct {
 	Native string
 	// WebURL opens the item at the provider.
 	WebURL string
+	// ResourceKey is what some items of Google Drive need, besides their id, to be
+	// reached. Empty for all others.
+	ResourceKey string
 	// Link is set for an entry that points to another item: a Drive shortcut or a
 	// OneDrive item of another drive.
 	Link *Link
@@ -99,6 +102,10 @@ type Provider interface {
 	Named(ctx context.Context, folderID, name string) ([]Item, error)
 	// Get returns the entry with the given id, KindNotFound when it is gone or trashed.
 	Get(ctx context.Context, id string) (*Item, error)
+	// Known tells the provider about an entry it handed out earlier, before calls
+	// that name the entry by its id alone. A provider that needs more than the id to
+	// reach an item keeps that from it; the others do nothing.
+	Known(item *Item)
 	// Target returns link, an entry that points to another item, with the size, time,
 	// version, revision and checksum of that item as it is now. A listing does not
 	// tell these. KindNotFound when the target is gone.

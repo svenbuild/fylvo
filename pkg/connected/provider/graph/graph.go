@@ -29,7 +29,10 @@ type Options struct {
 }
 
 type client struct {
-	caller  provider.Caller
+	caller provider.Caller
+	// remote sends the calls about items in other drives. An answer there says
+	// something about that item, never that the connection itself was refused.
+	remote  provider.Caller
 	baseURL string
 	driveID string
 
@@ -56,17 +59,17 @@ func New(o Options) provider.Provider {
 	httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	return &client{
-		caller: provider.Caller{
-			HTTP:      &httpClient,
-			Auth:      o.Auth,
-			Classify:  classify,
-			AllowHTTP: o.BaseURL != "",
-		},
-		baseURL: baseURL,
-		driveID: o.DriveID,
-	}
+	caller := provider.Caller{HTTP: &httpClient, Auth: o.Auth, Classify: classify, AllowHTTP: o.BaseURL != ""}
+	remote := caller
+	remote.Auth = tokenOnly{o.Auth}
+	return &client{caller: caller, remote: remote, baseURL: baseURL, driveID: o.DriveID}
 }
+
+// tokenOnly is an Auth that hands out tokens and takes no other message.
+type tokenOnly struct{ provider.Auth }
+
+// Known does nothing: an id is all it takes to reach an item of OneDrive.
+func (c *client) Known(*provider.Item) {}
 
 func segment(value string) string {
 	switch value {
@@ -187,7 +190,7 @@ func (c *client) Target(ctx context.Context, link *provider.Item) (*provider.Ite
 	}
 	var entry driveItem
 	address := c.itemURL(link.Link.TargetDrive, link.Link.TargetID) + selectQuery(itemFields)
-	if err := c.caller.JSON(ctx, http.MethodGet, address, nil, &entry); err != nil {
+	if err := c.remote.JSON(ctx, http.MethodGet, address, nil, &entry); err != nil {
 		return nil, err
 	}
 	// The answer is the item itself, not a link to it.
@@ -211,11 +214,10 @@ func (c *client) Open(ctx context.Context, item *provider.Item, rangeHeader stri
 	if item.IsDir {
 		return nil, &provider.Error{Kind: provider.KindForbidden}
 	}
-	driveID := c.driveID
 	if item.Link != nil {
-		driveID = item.Link.TargetDrive
+		return c.remote.Download(ctx, c.itemURL(item.Link.TargetDrive, item.ContentID())+"/content", rangeHeader)
 	}
-	return c.caller.Download(ctx, c.itemURL(driveID, item.ContentID())+"/content", rangeHeader)
+	return c.caller.Download(ctx, c.itemURL(c.driveID, item.ID)+"/content", rangeHeader)
 }
 
 func (c *client) Export(context.Context, *provider.Item, string) (*provider.Content, error) {

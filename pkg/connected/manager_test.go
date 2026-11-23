@@ -453,6 +453,13 @@ func TestNothingIsStoredForAnAccountThatIsGone(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, rows)
 
+	_, _, err = f.Authorize(ctx, 7, ProviderDrive, "", testRedirect)
+	require.Equal(t, ReasonExpired, ReasonOf(err), "no sign-in starts for an account that is gone")
+	gone := f.Leaving(9)
+	_, _, err = f.Authorize(ctx, 9, ProviderDrive, "", testRedirect)
+	require.Equal(t, ReasonExpired, ReasonOf(err), "nor for one that is being removed")
+	gone()
+
 	// Deleting an account also ends the sign-ins it has under way.
 	address, cookie, err = f.Authorize(ctx, 8, ProviderDrive, "", testRedirect)
 	require.NoError(t, err)

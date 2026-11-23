@@ -462,7 +462,20 @@ func ServeConnectedContent(c *gin.Context) {
 	}
 	defer done()
 
+	// A download waits for its place before the file is looked at, so the look is not
+	// minutes old when the bytes are read. HEAD reads no bytes and needs no place.
+	if c.Request.Method != http.MethodHead {
+		release, err := connected.AcquireStream(ctx)
+		if err != nil {
+			c.Header("Retry-After", "5")
+			c.AbortWithStatus(http.StatusServiceUnavailable)
+			return
+		}
+		defer release()
+	}
+
 	item := grant.Item.ProviderItem()
+	conn.P.Known(item)
 	// The file as it is now. A grant is for one state of one item: when the content
 	// changed since, the client has to ask for a new address. For a link that is the
 	// state of what it points to, and it must still point there.
@@ -505,14 +518,6 @@ func ServeConnectedContent(c *gin.Context) {
 		c.Writer.WriteHeaderNow()
 		return
 	}
-
-	release, err := connected.AcquireStream(ctx)
-	if err != nil {
-		c.Header("Retry-After", "5")
-		c.AbortWithStatus(http.StatusServiceUnavailable)
-		return
-	}
-	defer release()
 
 	var content *provider.Content
 	if item.Native != "" {

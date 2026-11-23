@@ -2,6 +2,8 @@ package fylvo
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/url"
 
@@ -167,16 +169,28 @@ func (s *ConnectedAuthorizeService) Authorize(c *gin.Context) (*ConnectedAuthori
 		return nil, err
 	}
 
-	setConnectedCookie(c, dep, cookie, connectedCookieAge)
+	setConnectedCookie(c, dep, connectedCookieName(address), cookie, connectedCookieAge)
 	return &ConnectedAuthorizeResponse{URL: address}, nil
+}
+
+// connectedCookieName is the name of the cookie of one sign-in, from an address that
+// carries its state: the consent address, or the callback as the provider calls it. Each
+// sign-in has its own, so two that are started side by side do not take each other's.
+func connectedCookieName(address string) string {
+	state := ""
+	if u, err := url.Parse(address); err == nil {
+		state = u.Query().Get("state")
+	}
+	sum := sha256.Sum256([]byte(state))
+	return connectedCookie + "_" + hex.EncodeToString(sum[:8])
 }
 
 // setConnectedCookie sets or, with a negative age, removes the cookie of a sign-in. It is
 // sent only to the callback, never readable by scripts, and only over https when the
 // installation runs on https (TLS usually ends at a proxy, so the request does not tell).
-func setConnectedCookie(c *gin.Context, dep dependency.Dep, value string, age int) {
+func setConnectedCookie(c *gin.Context, dep dependency.Dep, name, value string, age int) {
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     connectedCookie,
+		Name:     name,
 		Value:    value,
 		Path:     connectedCallbackPath,
 		MaxAge:   age,
@@ -190,8 +204,9 @@ func setConnectedCookie(c *gin.Context, dep dependency.Dep, value string, age in
 // redirect to the web app, which completes the sign-in as the signed-in account.
 func ConnectedCallback(c *gin.Context) {
 	dep := dependency.FromContext(c)
-	cookie, _ := c.Cookie(connectedCookie)
-	setConnectedCookie(c, dep, "", -1)
+	name := connectedCookieName(c.Request.URL.String())
+	cookie, _ := c.Cookie(name)
+	setConnectedCookie(c, dep, name, "", -1)
 
 	target := primarySiteURL(c, dep).ResolveReference(&url.URL{Path: connectedSettingsPage})
 	q := url.Values{"tab": {"connected"}}

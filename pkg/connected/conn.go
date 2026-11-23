@@ -307,6 +307,10 @@ func (l *liveConn) refresh(ctx context.Context, current *Token) (*Token, error) 
 // markReconnect notes that the connection has to be connected again, for the generation
 // this token belongs to. A connection renewed meanwhile is left alone.
 func (l *liveConn) markReconnect(ctx context.Context) {
+	// Callers hold the lock of the token: a database that stalls must not hold up
+	// every call of the connection for good.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	marked, err := l.m.storages.UpdateStatus(ctx, l.rowID, l.generation, inventory.ConnectedStatusReconnect,
 		"The provider no longer accepts the stored access.")
 	if err != nil || !marked {
