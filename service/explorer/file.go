@@ -350,12 +350,12 @@ func (service *FileUpdateService) PutContent(c *gin.Context, ls fs.LockSession) 
 		return nil, serializer.NewError(serializer.CodeParamErr, "invalid content length", err)
 	}
 
-	if fileSize > settings.MaxOnlineEditSize(c) {
-		return nil, fs.ErrFileSizeTooBig
-	}
 	// Fylvo: a connected storage saves through an upload session at its provider.
 	if uri, ok := connectedURI(service.Uri); ok {
-		return connectedPutContent(c, uri, service, rc, fileSize)
+		return connectedPutContent(c, uri, service, rc, fileSize, settings.MaxOnlineEditSize(c))
+	}
+	if fileSize > settings.MaxOnlineEditSize(c) {
+		return nil, fs.ErrFileSizeTooBig
 	}
 
 	uri, err := fs.NewUriFromString(service.Uri)

@@ -952,3 +952,189 @@ func TestUploadSessionsPerAccount(t *testing.T) {
 	_, err := e.start("one too many.txt", 0, UploadRequest{})
 	require.Equal(t, serializer.CodeConnectedBusy, codeOf(err))
 }
+
+// A provider that says "go on" for bytes that never left this server is not believed:
+// it is asked what it has, and the chunk is sent again.
+func TestUploadGoOnForBytesNeverSent(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		data := payload(2*testChunk + 1000)
+		info, err := e.start("a.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodPut || !strings.HasPrefix(r.Header.Get("Content-Range"), "bytes 0-") {
+				return nil, nil
+			}
+			_, _ = io.CopyN(io.Discard, r.Body, 100)
+			if e.d != nil {
+				return &http.Response{StatusCode: http.StatusPermanentRedirect, Body: http.NoBody,
+					Header: http.Header{"Range": {fmt.Sprintf("bytes=0-%d", testChunk-1)}}}, nil
+			}
+			return &http.Response{StatusCode: http.StatusAccepted, Header: http.Header{"Content-Type": {"application/json"}},
+				Body: io.NopCloser(strings.NewReader(fmt.Sprintf(`{"nextExpectedRanges":["%d-"]}`, testChunk)))}, nil
+		}
+		_, err = e.chunk(info.ID, 0, data)
+		require.Equal(t, serializer.CodeConnectedBusy, codeOf(err))
+		e.http.hook = nil
+		require.Zero(t, e.status(info.ID).Received)
+
+		row, err := e.send(info.ID, 0, data)
+		require.NoError(t, err)
+		require.NotNil(t, row)
+		require.Equal(t, data, e.content("a.bin"))
+	})
+}
+
+// A receipt from Drive that cannot be for this upload leaves the outcome unknown: one
+// that comes before the whole tail left this server, and one that does not say what
+// kind of entry was stored.
+func TestUploadDriveReceiptThatProvesNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		read int64
+		mime string
+	}{
+		{"before the tail left", 100, `"mimeType":"application/octet-stream",`},
+		{"without a kind", 1 << 20, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newUploadEnv(t, ProviderDrive)
+			data := payload(testChunk + 1000)
+			info, err := e.start("a.bin", len(data), UploadRequest{})
+			require.NoError(t, err)
+			_, err = e.chunk(info.ID, 0, data)
+			require.NoError(t, err)
+
+			sum := md5.Sum(data)
+			e.http.hook = func(r *http.Request) (*http.Response, error) {
+				if !isLastRange(r, len(data)) {
+					return nil, nil
+				}
+				_, _ = io.CopyN(io.Discard, r.Body, tc.read)
+				receipt := fmt.Sprintf(`{"id":"forged","name":"a.bin",%s"size":"%d","md5Checksum":"%s"}`, tc.mime, len(data), hex.EncodeToString(sum[:]))
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+					Body: io.NopCloser(strings.NewReader(receipt))}, nil
+			}
+			_, err = e.chunk(info.ID, 1, data)
+			require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+			require.Equal(t, UploadUnknown, e.status(info.ID).State)
+		})
+	}
+}
+
+// A database that does not answer is told as that, not as a session that is gone: a
+// client waiting for the outcome of an upload asks again.
+func TestUploadStatusWhenTheDatabaseFails(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	info, err := e.start("a.bin", 1000, UploadRequest{})
+	require.NoError(t, err)
+	require.NoError(t, e.f.db.Close())
+	_, err = e.f.UploadStatus(context.Background(), 7, info.ID)
+	require.Equal(t, serializer.CodeDBError, codeOf(err))
+}
+
+// An empty file is created with a request to the provider like any other: it waits for
+// one of the places.
+func TestUploadEmptyFileTakesAPlace(t *testing.T) {
+	e := newUploadEnv(t, ProviderOneDrive)
+	before := uploadWait
+	uploadWait = time.Millisecond
+	t.Cleanup(func() { uploadWait = before })
+
+	info, err := e.start("empty.txt", 0, UploadRequest{})
+	require.NoError(t, err)
+	e.f.uploads.sem <- struct{}{}
+	e.f.uploads.sem <- struct{}{}
+	_, err = e.chunk(info.ID, 0, nil)
+	require.ErrorIs(t, err, ErrBusy)
+	require.Equal(t, UploadReceiving, e.status(info.ID).State)
+
+	<-e.f.uploads.sem
+	row, err := e.chunk(info.ID, 0, nil)
+	require.NoError(t, err)
+	require.NotNil(t, row)
+}
+
+// A change the provider did not answer may still be carried out there. Until that is
+// settled its name stays closed, so a second request cannot make a second entry with it.
+func TestNameStaysClosedAfterAnUnclearChange(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	answer := func(status int) {
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/files") {
+				return nil, nil
+			}
+			if status == 0 {
+				return nil, errors.New("connection reset")
+			}
+			return &http.Response{StatusCode: status, Header: http.Header{}, Body: http.NoBody}, nil
+		}
+	}
+
+	// A clear no closes nothing.
+	answer(http.StatusBadRequest)
+	_, err := e.f.CreateEntry(e.ctx, e.conn, "Plain", true, true)
+	require.Error(t, err)
+	e.http.hook = nil
+	_, err = e.f.CreateEntry(e.ctx, e.conn, "Plain", true, true)
+	require.NoError(t, err)
+
+	// No answer at all: the name is closed, in every spelling, and only this name.
+	answer(0)
+	_, err = e.f.CreateEntry(e.ctx, e.conn, "Work", true, true)
+	require.Error(t, err)
+	e.http.hook = nil
+	_, err = e.f.CreateEntry(e.ctx, e.conn, "Work", true, true)
+	require.ErrorIs(t, err, ErrBusy)
+	_, err = e.f.CreateEntry(e.ctx, e.conn, "work", false, true)
+	require.ErrorIs(t, err, ErrBusy)
+	_, err = e.start("WORK", 1000, UploadRequest{})
+	require.ErrorIs(t, err, ErrBusy)
+	_, err = e.f.CreateEntry(e.ctx, e.conn, "Other", true, true)
+	require.NoError(t, err)
+
+	// After a while it is open again.
+	now := e.f.uploads.now
+	e.f.uploads.now = func() time.Time { return now().Add(unsettledFor + time.Second) }
+	_, err = e.f.CreateEntry(e.ctx, e.conn, "Work", true, true)
+	require.NoError(t, err)
+}
+
+// "Slow down" to the last range of an upload is a clear no: the last chunk is sent
+// again, and the upload does not end as unknown.
+func TestUploadLastRangeToldToSlowDown(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		data := payload(testChunk + 1000)
+		info, err := e.start("a.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+		_, err = e.chunk(info.ID, 0, data)
+		require.NoError(t, err)
+
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if !isLastRange(r, len(data)) {
+				return nil, nil
+			}
+			_, _ = io.Copy(io.Discard, r.Body)
+			return &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}, Body: http.NoBody}, nil
+		}
+		_, err = e.chunk(info.ID, 1, data)
+		require.Equal(t, serializer.CodeConnectedBusy, codeOf(err))
+		e.http.hook = nil
+		require.Equal(t, UploadReceiving, e.status(info.ID).State)
+
+		row, err := e.chunk(info.ID, 1, data)
+		require.NoError(t, err)
+		require.NotNil(t, row)
+		require.Equal(t, data, e.content("a.bin"))
+	})
+}
+
+// "Create folder X" where X is a link to a folder does not answer with the link as if
+// it were the folder that was asked for.
+func TestCreateWhereALinkHasTheName(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	target := e.d.AddFolder("", "Target")
+	e.d.AddShortcut("", "Team", target)
+	_, err := e.f.CreateEntry(e.ctx, e.conn, "Team", true, false)
+	require.ErrorIs(t, err, ErrNameTaken)
+}

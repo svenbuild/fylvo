@@ -663,3 +663,56 @@ func TestOddNamesAndTimes(t *testing.T) {
 		t.Fatalf("time of the row: %v", page.Rows[0].ModTime)
 	}
 }
+
+// waitingProvider answers the first listing only when the test lets it.
+type waitingProvider struct {
+	*memProvider
+	once    sync.Once
+	reading chan struct{}
+	goOn    chan struct{}
+}
+
+func (p *waitingProvider) Children(ctx context.Context, folderID, page string) (*provider.Page, error) {
+	res, err := p.memProvider.Children(ctx, folderID, page)
+	p.once.Do(func() {
+		close(p.reading)
+		<-p.goOn
+	})
+	return res, err
+}
+
+// A folder is written to while a listing of it is on its way back from the provider.
+// The listing is from before the write: nobody after it gets it, and it has no next page.
+func TestWriteWhileAFolderIsRead(t *testing.T) {
+	p := &waitingProvider{memProvider: newMem(false), reading: make(chan struct{}), goOn: make(chan struct{})}
+	p.file("root", "old.txt", 1)
+	p.file("root", "other.txt", 1)
+	tree, c, ctx := NewTree(), memConn(p), context.Background()
+
+	first := make(chan *Page, 1)
+	go func() {
+		page, _ := tree.List(ctx, c, "", Order{By: "name"}, 1, "")
+		first <- page
+	}()
+	<-p.reading
+	p.mu.Lock()
+	p.children["root"][0].Name = "new.txt"
+	p.mu.Unlock()
+	tree.Changed(c, "root")
+	close(p.goOn)
+
+	page := <-first
+	if page == nil || page.Next == "" {
+		t.Fatalf("the listing that began before the write is answered: %+v", page)
+	}
+	if _, err := tree.List(ctx, c, "", Order{By: "name"}, 1, page.Next); !errors.Is(err, ErrListingGone) {
+		t.Fatalf("its next page is gone, got %v", err)
+	}
+	page, err := tree.List(ctx, c, "", Order{By: "name"}, 10, "")
+	if err != nil || rowNames(page.Rows) != "new.txt|other.txt" {
+		t.Fatalf("the next listing shows the write: %v %v", page, err)
+	}
+	if len(tree.reads) != 0 {
+		t.Fatalf("no read is left noted: %d", len(tree.reads))
+	}
+}

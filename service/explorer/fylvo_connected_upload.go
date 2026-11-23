@@ -114,7 +114,13 @@ func connectedCancelUpload(c *gin.Context, uri *fs.URI, s *DeleteUploadSessionSe
 // connectedPutContent answers PUT /file/content: one request that runs a whole upload
 // session, from the start to the commit. The body is passed on chunk by chunk as it
 // arrives.
-func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body io.Reader, size int64) (*FileResponse, error) {
+func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body io.Reader, size, limit int64) (*FileResponse, error) {
+	// Whoever throws away what is left of the body after an error does not wait for a
+	// client that stands still.
+	defer func() { _ = http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(connectedIdle)) }()
+	if size > limit {
+		return nil, fs.ErrFileSizeTooBig
+	}
 	if len(uri.U.Query()) > 0 {
 		return nil, connected.Error(c, connected.ErrBadPath)
 	}
@@ -129,9 +135,6 @@ func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body
 		return nil, err
 	}
 	defer req.done()
-	// Whoever throws away what is left of the body after an error does not wait for a
-	// client that stands still.
-	defer func() { _ = http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(connectedIdle)) }()
 
 	info, err := req.m.StartUpload(req.ctx, req.conn, connected.UploadRequest{
 		Path:             req.path,

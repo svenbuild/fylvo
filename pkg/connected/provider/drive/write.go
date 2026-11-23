@@ -31,11 +31,13 @@ var _ provider.Writer = (*client)(nil)
 var fileFields = "fields=" + url.QueryEscape(itemFields)
 
 func (c *client) CreateFolder(ctx context.Context, parentID, name string) (*provider.Item, error) {
-	return c.create(ctx, parentID, map[string]any{"name": name, "mimeType": folderType, "parents": []string{parentID}})
+	var f file
+	return c.create(ctx, parentID, map[string]any{"name": name, "mimeType": folderType, "parents": []string{parentID}}, &f)
 }
 
 func (c *client) CreateEmpty(ctx context.Context, parentID, name string) (*provider.Item, error) {
-	item, err := c.create(ctx, parentID, map[string]any{"name": name, "parents": []string{parentID}})
+	var f file
+	item, err := c.create(ctx, parentID, map[string]any{"name": name, "parents": []string{parentID}}, &f)
 	if err == nil && (item.IsDir || item.Native != "" || item.Link != nil) {
 		// Not the answer for a plain file: what was made is open.
 		return nil, &provider.Error{Kind: provider.KindOpen}
@@ -43,14 +45,14 @@ func (c *client) CreateEmpty(ctx context.Context, parentID, name string) (*provi
 	return item, err
 }
 
-// create adds an entry to a folder. Drive allows several entries with one name in a
-// folder, so a taken name is no error here: the package above checks names first.
-func (c *client) create(ctx context.Context, parentID string, meta map[string]any) (*provider.Item, error) {
-	var f file
-	if err := c.change(c.keyed(ctx, parentID), http.MethodPost, c.api+"files?"+fileFields, meta, &f); err != nil {
+// create adds an entry to a folder and reads Drive's answer into f. Drive allows several
+// entries with one name in a folder, so a taken name is no error here: the package above
+// checks names first.
+func (c *client) create(ctx context.Context, parentID string, meta map[string]any, f *file) (*provider.Item, error) {
+	if err := c.change(c.keyed(ctx, parentID), http.MethodPost, c.api+"files?"+fileFields, meta, f); err != nil {
 		return nil, err
 	}
-	return c.changed(&f)
+	return c.changed(f)
 }
 
 func (c *client) Update(ctx context.Context, id string, change provider.Change) (*provider.Item, error) {
@@ -69,7 +71,11 @@ func (c *client) Update(ctx context.Context, id string, change provider.Change) 
 	}
 	var f file
 	address := c.api + "files/" + url.PathEscape(id) + "?" + query.Encode()
-	if err := c.change(c.keyed(ctx, id), http.MethodPatch, address, meta, &f); err != nil {
+	ctx = c.keyed(ctx, id)
+	if change.Parent != "" {
+		ctx = c.keyed(ctx, change.Parent)
+	}
+	if err := c.change(ctx, http.MethodPatch, address, meta, &f); err != nil {
 		return nil, err
 	}
 	return c.changed(&f)
@@ -241,6 +247,10 @@ func refusal(err error) error {
 	if errors.As(err, &e) && (e.Kind == provider.KindExists || e.Kind == provider.KindStale) {
 		e.Kind = provider.KindOther
 	}
+	if errors.As(err, &e) && (e.Status == http.StatusTooManyRequests || e.Code == "rateLimitExceeded" || e.Code == "userRateLimitExceeded") {
+		// "Slow down": Drive took nothing of the range, and it can be sent again.
+		e.Kind = provider.KindRetry
+	}
 	return err
 }
 
@@ -310,7 +320,7 @@ func receipt(res *http.Response) (*provider.Item, error) {
 		return nil, &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}
 	}
 	item, ok := f.item()
-	if !ok || item.IsDir {
+	if !ok || item.IsDir || f.MimeType == "" {
 		return nil, &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}
 	}
 	return &item, nil

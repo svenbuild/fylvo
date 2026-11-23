@@ -122,6 +122,8 @@ type Manager struct {
 	leaving map[int]int
 	// writes holds one lock per account at a provider (Conn.AccountKey), see write.go.
 	writes sync.Map
+	// unsettled are the names a change with an open outcome was about (see write.go).
+	unsettled openNames
 }
 
 func NewManager(o ManagerOptions) *Manager {

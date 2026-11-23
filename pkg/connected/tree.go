@@ -195,6 +195,28 @@ type Tree struct {
 	mu        sync.Mutex
 	listings  map[listKey]*listing
 	snapshots map[string]*snapshot
+	// reads are the folders being read right now.
+	reads map[*reading]struct{}
+}
+
+// reading is a read of a folder under way. A write to the folder marks it: what was
+// read may be from before the write, so it is not kept for anybody who asks later.
+type reading struct {
+	key     listKey
+	changed bool
+}
+
+// read notes that a folder is being read from now on. The returned function ends that.
+func (t *Tree) read(key listKey) (*reading, func()) {
+	r := &reading{key: key}
+	t.mu.Lock()
+	t.reads[r] = struct{}{}
+	t.mu.Unlock()
+	return r, func() {
+		t.mu.Lock()
+		delete(t.reads, r)
+		t.mu.Unlock()
+	}
 }
 
 func NewTree() *Tree {
@@ -203,6 +225,7 @@ func NewTree() *Tree {
 		sem:       make(chan struct{}, parallelListings),
 		listings:  map[listKey]*listing{},
 		snapshots: map[string]*snapshot{},
+		reads:     map[*reading]struct{}{},
 	}
 }
 
@@ -285,6 +308,8 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 		return l, nil
 	}
 
+	r, done := t.read(key)
+	defer done()
 	l := newListing(c.P.CaseInsensitive())
 	for page, pages := "", 0; ; pages++ {
 		p, err := c.P.Children(ctx, folderID, page)
@@ -319,6 +344,11 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 	// it before it cleared this memory, so nothing of it comes back here.
 	if c.ended() {
 		return nil, context.Canceled
+	}
+	if r.changed {
+		// Written to while it was read: good for this call, which began before the
+		// write, and for nobody after it.
+		return l, nil
 	}
 	t.sweep()
 	t.makeRoom(len(l.entries))
@@ -568,6 +598,9 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 	if !parent.Enterable() {
 		return nil, ErrNotFound
 	}
+	key := listKey{conn: c.ID, gen: c.Generation, folder: parent.ContentID()}
+	r, done := t.read(key)
+	defer done()
 	l, err := t.load(ctx, c, parent.ContentID())
 	if err != nil {
 		return nil, err
@@ -579,7 +612,7 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 	sortRows(rows, o)
 
 	snap := &snapshot{
-		key:  listKey{conn: c.ID, gen: c.Generation, folder: parent.ContentID()},
+		key:  key,
 		user: c.UserID, path: path, order: o, parent: parent, rows: rows, viaLink: parent.ViaLink,
 		omitted: l.omitted,
 	}
@@ -592,10 +625,14 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 			t.mu.Unlock()
 			return nil, context.Canceled
 		}
-		t.sweep()
-		t.makeRoom(len(rows))
-		snap.lastUsed = t.now()
-		t.snapshots[id] = snap
+		// A write to the folder since this began ended the listing before its first
+		// page: it is not kept, and its next page answers ErrListingGone.
+		if !r.changed {
+			t.sweep()
+			t.makeRoom(len(rows))
+			snap.lastUsed = t.now()
+			t.snapshots[id] = snap
+		}
 		t.mu.Unlock()
 	}
 	if c.ended() {
@@ -651,6 +688,11 @@ func (t *Tree) Changed(c *Conn, folderIDs ...string) {
 		for id, s := range t.snapshots {
 			if s.key == key {
 				delete(t.snapshots, id)
+			}
+		}
+		for r := range t.reads {
+			if r.key == key {
+				r.changed = true
 			}
 		}
 	}

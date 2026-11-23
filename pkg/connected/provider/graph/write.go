@@ -234,6 +234,9 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 		}
 	case http.StatusNotFound, http.StatusPreconditionFailed, http.StatusInsufficientStorage:
 		return nil, provider.ByStatus(res.StatusCode, res.Header, nil)
+	case http.StatusTooManyRequests:
+		// "Slow down": nothing of the range was taken, and it can be sent again.
+		return nil, &provider.Error{Kind: provider.KindRetry, Status: res.StatusCode}
 	case http.StatusForbidden:
 		// A storage that is full can also answer like this. Any other "no" here says
 		// nothing certain about what was stored.

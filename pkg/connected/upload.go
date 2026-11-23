@@ -287,14 +287,18 @@ func (s *uploads) sweep() (expired []*upload) {
 
 // cancelAll ends sessions that were taken out of use, whose work locks the caller holds.
 func cancelAll(expired []*upload) {
+	// They have their outcome. The locks go back first: a request for one of them must
+	// not wait while a provider that does not answer is told about the others.
 	for _, u := range expired {
 		u.held = nil
+		u.work.Unlock()
+	}
+	for _, u := range expired {
 		if u.up != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 			_ = u.up.Cancel(ctx)
 			cancel()
 		}
-		u.work.Unlock()
 	}
 }
 
@@ -442,6 +446,10 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 			return nil, ErrTargetGone
 		}
 		if err := checkNewName(name); err != nil {
+			return nil, err
+		}
+		// Not while a change about this name may still be on its way at the provider.
+		if err := m.settled(c, u.folderID, name); err != nil {
 			return nil, err
 		}
 		err = nil
@@ -666,6 +674,11 @@ func (m *Manager) receive(ctx context.Context, u *upload, body io.Reader, start,
 		watch.Stop()
 		limit.Stop()
 		stop()
+		if err == nil && r.handed() < send {
+			// The provider says it has bytes that never left this server. What it has
+			// is open: it is asked.
+			err = &provider.Error{Kind: provider.KindOther}
+		}
 		if err != nil {
 			return m.sendFailed(ctx, u, err)
 		}
@@ -816,6 +829,13 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	}
 	defer m.writing(c)()
 	defer m.tree.Changed(c, u.folderID)
+	// A new file that may still be on its way into the storage keeps its name closed
+	// for a while, like any change with an open outcome.
+	defer func() {
+		if state, _, _ := u.outcome(); state == UploadUnknown && u.replace == "" {
+			m.unsettle(c, u.folderID, u.name)
+		}
+	}()
 
 	// The wait for the lock can have been long. A storage that was disconnected or
 	// connected again meanwhile gets nothing: the tail never leaves this server.
@@ -831,6 +851,13 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	if callCtx.Err() != nil {
 		return nil, m.fail(ctx, u, ErrUploadGone)
 	}
+	// The commit is a request to the provider like any other: it takes one of the
+	// places, which was given back while this waited for the lock.
+	release, err := m.uploads.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if u.up == nil {
 		item, err := w.CreateEmpty(callCtx, u.folderID, u.name)
 		switch {
@@ -844,24 +871,26 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 		case provider.KindOf(err) == provider.KindReconnect || provider.KindOf(err) == provider.KindSetup:
 			// Refused before anything was asked of the storage: it can be tried again.
 			return nil, Error(ctx, err)
+		case provider.KindOf(err) == provider.KindRetry:
+			// Refused before anything was done, for a reason that is gone.
+			return nil, ErrSendAgain
 		}
 		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
 		return nil, ErrOutcomeUnknown
 	}
 
-	// The last range is a request to the provider like any other: it takes one of the
-	// places, which was given back while this waited for the lock.
-	release, err := m.uploads.acquire(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 	tail := &cutReader{r: bytes.NewReader(u.held)}
 	item, err := u.up.Send(callCtx, u.next, tail, int64(len(u.held)))
 	tail.cut()
 	left := tail.handed()
 	u.sentTo = max(u.sentTo, u.next+left)
 	switch {
+	case err == nil && item != nil && left < int64(len(u.held)):
+		// A receipt for a file whose end never left this server. Whatever was stored,
+		// it is not known to be this upload.
+		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
+		u.held = nil
+		return nil, ErrOutcomeUnknown
 	case err == nil && item != nil:
 		return m.finish(u, item, true)
 	case refused(err):
@@ -983,7 +1012,13 @@ func (m *Manager) UploadStatus(ctx context.Context, userID int, id string) (*Upl
 	// Only while the storage is connected as it was when the upload started. It may
 	// need a new sign-in by now: the outcome of an upload is told all the same, it is
 	// what a client that lost an answer is waiting for.
-	if row, err := m.row(ctx, userID, u.conn); err != nil || row.Generation != u.generation {
+	row, err := m.row(ctx, userID, u.conn)
+	if err != nil {
+		// Also when the database did not answer: that is told as what it is, so a
+		// client waiting for an outcome asks again.
+		return nil, err
+	}
+	if row.Generation != u.generation {
 		return nil, ErrNoStorage
 	}
 	u.mu.Lock()

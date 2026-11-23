@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -75,6 +76,66 @@ func (m *Manager) writing(c *Conn) (done func()) {
 	return lock.(*sync.Mutex).Unlock
 }
 
+// unsettledFor is how long a name stays closed after a change about it whose outcome is
+// open: the provider may still be carrying it out.
+const unsettledFor = 2 * time.Minute
+
+// openNames are names a change was about that the provider did not answer clearly, with
+// the time each opens again. Until then nothing new gets such a name: a second request
+// would find it free while the first is still on its way, and a provider that does not
+// keep names unique would end up with both.
+type openNames struct {
+	mu    sync.Mutex
+	until map[string]time.Time
+}
+
+func nameKey(c *Conn, folderID, name string) string {
+	return c.AccountKey + "\x00" + folderID + "\x00" + strings.ToLower(name)
+}
+
+// unsettle closes a name in a folder for a while. The caller holds the lock of the account.
+func (m *Manager) unsettle(c *Conn, folderID, name string) {
+	now := m.uploads.now()
+	m.unsettled.mu.Lock()
+	defer m.unsettled.mu.Unlock()
+	if m.unsettled.until == nil {
+		m.unsettled.until = map[string]time.Time{}
+	}
+	for key, until := range m.unsettled.until {
+		if !now.Before(until) {
+			delete(m.unsettled.until, key)
+		}
+	}
+	m.unsettled.until[nameKey(c, folderID, name)] = now.Add(unsettledFor)
+}
+
+// settled answers ErrBusy for a name that is closed right now.
+func (m *Manager) settled(c *Conn, folderID, name string) error {
+	m.unsettled.mu.Lock()
+	defer m.unsettled.mu.Unlock()
+	if until, closed := m.unsettled.until[nameKey(c, folderID, name)]; closed && m.uploads.now().Before(until) {
+		return ErrBusy
+	}
+	return nil
+}
+
+// unclear tells whether a failed change may have been carried out all the same, or may
+// still be: the answer was lost, time ran out, or the provider failed while it worked.
+// A clear "no" of the provider is not unclear.
+func unclear(err error) bool {
+	if err == nil {
+		return false
+	}
+	var e *provider.Error
+	if !errors.As(err, &e) {
+		return true
+	}
+	if e.Status >= 400 && e.Status < 500 {
+		return false
+	}
+	return e.Kind == provider.KindOther || e.Kind == provider.KindBusy || e.Kind == provider.KindOpen
+}
+
 // folder resolves the folder something is to be put into.
 func (m *Manager) folder(ctx context.Context, c *Conn, path string) (*Row, error) {
 	row, err := m.tree.ResolveNow(ctx, c, path)
@@ -131,7 +192,7 @@ func (m *Manager) nameFree(ctx context.Context, c *Conn, folderID, name, self st
 	row, err := m.tree.named(ctx, c, folderID, name)
 	switch {
 	case errors.Is(err, ErrNotFound):
-		return nil
+		return m.settled(c, folderID, name)
 	case errors.Is(err, ErrAmbiguous):
 		return ErrNameTaken
 	case err != nil:
@@ -177,13 +238,17 @@ func (m *Manager) CreateEntry(ctx context.Context, c *Conn, path string, dir, er
 	existing, err := m.tree.named(ctx, c, parent.ContentID(), name)
 	switch {
 	case errors.Is(err, ErrNotFound):
+		if err := m.settled(c, parent.ContentID(), name); err != nil {
+			return nil, err
+		}
 	case errors.Is(err, ErrAmbiguous):
 		return nil, ErrNameTaken
 	case err != nil:
 		return nil, err
 	case existing.Name != name:
 		return nil, ErrCaseTaken
-	case errOnConflict || existing.IsDir != dir || existing.Native != "":
+	case errOnConflict || existing.IsDir != dir || existing.Native != "" || existing.Link != nil:
+		// Also a link to a folder: it is not a folder anything can be put into.
 		return nil, ErrNameTaken
 	default:
 		existing.Path, existing.ViaLink = path, existing.Link != nil
@@ -198,6 +263,9 @@ func (m *Manager) CreateEntry(ctx context.Context, c *Conn, path string, dir, er
 	}
 	m.tree.Changed(c, parent.ContentID())
 	if err != nil {
+		if unclear(err) {
+			m.unsettle(c, parent.ContentID(), name)
+		}
 		return nil, err
 	}
 	return rowOf(item, path), nil
@@ -229,6 +297,9 @@ func (m *Manager) RenameEntry(ctx context.Context, c *Conn, src Source, newName 
 	item, err := w.Update(ctx, row.ID, provider.Change{Name: newName})
 	m.tree.Changed(c, parent.ContentID())
 	if err != nil {
+		if unclear(err) {
+			m.unsettle(c, parent.ContentID(), newName)
+		}
 		return nil, err
 	}
 	return rowOf(item, joinPath(parentPath, newName)), nil
@@ -282,6 +353,9 @@ func (m *Manager) move(ctx context.Context, c *Conn, w provider.Writer, src Sour
 	}
 	_, err = w.Update(ctx, row.ID, provider.Change{Parent: target.ContentID(), OldParent: parent.ContentID()})
 	m.tree.Changed(c, parent.ContentID())
+	if unclear(err) {
+		m.unsettle(c, target.ContentID(), row.Name)
+	}
 	return err
 }
 
