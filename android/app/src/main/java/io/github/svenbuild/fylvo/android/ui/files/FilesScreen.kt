@@ -160,6 +160,10 @@ fun FilesScreen(
     val groupShare = accountState.group(Permissions.GROUP_SHARE)
     /** Fylvo: the file whose shares are listed ("Manage shares"). */
     var sharesOfTarget by remember { mutableStateOf<FileObject?>(null) }
+    /** Fylvo 1.6: a share link that needs its password (kept in memory only). */
+    var linkPassword by remember { mutableStateOf<LinkPasswordAsk?>(null) }
+    var linkBusy by remember { mutableStateOf(false) }
+
 
     /**
      * Fylvo 1.6: the further actions of one file, the same in its sheet and in the selection menu
@@ -267,6 +271,45 @@ fun FilesScreen(
     fun closeSearch() {
         viewModel.clearSearch()
         searchOpenedFrom = null
+    }
+
+    /**
+     * Fylvo 1.6: opens the share [id] of a link of the signed-in server, with [typed] as its
+     * password; asks for one when needed (design/android-parity-plan.md, 3).
+     */
+    fun openShareLink(id: String, typed: String) {
+        if (linkBusy) return
+        linkBusy = true
+        val tag = app.sessionManager.sessionTag()
+        scope.launch {
+            try {
+                runCatching { app.account.ensureLoaded() }
+                val info = app.shares.visit(id, typed)
+                if (!app.sessionManager.isCurrent(tag)) return@launch
+                val account = app.account.state.value
+                when (val d = io.github.svenbuild.fylvo.android.util.ShareLinks.decide(id, info, typed, account.me?.id, account.group(Permissions.GROUP_SHARE_DOWNLOAD))) {
+                    is io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.NeedPassword -> linkPassword = LinkPasswordAsk(id, d.name, d.wrong)
+                    io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.NotAllowed -> snackbar.showSnackbar(context.getString(R.string.link_not_allowed))
+                    is io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.Open -> {
+                        linkPassword = null
+                        accountOpen = false
+                        offlineOpen = false
+                        customizeOpen = false
+                        page = null
+                        viewModel.clearSelection()
+                        if (inSearch) closeSearch()
+                        CrUri.nameShare(d.root, d.name)
+                        viewModel.openPlace(d.root)
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                snackbar.showSnackbar(io.github.svenbuild.fylvo.android.util.userError(e).resolve(context))
+            } finally {
+                linkBusy = false
+            }
+        }
     }
 
     /** Fylvo: "Bearbeiten": the working copy goes to an editor; a message when none takes it. */
@@ -642,6 +685,9 @@ fun FilesScreen(
                 page = null
                 viewModel.openPlace(if (request.folder) request.uri else CrUri.parent(request.uri))
             }
+            is io.github.svenbuild.fylvo.android.data.prefs.Incoming.ShareLink -> openShareLink(request.id, request.password)
+            io.github.svenbuild.fylvo.android.data.prefs.Incoming.ForeignLink ->
+                snackbar.showSnackbar(context.getString(R.string.link_not_own_server))
         }
     }
 
@@ -791,6 +837,22 @@ fun FilesScreen(
                     extras = homeExtras,
                     swipeFor = { swipeFor(it, limited = true) },
                 )
+                // Fylvo 1.6: a pasted link is opened, not searched for.
+                inSearch && io.github.svenbuild.fylvo.android.util.ShareLinks.looksLikeLink(state.searchQuery.orEmpty()) -> {
+                    val serverBase by produceState("") { value = app.sessionManager.serverUrlNow() }
+                    val ref = io.github.svenbuild.fylvo.android.util.ShareLinks.parse(state.searchQuery.orEmpty(), serverBase)
+                    Column(Modifier.fillMaxSize()) {
+                        if (ref != null) ListItem(
+                            modifier = Modifier.clickable(enabled = !linkBusy) { openShareLink(ref.id, ref.password) },
+                            headlineContent = { Text(stringResource(R.string.open_share_link)) },
+                            supportingContent = { Text(stringResource(R.string.open_share_link_hint)) },
+                            leadingContent = { Icon(Icons.Outlined.Link, contentDescription = null) },
+                        ) else if (serverBase.isNotEmpty()) EmptyState(
+                            icon = Icons.Outlined.Link,
+                            title = stringResource(R.string.link_not_own_server),
+                        )
+                    }
+                }
                 inSearch -> SearchResults(
                     state = state,
                     viewModel = viewModel,
@@ -841,7 +903,13 @@ fun FilesScreen(
                         EmptyState(
                             icon = Icons.Outlined.FolderOpen,
                             title = stringResource(R.string.folder_empty),
-                            detail = if (state.canAddHere) stringResource(R.string.folder_empty_hint) else null,
+                            detail = when {
+                                state.canAddHere -> stringResource(R.string.folder_empty_hint)
+                                // Fylvo 1.6: an upload link with a password: the app cannot upload there.
+                                CrUri.hasSecret(state.currentUri) && Permissions.enabled(state.parent?.capability, Permissions.UPLOAD_FILE) ->
+                                    stringResource(R.string.link_upload_password)
+                                else -> null
+                            },
                         )
                     }
                     Category.TRASH -> EmptyState(icon = Icons.Outlined.Delete, title = stringResource(R.string.trash_empty), detail = stringResource(R.string.trash_empty_hint))
@@ -984,6 +1052,14 @@ fun FilesScreen(
         message = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
         canEdit = groupShare == true,
     )
+    linkPassword?.let { ask ->
+        LinkPasswordDialog(
+            ask = ask,
+            busy = linkBusy,
+            onOpen = { pw -> openShareLink(ask.id, pw) },
+            onDismiss = { linkPassword = null },
+        )
+    }
     sharesOfTarget?.let { file ->
         FileSharesSheet(file, shareActions, onDismiss = { sharesOfTarget = null; viewModel.refresh() })
     }

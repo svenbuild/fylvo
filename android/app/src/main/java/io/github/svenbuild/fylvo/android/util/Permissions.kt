@@ -17,7 +17,9 @@ object Permissions {
     /** May create folders and upload into this folder. */
     fun canAddTo(folder: FileObject?): Boolean =
         if (folder != null && Connected.isConnected(folder.path)) Connected.canCreateIn(folder) || Connected.canUploadTo(folder)
-        else folder != null && writable(folder) && (shareCapability(folder, UPLOAD_FILE) ?: (folder.owned == true))
+        // Fylvo 1.6: not into a link with a password (the upload queue would have to keep it).
+        else folder != null && writable(folder) && !CrUri.hasSecret(folder.path) &&
+            (shareCapability(folder, UPLOAD_FILE) ?: (folder.owned == true))
 
     /** May rename, move, delete or overwrite this file. */
     fun canModifyFile(file: FileObject): Boolean =

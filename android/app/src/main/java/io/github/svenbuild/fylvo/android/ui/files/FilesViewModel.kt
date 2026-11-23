@@ -79,7 +79,8 @@ fun offlineUriOf(file: FileObject): String = file.sharedRedirect ?: file.path
 fun canKeepOffline(file: FileObject): Boolean {
     val uri = offlineUriOf(file)
     val place = (CrUri.root(uri) == CrUri.MY_PREFIX && !CrUri.isRoot(uri)) || CrUri.isShare(uri)
-    return place && !file.isUploading
+    // Fylvo 1.6: an address with a share password never goes into the offline store.
+    return place && !file.isUploading && !CrUri.hasSecret(uri)
 }
 
 /**
@@ -1292,6 +1293,12 @@ class FilesViewModel(
     /** Called as the user types; results are fetched after a short pause. */
     fun search(query: String) {
         _state.value = _state.value.copy(searchQuery = query)
+        // Fylvo 1.6: a pasted link is offered to open (FilesScreen), never searched for.
+        if (io.github.svenbuild.fylvo.android.util.ShareLinks.looksLikeLink(query)) {
+            searchJob?.cancel()
+            _state.update { it.copy(files = emptyList(), loading = false) }
+            return
+        }
         runSearch(debounceMs = 300)
     }
 

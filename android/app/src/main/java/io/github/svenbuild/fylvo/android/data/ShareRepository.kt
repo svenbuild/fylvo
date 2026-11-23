@@ -133,6 +133,13 @@ class ShareRepository(private val api: ApiClient) {
 
     suspend fun delete(id: String) = api.service().deleteShare(id).unwrapEmpty()
 
+    /**
+     * Fylvo: a share as its visitor sees it, unlocked with [password] when it fits (a wrong one
+     * answers `unlocked: false`). Without redirects: the password is in the address.
+     */
+    suspend fun visit(id: String, password: String): ShareInfo =
+        api.authService().shareDetails(id, password = password.ifEmpty { null }).unwrap()
+
     /** The current state of own share [id] (the owner is always unlocked). */
     suspend fun details(id: String): ShareInfo = api.service().shareDetails(id).unwrap()
 

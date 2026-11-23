@@ -94,6 +94,23 @@ class MainActivity : AppCompatActivity() {
                 intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
             else -> null
         }
+        // Fylvo 1.6: a shared text with a link (no file): a share link of the signed-in server opens
+        // in the app; any other link only gets a message. The intent is cleared once handled.
+        if (intent?.action == Intent.ACTION_SEND && uris.isNullOrEmpty()) {
+            val url = intent.getStringExtra(Intent.EXTRA_TEXT)?.let(io.github.svenbuild.fylvo.android.util.ShareLinks::findUrl)
+            if (url != null) {
+                setIntent(Intent(this, MainActivity::class.java))
+                lifecycleScope.launch {
+                    if (!app.sessionManager.isLoggedIn.first()) return@launch
+                    val ref = io.github.svenbuild.fylvo.android.util.ShareLinks.parse(url, app.sessionManager.serverUrlNow())
+                    io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.session = app.sessionManager.sessionTag()
+                    io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value =
+                        ref?.let { io.github.svenbuild.fylvo.android.data.prefs.Incoming.ShareLink(it.id, it.password) }
+                            ?: io.github.svenbuild.fylvo.android.data.prefs.Incoming.ForeignLink
+                }
+                return
+            }
+        }
         // Fylvo: only content:// documents of other apps, never file:// or our own providers.
         val accepted = uris.orEmpty().filter { UploadWorker.isForeignContentUri(this, it) }
         if (accepted.isNotEmpty()) {

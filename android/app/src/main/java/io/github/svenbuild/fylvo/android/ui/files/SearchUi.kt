@@ -119,7 +119,7 @@ fun SearchResults(
                 FilterChip(
                     selected = state.searchScope != null,
                     onClick = { viewModel.setSearchScope(openedFrom) },
-                    label = { Text(CrUri.fileName(openedFrom)) },
+                    label = { Text(CrUri.displayName(openedFrom)) },
                 )
                 FilterChip(
                     selected = state.searchScope == null,

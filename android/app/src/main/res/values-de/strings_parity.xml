@@ -59,4 +59,13 @@
     <!-- Fehler -->
     <string name="error_group_not_allowed">Dein Konto darf das nicht.</string>
     <string name="error_share_password">Das Passwort dieser Freigabe ist falsch oder nicht mehr gültig.</string>
+
+    <!-- Freigabe-Links öffnen -->
+    <string name="open_share_link">Freigabe öffnen</string>
+    <string name="open_share_link_hint">Der Link gehört zu deinem Server</string>
+    <string name="link_not_own_server">Dieser Link gehört nicht zu deinem Server.</string>
+    <string name="link_not_allowed">Dein Konto darf keine Freigaben öffnen.</string>
+    <string name="link_password_needed">Diese Freigabe ist mit einem Passwort geschützt.</string>
+    <string name="link_password_wrong">Das Passwort passt nicht. Versuche es nochmals.</string>
+    <string name="link_upload_password">In einen Link mit Passwort kann die App nicht hochladen.</string>
 </resources>

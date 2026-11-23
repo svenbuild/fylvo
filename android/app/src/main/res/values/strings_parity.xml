@@ -59,4 +59,13 @@
     <!-- Errors -->
     <string name="error_group_not_allowed">Your account may not do this.</string>
     <string name="error_share_password">The password of this share is wrong or no longer valid.</string>
+
+    <!-- Opening share links -->
+    <string name="open_share_link">Open share</string>
+    <string name="open_share_link_hint">The link belongs to your server</string>
+    <string name="link_not_own_server">This link does not belong to your server.</string>
+    <string name="link_not_allowed">Your account may not open shares.</string>
+    <string name="link_password_needed">This share is protected with a password.</string>
+    <string name="link_password_wrong">The password does not fit. Try again.</string>
+    <string name="link_upload_password">Uploading into a link with a password is not possible in the app.</string>
 </resources>
