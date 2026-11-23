@@ -122,6 +122,7 @@ class FileRepository(private val api: ApiClient) {
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
     } catch (e: ApiException) {
+        // Not found: gone. Login needed or server trouble: no answer now (asked again later).
         if (e.code == ApiException.CODE_PATH_NOT_EXIST) false else if (e.isTransient) null else false
     } catch (_: Exception) {
         null

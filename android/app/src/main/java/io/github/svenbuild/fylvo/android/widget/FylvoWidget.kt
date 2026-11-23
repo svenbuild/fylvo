@@ -111,9 +111,10 @@ object FylvoWidget {
         views.setOnClickPendingIntent(R.id.widget_upload, action(context, FylvoActions.UPLOAD, 2))
         views.setTextViewText(R.id.widget_fav_title, text.getString(R.string.favorites))
         val height = manager.getAppWidgetOptions(id)?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT) ?: 0
-        val tall = height >= TALL_DP
+        // As tall as at least one favourite row needs.
         // As many rows as fit below the search bar and the title (60 + 30 dp), 36 dp each.
         val rows = ((height - 90) / 36).coerceIn(0, SLOTS)
+        val tall = height >= TALL_DP && rows > 0
         val stored = read(context)
         val slots = listOf(
             Triple(R.id.widget_fav1, R.id.widget_fav1_icon, R.id.widget_fav1_name),
@@ -128,7 +129,7 @@ object FylvoWidget {
             !tall -> null
             stored == null -> text.getString(R.string.widget_signed_out)
             stored.unsupported -> null
-            entries.isEmpty() -> text.getString(R.string.no_favorites)
+            stored.entries.isEmpty() -> text.getString(R.string.no_favorites)
             else -> null
         }
         views.setViewVisibility(R.id.widget_hint, if (hint != null) View.VISIBLE else View.GONE)

@@ -55,6 +55,8 @@ data class AccountPrefsState(
     val restored: Boolean = false,
     /** The last load reached no answer (network, server trouble). */
     val loadFailed: Boolean = false,
+    /** The favourites could not be loaded the last time they were asked for. */
+    val favoritesFailed: Boolean = false,
 ) {
     val favoriteIds: Set<String> get() = prefs?.favorites?.toSet().orEmpty()
     val usable: Boolean get() = prefs != null && supported != false
@@ -186,6 +188,7 @@ class AccountPrefsRepository(
                         prefs = prefs.value,
                         supported = true,
                         favorites = favorites ?: it.favorites,
+                        favoritesFailed = favorites == null,
                         tags = tags ?: it.tags,
                         accents = accents,
                         disableViewSync = settings?.disableViewSync ?: it.disableViewSync,
@@ -335,7 +338,7 @@ class AccountPrefsRepository(
         if (prefs != null && session.isCurrent(tag)) _state.update { it.copy(prefs = prefs) }
         val favorites = (call(tag) { api.service().favorites(tag) } as? Outcome.Found)?.value
         val tags = (call(tag) { api.service().tags(tag) } as? Outcome.Found)?.value
-        if (session.isCurrent(tag)) _state.update { it.copy(favorites = favorites ?: it.favorites, tags = tags ?: it.tags) }
+        if (session.isCurrent(tag)) _state.update { it.copy(favorites = favorites ?: it.favorites, favoritesFailed = favorites == null, tags = tags ?: it.tags) }
         if (favorites != null || tags != null) saveCache(tag, accountKey())
     }
 

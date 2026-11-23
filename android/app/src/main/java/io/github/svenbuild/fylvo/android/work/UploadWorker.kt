@@ -491,19 +491,22 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 )
             )
         }
+        // Fylvo: what the provider says about the file first, so the folder check below is the
+        // last step before the upload session.
+        val mime = runCatching { applicationContext.contentResolver.getType(uri) }.getOrNull()
+        val modified = lastModifiedOf(uri) ?: tmp.lastModified()
         beforeSend()?.let { stop ->
             tmp.delete()
             return stop
         }
         return try {
-            val mime = applicationContext.contentResolver.getType(uri)
             // Fylvo: a connected session that is gone stored nothing (40011): sent again once at once.
             var tries = 0
             while (true) {
                 try {
                     app.fileRepository.uploadFile(
                         tmp, parentUri, remoteName = item.name, overwrite = overwrite, mimeType = mime,
-                        lastModified = lastModifiedOf(uri) ?: tmp.lastModified(),
+                        lastModified = modified,
                         onSession = { sessionId, target, _ -> onSession(sessionId, target, tmp.length()) }, onProgress = onProgress,
                     )
                     break

@@ -193,8 +193,15 @@ fun SwipeSection(prefs: FylvoPrefs, repo: AccountPrefsRepository, showMessage: (
                                 .fillMaxWidth()
                                 .clickable {
                                     choosing = null
-                                    val next = if (right) swipe.copy(right = action) else swipe.copy(left = action)
-                                    scope.launch { showMessage(repo.updateMobile { MobilePrefs.withSwipe(it, next) }) }
+                                    // Only this direction, set on what the server has now (another change stays).
+                                    scope.launch {
+                                        showMessage(
+                                            repo.updateMobile { fresh ->
+                                                val now = MobilePrefs.swipe(fresh)
+                                                MobilePrefs.withSwipe(fresh, if (right) now.copy(right = action) else now.copy(left = action))
+                                            },
+                                        )
+                                    }
                                 }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,

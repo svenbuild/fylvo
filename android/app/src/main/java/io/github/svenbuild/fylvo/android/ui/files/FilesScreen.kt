@@ -124,6 +124,7 @@ fun FilesScreen(
     var sheetTarget by remember { mutableStateOf<FileObject?>(null) }
     /** Fylvo: the sheet shows a favourite from the cached list: only what needs no current path. */
     var sheetFromFavorites by remember { mutableStateOf(false) }
+    LaunchedEffect(sheetTarget) { if (sheetTarget == null) sheetFromFavorites = false }
     var preview by remember { mutableStateOf<Pair<List<FileObject>, Int>?>(null) }
     var renameTarget by remember { mutableStateOf<FileObject?>(null) }
     var deleteTarget by remember { mutableStateOf<FileObject?>(null) }
@@ -552,6 +553,12 @@ fun FilesScreen(
             is io.github.svenbuild.fylvo.android.data.prefs.Place.Storage -> viewModel.openPlace(storageUri(tab))
         }
     }
+    /** Fylvo: [goUp]; without a Home tab "up" never ends on the hidden home page, but on the start tab. */
+    fun goUpOrStart() {
+        goUp()
+        if (viewModel.state.value.home && io.github.svenbuild.fylvo.android.data.prefs.Place.Home !in tabs) selectTab(startTab)
+    }
+
     /** Fylvo: back at the top of a tab: to the start tab (at the start tab the app is left). */
     val backToStart = io.github.svenbuild.fylvo.android.data.prefs.Navigation.backAtTabRoot(currentTab, startTab)
 
@@ -619,7 +626,7 @@ fun FilesScreen(
             state.selecting -> viewModel.clearSelection()
             inSearch -> closeSearch()
             atTabRoot -> backToStart?.let(::selectTab)
-            else -> goUp()
+            else -> goUpOrStart()
         }
     }
 
@@ -667,7 +674,7 @@ fun FilesScreen(
                     showSort = !state.virtual,
                     viewMode = state.effectiveMode,
                     sort = state.activeSort,
-                    onBack = { goUp() },
+                    onBack = { goUpOrStart() },
                     onSearch = { openSearch() },
                     onToggleView = { viewModel.toggleViewMode() },
                     onSort = { viewModel.sortBy(it) },
@@ -1124,7 +1131,7 @@ fun FilesScreen(
             onOpenOffline = { offlineOpen = true },
             onOpenCustomize = { customizeOpen = true },
             // Account is a tab: back goes to the start tab like every other tab.
-            onBack = { backToStart?.let(::selectTab) ?: run { accountOpen = false } },
+            onBack = { selectTab(startTab) },
             bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
         )
     }
@@ -1153,7 +1160,7 @@ fun FilesScreen(
             actionsFor = pageActions,
             bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
             swipeFor = { swipeFor(it, limited = true) },
-            loadFailed = prefsState.loadFailed,
+            loadFailed = prefsState.loadFailed || prefsState.favoritesFailed,
             onRetry = { scope.launch { prefsRepo.refreshFavorites(); prefsRepo.refresh() } },
         )
     }
@@ -1262,6 +1269,8 @@ fun FilesScreen(
                         else scope.launch {
                             val id = runCatching { app.fileRepository.folderInfo(dst) }.getOrNull()
                                 ?.takeIf { it.isFolder && it.owned == true }?.id
+                            // Only for this share and while nothing else was chosen meanwhile.
+                            if (io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value !== uris || io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.shareTarget.value != null) return@launch
                             if (id != null) choose(ShareTarget(dst, id)) else shareNotice = context.getString(R.string.share_folder_unchecked)
                         }
                     }
@@ -1296,7 +1305,8 @@ fun FilesScreen(
                         val same = target.id?.let { app.fileRepository.folderIdMatches(target.uri, it) } ?: true
                         if (same == false) {
                             shareBusy = false
-                            choose(null)
+                            // Only the target that was checked is dropped, not a newer choice.
+                            if (io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.shareTarget.value == (target.uri to target.id)) choose(null)
                             shareNotice = context.getString(R.string.share_folder_changed)
                             return@launch
                         }

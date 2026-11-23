@@ -378,3 +378,16 @@ class PlainNameTest {
         org.junit.Assert.assertEquals("upload.bin", f("  "))
     }
 }
+
+class NavigationRound4Test {
+    @org.junit.Test
+    fun nestedShortcutsAndStart() {
+        val outer = Place.Link("cloudreve://my/Projects", "Projects")
+        val inner = Place.Link("cloudreve://my/Projects/Archive", "Archive")
+        val tabs = listOf(Place.Files, outer, inner, Place.Account)
+        org.junit.Assert.assertEquals(inner, Navigation.activeTab(Where(uri = "cloudreve://my/Projects/Archive/2026"), tabs, listOf(outer, inner), null))
+        org.junit.Assert.assertEquals(outer, Navigation.activeTab(Where(uri = "cloudreve://my/Projects/Other"), tabs, listOf(outer, inner), null))
+        // Account and Offline are never the start tab.
+        org.junit.Assert.assertEquals(Place.Files, Navigation.startTab("", listOf(Place.Account, Place.Offline, Place.Files)))
+    }
+}

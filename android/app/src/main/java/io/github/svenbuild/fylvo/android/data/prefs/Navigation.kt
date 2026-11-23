@@ -38,9 +38,9 @@ object Navigation {
             ?: Place.Files
     }
 
-    private fun linkOf(uri: String, links: List<Place.Link>): Place.Link? = links.firstOrNull { link ->
-        if (CrUri.isSearch(link.uri)) uri == link.uri else uri == link.uri || uri.startsWith(link.uri.trimEnd('/') + "/")
-    }
+    private fun linkOf(uri: String, links: List<Place.Link>): Place.Link? =
+        links.firstOrNull { it.uri == uri }
+            ?: links.filter { !CrUri.isSearch(it.uri) && uri.startsWith(it.uri.trimEnd('/') + "/") }.maxByOrNull { it.uri.length }
 
     /**
      * The active tab: the place itself when it is a tab; a place opened from the chips (or a page
@@ -84,7 +84,8 @@ object Navigation {
     fun startTab(startPage: String?, tabs: List<Place>): Place = when {
         startPage == "my_files" && Place.Files in tabs -> Place.Files
         Place.Home in tabs -> Place.Home
-        else -> tabs.firstOrNull() ?: Place.Files
+        // Account and Offline are pages of the account, never where the app starts.
+        else -> tabs.firstOrNull { it != Place.Account && it != Place.Offline } ?: Place.Files
     }
 
     /** What "back" does at the top of the active tab: go to the start tab, or leave the app. */
