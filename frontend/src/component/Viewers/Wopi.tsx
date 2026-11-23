@@ -105,6 +105,7 @@ const Wopi = () => {
     }
   };
 
+  // Fylvo: bound again for a new session, so the editor's requests name its own file.
   useEffect(() => {
     if (!viewerState || !viewerState.open) {
       submitedRef.current = false;
@@ -115,7 +116,6 @@ const Wopi = () => {
     return () => {
       window.removeEventListener("message", handlePostMessage, false);
     };
-    // Fylvo: bound again for a new session, so the editor's requests name its own file.
   }, [viewerState?.open, viewerState?.session?.id]);
 
   const onClose = useCallback(() => {

@@ -9,6 +9,16 @@ const archiveViewer = "archive";
 // Fylvo: in a connected storage only viewers that read the file through its address work, and
 // the Office editor of the server (it opens its own session for the file); the archive viewer
 // needs a file of this server.
+// The type an Office viewer has to handle: for a file its extension ("" for a name without a
+// dot, as the server sees it), undefined for a folder or the place of a new document from a
+// template, which take any Office viewer ("show all" lists every viewer).
+const officeType = (file: FileResponse) => {
+  if (file.type != FileType.file) {
+    return undefined;
+  }
+  return file.name.includes(".") ? fileExtension(file.name) ?? "" : "";
+};
+
 // The Office editor needs the file itself: not a shortcut, a document of the provider or a row
 // that cannot be used.
 export const usableViewers = (file: FileResponse, viewers?: Viewer[]) => {
@@ -21,10 +31,7 @@ export const usableViewers = (file: FileResponse, viewers?: Viewer[]) => {
     Metadata.connected_external_url,
     Metadata.connected_unsupported,
   ].some((key) => file.metadata?.[key] !== undefined);
-  // For a file an Office viewer also only for its own types ("show all" lists every viewer); a
-  // folder (the place of a new document from a template) has no type.
-  // A name without a dot has no type (as the server sees it).
-  const ext = file.type == FileType.file ? (file.name.includes(".") ? fileExtension(file.name) ?? "" : "") : undefined;
+  const ext = officeType(file);
   return (viewers ?? []).filter(
     (v) =>
       v.id != archiveViewer &&
