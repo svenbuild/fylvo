@@ -178,6 +178,7 @@ type Server struct {
 	thumbnailRedirect bool
 	thumbnailSizes    []string
 	thumbnailStatus   int
+	onThumbnail       func()
 	contentStatus     int
 
 	sessions    map[string]*session
@@ -483,6 +484,13 @@ func (s *Server) RefuseThumbnails(status int) {
 	s.thumbnailStatus = status
 }
 
+// OnThumbnail sets what runs when a preview is fetched, before it is answered.
+func (s *Server) OnThumbnail(f func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onThumbnail = f
+}
+
 // RefuseContent makes the content server answer every request with the given status, 0
 // to serve again.
 func (s *Server) RefuseContent(status int) {
@@ -712,6 +720,9 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, f)
 		case CallThumbnail:
 			s.thumbnailSizes = append(s.thumbnailSizes, rev)
+			if s.onThumbnail != nil {
+				s.onThumbnail()
+			}
 			switch picture := e.preview(); {
 			case s.thumbnailStatus != 0:
 				w.WriteHeader(s.thumbnailStatus)

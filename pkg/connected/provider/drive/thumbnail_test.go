@@ -136,11 +136,15 @@ func TestThumbnailKeepsTheTokenAtHome(t *testing.T) {
 	assert.Equal(t, provider.KindBusy, provider.KindOf(err))
 	assert.Zero(t, auth.Renewals())
 	s.RefuseThumbnails(0)
-	// The same for a refusal by the host the image host sends the request on to.
+	// A refusal by the host the image host sends the request on to: no token went
+	// there, so none is renewed. It comes back as the plain answer it was.
 	s.RedirectThumbnails(true)
 	s.RefuseContent(http.StatusUnauthorized)
 	_, err = thumbs.Thumbnail(ctx, item, 400)
-	assert.Equal(t, provider.KindForbidden, provider.KindOf(err))
+	var refused *provider.Error
+	require.ErrorAs(t, err, &refused)
+	assert.Equal(t, http.StatusUnauthorized, refused.Status)
+	assert.Equal(t, provider.KindOther, refused.Kind)
 	assert.Zero(t, auth.Renewals())
 	s.RefuseContent(0)
 	s.RedirectThumbnails(false)

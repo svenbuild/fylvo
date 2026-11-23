@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -139,6 +140,9 @@ func TestThumbnailThatIsNone(t *testing.T) {
 		"the provider has none":   func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: provider.KindNotFound} },
 		"not for this account":    func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: provider.KindForbidden} },
 		"it lies somewhere else":  func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: provider.KindUnsafe} },
+		"refused after a redirect": func(*provider.Item, int) ([]byte, error) {
+			return nil, &provider.Error{Kind: provider.KindOther, Status: http.StatusUnauthorized}
+		},
 		"a page instead":          func(*provider.Item, int) ([]byte, error) { return []byte("<html><body>Sign in</body></html>"), nil },
 		"a picture of other kind": func(*provider.Item, int) ([]byte, error) { return []byte("GIF89a\x01\x00\x01\x00\x00\x00\x00;"), nil },
 		"nothing":                 func(*provider.Item, int) ([]byte, error) { return nil, nil },
@@ -170,8 +174,12 @@ func TestThumbnailThatIsNone(t *testing.T) {
 func TestThumbnailTroubleIsNotRemembered(t *testing.T) {
 	m, p, conn, dir := thumbFixture(t)
 	item := &provider.Item{ID: "file-1", Version: "r:1"}
-	for _, kind := range []provider.Kind{provider.KindBusy, provider.KindStale, provider.KindReconnect} {
-		p.answer = func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: kind} }
+	for _, kind := range []provider.Kind{provider.KindBusy, provider.KindStale, provider.KindReconnect, provider.KindOther} {
+		// Reconnect comes with the status of the refusal that led to it: that is about
+		// the connection and never "no preview".
+		p.answer = func(*provider.Item, int) ([]byte, error) {
+			return nil, &provider.Error{Kind: kind, Status: map[provider.Kind]int{provider.KindReconnect: http.StatusUnauthorized, provider.KindOther: http.StatusBadGateway}[kind]}
+		}
 		_, err := m.Thumbnail(context.Background(), conn, item, 400)
 		require.Equal(t, kind, provider.KindOf(err))
 		require.False(t, m.NoThumbnail(conn, item, 400))
@@ -469,6 +477,17 @@ func TestThumbCacheRemembersUseOverARestart(t *testing.T) {
 	info, err = os.Stat(filepath.Join(dir, thumbConn, "a"+thumbExt))
 	require.NoError(t, err)
 	require.Equal(t, stamp, info.ModTime())
+	// Read every half hour, it is written again once an hour has gone by since the
+	// last time it was written, however often it was read in between.
+	for i := 0; i < 2; i++ {
+		now = now.Add(30 * time.Minute)
+		_, ok = c.get(thumbConn, "a"+thumbExt)
+		require.True(t, ok)
+	}
+	info, err = os.Stat(filepath.Join(dir, thumbConn, "a"+thumbExt))
+	require.NoError(t, err)
+	require.WithinDuration(t, now, info.ModTime(), 2*time.Second)
+	require.True(t, info.ModTime().After(stamp))
 
 	// After a restart with room for two, the one read last is among those that stay.
 	restarted := newThumbs(dir)
@@ -498,6 +517,9 @@ func TestThumbCacheStartTidiesUp(t *testing.T) {
 
 	started := newThumbs(dir)
 	started.live = func() ([]string, error) { return []string{lives}, nil }
+	// The server does this at its start; nobody has asked for a preview yet.
+	(&Manager{thumbs: started}).TidyThumbnails()
+	require.ElementsMatch(t, []string{lives + "/x" + thumbExt, "notes/mine.txt"}, kept(t, dir))
 	_, ok = started.get(lives, "x"+thumbExt)
 	require.True(t, ok)
 	_, ok = started.get(ended, "x"+thumbExt)
@@ -510,6 +532,51 @@ func TestThumbCacheStartTidiesUp(t *testing.T) {
 	off := newThumbs(dir)
 	require.Empty(t, off.dir)
 	require.Equal(t, []string{"notes/mine.txt"}, kept(t, dir))
+}
+
+// A preview that cannot be removed still takes its room: it stays counted, and when no
+// room can be made nothing new is kept, so the bound holds.
+func TestThumbCacheCountsWhatItCannotRemove(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "thumbs")
+	c := newThumbs(dir)
+	picture := testPicture(1)
+	one := int64(len(sealedPicture(picture)))
+	c.limit = one * 2
+	now := time.Unix(1800000000, 0)
+	c.now = func() time.Time { return now }
+	c.put(thumbConn, "a"+thumbExt, picture)
+	now = now.Add(time.Second)
+	c.put(thumbConn, "b"+thumbExt, picture)
+	// Both turn into something that cannot be deleted like a file: a folder that is
+	// not empty.
+	for _, name := range []string{"a", "b"} {
+		path := filepath.Join(dir, thumbConn, name+thumbExt)
+		require.NoError(t, os.Remove(path))
+		require.NoError(t, os.MkdirAll(filepath.Join(path, "x"), 0o700))
+	}
+	now = now.Add(time.Second)
+	c.put(thumbConn, "c"+thumbExt, picture)
+	require.Equal(t, one*2, c.total, "what could not be removed is still counted")
+	_, ok := c.get(thumbConn, "c"+thumbExt)
+	require.False(t, ok, "no room could be made, so the new one is not kept")
+	_, err := os.Stat(filepath.Join(dir, thumbConn, "c"+thumbExt))
+	require.True(t, os.IsNotExist(err))
+}
+
+// A grant is good up to its last second, not through it.
+func TestGrantEndsAtItsExpiry(t *testing.T) {
+	m := &Manager{sealer: testSealer(1)}
+	ctx := context.Background()
+	for offset, ok := range map[int64]bool{-5: false, 0: false, 30: true} {
+		sealed, err := m.SealGrantStable(ctx, &Grant{Kind: GrantThumb, User: 7, Expires: time.Now().Unix() + offset})
+		require.NoError(t, err)
+		_, err = m.OpenGrant(ctx, sealed)
+		if ok {
+			require.NoError(t, err, offset)
+		} else {
+			require.ErrorIs(t, err, ErrGrant, offset)
+		}
+	}
 }
 
 // The switch for the size of the cache: megabytes, and 0 keeps nothing on disk.
@@ -617,6 +684,9 @@ func TestThumbCacheEndsWithTheConnection(t *testing.T) {
 	_, err = os.Stat(filepath.Join(dir, thumbConn))
 	require.True(t, errors.Is(err, os.ErrNotExist), "the folder of the connection is gone")
 	require.False(t, m.NoThumbnail(conn, none, 400), "what was known of it is forgotten")
+	// And nothing new is noted for it: a fetch that comes back with "none" afterwards.
+	m.thumbs.miss(thumbConn + "/late" + thumbExt)
+	require.Empty(t, m.thumbs.misses)
 	require.Equal(t, m.thumbs.files[other.ID+"/"+thumbName(item, 400)].size, m.thumbs.total)
 }
 

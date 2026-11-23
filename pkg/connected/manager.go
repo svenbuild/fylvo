@@ -159,7 +159,13 @@ func NewManager(o ManagerOptions) *Manager {
 		thumbs:   newThumbs(o.ThumbDir),
 	}
 	if o.Storages != nil {
-		m.thumbs.live = func() ([]string, error) { return o.Storages.PublicIDs(context.Background()) }
+		m.thumbs.live = func() ([]string, error) {
+			// Not for long: who asks for a preview meanwhile waits for this. Without an
+			// answer nothing is removed.
+			ctx, cancel := context.WithTimeout(context.Background(), thumbLiveTime)
+			defer cancel()
+			return o.Storages.PublicIDs(ctx)
+		}
 	}
 	return m
 }

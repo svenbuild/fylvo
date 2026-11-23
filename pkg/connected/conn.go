@@ -130,6 +130,16 @@ func (c *Conn) ended() bool {
 	return c.live != nil && c.live.ctx.Err() != nil
 }
 
+// StillConnected tells whether the connection a request was admitted to (Use) is still
+// the one it was: not disconnected and not connected again since. A disconnect or a
+// reconnect that is under way is waited for, so the answer is never "yes" for a
+// connection whose end has begun.
+func (m *Manager) StillConnected(c *Conn) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return !c.ended()
+}
+
 // closeLive stops everything running for a connection and forgets its open token. The
 // caller holds m.mu exclusively.
 func (m *Manager) closeLive(publicID string) {

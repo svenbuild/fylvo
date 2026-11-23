@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -217,6 +218,29 @@ func TestConnectedThumbnailThatIsNotThere(t *testing.T) {
 	rec = e.picture(answer.Url)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, testPNG(2), rec.Body.Bytes())
+}
+
+// The connection ends while its picture is on the way from the provider: the request
+// that was let in before gets nothing, and nothing is kept.
+func TestConnectedThumbnailEndsWithTheConnectionMidway(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "photo.png", testPNG(1))
+	answer, err := e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	var once sync.Once
+	var ended error
+	e.sim.OnThumbnail(func() {
+		// The simulated Drive is in the middle of this call: the connection ends now,
+		// and the provider answers after it is gone.
+		once.Do(func() { ended = e.m.Disconnect(e.ctx, e.alex.ID, e.id) })
+	})
+	rec := e.picture(answer.Url)
+	require.NoError(t, ended)
+	require.Equal(t, 1, e.sim.Calls(drivetest.CallThumbnail), "the provider was asked, and answered")
+	require.NotEqual(t, http.StatusOK, rec.Code)
+	require.Empty(t, rec.Body.Bytes())
+	require.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+	require.Empty(t, e.keptPreviews())
 }
 
 // The address of a preview is for one state of one file of one account. It ends with

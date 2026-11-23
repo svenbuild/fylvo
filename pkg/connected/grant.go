@@ -121,7 +121,8 @@ func (m *Manager) OpenGrant(ctx context.Context, sealed string) (*Grant, error) 
 		return nil, ErrGrant
 	}
 	var g Grant
-	if err := json.Unmarshal(plain, &g); err != nil || time.Now().Unix() > g.Expires {
+	// Up to its last second, not through it.
+	if err := json.Unmarshal(plain, &g); err != nil || time.Now().Unix() >= g.Expires {
 		return nil, ErrGrant
 	}
 	return &g, nil

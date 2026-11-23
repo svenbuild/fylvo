@@ -422,10 +422,6 @@ func (c *Caller) Download(ctx context.Context, address, rangeHeader string) (*Co
 		if res.StatusCode >= 400 {
 			err := c.classify(res)
 			res.Body.Close()
-			if c.ItemOnly && res.StatusCode == http.StatusUnauthorized {
-				// About that item only, here as at the first address.
-				return nil, &Error{Kind: KindForbidden, Status: res.StatusCode}
-			}
 			return nil, err
 		}
 	}

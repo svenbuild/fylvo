@@ -17,6 +17,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/activity"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/conf"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/crontab"
 	"github.com/cloudreve/Cloudreve/v4/pkg/email"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/driver/onedrive"
@@ -122,6 +123,11 @@ func (s *server) Start() error {
 		}
 		c.Start()
 		s.cron = c
+
+		// Fylvo: what is kept of previews of connected storages is tidied up now, not
+		// when the first one is asked for: leftovers of a crash, of connections that
+		// ended meanwhile, and of a cache that was switched off.
+		go connected.For(s.dep).TidyThumbnails()
 
 		// Fylvo: thumbnails made ahead of time.
 		pregenCtx, stopPregen := context.WithCancel(context.Background())

@@ -36,6 +36,8 @@ const (
 	maxThumbFetches = 2
 	// thumbFetchTime bounds one fetch at a provider.
 	thumbFetchTime = 30 * time.Second
+	// thumbLiveTime bounds the look at the connections there are, at the start.
+	thumbLiveTime = 5 * time.Second
 	// thumbMissLife is how long "the provider has none" is remembered for a version,
 	// maxThumbMisses how many such notes are kept.
 	thumbMissLife  = 6 * time.Hour
@@ -57,7 +59,8 @@ var thumbWait = 10 * time.Second
 // thumbFile is one kept preview.
 type thumbFile struct {
 	size int64
-	used time.Time
+	// used is when it was last asked for, saved what the disk says about that.
+	used, saved time.Time
 }
 
 // thumbFlight is a fetch that is under way, for those who ask for the same preview
@@ -159,7 +162,7 @@ func (t *thumbs) load() {
 				_ = os.Remove(path)
 				continue
 			}
-			t.files[conn.Name()+"/"+e.Name()] = &thumbFile{size: info.Size(), used: info.ModTime()}
+			t.files[conn.Name()+"/"+e.Name()] = &thumbFile{size: info.Size(), used: info.ModTime(), saved: info.ModTime()}
 			t.total += info.Size()
 		}
 	}
@@ -185,13 +188,17 @@ func (t *thumbs) shrink() {
 	}
 }
 
-// remove deletes one kept preview. The caller holds t.mu.
-func (t *thumbs) remove(key string) {
+// remove deletes one kept preview. A file that cannot be deleted stays counted: it
+// still takes its room. The caller holds t.mu.
+func (t *thumbs) remove(key string) bool {
+	if err := os.Remove(filepath.Join(t.dir, filepath.FromSlash(key))); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false
+	}
 	if f := t.files[key]; f != nil {
 		t.total -= f.size
 		delete(t.files, key)
 	}
-	_ = os.Remove(filepath.Join(t.dir, filepath.FromSlash(key)))
+	return true
 }
 
 // get returns a kept preview.
@@ -221,11 +228,11 @@ func (t *thumbs) kept(conn, name string) ([]byte, bool) {
 		t.remove(key)
 		return nil, false
 	}
-	if now := t.now(); now.Sub(f.used) >= thumbUsedStep {
-		_ = os.Chtimes(path, now, now)
+	if now := t.now(); now.After(f.used) {
 		f.used = now
-	} else if now.After(f.used) {
-		f.used = now
+		if now.Sub(f.saved) >= thumbUsedStep && os.Chtimes(path, now, now) == nil {
+			f.saved = now
+		}
 	}
 	return data, true
 }
@@ -289,9 +296,15 @@ func (t *thumbs) put(conn, name string, data []byte) {
 	if old := t.files[key]; old != nil {
 		t.total -= old.size
 	}
-	t.files[key] = &thumbFile{size: int64(len(stored)), used: t.now()}
+	now := t.now()
+	t.files[key] = &thumbFile{size: int64(len(stored)), used: now, saved: now}
 	t.total += int64(len(stored))
 	t.shrink()
+	if t.total > t.limit {
+		// No room could be made (older ones could not be deleted): this one is not
+		// kept either, so the bound holds.
+		t.remove(key)
+	}
 }
 
 // drop removes everything kept for a connection that ended, and keeps nothing more for it.
@@ -336,6 +349,10 @@ func (t *thumbs) missed(key string) bool {
 func (t *thumbs) miss(key string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if conn, _, _ := strings.Cut(key, "/"); t.gone[conn] {
+		// The connection ended while the provider was asked: nothing more is kept for it.
+		return
+	}
 	now := t.now()
 	if len(t.misses) >= maxThumbMisses {
 		// Those that ran out go first. If that is not enough some others go, whichever:
@@ -359,6 +376,16 @@ func (t *thumbs) miss(key string) {
 func isPicture(data []byte) bool {
 	kind := http.DetectContentType(data)
 	return kind == "image/jpeg" || kind == "image/png"
+}
+
+// TidyThumbnails looks at what is kept on disk: what a crash left half-written and the
+// folders of connections that are no more are removed, and the bound is applied. It
+// runs once; the server calls it at its start, so none of that waits for somebody to
+// load a preview.
+func (m *Manager) TidyThumbnails() {
+	m.thumbs.mu.Lock()
+	defer m.thumbs.mu.Unlock()
+	m.thumbs.load()
 }
 
 // HasThumbnail tells whether a row can have a preview: a file of the storage itself
@@ -450,14 +477,19 @@ func (m *Manager) fetchThumbnail(ctx context.Context, source provider.Thumbnaile
 		return nil, ErrNoThumbnail
 	}
 	content, err := source.Thumbnail(ctx, item, size)
-	switch provider.KindOf(err) {
-	case provider.KindNotFound, provider.KindForbidden, provider.KindUnsafe:
-		// None, none for this account, or one that lies where nothing is fetched from.
-		if err != nil {
+	if err != nil {
+		var failure *provider.Error
+		switch {
+		case provider.KindOf(err) == provider.KindNotFound, provider.KindOf(err) == provider.KindForbidden,
+			provider.KindOf(err) == provider.KindUnsafe:
+			// None, none for this account, or one that lies where nothing is fetched from.
+			return none()
+		case errors.As(err, &failure) && failure.Kind == provider.KindOther && failure.Status == http.StatusUnauthorized:
+			// A plain "no" from the host a redirect led to, where no token was sent:
+			// about this picture, and the same the next time. (A call with the token
+			// never ends this way: there a 401 is answered by a new token.)
 			return none()
 		}
-	}
-	if err != nil {
 		return nil, err
 	}
 	defer content.Body.Close()
