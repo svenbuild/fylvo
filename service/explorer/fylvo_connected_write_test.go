@@ -473,7 +473,8 @@ func TestConnectedCreateOfficeDocument(t *testing.T) {
 		}
 		require.Contains(t, names, main, path)
 	}
-	// It opens in the Office server for editing, like any document.
+	// Fylvo hands out a window that edits for it, like for any document. (What the
+	// Office server makes of the file is not part of this test.)
 	session, err := e.officeSession(t, "/New.docx", types.ViewerActionEdit)
 	require.NoError(t, err)
 	require.True(t, *session.Edit)
@@ -489,11 +490,21 @@ func TestConnectedCreateOfficeDocument(t *testing.T) {
 	require.Equal(t, id, e.sim.Calls(drivetest.CallStart), "nothing was uploaded for a name that is taken")
 	_, err = create("/New.docx", true)
 	require.Equal(t, serializer.CodeObjectExist, connectedCode(err))
-	// A folder under the name is not a document.
-	_, err = (&CreateFileService{Uri: e.root + "/Folder.docx", Type: "folder"}).Create(e.as(e.alex))
+	// A folder is a folder, whatever its name ends in, and a folder or a link under
+	// the name is not a document: an error, and nothing is stored.
+	folder, err := (&CreateFileService{Uri: e.root + "/Folder.docx", Type: "folder"}).Create(e.as(e.alex))
 	require.NoError(t, err)
+	require.Equal(t, int(types.FileTypeFolder), folder.Type)
 	_, err = create("/Folder.docx", false)
 	require.Equal(t, serializer.CodeObjectExist, connectedCode(err))
+	e.sim.AddShortcut("", "Link.docx", e.sim.AddFile("", "target.txt", []byte("x")))
+	e.m.Tree().Forget(e.id)
+	uploads := e.sim.Calls(drivetest.CallStart)
+	for _, errOnConflict := range []bool{false, true} {
+		_, err = create("/Link.docx", errOnConflict)
+		require.Equal(t, serializer.CodeObjectExist, connectedCode(err))
+	}
+	require.Equal(t, uploads, e.sim.Calls(drivetest.CallStart))
 
 	// Every other kind of file is created empty, as before, and a folder is a folder.
 	notes, err := create("/notes.txt", true)
@@ -505,9 +516,23 @@ func TestConnectedCreateOfficeDocument(t *testing.T) {
 
 	// The rules of every change hold: a name Fylvo does not give, and an installation
 	// that only reads.
-	_, err = create("/a:b.docx", true)
+	// What is refused is refused in the order it is for an empty file: the name before
+	// anything about the folder or about what is there.
+	for _, path := range []string{"/a:b.docx", "/missing folder/a:b.docx"} {
+		for _, kind := range []string{path, strings.TrimSuffix(path, ".docx") + ".txt"} {
+			_, err = create(kind, true)
+			require.Equal(t, serializer.CodeIllegalObjectName, connectedCode(err), kind)
+		}
+	}
+	e.sim.AddFile("", "x:y.docx", []byte("made at the provider"))
+	e.m.Tree().Forget(e.id)
+	_, err = create("/x:y.docx", true)
 	require.Equal(t, serializer.CodeIllegalObjectName, connectedCode(err))
+	_, err = create("/missing folder/new.docx", true)
+	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
 	t.Setenv(connected.EnvWrite, "")
-	_, err = create("/Later.docx", true)
-	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
+	for _, path := range []string{"/Later.docx", "/a:b.docx", "/Later.txt"} {
+		_, err = create(path, true)
+		require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err), path)
+	}
 }

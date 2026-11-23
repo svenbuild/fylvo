@@ -128,7 +128,7 @@ func theme() string {
 		`<a:lnStyleLst>` + line("6350") + line("12700") + line("19050") + `</a:lnStyleLst>` +
 		`<a:effectStyleLst>` + effect + effect + effect + `</a:effectStyleLst>` +
 		`<a:bgFillStyleLst>` + fill + fill + fill + `</a:bgFillStyleLst>` +
-		`</a:fmtScheme></a:themeElements></a:theme>`
+		`</a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>`
 }
 
 // presentation is a PowerPoint presentation with one empty slide.
@@ -155,6 +155,9 @@ func presentation() []byte {
 			{"ppt/slideMasters/slideMaster1.xml", xmlHead + `<p:sldMaster` + slideSpaces + `>` + emptyTree +
 				`<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>` +
 				`<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>` +
+				// The schema does without the text styles; PowerPoint writes them into
+				// every master, so they are there, empty.
+				`<p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles>` +
 				`</p:sldMaster>`},
 			{"ppt/slideMasters/_rels/slideMaster1.xml.rels", rels(
 				[3]string{"rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"},

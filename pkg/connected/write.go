@@ -236,6 +236,18 @@ func rowOf(item *provider.Item, path string) *Row {
 // replaces anything: a file that is already there under the name is returned as it is,
 // unless errOnConflict asks for an error.
 func (m *Manager) CreateDocument(ctx context.Context, c *Conn, path string, content []byte, errOnConflict bool) (*Row, error) {
+	// What is asked first for an empty file is asked first here too, so both answer
+	// the same to a request that cannot be: changes switched off, then the name.
+	if _, err := writer(c); err != nil {
+		return nil, err
+	}
+	_, name := ParentOf(path)
+	if path == "" {
+		return nil, ErrNameTaken
+	}
+	if err := checkNewName(name); err != nil {
+		return nil, err
+	}
 	row, err := m.Save(ctx, c, UploadRequest{Path: path, Size: int64(len(content))}, bytes.NewReader(content))
 	var app serializer.AppError
 	if err != nil && !errOnConflict && errors.As(err, &app) && app.Code == serializer.CodeObjectExist {
