@@ -161,7 +161,9 @@ fun FilesScreen(
     // Fylvo 1.6: the account's group rights (null while not known: nothing that needs them is offered).
     val accountState by app.account.state.collectAsState()
     val groupShare = accountState.group(Permissions.GROUP_SHARE)
-    LaunchedEffect(state.currentUri, accountOpen) { if (accountState.me == null) runCatching { app.account.ensureLoaded() } }
+    LaunchedEffect(state.currentUri, accountOpen) {
+        if (accountState.me == null || accountState.mapEnabled == null) runCatching { app.account.ensureLoaded() }
+    }
     /** Fylvo: the file whose shares are listed ("Manage shares"). */
     var sharesOfTarget by remember { mutableStateOf<FileObject?>(null) }
     /** Fylvo 1.6: the file whose versions are listed, and "Empty trash" waiting for its yes. */
@@ -292,44 +294,6 @@ fun FilesScreen(
         searchOpenedFrom = null
     }
 
-    /**
-     * Fylvo 1.6: opens the share [id] of a link of the signed-in server, with [typed] as its
-     * password; asks for one when needed (design/android-parity-plan.md, 3).
-     */
-    fun openShareLink(id: String, typed: String) {
-        if (linkBusy) return
-        linkBusy = true
-        val tag = app.sessionManager.sessionTag()
-        scope.launch {
-            try {
-                runCatching { app.account.ensureLoaded() }
-                val info = app.shares.visit(id, typed)
-                if (!app.sessionManager.isCurrent(tag)) return@launch
-                val account = app.account.state.value
-                when (val d = io.github.svenbuild.fylvo.android.util.ShareLinks.decide(id, info, typed, account.me?.id, account.group(Permissions.GROUP_SHARE_DOWNLOAD))) {
-                    is io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.NeedPassword -> linkPassword = LinkPasswordAsk(id, d.name, d.wrong)
-                    io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.NotAllowed -> snackbar.showSnackbar(context.getString(R.string.link_not_allowed))
-                    is io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.Open -> {
-                        linkPassword = null
-                        accountOpen = false
-                        offlineOpen = false
-                        customizeOpen = false
-                        page = null
-                        viewModel.clearSelection()
-                        if (inSearch) closeSearch()
-                        CrUri.nameShare(d.root, d.name)
-                        viewModel.openPlace(d.root)
-                    }
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                snackbar.showSnackbar(io.github.svenbuild.fylvo.android.util.userError(e).resolve(context))
-            } finally {
-                linkBusy = false
-            }
-        }
-    }
 
     /** Fylvo: "Bearbeiten": the working copy goes to an editor; a message when none takes it. */
     fun editFile(file: FileObject) {
@@ -361,6 +325,50 @@ fun FilesScreen(
         }
         val siblings = if (alone || inSearch || state.home) listOf(file) else viewModel.previewableSiblings(file)
         preview = siblings to siblings.indexOfFirst { it.path == file.path }.coerceAtLeast(0)
+    }
+
+    /**
+     * Fylvo 1.6: opens the share [id] of a link of the signed-in server, with [typed] as its
+     * password; asks for one when needed (design/android-parity-plan.md, 3).
+     */
+    fun openShareLink(id: String, typed: String) {
+        if (linkBusy) return
+        linkBusy = true
+        val tag = app.sessionManager.sessionTag()
+        scope.launch {
+            try {
+                runCatching { app.account.ensureLoaded() }
+                val info = app.shares.visit(id, typed)
+                if (!app.sessionManager.isCurrent(tag)) return@launch
+                val account = app.account.state.value
+                when (val d = io.github.svenbuild.fylvo.android.util.ShareLinks.decide(id, info, typed, account.me?.id, account.group(Permissions.GROUP_SHARE_DOWNLOAD))) {
+                    is io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.NeedPassword -> linkPassword = LinkPasswordAsk(id, d.name, d.wrong)
+                    io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.NotAllowed -> snackbar.showSnackbar(context.getString(R.string.link_not_allowed))
+                    is io.github.svenbuild.fylvo.android.util.ShareLinks.Decision.Open -> {
+                        linkPassword = null
+                        accountOpen = false
+                        offlineOpen = false
+                        customizeOpen = false
+                        page = null
+                        viewModel.clearSelection()
+                        if (inSearch) closeSearch()
+                        CrUri.nameShare(d.root, d.name)
+                        viewModel.openPlace(d.root)
+                        // A shared single file opens right away.
+                        if (!info.isFolder) {
+                            runCatching { app.fileRepository.list(d.root).files.firstOrNull { !it.isFolder } }
+                                .getOrNull()?.let { openFile(it, alone = true) }
+                        }
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                snackbar.showSnackbar(io.github.svenbuild.fylvo.android.util.userError(e).resolve(context))
+            } finally {
+                linkBusy = false
+            }
+        }
     }
 
     var shareTarget by remember { mutableStateOf<FileObject?>(null) }

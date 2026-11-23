@@ -298,7 +298,7 @@ class FileRepository(private val api: ApiClient) {
     }
 
     private suspend fun writeService(uri: String): ApiService =
-        if (Connected.isConnected(uri)) api.editService() else api.service()
+        if (Connected.isConnected(uri)) api.editService() else readService(uri)
 
     /** Subfolders of [uri] only, for the destination picker. */
     suspend fun listFolders(uri: String): List<FileObject> = listFoldersWithParent(uri).first
@@ -345,8 +345,10 @@ class FileRepository(private val api: ApiClient) {
         previous: String = "",
         previousRequired: Boolean = false,
         service: ApiService? = null,
+        /** Fylvo 1.6: the session the upload belongs to (not sent once it ended). */
+        tag: io.github.svenbuild.fylvo.android.api.SessionTag? = null,
     ): UploadSessionResponse =
-        (service ?: api.service()).createUploadSession(
+        (service ?: api.service()).createUploadSession(session = tag, request =
             CreateUploadSessionRequest(
                 uri = uri,
                 size = size,
@@ -463,6 +465,8 @@ class FileRepository(private val api: ApiClient) {
         previous: String = "",
         previousRequired: Boolean = false,
         strict: Boolean = false,
+        /** Fylvo 1.6: every request of this upload belongs to this session. */
+        tag: io.github.svenbuild.fylvo.android.api.SessionTag? = null,
         onSession: (sessionId: String, targetUri: String, entityId: String) -> Unit = { _, _, _ -> },
         onProgress: (sent: Long, total: Long) -> Unit = { _, _ -> },
     ): UploadSessionResponse {
@@ -483,6 +487,7 @@ class FileRepository(private val api: ApiClient) {
             previous = previous,
             previousRequired = previousRequired,
             service = svc,
+            tag = tag,
         )
 
         if (session.rapidUploaded) return session
@@ -527,10 +532,10 @@ class FileRepository(private val api: ApiClient) {
                     var retryAfter: Long? = null
                     try {
                         val resp = if (target.contains("/file/upload/")) {
-                            svc.uploadChunk(target, body)
+                            svc.uploadChunk(target, body, tag)
                         } else {
                             // Presigned third-party URLs are conventionally PUT.
-                            svc.uploadChunkPut(target, body)
+                            svc.uploadChunkPut(target, body, tag)
                         }
                         retryAfter = resp.headers()["Retry-After"]?.trim()?.toLongOrNull()
                         if (!resp.isSuccessful) {
@@ -556,7 +561,7 @@ class FileRepository(private val api: ApiClient) {
         }
 
         if (session.completeUrl.isNotEmpty()) {
-            val resp = svc.completeUpload(resolveUrl(session.completeUrl))
+            val resp = svc.completeUpload(resolveUrl(session.completeUrl), tag)
             if (!resp.isSuccessful) {
                 throw ApiException(resp.code(), "Upload completion failed: HTTP ${resp.code()}")
             }

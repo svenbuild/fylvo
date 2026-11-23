@@ -131,7 +131,12 @@ class ShareRepository(private val api: ApiClient, private val session: SessionMa
         // An expired link has no info any more (404): its own list entry is the latest there is.
         val untouched = !share.expired && options.downloads != null && options.downloads == LinkOptions.of(share).downloads
         val send = if (untouched) {
-            val left = details(share.id).remainDownloads
+            // Expired meanwhile: the server has no info any more; the limit as it was is sent.
+            val left = try {
+                details(share.id).remainDownloads
+            } catch (e: ApiException) {
+                if (e.code == 404) options.downloads else throw e
+            }
             if (left != null && left <= 0) throw ApiException(CODE_NO_DOWNLOADS_LEFT, "No downloads left")
             options.copy(downloads = left)
         } else options

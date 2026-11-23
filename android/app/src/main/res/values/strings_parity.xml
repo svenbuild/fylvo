@@ -212,4 +212,6 @@
     <string name="revoke_text">The app can no longer use your account until it is signed in again.</string>
     <string name="recent_sign_ins">Recent sign-ins</string>
     <string name="load_more">Load more</string>
+
+    <string name="editor_saving_wait">Saving… the editor closes when it is done.</string>
 </resources>

@@ -212,4 +212,6 @@
     <string name="revoke_text">Die App kann dein Konto nicht mehr benutzen, bis sie neu angemeldet wird.</string>
     <string name="recent_sign_ins">Letzte Anmeldungen</string>
     <string name="load_more">Mehr laden</string>
+
+    <string name="editor_saving_wait">Wird gespeichert … der Editor schliesst danach.</string>
 </resources>

@@ -89,6 +89,8 @@ fun SharesPage(
 
     suspend fun load(token: String?) {
         val mine = if (token == null) ++generation else generation
+        // A reload forgets the old next page at once (nothing of the old list is asked for any more).
+        if (token == null) next = null
         loading = true
         runCatching { app.shares.list(token) }
             .onSuccess { page ->
@@ -100,6 +102,8 @@ fun SharesPage(
                 moreFailed = false
             }
             .onFailure { if (mine == generation) { if (token == null) failed = true else moreFailed = true } }
+        // A failed reload with rows on screen: the footer offers to try again.
+        if (mine == generation && token == null && failed && shares.isNotEmpty()) next = null
         if (mine == generation) loading = false
     }
     LaunchedEffect(reload) { load(null) }
@@ -124,7 +128,7 @@ fun SharesPage(
                     actions = actions,
                     onChanged = { reload++ },
                     next = next,
-                    moreFailed = moreFailed,
+                    moreFailed = moreFailed || (failed && !loading),
                     onMore = { token -> scope.launch { load(token) } },
                     contentPadding = PaddingValues(bottom = 96.dp),
                 )

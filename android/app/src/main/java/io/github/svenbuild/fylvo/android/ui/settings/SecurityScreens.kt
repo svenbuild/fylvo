@@ -92,7 +92,19 @@ fun AccountAvatar(size: androidx.compose.ui.unit.Dp, version: Int = 0) {
     val server by app.sessionManager.serverUrl.collectAsState(initial = "")
     val modifier = Modifier.size(size).clip(CircleShape)
     if (me != null && me.avatar == "file" && server.isNotEmpty()) {
+        // Its own loader that follows no redirect: a changed picture setting never leads to Gravatar.
+        val loader = remember {
+            coil.ImageLoader.Builder(app)
+                .okHttpClient {
+                    okhttp3.OkHttpClient.Builder()
+                        .followRedirects(false)
+                        .addInterceptor(io.github.svenbuild.fylvo.android.api.ApiClient.userAgent)
+                        .build()
+                }
+                .build()
+        }
         AsyncImage(
+            imageLoader = loader,
             model = "${server.trimEnd('/')}/api/v4/user/avatar/${me.id}?nocache=true&v=$version",
             contentDescription = null,
             contentScale = ContentScale.Crop,
@@ -217,6 +229,8 @@ fun SecurityPage(onBack: () -> Unit, bottomBar: @Composable () -> Unit) {
     var setup2fa by remember { mutableStateOf<String?>(null) }
     var disable2fa by remember { mutableStateOf(false) }
     var revoke by remember { mutableStateOf<io.github.svenbuild.fylvo.android.api.OauthGrant?>(null) }
+    /** A 2FA secret is being fetched (the server keeps only the last one: one request at a time). */
+    var fetching by remember { mutableStateOf(false) }
     val message: (String) -> Unit = { scope.launch { snackbar.showSnackbar(it) } }
 
     LaunchedEffect(reload) {
@@ -239,10 +253,14 @@ fun SecurityPage(onBack: () -> Unit, bottomBar: @Composable () -> Unit) {
                 ListItem(
                     modifier = Modifier.clickable {
                         if (s.twoFaEnabled) disable2fa = true
-                        else scope.launch {
-                            runCatching { app.security.twoFaSecret() }
-                                .onSuccess { setup2fa = it }
-                                .onFailure { message(userError(it).resolve(context)) }
+                        else if (!fetching) {
+                            fetching = true
+                            scope.launch {
+                                runCatching { app.security.twoFaSecret() }
+                                    .onSuccess { setup2fa = it }
+                                    .onFailure { message(userError(it).resolve(context)) }
+                                fetching = false
+                            }
                         }
                     },
                     headlineContent = { Text(stringResource(R.string.two_fa)) },

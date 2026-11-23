@@ -46,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.ui.files.FileKind
 import io.github.svenbuild.fylvo.android.api.FileObject
@@ -67,12 +68,24 @@ fun TextEditorScreen(viewModel: TextEditorViewModel, onClose: (wroteSomething: B
     val code = (shown as? EditorTarget.Existing)?.file?.let { FileKind.of(it) == FileKind.CODE } == true
     var preview by remember { mutableStateOf(false) }
     var askLeave by remember { mutableStateOf(false) }
+    /** "Save" in the leave question: close once the save went through. */
+    var closeAfterSave by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
+    LaunchedEffect(state.saving, closeAfterSave) {
+        if (closeAfterSave && !state.saving) {
+            closeAfterSave = false
+            if (!viewModel.dirty) onClose(state.wroteSomething)
+        }
+    }
     fun leave() {
         when {
             // A save on its way finishes first (its answer belongs to this file).
-            state.saving -> Unit
+            state.saving -> {
+                closeAfterSave = true
+                scope.launch { snackbar.showSnackbar(context.getString(R.string.editor_saving_wait)) }
+            }
             viewModel.dirty && state.loadError == null && !state.loading -> askLeave = true
             else -> onClose(state.wroteSomething)
         }
@@ -143,7 +156,7 @@ fun TextEditorScreen(viewModel: TextEditorViewModel, onClose: (wroteSomething: B
             title = { Text(stringResource(R.string.editor_unsaved_title)) },
             text = { Text(stringResource(R.string.editor_unsaved_text)) },
             confirmButton = {
-                TextButton(onClick = { askLeave = false; viewModel.save() }) { Text(stringResource(R.string.save)) }
+                TextButton(onClick = { askLeave = false; closeAfterSave = true; viewModel.save() }) { Text(stringResource(R.string.save)) }
             },
             dismissButton = {
                 Column(horizontalAlignment = Alignment.End) {

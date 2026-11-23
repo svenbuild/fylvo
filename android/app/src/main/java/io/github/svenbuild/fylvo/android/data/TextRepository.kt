@@ -104,13 +104,22 @@ class TextRepository(
         val tmp = withContext(Dispatchers.IO) {
             File(cacheDir, "text-new").apply { mkdirs() }.let { File.createTempFile("new", ".tmp", it) }.also { it.writeBytes(encode(text, bom)) }
         }
+        var started: Pair<String, String>? = null
         val made = try {
-            files.uploadFile(tmp, parentUri, name, overwrite = false)
+            files.uploadFile(tmp, parentUri, name, overwrite = false, tag = tag, onSession = { id, uri, _ -> started = id to uri })
+        } catch (e: Exception) {
+            // A half done upload leaves a locked placeholder: cancel it.
+            started?.let { (id, uri) -> runCatching { files.deleteUploadSession(id, uri) } }
+            throw e
         } finally {
             tmp.delete()
         }
-        // The server answers with the address it stored the file at.
-        return files.folderInfo(made.uri.ifEmpty { CrUri.join(parentUri, name) })
+        // The server answers with the address it stored the file at, and the version it made: the
+        // editor goes on from exactly that version (a change by someone else meanwhile is a conflict).
+        val uri = made.uri.ifEmpty { CrUri.join(parentUri, name) }
+        val info = runCatching { files.folderInfo(uri) }.getOrNull()
+        return (info ?: FileObject(type = 0, name = CrUri.fileName(uri), path = uri))
+            .copy(primaryEntity = made.entityId.ifEmpty { info?.primaryEntity.orEmpty() })
     }
 
     /** [createNew] under the first free name of [copyNames]. */

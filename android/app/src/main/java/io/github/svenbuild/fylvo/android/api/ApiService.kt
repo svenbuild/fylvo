@@ -80,7 +80,7 @@ interface ApiService {
     suspend fun deleteFiles(@Body request: DeleteFileRequest): Response<ApiResponse<Unit>>
 
     @PUT("api/v4/file/upload")
-    suspend fun createUploadSession(@Body request: CreateUploadSessionRequest): Response<ApiResponse<UploadSessionResponse>>
+    suspend fun createUploadSession(@Body request: CreateUploadSessionRequest, @Tag session: SessionTag? = null): Response<ApiResponse<UploadSessionResponse>>
 
     /** Cancels an unfinished upload session, so its placeholder file and lock go away. */
     @HTTP(method = "DELETE", path = "api/v4/file/upload", hasBody = true)
@@ -89,13 +89,13 @@ interface ApiService {
     // Chunk targets are fully resolved URLs returned in upload_urls —
     // same-origin for local policies, presigned for remote policies.
     @POST
-    suspend fun uploadChunk(@Url url: String, @Body body: RequestBody): Response<ResponseBody>
+    suspend fun uploadChunk(@Url url: String, @Body body: RequestBody, @Tag session: SessionTag? = null): Response<ResponseBody>
 
     @PUT
-    suspend fun uploadChunkPut(@Url url: String, @Body body: RequestBody): Response<ResponseBody>
+    suspend fun uploadChunkPut(@Url url: String, @Body body: RequestBody, @Tag session: SessionTag? = null): Response<ResponseBody>
 
     @POST
-    suspend fun completeUpload(@Url url: String): Response<ResponseBody>
+    suspend fun completeUpload(@Url url: String, @Tag session: SessionTag? = null): Response<ResponseBody>
 
     // Streamed: a large file must never be held in memory as a whole.
     @Streaming
