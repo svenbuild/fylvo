@@ -23,12 +23,17 @@ export const publishConnectedStorages = (next: ConnectedStorage[] | undefined) =
   listeners.forEach((l) => l(next));
 };
 
-// enabled=false only listens and never asks the server (pages without connected storages).
+// Set when the list became out of date while a load was running; that load is followed by
+// another one, so an answer from before the change is not the last word.
+let stale = false;
+
 // Loads the list unless a load is running; an answer for a previous account is dropped.
 const load = (dispatch: AppDispatch) => {
   if (loading) {
+    stale = true;
     return;
   }
+  stale = false;
   const started = generation;
   const request = dispatch(getConnectedStorages())
     .then((res) => started == generation && publishConnectedStorages(res.storages))
@@ -36,6 +41,9 @@ const load = (dispatch: AppDispatch) => {
     .finally(() => {
       if (loading == request) {
         loading = undefined;
+        if (stale && started == generation) {
+          load(dispatch);
+        }
       }
     });
   loading = request;
@@ -50,7 +58,7 @@ const listenForChanges = (dispatch: AppDispatch) => {
   }
   listening = true;
   window.addEventListener(ConnectedChangedEvent, () => {
-    if (storages) {
+    if (storages || loading) {
       load(dispatch);
     }
   });

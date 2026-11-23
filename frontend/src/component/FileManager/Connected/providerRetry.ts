@@ -115,6 +115,9 @@ export const retryBusy = async <T>(state: BusyState, request: () => Promise<T>):
       }
       const busy = busyWait(e);
       if (!busy) {
+        // Another answer: busy answers before it are no longer "in a row".
+        state.inARow = 0;
+        state.wait = firstWait;
         throw e;
       }
       state.inARow++;

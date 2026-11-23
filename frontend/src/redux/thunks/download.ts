@@ -317,29 +317,52 @@ function startBrowserBatchDownloadTo(
     };
 
     // Fylvo: busy answers of a connected storage's provider, counted over the whole download.
-    const busy = newBusyState(cancelSignals[downloadId].signal);
+    // Other storages keep their own handling: one failing file never stops the rest.
     const connected = files.some((f) => inConnectedStorage(f.path));
+    const busy = connected ? newBusyState(cancelSignals[downloadId].signal) : undefined;
+    const fetchFile = (url: string) => {
+      const signal = cancelSignals[downloadId].signal;
+      return busy ? retryBusy(busy, () => fetchContent(url, signal)) : fetchContent(url, signal);
+    };
     const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [] };
+    // Fylvo: the provider stayed busy or the storage needs a reconnect: the log says so, and
+    // names what was left out up to here.
+    const logStop = (e: unknown) => {
+      if (e instanceof ProviderGaveUp) {
+        appendLog(i18next.t(e.message));
+        skippedNotes(skipped).forEach(appendLog);
+      }
+    };
 
     // Walk the tree once: count files and bytes, and keep the rows of each folder for the
     // download (Fylvo: so a connected storage is listed only once, and what was counted and
     // asked about is what gets downloaded).
     const folders: { children: FileResponse[]; relativePath: string }[] = [];
-    await dispatch(
-      walk(
-        files,
-        async (children, relativePath) => {
-          folders.push({ children, relativePath });
-          const childFiles = children.filter((f) => f.type == FileType.file);
-          totalFiles += childFiles.length;
-          totalExpectedBytes += childFiles.reduce((sum, f) => sum + (f.size || 0), 0);
-        },
-        [],
-        "",
-        skipped,
-        busy,
-      ),
-    );
+    try {
+      await dispatch(
+        walk(
+          files,
+          async (children, relativePath) => {
+            folders.push({ children, relativePath });
+            const childFiles = children.filter((f) => f.type == FileType.file);
+            totalFiles += childFiles.length;
+            totalExpectedBytes += childFiles.reduce((sum, f) => sum + (f.size || 0), 0);
+          },
+          [],
+          "",
+          skipped,
+          busy,
+        ),
+      );
+    } catch (e) {
+      logStop(e);
+      throw e;
+    }
+    // The walk returns quietly when cancelled.
+    if (cancelSignals[downloadId].signal.aborted) {
+      appendLog(i18next.t("modals.directoryDownloadCancelled"));
+      return null;
+    }
 
     // Fylvo: many files from a connected storage take a while; ask first.
     if (connected && totalFiles >= askAboveFiles) {
@@ -448,7 +471,7 @@ function startBrowserBatchDownloadTo(
           let urlError = "failed to get download url";
           if (oneByOne) {
             try {
-              url = await retryBusy(busy, () => dispatch(getConnectedFileUrl(getFileLinkedUri(childFiles[i]))));
+              url = await retryBusy(busy!, () => dispatch(getConnectedFileUrl(getFileLinkedUri(childFiles[i]))));
             } catch (e) {
               if (e instanceof ProviderGaveUp || (e instanceof Error && e.name == "AbortError")) {
                 throw e;
@@ -475,7 +498,7 @@ function startBrowserBatchDownloadTo(
           updateProgress(true);
           try {
             // Fylvo: an error answer must not become the file; a busy provider is waited for.
-            const res = await retryBusy(busy, () => fetchContent(url!, cancelSignals[downloadId].signal));
+            const res = await fetchFile(url!);
 
             // Stream the response directly to disk to avoid buffering
             // the entire file in memory
@@ -484,10 +507,16 @@ function startBrowserBatchDownloadTo(
               throw new Error("Response body is not readable");
             }
 
-            await streamFileToFileSystemDirectory(handle, reader, name, (bytes) => {
-              totalBytes += bytes;
-              updateProgress();
-            });
+            try {
+              await streamFileToFileSystemDirectory(handle, reader, name, (bytes) => {
+                totalBytes += bytes;
+                updateProgress();
+              });
+            } catch (e) {
+              // Fylvo: a failed local write ends the transfer too, so it does not keep running.
+              reader.cancel().catch(() => {});
+              throw e;
+            }
             filesCompleted++;
             updateProgress(true);
             appendLog(i18next.t("modals.directoryDownloadFinished", { name }));
@@ -533,12 +562,7 @@ function startBrowserBatchDownloadTo(
         await downloadFolder(folder.children, folder.relativePath);
       }
     } catch (e) {
-      // Fylvo: the provider stayed busy or the storage needs a reconnect: say so, and what
-      // was left out up to here.
-      if (e instanceof ProviderGaveUp) {
-        appendLog(i18next.t(e.message));
-        skippedNotes(skipped).forEach(appendLog);
-      }
+      logStop(e);
       throw e;
     }
 
@@ -589,8 +613,10 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
   return async (dispatch, getState) => {
     const skipped: WalkSkipped = { names: [], omitted: 0, unreadable: [] };
     // Fylvo: busy answers of a connected storage's provider, counted over the whole download.
-    const busy = newBusyState();
     const connected = files.some((f) => inConnectedStorage(f.path));
+    // Ends waiting and retrying when the archive is no longer written (for example a cancel).
+    const stopped = new AbortController();
+    const busy = connected ? newBusyState(stopped.signal) : undefined;
     let stopReason = "";
     // Files and folders: an exported name must not take the path of a folder either.
     let allWalked: FileResponseWalked[];
@@ -656,7 +682,7 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
             }
             try {
               if (connected) {
-                const url = await retryBusy(busy, () => dispatch(getConnectedFileUrl(getFileLinkedUri(batch[0]))));
+                const url = await retryBusy(busy!, () => dispatch(getConnectedFileUrl(getFileLinkedUri(batch[0]))));
                 if (url) {
                   pending.push({ file: batch[0], url });
                 } else {
@@ -696,7 +722,7 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
           const next = pending.shift()!;
           try {
             // An error answer must not become a file in the archive; a busy provider is waited for.
-            const res = await retryBusy(busy, () => fetchContent(next.url));
+            const res = busy ? await retryBusy(busy, () => fetchContent(next.url)) : await fetchContent(next.url);
             const stream = () => res.body;
             ctrl.enqueue({ name: downloadFileName(next.file, next.file.relativePath, takenNames), stream });
             return;
@@ -720,6 +746,7 @@ export function streamSaverDownload(files: FileResponse[]): AppThunk {
         await longRunningTaskWithSnackbar(readableZipStream.pipeTo(fileStream), "fileManager.batchDownloadStarted");
       } catch (e) {
         console.log(e);
+        stopped.abort();
         // Fylvo: a transfer broken off midway leaves an archive that cannot be opened.
         if (!(e instanceof Error && e.name == "AbortError")) {
           enqueueSnackbar({

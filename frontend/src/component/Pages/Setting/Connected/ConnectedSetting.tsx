@@ -35,7 +35,7 @@ import {
   sendConnectedFinish,
   sendConnectedRename,
 } from "../../../../api/connected.ts";
-import { AppError } from "../../../../api/request.ts";
+import { AppError, ConnectedChangedEvent } from "../../../../api/request.ts";
 import { GroupPermission } from "../../../../api/user.ts";
 import { useAppDispatch } from "../../../../redux/hooks.ts";
 import { confirmOperation } from "../../../../redux/thunks/dialog.ts";
@@ -492,6 +492,15 @@ const ConnectedSetting = () => {
         setRefreshing(false);
       });
   }, [dispatch]);
+
+  // A 40921 anywhere (for example during a download) makes this list out of date.
+  useEffect(() => {
+    const onChanged = () => {
+      load();
+    };
+    window.addEventListener(ConnectedChangedEvent, onChanged);
+    return () => window.removeEventListener(ConnectedChangedEvent, onChanged);
+  }, [load]);
 
   useEffect(() => {
     // ?reconnect=<id> may also change while the tab is open.
