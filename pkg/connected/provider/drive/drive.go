@@ -153,7 +153,8 @@ func (c *client) mapped(f *file) (provider.Item, bool) {
 	return item, ok
 }
 
-// keyed marks a call about the item with the given id with its resource key, if it has one.
+// keyed marks a call about the item with the given id with its resource key, if it has
+// one. A call about two items is marked twice.
 func (c *client) keyed(ctx context.Context, id string) context.Context {
 	c.mu.Lock()
 	key := c.keys[id]
@@ -161,7 +162,11 @@ func (c *client) keyed(ctx context.Context, id string) context.Context {
 	if key == "" {
 		return ctx
 	}
-	return context.WithValue(ctx, resourceKeyContext{}, id+"/"+key)
+	value := id + "/" + key
+	if before, _ := ctx.Value(resourceKeyContext{}).(string); before != "" {
+		value = before + "," + value
+	}
+	return context.WithValue(ctx, resourceKeyContext{}, value)
 }
 
 // New returns the Drive client of one connection.

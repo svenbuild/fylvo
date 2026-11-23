@@ -194,14 +194,14 @@ func TestConnectedListAndInfo(t *testing.T) {
 	require.Empty(t, res.Pagination.NextPageToken)
 	require.Equal(t, 1, res.Connected.Omitted, "the name with a slash")
 	require.Equal(t, e.id, res.Connected.ID)
-	require.True(t, res.Connected.ReadOnly)
+	require.False(t, res.Connected.ReadOnly)
 	require.Equal(t, e.root, res.Parent.Path)
 	require.Equal(t, []string{"name", "size", "updated_at"}, res.Props.OrderByOptions)
 
 	byName := map[string]FileResponse{}
 	for _, f := range res.Files {
 		byName[f.Name] = f
-		require.False(t, f.Owned, f.Name)
+		require.True(t, f.Owned, f.Name)
 		require.False(t, f.Shared, f.Name)
 		require.True(t, strings.HasPrefix(f.ID, "cs"), f.Name)
 	}
@@ -222,9 +222,16 @@ func TestConnectedListAndInfo(t *testing.T) {
 	require.True(t, strings.HasPrefix(file.PrimaryEntity, "v"))
 	require.Contains(t, file.Metadata, dbfs.ThumbDisabledKey)
 	require.True(t, can("notes.txt", dbfs.NavigatorCapabilityDownloadFile))
+	require.True(t, can("notes.txt", dbfs.NavigatorCapabilityRenameFile))
+	require.True(t, can("notes.txt", dbfs.NavigatorCapabilityDeleteFile))
+	require.True(t, can("Docs", dbfs.NavigatorCapabilityCreateFile))
+	for _, readOnly := range []string{"Budget.gsheet", "twice.txt"} {
+		require.False(t, can(readOnly, dbfs.NavigatorCapabilityRenameFile), readOnly)
+		require.False(t, can(readOnly, dbfs.NavigatorCapabilityDeleteFile), readOnly)
+	}
 	for _, never := range []dbfs.NavigatorCapability{
-		dbfs.NavigatorCapabilityCreateFile, dbfs.NavigatorCapabilityRenameFile, dbfs.NavigatorCapabilityUploadFile,
-		dbfs.NavigatorCapabilityDeleteFile, dbfs.NavigatorCapabilityShare, dbfs.NavigatorCapabilityVersionControl,
+		dbfs.NavigatorCapabilityCreateFile, dbfs.NavigatorCapabilityUploadFile,
+		dbfs.NavigatorCapabilityShare, dbfs.NavigatorCapabilityVersionControl,
 		dbfs.NavigatorCapabilityUpdateMetadata, dbfs.NavigatorCapabilityRestore, dbfs.NavigatorCapabilitySoftDelete,
 	} {
 		require.False(t, can("notes.txt", never), "capability %d", never)
@@ -469,8 +476,6 @@ func TestConnectedIsKeptFromTheDatabaseFileSystem(t *testing.T) {
 	require.Error(t, err)
 	require.Error(t, (&MoveFileService{Uris: []string{file}, Dst: "cloudreve://my"}).Move(e.as(e.alex)))
 	require.Error(t, (&MoveFileService{Uris: []string{"cloudreve://my/a.txt"}, Dst: e.root}).Move(e.as(e.alex)))
-	_, err = (&CreateFileService{Uri: e.root + "/new", Type: "folder"}).Create(e.as(e.alex))
-	require.Error(t, err)
 	_, err = (&FileThumbService{Uri: file}).Get(e.as(e.alex))
 	require.Equal(t, serializer.CodeEntityNotExist, connectedCode(err))
 
@@ -481,8 +486,7 @@ func TestConnectedIsKeptFromTheDatabaseFileSystem(t *testing.T) {
 	require.Error(t, (&DeleteVersionService{Uri: file, Version: "x"}).Delete(e.as(e.alex)))
 	_, err = (&CreateViewerSessionService{Uri: file, ViewerID: "x", PreferredAction: types.ViewerActionView}).Create(e.as(e.alex))
 	require.Error(t, err)
-	_, err = (&CreateUploadSessionService{Uri: e.root + "/new.txt", Size: 3}).Create(e.as(e.alex))
-	require.Error(t, err)
+	// An upload session that is not one of a connected storage.
 	require.Error(t, (&DeleteUploadSessionService{ID: "x", Uri: file}).Delete(e.as(e.alex)))
 	_, err = (&ArchiveListFilesService{Uri: file}).List(e.as(e.alex))
 	require.Error(t, err)

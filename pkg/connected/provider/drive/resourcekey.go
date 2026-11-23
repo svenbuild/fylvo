@@ -2,7 +2,8 @@ package drive
 
 import "net/http"
 
-// resourceKeyContext marks a call that needs a resource key, as "<id>/<key>".
+// resourceKeyContext marks a call that needs resource keys, as "<id>/<key>", several
+// with commas between them.
 type resourceKeyContext struct{}
 
 // keyTransport adds the resource key of a call to the requests that go to the Drive

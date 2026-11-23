@@ -323,9 +323,10 @@ func TestRangeRefusals(t *testing.T) {
 	_, err = send(t, u, content, 0, 1000)
 	noAddress(t, s, err)
 	assert.Equal(t, provider.KindBusy, provider.KindOf(err))
+	// "Slow down" is a clear no: nothing of the range was taken, it can be sent again.
 	s.Throttle(1)
 	_, err = send(t, u, content, 0, 1000)
-	assert.Equal(t, provider.KindBusy, provider.KindOf(err))
+	assert.Equal(t, provider.KindRetry, provider.KindOf(err))
 	assert.Equal(t, 3, s.Calls(drivetest.CallRange))
 
 	item, err := send(t, u, content, 0, drivetest.Granularity)
@@ -467,7 +468,8 @@ func TestRangeTokenRenewal(t *testing.T) {
 	s.Reject()
 	_, err = send(t, u, content, 0, 10)
 	noAddress(t, s, err)
-	assert.Equal(t, provider.KindOther, provider.KindOf(err))
+	// A plain "no" for a token that ran out: nothing was taken, and there is a new one.
+	assert.Equal(t, provider.KindRetry, provider.KindOf(err))
 	assert.Equal(t, 1, auth.Renewals())
 
 	received, _, err := u.State(ctx)
@@ -506,4 +508,29 @@ func TestWriteReasons(t *testing.T) {
 	assert.Equal(t, provider.KindBusy, classifyOnce(403, nil, []byte(`{"error":{"errors":[{"reason":"rateLimitExceeded"}]}}`)).Kind)
 	assert.Equal(t, provider.KindOther, classifyOnce(503, nil, nil).Kind)
 	assert.Equal(t, provider.KindFull, classifyOnce(403, nil, []byte(`{"error":{"errors":[{"reason":"storageQuotaExceeded"}]}}`)).Kind)
+}
+
+// A move is about two entries that can each need a resource key: the one that moves
+// and the folder it goes into. Both keys go with the call.
+func TestMoveNamesBothResourceKeys(t *testing.T) {
+	s, d, w, _ := setupWriter(t)
+	ctx := context.Background()
+	from := s.AddFolder("", "From")
+	to := s.AddFolder("", "To")
+	id := s.AddFile(from, "a.txt", []byte("abc"))
+	s.SetResourceKey(id, "key-file")
+	s.SetResourceKey(to, "key-folder")
+
+	// The keys are learned where the entries are listed.
+	_, err := d.Children(ctx, s.RootID(), "")
+	require.NoError(t, err)
+	_, err = d.Children(ctx, from, "")
+	require.NoError(t, err)
+
+	item, err := w.Update(ctx, id, provider.Change{Parent: to, OldParent: from})
+	require.NoError(t, err)
+	assert.Equal(t, id, item.ID)
+	found, err := d.Named(ctx, to, "a.txt")
+	require.NoError(t, err)
+	require.Len(t, found, 1)
 }

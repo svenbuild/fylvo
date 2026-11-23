@@ -225,6 +225,10 @@ type (
 )
 
 func (service *CreateFileService) Create(c *gin.Context) (*FileResponse, error) {
+	// Fylvo: a connected storage creates at its provider.
+	if uri, ok := connectedURI(service.Uri); ok {
+		return connectedCreate(c, uri, service)
+	}
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	m := manager.NewFileManager(dep, user)
@@ -255,10 +259,15 @@ type (
 	RenameFileService      struct {
 		Uri     string `json:"uri" binding:"required"`
 		NewName string `json:"new_name" binding:"required,min=1,max=255"`
+		// Ids is for addresses of a connected storage (Fylvo): the id of the row as last listed.
+		Ids connectedIDs `json:"ids"`
 	}
 )
 
 func (service *RenameFileService) Rename(c *gin.Context) (*FileResponse, error) {
+	if uri, ok := connectedURI(service.Uri); ok {
+		return connectedRename(c, uri, service)
+	}
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	m := manager.NewFileManager(dep, user)
@@ -283,6 +292,8 @@ type (
 		Uris []string `json:"uris" binding:"required,min=1"`
 		Dst  string   `json:"dst" binding:"required"`
 		Copy bool     `json:"copy"`
+		// Ids is for addresses of a connected storage (Fylvo): the ids of the rows as last listed.
+		Ids connectedIDs `json:"ids"`
 	}
 )
 
@@ -291,6 +302,17 @@ func (s *MoveFileService) GetUris() []string {
 }
 
 func (s *MoveFileService) Move(c *gin.Context) error {
+	// Fylvo: inside one connected storage the provider moves. Between a connected
+	// storage and anything else nothing is moved or copied.
+	connectedUris, err := connectedURIs(s.Uris)
+	if err != nil {
+		return err
+	}
+	connectedDst, dstIsConnected := connectedURI(s.Dst)
+	if len(connectedUris) > 0 || dstIsConnected {
+		return connectedMove(c, connectedUris, connectedDst, s)
+	}
+
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	m := manager.NewFileManager(dep, user)
@@ -328,6 +350,10 @@ func (service *FileUpdateService) PutContent(c *gin.Context, ls fs.LockSession) 
 		return nil, serializer.NewError(serializer.CodeParamErr, "invalid content length", err)
 	}
 
+	// Fylvo: a connected storage saves through an upload session at its provider.
+	if uri, ok := connectedURI(service.Uri); ok {
+		return connectedPutContent(c, uri, service, rc, fileSize, settings.MaxOnlineEditSize(c))
+	}
 	if fileSize > settings.MaxOnlineEditSize(c) {
 		return nil, fs.ErrFileSizeTooBig
 	}
@@ -560,6 +586,8 @@ type (
 		Uris           []string `json:"uris" binding:"required,min=1"`
 		UnlinkOnly     bool     `json:"unlink"`
 		SkipSoftDelete bool     `json:"skip_soft_delete"`
+		// Ids is for addresses of a connected storage (Fylvo): the ids of the rows as last listed.
+		Ids connectedIDs `json:"ids"`
 	}
 )
 
@@ -568,6 +596,15 @@ func (s *DeleteFileService) GetUris() []string {
 }
 
 func (s *DeleteFileService) Delete(c *gin.Context) error {
+	// Fylvo: entries of a connected storage go into the trash of the provider.
+	connectedUris, err := connectedURIs(s.Uris)
+	if err != nil {
+		return err
+	}
+	if len(connectedUris) > 0 {
+		return connectedDelete(c, connectedUris, s)
+	}
+
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	m := manager.NewFileManager(dep, user)

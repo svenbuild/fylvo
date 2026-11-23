@@ -51,7 +51,7 @@ const (
 type ConnectedListInfo struct {
 	ID       string `json:"id"`
 	Provider string `json:"provider"`
-	// ReadOnly: nothing can be changed in this folder.
+	// ReadOnly: nothing can be changed in this folder (it is reached through a link).
 	ReadOnly bool `json:"read_only"`
 	// Search and Thumbnails tell whether these are available yet.
 	Search     bool `json:"search"`
@@ -159,12 +159,19 @@ func connectedCapability(row *connected.Row) *boolset.BooleanSet {
 		if row.IsDir {
 			flags[dbfs.NavigatorCapabilityListChildren] = row.Enterable()
 			flags[dbfs.NavigatorCapabilityEnterFolder] = row.Enterable()
+			// Something new can be put into a folder of the storage itself.
+			flags[dbfs.NavigatorCapabilityCreateFile] = row.Enterable() && !row.ViaLink
 			// A folder is downloaded by the client, which lists it and fetches its files
 			// one by one. Not through a link: links can lead back up.
 			flags[dbfs.NavigatorCapabilityDownloadFile] = row.Enterable() && row.Link == nil
+			flags[dbfs.NavigatorCapabilityUploadFile] = flags[dbfs.NavigatorCapabilityCreateFile]
 		} else {
 			flags[dbfs.NavigatorCapabilityDownloadFile] = row.Native == "" || len(connected.ExportFormats[row.Native]) > 0
 		}
+	}
+	if !row.ReadOnly() && row.Path != "" {
+		flags[dbfs.NavigatorCapabilityRenameFile] = true
+		flags[dbfs.NavigatorCapabilityDeleteFile] = true
 	}
 	boolset.Sets(flags, set)
 	return set
@@ -183,6 +190,8 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 		Path:          connectedRowURI(req.conn.ID, row.Path),
 		Capability:    connectedCapability(row),
 		PrimaryEntity: connected.VersionID(req.conn.ID, row),
+		// The storage is the account's own. What can be done with a row is in its capability.
+		Owned: true,
 	}
 	if row.IsDir {
 		res.Type = int(types.FileTypeFolder)
@@ -225,7 +234,7 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 	if extended {
 		res.ExtendedInfo = &ExtendedInfo{
 			StorageUsed:   row.Size,
-			StoragePolicy: &StoragePolicy{ID: "connected", Name: req.conn.Name, Type: types.PolicyTypeLocal},
+			StoragePolicy: connectedPolicy(req),
 		}
 	}
 	return res
@@ -297,15 +306,16 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 			IsCursor:      true,
 		},
 		Props: &fs.NavigatorProps{
-			Capability:            connectedCapability(&connected.Row{Item: provider.Item{IsDir: true}}),
+			Capability:            connectedCapability(page.Parent),
 			MaxPageSize:           connectedMaxPageSize,
 			OrderByOptions:        []string{"name", "size", "updated_at"},
 			OrderDirectionOptions: []string{"asc", "desc"},
 		},
+		StoragePolicy: connectedPolicy(req),
 		Connected: &ConnectedListInfo{
 			ID:       req.conn.ID,
 			Provider: req.conn.Provider,
-			ReadOnly: true,
+			ReadOnly: page.Parent.ViaLink,
 			Omitted:  page.Omitted,
 		},
 	}

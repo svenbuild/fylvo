@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 )
@@ -18,6 +19,11 @@ const (
 	conflictBehavior  = "@microsoft.graph.conflictBehavior"
 	uploadGranularity = 320 * 1024
 	maxWriteJSON      = 1024 * 1024
+	// writeTimeout bounds a call that changes something, from its start to the end of
+	// the answer.
+	writeTimeout = 2 * time.Minute
+	// decodeTimeout bounds the reading of a small JSON answer.
+	decodeTimeout = 30 * time.Second
 )
 
 var _ provider.Writer = (*client)(nil)
@@ -32,10 +38,18 @@ func (c *client) CreateFolder(ctx context.Context, parentID, name string) (*prov
 func (c *client) CreateEmpty(ctx context.Context, parentID, name string) (*provider.Item, error) {
 	address := c.itemURL(c.driveID, parentID) + ":/" + segment(name) + ":/content" +
 		selectQuery(itemFields) + "&" + conflictBehavior + "=fail"
-	return c.writeItem(ctx, http.MethodPut, address, nil)
+	item, err := c.writeItem(ctx, http.MethodPut, address, nil)
+	if err == nil && (item.IsDir || item.Native != "" || item.Version == "") {
+		// An answer that does not show a file: what was made is open.
+		return nil, &provider.Error{Kind: provider.KindOther}
+	}
+	return item, err
 }
 
 func (c *client) Update(ctx context.Context, id string, change provider.Change) (*provider.Item, error) {
+	// No conflict behaviour is named: a change of an item is refused by Graph when the
+	// name is taken (409 nameAlreadyExists), and it is not known to take the annotation
+	// on this call. The check against real accounts looks at exactly this.
 	in := make(map[string]any)
 	if change.Name != "" {
 		in["name"] = change.Name
@@ -60,6 +74,9 @@ func (c *client) writeItem(ctx context.Context, method, address string, in any) 
 
 // A failed write can leave the outcome open, so use Stream instead of the retrying Caller.Do.
 func (c *client) write(ctx context.Context, method, address string, header http.Header, in, out any) error {
+	// To the end of the answer: a provider that stalls must not hold a change for good.
+	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
 	if header == nil {
 		header = make(http.Header)
 	}
@@ -74,9 +91,8 @@ func (c *client) write(ctx context.Context, method, address string, header http.
 		header.Set("Content-Type", "application/json")
 	}
 	res, err := c.caller.Stream(ctx, method, address, header, bytes.NewReader(body), int64(len(body)), true)
-	if err == nil && res.StatusCode == http.StatusUnauthorized {
-		// Refused before anything was done, and Stream has asked for a new token: once more.
-		res.Body.Close()
+	if provider.KindOf(err) == provider.KindRetry {
+		// Refused before anything was done, and there is a new token: once more.
 		res, err = c.caller.Stream(ctx, method, address, header, bytes.NewReader(body), int64(len(body)), true)
 	}
 	if err != nil {
@@ -104,6 +120,10 @@ func (c *client) write(ctx context.Context, method, address string, header http.
 }
 
 func decodeWrite(res *http.Response, out any) error {
+	// A provider that sends its headers and then stalls must not hold what waits for
+	// this answer: the body is closed when it takes too long.
+	stalled := time.AfterFunc(decodeTimeout, func() { res.Body.Close() })
+	defer stalled.Stop()
 	if err := json.NewDecoder(io.LimitReader(res.Body, maxWriteJSON)).Decode(out); err != nil {
 		return &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}
 	}
@@ -123,7 +143,8 @@ func (c *client) NewUpload(ctx context.Context, parentID, name string, size int6
 }
 
 func (c *client) ReplaceUpload(ctx context.Context, item *provider.Item, size int64) (provider.Upload, error) {
-	if item == nil || item.Link != nil {
+	if item == nil || item.Link != nil || item.ETag == "" {
+		// Without the tag of the item the replace could not be tied to its state.
 		return nil, &provider.Error{Kind: provider.KindForbidden}
 	}
 	address := c.itemURL(c.driveID, item.ID) + "/createUploadSession"
@@ -179,19 +200,32 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 	defer res.Body.Close()
 	switch res.StatusCode {
 	case http.StatusAccepted:
-		if end < u.size {
-			_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, maxWriteJSON))
-			return nil, nil
+		// "Go on", and from where. Only when that is the end of this range was all of
+		// it taken; anything else is for State to sort out.
+		var state struct {
+			Ranges []string `json:"nextExpectedRanges"`
+		}
+		if end < u.size && decodeWrite(res, &state) == nil && len(state.Ranges) > 0 {
+			if start, _, _ := strings.Cut(state.Ranges[0], "-"); start == strconv.FormatInt(end, 10) {
+				return nil, nil
+			}
 		}
 	case http.StatusOK, http.StatusCreated:
+		if end != u.size {
+			// A stored file where only a part was sent: what was stored is open, and
+			// stays so.
+			return nil, &provider.Error{Kind: provider.KindOpen, Status: res.StatusCode}
+		}
 		if end == u.size {
 			var entry driveItem
 			if err := decodeWrite(res, &entry); err != nil {
 				return nil, err
 			}
-			if entry.File != nil {
-				return writeResult(&entry)
+			if item, err := writeResult(&entry); err == nil && entry.File != nil && item.Version != "" {
+				return item, nil
 			}
+			// Not the answer for a stored file with a state: what was stored is open.
+			return nil, &provider.Error{Kind: provider.KindOpen, Status: res.StatusCode}
 		}
 	case http.StatusConflict:
 		failure := u.caller.Failure(res).(*provider.Error)
@@ -200,6 +234,15 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 		}
 	case http.StatusNotFound, http.StatusPreconditionFailed, http.StatusInsufficientStorage:
 		return nil, provider.ByStatus(res.StatusCode, res.Header, nil)
+	case http.StatusTooManyRequests:
+		// "Slow down": nothing of the range was taken, and it can be sent again.
+		return nil, &provider.Error{Kind: provider.KindRetry, Status: res.StatusCode}
+	case http.StatusForbidden:
+		// A storage that is full can also answer like this. Any other "no" here says
+		// nothing certain about what was stored.
+		if failure := u.caller.Failure(res).(*provider.Error); failure.Kind == provider.KindFull {
+			return nil, failure
+		}
 	}
 	// Even 416 cannot say whether a previous request committed the content.
 	return nil, &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}
@@ -213,6 +256,10 @@ func (u *upload) State(ctx context.Context) (int64, *provider.Item, error) {
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusNotFound {
 		return 0, nil, provider.ByStatus(res.StatusCode, res.Header, nil)
+	}
+	if res.StatusCode >= 400 {
+		// "Slow down" is told as such, so the client is asked to come back.
+		return 0, nil, u.caller.Failure(res)
 	}
 	if res.StatusCode != http.StatusOK {
 		return 0, nil, &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}

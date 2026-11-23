@@ -183,6 +183,12 @@ func TestReplaceUpload(t *testing.T) {
 				require.Nil(t, u)
 				return
 			}
+			if tc == "no ETag" {
+				// Without the tag the replace could not be tied to the state of the file.
+				require.Equal(t, provider.KindForbidden, provider.KindOf(err))
+				require.Nil(t, u)
+				return
+			}
 			require.NoError(t, err)
 			if tc == "stale at commit" || tc == "no ETag" {
 				s.SetContent(id, []byte("different"))

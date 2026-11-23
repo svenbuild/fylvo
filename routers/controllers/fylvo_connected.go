@@ -60,6 +60,29 @@ func FylvoConnectedCapacity(c *gin.Context) {
 	fylvoAnswer(c, res, err)
 }
 
+// FylvoConnectedUploadChunk takes a chunk of an upload into a connected storage. The
+// chunk that completes the upload is answered with the file.
+func FylvoConnectedUploadChunk(c *gin.Context, service *explorer.UploadService) {
+	res, err := service.ConnectedUploadChunk(c)
+	if err != nil {
+		// What is left of the body is the server's to throw away, with its own limits.
+		c.JSON(200, serializer.Err(c, err))
+		c.Abort()
+		return
+	}
+	if res == nil {
+		c.JSON(200, serializer.Response{})
+		return
+	}
+	c.JSON(200, serializer.Response{Data: res})
+}
+
+// FylvoConnectedUploadState tells where an upload into a connected storage stands.
+func FylvoConnectedUploadState(c *gin.Context) {
+	res, err := explorer.ConnectedUploadState(c, c.Param("session"))
+	fylvoAnswer(c, res, err)
+}
+
 // FylvoConnectedContent serves the content of a file in a connected storage.
 func FylvoConnectedContent(c *gin.Context) {
 	explorer.ServeConnectedContent(c)

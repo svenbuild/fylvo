@@ -90,6 +90,28 @@ var nativeKinds = func() map[string]bool {
 	return kinds
 }()
 
+// nativeKindOf tells whether a name ends in the extension of an entry that exists only
+// at the provider, and which. Where names are told apart without regard to case, so is
+// the extension.
+func nativeKindOf(name string, fold bool) (string, bool) {
+	dot := strings.LastIndex(name, ".")
+	if dot <= 0 {
+		return "", false
+	}
+	kind := name[dot+1:]
+	if fold {
+		kind = strings.ToLower(kind)
+	}
+	return kind, nativeKinds[kind]
+}
+
+// hasNativeKind tells whether a name could be taken for an entry that exists only at the
+// provider, in any spelling.
+func hasNativeKind(name string) bool {
+	_, ok := nativeKindOf(name, true)
+	return ok
+}
+
 // plainName tells whether a name can be one element of a path.
 func plainName(name string) bool {
 	if name == "" || name == "." || name == ".." {
@@ -173,6 +195,28 @@ type Tree struct {
 	mu        sync.Mutex
 	listings  map[listKey]*listing
 	snapshots map[string]*snapshot
+	// reads are the folders being read right now.
+	reads map[*reading]struct{}
+}
+
+// reading is a read of a folder under way. A write to the folder marks it: what was
+// read may be from before the write, so it is not kept for anybody who asks later.
+type reading struct {
+	key     listKey
+	changed bool
+}
+
+// read notes that a folder is being read from now on. The returned function ends that.
+func (t *Tree) read(key listKey) (*reading, func()) {
+	r := &reading{key: key}
+	t.mu.Lock()
+	t.reads[r] = struct{}{}
+	t.mu.Unlock()
+	return r, func() {
+		t.mu.Lock()
+		delete(t.reads, r)
+		t.mu.Unlock()
+	}
 }
 
 func NewTree() *Tree {
@@ -181,6 +225,7 @@ func NewTree() *Tree {
 		sem:       make(chan struct{}, parallelListings),
 		listings:  map[listKey]*listing{},
 		snapshots: map[string]*snapshot{},
+		reads:     map[*reading]struct{}{},
 	}
 }
 
@@ -263,6 +308,8 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 		return l, nil
 	}
 
+	r, done := t.read(key)
+	defer done()
 	l := newListing(c.P.CaseInsensitive())
 	for page, pages := "", 0; ; pages++ {
 		p, err := c.P.Children(ctx, folderID, page)
@@ -297,6 +344,11 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 	// it before it cleared this memory, so nothing of it comes back here.
 	if c.ended() {
 		return nil, context.Canceled
+	}
+	if r.changed {
+		// Written to while it was read: good for this call, which began before the
+		// write, and for nobody after it.
+		return l, nil
 	}
 	t.sweep()
 	t.makeRoom(len(l.entries))
@@ -378,13 +430,13 @@ func (t *Tree) named(ctx context.Context, c *Conn, folderID, name string) (*Row,
 
 	// A document that exists only at the provider and shows under name: its own name
 	// is the part before the extension of its kind.
-	if dot := strings.LastIndex(name, "."); dot > 0 && nativeKinds[name[dot+1:]] {
-		items, err := c.P.Named(ctx, folderID, name[:dot])
+	if kind, ok := nativeKindOf(name, l.fold); ok {
+		items, err := c.P.Named(ctx, folderID, name[:len(name)-len(kind)-1])
 		if err != nil && provider.KindOf(err) != provider.KindNotFound {
 			return nil, err
 		}
 		for _, it := range items {
-			if it.Native == name[dot+1:] {
+			if it.Native == kind {
 				l.add(it)
 			}
 		}
@@ -406,6 +458,16 @@ func (t *Tree) named(ctx context.Context, c *Conn, folderID, name string) (*Row,
 // it has reached by that folder's id. A name that stands for several entries makes the
 // path ambiguous: refused, for the provider would let any of them answer.
 func (t *Tree) Resolve(ctx context.Context, c *Conn, path string) (*Row, error) {
+	return t.resolve(ctx, c, path, true)
+}
+
+// ResolveNow is Resolve without the listings in memory: every name on the path is looked
+// up at the provider. For changes, which must act on what is there now.
+func (t *Tree) ResolveNow(ctx context.Context, c *Conn, path string) (*Row, error) {
+	return t.resolve(ctx, c, path, false)
+}
+
+func (t *Tree) resolve(ctx context.Context, c *Conn, path string, cached bool) (*Row, error) {
 	rootID, err := c.P.Root(ctx)
 	if err != nil {
 		return nil, err
@@ -426,7 +488,11 @@ func (t *Tree) Resolve(ctx context.Context, c *Conn, path string) (*Row, error) 
 		folderID := row.ContentID()
 
 		var found *Row
-		if l := t.fresh(listKey{conn: c.ID, gen: c.Generation, folder: folderID}); l != nil {
+		var l *listing
+		if cached {
+			l = t.fresh(listKey{conn: c.ID, gen: c.Generation, folder: folderID})
+		}
+		if l != nil {
 			found = l.find(name)
 			switch {
 			case found == nil:
@@ -532,6 +598,9 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 	if !parent.Enterable() {
 		return nil, ErrNotFound
 	}
+	key := listKey{conn: c.ID, gen: c.Generation, folder: parent.ContentID()}
+	r, done := t.read(key)
+	defer done()
 	l, err := t.load(ctx, c, parent.ContentID())
 	if err != nil {
 		return nil, err
@@ -543,7 +612,7 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 	sortRows(rows, o)
 
 	snap := &snapshot{
-		key:  listKey{conn: c.ID, gen: c.Generation, folder: parent.ContentID()},
+		key:  key,
 		user: c.UserID, path: path, order: o, parent: parent, rows: rows, viaLink: parent.ViaLink,
 		omitted: l.omitted,
 	}
@@ -556,10 +625,14 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 			t.mu.Unlock()
 			return nil, context.Canceled
 		}
-		t.sweep()
-		t.makeRoom(len(rows))
-		snap.lastUsed = t.now()
-		t.snapshots[id] = snap
+		// A write to the folder since this began ended the listing before its first
+		// page: it is not kept, and its next page answers ErrListingGone.
+		if !r.changed {
+			t.sweep()
+			t.makeRoom(len(rows))
+			snap.lastUsed = t.now()
+			t.snapshots[id] = snap
+		}
 		t.mu.Unlock()
 	}
 	if c.ended() {
@@ -615,6 +688,11 @@ func (t *Tree) Changed(c *Conn, folderIDs ...string) {
 		for id, s := range t.snapshots {
 			if s.key == key {
 				delete(t.snapshots, id)
+			}
+		}
+		for r := range t.reads {
+			if r.key == key {
+				r.changed = true
 			}
 		}
 	}

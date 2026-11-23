@@ -146,6 +146,7 @@ func (m *Manager) closeLive(publicID string) {
 		live.cancel()
 	}
 	m.tree.Forget(publicID)
+	m.uploads.close(publicID)
 }
 
 // Refused implements provider.Refusable: the provider refused a token it had handed out
@@ -362,8 +363,10 @@ func Error(ctx context.Context, err error) error {
 		return ErrReconnect
 	case provider.KindSetup:
 		return ErrUnavailable
-	case provider.KindBusy, provider.KindIncomplete:
+	case provider.KindBusy, provider.KindIncomplete, provider.KindRetry:
 		return ErrBusy
+	case provider.KindOpen:
+		return ErrOutcomeUnknown
 	case provider.KindFull:
 		return ErrFull
 	case provider.KindForbidden:
