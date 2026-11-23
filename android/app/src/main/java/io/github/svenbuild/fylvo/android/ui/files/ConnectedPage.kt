@@ -86,11 +86,21 @@ fun ConnectedPage(
 
     PlacePage(stringResource(R.string.connected_storages), onBack, bottomBar) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
+            // Fylvo 1.6.1: every state says what is the matter (never an empty page).
             if (overview == null) {
-                CircularProgressIndicator(Modifier.align(Alignment.Center))
+                if (state.failed) LoadFailed(onRetry = { viewModel.connected.load() })
+                else CircularProgressIndicator(Modifier.align(Alignment.Center))
                 return@Box
             }
+            val configured = overview.providers.any { it.configured }
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                if (state.failed) LoadFailed(onRetry = { viewModel.connected.load() })
+                when {
+                    !overview.available -> Notice(stringResource(R.string.connected_unavailable))
+                    !overview.allowed -> Notice(stringResource(if (overview.storages.isEmpty()) R.string.connect_not_allowed else R.string.connected_not_allowed_with))
+                    !configured -> Notice(stringResource(R.string.connected_no_provider))
+                    overview.storages.isEmpty() -> Notice(stringResource(R.string.connected_empty))
+                }
                 overview.storages.forEach { s ->
                     ListItem(
                         modifier = Modifier.clickable { target = s },
@@ -197,6 +207,26 @@ fun ConnectedPage(
             },
             dismissButton = { TextButton(onClick = { removing = null }) { Text(stringResource(R.string.cancel)) } },
         )
+    }
+}
+
+/** Fylvo 1.6.1: one calm sentence about the state of the page. */
+@Composable
+private fun Notice(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+    )
+}
+
+/** Fylvo 1.6.1: the storages could not be read; a retry. */
+@Composable
+private fun LoadFailed(onRetry: () -> Unit) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+        Text(stringResource(R.string.connected_load_failed), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        TextButton(onClick = onRetry, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text(stringResource(R.string.retry)) }
     }
 }
 

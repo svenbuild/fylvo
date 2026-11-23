@@ -1636,8 +1636,9 @@ fun FilesScreen(
             onOpenProfile = { accountPage = ACCOUNT_PROFILE },
             onOpenSecurity = { accountPage = ACCOUNT_SECURITY },
             onOpenTasks = { accountPage = ACCOUNT_TASKS },
-            // Also without the right to connect: storages connected before can still be disconnected.
-            onOpenConnected = if (connectedState.overview?.let { it.available && (it.allowed || it.storages.isNotEmpty()) } == true) ({ accountPage = ACCOUNT_CONNECTED }) else null,
+            // Like the web app's tab: when a storage can be connected, there are storages (also
+            // without the right to connect, to disconnect them), or the load failed (to retry).
+            onOpenConnected = if (connectedState.pageWanted) ({ accountPage = ACCOUNT_CONNECTED }) else null,
             onOpenCustomize = { customizeOpen = true },
             // Account is a tab: back goes to the start tab like every other tab.
             onBack = { selectTab(startTab) },

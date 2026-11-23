@@ -328,4 +328,10 @@
     <string name="connect_link_denied">The sign-in was cancelled at the provider. You can start again.</string>
     <string name="connect_link_expired">The sign-in took too long. Start again.</string>
     <string name="connect_link_failed">The sign-in did not work. You can start again.</string>
+    <!-- 1.6.1: states of the connected storages page -->
+    <string name="connected_unavailable">Connected storages are not available on this server.</string>
+    <string name="connected_not_allowed_with">Your account may no longer use connected storages. You can still disconnect them.</string>
+    <string name="connected_no_provider">No provider is set up on this server yet. Please ask the administrator.</string>
+    <string name="connected_empty">No storage connected yet.</string>
+    <string name="connected_load_failed">The connected storages could not be loaded.</string>
 </resources>

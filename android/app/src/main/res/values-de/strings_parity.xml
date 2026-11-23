@@ -328,4 +328,10 @@
     <string name="connect_link_denied">Die Anmeldung wurde beim Anbieter abgebrochen. Du kannst neu beginnen.</string>
     <string name="connect_link_expired">Die Anmeldung hat zu lange gedauert. Beginne neu.</string>
     <string name="connect_link_failed">Die Anmeldung hat nicht geklappt. Du kannst neu beginnen.</string>
+    <!-- 1.6.1: Zustände der Seite "Verbundene Speicher" -->
+    <string name="connected_unavailable">Verbundene Speicher sind auf diesem Server nicht verfügbar.</string>
+    <string name="connected_not_allowed_with">Dein Konto darf verbundene Speicher nicht mehr nutzen. Trennen ist weiterhin möglich.</string>
+    <string name="connected_no_provider">Auf diesem Server ist noch kein Anbieter eingerichtet. Bitte wende dich an die Verwaltung.</string>
+    <string name="connected_empty">Noch kein Speicher verbunden.</string>
+    <string name="connected_load_failed">Die verbundenen Speicher konnten nicht geladen werden.</string>
 </resources>

@@ -87,7 +87,18 @@ class ConnectedStorages(
         val overview: ConnectedOverview? = null,
         /** Usage by storage id, only for storages that answered. */
         val capacity: Map<String, CapacityResponse> = emptyMap(),
+        /** Fylvo 1.6.1: the last load failed (an overview shown before stays). */
+        val failed: Boolean = false,
     ) {
+        /**
+         * Fylvo 1.6.1: Account shows the storages page like the web app shows its tab: when the
+         * account can connect one (a provider is set up), has storages, or the load failed (so
+         * its retry can be reached).
+         */
+        val pageWanted: Boolean get() = overview?.let {
+            (it.available && it.allowed && it.providers.any { p -> p.configured }) || it.storages.isNotEmpty()
+        } ?: failed
+
         /** Shown on Home: the feature is there and this account may use it. */
         val visible: Boolean get() = overview != null && overview.available && overview.allowed &&
             (overview.storages.isNotEmpty() || overview.providers.any { it.configured })
@@ -116,19 +127,20 @@ class ConnectedStorages(
             throw e
         } catch (e: ApiException) {
             if (e.code == ApiException.CODE_LOGIN_REQUIRED) onSessionExpired()
+            else _state.update { it.copy(failed = true) }
             return
         }
         when (result) {
             is OverviewResult.Found -> {
                 Connected.nameStorages(result.overview.storages)
-                _state.update { it.copy(overview = result.overview) }
+                _state.update { it.copy(overview = result.overview, failed = false) }
                 loadCapacities()
             }
             OverviewResult.Missing -> {
                 Connected.nameStorages(emptyList())
                 _state.value = State()
             }
-            OverviewResult.Failed -> Unit
+            OverviewResult.Failed -> _state.update { it.copy(failed = true) }
         }
     }
 
