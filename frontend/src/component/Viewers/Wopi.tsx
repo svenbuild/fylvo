@@ -74,9 +74,10 @@ const Wopi = () => {
   }, [viewerState?.src, theme]);
 
   // Fylvo: editing in a connected storage: each editor window is a document of its own. The
-  // server says whether the session may save (it may open it for viewing only).
+  // server says whether the session may save (it may open it for viewing only); without that
+  // answer it counts as viewing.
   const connected = !!viewerState?.file && inConnectedStorage(viewerState.file.path);
-  const connectedEdit = connected && (viewerState?.edit ?? canEdit);
+  const connectedEdit = connected && viewerState?.edit === true;
 
   const handlePostMessage = (e: MessageEvent) => {
     console.log("Received PostMessage from " + e.origin, e.data);
