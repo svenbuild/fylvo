@@ -46,6 +46,9 @@ var (
 		// Content and thumbnail of a connected storage: the segment after the kind is the
 		// grant, which opens the file while it is valid.
 		regexp.MustCompile(`^((?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*)?/api/v4/fylvo/connected/(?:content|thumb)/)[^/]+`),
+		// Start page of connecting a storage from an app: the segment is the ticket,
+		// which the first browser that opens it makes its own.
+		regexp.MustCompile(`^((?:[a-zA-Z][a-zA-Z0-9+.-]*://[^/]*)?/api/v4/fylvo/connected/start/)[^/]+`),
 	}
 	// urlInText finds addresses in a text; it stops before trailing punctuation and quotes.
 	urlInText = regexp.MustCompile(`(?i)https?://[^\s"<>]*[^\s"'<>.,;:)]`)

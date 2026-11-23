@@ -65,11 +65,35 @@ func TestDevProvider(t *testing.T) {
 	elsewhere.Set("redirect_uri", "https://other.example.com/callback")
 	require.Equal(t, http.StatusBadRequest, page(http.MethodGet, "https://cloud.example.com"+DevPath+"authorize?"+elsewhere.Encode()).Code)
 
-	finish, err := m.Callback(ctx, consent.Query().Get("state"), cookie, "alex", "")
+	finishOut, err := m.Callback(ctx, consent.Query().Get("state"), cookie, "alex", "")
+	finish := finishOut.Finish
 	require.NoError(t, err)
-	storage, err := m.Finish(ctx, 7, finish)
+	storage, err := m.Finish(ctx, 7, finish, "")
 	require.NoError(t, err)
 	require.Equal(t, "alex@example.com", storage.Account)
+
+	// An app can connect here over plain http, so the flow can be tried on an emulator,
+	// and is shown the account like at a real provider.
+	plain, _ := url.Parse("http://192.168.1.10:5212")
+	require.True(t, AppSignin(plain, plain))
+	t.Setenv(EnvAppSignin, "0")
+	require.False(t, AppSignin(plain, plain))
+	t.Setenv(EnvAppSignin, "")
+	ticket, _, err := m.AuthorizeApp(ctx, 8, ProviderDrive, "", appChallenge)
+	require.NoError(t, err)
+	_, confirm, err := m.OpenTicket(ticket, "")
+	require.NoError(t, err)
+	address, signIn, _, err := m.StartTicket(ctx, ticket, confirm, testRedirect, anyAccount)
+	require.NoError(t, err)
+	consent, err = url.Parse(address)
+	require.NoError(t, err)
+	require.Equal(t, DevPath+"authorize", consent.Path)
+	out, err := m.Callback(ctx, consent.Query().Get("state"), signIn, "sam", "")
+	require.NoError(t, err)
+	seen, err := m.Preview(8, out.Finish, appVerifier)
+	require.NoError(t, err)
+	require.Equal(t, &SignedIn{Provider: ProviderDrive, Account: "sam@example.com", AccountKind: AccountAddress}, seen)
+	require.NoError(t, m.Cancel(8, out.Finish, appVerifier))
 
 	list := func(path string) (*Page, error) {
 		conn, opCtx, done, err := m.Use(ctx, 7, storage.ID)
@@ -96,9 +120,10 @@ func TestDevProvider(t *testing.T) {
 	address, cookie, err = m.Authorize(ctx, 7, ProviderDrive, storage.ID, testRedirect)
 	require.NoError(t, err)
 	consent, _ = url.Parse(address)
-	finish, err = m.Callback(ctx, consent.Query().Get("state"), cookie, "alex", "")
+	finishOut, err = m.Callback(ctx, consent.Query().Get("state"), cookie, "alex", "")
+	finish = finishOut.Finish
 	require.NoError(t, err)
-	_, err = m.Finish(ctx, 7, finish)
+	_, err = m.Finish(ctx, 7, finish, "")
 	require.NoError(t, err)
 	docs, err := list("Documents")
 	require.NoError(t, err)

@@ -61,6 +61,8 @@ with that variable. An ordinary build contains none of it. The log says so at th
   move, delete, save), as on any installation. Without it they are read-only.
 - Connecting works as with a real provider, but the sign-in page is one of the server:
   "Allow" as one of two sample accounts, or "Deny".
+- Connecting from an app (`client: "app"`) works here over plain http too, so it can be tried
+  on an emulator. An ordinary server offers it only with https.
 - `http://<your server>/api/v4/fylvo/dev/expire` ends all access, so every sample storage
   has to be connected again.
 - The browser has to reach the server under its first site address (admin area, "Site URL"):

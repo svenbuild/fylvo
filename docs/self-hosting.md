@@ -220,6 +220,20 @@ FYLVO_CONNECTED_WRITE=1
 Without the line nothing in a Google Drive or OneDrive is changed by Fylvo, and the apps offer
 no such action there.
 
+The phone app can connect a storage itself: it opens a page of your server in the phone's
+browser, which names the Fylvo account and asks before the sign-in at the provider starts. This
+works only where Fylvo runs with https. To turn it off, so that storages are connected in the
+web app only, add this to `.env` and start Fylvo again:
+
+```bash
+FYLVO_CONNECTED_APP_SIGNIN=0
+```
+
+If a proxy in front of Fylvo writes its own log, keep the secrets of a sign-in out of it. For
+addresses below `/api/v4/fylvo/connected/` do not log the path of `start/...`, the query of
+`callback`, the headers `Cookie`, `Set-Cookie`, `Authorization` and `Referer`, the `Location`
+of answers, or any request or answer body. Fylvo's own log replaces these values.
+
 Fylvo checks every connection to a provider and refuses internal addresses. If the server goes
 out through a proxy (`HTTPS_PROXY`), the proxy decides which targets are reachable: Fylvo can
 only check the address and its own name lookup, so the proxy itself has to block internal

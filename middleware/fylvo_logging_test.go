@@ -41,6 +41,8 @@ func TestLoggingHidesSecrets(t *testing.T) {
 	engine.GET("/s/:id/:password", func(c *gin.Context) { c.Status(http.StatusFound) })
 	engine.GET("/session/reset", func(c *gin.Context) { c.Status(http.StatusOK) })
 	engine.GET("/api/v4/file/content/:id/:speed/:name", func(c *gin.Context) { c.Status(http.StatusOK) })
+	engine.GET("/api/v4/fylvo/connected/start/:ticket", func(c *gin.Context) { c.Status(http.StatusOK) })
+	engine.POST("/api/v4/fylvo/connected/start/:ticket", func(c *gin.Context) { c.Status(http.StatusSeeOther) })
 	engine.GET("/s/:id/:password/panic", func(c *gin.Context) { panic("boom") })
 	engine.GET("/s/:id/:password/gone", func(c *gin.Context) {
 		panic(&net.OpError{Op: "write", Err: os.NewSyscallError("write", errors.New("broken pipe"))})
@@ -57,13 +59,19 @@ func TestLoggingHidesSecrets(t *testing.T) {
 		// An encoded fixed segment is routed like /s/..., so it is masked like it.
 		"/%73/Ab/encodedpw",
 		"/s/Ab/gonepw/gone",
+		// Fylvo: the ticket of connecting a storage from an app, also spelled with escapes.
+		"/api/v4/fylvo/connected/start/ticketAbCdEf0123456789-_ticketAbCdEf0123456",
+		"/api/v4/fylvo/connected/st%61rt/ticketEscaped0123456789-_ticketAbCdEf012345",
 	} {
 		engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
 	}
+	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost,
+		"/api/v4/fylvo/connected/start/ticketPosted0123456789-_ticketAbCdEf0123456", nil))
 
 	out := buf.String()
 	for _, s := range []string{"wopitoken-0b7d1c2e.Xy9AbCdEf", "sigsecret77", "sharepw55", "resetsecret99",
-		"AbCd1234", "shortsig", "panictoken", "panicpw", "encodedpw", "gonepw"} {
+		"AbCd1234", "shortsig", "panictoken", "panicpw", "encodedpw", "gonepw",
+		"ticketAbCdEf", "ticketEscaped", "ticketPosted"} {
 		assert.NotContains(t, out, s)
 	}
 	// The lines stay useful: method, status, path and the parameter names.
@@ -76,6 +84,7 @@ func TestLoggingHidesSecrets(t *testing.T) {
 		`"/api/v4/file/content/Xy/0/a%23b.pdf?sign=***"`,
 		`Panic recovered in GET /s/Ab/***/panic: boom`,
 		`Connection lost in GET /s/Ab/***/gone:`,
+		`GET`, `"/api/v4/fylvo/connected/start/***"`,
 	} {
 		assert.Contains(t, out, s)
 	}

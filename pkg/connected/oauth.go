@@ -31,6 +31,8 @@ type Spec struct {
 	Scopes   []string
 	// AuthParams are added to the consent address.
 	AuthParams map[string]string
+	// AppAuthParams are added on top for a sign-in that an app started (see oauth_app.go).
+	AppAuthParams map[string]string
 	// Identify reads who signed in and which drive is theirs.
 	Identify func(ctx context.Context, call APICall) (*Identity, error)
 	// Revoke takes the access back at the provider, for providers that can. It ends the
@@ -72,8 +74,36 @@ type Identity struct {
 	Key string
 	// Label is shown as "connected as".
 	Label string
+	// Shown and Kind are for the look an app takes before it stores a new connection:
+	// the name of the account that says most about whose it is, and what kind of name
+	// that is (see the Account* kinds). A name anybody can set is never called an address.
+	Shown string
+	Kind  string
 	// Props go into the setup of the remote (drive id and type for OneDrive).
 	Props map[string]string
+}
+
+// The kinds of name a provider tells for an account.
+const (
+	// AccountAddress: the address the provider itself knows the account by (Google).
+	AccountAddress = "address"
+	// AccountSignInName: the name the account signs in with (Microsoft). It looks like an
+	// address and proves no mailbox.
+	AccountSignInName = "sign_in_name"
+	// AccountName: only a display name, which the owner of the account chooses.
+	AccountName = "name"
+	// AccountNone: the provider told no name at all.
+	AccountNone = "none"
+)
+
+// shown picks what an app shows of an account: the first name that is there.
+func shown(names ...[2]string) (name, kind string) {
+	for _, n := range names {
+		if n[0] != "" {
+			return n[0], n[1]
+		}
+	}
+	return "", AccountNone
 }
 
 // Specs returns the providers of this version.
@@ -103,6 +133,9 @@ func Specs() map[string]*Spec {
 			AuthURL:  "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
 			TokenURL: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
 			Scopes:   []string{"Files.ReadWrite", "offline_access", "User.Read"},
+			// Microsoft passes a signed-in user through without a screen when it can. A
+			// sign-in from an app asks for the account chooser, so there always is one.
+			AppAuthParams: map[string]string{"prompt": "select_account"},
 			Identify: func(ctx context.Context, call APICall) (*Identity, error) {
 				return identifyOneDrive(ctx, call, "https://graph.microsoft.com")
 			},
@@ -132,7 +165,10 @@ func identifyDrive(ctx context.Context, call APICall, base string) (*Identity, e
 	if label == "" {
 		label = about.User.DisplayName
 	}
-	return &Identity{Key: about.User.PermissionID, Label: label}, nil
+	identity := &Identity{Key: about.User.PermissionID, Label: label}
+	identity.Shown, identity.Kind = shown(
+		[2]string{about.User.EmailAddress, AccountAddress}, [2]string{about.User.DisplayName, AccountName})
+	return identity, nil
 }
 
 func revokeGoogle(ctx context.Context, client *http.Client, address, refreshToken string) error {
@@ -182,11 +218,16 @@ func identifyOneDrive(ctx context.Context, call APICall, base string) (*Identity
 	if label == "" {
 		label = me.DisplayName
 	}
-	return &Identity{
+	identity := &Identity{
 		Key:   me.ID + "|" + drive.ID,
 		Label: label,
 		Props: map[string]string{"drive_id": drive.ID, "drive_type": drive.DriveType},
-	}, nil
+	}
+	// Not "mail": the administrator of any organisation at Microsoft can set it to an
+	// address of somebody else.
+	identity.Shown, identity.Kind = shown(
+		[2]string{me.UserPrincipalName, AccountSignInName}, [2]string{me.DisplayName, AccountName})
+	return identity, nil
 }
 
 // Errors of the sign-in flow. They are fixed texts: what a provider answers is
@@ -236,6 +277,12 @@ type flowState struct {
 	expires    time.Time
 	clientID   string
 	clientAuth string
+	// made is when the sign-in was asked for: the oldest gives way to a new one.
+	made time.Time
+	// app marks a sign-in an app started, challenge and attempt are those of its ticket.
+	app       bool
+	challenge string
+	attempt   string
 }
 
 // Granted is the outcome of a completed sign-in, waiting to be stored.
@@ -248,6 +295,29 @@ type Granted struct {
 	Token   string
 	Scopes  string
 	expires time.Time
+	made    time.Time
+	// App marks the result of a sign-in an app started: it is handed out only with the
+	// verifier whose challenge this is. Attempt is the id the app knows it by.
+	App       bool
+	Challenge string
+	Attempt   string
+}
+
+// Outcome is what a callback tells about its sign-in besides its error.
+type Outcome struct {
+	// Finish is the code the result waits under.
+	Finish string
+	// App: the sign-in was started by an app. Known also when the state is gone.
+	App bool
+	// Attempt is the id of the sign-in of an app, set once the browser that came back
+	// proved to be the one that confirmed. UserID and Provider are set with it.
+	Attempt  string
+	UserID   int
+	Provider string
+	// Account and AccountKind name the account that signed in at the provider, when the
+	// sign-in worked (see Identity.Shown).
+	Account     string
+	AccountKind string
 }
 
 // Flow runs sign-ins at providers. States and results live in memory only and
@@ -260,6 +330,9 @@ type Flow struct {
 	mu      sync.Mutex
 	states  map[string]*flowState
 	granted map[string]*Granted
+	// tickets and receipts belong to sign-ins from apps (see oauth_app.go).
+	tickets  map[string]*flowTicket
+	receipts map[string]*receipt
 	// exchanging counts the callbacks per provider that are talking to the provider.
 	exchanging map[string]int
 	// revoking counts, per provider, the tokens that are being taken back right now.
@@ -278,6 +351,7 @@ func NewFlow(specs map[string]*Spec, client *http.Client) *Flow {
 	return &Flow{
 		specs: specs, http: &fixed, now: time.Now,
 		states: map[string]*flowState{}, granted: map[string]*Granted{}, exchanging: map[string]int{},
+		tickets: map[string]*flowTicket{}, receipts: map[string]*receipt{},
 		revoking: map[string]int{}, talking: map[int]int{}, dropped: map[int]bool{},
 	}
 }
@@ -303,19 +377,73 @@ func (f *Flow) sweep() {
 			delete(f.granted, k)
 		}
 	}
+	for k, t := range f.tickets {
+		// One that was not used runs out by itself; one that was used lives as long
+		// as the state it became.
+		if (t.state == "" && now.After(t.made.Add(ticketLife))) || (t.state != "" && f.states[t.state] == nil) {
+			delete(f.tickets, k)
+		}
+	}
+	for k, r := range f.receipts {
+		if now.After(r.expires) {
+			delete(f.receipts, k)
+		}
+	}
 }
 
-// Begin starts a sign-in for a user. It returns the consent address of the
-// provider and the value of the cookie that ties the sign-in to this browser.
-func (f *Flow) Begin(userID int, provider string, client Client, reconnect *Reconnect) (address, cookie string, err error) {
-	spec := f.specs[provider]
-	if spec == nil {
-		return "", "", fmt.Errorf("unknown provider %q", provider)
+// place makes room for one more sign-in of an account. Everything it has under way
+// counts: tickets that were not used, sign-ins that wait for the provider, ones that
+// talk to it, and ones that wait to be stored. A further one takes the place of the one
+// asked for longest ago among tickets and waiting sign-ins, else of the oldest result;
+// when all of them talk to a provider right now it has to wait. The caller holds f.mu.
+func (f *Flow) place(userID int) error {
+	var (
+		oldest        func()
+		oldestMade    time.Time
+		oldestGranted string
+	)
+	older := func(made time.Time, drop func()) {
+		if oldest == nil || made.Before(oldestMade) {
+			oldest, oldestMade = drop, made
+		}
 	}
+	open := f.talking[userID]
+	for k, s := range f.states {
+		if s.userID == userID {
+			open++
+			older(s.made, func() { delete(f.states, k) })
+		}
+	}
+	for k, t := range f.tickets {
+		if t.userID == userID && t.state == "" {
+			open++
+			older(t.made, func() { delete(f.tickets, k) })
+		}
+	}
+	for k, g := range f.granted {
+		if g.UserID != userID {
+			continue
+		}
+		open++
+		if oldestGranted == "" || g.made.Before(f.granted[oldestGranted].made) {
+			oldestGranted = k
+		}
+	}
+	switch {
+	case open < maxStates:
+	case oldest != nil:
+		oldest()
+	case oldestGranted != "":
+		delete(f.granted, oldestGranted)
+	default:
+		return ErrFlowWait
+	}
+	return nil
+}
 
-	state, verifier, cookie := randomToken(24), randomToken(32), randomToken(32)
+// consent is the address of the provider a sign-in starts at.
+func (f *Flow) consent(spec *Spec, client Client, state, verifier string, app bool) string {
 	challenge := sha256.Sum256([]byte(verifier))
-
 	q := url.Values{
 		"response_type":         {"code"},
 		"client_id":             {client.ID},
@@ -328,51 +456,12 @@ func (f *Flow) Begin(userID int, provider string, client Client, reconnect *Reco
 	for k, v := range spec.AuthParams {
 		q.Set(k, v)
 	}
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.sweep()
-	if f.revoking[provider] > 0 {
-		return "", "", ErrFlowWait
-	}
-	// Everything an account has under way counts: sign-ins that wait for the provider,
-	// ones that talk to it, and ones that wait to be stored.
-	var oldest, oldestGranted string
-	open := f.talking[userID]
-	for k, s := range f.states {
-		if s.userID != userID {
-			continue
-		}
-		open++
-		if oldest == "" || s.expires.Before(f.states[oldest].expires) {
-			oldest = k
+	if app {
+		for k, v := range spec.AppAuthParams {
+			q.Set(k, v)
 		}
 	}
-	for k, g := range f.granted {
-		if g.UserID != userID {
-			continue
-		}
-		open++
-		if oldestGranted == "" || g.expires.Before(f.granted[oldestGranted].expires) {
-			oldestGranted = k
-		}
-	}
-	switch {
-	case open < maxStates:
-	case oldest != "":
-		delete(f.states, oldest)
-	case oldestGranted != "":
-		delete(f.granted, oldestGranted)
-	default:
-		return "", "", ErrFlowWait
-	}
-	f.states[state] = &flowState{
-		userID: userID, provider: provider, verifier: verifier, browser: sha256.Sum256([]byte(cookie)),
-		redirect: client.Redirect, reconnect: reconnect, expires: f.now().Add(stateLife),
-		clientID: client.ID, clientAuth: client.Secret,
-	}
-
-	address = spec.AuthURL
+	address := spec.AuthURL
 	if strings.HasPrefix(address, "/") {
 		// A sign-in page this installation serves itself (development builds only): it
 		// is at the address the browser reaches the installation by.
@@ -380,14 +469,41 @@ func (f *Flow) Begin(userID int, provider string, client Client, reconnect *Reco
 			address = back.Scheme + "://" + back.Host + address
 		}
 	}
-	return address + "?" + q.Encode(), cookie, nil
+	return address + "?" + q.Encode()
+}
+
+// Begin starts a sign-in for a user. It returns the consent address of the
+// provider and the value of the cookie that ties the sign-in to this browser.
+func (f *Flow) Begin(userID int, provider string, client Client, reconnect *Reconnect) (address, cookie string, err error) {
+	spec := f.specs[provider]
+	if spec == nil {
+		return "", "", fmt.Errorf("unknown provider %q", provider)
+	}
+
+	state, verifier, cookie := randomToken(24), randomToken(32), randomToken(32)
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sweep()
+	if f.revoking[provider] > 0 {
+		return "", "", ErrFlowWait
+	}
+	if err := f.place(userID); err != nil {
+		return "", "", err
+	}
+	f.states[state] = &flowState{
+		userID: userID, provider: provider, verifier: verifier, browser: sha256.Sum256([]byte(cookie)),
+		redirect: client.Redirect, reconnect: reconnect, expires: f.now().Add(stateLife),
+		clientID: client.ID, clientAuth: client.Secret, made: f.now(),
+	}
+	return f.consent(spec, client, state, verifier, false), cookie, nil
 }
 
 // Callback completes the provider's side of a sign-in: it takes the state out,
 // checks the browser, exchanges the code and asks who signed in. The result waits
 // under the returned code for Finish. providerError is the "error" parameter of
 // the callback, if any.
-func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError string) (finish string, err error) {
+func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError string) (out Outcome, err error) {
 	f.mu.Lock()
 	f.sweep()
 	s := f.states[state]
@@ -399,27 +515,40 @@ func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError 
 	f.mu.Unlock()
 
 	if s == nil {
-		return "", ErrFlowExpired
+		// The kind of the sign-in still shows in the state value.
+		return Outcome{App: IsAppState(state)}, ErrFlowExpired
 	}
+	out.App = s.app
 	// A provider that stalls must not keep the sign-in under way for good.
 	ctx, cancel := context.WithTimeout(ctx, callbackTime)
 	defer cancel()
-	// Counted until the result is stored below, so Busy never has a gap.
-	defer func() {
-		f.mu.Lock()
+	// Counted until the result is stored below, so Busy never has a gap. done gives the
+	// count back; the last step below does it together with keeping the result.
+	counted := true
+	done := func() {
+		if !counted {
+			return
+		}
+		counted = false
 		f.exchanging[s.provider]--
 		if f.talking[s.userID]--; f.talking[s.userID] <= 0 {
 			delete(f.talking, s.userID)
 			delete(f.dropped, s.userID)
 		}
+	}
+	defer func() {
+		f.mu.Lock()
+		done()
 		f.mu.Unlock()
 	}()
 	sum := sha256.Sum256([]byte(cookie))
 	if cookie == "" || subtle.ConstantTimeCompare(sum[:], s.browser[:]) != 1 {
-		return "", ErrFlowBrowser
+		return out, ErrFlowBrowser
 	}
+	// From here on the browser is the one that started (or, for an app, confirmed).
+	out.Attempt, out.UserID, out.Provider = s.attempt, s.userID, s.provider
 	if providerError != "" || code == "" {
-		return "", ErrFlowDenied
+		return out, ErrFlowDenied
 	}
 
 	spec := f.specs[s.provider]
@@ -433,13 +562,13 @@ func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError 
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, spec.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return "", ErrFlowProvider
+		return out, ErrFlowProvider
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	res, err := f.http.Do(req)
 	if err != nil {
-		return "", ErrFlowProvider
+		return out, ErrFlowProvider
 	}
 	defer res.Body.Close()
 
@@ -453,21 +582,21 @@ func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError 
 	}
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if json.Unmarshal(raw, &tok) != nil {
-		return "", ErrFlowProvider
+		return out, ErrFlowProvider
 	}
 	switch {
 	case tok.Error == "invalid_client" || tok.Error == "unauthorized_client":
-		return "", ErrFlowSetup
+		return out, ErrFlowSetup
 	case res.StatusCode != http.StatusOK || tok.Error != "":
-		return "", ErrFlowProvider
+		return out, ErrFlowProvider
 	case tok.AccessToken == "" || tok.RefreshToken == "":
 		// Without a refresh token the connection would end within the hour.
-		return "", ErrFlowProvider
+		return out, ErrFlowProvider
 	}
 
 	identity, err := spec.Identify(ctx, f.apiCall(tok.AccessToken))
 	if err != nil {
-		return "", ErrFlowProvider
+		return out, ErrFlowProvider
 	}
 
 	tokenType := tok.TokenType
@@ -481,19 +610,24 @@ func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError 
 		"expiry":        f.now().Add(time.Duration(tok.ExpiresIn) * time.Second).UTC().Format(time.RFC3339),
 	})
 
-	finish = randomToken(24)
+	out.Finish = randomToken(24)
 	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.dropped[s.userID] {
 		// The account was removed while the provider answered: its token is let go.
-		f.mu.Unlock()
-		return "", ErrFlowExpired
+		out.Finish = ""
+		return out, ErrFlowExpired
 	}
-	f.granted[finish] = &Granted{
+	// The result takes the place of its callback in one step, so the sign-in is never
+	// counted twice.
+	f.granted[out.Finish] = &Granted{
 		UserID: s.userID, Provider: s.provider, Identity: identity, Reconnect: s.reconnect,
-		Token: string(token), Scopes: tok.Scope, expires: f.now().Add(finishLife),
+		Token: string(token), Scopes: tok.Scope, expires: f.now().Add(finishLife), made: s.made,
+		App: s.app, Challenge: s.challenge, Attempt: s.attempt,
 	}
-	f.mu.Unlock()
-	return finish, nil
+	done()
+	out.Account, out.AccountKind = identity.Shown, identity.Kind
+	return out, nil
 }
 
 // apiCall returns a function that reads JSON from the provider with the token.
@@ -519,21 +653,10 @@ func (f *Flow) apiCall(accessToken string) APICall {
 	}
 }
 
-// Finish hands the result of a sign-in to the user who started it, once.
-func (f *Flow) Finish(userID int, finish string) (*Granted, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.sweep()
-	g := f.granted[finish]
-	if g == nil {
-		return nil, ErrFlowExpired
-	}
-	if g.UserID != userID {
-		// Left in place: the user who started the sign-in can still finish it.
-		return nil, ErrFlowAccount
-	}
-	delete(f.granted, finish)
-	return g, nil
+// Finish hands the result of a sign-in to the user who started it, once. A result of a
+// sign-in from an app needs the verifier of that app (see oauth_app.go).
+func (f *Flow) Finish(userID int, finish, verifier string) (*Granted, error) {
+	return f.take(userID, finish, verifier, true)
 }
 
 // Revoking asks whether a token of this provider may be taken back now. It may not while
@@ -569,6 +692,16 @@ func (f *Flow) Forget(userID int) {
 	for k, g := range f.granted {
 		if g.UserID == userID {
 			delete(f.granted, k)
+		}
+	}
+	for k, t := range f.tickets {
+		if t.userID == userID {
+			delete(f.tickets, k)
+		}
+	}
+	for k, r := range f.receipts {
+		if r.userID == userID {
+			delete(f.receipts, k)
 		}
 	}
 	if f.talking[userID] > 0 {

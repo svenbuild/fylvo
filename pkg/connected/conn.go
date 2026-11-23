@@ -413,6 +413,13 @@ const (
 // installation than its first one, which is the one the provider sends the browser back to.
 var ErrOtherAddress = reasoned(serializer.CodeParamErr, "Open Fylvo under its main address to connect a storage", ReasonOtherAddress)
 
+// ReasonAppSigninOff: apps cannot connect storages through this address of the
+// installation: the operator switched it off, or it is not https.
+const ReasonAppSigninOff = "app_signin_off"
+
+// ErrAppSigninOff is the answer to an app where apps cannot connect storages.
+var ErrAppSigninOff = reasoned(serializer.CodeConnectedUnavailable, "Connecting a storage from an app is not available here", ReasonAppSigninOff)
+
 // ErrNotAllowed is the answer for an account whose group may not connect storages.
 var ErrNotAllowed = reasoned(serializer.CodeConnectedUnavailable, "Connected storages are not available", ReasonNotAllowed)
 

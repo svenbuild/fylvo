@@ -493,6 +493,11 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			v4.Any("fylvo/dev/*page", gin.WrapH(simulated))
 		}
 		v4.GET("fylvo/connected/callback", controllers.FylvoConnectedCallback)
+		// Fylvo: where an app sends the system browser to connect a storage. No sign-in:
+		// the ticket in the path belongs to the first browser that opens it, and the page
+		// names the account before anything goes to the provider.
+		v4.GET("fylvo/connected/start/:ticket", controllers.FylvoConnectedStart)
+		v4.POST("fylvo/connected/start/:ticket", controllers.FylvoConnectedStart)
 
 		// Fylvo: content of a file in a connected storage. The grant in the path is the
 		// permission, checked in full on every request. Served like other file content:
