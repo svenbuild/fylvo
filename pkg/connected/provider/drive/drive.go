@@ -1,4 +1,5 @@
-// Package drive reads a Google Drive through the Drive API v3.
+// Package drive reads and changes a Google Drive through the Drive API v3, with
+// resumable uploads for content (write.go).
 //
 // It speaks plain HTTPS through provider.Caller, which adds the access token, renews
 // it on a 401, obeys rate limits and follows content redirects without the token.
@@ -469,6 +470,11 @@ var reasons = map[string]provider.Kind{
 	"appNotAuthorizedToFile":      provider.KindForbidden,
 	"forbidden":                   provider.KindForbidden,
 	"domainPolicy":                provider.KindForbidden,
+
+	// Limits on the number of items: of the account, of a folder, of a shared drive.
+	"activeItemCreationLimitExceeded":   provider.KindFull,
+	"numChildrenInNonRootLimitExceeded": provider.KindFull,
+	"teamDriveFileLimitExceeded":        provider.KindFull,
 }
 
 // safeCode is what a reason must look like to be kept as Error.Code: a short word.
