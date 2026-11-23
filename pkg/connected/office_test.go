@@ -763,3 +763,33 @@ func TestOfficeCopyOutlivesItsRequest(t *testing.T) {
 		require.Equal(t, []byte("changed by somebody else"), e.content("letter.docx"))
 	})
 }
+
+// How a window stands is told for a live session of the account only.
+func TestOfficeConflictOnlyForALiveSessionOfTheAccount(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	e.sim.AddFile("", "letter.docx", []byte("version one"))
+	s, err := e.openOffice("letter.docx", true)
+	require.NoError(t, err)
+
+	standing, err := e.f.OfficeConflict(s.User, s.ID)
+	require.NoError(t, err)
+	require.Equal(t, &OfficeStanding{Fingerprint: "fp"}, standing)
+	_, err = e.f.OfficeConflict(s.User+1, s.ID)
+	require.ErrorIs(t, err, ErrNoStorage)
+	_, err = e.f.OfficeConflict(s.User, "co-unknown")
+	require.ErrorIs(t, err, ErrNoStorage)
+
+	// It ran out.
+	now := e.f.offices.now
+	e.f.offices.now = func() time.Time { return now().Add(2 * time.Hour) }
+	_, err = e.f.OfficeConflict(s.User, s.ID)
+	require.ErrorIs(t, err, ErrNoStorage)
+	e.f.offices.now = now
+	_, err = e.f.OfficeConflict(s.User, s.ID)
+	require.NoError(t, err)
+
+	// It was closed.
+	e.f.CloseOffice(s)
+	_, err = e.f.OfficeConflict(s.User, s.ID)
+	require.ErrorIs(t, err, ErrNoStorage)
+}

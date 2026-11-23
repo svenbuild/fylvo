@@ -34,8 +34,7 @@ import { FileManagerIndex } from "../FileManager.tsx";
 import { FmIndexContext } from "../FmIndexContext.tsx";
 import ShareInfoPopover from "./ShareInfoPopover.tsx";
 import { useConnectedStorage } from "../Connected/useConnectedStorages.ts";
-import CloudFilled from "../../Icons/CloudFilled.tsx";
-import CloudOutlined from "../../Icons/CloudOutlined.tsx";
+import { connectedProviderIcons } from "../Connected/ConnectedProviderIcon.tsx";
 
 export const BreadcrumbButtonBase = styled(Button, {
   shouldForwardProp: (prop) => prop !== "isDropOver",
@@ -224,12 +223,12 @@ export const useBreadcrumbButtons = ({
           }
           return undefined;
         case Filesystem.connected:
-          return { Icons: [CloudFilled, CloudOutlined] };
+          return { Icons: connectedProviderIcons(connectedStorage?.provider) };
         default:
           return undefined;
       }
     }
-  }, [uri, shareInfo]);
+  }, [uri, shareInfo, connectedStorage?.provider]);
 
   return [loading, displayName, startIcon, onClick, shareInfo] as const;
 };

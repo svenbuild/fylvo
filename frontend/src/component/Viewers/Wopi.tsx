@@ -1,4 +1,4 @@
-import { Alert, Box, ListItemText, Menu, useTheme } from "@mui/material";
+import { Alert, Box, Button, ListItemText, Menu, useTheme } from "@mui/material";
 import i18n from "i18next";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,8 +9,11 @@ import { SquareMenuItem } from "../FileManager/ContextMenu/ContextMenu.tsx";
 import useActionDisplayOpt, { canUpdate } from "../FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { FileManagerIndex } from "../FileManager/FileManager.tsx";
 import ViewerDialog, { ViewerLoading } from "./ViewerDialog.tsx";
-import { inConnectedStorage } from "../../api/connected.ts";
+import { ConnectedCode, getConnectedOfficeState, inConnectedStorage } from "../../api/connected.ts";
+import { FileResponse } from "../../api/explorer.ts";
+import { AppError, Code } from "../../api/request.ts";
 import { refreshFileList } from "../../redux/thunks/filemanager.ts";
+import { openViewers, openWopiViewer } from "../../redux/thunks/viewer.ts";
 import CrUri from "../../util/uri.ts";
 import { AppThunk } from "../../redux/store.ts";
 
@@ -50,6 +53,22 @@ const refreshFolderIfOpen =
       dispatch(refreshFileList(FileManagerIndex.main));
     }
   };
+
+// Fylvo: how often an editing window of a connected storage asks the server whether it can
+// still save.
+const officeStateInterval = 4000;
+
+// Fylvo: answers after which there is nothing more to ask: the server no longer knows the
+// window, the account is signed out, or it may not use connected storages.
+const officeStateOver: number[] = [
+  40016,
+  Code.CodeLoginRequired,
+  Code.CredentialInvalid,
+  Code.PermissionDenied,
+  // The sign-in of this page may not read files.
+  40089,
+  ConnectedCode.Unavailable,
+];
 
 const Wopi = () => {
   const { t } = useTranslation();
@@ -96,6 +115,65 @@ const Wopi = () => {
   // answer it counts as viewing.
   const connected = !!viewerState?.file && inConnectedStorage(viewerState.file.path);
   const connectedEdit = connected && viewerState?.edit === true;
+
+  // Fylvo: after a conflict (the file changed elsewhere) the editor shows its dialog once and
+  // then stops sending what is typed, also when the window is closed. The server has put the
+  // refused state next to the file as a copy and knows that this window cannot save any more;
+  // the editor does not tell this page. So the page asks the server while the window is open.
+  // Once the conflict is known, or the server no longer knows the window, it stops asking.
+  // conflict is set then; its copy is missing when the server could not keep one.
+  const [conflict, setConflict] = useState<{ copy?: FileResponse } | undefined>(undefined);
+  const conflictCopy = conflict?.copy;
+  const [openingCopy, setOpeningCopy] = useState(false);
+  const sessionId = viewerState?.session?.id;
+  const watching = connectedEdit && !!viewerState?.open && !!sessionId;
+  useEffect(() => {
+    setConflict(undefined);
+    setOpeningCopy(false);
+    if (!watching || !sessionId) {
+      return;
+    }
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined = undefined;
+    const ask = async () => {
+      try {
+        const state = await dispatch(getConnectedOfficeState(sessionId));
+        if (stopped) {
+          return;
+        }
+        if (state.conflict) {
+          setConflict({ copy: state.copy });
+          return;
+        }
+      } catch (e) {
+        // An answer that says the window is over ends the asking. Anything else (a request
+        // that did not get through or hung, a server in trouble for a moment) is tried again.
+        if (stopped || (e instanceof AppError && officeStateOver.includes(e.code))) {
+          return;
+        }
+      }
+      timer = setTimeout(ask, officeStateInterval);
+    };
+    timer = setTimeout(ask, officeStateInterval);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [watching, sessionId]);
+
+  // The editor is locked: nothing more can be typed into a window that does not save, once
+  // what it had is safe in a copy. Without a copy it stays usable: what the user wrote is in
+  // the editor only, and has to be taken out of it by hand.
+  useEffect(() => {
+    const frame = document.getElementById("office_frame");
+    if (!frame) {
+      return;
+    }
+    frame.toggleAttribute("inert", !!conflictCopy);
+    if (conflictCopy) {
+      frame.blur();
+    }
+  }, [conflictCopy, sessionId]);
 
   const handlePostMessage = (e: MessageEvent) => {
     console.log("Received PostMessage from " + e.origin, e.data);
@@ -147,6 +225,25 @@ const Wopi = () => {
       }
     }
   }, [dispatch, connectedEdit, viewerState?.file]);
+
+  // Fylvo: go on in the copy. It takes the place of this window, in the same editor.
+  const openConflictCopy = useCallback(async () => {
+    if (!conflictCopy || openingCopy) {
+      return;
+    }
+    setOpeningCopy(true);
+    dispatch(refreshFolderIfOpen(new CrUri(conflictCopy.path).parent().toString(), false));
+    try {
+      if (viewerState?.viewer) {
+        await dispatch(openWopiViewer(conflictCopy, viewerState.viewer));
+      } else {
+        await dispatch(openViewers(FileManagerIndex.main, conflictCopy));
+      }
+    } catch (e) {
+      // The copy could not be opened (it is gone, the provider is busy): the notice stays.
+    }
+    setOpeningCopy(false);
+  }, [dispatch, conflictCopy, openingCopy, viewerState?.viewer]);
 
   const openMore = useCallback(
     (e: React.MouseEvent<any>) => {
@@ -200,15 +297,54 @@ const Wopi = () => {
             replacedSrc={replacedSrc}
           />
         )}
-        {connectedEdit && !noticeClosed && (
+        {connectedEdit && !noticeClosed && !conflict && (
           <Alert severity="warning" onClose={() => setNoticeClosed(true)} sx={{ borderRadius: 0 }}>
             {t("application:connected.officeOneWindow")}
+          </Alert>
+        )}
+        {conflictCopy && (
+          <Alert
+            severity="error"
+            sx={{ borderRadius: 0, alignItems: "center" }}
+            action={
+              <>
+                <Button
+                  color="inherit"
+                  size="small"
+                  autoFocus
+                  disabled={openingCopy}
+                  onClick={openConflictCopy}
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  {t("application:connected.officeOpenCopy")}
+                </Button>
+                <Button
+                  color="inherit"
+                  size="small"
+                  disabled={openingCopy}
+                  onClick={onClose}
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  {t("common:close")}
+                </Button>
+              </>
+            }
+          >
+            {t("application:connected.officeConflict", { name: conflictCopy.name })}
+          </Alert>
+        )}
+        {conflict && !conflictCopy && (
+          <Alert severity="error" sx={{ borderRadius: 0 }}>
+            {t("application:connected.officeConflictUnkept")}
           </Alert>
         )}
         {!loaded && <ViewerLoading />}
         <Box
           onLoad={handleIframeOnload}
           component={"iframe"}
+          // Fylvo: a new session of a connected storage gets a frame of its own, so the document of
+          // the one before is gone at once (it may be one that can no longer save).
+          key={connected ? sessionId ?? "none" : "office"}
           id={"office_frame"}
           name={"office_frame"}
           sandbox={
@@ -221,6 +357,9 @@ const Wopi = () => {
             height: loaded ? "100%" : 0,
             border: "none",
             minHeight: loaded ? "calc(100vh - 200px)" : 0,
+            // Fylvo: a window that no longer saves is shown, but dimmed and out of reach.
+            opacity: conflictCopy ? 0.35 : 1,
+            pointerEvents: conflictCopy ? "none" : undefined,
           }}
         />
       </ViewerDialog>

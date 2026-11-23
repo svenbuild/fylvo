@@ -344,8 +344,7 @@ export function openAtProvider(index: number, file: FileResponse): AppThunk {
   return async (dispatch) => {
     dispatch(closeContextMenu({ index, value: undefined }));
     // The first one that names an address, as the menu decides whether to show the entry.
-    const url =
-      file.metadata?.[Metadata.connected_external_url] || file.metadata?.[Metadata.connected_provider_url];
+    const url = file.metadata?.[Metadata.connected_external_url] || file.metadata?.[Metadata.connected_provider_url];
     if (url && /^https?:\/\//i.test(url)) {
       window.open(url, "_blank", "noopener,noreferrer");
     }
@@ -460,6 +459,10 @@ export function fileDoubleClicked(index: number, file: FileResponse, e?: React.M
       dispatch(openAtProvider(index, file));
     } else if (actionOpt.showOpen || actionOpt.showEnter) {
       dispatch(openFile(index, file));
+    } else if (actionOpt.showAlsoAtProvider) {
+      // Fylvo: a shortcut to a file has no "open" here; its address at the provider is the way
+      // to open it.
+      dispatch(openAtProvider(index, file));
     } else if (
       file.type == FileType.file &&
       actionOpt.showDownload &&

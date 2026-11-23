@@ -54,8 +54,8 @@ export interface DisplayOption {
   showOpen?: boolean;
   // Fylvo: a document of a connected storage's provider, opened there.
   showOpenAtProvider?: boolean;
-  // Fylvo: a row of a connected storage that can also be opened at the provider. Only an
-  // entry of the menu: what a double click does is not changed by it.
+  // Fylvo: a row of a connected storage that can also be opened at the provider: an entry of
+  // the menu, and what a double click does when the row has no "open" of its own.
   showAlsoAtProvider?: boolean;
   showOpenWithCascading?: () => boolean;
   showOpenWith?: () => boolean;

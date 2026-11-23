@@ -51,6 +51,8 @@ export interface WopiViewerState extends GeneralViewerState {
   session: ViewerSession;
   // Fylvo: whether the session may save; only for a file of a connected storage.
   edit?: boolean;
+  // Fylvo: the viewer the window was opened with, to open another file the same way.
+  viewer?: Viewer;
 }
 
 export interface DrawIOViewerState extends GeneralViewerState {

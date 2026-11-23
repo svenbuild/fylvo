@@ -104,6 +104,12 @@ func FylvoConnectedOfficeGet(c *gin.Context)   { explorer.ConnectedOfficeGet(c) 
 func FylvoConnectedOfficePut(c *gin.Context)   { explorer.ConnectedOfficePut(c) }
 func FylvoConnectedOfficeOther(c *gin.Context) { explorer.ConnectedOfficeOther(c) }
 
+// FylvoConnectedOfficeState tells the web app whether an editor window can still save.
+func FylvoConnectedOfficeState(c *gin.Context) {
+	res, err := explorer.ConnectedOfficeState(c, c.Param("session"))
+	fylvoAnswer(c, res, err)
+}
+
 // FylvoConnectedAdmin returns the setup of the providers.
 func FylvoConnectedAdmin(c *gin.Context) {
 	res, err := fylvo.ConnectedAdmin(c)
