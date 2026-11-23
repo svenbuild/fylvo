@@ -14,12 +14,13 @@ import {
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import SessionManager from "../../../session/index.ts";
 import { sizeToString } from "../../../util";
-import CrUri from "../../../util/uri.ts";
+import CrUri, { Filesystem } from "../../../util/uri.ts";
 import TimeBadge from "../../Common/TimeBadge.tsx";
 import ShieldDismiss from "../../Icons/ShieldDismiss.tsx";
 import ShieldLockFilled from "../../Icons/ShieldLockFilled.tsx";
 import FileBadge from "../FileBadge.tsx";
 import InfoRow from "./InfoRow.tsx";
+import { sizeKnown, timeKnown } from "../Connected/ConnectedMark.tsx";
 
 export interface BasicInfoProps {
   target: FileResponse;
@@ -169,6 +170,8 @@ const BasicInfo = ({ target }: BasicInfoProps) => {
   const targetCrUri = useMemo(() => {
     return new CrUri(target.path);
   }, [target]);
+  // Fylvo: a connected storage has no folder sizes and no storage of this server.
+  const inConnected = targetCrUri.fs() == Filesystem.connected;
 
   const viewSyncEnabled = useMemo(() => {
     return !SessionManager.currentLoginOrNull()?.user?.disable_view_sync;
@@ -301,15 +304,19 @@ const BasicInfo = ({ target }: BasicInfoProps) => {
           }
         />
       )}
-      <InfoRow
-        title={t("application:fileManager.createdAt")}
-        content={<TimeBadge variant={"body2"} datetime={target.created_at} />}
-      />
-      <InfoRow
-        title={t("application:fileManager.modifiedAt")}
-        content={<TimeBadge variant={"body2"} datetime={target.updated_at} />}
-      />
-      {target.type == FileType.folder && !isSymbolicLink && (
+      {timeKnown(target.created_at) && (
+        <InfoRow
+          title={t("application:fileManager.createdAt")}
+          content={<TimeBadge variant={"body2"} datetime={target.created_at} />}
+        />
+      )}
+      {timeKnown(target.updated_at) && (
+        <InfoRow
+          title={t("application:fileManager.modifiedAt")}
+          content={<TimeBadge variant={"body2"} datetime={target.updated_at} />}
+        />
+      )}
+      {target.type == FileType.folder && !isSymbolicLink && !inConnected && (
         <>
           {!folderSummary && (
             <InfoRow
@@ -339,21 +346,23 @@ const BasicInfo = ({ target }: BasicInfoProps) => {
       )}
       {target.type == FileType.file && (
         <>
-          <InfoRow title={t("fileManager.size")} content={displaySize(target.size)} />
-          <InfoRow
-            title={t("application:fileManager.storageUsed")}
-            content={
-              target.extended_info ? (
-                displaySize(target.extended_info.storage_used)
-              ) : (
-                <Skeleton variant={"text"} width={75} />
-              )
-            }
-          />
-          {showEncryptionStatus && encryptionStatus && (
+          {sizeKnown(target) && <InfoRow title={t("fileManager.size")} content={displaySize(target.size)} />}
+          {!inConnected && (
+            <InfoRow
+              title={t("application:fileManager.storageUsed")}
+              content={
+                target.extended_info ? (
+                  displaySize(target.extended_info.storage_used)
+                ) : (
+                  <Skeleton variant={"text"} width={75} />
+                )
+              }
+            />
+          )}
+          {showEncryptionStatus && encryptionStatus && !inConnected && (
             <InfoRow title={t("application:fileManager.encryption")} content={encryptionStatus} />
           )}
-          {ftsEnabled && (
+          {ftsEnabled && !inConnected && (
             <InfoRow
               title={t("application:fileManager.ftsStatus")}
               content={

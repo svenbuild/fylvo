@@ -5,6 +5,7 @@ import { FileResponse } from "../../../api/explorer.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { RadiusFrame } from "../../Frame/RadiusFrame.tsx";
 import SidebarContent from "./SidebarContent.tsx";
+import { rowUnsupported } from "../Connected/ConnectedMark.tsx";
 
 export interface SideBarProps {
   inPhotoViewer?: boolean;
@@ -36,7 +37,10 @@ const Sidebar = ({ inPhotoViewer }: SideBarProps) => {
       if (typeof sidebarTarget === "string") {
       } else {
         setTarget(sidebarTarget);
-        loadExtendedInfo(sidebarTarget.path);
+        // Fylvo: a row of a connected storage that cannot be used has no details to load.
+        if (!rowUnsupported(sidebarTarget)) {
+          loadExtendedInfo(sidebarTarget.path);
+        }
       }
     } else {
       setTarget(null);

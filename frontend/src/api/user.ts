@@ -99,6 +99,8 @@ export const GroupPermission = {
   redirected_source: 11,
   advance_delete: 12,
   unique_direct_link: 17,
+  // Fylvo: may connect storages at other providers
+  connected_storage: 40,
 };
 
 export interface UserSettings {

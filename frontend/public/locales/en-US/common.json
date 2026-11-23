@@ -110,6 +110,14 @@
     "40903": "The time to set a new password has run out. Please sign in again.",
     "40904": "The file to replace is gone.",
     "40905": "A file or folder with the same name in different upper and lower case already exists here.",
+    "40920": "This is not possible in a connected storage.",
+    "40921": "The storage has to be connected again (Settings, Connected storages).",
+    "40922": "Connected storages are not available.",
+    "40923": "The storage provider is busy. Please try again later.",
+    "40924": "The storage at the provider is full.",
+    "40925": "This item cannot be used here.",
+    "40926": "The listing has expired. Please load it again.",
+    "40927": "It is not known whether saving went through. Your changes are kept; check the file before saving again.",
     "50001": "Database operation failed. ({{message}})",
     "50002": "Failed to sign the URL or request. ({{message}})",
     "50004": "I/O operation failed. ({{message}})",
@@ -117,6 +125,13 @@
     "50006": "Internal cache error.",
     "50007": "The storage callback failed.",
     "50010": "Desired node is unavailable.",
-    "50011": "Failed to query file metadata."
+    "50011": "Failed to query file metadata.",
+    "40925_ambiguous": "This name exists more than once at the provider. Rename one of them there.",
+    "40925_changed": "This item was changed at the provider meanwhile. Please reload the folder.",
+    "40925_forbidden": "The provider does not allow this for this item.",
+    "40925_flagged": "The provider has blocked this file.",
+    "40925_export_too_large": "This document is too large to be exported by the provider.",
+    "40925_daily_limit": "The provider's daily limit is reached. Please try again tomorrow.",
+    "40925_too_large": "This folder has too many entries to be shown here."
   }
 }

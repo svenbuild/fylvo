@@ -23,6 +23,8 @@ defaultGroupBs.sets({
   [GroupPermission.share]: true,
   [GroupPermission.share_download]: true,
   [GroupPermission.set_anonymous_permission]: true,
+  // Fylvo: new groups may connect storages, as existing ones after the update
+  [GroupPermission.connected_storage]: true,
 });
 const defaultGroup: GroupEnt = {
   name: "",

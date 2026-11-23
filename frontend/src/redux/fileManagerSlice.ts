@@ -5,6 +5,7 @@ import { Capacity } from "../api/user.ts";
 import { ListViewColumnSetting } from "../component/FileManager/Explorer/ListView/Column.tsx";
 import SessionManager, { UserSettings } from "../session";
 import { SearchParam } from "../util/uri.ts";
+import { folderEnterable } from "../api/connected.ts";
 
 export const ContextMenuTypes = {
   empty: "empty",
@@ -199,7 +200,9 @@ export const fileManagerSlice = createSlice({
       fm.tree[path].children = [
         ...new Set([
           ...(fm.tree[path].children ?? []),
-          ...action.payload.value[0].filter((t) => t.type == FileType.folder).map((file) => file.path),
+          ...action.payload.value[0]
+            .filter((t) => t.type == FileType.folder && folderEnterable(t))
+            .map((file) => file.path),
         ]),
       ];
     },

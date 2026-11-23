@@ -4,13 +4,16 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { AppError, Code, Response } from "../../../api/request.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
-import { navigateToPath, retrySharePassword } from "../../../redux/thunks/filemanager.ts";
+import { navigateToPath, refreshFileList, retrySharePassword } from "../../../redux/thunks/filemanager.ts";
+import { ConnectedCode } from "../../../api/connected.ts";
+import CloudOff from "../../Icons/CloudOff.tsx";
 import CrUri, { Filesystem } from "../../../util/uri.ts";
 import { FilledTextField, SecondaryButton } from "../../Common/StyledComponents.tsx";
 import ArrowLeft from "../../Icons/ArrowLeft.tsx";
 import LinkDismiss from "../../Icons/LinkDismiss.tsx";
 import LockClosed from "../../Icons/LockClosed.tsx";
 import { FmIndexContext } from "../FmIndexContext.tsx";
+import { useConnectedStorages } from "../Connected/useConnectedStorages.ts";
 
 interface ExplorerErrorProps {
   error?: Response<any>;
@@ -52,7 +55,12 @@ const RetryPassword = () => {
           error={wrongPassword}
           helperText={wrongPassword ? t("application:share.incorrectPassword") : undefined}
         />
-        <Button type={"submit"} disabled={password == ""} variant={"contained"} sx={{ minWidth: 44, px: 1, height: 56 }}>
+        <Button
+          type={"submit"}
+          disabled={password == ""}
+          variant={"contained"}
+          sx={{ minWidth: 44, px: 1, height: 56 }}
+        >
           <ArrowLeft
             sx={{
               transform: "scaleX(-1)",
@@ -71,6 +79,11 @@ const ExplorerError = memo(
     const fmIndex = useContext(FmIndexContext);
     const fs = useAppSelector((state) => state.fileManager[fmIndex].current_fs);
     const previousPath = useAppSelector((state) => state.fileManager[fmIndex].previous_path);
+    const path = useAppSelector((state) => state.fileManager[fmIndex].path);
+    // Fylvo: a link into a connected storage that is no longer connected (for example a pin).
+    const connectedId = fs == Filesystem.connected && path ? new CrUri(path).id() : undefined;
+    const connectedStorages = useConnectedStorages(!!connectedId);
+    const connectedGone = !!connectedId && !!connectedStorages && !connectedStorages.some((c) => c.id == connectedId);
     const { t } = useTranslation("application");
     const appErr = useMemo(() => {
       if (error) {
@@ -88,6 +101,22 @@ const ExplorerError = memo(
     }, [navigate]);
 
     const innerError = () => {
+      if (connectedGone) {
+        return (
+          <Box sx={{ textAlign: "center", maxWidth: 420 }}>
+            <CloudOff sx={{ fontSize: 24 }} color={"action"} />
+            <Typography color={"text.secondary"}>{t("application:connected.storageGone")}</Typography>
+            <SecondaryButton
+              variant={"contained"}
+              color={"inherit"}
+              sx={{ mt: 1.5 }}
+              onClick={() => navigate("/settings?tab=connected")}
+            >
+              {t("application:connected.title")}
+            </SecondaryButton>
+          </Box>
+        );
+      }
       switch (error?.code) {
         case Code.AnonymouseAccessDenied:
           return (
@@ -101,6 +130,39 @@ const ExplorerError = memo(
           );
         case Code.IncorrectPassword:
           return <RetryPassword />;
+        // Fylvo: a connected storage whose provider no longer accepts the access, or is busy.
+        case ConnectedCode.Reconnect:
+        case ConnectedCode.Busy:
+          return (
+            <Box sx={{ textAlign: "center", maxWidth: 420 }}>
+              <CloudOff sx={{ fontSize: 24 }} color={"action"} />
+              <Typography color={"text.secondary"}>{appErr?.message}</Typography>
+              {error?.code == ConnectedCode.Reconnect ? (
+                <SecondaryButton
+                  variant={"contained"}
+                  color={"inherit"}
+                  sx={{ mt: 1.5 }}
+                  onClick={() =>
+                    navigate(
+                      "/settings?tab=connected" +
+                        (fs == Filesystem.connected && path ? "&reconnect=" + new CrUri(path).id() : ""),
+                    )
+                  }
+                >
+                  {t("application:connected.reconnect")}
+                </SecondaryButton>
+              ) : (
+                <SecondaryButton
+                  variant={"contained"}
+                  color={"inherit"}
+                  sx={{ mt: 1.5 }}
+                  onClick={() => dispatch(refreshFileList(fmIndex))}
+                >
+                  {t("application:connected.retry")}
+                </SecondaryButton>
+              )}
+            </Box>
+          );
         // @ts-ignore
         case Code.NodeFound:
           if (fs == Filesystem.share) {

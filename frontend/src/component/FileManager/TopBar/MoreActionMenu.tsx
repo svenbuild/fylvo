@@ -22,6 +22,11 @@ const MoreActionMenu = ({ onClose, ...rest }: MenuProps) => {
   const { t } = useTranslation();
   const fmIndex = useContext(FmIndexContext);
   const fs = useAppSelector((state) => state.fileManager[fmIndex].current_fs);
+  // Fylvo: the root of a connected storage has its own sidebar entry already.
+  const atConnectedRoot = useAppSelector(
+    (state) =>
+      fs == Filesystem.connected && state.fileManager[fmIndex].pure_path == state.fileManager[fmIndex].path_root,
+  );
   const dispatch = useAppDispatch();
   const isLogin = !!SessionManager.currentLoginOrNull();
   const theme = useTheme();
@@ -89,7 +94,7 @@ const MoreActionMenu = ({ onClose, ...rest }: MenuProps) => {
           </SquareMenuItem>
         </>
       )}
-      {isLogin && (
+      {isLogin && !atConnectedRoot && (
         <SquareMenuItem onClick={onPinClicked}>
           <ListItemIcon>
             <PinOutlined fontSize="small" />

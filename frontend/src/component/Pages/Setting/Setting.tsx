@@ -20,12 +20,15 @@ import PageHeader, { PageTabQuery } from "../PageHeader.tsx";
 import PreferenceSetting from "./PreferenceSetting.tsx";
 import ProfileSetting from "./ProfileSetting.tsx";
 import SecuritySetting from "./Security/SecuritySetting.tsx";
+import ConnectedSetting, { useConnectedTabVisible } from "./Connected/ConnectedSetting.tsx";
+import CloudOutlined from "../../Icons/CloudOutlined.tsx";
 
 export enum SettingPageTab {
   Profile = "profile",
   Preference = "preference",
   Security = "security",
   Customize = "customize",
+  Connected = "connected",
 }
 
 const Setting = () => {
@@ -34,6 +37,7 @@ const Setting = () => {
   const [tab, setTab] = useQueryState(PageTabQuery);
   const [loading, setLoading] = useState(true);
   const [setting, setSetting] = useState<UserSettings | undefined>(undefined);
+  const connectedVisible = useConnectedTabVisible(tab);
 
   useEffect(() => {
     setLoading(true);
@@ -73,8 +77,15 @@ const Setting = () => {
         },
       ],
     );
+    if (connectedVisible) {
+      res.push({
+        label: t("application:connected.title"),
+        value: SettingPageTab.Connected,
+        icon: <CloudOutlined />,
+      });
+    }
     return res;
-  }, [t]);
+  }, [t, connectedVisible]);
 
   return (
     <PageContainer compact contentWidth={780}>
@@ -105,7 +116,8 @@ const Setting = () => {
                   <FacebookCircularProgress />
                 </Box>
               )}
-              {!loading && setting && (
+              {/* The connected tab also works without the settings, so the return from a provider always lands. */}
+              {!loading && (setting || tab == SettingPageTab.Connected) && (
                 <Paper
                   variant="outlined"
                   sx={{
@@ -126,12 +138,17 @@ const Setting = () => {
                     },
                   }}
                 >
-                  {(!tab || tab == SettingPageTab.Profile) && (
+                  {setting && (!tab || tab == SettingPageTab.Profile) && (
                     <ProfileSetting setting={setting} setSetting={setSetting} />
                   )}
-                  {tab == SettingPageTab.Preference && <PreferenceSetting setting={setting} setSetting={setSetting} />}
-                  {tab == SettingPageTab.Security && <SecuritySetting setting={setting} setSetting={setSetting} />}
+                  {setting && tab == SettingPageTab.Preference && (
+                    <PreferenceSetting setting={setting} setSetting={setSetting} />
+                  )}
+                  {setting && tab == SettingPageTab.Security && (
+                    <SecuritySetting setting={setting} setSetting={setSetting} />
+                  )}
                   {tab == SettingPageTab.Customize && <CustomizeSetting />}
+                  {tab == SettingPageTab.Connected && <ConnectedSetting />}
                 </Paper>
               )}
             </Box>
