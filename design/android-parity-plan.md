@@ -25,7 +25,14 @@ und Paket 2, Version 1.6.0 (versionCode 12).
   Upload-Warteschlange, `rememberSaveable` (z. B. `uploadTarget`), letzte Dateien. Dazu
   `CrUri.shareId(uri)`, das `:<pw>` abschneidet (heute schickt `MobilePrefs.starState` die id samt
   Passwort an `/share/info/{id}`). Je Weg ein Unit-Test. Hochladen in einen Link mit Passwort gibt
-  es in 1.6.0 nicht (die Warteschlange müsste das Passwort sichern); in Links ohne Passwort schon.
+  es in 1.6.0 nicht (die Warteschlange müsste das Passwort sichern): dort kein "+", sondern ein
+  kurzer Hinweis; in Links ohne Passwort schon. Archiv-Aufgaben mit einer solchen Adresse auch nicht
+  (der Server speichert Quelle und Ziel der Aufgabe in seiner Datenbank).
+- **Keine Adressen im Log:** `userError` schreibt heute die Fehlermeldung ins Log, und manche
+  Meldungen enthalten eine Adresse (`FileRepository.kt:144`). Log nur noch Fehlerart und Code;
+  Aufrufe mit Freigabe-Passwort laufen über den Client ohne Weiterleitungen.
+- Kopierte Freigabe-Links werden in der Zwischenablage als vertraulich markiert
+  (`ClipDescription.EXTRA_IS_SENSITIVE`). Das 2FA-Geheimnis wird nicht kopiert.
 - **Sitzung:** jede ändernde Aktion und jeder Entwurf gehört zur Sitzung, in der er begann
   (`SessionTag`); nach Abmelden oder Kontowechsel wird nichts davon gegen das neue Konto ausgeführt,
   offene Freigabe-Seiten werden geschlossen.
@@ -41,10 +48,15 @@ und Paket 2, Version 1.6.0 (versionCode 12).
 - Gruppen-Bits (wie `frontend/src/api/user.ts`): 2 Teilen, 5 Archiv-Aufgaben, 7 fremde Freigaben
   öffnen. Datei-Bits (wie heute `Permissions`): 0 anlegen, 1 umbenennen, 6 hochladen (auch: Inhalt
   ersetzen), 7 herunterladen, 18 teilen, 20 Versionen. Rechte werden **je Aktion** geprüft, je eine
-  kleine Funktion in `Permissions` mit Tests (teilen: Besitz + Gruppen-Bit 2 + Datei-Bit 18;
-  Inhalt speichern: Besitz bzw. Bit 6; neue Datei: Bit 0 bzw. Besitz; Archiv packen: lesbare
-  Quellen + Ziel mit Bit 0/6; Versionen: Besitz + Bit 20). Neue rechtepflichtige Aktionen erscheinen
-  erst, wenn die Gruppen-Bits da sind.
+  kleine Funktion in `Permissions` mit Tests:
+  - teilen: Besitz + Gruppen-Bit 2 + Datei-Bit 18;
+  - Inhalt speichern (wie `useActionDisplayOpt.ts`): in eigenen Dateien Besitz; in Freigaben und
+    verbundenen Speichern `canModifyFile` (Bit 1) **und** Bit 6. Besucher eines Upload-Links haben
+    nur Bit 6 und dürfen nicht ersetzen;
+  - neue Textdatei: wie Inhalt speichern, aber am Ordner (also nicht in Upload-Links);
+  - Archiv packen/entpacken: Gruppen-Bit 5, lesbare Quellen (Bit 7), Ziel mit Bit 0;
+  - Versionen: Besitz + Bit 20.
+  Neue rechtepflichtige Aktionen erscheinen erst, wenn die Gruppen-Bits da sind.
 - `GET /site/config/explorer` liest zusätzlich `map_provider` und `full_text_search`.
 
 ## Paket 1
@@ -60,8 +72,11 @@ und Paket 2, Version 1.6.0 (versionCode 12).
   ruhige Zeile "läuft ab 12.12. · 14 Aufrufe · 3 Downloads", Schloss bei Passwort, "Mit n Personen"
   bei `member_only`, "Abgelaufen" grau. Leer: kurzer Satz.
 - **Tipp auf eine Zeile:** Aktionsblatt mit Link kopieren, Link teilen (Systemblatt), Bearbeiten,
-  Im Ordner zeigen (Pfad über `GET /share/info/{id}?owner_extended=true` → `source_uri`), Löschen
-  (Rückfrage, `DELETE /share/{id}`). Bei `member_only` kein Link, "Bearbeiten" öffnet das
+  Im Ordner zeigen, Löschen (Rückfrage, `DELETE /share/{id}`). Den Pfad holt die App wie das Web
+  (`share.ts:225`): `GET /share/info/{id}?owner_extended=true&password=<pw aus der Zeile>` (der
+  Besitzer bekommt das Passwort in der Liste; nur im Speicher) → `source_uri`. Bei einer
+  Einzeldatei ist `source_uri` der Ordner: "Im Ordner zeigen" öffnet ihn, "Bearbeiten" nimmt
+  `source_uri` + `name`. Test mit einer Einzeldatei-Freigabe mit Passwort. Bei `member_only` kein Link, "Bearbeiten" öffnet das
   Personen-Blatt (12). **Abgelaufene** Freigaben: nur Löschen, dazu der Hinweis "Wieder einschalten
   über die Datei" (der Server gibt für sie kein `source_uri` heraus, und Bearbeiten braucht die
   Adresse der Datei).
@@ -75,8 +90,8 @@ und Paket 2, Version 1.6.0 (versionCode 12).
 Das heutige `ShareLinkSheet` wird zum Blatt für Anlegen und Bearbeiten (scrollbar), gleiche Felder
 wie `ShareSetting.tsx`:
 
-- Passwort (nur beim Anlegen; beim Bearbeiten zeigt eine Zeile "Mit Passwort", weil der Server es
-  beim Bearbeiten nicht ändert).
+- Passwort (nur beim Anlegen; nur Buchstaben und Ziffern, höchstens 32, in der App geprüft; beim
+  Bearbeiten zeigt eine Zeile "Mit Passwort", weil der Server es beim Bearbeiten nicht ändert).
 - Ablauf: Chips Nie, 1 Tag, 7 Tage, 30 Tage, "Datum ..." (Datumswahl, Ende des gewählten Tages in
   der Zeitzone des Geräts). Gesendet wird `expire` in Sekunden ab jetzt. Beim Bearbeiten ist die
   bestehende Frist als eigener Chip vorgewählt ("bis 12.12.") und wird als Restsekunden neu
@@ -100,14 +115,17 @@ wie `ShareSetting.tsx`:
   beliebige Server liesse sich nicht bestätigen und würde fremde `/s/`-Links (andere Dienste)
   einfangen.
 - **Prüfung:** Pfad `/s/<id>[/<passwort>]`, und `scheme://host:port` (Standard-Ports 80/443
-  ergänzt) gleich der Adresse, mit der die App angemeldet ist, oder gleich der Site-Adresse aus den
-  Einstellungen des Servers (der Server baut Links mit ihr). Reine Funktion mit Tests. Sonst ein
-  Satz "Dieser Link gehört nicht zu deinem Server" und keine Anfrage. Ein eingefügter Link wird vor
-  dem Start der Namenssuche erkannt (er löst keine Suche aus).
-- **Öffnen:** ohne Gruppen-Bit 7 ein Satz ("Dein Konto darf keine Freigaben öffnen"). Sonst
-  `GET /share/info/{id}?password=`: `unlocked == false` mit `password_protected` → Passwort-Dialog
-  (falsches Passwort = wieder `unlocked == false`; 40900 = zu viele Versuche; 404 = abgelaufen oder
-  weg). Danach wird `cloudreve://<id>[:<pw>]@share` wie ein Ordner von "Mit mir geteilt" geöffnet
+  ergänzt) gleich der Adresse, mit der die App angemeldet ist (die Site-Adresse des Servers ist
+  nicht öffentlich abfragbar; ein Link über eine andere Adresse desselben Servers wird darum
+  abgelehnt, mit dem Satz). Reine Funktion mit Tests. Sonst ein Satz "Dieser Link gehört nicht zu
+  deinem Server" und keine Anfrage. Ein eingefügter Link wird vor dem Start der Namens- und der
+  Volltextsuche erkannt (er löst keine Suche aus). Ein behandelter Text-Intent wird danach
+  geleert, damit Drehen ihn nicht nochmals öffnet.
+- **Öffnen:** `GET /share/info/{id}?password=`: `unlocked == false` mit `password_protected` →
+  Passwort-Dialog (falsches Passwort = wieder `unlocked == false`; 40900 = zu viele Versuche; 404 =
+  abgelaufen oder weg). Gehört die Freigabe jemand anderem und fehlt Gruppen-Bit 7: ein Satz ("Dein
+  Konto darf keine Freigaben öffnen"); der Besitzer braucht das Bit nicht und bekommt das Passwort
+  in der Antwort (die Liste prüft es auch bei ihm). Danach wird `cloudreve://<id>[:<pw>]@share` wie ein Ordner von "Mit mir geteilt" geöffnet
   (gleiche Liste, Rechte aus den Datei-Bits; 40069 beim Auflisten = Passwort ungültig geworden),
   Titel = Name der Freigabe. Eine geteilte Einzeldatei öffnet gleich ihre Vorschau bzw. ihr
   Aktionsblatt. "Nur hochladen" zeigt die leere Liste mit dem "+" und einem Hinweis.
@@ -121,31 +139,35 @@ wie `ShareSetting.tsx`:
   und als UTF-8 lesbar ist, und keine Arbeitskopie der Offline-Bearbeitung offen ist (vor dem
   Speichern nochmals geprüft).
 - **Laden:** der Editor lädt selbst genau die Fassung `primary_entity` (`POST /file/url` mit
-  `entity`) und merkt sie sich; kein Rückgriff auf eine ältere Offline-Kopie (die Vorschau darf das
-  weiter, bleibt dann aber nur lesbar).
+  `entity`) und merkt sie sich samt Datei-ID; kein Rückgriff auf eine ältere Offline-Kopie (die
+  Vorschau darf das weiter, bleibt dann aber nur lesbar). Eine leere Datei ohne Fassung (z. B. im Web
+  angelegt) startet mit leerem Text; ihr erstes Speichern geht ohne `previous`.
 - **Editor:** ganze Seite, Textfeld mit `TextFieldState` (Code-Endungen in fester Schrift), oben
   Zurück, Name, "Speichern" (aktiv bei Änderungen). Markdown: Umschalter "Bearbeiten / Vorschau";
   die Vorschau mit einer gepflegten Compose-Bibliothek (`com.mikepenz:multiplatform-markdown-renderer`,
   Apache 2.0, ohne Bild-Modul: lädt keine Bilder von aussen). Der Text liegt im ViewModel des
-  Editors (überlebt Drehen, nicht in `rememberSaveable`).
+  Editors (überlebt Drehen, nicht in `rememberSaveable`). Links in der Vorschau öffnen nur, wenn sie
+  mit `http://` oder `https://` beginnen.
 - **Speichern:** `PUT /file/content?uri=&previous=<geladene Fassung>&previous_required=true` mit den
   Bytes (UTF-8, ein vorhandenes BOM bleibt). Danach gilt die `primary_entity` der Antwort.
 - **Konflikt 40076:** Dialog "Die Datei wurde inzwischen geändert": "Als Kopie speichern", "Trotzdem
   überschreiben" (neu mit der dann aktuellen Fassung als `previous`, nach erneuter Prüfung, dass es
   dieselbe Datei-ID ist), "Abbrechen". 40904 (Datei weg): nur "Als Kopie speichern". "Als Kopie"
-  legt die Datei zuerst mit `POST /file/create` und `err_on_conflict` an (Name
-  `<Name> (Kopie <Datum>).<ext>`; trifft nie eine vorhandene) und schreibt dann mit deren Fassung.
-  40073 gesperrt, 40049 zu gross: Satz. 40927 (verbundener Speicher, Ausgang unbekannt): Entwurf
-  bleibt, Hinweis, neu laden vor erneutem Versuch.
+  lädt den Text als neue Datei hoch (vorhandener Upload-Weg, der nur anlegt: belegter Name = 40004,
+  dann der nächste Name; wie das Web in verbundenen Speichern, `viewer.ts:511`), Name
+  `<Name> (Kopie <Datum>).<ext>`. 40073 gesperrt, 40049 zu gross: Satz. 40927 (verbundener
+  Speicher, Ausgang unbekannt): Entwurf bleibt, Hinweis, neu laden vor erneutem Versuch. Verbundene
+  Speicher nehmen keine leere Datei an: Speichern bei leerem Text dort gesperrt, mit Satz.
 - **Zurück mit ungespeicherten Änderungen:** Speichern / Verwerfen / Weiter bearbeiten.
 
 ### 5. Neue Datei anlegen
 
 - Blatt "+" bekommt "Neue Textdatei" und "Neue Markdown-Notiz" (die Vorlagen des Webs mit Inhalt
   `txt` und `md`; Draw.io und Excalidraw sind nicht gewollt, für Office gibt es keine Vorlage).
-  Nur wo hochgeladen werden darf und nicht in verbundenen Speichern.
-- Name-Dialog (vorgefüllt "Neue Datei.txt" / "Notiz.md"), `POST /file/create` mit `type: file`,
-  `err_on_conflict: true` (Namen-Konflikt 40004 und 40905 als Satz), danach öffnet der Editor.
+  Nach der Rechte-Regel "neue Textdatei", nicht in verbundenen Speichern.
+- Name-Dialog (vorgefüllt "Neue Datei.txt" / "Notiz.md"), danach öffnet der Editor mit leerem
+  Text; am Server entsteht die Datei erst beim ersten Speichern, als Upload, der nur anlegt
+  (belegter Name 40004 und 40905 als Satz, Name ändern). So gibt es keine leere Datei ohne Fassung.
 
 ### 6. Ältere Fassungen
 
@@ -167,9 +189,9 @@ wie `ShareSetting.tsx`:
   wenn der Server einen Kartenanbieter hat (`map_provider` nicht leer und nicht `none`). Die App
   lädt selbst keine Kartenbilder.
 - **Speicherort-Grösse** bei Ordnern (`storage_used`), **Freigaben (n)** (siehe 1).
-- **Verlauf** (eigene Dateien in Meine Dateien und Papierkorb): die neuesten fünf Einträge aus
-  `GET /file/activity`, "Alle anzeigen" öffnet eine Seite mit weiteren (`next`). Zeile: was (aus
-  `type` und `content`), wer, über (WebDAV, Office, Link), wann.
+- **Verlauf** (eigene Dateien in Meine Dateien und Papierkorb): die neuesten zehn Einträge aus
+  `GET /file/activity` direkt in den Details, keine eigene Seite. Zeile: was (aus `type` und
+  `content`), wer, über (WebDAV, Office, Link), wann.
 
 ### 8. Papierkorb leeren
 
@@ -191,7 +213,7 @@ wie `ShareSetting.tsx`:
     Nicht bei Konten ohne Passwort (`passwordless`). Endet die Sitzung danach, läuft der vorhandene
     Weg für abgelaufene Sitzungen (Arbeitskopien bleiben).
   - 2FA: Zustand; Einschalten: `GET /user/setting/2fa` → eigene Seite (Fenster mit `FLAG_SECURE`)
-    mit dem Geheimnis in Vierergruppen, Kopieren und "In Authenticator-App öffnen"
+    mit dem Geheimnis in Vierergruppen (nicht kopierbar) und "In Authenticator-App öffnen"
     (`otpauth://totp/Fylvo:<E-Mail>?secret=…&issuer=Fylvo`), dann Code eingeben →
     `PATCH {two_fa_enabled: true, two_fa_code}` (40022 falscher Code; nach 10 Minuten neu beginnen).
     Ausschalten mit Code. Immer beide Felder zusammen senden.
@@ -220,19 +242,18 @@ wie `ShareSetting.tsx`:
 ### 11. Archive und Aufgaben
 
 - Aktionsblatt einer Datei mit Endung zip, gz, xz, tar, rar, 7z, bz2 (Gruppen-Bit 5, Datei-Bit 7):
-  "Entpacken" → Zielordner (vorhandene Ordnerauswahl, vorgewählt der aktuelle Ordner), bei zip, 7z,
-  rar ein freiwilliges Passwort → `POST /workflow/extract`.
-- Bei zip und 7z zusätzlich "Inhalt ansehen" (`GET /file/archive`): Liste wie ein Ordner (Ordner im
-  Archiv antippbar, Zurück), unten "Alles entpacken" bzw. bei Auswahl "Auswahl entpacken"
-  (`file_mask`).
+  "Entpacken" → Zielordner (vorhandene Ordnerauswahl, vorgewählt der aktuelle Ordner) →
+  `POST /workflow/extract` (immer alles). **Kein Archiv-Passwort** in 1.6.0: der Server speichert
+  es im Klartext im Zustand der Aufgabe (an den Haupt-Thread gemeldet).
+- Bei zip und 7z zusätzlich "Inhalt ansehen" (`GET /file/archive`, Sven wollte "hineinsehen"):
+  Liste wie ein Ordner (Ordner im Archiv antippbar, Zurück), unten "Entpacken". Keine Auswahl
+  einzelner Einträge.
 - Auswahl (eine oder mehrere Einträge, Bit 5): "Als ZIP packen" → Name (vorgefüllt) →
   `POST /workflow/archive` mit Ziel im aktuellen Ordner.
-- Archiv-Passwort: der Server speichert es im Zustand der Aufgabe (Datenbank). Die App bietet das
-  Feld trotzdem an (wie das Web), mit dem Hinweis an den Haupt-Thread.
 - **Aufgaben:** Seite unter Konto ("Aufgaben"), `GET /workflow?category=general&page_size=20`
-  (weiter mit `next_page_token`): Art, Quelle/Ziel, Zustand, bei laufenden der Fortschritt
-  (`/workflow/progress/{id}` alle 2 s, dazu die Liste alle 5 s neu, nur solange die Seite offen ist),
-  Fehlertext. Fertiges Entpacken → Tipp öffnet den Zielordner. Nach dem Start einer
+  (weiter mit `next_page_token`): Art, Quelle/Ziel, Zustand, Fehlertext. Solange die Seite offen ist
+  und eine Aufgabe läuft, wird nur die erste Seite der Liste alle 3 s neu geholt (zeigt Phase und
+  Ende); kein eigener Fortschritts-Aufruf je Aufgabe. Fertiges Entpacken → Tipp öffnet den Zielordner. Nach dem Start einer
   Aufgabe ein Hinweis mit "Ansehen". Abbrechen gibt es am Server nicht.
 
 ### 12. Mit Personen teilen
@@ -242,7 +263,9 @@ wie `ShareSetting.tsx`:
   `extended_info.shares`, Namen über `GET /user/info/{id}`), je Person "Lesen" / "Bearbeiten",
   Entfernen; "Person hinzufügen": Suche ab 2 Zeichen (`GET /user/search`, ohne mich und vorhandene).
 - Speichern: neu `PUT /share {uri, member_only: true, members}`, sonst `POST /share/{id}` mit allen
-  Feldern und der ganzen Mitgliederliste. Alle entfernt → "Teilen beenden" löscht die Freigabe.
+  Feldern (der Server ersetzt sie): die laufende Frist als Restsekunden, `share_view` und
+  `show_readme` aus der Besitzer-Antwort, dazu die ganze Mitgliederliste. Alle entfernt → "Teilen
+  beenden" löscht die Freigabe.
 
 ### 13. Office-Dokumente (nur in einer anderen App öffnen)
 
