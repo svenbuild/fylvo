@@ -49,6 +49,13 @@ object Navigation {
     fun activeTab(where: Where, tabs: List<Place>, links: List<Place.Link>, last: Place?): Place {
         val place = placeOf(where, links)
         if (place in tabs) return place
+        // A folder below a shortcut that is a tab (the closest one) belongs to that tab.
+        if (!where.home && !where.account && where.page == null && !CrUri.isSearch(where.uri)) {
+            tabs.filterIsInstance<Place.Link>()
+                .filter { !CrUri.isSearch(it.uri) && (where.uri == it.uri || where.uri.startsWith(it.uri.trimEnd('/') + "/")) }
+                .maxByOrNull { it.uri.length }
+                ?.let { return it }
+        }
         val origin = where.origin
         val fromFiles = origin == CrUri.MY_PREFIX || origin?.startsWith("page:") == true ||
             (where.page != null && !where.home && origin == null)

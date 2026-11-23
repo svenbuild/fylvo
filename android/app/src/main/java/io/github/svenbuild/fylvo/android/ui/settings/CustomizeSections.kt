@@ -106,7 +106,19 @@ fun TabsSection(
     )
         .map { tab -> if (tab is Place.Link) links.firstOrNull { it.uri == tab.uri } ?: tab else tab }
     var adding by remember { mutableStateOf(false) }
-    fun save(next: List<Place>) = scope.launch { showMessage(repo.updateMobile { MobilePrefs.withTabs(it, next) }) }
+    /** Applies [change] to the tabs the server has now, so a quick second change keeps the first. */
+    fun save(change: (List<Place>) -> List<Place>) = scope.launch {
+        showMessage(
+            repo.updateMobile { fresh ->
+                val current = MobilePrefs.tabs(fresh, linkExists = { uri -> links.any { it.uri == uri } })
+                MobilePrefs.withTabs(fresh, change(current))
+            },
+        )
+    }
+    fun move(tab: Place, by: Int) = save { list ->
+        val i = list.indexOf(tab)
+        if (i < 0) list else list.moved(i, i + by)
+    }
 
     CustomizeLabel(stringResource(R.string.customize_tabs))
     tabs.forEachIndexed { i, tab ->
@@ -116,12 +128,12 @@ fun TabsSection(
             label = placeLabel(tab),
             leading = { Icon(placeIcons(tab).first, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
             canUp = i > 0, canDown = i < tabs.lastIndex,
-            onUp = { save(tabs.moved(i, i - 1)) }, onDown = { save(tabs.moved(i, i + 1)) },
+            onUp = { move(tab, -1) }, onDown = { move(tab, 1) },
         ) {
             if (fixed) {
                 Icon(Icons.Default.Close, contentDescription = null, tint = Color.Transparent, modifier = Modifier.padding(12.dp).size(24.dp))
             } else {
-                IconButton(onClick = { save(tabs - tab) }) {
+                IconButton(onClick = { save { list -> if (list.size > 3) list - tab else list } }) {
                     Icon(Icons.Default.Close, contentDescription = stringResource(R.string.remove_tab, placeLabel(tab)))
                 }
             }
@@ -150,8 +162,10 @@ fun TabsSection(
                             modifier = Modifier.clickable {
                                 adding = false
                                 // New tabs go before Account (which stays last unless moved).
-                                val at = tabs.indexOf(Place.Account).takeIf { it >= 0 } ?: tabs.size
-                                save(tabs.toMutableList().apply { add(at, place) })
+                                save { list ->
+                                    if (place in list || list.size >= MobilePrefs.MAX_TABS) list
+                                    else list.toMutableList().apply { add(indexOf(Place.Account).takeIf { it >= 0 } ?: size, place) }
+                                }
                             },
                             headlineContent = { Text(placeLabel(place)) },
                             leadingContent = { Icon(placeIcons(place).first, contentDescription = null) },

@@ -153,6 +153,9 @@ fun App() {
     // Fylvo: the account's light/dark choice, accent and density (cached copy first, then the server).
     val prefsState by app.accountPrefs.state.collectAsState()
     LaunchedEffect(loggedIn) {
+        // Fylvo: not signed in (also when the stored sign-in cannot be read any more): the widget
+        // shows no names of files.
+        if (loggedIn == false) runCatching { io.github.svenbuild.fylvo.android.widget.FylvoWidget.clear(context) }
         if (loggedIn == true) {
             // A storage problem (full, broken file) must not end the app at every start.
             runCatching { app.accountPrefs.restore() }.onFailure { app.accountPrefs.markRestored() }

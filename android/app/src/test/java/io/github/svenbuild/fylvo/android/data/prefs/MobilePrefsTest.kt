@@ -391,3 +391,15 @@ class NavigationRound4Test {
         org.junit.Assert.assertEquals(Place.Files, Navigation.startTab("", listOf(Place.Account, Place.Offline, Place.Files)))
     }
 }
+
+class NavigationRound5Test {
+    @org.junit.Test
+    fun folderBelowAShortcutTab() {
+        val outer = Place.Link("cloudreve://my/Projects", "Projects")
+        val inner = Place.Link("cloudreve://my/Projects/Archive", "Archive")
+        // Only "Projects" is a tab; "Archive" is a shortcut of the sidebar.
+        val tabs = listOf(Place.Home, Place.Files, outer, Place.Account)
+        org.junit.Assert.assertEquals(outer, Navigation.activeTab(Where(uri = "cloudreve://my/Projects/Archive/x"), tabs, listOf(outer, inner), Place.Home))
+        org.junit.Assert.assertEquals(Place.Files, Navigation.activeTab(Where(uri = "cloudreve://my/Other"), tabs, listOf(outer, inner), Place.Home))
+    }
+}

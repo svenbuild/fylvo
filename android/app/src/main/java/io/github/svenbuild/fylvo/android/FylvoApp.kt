@@ -11,6 +11,8 @@ import okhttp3.OkHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.first
 import io.github.svenbuild.fylvo.android.api.RefreshTokenRequest
 import io.github.svenbuild.fylvo.android.api.ApiClient
 import io.github.svenbuild.fylvo.android.data.AppUpdater
@@ -95,8 +97,23 @@ class FylvoApp : Application(), ImageLoaderFactory {
      */
     suspend fun endSession(expired: Boolean = false) {
         // Runs to the end even when the caller's screen or search is cancelled meanwhile.
-        withContext(NonCancellable) {
-            // Fylvo: first of all, no request of this session runs any more (nor its answer lands).
+        withContext(NonCancellable) { endLock.withLock {
+            // Fylvo: two expiries at the same time end the session once (the second finds it gone).
+            if (!sessionManager.isLoggedIn.first()) return@withLock
+            // Open uploads first, while the sign-in still works and its token can be renewed
+            // (their sessions on the server are cancelled).
+            if (!expired) {
+                try {
+                    withContext(Dispatchers.IO) {
+                        kotlinx.coroutines.withTimeoutOrNull(15_000) {
+                            io.github.svenbuild.fylvo.android.work.UploadWorker.cancelAllForSignOut(this@FylvoApp)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    // The sign-out goes on.
+                }
+            }
+            // Fylvo: then no request of this session runs any more (nor its answer lands).
             sessionManager.endGeneration()
             /** Fylvo: one cleanup step; a failure (full storage, broken file) never stops the others. */
             suspend fun step(block: suspend () -> Unit) {
@@ -108,15 +125,7 @@ class FylvoApp : Application(), ImageLoaderFactory {
             }
             // Fylvo: whatever fails on the way, the session's tokens are removed at the end.
             try {
-            // Open uploads first, while the sign-in still works (their sessions are cancelled).
             if (!expired) {
-                step {
-                    withContext(Dispatchers.IO) {
-                        kotlinx.coroutines.withTimeoutOrNull(15_000) {
-                            io.github.svenbuild.fylvo.android.work.UploadWorker.cancelAllForSignOut(this@FylvoApp)
-                        }
-                    }
-                }
                 step { apiClient.authService().signOut(RefreshTokenRequest(sessionManager.refreshTokenNow())) }
             }
             step {
@@ -180,6 +189,9 @@ class FylvoApp : Application(), ImageLoaderFactory {
             } finally {
                 if (expired) sessionManager.clearSession() else sessionManager.clear()
             }
-        }
+        } }
     }
+
+    /** Fylvo: one session end at a time. */
+    private val endLock = kotlinx.coroutines.sync.Mutex()
 }

@@ -589,8 +589,11 @@ fun FilesScreen(
         viewModel.clearSelection()
         if (inSearch) closeSearch()
         when (request) {
-            is io.github.svenbuild.fylvo.android.data.prefs.Incoming.Share ->
+            is io.github.svenbuild.fylvo.android.data.prefs.Incoming.Share -> {
+                // A new share replaces an open sheet together with its choice (nothing mixes).
+                io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.shareTarget.value = null
                 io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value = request.uris
+            }
             io.github.svenbuild.fylvo.android.data.prefs.Incoming.Search -> {
                 accountOpen = false
                 offlineOpen = false
@@ -986,7 +989,7 @@ fun FilesScreen(
             onDiscardEdit = { sheetTarget = null; discardTarget = state.editOf(file) },
             star = starOf(file),
             onStar = { on -> sheetTarget = null; setFavorite(listOf(file), on) },
-            canEditMetadata = !limited && prefsState.usable && io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.canEditMetadata(listOf(file)),
+            canEditMetadata = !limited && !state.offlineMode && io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.canEditMetadata(listOf(file)),
             onColor = { sheetTarget = null; colorTarget = listOf(file) },
             onTags = { sheetTarget = null; tagsTarget = listOf(file) },
             onShowInFolder = if (limited || (!state.inTrash && (state.home || state.virtual || inSearch))) ({
@@ -1238,11 +1241,13 @@ fun FilesScreen(
         var shareBusy by remember(uris) { mutableStateOf(false) }
         var shareNotice by remember(uris) { mutableStateOf<String?>(null) }
         var pickingShareFolder by remember(uris) { mutableStateOf(false) }
+        /** Counts the folder choices; a late answer for an older one is dropped. */
+        var pickSeq by remember(uris) { mutableStateOf(0) }
         val favoriteFolders = prefsState.favorites?.files.orEmpty()
             .filter { it.isFolder && io.github.svenbuild.fylvo.android.data.prefs.FylvoActions.openAllowed(it.path) && it.path != last?.uri }
             .map { ShareTarget(it.path, it.id, io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.folderColor(it)) }
         // Preselected: the folder used last, else My files.
-        LaunchedEffect(lastRead.first) { if (lastRead.first && chosen == null) choose(last ?: ShareTarget(CrUri.MY_PREFIX, null)) }
+        LaunchedEffect(lastRead.first, uris) { if (lastRead.first && chosen == null) choose(last ?: ShareTarget(CrUri.MY_PREFIX, null)) }
         fun closeShare() {
             io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value = null
             io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.shareTarget.value = null
@@ -1267,10 +1272,11 @@ fun FilesScreen(
                         val listed = viewModel.pickerFolderId(dst)
                         if (listed != null) choose(ShareTarget(dst, listed))
                         else scope.launch {
+                            val mine = ++pickSeq
                             val id = runCatching { app.fileRepository.folderInfo(dst) }.getOrNull()
                                 ?.takeIf { it.isFolder && it.owned == true }?.id
                             // Only for this share and while nothing else was chosen meanwhile.
-                            if (io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value !== uris || io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.shareTarget.value != null) return@launch
+                            if (mine != pickSeq || io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value !== uris || io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.shareTarget.value != null) return@launch
                             if (id != null) choose(ShareTarget(dst, id)) else shareNotice = context.getString(R.string.share_folder_unchecked)
                         }
                     }
@@ -1287,7 +1293,7 @@ fun FilesScreen(
                 extra = chosen?.takeIf { c -> c.uri != CrUri.MY_PREFIX && c.uri != last?.uri && favoriteFolders.none { it.uri == c.uri } },
                 busy = shareBusy,
                 notice = shareNotice,
-                onChoose = { choose(it); shareNotice = null },
+                onChoose = { pickSeq++; choose(it); shareNotice = null },
                 onPickOther = { pickingShareFolder = true },
                 onUpload = {
                     val target = chosen ?: return@ShareTargetSheet

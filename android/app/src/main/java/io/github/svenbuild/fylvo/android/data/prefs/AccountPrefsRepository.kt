@@ -126,7 +126,8 @@ class AccountPrefsRepository(
     /** "server|user id"; empty while signed out. */
     suspend fun accountKey(): String {
         val server = session.serverUrlNow()
-        val user = session.userId.first()
+        // Sessions of older app versions may lack the user id: the email names the account then.
+        val user = session.userId.first().ifEmpty { session.userEmail.first().let { if (it.isEmpty()) "" else "mail:$it" } }
         return if (server.isEmpty() || user.isEmpty()) "" else "$server|$user"
     }
 
@@ -320,7 +321,14 @@ class AccountPrefsRepository(
         when (val outcome = request(tag)) {
             is Outcome.Found -> {
                 if (!session.isCurrent(tag)) return@queued ""
-                _state.update { s -> s.copy(prefs = s.prefs?.copy(favorites = outcome.value.favorites)) }
+                val ids = outcome.value.favorites.toSet()
+                _state.update { s ->
+                    // Whatever is no favourite any more leaves the list at once (also if reloading it fails).
+                    s.copy(
+                        prefs = s.prefs?.copy(favorites = outcome.value.favorites),
+                        favorites = s.favorites?.let { f -> f.copy(files = f.files.filter { it.id in ids }) },
+                    )
+                }
                 val list = (call(tag) { api.service().favorites(tag) } as? Outcome.Found)?.value
                 if (list != null && session.isCurrent(tag)) _state.update { it.copy(favorites = list) }
                 saveCache(tag, accountKey())
