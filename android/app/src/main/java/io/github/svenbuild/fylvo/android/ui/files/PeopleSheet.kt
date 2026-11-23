@@ -124,7 +124,14 @@ fun PeopleSheet(target: PeopleTarget, onDone: (String?) -> Unit, onDismiss: () -
                 .onSuccess { onDone(context.getString(R.string.people_saved)) }
                 .onFailure {
                     if (it is io.github.svenbuild.fylvo.android.data.ShareEndPassed) expireToChoose = true
-                    else error = userError(it).resolve(context)
+                    else {
+                        error = userError(it).resolve(context)
+                        // A new share whose answer was lost may exist anyway: the next save edits it
+                        // (never a second share). When that cannot be told, only a retry is offered.
+                        if (share == null) runCatching { app.shares.sharesOf(target.uri).firstOrNull { s -> s.memberOnly } }
+                            .onSuccess { found -> share = found }
+                            .onFailure { loadFailed = true }
+                    }
                 }
             saving = false
         }

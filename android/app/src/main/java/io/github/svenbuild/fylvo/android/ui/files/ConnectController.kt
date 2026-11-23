@@ -133,7 +133,9 @@ class ConnectController(
      * request is open.
      */
     suspend fun resume() = lock.withLock {
-        if (_ui.value is Ui.Confirm || _ui.value is Ui.Busy) return@withLock
+        // Busy cannot be seen here: every request runs under the lock and sets its end state
+        // (also when it is cancelled), so only an open question is left alone.
+        if (_ui.value is Ui.Confirm) return@withLock
         val a = current() ?: return@withLock
         when {
             a.code != null && a.yes -> save(a)
@@ -163,32 +165,44 @@ class ConnectController(
 
     private suspend fun preview(a: ConnectAttempt) {
         val code = a.code ?: return
+        val round = generation
         _ui.value = Ui.Busy
         try {
             val p = repo.preview(code, a.verifier)
+            // Signed out meanwhile: the answer belongs to nobody any more.
+            if (round != generation) return
             // A reconnect may save without asking (the server refuses another provider account).
             if (a.reconnect != null) save(a.copy(yes = true).also(store::save))
             else _ui.value = Ui.Confirm(p)
         } catch (e: kotlinx.coroutines.CancellationException) {
+            stopped(round, a)
             throw e
         } catch (e: Exception) {
-            handle(e, a, sentBefore = a.sent)
+            if (round == generation) handle(e, a, sentBefore = a.sent)
         }
+    }
+
+    /** A request was cancelled (the screen went): the attempt stays stored and is resumed later. */
+    private fun stopped(round: Int, a: ConnectAttempt) {
+        if (round == generation && _ui.value == Ui.Busy) _ui.value = Ui.Waiting(a.provider)
     }
 
     private suspend fun save(a: ConnectAttempt) {
         val code = a.code ?: return
+        val round = generation
         _ui.value = Ui.Busy
         val sentBefore = a.sent
         store.save(a.copy(sent = true))
         try {
             repo.save(code, a.verifier)
+            if (round != generation) return
             _message.value = UiText.Res(if (a.reconnect != null) R.string.connect_reconnected else R.string.connect_saved)
             end()
         } catch (e: kotlinx.coroutines.CancellationException) {
+            stopped(round, a)
             throw e
         } catch (e: Exception) {
-            handle(e, a.copy(sent = true), sentBefore)
+            if (round == generation) handle(e, a.copy(sent = true), sentBefore)
         }
     }
 

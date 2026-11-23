@@ -59,29 +59,44 @@ object FolderUpload {
         p.edit().putStringSet(KEY, p.getStringSet(KEY, emptySet()).orEmpty() + tree.toString()).apply()
     }
 
-    /** Gives back the right on [tree] now (the upload was not started). */
-    fun release(context: Context, tree: Uri) {
+    /** Gives back the right on [tree] now. Only through [releaseFinished], which knows who still needs it. */
+    private fun release(context: Context, tree: Uri) {
         runCatching { context.contentResolver.releasePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         p.edit().putStringSet(KEY, p.getStringSet(KEY, emptySet()).orEmpty() - tree.toString()).apply()
     }
 
-    /** Trees whose batches are still being queued: their right stays even while no batch needs it yet. */
-    private val queuing = mutableSetOf<String>()
+    /**
+     * Trees in use by a pick, its question or its queuing (a count: the same folder can be picked
+     * twice): their right stays even while no stored batch needs it yet.
+     */
+    private val queuing = mutableMapOf<String, Int>()
 
-    /** Marks [tree] as being queued until [done] is called (a finished first batch never frees it). */
-    fun queuing(tree: Uri) = synchronized(queuing) { queuing += tree.toString() }
+    /**
+     * A right on [tree] was just taken: it is noted at once (a stop of the app before the upload
+     * starts gives it back at the next start) and stays in use until [done].
+     */
+    fun picked(context: Context, tree: Uri) {
+        synchronized(queuing) { queuing[tree.toString()] = (queuing[tree.toString()] ?: 0) + 1 }
+        keep(context, tree)
+    }
 
-    /** All batches of [tree] are stored (or queuing stopped): from now on the usual rule applies. */
+    /**
+     * The pick of [tree] is over (queued, cancelled or failed): its right goes back unless a stored
+     * batch or another pick still needs it.
+     */
     fun done(context: Context, tree: Uri) {
-        synchronized(queuing) { queuing -= tree.toString() }
+        synchronized(queuing) {
+            val n = (queuing[tree.toString()] ?: 0) - 1
+            if (n > 0) queuing[tree.toString()] = n else queuing.remove(tree.toString())
+        }
         releaseFinished(context)
     }
 
     /** Gives back every kept right no stored upload batch needs any more. */
     fun releaseFinished(context: Context) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val busy = synchronized(queuing) { queuing.toSet() }
+        val busy = synchronized(queuing) { queuing.keys.toSet() }
         val trees = p.getStringSet(KEY, emptySet()).orEmpty()
         if (trees.isEmpty()) return
         val batches = File(context.filesDir, "upload_batches").listFiles { f -> f.name.endsWith(".json") }.orEmpty()

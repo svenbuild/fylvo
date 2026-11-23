@@ -1412,12 +1412,14 @@ class FilesViewModel(
         val uri = searchUri() ?: return
         if (s.searchLoadingMore || s.searchLoading) return
         _state.value = s.copy(searchLoadingMore = true)
+        // A category search has the same address for every text: the text and filters count too.
+        fun sameSearch() = searchUri() == uri && _state.value.searchQuery == s.searchQuery && _state.value.searchFilters == s.searchFilters
         viewModelScope.launch {
             try {
                 if (uri.startsWith("fulltext:")) {
                     val shown = _state.value.searchResults
                     val (files, snippets, total) = fullTextPage(uri.removePrefix("fulltext:"), shown.size)
-                    if (searchUri() != uri) return@launch
+                    if (!sameSearch()) return@launch
                     val all = shown + files.filter { f -> shown.none { it.path == f.path } }
                     _state.value = _state.value.copy(
                         searchLoadingMore = false, searchResults = all,
@@ -1428,7 +1430,7 @@ class FilesViewModel(
                 }
                 val res = repo.list(uri, pageToken = token, orderBy = "updated_at", orderDirection = "desc")
                 // A newer query replaced this one while the page was in flight.
-                if (searchUri() != uri) return@launch
+                if (!sameSearch()) return@launch
                 _state.value = _state.value.copy(
                     searchLoadingMore = false,
                     searchResults = _state.value.searchResults + matchSearch(res.files),
@@ -1436,7 +1438,7 @@ class FilesViewModel(
                 )
                 fillShortPage()
             } catch (e: Exception) {
-                if (searchUri() == uri) {
+                if (sameSearch()) {
                     _state.value = _state.value.copy(searchLoadingMore = false, snackbar = failure(e))
                 }
             }

@@ -196,12 +196,13 @@ fun FilesScreen(
             val scan = withContext(Dispatchers.IO) {
                 runCatching {
                     context.contentResolver.takePersistableUriPermission(tree, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    io.github.svenbuild.fylvo.android.work.FolderUpload.picked(context, tree)
                     io.github.svenbuild.fylvo.android.work.FolderUpload.scan(context, tree)
                 }.getOrNull()
             }
             folderReading = false
             if (scan == null || (scan.files.isEmpty() && scan.dirs.isEmpty())) {
-                io.github.svenbuild.fylvo.android.work.FolderUpload.release(context, tree)
+                io.github.svenbuild.fylvo.android.work.FolderUpload.done(context, tree)
                 snackbar.showSnackbar(context.getString(if (scan == null) R.string.folder_upload_unreadable else R.string.folder_upload_empty))
                 return@launch
             }
@@ -1127,9 +1128,11 @@ fun FilesScreen(
                     scope.launch {
                         // The target is taken by id now (it must still be the same when the upload
                         // starts); when its id cannot be read, nothing starts.
+                        // The folder on screen, not whatever has its address now.
+                        val shown = state.parent?.id?.takeIf { it.isNotEmpty() }
                         val id = if (CrUri.isRoot(target)) "" else withContext(Dispatchers.IO) {
                             runCatching { app.fileRepository.folderInfo(target).id }.getOrNull()?.takeIf { it.isNotEmpty() }
-                        }
+                        }?.takeIf { shown == null || it == shown }
                         if (id == null) {
                             snackbar.showSnackbar(context.getString(R.string.folder_upload_failed))
                             return@launch
@@ -1314,7 +1317,7 @@ fun FilesScreen(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = {
                 folderUploadAsk = null
-                io.github.svenbuild.fylvo.android.work.FolderUpload.release(context, scan.tree)
+                io.github.svenbuild.fylvo.android.work.FolderUpload.done(context, scan.tree)
             },
             title = { Text(stringResource(R.string.folder_upload_title, scan.name)) },
             text = {
@@ -1329,40 +1332,50 @@ fun FilesScreen(
                     val tag = app.sessionManager.sessionTag()
                     scope.launch {
                         val folders = io.github.svenbuild.fylvo.android.work.FolderUpload
-                        // Until every batch is stored, a finished first batch does not give the right back.
-                        folders.queuing(scan.tree)
-                        val ok = withContext(Dispatchers.IO) {
-                            runCatching {
-                                // Still the account and the folder that were chosen (nothing lands in one that took its place).
-                                if (UploadWorker.currentAccount(app) != account || !app.sessionManager.isCurrent(tag)) return@runCatching false
-                                if (targetId != null && app.fileRepository.folderIdMatches(target, targetId) != true) return@runCatching false
-                                // An existing folder of that name is filled up; files with a taken name get a new one.
-                                val root = CrUri.join(target, scan.name)
-                                app.fileRepository.mkdirs(root)
-                                scan.dirs.forEach { app.fileRepository.mkdirs(CrUri.join(root, it)) }
-                                folders.keep(context, scan.tree)
-                                folders.groups(scan).forEach { (dir, items) ->
-                                    val parent = if (dir.isEmpty()) root else CrUri.join(root, dir)
-                                    // Every batch checks its own folder by id before each file.
-                                    val parentId = app.fileRepository.folderInfo(parent).id
-                                    if (parentId.isEmpty()) return@runCatching false
-                                    val existing = viewModel.namesInFolder(parent)
-                                    val names = UploadWorker.uniqueWithinSelection(items.map { it.name }, existing)
-                                    UploadWorker.enqueueSafely(context, items.map { it.uri }, parent, names, expectedParentId = parentId, account = account)
+                        val groups = folders.groups(scan)
+                        // Batches queued; the right of the tree stays in use (since the pick) until all are stored.
+                        var queued = 0
+                        try {
+                            withContext(Dispatchers.IO) {
+                                runCatching {
+                                    // Still the account and the folder that were chosen (nothing lands in one that took its place).
+                                    if (UploadWorker.currentAccount(app) != account || !app.sessionManager.isCurrent(tag)) return@runCatching
+                                    if (targetId != null && app.fileRepository.folderIdMatches(target, targetId) != true) return@runCatching
+                                    // An existing folder of that name is filled up; files with a taken name get a new one.
+                                    val root = CrUri.join(target, scan.name)
+                                    app.fileRepository.mkdirs(root)
+                                    scan.dirs.forEach { app.fileRepository.mkdirs(CrUri.join(root, it)) }
+                                    groups.forEach { (dir, items) ->
+                                        val parent = if (dir.isEmpty()) root else CrUri.join(root, dir)
+                                        // Every batch checks its own folder by id before each file.
+                                        val parentId = app.fileRepository.folderInfo(parent).id
+                                        if (parentId.isEmpty()) return@runCatching
+                                        val existing = viewModel.namesInFolder(parent)
+                                        val names = UploadWorker.uniqueWithinSelection(items.map { it.name }, existing)
+                                        if (!UploadWorker.enqueueSafely(context, items.map { it.uri }, parent, names, expectedParentId = parentId, account = account)) return@runCatching
+                                        queued++
+                                    }
                                 }
-                                true
-                            }.getOrDefault(false)
+                            }
+                        } finally {
+                            folders.done(context, scan.tree)
                         }
-                        folders.done(context, scan.tree)
-                        snackbar.showSnackbar(context.getString(if (ok) R.string.folder_upload_started else R.string.folder_upload_failed))
-                        if (ok) viewModel.refresh()
+                        snackbar.showSnackbar(
+                            when {
+                                queued == groups.size -> context.getString(R.string.folder_upload_started)
+                                // Some batches go up: said so, a new try would upload them twice.
+                                queued > 0 -> context.getString(R.string.folder_upload_partly, queued, groups.size)
+                                else -> context.getString(R.string.folder_upload_failed)
+                            },
+                        )
+                        if (queued > 0) viewModel.refresh()
                     }
                 }) { Text(stringResource(R.string.upload)) }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     folderUploadAsk = null
-                    io.github.svenbuild.fylvo.android.work.FolderUpload.release(context, scan.tree)
+                    io.github.svenbuild.fylvo.android.work.FolderUpload.done(context, scan.tree)
                 }) { Text(stringResource(R.string.cancel)) }
             },
         )

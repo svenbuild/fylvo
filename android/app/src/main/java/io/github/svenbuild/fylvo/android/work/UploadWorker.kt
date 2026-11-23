@@ -835,14 +835,16 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             overwriteOnly: Set<String>? = null,
             expectedParentId: String? = null,
             account: String? = null,
-        ) {
-            try {
+        ): Boolean {
+            return try {
                 enqueue(context, uris, parentUri, names, overwrite, overwriteOnly, expectedParentId, account)
+                true
             } catch (e: Exception) {
                 Log.w(LOG_TAG, "Could not queue an upload: ${e.javaClass.simpleName}")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     android.widget.Toast.makeText(context, context.localized().getString(R.string.upload_could_not_start), android.widget.Toast.LENGTH_LONG).show()
                 }
+                false
             }
         }
 

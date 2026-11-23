@@ -136,7 +136,7 @@ fun ConnectedPage(
         ModalBottomSheet(onDismissRequest = { target = null }) {
             Text(CrUri.rootLabel(s.uri), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             if (s.ok && overview?.allowed == true) SheetAction(Icons.Outlined.FolderOpen, stringResource(R.string.open), { target = null; onOpen(s) })
-            // Without the right to connect only open and disconnect are left (as on the server).
+            // Without the right to connect only disconnect is left.
             if (overview?.allowed == true) SheetAction(Icons.Outlined.DriveFileRenameOutline, stringResource(R.string.rename), { target = null; renaming = s })
             if (overview?.allowed == true) SheetAction(
                 if (overview?.appSignin == true) Icons.Outlined.Sync else Icons.AutoMirrored.Outlined.OpenInNew,
