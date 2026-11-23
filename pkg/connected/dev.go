@@ -300,7 +300,6 @@ func (s devSettings) Set(ctx context.Context, settings map[string]string) error 
 	return s.SettingStore.Set(ctx, kept)
 }
 
-// devSampleData fills the simulated storage with one of everything a client has to handle.
 // devDocx is a Word document with one line of text: the smallest package of parts a
 // word processor opens.
 func devDocx(text string) []byte {
@@ -331,6 +330,7 @@ func devDocx(text string) []byte {
 	return buf.Bytes()
 }
 
+// devSampleData fills the simulated storage with one of everything a client has to handle.
 func devSampleData(s *drivetest.Server) {
 	picture := func(c color.Color) []byte {
 		img := image.NewRGBA(image.Rect(0, 0, 320, 200))

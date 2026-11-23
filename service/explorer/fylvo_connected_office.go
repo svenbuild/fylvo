@@ -445,7 +445,7 @@ func ConnectedOfficePut(c *gin.Context) {
 		sum  [sha256.Size]byte
 	)
 	if officeExitSave(c) {
-		kept, digest, err := spoolOffice(body, size)
+		kept, digest, err := spoolOffice(c, body, size)
 		if err != nil {
 			connectedOfficeError(c, err)
 			return
@@ -455,6 +455,13 @@ func ConnectedOfficePut(c *gin.Context) {
 			_ = os.Remove(kept.Name())
 		}()
 		last, sum, body = kept, digest, kept
+		if beside := o.req.m.OfficeKept(o.session, sum); beside != nil {
+			// This very content went into a copy before, and the answer to that did
+			// not arrive. It is not stored a second time, and not over the file either
+			// (the window may have read the file again since).
+			c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(beside.ModTime)})
+			return
+		}
 	}
 
 	row, err := o.req.m.OfficeSave(o.req.ctx, o.req.conn, o.session, body, size)
@@ -463,13 +470,16 @@ func ConnectedOfficePut(c *gin.Context) {
 		if last != nil {
 			// What the user wrote is not thrown away with the window: it is stored as a
 			// new file beside the one that changed, and the editor is told it is saved.
-			if beside, err := o.req.m.OfficeKeepBeside(o.req.ctx, o.req.conn, o.session, last, size, sum, officeConflictWord(o.req.user)); err == nil {
+			beside, err := o.req.m.OfficeKeepBeside(o.req.ctx, o.req.conn, o.session, last, size, sum, officeConflictWord(o.req.user))
+			if err == nil {
 				logging.FromContext(c).Info("Connected storage: the last save of an editor met a changed file and was kept as a copy beside it.")
 				c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(beside.ModTime)})
 				return
 			}
 			// It could not be kept either (no room, the folder is gone): the conflict
-			// is all there is to say.
+			// is all there is to say. The operator is told, for this is where what
+			// somebody wrote is lost.
+			logging.FromContext(c).Warning("Connected storage: the last save of an editor met a changed file and could not be kept as a copy: %s", connected.Public(c, err))
 		}
 		// The file is no longer the version this editor read, or no longer where it
 		// was. The body is what the Office server understands as "the document
@@ -502,8 +512,12 @@ func officeExitSave(c *gin.Context) bool {
 
 // spoolOffice takes a body of the given size into a file of its own, to be read again,
 // and returns it with the SHA-256 of its content. The caller closes and removes it.
-func spoolOffice(body io.Reader, size int64) (kept *os.File, sum [sha256.Size]byte, err error) {
-	kept, err = os.CreateTemp("", "fylvo-office-*")
+func spoolOffice(c *gin.Context, body io.Reader, size int64) (kept *os.File, sum [sha256.Size]byte, err error) {
+	// Where the installation keeps what is in transit, as its operator set it.
+	dir := util.DataPath(dependency.FromContext(c).SettingProvider().TempPath(c))
+	if err = os.MkdirAll(dir, 0o700); err == nil {
+		kept, err = os.CreateTemp(dir, officeTempName+"*")
+	}
 	if err != nil {
 		return nil, sum, serializer.NewError(serializer.CodeIOFailed, "Failed to take in the document", err)
 	}
@@ -511,6 +525,13 @@ func spoolOffice(body io.Reader, size int64) (kept *os.File, sum [sha256.Size]by
 	n, err := io.Copy(io.MultiWriter(kept, digest), io.LimitReader(body, size))
 	if err == nil && n != size {
 		err = io.ErrUnexpectedEOF
+	}
+	if err == nil {
+		// Not a byte more than was announced.
+		var more [1]byte
+		if extra, _ := body.Read(more[:]); extra > 0 {
+			err = errors.New("the body is longer than announced")
+		}
 	}
 	if err == nil {
 		_, err = kept.Seek(0, io.SeekStart)
@@ -523,6 +544,9 @@ func spoolOffice(body io.Reader, size int64) (kept *os.File, sum [sha256.Size]by
 	copy(sum[:], digest.Sum(nil))
 	return kept, sum, nil
 }
+
+// officeTempName starts the name of a document that is taken in for a last save.
+const officeTempName = "fylvo-office-"
 
 // officeConflictWord is the word in the name of a copy kept after a conflict, in the
 // language of the account as far as the server knows it.
