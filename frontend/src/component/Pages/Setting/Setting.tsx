@@ -116,7 +116,8 @@ const Setting = () => {
                   <FacebookCircularProgress />
                 </Box>
               )}
-              {!loading && setting && (
+              {/* The connected tab also works without the settings, so the return from a provider always lands. */}
+              {!loading && (setting || tab == SettingPageTab.Connected) && (
                 <Paper
                   variant="outlined"
                   sx={{
@@ -137,11 +138,15 @@ const Setting = () => {
                     },
                   }}
                 >
-                  {(!tab || tab == SettingPageTab.Profile) && (
+                  {setting && (!tab || tab == SettingPageTab.Profile) && (
                     <ProfileSetting setting={setting} setSetting={setSetting} />
                   )}
-                  {tab == SettingPageTab.Preference && <PreferenceSetting setting={setting} setSetting={setSetting} />}
-                  {tab == SettingPageTab.Security && <SecuritySetting setting={setting} setSetting={setSetting} />}
+                  {setting && tab == SettingPageTab.Preference && (
+                    <PreferenceSetting setting={setting} setSetting={setSetting} />
+                  )}
+                  {setting && tab == SettingPageTab.Security && (
+                    <SecuritySetting setting={setting} setSetting={setSetting} />
+                  )}
                   {tab == SettingPageTab.Customize && <CustomizeSetting />}
                   {tab == SettingPageTab.Connected && <ConnectedSetting />}
                 </Paper>

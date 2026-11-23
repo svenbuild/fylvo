@@ -84,13 +84,7 @@ const ProviderForm = ({
           size="small"
           variant="outlined"
           color={ready ? "success" : "default"}
-          label={t(
-            ready
-              ? "connected.ready"
-              : setup.client_id
-                ? "connected.secretMissing"
-                : "connected.notSetUp",
-          )}
+          label={t(ready ? "connected.ready" : setup.client_id ? "connected.secretMissing" : "connected.notSetUp")}
           sx={{ height: "initial", fontSize: (theme) => theme.typography.caption.fontSize }}
         />
       </Box>
@@ -187,7 +181,6 @@ const ConnectedProviders = () => {
     );
   }
 
-
   const providers = [
     ...providerOrder.filter((p) => setup.providers[p]),
     ...Object.keys(setup.providers).filter((p) => !providerOrder.includes(p)),
@@ -211,7 +204,12 @@ const ConnectedProviders = () => {
                     endAdornment: (
                       <InputAdornment position="end">
                         <Tooltip title={t("connected.copy")}>
-                          <IconButton edge="end" size="small" onClick={() => copyToClipboard(setup.callback_url)} aria-label={t("connected.copy")}>
+                          <IconButton
+                            edge="end"
+                            size="small"
+                            onClick={() => copyToClipboard(setup.callback_url)}
+                            aria-label={t("connected.copy")}
+                          >
                             <CopyOutlined fontSize="small" />
                           </IconButton>
                         </Tooltip>

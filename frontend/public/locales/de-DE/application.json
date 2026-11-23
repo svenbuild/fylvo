@@ -1252,7 +1252,8 @@
       "too_many": "Es lassen sich keine weiteren Speicher verbinden.",
       "setup": "Der Anbieter hat die Einrichtung dieses Servers abgelehnt. Bitte an die Verwaltung wenden.",
       "not_configured": "Dieser Anbieter ist auf diesem Server nicht eingerichtet.",
-      "not_allowed": "Dieses Konto darf keine Speicher verbinden."
+      "not_allowed": "Dieses Konto darf keine Speicher verbinden.",
+      "unavailable": "Verbundene Speicher sind nicht verfügbar."
     }
   }
 }

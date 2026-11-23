@@ -31,6 +31,8 @@ export const ConnectedMaxPerUser = 10;
 export const ConnectedMaxNameBytes = 64;
 
 export const ConnectedCode = {
+  // Existing code: the account at the provider is already connected.
+  ObjectExists: 40004,
   Unsupported: 40920,
   Reconnect: 40921,
   Unavailable: 40922,

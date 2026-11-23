@@ -1174,7 +1174,8 @@
       "too_many": "No more storages can be connected.",
       "setup": "The provider refused the setup of this server. Please ask the administrator.",
       "not_configured": "This provider is not set up on this server.",
-      "not_allowed": "Your account may not connect storages."
+      "not_allowed": "Your account may not connect storages.",
+      "unavailable": "Connected storages are not available."
     }
   }
 }

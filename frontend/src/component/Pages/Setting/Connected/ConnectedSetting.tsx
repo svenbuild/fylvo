@@ -78,13 +78,23 @@ export const useConnectedTabVisible = (openTab: string | null) => {
         const usable = res.available && res.allowed && res.providers.some((p) => p.configured);
         setVisible((v) => v || usable || res.storages.length > 0);
       })
-      .catch(() => {});
+      // Shown, so its retry can be reached.
+      .catch(() => setVisible(true));
   }, []);
   return visible || openTab == ConnectedSettingTab;
 };
 
 // Values of data.reason the server sends with errors of authorize and finish.
-const knownReasons = ["expired", "account", "other_account", "exists", "too_many", "setup", "not_configured", "not_allowed"];
+const knownReasons = [
+  "expired",
+  "account",
+  "other_account",
+  "exists",
+  "too_many",
+  "setup",
+  "not_configured",
+  "not_allowed",
+];
 
 // Text for an error of authorize or finish: by data.reason, else by code, else general.
 const useErrorText = () => {
@@ -96,11 +106,11 @@ const useErrorText = () => {
         if (typeof reason == "string" && knownReasons.includes(reason)) {
           return t(`connected.reason.${reason}`);
         }
-        if (e.code == 40004) {
+        if (e.code == ConnectedCode.ObjectExists) {
           return t("connected.reason.exists");
         }
         if (e.code == ConnectedCode.Unavailable) {
-          return t("connected.reason.not_allowed");
+          return t("connected.reason.unavailable");
         }
       }
       return t("connected.finishFailed");
@@ -143,6 +153,10 @@ interface FlowResult {
   // Address of the installation to start connecting from.
   origin?: string;
 }
+
+// The finish step of a sign-in that is still running. It lives outside the component, so
+// leaving the tab and coming back while it runs shows its result and a fresh list.
+let finishRun: Promise<FlowResult> | undefined;
 
 const RenameDialog = ({
   storage,
@@ -216,44 +230,23 @@ const RenameDialog = ({
 const ConnectDialog = ({
   open,
   list,
+  authorizing,
   onClose,
-  onFailed,
+  onConnect,
 }: {
   open: boolean;
   list?: ConnectedListResponse;
+  authorizing?: string;
   onClose: () => void;
-  onFailed: (result: FlowResult) => void;
+  onConnect: (provider: string) => void;
 }) => {
   const { t } = useTranslation();
-  const dispatch = useAppDispatch();
-  const errorText = useErrorText();
-  const [loading, setLoading] = useState<string | undefined>(undefined);
   const providers = list?.providers.filter((p) => p.configured) ?? [];
-  useResetOnBack(() => setLoading(undefined));
-
-  const connect = (provider: string) => {
-    setLoading(provider);
-    dispatch(sendConnectedAuthorize(provider))
-      .then((res) => {
-        // On success the page is left; the loading state stays until the browser is gone.
-        const origin = openProvider(res.url);
-        if (origin) {
-          setLoading(undefined);
-          onClose();
-          onFailed({ severity: "error", message: t("connected.otherOrigin"), origin });
-        }
-      })
-      .catch((e) => {
-        setLoading(undefined);
-        onClose();
-        onFailed({ severity: "error", message: errorText(e) });
-      });
-  };
 
   return (
     <DraggableDialog
       title={t("connected.connect")}
-      loading={!!loading}
+      loading={!!authorizing}
       dialogProps={{ open, onClose, fullWidth: true, maxWidth: "xs" }}
     >
       <DialogContent>
@@ -262,15 +255,15 @@ const ConnectDialog = ({
           {providers.map((p) => (
             <ListItemButton
               key={p.type}
-              disabled={!!loading}
-              onClick={() => connect(p.type)}
+              disabled={!!authorizing}
+              onClick={() => onConnect(p.type)}
               sx={{ border: 1, borderColor: "divider", borderRadius: 1, mt: 1 }}
             >
               <ListItemIcon sx={{ minWidth: 34 }}>
                 <CloudOutlined fontSize="small" />
               </ListItemIcon>
               <ListItemText primary={p.name} slotProps={{ primary: { variant: "subtitle2" } }} />
-              {loading == p.type && <CircularProgress size={18} />}
+              {authorizing == p.type && <CircularProgress size={18} />}
             </ListItemButton>
           ))}
         </List>
@@ -283,41 +276,24 @@ const StorageRow = ({
   storage,
   list,
   allowed,
+  authorizing,
   onRename,
+  onReconnect,
   onDisconnected,
-  onFailed,
 }: {
   storage: ConnectedStorage;
   list: ConnectedListResponse;
   allowed: boolean;
+  authorizing?: string;
   onRename: (s: ConnectedStorage) => void;
+  onReconnect: (s: ConnectedStorage) => void;
   onDisconnected: (id: string) => void;
-  onFailed: (result: FlowResult) => void;
 }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const errorText = useErrorText();
-  const [reconnecting, setReconnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const needsReconnect = storage.status == ConnectedStatus.reconnect;
   const configured = list.providers.some((p) => p.type == storage.provider && p.configured);
-  useResetOnBack(() => setReconnecting(false));
-
-  const reconnect = () => {
-    setReconnecting(true);
-    dispatch(sendConnectedAuthorize(storage.provider, storage.id))
-      .then((res) => {
-        const origin = openProvider(res.url);
-        if (origin) {
-          setReconnecting(false);
-          onFailed({ severity: "error", message: t("connected.otherOrigin"), origin });
-        }
-      })
-      .catch((e) => {
-        setReconnecting(false);
-        onFailed({ severity: "error", message: errorText(e) });
-      });
-  };
 
   const disconnect = () => {
     dispatch(confirmOperation(t("connected.disconnectConfirm", { name: storage.name })))
@@ -380,8 +356,9 @@ const StorageRow = ({
             size="small"
             variant="outlined"
             color="warning"
-            loading={reconnecting}
-            onClick={reconnect}
+            loading={authorizing == storage.id}
+            disabled={!!authorizing}
+            onClick={() => onReconnect(storage)}
             startIcon={<ArrowSync />}
           >
             <span>{t("connected.reconnect")}</span>
@@ -420,7 +397,11 @@ const ConnectedSetting = () => {
   const [result, setResult] = useState<FlowResult | undefined>(undefined);
   const [connectOpen, setConnectOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<ConnectedStorage | undefined>(undefined);
+  // Provider type (connect) or connection id (reconnect) of the sign-in being started.
+  // One at a time: each start replaces the cookie of the one before.
+  const [authorizing, setAuthorizing] = useState<string | undefined>(undefined);
   const handled = useRef(false);
+  useResetOnBack(() => setAuthorizing(undefined));
 
   const isAdmin = useMemo(
     () => GroupBS(SessionManager.currentLoginOrNull()?.user).enabled(GroupPermission.is_admin),
@@ -452,24 +433,53 @@ const ConnectedSetting = () => {
       setFlowError(null);
     }
 
-    if (!finish) {
+    if (finish) {
+      const code = finish;
+      setFinish(null);
+      const run: Promise<FlowResult> = dispatch(sendConnectedFinish(code)).then(
+        (storage) => ({ severity: "success", message: t("connected.connected", { name: storage.name }) }),
+        (e) => ({ severity: "error", message: errorText(e) }),
+      );
+      finishRun = run;
+      run.then(() => {
+        if (finishRun == run) {
+          finishRun = undefined;
+        }
+      });
+    }
+
+    if (!finishRun) {
       load();
       return;
     }
-
-    const code = finish;
-    setFinish(null);
     setFinishing(true);
-    dispatch(sendConnectedFinish(code))
-      .then((storage) => {
-        setResult({ severity: "success", message: t("connected.connected", { name: storage.name }) });
+    finishRun.then((res) => {
+      setResult(res);
+      setFinishing(false);
+      load();
+    });
+  }, []);
+
+  const authorize = (provider: string, reconnect?: string) => {
+    setAuthorizing(reconnect ?? provider);
+    dispatch(sendConnectedAuthorize(provider, reconnect))
+      .then((res) => {
+        // On success the page is left; the state stays until the browser is gone.
+        const origin = openProvider(res.url);
+        if (origin) {
+          setAuthorizing(undefined);
+          setConnectOpen(false);
+          setResult({ severity: "error", message: t("connected.otherOrigin"), origin });
+        }
       })
-      .catch((e) => setResult({ severity: "error", message: errorText(e) }))
-      .finally(() => {
-        setFinishing(false);
+      .catch((e) => {
+        setAuthorizing(undefined);
+        setConnectOpen(false);
+        setResult({ severity: "error", message: errorText(e) });
+        // The refusal may come from a change elsewhere (permission, another tab).
         load();
       });
-  }, []);
+  };
 
   const onRenamed = (storage: ConnectedStorage) => {
     setList((l) => l && { ...l, storages: l.storages.map((s) => (s.id == storage.id ? storage : s)) });
@@ -583,9 +593,10 @@ const ConnectedSetting = () => {
               storage={s}
               list={list}
               allowed={allowed}
+              authorizing={authorizing}
               onRename={setRenameTarget}
+              onReconnect={(r) => authorize(r.provider, r.id)}
               onDisconnected={onDisconnected}
-              onFailed={setResult}
             />
           ))}
 
@@ -607,7 +618,13 @@ const ConnectedSetting = () => {
           </Box>
         )}
       </SettingForm>
-      <ConnectDialog open={connectOpen} list={list} onClose={() => setConnectOpen(false)} onFailed={setResult} />
+      <ConnectDialog
+        open={connectOpen}
+        list={list}
+        authorizing={authorizing}
+        onClose={() => setConnectOpen(false)}
+        onConnect={(provider) => authorize(provider)}
+      />
       <RenameDialog storage={renameTarget} onClose={() => setRenameTarget(undefined)} onRenamed={onRenamed} />
     </Stack>
   );
