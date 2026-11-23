@@ -10,16 +10,19 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
 )
 
-var managers sync.Map // dependency.Dep -> *Manager
+// managers holds the Manager of each running server, by the database client of the
+// server. Not by the Dep: every request gets a Dep of its own.
+var managers sync.Map // *ent.Client -> *Manager
 
 // For returns the Manager of a running server. There is one per server: sign-ins in
-// progress live in its memory.
+// progress, listings that are paged through and open connections live in its memory.
 func For(dep dependency.Dep) *Manager {
-	if m, ok := managers.Load(dep); ok {
+	key := dep.DBClient()
+	if m, ok := managers.Load(key); ok {
 		return m.(*Manager)
 	}
 
-	m := NewManager(ManagerOptions{
+	options := ManagerOptions{
 		Storages: inventory.NewConnectedStorageClient(dep.DBClient()),
 		Settings: &depSettings{client: dep.SettingClient(), kv: dep.KV()},
 		Sealer: NewSealer(func(ctx context.Context) ([]byte, error) {
@@ -29,14 +32,18 @@ func For(dep dependency.Dep) *Manager {
 			u, err := dep.UserClient().GetByID(ctx, userID)
 			return err == nil && u != nil
 		},
-	})
-	actual, _ := managers.LoadOrStore(dep, m)
+	}
+	devOptions(&options)
+	actual, loaded := managers.LoadOrStore(key, NewManager(options))
+	if !loaded {
+		devReady(dep, actual.(*Manager))
+	}
 	return actual.(*Manager)
 }
 
 // Install makes m the Manager of a server. For tests that bring their own providers.
 func Install(dep dependency.Dep, m *Manager) {
-	managers.Store(dep, m)
+	managers.Store(dep.DBClient(), m)
 }
 
 // DepSettings returns the settings of a server as a Manager reads and writes them.

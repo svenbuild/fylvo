@@ -9,6 +9,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/middleware"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster"
 	"github.com/cloudreve/Cloudreve/v4/pkg/conf"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/downloader/slave"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
@@ -476,6 +477,11 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 
 		// Fylvo: the browser comes back here from the provider of a storage that is being
 		// connected. It carries no sign-in; a cookie ties it to the browser that started.
+		// Fylvo: the simulated provider of development builds (see pkg/connected/dev.go).
+		// In an ordinary build there is none, and nothing is served here.
+		if simulated := connected.DevHandler(); simulated != nil {
+			v4.Any("fylvo/dev/*page", gin.WrapH(simulated))
+		}
 		v4.GET("fylvo/connected/callback", controllers.FylvoConnectedCallback)
 
 		// Fylvo: content of a file in a connected storage. The grant in the path is the

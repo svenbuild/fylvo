@@ -351,7 +351,15 @@ func (f *Flow) Begin(userID int, provider string, client Client, reconnect *Reco
 		clientID: client.ID, clientAuth: client.Secret,
 	}
 
-	return spec.AuthURL + "?" + q.Encode(), cookie, nil
+	address = spec.AuthURL
+	if strings.HasPrefix(address, "/") {
+		// A sign-in page this installation serves itself (development builds only): it
+		// is at the address the browser reaches the installation by.
+		if back, err := url.Parse(client.Redirect); err == nil {
+			address = back.Scheme + "://" + back.Host + address
+		}
+	}
+	return address + "?" + q.Encode(), cookie, nil
 }
 
 // Callback completes the provider's side of a sign-in: it takes the state out,

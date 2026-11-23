@@ -107,6 +107,7 @@ type Server struct {
 	incompleteNext bool
 	emptyNext      bool
 	token          string
+	rejects        func(token string) bool
 	tokens         []string
 	contentTokens  []string
 	failRevisions  bool
@@ -118,6 +119,19 @@ type Server struct {
 
 // New starts a simulated Drive with an empty root folder and closes it at the end of t.
 func New(t testing.TB) *Server {
+	s := Start()
+	t.Cleanup(s.Close)
+	return s
+}
+
+// Close stops the servers of the simulated Drive.
+func (s *Server) Close() {
+	s.api.Close()
+	s.content.Close()
+}
+
+// Start starts a simulated Drive with an empty root folder. The caller closes it.
+func Start() *Server {
 	s := &Server{
 		items:    map[string]*entry{},
 		root:     "root0",
@@ -128,8 +142,6 @@ func New(t testing.TB) *Server {
 	s.items[s.root] = &entry{id: s.root, name: "My Drive", mimeType: FolderType, modTime: s.clock}
 	s.api = httptest.NewServer(http.HandlerFunc(s.serveAPI))
 	s.content = httptest.NewServer(http.HandlerFunc(s.serveContent))
-	t.Cleanup(s.api.Close)
-	t.Cleanup(s.content.Close)
 	return s
 }
 
@@ -318,6 +330,13 @@ func (s *Server) RequireToken(token string) {
 	s.token = token
 }
 
+// RejectTokens makes the simulator answer 401 to every token rejects says yes to.
+func (s *Server) RejectTokens(rejects func(token string) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rejects = rejects
+}
+
 // Tokens returns the bearer tokens of all API calls so far, in order.
 func (s *Server) Tokens() []string {
 	s.mu.Lock()
@@ -411,7 +430,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 
 	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	s.tokens = append(s.tokens, token)
-	if token == "" || (s.token != "" && token != s.token) {
+	if token == "" || (s.token != "" && token != s.token) || (s.rejects != nil && s.rejects(token)) {
 		writeError(w, http.StatusUnauthorized, "authError", "Invalid Credentials")
 		return
 	}
