@@ -221,6 +221,36 @@ export const BatchDownloadCompleteAction = (downloadId: string) => (snackbarId: 
   return <BatchDownloadCompleteContent downloadId={downloadId} snackbarId={snackbarId} />;
 };
 
+// Fylvo: a batch download that left something out; its log says what.
+const BatchDownloadIncompleteContent = ({
+  downloadId,
+  snackbarId,
+}: {
+  downloadId: string;
+  snackbarId: SnackbarKey | undefined;
+}) => {
+  const { t } = useTranslation("application");
+  const dispatch = useAppDispatch();
+  return (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Button
+        onClick={() => dispatch(setBatchDownloadLogDialog({ open: true, id: downloadId }))}
+        color="inherit"
+        size="small"
+      >
+        {t("fileManager.details")}
+      </Button>
+      <Button onClick={() => closeSnackbar(snackbarId)} color="inherit" size="small">
+        {t("dismiss", { ns: "common", defaultValue: "Dismiss" })}
+      </Button>
+    </Box>
+  );
+};
+
+export const BatchDownloadIncompleteAction = (downloadId: string) => (snackbarId: SnackbarKey | undefined) => {
+  return <BatchDownloadIncompleteContent downloadId={downloadId} snackbarId={snackbarId} />;
+};
+
 export const ViewTaskAction =
   (path: string = "/tasks") =>
   (snackbarId: SnackbarKey | undefined) => {

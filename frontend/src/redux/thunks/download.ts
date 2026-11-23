@@ -10,6 +10,7 @@ import {
   BatchDownloadProgressAction,
   BatchDownloadSecondaryAction,
   BatchDownloadCompleteAction,
+  BatchDownloadIncompleteAction,
 } from "../../component/Common/Snackbar/snackbar.tsx";
 import SessionManager from "../../session";
 import { getFileLinkedUri } from "../../util";
@@ -208,7 +209,7 @@ export function browserBatchDownload(files: FileResponse[]): AppThunk {
           message: i18next.t("application:connected.downloadIncomplete"),
           variant: "warning",
           persist: true,
-          action: BatchDownloadCompleteAction(downloadId),
+          action: BatchDownloadIncompleteAction(downloadId),
         });
       } else {
         enqueueSnackbar({
