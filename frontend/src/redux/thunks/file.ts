@@ -712,6 +712,7 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
     const dstUri = new CrUri(dst);
     if (
       !src.find((f) => f.metadata && f.metadata[Metadata.restore_uri]) &&
+      !src.some((f) => inConnectedStorage(f.path)) &&
       dstUri.fs() == Filesystem.trash &&
       dstUri.elements().length == 0
     ) {

@@ -253,7 +253,9 @@ export default class UploadManager {
     // Fylvo: an upload into a connected storage does not create folders, so files of a
     // dropped folder are left out there.
     if (inConnectedStorage(dst)) {
-      const plain = files.filter((file) => getDirectoryUploadDst(dst, file) == dst);
+      const inFolder = (file: File & { fsPath?: string }) =>
+        (file.webkitRelativePath || file.fsPath || "").replace(/^\//, "").includes("/");
+      const plain = files.filter((file) => !inFolder(file));
       if (plain.length < files.length) {
         this.o.onToast("warning", i18next.t("application:connected.noFolderUpload"));
       }

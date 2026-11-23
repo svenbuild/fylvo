@@ -70,6 +70,9 @@ export const handleRemoteInvoke = async (
               size: res.size,
             },
           ]);
+        } else {
+          // Fylvo: a refused save is answered as well, so the editor does not wait for it.
+          sendResponse(w, msg, null, "not saved");
         }
       } catch (e) {
         sendResponse(w, msg, null, `${e}`);

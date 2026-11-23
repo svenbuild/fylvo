@@ -450,7 +450,12 @@ export function switchToImageViewer(): AppThunk {
   };
 }
 
-export function saveImage(name: string, data: string, file: FileResponse, version?: string): AppThunk {
+export function saveImage(
+  name: string,
+  data: string,
+  file: FileResponse,
+  version?: string,
+): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState) => {
     if (!version) {
       version = file.primary_entity;
@@ -467,7 +472,10 @@ export function saveImage(name: string, data: string, file: FileResponse, versio
       originFileUri = originFileUri.parent().join(name);
     }
 
-    const savedImageFile = await dispatch(saveFile(originFileUri.toString(), await dataUrlToBytes(data), version));
+    // Fylvo: a copy under a new name in a connected storage replaces nothing.
+    const uri = originFileUri.toString();
+    const previous = name != file.name && inConnectedStorage(uri) ? undefined : version;
+    const savedImageFile = await dispatch(saveFile(uri, await dataUrlToBytes(data), previous));
     if (savedImageFile) {
       const {
         globalState: { imageViewer },
@@ -481,6 +489,7 @@ export function saveImage(name: string, data: string, file: FileResponse, versio
         );
       }
     }
+    return savedImageFile;
   };
 }
 
@@ -536,7 +545,8 @@ export function saveFile(
           if (opt.overwrite) {
             return await dispatch(saveFile(uri, data));
           } else if (opt.saveAs) {
-            return await dispatch(saveFile(opt.saveAs, data, version));
+            // Fylvo: a copy under a new name in a connected storage replaces nothing.
+            return await dispatch(saveFile(opt.saveAs, data, inConnectedStorage(opt.saveAs) ? undefined : version));
           }
         } catch (e) {
           // Cancel save action
@@ -634,8 +644,11 @@ export function saveDrawIO(
   saveAsNew?: boolean,
 ): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState): Promise<FileResponse | undefined> => {
-    // Fylvo: in a connected storage only over the version the editor holds.
-    const version = inConnectedStorage(file.path) ? file.primary_entity : undefined;
+    // Fylvo: in a connected storage only over the version saved last (the editor's messages
+    // may still name the file as it was opened).
+    const current = getState().globalState.drawIOViewer?.file;
+    const latest = current?.path == file.path ? current : file;
+    const version = inConnectedStorage(file.path) ? latest.primary_entity : undefined;
     const savedFile = await dispatch(saveFile(getFileLinkedUri(file), data, version, saveAsNew, true));
 
     if (savedFile) {

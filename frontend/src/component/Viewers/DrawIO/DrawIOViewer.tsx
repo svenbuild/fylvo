@@ -25,6 +25,8 @@ const DrawIOViewer = () => {
   const [src, setSrc] = useState("");
   const [loaded, setLoaded] = useState(false);
   const pp = useRef<HTMLIFrameElement | undefined>();
+  // Fylvo: the editor's frame, to take messages only from it.
+  const frame = useRef<HTMLIFrameElement>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   useEffect(() => {
@@ -54,6 +56,9 @@ const DrawIOViewer = () => {
   }, [viewerState?.open]);
 
   const handlePostMessage = async (e: MessageEvent) => {
+    if (!frame.current || e.source !== frame.current.contentWindow) {
+      return;
+    }
     console.log("Received PostMessage from " + e.origin, e.data);
     let msg;
     try {
@@ -184,6 +189,7 @@ const DrawIOViewer = () => {
       {src && (
         <Box
           onLoad={handleIframeOnload}
+          ref={frame}
           src={src}
           component={"iframe"}
           allow="clipboard-read; clipboard-write"

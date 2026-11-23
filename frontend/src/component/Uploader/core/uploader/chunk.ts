@@ -17,25 +17,6 @@ export interface ChunkInfo {
   index: number;
 }
 
-// Fylvo: uploads into connected storages go at most two at a time; the server talks to the
-// provider with at most two requests per account.
-const connectedSlots = { free: 2, waiting: [] as (() => void)[] };
-const takeConnectedSlot = async () => {
-  if (connectedSlots.free > 0) {
-    connectedSlots.free--;
-    return;
-  }
-  await new Promise<void>((resolve) => connectedSlots.waiting.push(resolve));
-};
-const giveConnectedSlot = () => {
-  const next = connectedSlots.waiting.shift();
-  if (next) {
-    next();
-  } else {
-    connectedSlots.free++;
-  }
-};
-
 export default abstract class Chunk extends Base {
   protected chunks: Blob[] = [];
   private readonly DEFAULT_CONCURRENCY = 1; // Default concurrent uploads
@@ -50,6 +31,8 @@ export default abstract class Chunk extends Base {
   }
 
   public upload = async () => {
+    this.busyInARow = 0;
+    this.busyWait = firstWait;
     this.logger.info("Preparing uploading file chunks.");
     this.initBeforeUploadChunks();
 
@@ -60,7 +43,6 @@ export default abstract class Chunk extends Base {
       await this.uploadChunksWithDynamicPool();
       return;
     }
-    await takeConnectedSlot();
     try {
       await this.uploadChunksWithDynamicPool();
     } catch (e) {
@@ -69,8 +51,6 @@ export default abstract class Chunk extends Base {
         return;
       }
       throw e;
-    } finally {
-      giveConnectedSlot();
     }
   };
 
@@ -93,6 +73,10 @@ export default abstract class Chunk extends Base {
       }
       if (state.state == "failed") {
         failedCode = state.code;
+      }
+      // Not all bytes arrived: nothing is stored yet, so it is an ordinary failure.
+      if (state.state == "receiving" && state.received < this.task.file.size) {
+        return false;
       }
     } catch (_) {
       // The server no longer knows the session (40016 or a restart): unknown as well.

@@ -139,13 +139,9 @@ export const getActionOpt = (
       display.showRemoteDownload = false;
     }
     if (display.showCreateFile) {
-      const allViewers = Object.entries(ViewersByID);
-      for (let i = 0; i < allViewers.length; i++) {
-        if (allViewers[i][1] && allViewers[i][1].templates) {
-          display.showNewFileFromTemplate = true;
-          break;
-        }
-      }
+      display.showNewFileFromTemplate = usableViewers(parent, Object.values(ViewersByID)).some(
+        (viewer) => viewer && viewer.templates,
+      );
     }
 
     return display;

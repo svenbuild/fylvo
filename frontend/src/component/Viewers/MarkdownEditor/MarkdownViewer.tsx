@@ -32,6 +32,8 @@ const MarkdownViewer = () => {
   const [changedValue, setChangedValue] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saved, setSaved] = useState(true);
+  // Fylvo: counts edits, so a save only marks as saved what it sent.
+  const edits = useRef(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [optionAnchorEl, setOptionAnchorEl] = useState<null | HTMLElement>(null);
   const saveFunction = useRef(() => {});
@@ -106,10 +108,12 @@ const MarkdownViewer = () => {
       }
 
       setLoading(true);
+      const sentAt = edits.current;
       dispatch(saveMarkdown(changedValue, viewerState.file, viewerState.version, saveAs))
         .then((saved) => {
-          // Only a save that went through; a refused one keeps the changes marked.
-          if (saved) {
+          // Only a save that went through, and not edits made meanwhile; a refused one keeps
+          // the changes marked.
+          if (saved && edits.current == sentAt) {
             setSaved(true);
           }
         })
@@ -121,6 +125,7 @@ const MarkdownViewer = () => {
   );
 
   const onChange = useCallback((v: string) => {
+    edits.current++;
     setChangedValue(v);
     setSaved(false);
   }, []);
