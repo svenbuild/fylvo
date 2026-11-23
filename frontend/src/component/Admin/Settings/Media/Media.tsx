@@ -153,6 +153,24 @@ const Media = () => {
                 <NoMarginHelperText>{t("settings.notAppliedToNativeGenerator", { prefix: "" })}</NoMarginHelperText>
               </FormControl>
             </SettingForm>
+            <SettingForm lgWidth={5}>
+              <FormControl fullWidth>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={isTrueVal(values.thumb_pregen_enabled)}
+                      onChange={(e) =>
+                        setSettings({
+                          thumb_pregen_enabled: e.target.checked ? "1" : "0",
+                        })
+                      }
+                    />
+                  }
+                  label={t("settings.thumbPregen")}
+                />
+                <NoMarginHelperText>{t("settings.thumbPregenDes")}</NoMarginHelperText>
+              </FormControl>
+            </SettingForm>
           </SettingSectionContent>
           <MagicVarDialog
             open={magicVarDialogOpen}

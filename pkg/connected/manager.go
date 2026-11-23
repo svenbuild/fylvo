@@ -122,6 +122,8 @@ type Manager struct {
 	usage map[string]usage
 	// leaving counts, per account, the deletions of that account that are under way.
 	leaving map[int]int
+	// starting lets one ticket at a time become a sign-in (see StartTicket).
+	starting sync.Mutex
 	// writes holds one lock per account at a provider (Conn.AccountKey), see write.go.
 	writes sync.Map
 	// unsettled are the names a change with an open outcome was about (see write.go).
@@ -362,64 +364,207 @@ func validPublicID(id string) bool {
 	return true
 }
 
+// admit runs the checks every sign-in passes before it starts: the provider is one of
+// this version and set up, the account is there and not being removed, and either the
+// connection to renew is one of it at this provider or it has room for one more. It
+// returns the client of the installation (without the redirect address) and the
+// connection to renew. The caller holds m.mu, so nothing starts for an account whose
+// removal has begun: its sign-ins were dropped, and one that started now would leave a
+// token behind when the provider answers. loaded tells that the caller read the account
+// itself a moment ago; it is then not asked for a second time.
+func (m *Manager) admit(ctx context.Context, userID int, provider, reconnect string, loaded bool) (client Client, renew *Reconnect, err error) {
+	if m.specs[provider] == nil {
+		return client, nil, serializer.NewError(serializer.CodeParamErr, "Unknown provider", nil)
+	}
+	client, ok, err := m.client(ctx, provider)
+	if err != nil {
+		return client, nil, err
+	}
+	if !ok {
+		return client, nil, reasoned(serializer.CodeConnectedUnavailable, "The provider is not set up", ReasonNotConfigured)
+	}
+	if m.leaving[userID] > 0 || (!loaded && m.exists != nil && !m.exists(ctx, userID)) {
+		return client, nil, flowError(ErrFlowExpired)
+	}
+
+	if reconnect != "" {
+		row, err := m.row(ctx, userID, reconnect)
+		if err != nil {
+			return client, nil, err
+		}
+		if row.Provider != provider {
+			return client, nil, serializer.NewError(serializer.CodeParamErr, "The storage is at another provider", nil)
+		}
+		return client, &Reconnect{ID: row.PublicID, Generation: row.Generation}, nil
+	}
+	rows, err := m.storages.ListByUser(ctx, userID)
+	if err != nil {
+		return client, nil, serializer.NewError(serializer.CodeDBError, "Failed to list connected storages", err)
+	}
+	if len(rows) >= MaxPerUser {
+		return client, nil, reasoned(serializer.CodeParamErr, "Too many connected storages", ReasonTooMany)
+	}
+	return client, nil, nil
+}
+
+// startError is the answer of the API to a sign-in that could not be kept.
+func startError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrFlowWait):
+		return ErrBusy
+	}
+	return serializer.NewError(serializer.CodeParamErr, "Failed to start the sign-in", err)
+}
+
 // Authorize starts connecting a storage, or renewing the token of the connection
 // reconnect. redirect is the callback address of this installation as registered at the
 // provider. It returns the consent address and the value for the browser's cookie.
 func (m *Manager) Authorize(ctx context.Context, userID int, provider, reconnect, redirect string) (address, cookie string, err error) {
-	if m.specs[provider] == nil {
-		return "", "", serializer.NewError(serializer.CodeParamErr, "Unknown provider", nil)
-	}
-	client, ok, err := m.client(ctx, provider)
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	client, renew, err := m.admit(ctx, userID, provider, reconnect, false)
 	if err != nil {
 		return "", "", err
 	}
-	if !ok {
-		return "", "", reasoned(serializer.CodeConnectedUnavailable, "The provider is not set up", ReasonNotConfigured)
-	}
 	client.Redirect = redirect
-
-	// Not for an account that is being removed or is gone: its sign-ins were dropped,
-	// and one that started now would leave a token behind when the provider answers.
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.leaving[userID] > 0 || (m.exists != nil && !m.exists(ctx, userID)) {
-		return "", "", flowError(ErrFlowExpired)
-	}
-
-	var renew *Reconnect
-	if reconnect != "" {
-		row, err := m.row(ctx, userID, reconnect)
-		if err != nil {
-			return "", "", err
-		}
-		if row.Provider != provider {
-			return "", "", serializer.NewError(serializer.CodeParamErr, "The storage is at another provider", nil)
-		}
-		renew = &Reconnect{ID: row.PublicID, Generation: row.Generation}
-	} else {
-		rows, err := m.storages.ListByUser(ctx, userID)
-		if err != nil {
-			return "", "", serializer.NewError(serializer.CodeDBError, "Failed to list connected storages", err)
-		}
-		if len(rows) >= MaxPerUser {
-			return "", "", reasoned(serializer.CodeParamErr, "Too many connected storages", ReasonTooMany)
-		}
-	}
-
 	address, cookie, err = m.flow.Begin(userID, provider, client, renew)
-	if errors.Is(err, ErrFlowWait) {
-		return "", "", ErrBusy
-	}
-	if err != nil {
-		return "", "", serializer.NewError(serializer.CodeParamErr, "Failed to start the sign-in", err)
-	}
-	return address, cookie, nil
+	return address, cookie, startError(err)
 }
 
-// Callback handles the return from the provider. It returns the code for Finish, or one
-// of the ErrFlow errors.
-func (m *Manager) Callback(ctx context.Context, state, cookie, code, providerError string) (string, error) {
+// AuthorizeApp keeps a sign-in that an app asked for, under the same checks (see
+// oauth_app.go). challenge is the hash of the secret the app keeps. It returns the
+// ticket, with which the app sends the system browser to the start page, and the id the
+// app knows the sign-in by. Nothing is at the provider yet.
+func (m *Manager) AuthorizeApp(ctx context.Context, userID int, provider, reconnect, challenge string) (ticket, attempt string, err error) {
+	if !ValidChallenge(challenge) {
+		return "", "", serializer.NewError(serializer.CodeParamErr, "Invalid challenge", nil)
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, renew, err := m.admit(ctx, userID, provider, reconnect, false)
+	if err != nil {
+		return "", "", err
+	}
+	ticket, attempt, err = m.flow.Ticket(userID, provider, renew, challenge)
+	return ticket, attempt, startError(err)
+}
+
+// OwnsTicket tells whether a browser shows the cookie of the one that owns a ticket.
+func (m *Manager) OwnsTicket(ticket, cookie string) bool {
+	_, err := m.flow.Check(ticket, cookie)
+	return err == nil
+}
+
+// OpenTicket answers a browser that asks for the start page of a ticket (see Flow.Open).
+func (m *Manager) OpenTicket(ticket, cookie string) (view *TicketView, confirm string, err error) {
+	return m.flow.Open(ticket, cookie)
+}
+
+// TicketRefused tells that a ticket cannot become a sign-in and is used up. Reason is
+// the word the app is told.
+type TicketRefused struct{ Reason string }
+
+func (e *TicketRefused) Error() string { return "the sign-in cannot start: " + e.Reason }
+
+// refusal names why the checks before a sign-in failed for good, "" for trouble that
+// may pass (the database could not be read).
+func refusal(err error) string {
+	var app serializer.AppError
+	if errors.As(err, &app) && app.Code == serializer.CodeDBError {
+		return ""
+	}
+	switch reason := ReasonOf(err); reason {
+	case ReasonNotAllowed, ReasonTooMany:
+		return reason
+	case ReasonNotConfigured:
+		return ReasonSetup
+	}
+	// The account or the connection to renew is gone.
+	return ReasonExpired
+}
+
+// StartTicket turns a ticket into a sign-in at the provider, for the browser that owns
+// the ticket. Everything a sign-in is checked for when it is asked for is checked again
+// now, minutes later: allowed tells whether the account still signs in and may connect
+// storages (nil, ErrNotAllowed, ErrFlowExpired for an account that is gone or blocked,
+// or an error of the database). It returns the consent address and the value of the
+// sign-in cookie; the same again for the same browser while that sign-in is under way.
+// One ticket at a time goes through here: of two presses at once the second finds what
+// the first made, and never decides differently about the same ticket.
+//
+// The errors: ErrFlowExpired, without a view, when the ticket is not one of this
+// browser; ErrFlowWait when it can be tried again in a moment, the ticket stays; a
+// *TicketRefused when the checks failed, the ticket is used up.
+func (m *Manager) StartTicket(ctx context.Context, ticket, cookie, redirect string,
+	allowed func(ctx context.Context, userID int) error) (address, signIn string, view *TicketView, err error) {
+	m.starting.Lock()
+	defer m.starting.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	view, err = m.flow.Check(ticket, cookie)
+	if err != nil {
+		return "", "", nil, ErrFlowExpired
+	}
+
+	var client Client
+	if !view.Used {
+		reconnect := ""
+		if view.Reconnect != nil {
+			reconnect = view.Reconnect.ID
+		}
+		var renew *Reconnect
+		err := allowed(ctx, view.UserID)
+		if errors.Is(err, ErrFlowExpired) {
+			err = flowError(ErrFlowExpired)
+		}
+		if err == nil {
+			client, renew, err = m.admit(ctx, view.UserID, view.Provider, reconnect, true)
+		}
+		if err == nil && renew != nil && renew.Generation != view.Reconnect.Generation {
+			// Connected again meanwhile, by another sign-in.
+			err = flowError(ErrFlowExpired)
+		}
+		if err != nil {
+			reason := refusal(err)
+			if reason == "" {
+				return "", "", view, ErrFlowWait
+			}
+			m.flow.Drop(ticket)
+			return "", "", view, &TicketRefused{Reason: reason}
+		}
+		client.Redirect = redirect
+	}
+
+	address, signIn, err = m.flow.Start(ticket, cookie, client)
+	if err != nil && !errors.Is(err, ErrFlowWait) {
+		return "", "", nil, ErrFlowExpired
+	}
+	return address, signIn, view, err
+}
+
+// Callback handles the return from the provider. Its outcome carries the code for
+// Finish; the error is nil or one of the ErrFlow errors.
+func (m *Manager) Callback(ctx context.Context, state, cookie, code, providerError string) (Outcome, error) {
 	return m.flow.Callback(ctx, state, cookie, code, providerError)
+}
+
+// ProviderName is the name a provider shows under, "" for one this version has not.
+func (m *Manager) ProviderName(provider string) string {
+	if spec := m.specs[provider]; spec != nil {
+		return spec.Name
+	}
+	return ""
+}
+
+// Get returns one connection of an account.
+func (m *Manager) Get(ctx context.Context, userID int, publicID string) (*Storage, error) {
+	row, err := m.row(ctx, userID, publicID)
+	if err != nil {
+		return nil, err
+	}
+	return storageOf(row), nil
 }
 
 // FlowErrorCode names an error of the sign-in for the web app, which shows a text for it.
@@ -435,6 +580,10 @@ func FlowErrorCode(err error) string {
 		return "setup"
 	case errors.Is(err, ErrFlowAccount):
 		return "account"
+	case errors.Is(err, ErrFlowVerifier):
+		return "verifier"
+	case errors.Is(err, ErrFlowOvertaken):
+		return "overtaken"
 	}
 	return "provider"
 }
@@ -452,8 +601,47 @@ func tokenContext(publicID string, userID int, provider string) []byte {
 	return Context(publicID, strconv.Itoa(userID), provider)
 }
 
-// Finish stores the result of a sign-in for the account that started it.
-func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage, error) {
+// SignedIn is what an app is shown of the result of its sign-in before it stores it.
+type SignedIn struct {
+	Provider string `json:"provider"`
+	// Account names the account at the provider, AccountKind what kind of name that is
+	// (see the Account* kinds).
+	Account     string `json:"account"`
+	AccountKind string `json:"account_kind"`
+	// Reconnect is the id of the storage the sign-in renews.
+	Reconnect string `json:"reconnect,omitempty"`
+}
+
+// Preview shows the result of a sign-in from an app to the account and the verifier it
+// is for. Nothing is stored and the result stays.
+func (m *Manager) Preview(userID int, code, verifier string) (*SignedIn, error) {
+	granted, err := m.flow.Peek(userID, code, verifier)
+	if err != nil {
+		return nil, flowError(err)
+	}
+	res := &SignedIn{Provider: granted.Provider, Account: granted.Identity.Shown, AccountKind: granted.Identity.Kind}
+	if res.AccountKind == "" || res.Account == "" {
+		res.Account, res.AccountKind = "", AccountNone
+	}
+	if granted.Reconnect != nil {
+		res.Reconnect = granted.Reconnect.ID
+	}
+	return res, nil
+}
+
+// Cancel drops the result of a sign-in from an app, for the account and the verifier it
+// is for.
+func (m *Manager) Cancel(userID int, code, verifier string) error {
+	if err := m.flow.Cancel(userID, code, verifier); err != nil {
+		return flowError(err)
+	}
+	return nil
+}
+
+// Finish stores the result of a sign-in for the account that started it. The result of a
+// sign-in from an app needs the verifier of that app; one of the web app comes without.
+// An app that asks again for a result it stored a moment ago gets the same storage.
+func (m *Manager) Finish(ctx context.Context, userID int, code, verifier string) (*Storage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -462,11 +650,25 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 		return nil, flowError(ErrFlowExpired)
 	}
 
-	granted, err := m.flow.Finish(userID, code)
+	granted, err := m.flow.Finish(userID, code, verifier)
+	if errors.Is(err, ErrFlowExpired) {
+		if id, ok := m.flow.Receipt(userID, code, verifier); ok {
+			// The answer of the first time was lost. The storage is read again.
+			return m.Get(ctx, userID, id)
+		}
+	}
 	if err != nil {
 		return nil, flowError(err)
 	}
+	// The receipt is written the moment the storage is kept, also when something after
+	// that fails: the app that asks again then gets the storage instead of "expired".
+	return m.store(ctx, userID, granted, func(id string) { m.flow.Remember(code, granted, id) })
+}
 
+// store keeps the token of a finished sign-in: for the connection it renews, or as a new
+// connection. kept is told the id of the storage once it is stored for good. The caller
+// holds m.mu.
+func (m *Manager) store(ctx context.Context, userID int, granted *Granted, kept func(id string)) (*Storage, error) {
 	props := &types.ConnectedStorageProps{
 		DriveID:   granted.Identity.Props["drive_id"],
 		DriveType: granted.Identity.Props["drive_type"],
@@ -495,6 +697,8 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 			Props:   props,
 		})
 		if ok {
+			// The new token is stored, whatever becomes of reading the row back.
+			kept(row.PublicID)
 			// What ran with the old token ends here, whatever else went wrong.
 			m.closeLive(row.PublicID)
 			if m.hooks.Closed != nil {
@@ -505,13 +709,21 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 			return nil, serializer.NewError(serializer.CodeDBError, "Failed to store the token", err)
 		}
 		if !ok {
-			// Connected again meanwhile, by another sign-in.
+			// Connected again meanwhile, by another sign-in. An app is told so in its
+			// own word; the web app goes on getting the one it knows.
+			if granted.App {
+				return nil, flowError(ErrFlowOvertaken)
+			}
 			return nil, flowError(ErrFlowExpired)
 		}
 		return storageOf(renewed), nil
 	}
 
-	return m.createLocked(ctx, userID, granted.Provider, granted.Identity, granted.Token, props)
+	storage, err := m.createLocked(ctx, userID, granted.Provider, granted.Identity, granted.Token, props)
+	if err == nil {
+		kept(storage.ID)
+	}
+	return storage, err
 }
 
 // Create stores a new connection of an account from a token its provider granted. The

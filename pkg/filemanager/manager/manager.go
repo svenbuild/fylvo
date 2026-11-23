@@ -154,6 +154,8 @@ type manager struct {
 	kv           cache.Driver
 	config       conf.ConfigProvider
 	stateless    bool
+	// keepForWorker: a queued task uses this manager, it is not put back for reuse (Fylvo).
+	keepForWorker bool
 	auth         auth.Auth
 	hasher       hashid.Encoder
 	policyClient inventory.StoragePolicyClient
@@ -196,7 +198,8 @@ func newStatelessFileManager(dep dependency.Dep) FileManager {
 }
 
 func (m *manager) Recycle() {
-	if m.fs != nil {
+	// Fylvo: a thumbnail task may still use it (SubmitAndAwaitThumbnailTask).
+	if m.fs != nil && !m.keepForWorker {
 		m.fs.Recycle()
 	}
 }

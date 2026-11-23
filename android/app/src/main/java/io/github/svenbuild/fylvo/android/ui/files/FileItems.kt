@@ -101,17 +101,32 @@ fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
     // Signed URLs expire; re-key on a coarse time bucket so any recomposition
     // past the TTL refetches instead of sticking for the VM's lifetime.
     val bucket = System.currentTimeMillis() / THUMB_TTL_MS
-    // Fylvo: keyed by the version too, so a new version fetches its own preview.
-    val url by produceState<String?>(initialValue = null, file.id, file.primaryEntity, bucket) {
+    // Fylvo: keyed by the version too, so a new version fetches its own preview. The address is
+    // kept with the version it was asked for, so while the next one is asked the old version's
+    // address is never shown for it.
+    val resolved by produceState<Pair<String, String?>?>(initialValue = null, file.id, file.primaryEntity, bucket) {
         // Fylvo: a failed request (network, busy server) is tried again a few times.
         for (wait in THUMB_RETRY_DELAYS_MS) {
-            value = viewModel.thumbUrl(file)
-            if (value != null || viewModel.hasNoThumb(file)) break
+            val url = viewModel.thumbUrl(file)
+            value = file.primaryEntity to url
+            if (url != null || viewModel.hasNoThumb(file)) break
             kotlinx.coroutines.delay(wait)
         }
     }
-    return url
+    return resolved?.takeIf { it.first == file.primaryEntity }?.second
 }
+
+/**
+ * Fylvo: the key Coil keeps a preview under (memory and disk): the id of the stored thumbnail in
+ * its address (.../file/content/<id>/...). The signed address changes from day to day; a stored
+ * thumbnail never changes (a new one gets a new id). The address is still asked from the server
+ * first, which checks the access. Null for other addresses (Coil then keys by the address). The
+ * caches are cleared when the session ends (FylvoApp.endSession).
+ */
+fun thumbCacheKey(thumbUrl: String?): String? =
+    thumbUrl?.let { THUMB_ID.find(it)?.groupValues?.get(1) }?.let { "thumb:$it" }
+
+private val THUMB_ID = Regex("/file/content/([^/?]+)/")
 
 /**
  * Thumbnail when the server has one, otherwise the file-kind icon on a soft
@@ -142,7 +157,12 @@ fun FileThumb(
     ) {
         if (thumbUrl != null) {
             SubcomposeAsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(thumbUrl).crossfade(180).build(),
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(thumbUrl)
+                    .memoryCacheKey(thumbCacheKey(thumbUrl))
+                    .diskCacheKey(thumbCacheKey(thumbUrl))
+                    .crossfade(180)
+                    .build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

@@ -470,6 +470,8 @@
     "thumbQuality": "画像品質",
     "thumbQualityDes": "圧縮品質パーセンテージ。jpgとwebpエンコーディングのみに有効です。",
     "thumbGC": "生成完了後にメモリを即時解放",
+    "thumbPregen": "不足しているサムネイルをバックグラウンドで生成",
+    "thumbPregenDes": "ゆっくり 1 件ずつ、新しいファイルから順に。Office 文書は初回表示時のみ。",
     "captcha": "CAPTCHA",
     "captchaType": "CAPTCHAの種類",
     "captchaTypeDes": "CAPTCHAの種類とCAPTCHAサービスプロバイダーを選択します。",

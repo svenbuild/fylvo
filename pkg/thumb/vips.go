@@ -38,8 +38,14 @@ func (v *VipsGenerator) Generate(ctx context.Context, es entitysource.EntitySour
 
 	outputOpt := ".png"
 	encode := v.settings.ThumbEncode(ctx)
-	if encode.Format == "jpg" || encode.Format == "webp" {
-		outputOpt = fmt.Sprintf(".%s[Q=%d]", encode.Format, encode.Quality)
+	switch {
+	case encode.Format == "webp":
+		outputOpt = fmt.Sprintf(".webp[Q=%d]", encode.Quality)
+	case encode.Format == "jpg" && util.IsInExtensionListExt(jpegExts, ext):
+		// Fylvo: a JPEG has no transparency; the white background only matters for a file that
+		// is not really a JPEG. Other inputs become PNG, and the pipeline turns an opaque one
+		// into a JPEG (toJPEGIfOpaque), so transparent images keep their transparency.
+		outputOpt = fmt.Sprintf(".jpg[Q=%d,background=255]", encode.Quality)
 	}
 
 	input := "[descriptor=0]"

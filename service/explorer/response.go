@@ -243,6 +243,9 @@ type WopiFileInfo struct {
 type ViewerSessionResponse struct {
 	Session *manager.ViewerSession `json:"session"`
 	WopiSrc string                 `json:"wopi_src,omitempty"`
+	// Fylvo: Edit is set for a file in a connected storage and tells whether the
+	// session may save: true edits, false only shows the file, whatever was asked for.
+	Edit *bool `json:"edit,omitempty"`
 }
 
 type ListResponse struct {

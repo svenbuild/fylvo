@@ -143,7 +143,8 @@ func TestFlowHappyPath(t *testing.T) {
 	}
 	state, code := p.consent(t, address)
 
-	finish, err := flow.Callback(ctx, state, cookie, code, "")
+	finishOut, err := flow.Callback(ctx, state, cookie, code, "")
+	finish := finishOut.Finish
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,10 +153,10 @@ func TestFlowHappyPath(t *testing.T) {
 	}
 
 	// Another account cannot take the result, and does not use it up.
-	if _, err := flow.Finish(8, finish); !errors.Is(err, ErrFlowAccount) {
+	if _, err := flow.Finish(8, finish, ""); !errors.Is(err, ErrFlowAccount) {
 		t.Fatalf("finish by another account: %v", err)
 	}
-	g, err := flow.Finish(7, finish)
+	g, err := flow.Finish(7, finish, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +173,7 @@ func TestFlowHappyPath(t *testing.T) {
 	}
 
 	// Everything works once.
-	if _, err := flow.Finish(7, finish); !errors.Is(err, ErrFlowExpired) {
+	if _, err := flow.Finish(7, finish, ""); !errors.Is(err, ErrFlowExpired) {
 		t.Fatalf("second finish: %v", err)
 	}
 	if _, err := flow.Callback(ctx, state, cookie, code, ""); !errors.Is(err, ErrFlowExpired) {
@@ -238,12 +239,13 @@ func TestFlowRefusals(t *testing.T) {
 
 		address, cookie, _ = flow.Begin(7, ProviderDrive, client, nil)
 		state, code = p.consent(t, address)
-		finish, err := flow.Callback(ctx, state, cookie, code, "")
+		finishOut, err := flow.Callback(ctx, state, cookie, code, "")
+		finish := finishOut.Finish
 		if err != nil {
 			t.Fatal(err)
 		}
 		now = now.Add(finishLife + time.Second)
-		if _, err := flow.Finish(7, finish); !errors.Is(err, ErrFlowExpired) {
+		if _, err := flow.Finish(7, finish, ""); !errors.Is(err, ErrFlowExpired) {
 			t.Fatalf("late finish: %v", err)
 		}
 	})
@@ -421,7 +423,8 @@ func TestFlowBoundCountsWaitingResults(t *testing.T) {
 			t.Fatal(err)
 		}
 		state, code := p.consent(t, address)
-		finish, err := flow.Callback(ctx, state, cookie, code, "")
+		finishOut, err := flow.Callback(ctx, state, cookie, code, "")
+		finish := finishOut.Finish
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -431,10 +434,10 @@ func TestFlowBoundCountsWaitingResults(t *testing.T) {
 	if len(flow.granted) != maxStates {
 		t.Fatalf("%d results are kept", len(flow.granted))
 	}
-	if _, err := flow.Finish(7, codes[0]); !errors.Is(err, ErrFlowExpired) {
+	if _, err := flow.Finish(7, codes[0], ""); !errors.Is(err, ErrFlowExpired) {
 		t.Fatalf("the oldest result: %v", err)
 	}
-	if _, err := flow.Finish(7, codes[maxStates]); err != nil {
+	if _, err := flow.Finish(7, codes[maxStates], ""); err != nil {
 		t.Fatalf("the newest result: %v", err)
 	}
 }

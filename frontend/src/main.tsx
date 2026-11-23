@@ -6,6 +6,9 @@ import { router } from "./router";
 import { RouterProvider } from "react-router-dom";
 import { NuqsAdapter } from "nuqs/adapters/react-router/v6";
 import "@fontsource-variable/inter";
+import { reloadOnMissingChunk } from "./fylvoChunkReload.ts";
+
+reloadOnMissingChunk();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <Provider store={store}>

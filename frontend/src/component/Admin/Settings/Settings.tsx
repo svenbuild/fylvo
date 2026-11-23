@@ -231,6 +231,7 @@ const Settings = () => {
                     "thumb_entity_suffix",
                     "thumb_encode_method",
                     "thumb_gc_after_gen",
+                    "thumb_pregen_enabled",
                     "thumb_encode_quality",
                     "thumb_builtin_enabled",
                     "thumb_builtin_max_size",

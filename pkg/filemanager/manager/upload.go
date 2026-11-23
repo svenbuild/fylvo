@@ -540,6 +540,10 @@ func (m *manager) onNewEntityUploaded(ctx context.Context, session *fs.UploadSes
 		m.mediaMetaForNewEntity(ctx, session, d, uri, owner)
 		// Submit full text index task for new entity
 		m.fullTextIndexForNewEntity(ctx, session, uri, owner)
+		// Fylvo: a new version gets its thumbnail ahead of time.
+		if session.Props.EntityType == nil || *session.Props.EntityType == types.EntityTypeVersion {
+			WakeThumbPregen()
+		}
 	}
 }
 

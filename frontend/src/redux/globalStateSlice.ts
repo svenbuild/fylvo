@@ -49,6 +49,8 @@ export interface ViewerSelectorState extends GeneralViewerState {
 export interface WopiViewerState extends GeneralViewerState {
   src: string;
   session: ViewerSession;
+  // Fylvo: whether the session may save; only for a file of a connected storage.
+  edit?: boolean;
 }
 
 export interface DrawIOViewerState extends GeneralViewerState {

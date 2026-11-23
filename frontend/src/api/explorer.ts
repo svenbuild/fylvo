@@ -479,6 +479,8 @@ export interface ViewerSession {
 export interface ViewerSessionResponse {
   session: ViewerSession;
   wopi_src?: string;
+  // Fylvo: only for a file of a connected storage: whether the session may save.
+  edit?: boolean;
 }
 
 export interface CreateViewerSessionService {

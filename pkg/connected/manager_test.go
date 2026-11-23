@@ -101,11 +101,12 @@ func (f *managerFixture) connect(t *testing.T, userID int, reconnect string) (*S
 		return nil, err
 	}
 	state, code := f.provider.consent(t, address)
-	finish, err := f.Callback(ctx, state, cookie, code, "")
+	finishOut, err := f.Callback(ctx, state, cookie, code, "")
+	finish := finishOut.Finish
 	if err != nil {
 		return nil, err
 	}
-	return f.Finish(ctx, userID, finish)
+	return f.Finish(ctx, userID, finish, "")
 }
 
 func codeOf(err error) int {
@@ -271,13 +272,15 @@ func TestReconnect(t *testing.T) {
 	require.NoError(t, err)
 	stateA, codeA := f.provider.consent(t, addressA)
 	stateB, codeB := f.provider.consent(t, addressB)
-	finishA, err := f.Callback(ctx, stateA, cookieA, codeA, "")
+	finishAOut, err := f.Callback(ctx, stateA, cookieA, codeA, "")
+	finishA := finishAOut.Finish
 	require.NoError(t, err)
-	finishB, err := f.Callback(ctx, stateB, cookieB, codeB, "")
+	finishBOut, err := f.Callback(ctx, stateB, cookieB, codeB, "")
+	finishB := finishBOut.Finish
 	require.NoError(t, err)
-	_, err = f.Finish(ctx, 7, finishA)
+	_, err = f.Finish(ctx, 7, finishA, "")
 	require.NoError(t, err)
-	_, err = f.Finish(ctx, 7, finishB)
+	_, err = f.Finish(ctx, 7, finishB, "")
 	require.Error(t, err)
 	require.Equal(t, ReasonExpired, ReasonOf(err))
 	row, err = f.storages.Get(ctx, 7, storage.ID)
@@ -320,9 +323,10 @@ func TestRevokeOnlyWhenSafe(t *testing.T) {
 
 	// That sign-in still completes with a working token.
 	state, code := f.provider.consent(t, address)
-	finish, err := f.Callback(ctx, state, cookie, code, "")
+	finishOut, err := f.Callback(ctx, state, cookie, code, "")
+	finish := finishOut.Finish
 	require.NoError(t, err)
-	third, err := f.Finish(ctx, 9, finish)
+	third, err := f.Finish(ctx, 9, finish, "")
 	require.NoError(t, err)
 
 	require.NoError(t, f.Disconnect(ctx, 9, third.ID))
@@ -379,12 +383,13 @@ func TestNothingStoredForAnAccountBeingDeleted(t *testing.T) {
 	address, cookie, err := f.Authorize(ctx, 7, ProviderDrive, "", testRedirect)
 	require.NoError(t, err)
 	state, code := f.provider.consent(t, address)
-	finish, err := f.Callback(ctx, state, cookie, code, "")
+	finishOut, err := f.Callback(ctx, state, cookie, code, "")
+	finish := finishOut.Finish
 	require.NoError(t, err)
 
 	gone := f.Leaving(7)
 	require.NoError(t, f.DisconnectUser(ctx, 7))
-	_, err = f.Finish(ctx, 7, finish)
+	_, err = f.Finish(ctx, 7, finish, "")
 	require.Error(t, err)
 	list, err := f.List(ctx, 7)
 	require.NoError(t, err)
@@ -438,12 +443,13 @@ func TestNothingIsStoredForAnAccountThatIsGone(t *testing.T) {
 	address, cookie, err := f.Authorize(ctx, 7, ProviderDrive, "", testRedirect)
 	require.NoError(t, err)
 	state, code := f.provider.consent(t, address)
-	finish, err := f.Callback(ctx, state, cookie, code, "")
+	finishOut, err := f.Callback(ctx, state, cookie, code, "")
+	finish := finishOut.Finish
 	require.NoError(t, err)
 
 	// The account is deleted, completely, and only then the request goes on.
 	f.gone = map[int]bool{7: true}
-	_, err = f.Finish(ctx, 7, finish)
+	_, err = f.Finish(ctx, 7, finish, "")
 	require.Error(t, err)
 	rows, err := f.storages.ListByUser(ctx, 7)
 	require.NoError(t, err)
@@ -460,10 +466,11 @@ func TestNothingIsStoredForAnAccountThatIsGone(t *testing.T) {
 	address, cookie, err = f.Authorize(ctx, 8, ProviderDrive, "", testRedirect)
 	require.NoError(t, err)
 	state, code = f.provider.consent(t, address)
-	finish, err = f.Callback(ctx, state, cookie, code, "")
+	finishOut, err = f.Callback(ctx, state, cookie, code, "")
+	finish = finishOut.Finish
 	require.NoError(t, err)
 	require.NoError(t, f.DisconnectUser(ctx, 8))
-	_, err = f.Finish(ctx, 8, finish)
+	_, err = f.Finish(ctx, 8, finish, "")
 	require.Equal(t, ReasonExpired, ReasonOf(err))
 }
 

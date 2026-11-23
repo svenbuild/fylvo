@@ -122,6 +122,8 @@ type (
 		ThumbSlaveSidecarSuffix(ctx context.Context) string
 		// ThumbGCAfterGen returns true if force GC is invoked after thumb generation.
 		ThumbGCAfterGen(ctx context.Context) bool
+		// ThumbPregenEnabled returns true if missing thumbnails are made in the background (Fylvo).
+		ThumbPregenEnabled(ctx context.Context) bool
 		// FFMpegPath returns the path of ffmpeg executable.
 		FFMpegPath(ctx context.Context) string
 		// FFMpegThumbGeneratorEnabled returns true if ffmpeg thumb generator is enabled.
@@ -539,6 +541,10 @@ func (s *settingProvider) ThumbSlaveSidecarSuffix(ctx context.Context) string {
 
 func (s *settingProvider) ThumbGCAfterGen(ctx context.Context) bool {
 	return s.getBoolean(ctx, "thumb_gc_after_gen", false)
+}
+
+func (s *settingProvider) ThumbPregenEnabled(ctx context.Context) bool {
+	return s.getBoolean(ctx, "thumb_pregen_enabled", true)
 }
 
 func (s *settingProvider) TempPath(ctx context.Context) string {

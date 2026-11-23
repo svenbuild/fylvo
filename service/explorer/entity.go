@@ -40,6 +40,9 @@ func (s *EntityDownloadService) Serve(c *gin.Context) error {
 	settings := dep.SettingProvider()
 	maxAge := settings.PublicResourceMaxAge(c)
 	c.Header("Cache-Control", fmt.Sprintf("public, max-age=%d", maxAge))
+	if isThumbEntity(entitySource) {
+		prepareThumbResponse(c, entitySource)
+	}
 
 	isDownload := c.Query(routes.IsDownloadQuery) != ""
 	isThumb := c.Query(routes.IsThumbQuery) != ""

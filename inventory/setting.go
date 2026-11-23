@@ -554,9 +554,10 @@ var DefaultSettings = map[string]string{
 	"thumb_height":                               "300",
 	"thumb_entity_suffix":                        "{blob_path}/{blob_name}._thumb",
 	"thumb_slave_sidecar_suffix":                 "._thumb_sidecar",
-	"thumb_encode_method":                        "png",
+	"thumb_encode_method":                        "jpg",
 	"thumb_gc_after_gen":                         "0",
-	"thumb_encode_quality":                       "95",
+	"thumb_pregen_enabled":                       "1", // Fylvo: thumbnails made ahead of time, see manager/fylvo_thumb_pregen.go
+	"thumb_encode_quality":                       "80",
 	"thumb_builtin_enabled":                      "1",
 	"thumb_builtin_max_size":                     "78643200", // 75 MB
 	"thumb_vips_max_size":                        "78643200", // 75 MB
@@ -597,7 +598,7 @@ var DefaultSettings = map[string]string{
 	"queue_media_meta_backoff_max_duration":      "60",
 	"queue_media_meta_max_retry":                 "1",
 	"queue_media_meta_retry_delay":               "0",
-	"queue_thumb_worker_num":                     "15",
+	"queue_thumb_worker_num":                     "2",
 	"queue_thumb_max_execution":                  "300",
 	"queue_thumb_backoff_factor":                 "2",
 	"queue_thumb_backoff_max_duration":           "60",
