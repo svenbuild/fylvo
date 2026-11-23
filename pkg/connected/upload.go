@@ -738,6 +738,10 @@ func (m *Manager) receive(ctx context.Context, u *upload, body io.Reader, start,
 	copy(next, held)
 	next = next[:len(held)+int(rest)]
 	if _, err := io.ReadFull(in, next[len(held):]); err != nil {
+		if errors.Is(err, ErrCopyChanged) {
+			// A copy on the server: its source changed while it was read.
+			return err
+		}
 		// The client's body ended early. What the provider has is known; the chunk is
 		// sent again.
 		return ErrSendAgain

@@ -1,6 +1,7 @@
 package explorer
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"sort"
@@ -180,11 +181,14 @@ func TestConnectedCopyFromFylvo(t *testing.T) {
 	require.Equal(t, 0, state.Copied)
 	require.Equal(t, 1, state.Skipped)
 
-	// Into a folder below, and under a name a file has: the folder gets a number.
-	e.sim.AddFile("", "Docs2", []byte("a file, not a folder"))
+	// Into a folder below, where a file has the folder's name: the folder gets a number.
+	sub := e.sim.Find(e.sim.Find("", "Docs"), "sub")
+	e.sim.AddFile(sub, "Docs", []byte("a file, not a folder"))
 	_, state = e.runCopy(e.alex, []string{"cloudreve://my/Docs"}, e.root+"/Docs/sub", nil)
 	require.Equal(t, 2, state.Copied)
-	require.Equal(t, "aaa", e.driveTree("Docs/sub")["Docs/a.txt"])
+	tree = e.driveTree("Docs/sub")
+	require.Equal(t, "a file, not a folder", tree["Docs"])
+	require.Equal(t, "aaa", tree["Docs (2)/a.txt"])
 }
 
 // trimMy shortens addresses of Fylvo's own files in a report.
@@ -322,9 +326,77 @@ func TestConnectedCopyChecks(t *testing.T) {
 	// Somebody else's storage, or files.
 	require.Equal(t, serializer.CodeParentNotExist, connectedCode(create(e.sam, []string{e.root + "/Docs"}, "cloudreve://my")))
 	require.Error(t, create(e.sam, []string{"cloudreve://my/mine.txt"}, e.root))
+	// Whole file systems, and what is reached through a shortcut.
+	require.Equal(t, serializer.CodeParamErr, connectedCode(create(e.alex, []string{"cloudreve://my"}, e.root)))
+	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(create(e.alex, []string{e.root}, "cloudreve://my/Out")))
+	e.sim.AddShortcut("", "to docs", docs)
+	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(create(e.alex, []string{e.root + "/to docs/a.txt"}, "cloudreve://my/Out")))
+	// Into Fylvo only into the account's own files.
+	require.Equal(t, serializer.CodeParamErr, connectedCode(create(e.alex, []string{e.root + "/Docs"}, "cloudreve://my/Out?category=image")))
 	// Into a connected storage while changes are switched off.
 	t.Setenv(connected.EnvWrite, "")
 	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(create(e.alex, []string{"cloudreve://my/mine.txt"}, e.root)))
 	require.Equal(t, before, tasks(), "no task was made")
 	_ = queue.ConnectedCopyTaskType
+}
+
+// A folder copied into the folder it is in: the copy is a folder of its own, and nothing
+// is put into the folder that is read.
+func TestConnectedCopyIntoItsParent(t *testing.T) {
+	e := newConnectedEnv(t)
+	docs := e.sim.AddFolder("", "Docs")
+	e.sim.AddFile(docs, "a.txt", []byte("aaa"))
+	e.sim.AddNative(docs, "Budget", "gsheet")
+	status, state := e.runCopy(e.alex, []string{e.root + "/Docs"}, e.root, nil)
+	require.Equal(t, task.StatusCompleted, status)
+	require.Equal(t, 2, state.Copied)
+	tree := e.driveTree("")
+	require.NotContains(t, tree, "Docs/Budget.xlsx", "the source is as it was")
+	require.Equal(t, "aaa", tree["Docs (2)/a.txt"])
+	require.Contains(t, tree, "Docs (2)/Budget.xlsx")
+}
+
+// Names that become one at the target are both kept; empty files are copied.
+func TestConnectedCopyNamesAndEmptyFiles(t *testing.T) {
+	e := newConnectedEnv(t)
+	docs := e.sim.AddFolder("", "Docs")
+	e.sim.AddFile(docs, "a:b.txt", []byte("one"))
+	e.sim.AddFile(docs, "a_b.txt", []byte("two"))
+	e.sim.AddFile(docs, "empty.txt", nil)
+	e.fylvoMkdir(e.alex, "In")
+	status, state := e.runCopy(e.alex, []string{e.root + "/Docs"}, "cloudreve://my/In", nil)
+	require.Equal(t, task.StatusCompleted, status)
+	require.Equal(t, 3, state.Copied)
+	tree := e.fylvoTree(e.alex, "In")
+	require.ElementsMatch(t, []string{"one", "two"}, []string{tree["Docs/a_b.txt"], tree["Docs/a_b (2).txt"]})
+	require.Contains(t, tree, "Docs/empty.txt")
+	require.Equal(t, "", tree["Docs/empty.txt"])
+
+	// An empty file of Fylvo, which never had content, into the storage.
+	fm := manager.NewFileManager(e.dep, e.alex)
+	uri, _ := fs.NewUriFromString("cloudreve://my/In/new.txt")
+	_, err := fm.Create(e.as(e.alex), uri, types.FileTypeFile)
+	fm.Recycle()
+	require.NoError(t, err)
+	status, state = e.runCopy(e.alex, []string{"cloudreve://my/In/new.txt"}, e.root, nil)
+	require.Equal(t, task.StatusCompleted, status)
+	require.Equal(t, 1, state.Copied, "%+v", state.Notes)
+	require.Contains(t, e.driveTree(""), "new.txt")
+}
+
+// The server ends while a copy is under way: it is resumed later, not ended.
+func TestConnectedCopyResumes(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.fylvoPut(e.alex, "a.txt", []byte("aaa"))
+	ctx, cancel := context.WithCancel(e.as(e.alex))
+	cancel()
+	q, err := workflows.NewConnectedCopyTask(e.as(e.alex), []string{"cloudreve://my/a.txt"}, e.root)
+	require.NoError(t, err)
+	status, err := q.(*workflows.ConnectedCopyTask).Do(ctx)
+	require.NoError(t, err)
+	require.Equal(t, task.StatusSuspending, status)
+	// Run again, it copies.
+	status, state := e.runCopy(e.alex, []string{"cloudreve://my/a.txt"}, e.root, nil)
+	require.Equal(t, task.StatusCompleted, status)
+	require.Equal(t, 1, state.Copied)
 }

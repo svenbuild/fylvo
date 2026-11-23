@@ -27,9 +27,11 @@ export interface FolderPickerProps {
   disableSharedWithMe?: boolean;
   disableTrash?: boolean;
   initialPath?: string;
+  // Fylvo: offer the connected storages as targets.
+  showConnected?: boolean;
 }
 
-const FolderPicker = ({ disableSharedWithMe, disableTrash, initialPath }: FolderPickerProps) => {
+const FolderPicker = ({ disableSharedWithMe, disableTrash, initialPath, showConnected }: FolderPickerProps) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const path = useAppSelector((state) => state.fileManager[FileManagerIndex.main].path);
@@ -51,6 +53,7 @@ const FolderPicker = ({ disableSharedWithMe, disableTrash, initialPath }: Folder
             index={FileManagerIndex.selector}
             disableSharedWithMe={disableSharedWithMe}
             disableTrash={disableTrash}
+            showConnected={showConnected}
           />
         </StyledGridItem>
         <StyledGridItem

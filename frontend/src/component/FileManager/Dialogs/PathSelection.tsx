@@ -257,6 +257,7 @@ const PathSelection = () => {
           disableSharedWithMe={variantProps.disableSharedWithMe}
           disableTrash={variantProps.disableTrash}
           initialPath={initialPath}
+          showConnected={variant == PathSelectionVariantOptions.copy || variant == PathSelectionVariantOptions.move}
         />
       </DialogContent>
     </DraggableDialog>

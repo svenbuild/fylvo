@@ -53,6 +53,7 @@ func splitName(name string) (base, ext string) {
 type CopyReader struct {
 	m       *Manager
 	c       *Conn
+	ctx     context.Context
 	body    io.ReadCloser
 	release func()
 	stop    context.CancelFunc
@@ -65,13 +66,24 @@ type CopyReader struct {
 	checked           bool
 }
 
+// waitForStream takes one of the server's places for streams, waiting for as long as
+// ctx lasts: a copy is work in the background, nobody waits for an answer.
+func waitForStream(ctx context.Context) (func(), error) {
+	for {
+		release, err := AcquireStream(ctx)
+		if !errors.Is(err, ErrBusy) {
+			return release, err
+		}
+	}
+}
+
 // OpenCopy opens the file of row for copying, in its state of now. Links and documents
 // that exist only at the provider are not opened here. The caller closes the reader.
 func (m *Manager) OpenCopy(ctx context.Context, c *Conn, row *Row) (*CopyReader, error) {
 	if row.IsDir || row.Link != nil || row.Native != "" || row.Unsupported != "" {
 		return nil, ErrUnsupported
 	}
-	release, err := AcquireStream(ctx)
+	release, err := waitForStream(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +97,13 @@ func (m *Manager) OpenCopy(ctx context.Context, c *Conn, row *Row) (*CopyReader,
 		release()
 		return nil, ErrCopyChanged
 	}
+	if item.Version == "" {
+		// Without a marker for its state nothing would show that the bytes are of one
+		// version.
+		release()
+		return nil, ErrUnsupported
+	}
+	parent := ctx
 	// The read ends when the provider stands still for too long.
 	ctx, stop := context.WithCancel(ctx)
 	watch := time.AfterFunc(uploadStall, stop)
@@ -96,7 +115,7 @@ func (m *Manager) OpenCopy(ctx context.Context, c *Conn, row *Row) (*CopyReader,
 		return nil, Error(ctx, err)
 	}
 	r := &CopyReader{
-		m: m, c: c, body: content.Body, release: release, stop: stop, watch: watch,
+		m: m, c: c, ctx: parent, body: content.Body, release: release, stop: stop, watch: watch,
 		id: item.ID, version: item.Version, want: item.Hash, size: item.Size,
 	}
 	if r.want != "" {
@@ -148,21 +167,27 @@ func (r *CopyReader) Read(p []byte) (int, error) {
 }
 
 func (r *CopyReader) verify() error {
+	// The provider must end here, cleanly: not one byte more, and no error.
 	var extra [1]byte
-	r.watch.Reset(uploadStall)
-	more, _ := r.body.Read(extra[:])
-	r.watch.Stop()
-	if more > 0 {
-		return ErrCopyChanged
+	for tries := 0; ; tries++ {
+		r.watch.Reset(uploadStall)
+		more, err := r.body.Read(extra[:])
+		r.watch.Stop()
+		if more > 0 {
+			return ErrCopyChanged
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil || tries > 3 {
+			return ErrCopyChanged
+		}
 	}
 	if r.sum != nil && r.text(r.sum) != r.want {
 		return ErrCopyChanged
 	}
-	ctx, stop := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, stop := context.WithTimeout(r.ctx, 30*time.Second)
 	defer stop()
-	if r.c.live != nil {
-		defer context.AfterFunc(r.c.live.ctx, stop)()
-	}
 	after, err := r.c.P.Get(ctx, r.id)
 	if err != nil {
 		return Error(ctx, err)
@@ -197,7 +222,7 @@ func (m *Manager) OpenExport(ctx context.Context, c *Conn, row *Row, format stri
 	if !known {
 		return nil, ErrUnsupported
 	}
-	release, err := AcquireStream(ctx)
+	release, err := waitForStream(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +232,11 @@ func (m *Manager) OpenExport(ctx context.Context, c *Conn, row *Row, format stri
 		release()
 		return nil, Error(ctx, err)
 	}
+	if item.Version == "" {
+		release()
+		return nil, ErrUnsupported
+	}
+	parent := ctx
 	ctx, stop := context.WithCancel(ctx)
 	watch := time.AfterFunc(uploadStall, stop)
 	content, err := c.P.Export(ctx, item, format)
@@ -216,12 +246,13 @@ func (m *Manager) OpenExport(ctx context.Context, c *Conn, row *Row, format stri
 		release()
 		return nil, Error(ctx, err)
 	}
-	return &exportReader{c: c, body: content.Body, id: item.ID, version: item.Version,
+	return &exportReader{c: c, ctx: parent, body: content.Body, id: item.ID, version: item.Version,
 		release: release, stop: stop, watch: watch}, nil
 }
 
 type exportReader struct {
 	c       *Conn
+	ctx     context.Context
 	body    io.ReadCloser
 	id      string
 	version string
@@ -241,7 +272,7 @@ func (r *exportReader) Read(p []byte) (int, error) {
 	if err != io.EOF {
 		return n, err
 	}
-	ctx, stop := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, stop := context.WithTimeout(r.ctx, 30*time.Second)
 	defer stop()
 	after, gerr := r.c.P.Get(ctx, r.id)
 	if gerr != nil {

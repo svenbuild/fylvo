@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -122,6 +123,29 @@ func TestOpenExport(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, body.Close())
 	require.NotEmpty(t, got)
+
+	// The document changes while it is exported: the end of the export says so.
+	id := row.ID
+	e.http.hook = func(req *http.Request) (*http.Response, error) {
+		if !strings.Contains(req.URL.Path, "/export") {
+			return nil, nil
+		}
+		res, err := e.http.base.RoundTrip(req)
+		if err == nil {
+			// Gone in the moment it was exported: the export is no file to keep.
+			e.d.Trash(id)
+		}
+		return res, err
+	}
+	body, err = e.f.OpenExport(e.ctx, e.conn, row, "xlsx")
+	require.NoError(t, err)
+	_, err = io.ReadAll(body)
+	require.Error(t, err)
+	require.NoError(t, body.Close())
+	e.http.hook = nil
+	e.d.AddNative("", "Budget", "gsheet")
+	row, err = e.f.Tree().ResolveNow(e.ctx, e.conn, "Budget.gsheet")
+	require.NoError(t, err)
 
 	_, err = e.f.OpenExport(e.ctx, e.conn, row, "docx")
 	require.ErrorIs(t, err, ErrUnsupported)

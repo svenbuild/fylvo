@@ -117,16 +117,30 @@ func (s *ConnectedCopyService) checkEnd(c *gin.Context, fm manager.FileManager, 
 			if !connected.Writes() || !row.Enterable() || row.ViaLink || row.Link != nil {
 				return copyEnd{}, connected.ErrUnsupported
 			}
+		} else if req.path == "" || row.ViaLink {
+			// Not the whole storage, and nothing through a shortcut.
+			return copyEnd{}, connected.ErrUnsupported
 		}
-		return copyEnd{connection: req.conn.ID, path: req.path, uri: uri}, nil
+		// Compared as the provider compares names.
+		path := req.path
+		if req.conn.P.CaseInsensitive() {
+			path = connected.Fold(path)
+		}
+		return copyEnd{connection: req.conn.ID, path: path, uri: uri}, nil
 	}
 
 	uri, err := fs.NewUriFromString(raw)
 	if err != nil {
 		return copyEnd{}, serializer.NewError(serializer.CodeParamErr, "Invalid address", err)
 	}
-	if fsType := uri.FileSystem(); fsType != constants.FileSystemMy && fsType != constants.FileSystemShare &&
-		fsType != constants.FileSystemSharedWithMe {
+	fsType := uri.FileSystem()
+	if fsType != constants.FileSystemMy && (target || fsType != constants.FileSystemShare && fsType != constants.FileSystemSharedWithMe) {
+		// Into the account's own files only (they count against its room); out of them
+		// and of what is shared with it.
+		return copyEnd{}, serializer.NewError(serializer.CodeParamErr, "Invalid address", nil)
+	}
+	if uri.U.RawQuery != "" || !target && len(uri.Elements()) == 0 {
+		// Not a whole file system.
 		return copyEnd{}, serializer.NewError(serializer.CodeParamErr, "Invalid address", nil)
 	}
 	capability := dbfs.NavigatorCapabilityDownloadFile

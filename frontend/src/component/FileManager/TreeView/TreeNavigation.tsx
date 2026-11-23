@@ -22,10 +22,12 @@ export interface TreeNavigationProps {
   hideWithDrawer?: boolean;
   disableSharedWithMe?: boolean;
   disableTrash?: boolean;
+  // Fylvo: the connected storages of the account, as targets of a copy or a move.
+  showConnected?: boolean;
 }
 
 const TreeNavigation = React.memo(
-  ({ index = 0, scrollRef, hideWithDrawer, disableSharedWithMe, disableTrash }: TreeNavigationProps) => {
+  ({ index = 0, scrollRef, hideWithDrawer, disableSharedWithMe, disableTrash, showConnected }: TreeNavigationProps) => {
     const base = useAppSelector((s) => s.fileManager[index].path_root);
     const path = useAppSelector((s) => s.fileManager[index].pure_path_with_category);
     const currentFs = useAppSelector((s) => s.fileManager[index].current_fs);
@@ -67,7 +69,8 @@ const TreeNavigation = React.memo(
     }, [showShareTree]);
 
     const isLogin = !!SessionManager.currentLoginOrNull();
-    const connectedStorages = useConnectedStorages(isLogin && index != FileManagerIndex.main);
+    const listConnected = isLogin && index != FileManagerIndex.main && !!showConnected;
+    const connectedStorages = useConnectedStorages(listConnected);
 
     return (
       <FmIndexContext.Provider value={index}>
@@ -142,7 +145,7 @@ const TreeNavigation = React.memo(
                     <TreeFiles level={0} path={defaultSharedWithMePath} key={defaultSharedWithMePath} />
                   )}
                   {/* Fylvo: the connected storages of the account, as targets of a copy or a move. */}
-                  {index != FileManagerIndex.main &&
+                  {listConnected &&
                     connectedStorages?.map((s) => {
                       const root = connectedRootUri(s.id);
                       return (
