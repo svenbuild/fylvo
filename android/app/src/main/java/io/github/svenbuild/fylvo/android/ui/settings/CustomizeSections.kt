@@ -93,13 +93,17 @@ private fun <T> List<T>.moved(from: Int, to: Int): List<T> {
 fun TabsSection(
     prefs: FylvoPrefs,
     repo: AccountPrefsRepository,
-    /** Connected storages by id, for names and "add". */
-    storages: List<String>,
+    /** Connected storages by id, for names and "add"; null while their list is not known yet. */
+    storages: List<String>?,
     showMessage: (String?) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val links = MobilePrefs.links(prefs)
-    val tabs = MobilePrefs.tabs(prefs.mobile, linkExists = { uri -> links.any { it.uri == uri } })
+    val tabs = MobilePrefs.tabs(
+        prefs.mobile,
+        linkExists = { uri -> links.any { it.uri == uri } },
+        storageExists = { id -> storages == null || id in storages },
+    )
         .map { tab -> if (tab is Place.Link) links.firstOrNull { it.uri == tab.uri } ?: tab else tab }
     var adding by remember { mutableStateOf(false) }
     fun save(next: List<Place>) = scope.launch { showMessage(repo.updateMobile { MobilePrefs.withTabs(it, next) }) }
@@ -134,7 +138,7 @@ fun TabsSection(
     if (adding) {
         val candidates = (
             listOf(Place.Home, Place.Shared, Place.Favorites, Place.Tags, Place.Recent, Place.Offline, Place.Trash) +
-                Place.CATEGORIES.map { Place.Category(it) } + links + storages.map { Place.Storage(it) }
+                Place.CATEGORIES.map { Place.Category(it) } + links + storages.orEmpty().map { Place.Storage(it) }
             ).filter { it !in tabs }
         AlertDialog(
             onDismissRequest = { adding = false },

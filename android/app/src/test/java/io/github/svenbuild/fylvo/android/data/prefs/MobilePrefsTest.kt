@@ -92,7 +92,9 @@ class MobilePrefsTest {
         assertEquals(Outcome.Missing, outcomeOf(rsp<Unit>(200, """{"code":404,"msg":"Not found"}""")))
         assertEquals(Outcome.Failed, outcomeOf(rsp<Unit>(502, "Bad gateway")))
         assertEquals(Outcome.Refused(40001, "Invalid"), outcomeOf(rsp<Unit>(200, """{"code":40001,"msg":"Invalid"}""")))
-        assertTrue(outcomeOf(rsp<Unit>(200, """{"code":0}""")) is Outcome.Found)
+        // An empty success answer counts only where none is expected (a change), else it is a failure.
+        assertTrue(outcomeOf(rsp<Unit>(200, """{"code":0}"""), emptyOk = true) is Outcome.Found)
+        assertEquals(Outcome.Failed, outcomeOf(rsp<Unit>(200, """{"code":0}""")))
         try {
             outcomeOf(rsp<Unit>(200, """{"code":401,"msg":"Login required"}"""))
             fail("login required must throw")

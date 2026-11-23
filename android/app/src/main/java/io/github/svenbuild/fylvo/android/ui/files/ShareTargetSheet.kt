@@ -46,6 +46,8 @@ fun ShareTargetSheet(
     last: ShareTarget?,
     favorites: List<ShareTarget>,
     chosen: ShareTarget?,
+    /** A folder chosen in the picker that is none of the rows above (shown first). */
+    extra: ShareTarget? = null,
     busy: Boolean,
     /** A problem with the chosen folder, shown in the sheet (a snackbar would sit behind it). */
     notice: String?,
@@ -76,6 +78,10 @@ fun ShareTargetSheet(
                 )
             }
             val root = ShareTarget(CrUri.MY_PREFIX, null)
+            if (extra != null) {
+                Label(stringResource(R.string.share_chosen))
+                TargetRow(extra, chosen, onChoose)
+            }
             if (last != null) {
                 Label(stringResource(R.string.share_last_used))
                 TargetRow(last, chosen, onChoose)

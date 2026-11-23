@@ -63,8 +63,8 @@ import kotlinx.coroutines.launch
 fun CustomizeScreen(
     onBack: () -> Unit,
     bottomBar: @Composable () -> Unit,
-    /** Ids of the connected storages (they can become tabs). */
-    storages: List<String> = emptyList(),
+    /** Ids of the connected storages (they can become tabs); null while not known yet. */
+    storages: List<String>? = null,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as FylvoApp

@@ -581,4 +581,6 @@
         <item quantity="one">%d file</item>
         <item quantity="other">%d files</item>
     </plurals>
+    <string name="share_folder_unchecked">This folder could not be checked (no connection?). Please choose it again or pick another one.</string>
+    <string name="share_chosen">Chosen</string>
 </resources>

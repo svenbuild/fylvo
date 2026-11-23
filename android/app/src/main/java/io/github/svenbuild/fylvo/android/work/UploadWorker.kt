@@ -700,6 +700,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             overwriteOnly: Set<String>? = null,
             /** Fylvo: the target folder's id, checked before every file (sharing into Fylvo). */
             expectedParentId: String? = null,
+            /** Fylvo: the account at the moment the upload was confirmed (instead of the one now). */
+            account: String? = null,
         ) {
             if (uris.isEmpty()) return
             // Shared files (no folder listing here): two with the same name would race for one
@@ -716,7 +718,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             uris.take(room.coerceAtLeast(0)).forEach { uri ->
                 runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             }
-            val account = kotlinx.coroutines.runBlocking { currentAccount(context.applicationContext as FylvoApp) }
+            val account = account ?: kotlinx.coroutines.runBlocking { currentAccount(context.applicationContext as FylvoApp) }
             var batch = queue(context).create(uris.map { it.toString() }, fileNames, parentUri, overwrite, account = account)
             if (overwrite && overwriteOnly != null) {
                 batch = batch.copy(items = batch.items.map { it.copy(overwrite = it.name in overwriteOnly) })
@@ -803,9 +805,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             overwrite: Boolean = false,
             overwriteOnly: Set<String>? = null,
             expectedParentId: String? = null,
+            account: String? = null,
         ) {
             try {
-                enqueue(context, uris, parentUri, names, overwrite, overwriteOnly, expectedParentId)
+                enqueue(context, uris, parentUri, names, overwrite, overwriteOnly, expectedParentId, account)
             } catch (e: Exception) {
                 Log.w(LOG_TAG, "Could not queue an upload: ${e.javaClass.simpleName}")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {

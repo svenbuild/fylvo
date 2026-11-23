@@ -53,6 +53,8 @@ data class AccountPrefsState(
     val memberShares: Map<String, Boolean> = emptyMap(),
     /** The cached copy was read (or there was none): the screen may draw with these values. */
     val restored: Boolean = false,
+    /** The last load reached no answer (network, server trouble). */
+    val loadFailed: Boolean = false,
 ) {
     val favoriteIds: Set<String> get() = prefs?.favorites?.toSet().orEmpty()
     val usable: Boolean get() = prefs != null && supported != false
@@ -69,7 +71,7 @@ sealed interface Outcome<out T> {
     data object Failed : Outcome<Nothing>
 }
 
-internal fun <T> outcomeOf(response: Response<ApiResponse<T>>): Outcome<T> {
+internal fun <T> outcomeOf(response: Response<ApiResponse<T>>, emptyOk: Boolean = false): Outcome<T> {
     if (response.code() == 404) return Outcome.Missing
     if (response.code() == 401) throw ApiException(ApiException.CODE_LOGIN_REQUIRED, "HTTP 401")
     if (!response.isSuccessful) return Outcome.Failed
@@ -77,7 +79,8 @@ internal fun <T> outcomeOf(response: Response<ApiResponse<T>>): Outcome<T> {
     return when (body.code) {
         0 -> {
             @Suppress("UNCHECKED_CAST")
-            Outcome.Found(body.data ?: Unit as T)
+            val data = body.data ?: (if (emptyOk) Unit as T else return Outcome.Failed)
+            Outcome.Found(data)
         }
         ApiException.CODE_LOGIN_REQUIRED -> throw ApiException(body.code, body.msg)
         404 -> Outcome.Missing
@@ -185,6 +188,7 @@ class AccountPrefsRepository(
                         accents = accents,
                         disableViewSync = settings?.disableViewSync ?: it.disableViewSync,
                         restored = true,
+                        loadFailed = false,
                     )
                 }
                 saveCache(tag, account)
@@ -194,14 +198,18 @@ class AccountPrefsRepository(
                 lastLoad = System.currentTimeMillis()
                 _state.update { AccountPrefsState(supported = false, restored = true) }
                 saveCache(tag, account)
-                local.withLock { io.github.svenbuild.fylvo.android.widget.FylvoWidget.clear(context) }
+                local.withLock { runCatching { io.github.svenbuild.fylvo.android.widget.FylvoWidget.clear(context) } }
             }
-            else -> Unit
+            else -> if (session.isCurrent(tag)) _state.update { it.copy(loadFailed = true) }
         }
     }
 
     private suspend fun saveCache(tag: SessionTag, account: String) = local.withLock {
         if (!session.isCurrent(tag)) return@withLock
+        runCatching { saveCacheLocked(account) }
+    }
+
+    private suspend fun saveCacheLocked(account: String) {
         val s = _state.value
         // The widget's favourites follow the same copy (only while the session is still this one).
         s.favorites?.let { io.github.svenbuild.fylvo.android.widget.FylvoWidget.save(context, FylvoActions.accountHash(account), it.files) }
@@ -216,10 +224,11 @@ class AccountPrefsRepository(
     /** Forgets everything of the account (sign-out, expired session). */
     suspend fun clear() {
         local.withLock {
-            context.accountPrefsStore.edit { it.clear() }
-            io.github.svenbuild.fylvo.android.widget.FylvoWidget.clear(context)
+            // Each step on its own: a broken file must not keep the rest (or the sign-out) from running.
             _state.value = AccountPrefsState(restored = true)
             lastLoad = 0
+            runCatching { context.accountPrefsStore.edit { it.clear() } }
+            runCatching { io.github.svenbuild.fylvo.android.widget.FylvoWidget.clear(context) }
         }
     }
 
@@ -250,17 +259,16 @@ class AccountPrefsRepository(
     fun startPagePatch(value: String) = mapOf("start_page" to JsonPrimitive(value))
 
     /** Shows [change] at once (optimistic) while it is saved; reverts on failure. */
-    suspend fun patchOptimistic(change: (FylvoPrefs) -> FylvoPrefs, patch: Map<String, JsonElement>): String? {
-        val tag = session.sessionTag()
+    suspend fun patchOptimistic(change: (FylvoPrefs) -> FylvoPrefs, patch: Map<String, JsonElement>): String? = queued("") { tag ->
         val before = _state.value.prefs
         _state.update { s -> s.prefs?.let { s.copy(prefs = change(it)) } ?: s }
-        val result = patch(patch)
+        val result = applyPrefs(tag, call(tag) { api.service().patchPrefs(JsonObject(patch), tag) })
         if (result != null) {
             // Not saved: back to what was shown before (also when the server cannot be asked).
             if (session.isCurrent(tag)) _state.update { it.copy(prefs = before) }
-            refresh()
+            loadLocked()
         }
-        return result
+        result
     }
 
     /**
@@ -273,7 +281,11 @@ class AccountPrefsRepository(
         val mobile = change(fresh.value.mobile)
         if (session.isCurrent(tag)) _state.update { it.copy(prefs = fresh.value.copy(mobile = mobile)) }
         val result = applyPrefs(tag, call(tag) { api.service().patchPrefs(JsonObject(mapOf("mobile" to mobile)), tag) })
-        if (result != null) loadLocked()
+        if (result != null) {
+            // Not saved: what the server had a moment ago.
+            if (session.isCurrent(tag)) _state.update { it.copy(prefs = fresh.value) }
+            loadLocked()
+        }
         result
     }
 
@@ -314,6 +326,14 @@ class AccountPrefsRepository(
         }
     }
 
+    /** Fylvo: only the favourites and tags again (opening their pages), not the whole settings. */
+    suspend fun refreshFavorites() = queued(Unit) { tag ->
+        val favorites = (call(tag) { api.service().favorites(tag) } as? Outcome.Found)?.value
+        val tags = (call(tag) { api.service().tags(tag) } as? Outcome.Found)?.value
+        if (session.isCurrent(tag)) _state.update { it.copy(favorites = favorites ?: it.favorites, tags = tags ?: it.tags) }
+        if (favorites != null || tags != null) saveCache(tag, accountKey())
+    }
+
     /** Whether the share [id] is member-only and not the user's own; asked once per session. */
     suspend fun memberShare(id: String): Boolean? {
         _state.value.memberShares[id]?.let { return it }
@@ -329,7 +349,7 @@ class AccountPrefsRepository(
 
     /** Sets or removes metadata of [uris]; reloads the tags afterwards. */
     suspend fun patchMetadata(uris: List<String>, patches: List<MetadataPatch>): String? = queued("") { tag ->
-        when (val outcome = call(tag) { api.service().patchMetadata(MetadataPatchRequest(uris, patches), tag) }) {
+        when (val outcome = call(tag, emptyOk = true) { api.service().patchMetadata(MetadataPatchRequest(uris, patches), tag) }) {
             is Outcome.Found -> {
                 val tags = (call(tag) { api.service().tags(tag) } as? Outcome.Found)?.value
                 if (tags != null && session.isCurrent(tag)) _state.update { it.copy(tags = tags) }
@@ -349,7 +369,7 @@ class AccountPrefsRepository(
         val current = call(tag) { api.service().folderView(uri, tag) }
         if (current !is Outcome.Found) return@queued (current as? Outcome.Refused)?.message ?: ""
         val view = change(current.value.view ?: JsonObject(emptyMap()))
-        val result = when (val outcome = call(tag) { api.service().patchView(ViewPatchRequest(uri, view), tag) }) {
+        val result = when (val outcome = call(tag, emptyOk = true) { api.service().patchView(ViewPatchRequest(uri, view), tag) }) {
             is Outcome.Found -> null
             is Outcome.Refused -> outcome.message
             else -> ""
@@ -360,10 +380,10 @@ class AccountPrefsRepository(
 
     // ---- plumbing --------------------------------------------------------------
 
-    private suspend fun <T> call(tag: SessionTag, request: suspend () -> Response<ApiResponse<T>>): Outcome<T> {
+    private suspend fun <T> call(tag: SessionTag, emptyOk: Boolean = false, request: suspend () -> Response<ApiResponse<T>>): Outcome<T> {
         if (!session.isCurrent(tag)) return Outcome.Failed
         return try {
-            outcomeOf(request())
+            outcomeOf(request(), emptyOk)
         } catch (e: CancellationException) {
             throw e
         } catch (e: ApiException) {

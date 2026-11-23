@@ -578,4 +578,6 @@
         <item quantity="one">%d Datei</item>
         <item quantity="other">%d Dateien</item>
     </plurals>
+    <string name="share_folder_unchecked">Dieser Ordner konnte nicht geprüft werden (keine Verbindung?). Bitte wähle ihn nochmals oder einen anderen.</string>
+    <string name="share_chosen">Gewählt</string>
 </resources>

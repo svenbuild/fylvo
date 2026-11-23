@@ -127,6 +127,9 @@ class FileRepository(private val api: ApiClient) {
         null
     }
 
+    /** Fylvo: one file or folder as the server describes it now. */
+    suspend fun folderInfo(uri: String): FileObject = api.service().fileInfo(uri).unwrap()
+
     /** [entity] asks for that exact version of the file (empty = the current one). */
     suspend fun downloadUrl(uri: String, archive: Boolean = false, entity: String = ""): String =
         signedUrl(uri, download = true, archive = archive, entity = entity)

@@ -100,4 +100,6 @@ object IncomingQueue {
     val pending = MutableStateFlow<Incoming?>(null)
     /** Files waiting in the sheet "Save in Fylvo" (kept while the screen is rebuilt). */
     val share = MutableStateFlow<List<Uri>?>(null)
+    /** The folder chosen in that sheet (address and id; the id is null only for My files). */
+    val shareTarget = MutableStateFlow<Pair<String, String?>?>(null)
 }

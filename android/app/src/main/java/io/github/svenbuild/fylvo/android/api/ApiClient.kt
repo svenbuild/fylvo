@@ -146,8 +146,10 @@ class ApiClient(private val session: SessionManager) {
         if (current.isNotEmpty() && current != staleToken) return@withLock current
         val refreshToken = session.refreshTokenNow()
         if (refreshToken.isEmpty()) return@withLock null
-        // Fylvo: the new tokens belong to the session that asked for them.
+        // Fylvo: the new tokens belong to the session that asked for them; a session that is ending
+        // spends no refresh token (its sign-out still uses it).
         val asked = session.sessionTag()
+        if (!session.isCurrent(asked)) return@withLock null
 
         val resp = runCatching {
             bareService(baseUrl).refreshToken(RefreshTokenRequest(refreshToken))
