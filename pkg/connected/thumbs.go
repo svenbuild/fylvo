@@ -85,6 +85,10 @@ type thumbs struct {
 	// gone are connections that ended: nothing is kept for them any more.
 	gone    map[string]bool
 	flights map[string]*thumbFlight
+	// live returns the connections there are, for the start: the folder of one that is
+	// no more (it ended while the server was down or going down) is removed. nil, or an
+	// error, removes nothing.
+	live func() ([]string, error)
 }
 
 func newThumbs(dir string) *thumbs {
@@ -92,7 +96,14 @@ func newThumbs(dir string) *thumbs {
 	if mb, err := strconv.Atoi(os.Getenv(EnvThumbCache)); err == nil && mb >= 0 {
 		limit = int64(mb) << 20
 	}
-	if limit == 0 {
+	if limit == 0 && dir != "" {
+		// Nothing is kept. What an earlier start kept goes.
+		conns, _ := os.ReadDir(dir)
+		for _, conn := range conns {
+			if conn.IsDir() && validPublicID(conn.Name()) {
+				_ = os.RemoveAll(filepath.Join(dir, conn.Name()))
+			}
+		}
 		dir = ""
 	}
 	return &thumbs{
@@ -121,9 +132,23 @@ func (t *thumbs) load() {
 		return
 	}
 	t.loaded = true
+	var known map[string]bool
+	if t.live != nil {
+		if ids, err := t.live(); err == nil {
+			known = map[string]bool{}
+			for _, id := range ids {
+				known[id] = true
+			}
+		}
+	}
 	conns, _ := os.ReadDir(t.dir)
 	for _, conn := range conns {
 		if !conn.IsDir() || !validPublicID(conn.Name()) {
+			continue
+		}
+		if known != nil && !known[conn.Name()] {
+			// The connection ended and its folder was left behind.
+			_ = os.RemoveAll(filepath.Join(t.dir, conn.Name()))
 			continue
 		}
 		entries, _ := os.ReadDir(filepath.Join(t.dir, conn.Name()))
@@ -173,20 +198,35 @@ func (t *thumbs) remove(key string) {
 func (t *thumbs) get(conn, name string) ([]byte, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.kept(conn, name)
+}
+
+// thumbUsedStep is how far the time a kept preview was last used may lag on disk. It
+// is written there, so the order survives a restart, but not for every read.
+const thumbUsedStep = time.Hour
+
+// kept returns a kept preview. The caller holds t.mu.
+func (t *thumbs) kept(conn, name string) ([]byte, bool) {
 	t.load()
 	key := conn + "/" + name
 	f := t.files[key]
 	if f == nil {
 		return nil, false
 	}
-	stored, err := os.ReadFile(filepath.Join(t.dir, conn, name))
+	path := filepath.Join(t.dir, conn, name)
+	stored, err := os.ReadFile(path)
 	data, whole := unsealed(stored)
 	if err != nil || int64(len(stored)) != f.size || !whole || !isPicture(data) {
 		// Gone or damaged: as if it had never been kept.
 		t.remove(key)
 		return nil, false
 	}
-	f.used = t.now()
+	if now := t.now(); now.Sub(f.used) >= thumbUsedStep {
+		_ = os.Chtimes(path, now, now)
+		f.used = now
+	} else if now.After(f.used) {
+		f.used = now
+	}
 	return data, true
 }
 
@@ -280,6 +320,11 @@ func (t *thumbs) drop(conn string) {
 func (t *thumbs) missing(key string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.missed(key)
+}
+
+// missed is missing for a caller that holds t.mu.
+func (t *thumbs) missed(key string) bool {
 	until, ok := t.misses[key]
 	if ok && t.now().After(until) {
 		delete(t.misses, key)
@@ -291,11 +336,23 @@ func (t *thumbs) missing(key string) bool {
 func (t *thumbs) miss(key string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	now := t.now()
 	if len(t.misses) >= maxThumbMisses {
-		// Rare, and cheap to learn again: all of them go.
-		t.misses = map[string]time.Time{}
+		// Those that ran out go first. If that is not enough some others go, whichever:
+		// they are cheap to learn again.
+		for k, until := range t.misses {
+			if now.After(until) {
+				delete(t.misses, k)
+			}
+		}
+		for k := range t.misses {
+			if len(t.misses) < maxThumbMisses/10*9 {
+				break
+			}
+			delete(t.misses, k)
+		}
 	}
-	t.misses[key] = t.now().Add(thumbMissLife)
+	t.misses[key] = now.Add(thumbMissLife)
 }
 
 // isPicture tells whether data is a picture of a kind every client shows.
@@ -304,10 +361,11 @@ func isPicture(data []byte) bool {
 	return kind == "image/jpeg" || kind == "image/png"
 }
 
-// HasThumbnail tells whether a row can have a preview: a file of the storage itself,
-// in a state the provider names, of which the provider says it has a picture.
+// HasThumbnail tells whether a row can have a preview: a file of the storage itself
+// (no link, and nothing reached through one), in a state the provider names, of which
+// the provider says it has a picture.
 func HasThumbnail(row *Row) bool {
-	return !row.IsDir && row.Unsupported == "" && row.Link == nil && row.Version != "" && row.Preview
+	return !row.IsDir && row.Unsupported == "" && row.Link == nil && !row.ViaLink && row.Version != "" && row.Preview
 }
 
 // NoThumbnail tells whether the provider is known to have no preview of the item in the
@@ -327,16 +385,20 @@ func (m *Manager) Thumbnail(ctx context.Context, c *Conn, item *provider.Item, s
 	}
 	t, name := m.thumbs, thumbName(item, size)
 	key := c.ID + "/" + name
-	if data, ok := t.get(c.ID, name); ok {
-		return data, nil
-	}
-	if t.missing(key) {
-		return nil, ErrNoThumbnail
-	}
 
 	// One fetch per preview: who asks for the same one meanwhile waits for its result.
+	// What is kept, what is known to be missing and what is under way are looked at in
+	// one step, so nobody starts a second fetch for a picture that just arrived.
 	for {
 		t.mu.Lock()
+		if data, ok := t.kept(c.ID, name); ok {
+			t.mu.Unlock()
+			return data, nil
+		}
+		if t.missed(key) {
+			t.mu.Unlock()
+			return nil, ErrNoThumbnail
+		}
 		running := t.flights[key]
 		if running == nil {
 			break
@@ -347,7 +409,9 @@ func (m *Manager) Thumbnail(ctx context.Context, c *Conn, item *provider.Item, s
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
-		if running.err == nil || !(errors.Is(running.err, context.Canceled) || errors.Is(running.err, context.DeadlineExceeded)) {
+		if !errors.Is(running.err, context.Canceled) {
+			// Also when the provider took too long: nobody queues up behind a provider
+			// that stalls, each for a wait of his own.
 			return running.data, running.err
 		}
 		// The one who fetched gave up (its client went away). That says nothing to
@@ -397,6 +461,10 @@ func (m *Manager) fetchThumbnail(ctx context.Context, source provider.Thumbnaile
 		return nil, err
 	}
 	defer content.Body.Close()
+	if content.Partial {
+		// A part of something, though the whole was asked for: not a picture to keep.
+		return nil, &provider.Error{Kind: provider.KindBusy}
+	}
 	data, err := io.ReadAll(io.LimitReader(content.Body, thumbMaxBytes+1))
 	if err != nil {
 		if ctx.Err() != nil {

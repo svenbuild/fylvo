@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
@@ -135,6 +136,14 @@ func TestThumbnailKeepsTheTokenAtHome(t *testing.T) {
 	assert.Equal(t, provider.KindBusy, provider.KindOf(err))
 	assert.Zero(t, auth.Renewals())
 	s.RefuseThumbnails(0)
+	// The same for a refusal by the host the image host sends the request on to.
+	s.RedirectThumbnails(true)
+	s.RefuseContent(http.StatusUnauthorized)
+	_, err = thumbs.Thumbnail(ctx, item, 400)
+	assert.Equal(t, provider.KindForbidden, provider.KindOf(err))
+	assert.Zero(t, auth.Renewals())
+	s.RefuseContent(0)
+	s.RedirectThumbnails(false)
 	_, err = thumbs.Thumbnail(ctx, item, 400)
 	require.NoError(t, err)
 }
@@ -161,13 +170,29 @@ func TestThumbnailHostsOfDrive(t *testing.T) {
 		// Without a size of its own the link gets ours.
 		"https://lh3.googleusercontent.com/drive-storage/AbC":          "https://lh3.googleusercontent.com/drive-storage/AbC=s400",
 		"https://lh3.googleusercontent.com/drive-storage/AbC=w100-h50": "https://lh3.googleusercontent.com/drive-storage/AbC=w100-h50=s400",
+		// A link of another form is asked for as it is.
+		"https://lh3.googleusercontent.com/thumb?id=AbC&sz=s220": "https://lh3.googleusercontent.com/thumb?id=AbC&sz=s220",
+		"https://lh3.googleusercontent.com/a%20b/AbC=s220":       "https://lh3.googleusercontent.com/a%20b/AbC=s400",
 	} {
 		got, ok := c.thumbnailAddress(link, 400)
 		assert.True(t, ok, link)
 		assert.Equal(t, want, got)
+		// What is asked for lies on the host that was checked.
+		before, err := url.Parse(link)
+		require.NoError(t, err)
+		after, err := url.Parse(got)
+		require.NoError(t, err)
+		assert.Equal(t, before.Host, after.Host, link)
+		assert.Equal(t, "https", after.Scheme, link)
 	}
 	for _, link := range []string{
 		"",
+		// A link that names a host and no picture: the size must never become part
+		// of the host.
+		"https://lh3.googleusercontent.com",
+		"https://lh3.googleusercontent.com/",
+		"https://lh3.googleusercontent.com?x=1",
+		"https:lh3.googleusercontent.com/AbC=s220",
 		"http://lh3.googleusercontent.com/AbC=s220",
 		"https://lh7.googleusercontent.com/AbC=s220",
 		"https://lh3.googleusercontent.com.example.com/AbC=s220",

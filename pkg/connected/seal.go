@@ -23,9 +23,15 @@ const (
 
 const (
 	sealVersion = 1
-	nonceSize   = 12
+	// sealStable marks a value sealed by SealStable. It has a key of its own, so a
+	// nonce made there never meets a random one under the same key.
+	sealStable = 2
+	nonceSize  = 12
 	keyInfo     = "fylvo connected storage v1 "
 )
+
+// stableKey is added to a purpose for the keys of SealStable.
+const stableKey = " stable"
 
 // ErrSealed is returned for a value that does not open: wrong key, wrong context
 // or changed bytes. It says nothing about which.
@@ -85,30 +91,34 @@ func (s *Sealer) Seal(ctx context.Context, purpose string, context, plain []byte
 
 // SealStable is Seal with a result that is the same every time for the same plain and
 // context, for a value that is part of an address a client is to keep (the grant of a
-// preview). The nonce is not random but a keyed hash of what is sealed, under a key of
-// its own: two different values get different nonces, the same value the same one, and
-// then the same result, which tells nobody anything new. Open reads both kinds.
+// preview). The nonce is not random but a keyed hash of what is sealed: two different
+// values get different nonces, the same value the same one, and then the same result,
+// which tells nobody anything new. Such values are sealed under a key of their own, and
+// the nonce is made with another one. Open reads both kinds.
 func (s *Sealer) SealStable(ctx context.Context, purpose string, context, plain []byte) ([]byte, error) {
-	aead, err := s.aead(ctx, purpose)
+	aead, err := s.aead(ctx, purpose+stableKey)
 	if err != nil {
 		return nil, err
 	}
-	nonceKey, err := s.key(ctx, purpose+" nonce")
+	nonceKey, err := s.key(ctx, purpose+stableKey+" nonce")
 	if err != nil {
 		return nil, err
 	}
 	mac := hmac.New(sha256.New, nonceKey)
 	mac.Write(Context(string(context), string(plain)))
 	out := make([]byte, 1+nonceSize, 1+nonceSize+len(plain)+aead.Overhead())
-	out[0] = sealVersion
+	out[0] = sealStable
 	copy(out[1:], mac.Sum(nil))
 	return aead.Seal(out, out[1:1+nonceSize], plain, context), nil
 }
 
 // Open decrypts what Seal made.
 func (s *Sealer) Open(ctx context.Context, purpose string, context, sealed []byte) ([]byte, error) {
-	if len(sealed) < 1+nonceSize || sealed[0] != sealVersion {
+	if len(sealed) < 1+nonceSize || (sealed[0] != sealVersion && sealed[0] != sealStable) {
 		return nil, ErrSealed
+	}
+	if sealed[0] == sealStable {
+		purpose += stableKey
 	}
 	aead, err := s.aead(ctx, purpose)
 	if err != nil {

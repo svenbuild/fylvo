@@ -238,6 +238,15 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 		connectedWopi.POST(":session", controllers.FylvoConnectedOfficeOther)
 	}
 
+	// Fylvo: the preview of a file in a connected storage. The grant in the path is the
+	// permission; the picture comes from the provider or from disk. Whatever sign-in a
+	// request may carry plays no part: it is answered by the grant alone.
+	connectedThumb := noAuth.Group("fylvo/connected/thumb", middleware.ContentCORS())
+	{
+		connectedThumb.OPTIONS("*option", middleware.ContentCORS())
+		connectedThumb.GET(":grant/:name", middleware.Sandbox(), controllers.FylvoConnectedThumb)
+	}
+
 	// Fylvo: the browser comes back here from the provider of a storage that is being
 	// connected. It carries no sign-in; a cookie ties it to the browser that started.
 	noAuth.GET("fylvo/connected/callback", controllers.FylvoConnectedCallback)
@@ -509,13 +518,6 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			connectedContent.OPTIONS("*option", middleware.ContentCORS())
 			connectedContent.GET(":grant/:name", middleware.Sandbox(), controllers.FylvoConnectedContent)
 			connectedContent.HEAD(":grant/:name", controllers.FylvoConnectedContent)
-		}
-		// Fylvo: the preview of a file in a connected storage. As above the grant in the
-		// path is the permission; the picture comes from the provider or from disk.
-		connectedThumb := v4.Group("fylvo/connected/thumb", middleware.ContentCORS())
-		{
-			connectedThumb.OPTIONS("*option", middleware.ContentCORS())
-			connectedThumb.GET(":grant/:name", middleware.Sandbox(), controllers.FylvoConnectedThumb)
 		}
 
 		// 回调接口

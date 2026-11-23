@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -224,20 +225,135 @@ func TestThumbnailWaitersSurviveTheFetcher(t *testing.T) {
 		first <- err
 	}()
 	<-p.entered
-	second := make(chan []byte, 1)
+	type result struct {
+		data []byte
+		err  error
+	}
+	second := make(chan result, 1)
 	go func() {
 		data, err := m.Thumbnail(context.Background(), conn, item, 400)
-		require.NoError(t, err)
-		second <- data
+		second <- result{data, err}
 	}()
 	time.Sleep(50 * time.Millisecond)
 	leave()
 	require.ErrorIs(t, <-first, context.Canceled)
 	<-p.entered
 	close(p.release)
-	require.Equal(t, testPicture(1), <-second)
+	got := <-second
+	require.NoError(t, got.err)
+	require.Equal(t, testPicture(1), got.data)
 	require.EqualValues(t, 2, p.calls.Load())
 	require.False(t, m.NoThumbnail(conn, item, 400))
+}
+
+// A provider that stalls: the fetch runs into its limit, and those who waited for the
+// same preview are told to come back. They do not each wait their own turn at it.
+func TestThumbnailWaitersDoNotQueueBehindAStall(t *testing.T) {
+	m, p, conn, _ := thumbFixture(t)
+	p.entered, p.release = make(chan struct{}, 1), make(chan struct{})
+	p.answer = func(*provider.Item, int) ([]byte, error) { return nil, context.DeadlineExceeded }
+	item := &provider.Item{ID: "file-1", Version: "r:1"}
+
+	errs := make(chan error, 4)
+	for i := 0; i < 4; i++ {
+		go func() {
+			_, err := m.Thumbnail(context.Background(), conn, item, 400)
+			errs <- err
+		}()
+	}
+	<-p.entered
+	time.Sleep(100 * time.Millisecond)
+	close(p.release)
+	for i := 0; i < 4; i++ {
+		require.ErrorIs(t, <-errs, context.DeadlineExceeded)
+	}
+	require.EqualValues(t, 1, p.calls.Load())
+	require.False(t, m.NoThumbnail(conn, item, 400))
+}
+
+// A preview that arrives while somebody is about to ask for it is not fetched twice:
+// what is kept and what is under way are looked at in one step.
+func TestThumbnailIsNotFetchedBesideTheCache(t *testing.T) {
+	m, p, conn, _ := thumbFixture(t)
+	item := &provider.Item{ID: "file-1", Version: "r:1"}
+	var wg sync.WaitGroup
+	errs := make(chan error, 200)
+	for i := 0; i < 200; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := m.Thumbnail(context.Background(), conn, item, 400)
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	require.EqualValues(t, 1, p.calls.Load())
+}
+
+// A part of a picture, where the whole was asked for, is no preview.
+func TestThumbnailRefusesAPart(t *testing.T) {
+	m, _, conn, dir := thumbFixture(t)
+	conn.P = partial{}
+	item := &provider.Item{ID: "file-1", Version: "r:1"}
+	_, err := m.Thumbnail(context.Background(), conn, item, 400)
+	require.Equal(t, provider.KindBusy, provider.KindOf(err))
+	require.Empty(t, kept(t, dir))
+	require.False(t, m.NoThumbnail(conn, item, 400))
+}
+
+type partial struct{ provider.Provider }
+
+func (partial) Thumbnail(context.Context, *provider.Item, int) (*provider.Content, error) {
+	picture := testPicture(1)
+	return &provider.Content{Body: io.NopCloser(bytes.NewReader(picture)), Length: int64(len(picture)), Partial: true}, nil
+}
+
+// Rows that get no preview: a link, and what was reached through one.
+func TestHasThumbnail(t *testing.T) {
+	file := provider.Item{ID: "f", Version: "r:1", Preview: true}
+	require.True(t, HasThumbnail(&Row{Item: file}))
+	for name, row := range map[string]*Row{
+		"through a link":   {Item: file, ViaLink: true},
+		"a link":           {Item: provider.Item{ID: "f", Version: "r:1", Preview: true, Link: &provider.Link{TargetID: "t"}}, ViaLink: true},
+		"a folder":         {Item: provider.Item{ID: "f", IsDir: true, Preview: true}},
+		"no version":       {Item: provider.Item{ID: "f", Preview: true}},
+		"none at provider": {Item: provider.Item{ID: "f", Version: "r:1"}},
+		"unsupported":      {Item: file, Unsupported: "duplicate"},
+	} {
+		require.False(t, HasThumbnail(row), name)
+	}
+}
+
+// What is known as "none" stays bounded without forgetting everything at once.
+func TestThumbMissesAreBounded(t *testing.T) {
+	c := newThumbs("")
+	now := time.Unix(1800000000, 0)
+	c.now = func() time.Time { return now }
+	for i := 0; i < maxThumbMisses; i++ {
+		c.miss("old-" + strconv.Itoa(i))
+	}
+	now = now.Add(thumbMissLife / 2)
+	// Full. The next one makes room, and the recent ones are not all lost for it.
+	for i := 0; i < 100; i++ {
+		c.miss("new-" + strconv.Itoa(i))
+	}
+	require.LessOrEqual(t, len(c.misses), maxThumbMisses)
+	require.Greater(t, len(c.misses), maxThumbMisses/2)
+	for i := 0; i < 100; i++ {
+		require.True(t, c.missing("new-"+strconv.Itoa(i)))
+	}
+	// Once the old ones ran out they are the ones that go.
+	now = now.Add(thumbMissLife/2 + time.Minute)
+	for i := 0; i < maxThumbMisses; i++ {
+		c.miss("fill-" + strconv.Itoa(i))
+	}
+	for k := range c.misses {
+		require.False(t, strings.HasPrefix(k, "old-"), k)
+	}
 }
 
 // Only so many previews are fetched from providers at once. A further one waits a
@@ -250,12 +366,13 @@ func TestThumbnailFetchesAreBounded(t *testing.T) {
 	defer func() { thumbWait = wait }()
 
 	var wg sync.WaitGroup
+	running := make(chan error, maxThumbFetches)
 	for i := 0; i < maxThumbFetches; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			_, err := m.Thumbnail(context.Background(), conn, &provider.Item{ID: "busy-" + string(rune('a'+i)), Version: "r:1"}, 400)
-			require.NoError(t, err)
+			running <- err
 		}()
 		<-p.entered
 	}
@@ -273,6 +390,10 @@ func TestThumbnailFetchesAreBounded(t *testing.T) {
 
 	close(p.release)
 	wg.Wait()
+	close(running)
+	for err := range running {
+		require.NoError(t, err)
+	}
 	p.entered = nil
 	_, err = m.Thumbnail(context.Background(), conn, late, 400)
 	require.NoError(t, err)
@@ -318,6 +439,77 @@ func TestThumbCacheIsBounded(t *testing.T) {
 	smaller.limit = int64(len(sealedPicture(picture))) * 3
 	_, _ = smaller.get(thumbConn, name(0))
 	require.LessOrEqual(t, len(kept(t, dir)), 3)
+}
+
+// When a preview was last used is written to disk now and then, so a restart still
+// knows which ones were used longest ago.
+func TestThumbCacheRemembersUseOverARestart(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "thumbs")
+	c := newThumbs(dir)
+	picture := testPicture(1)
+	now := time.Now().Add(-48 * time.Hour).Truncate(time.Second)
+	c.now = func() time.Time { return now }
+	for _, name := range []string{"a", "b", "c"} {
+		c.put(thumbConn, name+thumbExt, picture)
+		old := now
+		require.NoError(t, os.Chtimes(filepath.Join(dir, thumbConn, name+thumbExt), old, old))
+		now = now.Add(time.Minute)
+	}
+	// "a" is read a day later; a read a moment after that writes nothing again.
+	now = now.Add(24 * time.Hour)
+	_, ok := c.get(thumbConn, "a"+thumbExt)
+	require.True(t, ok)
+	info, err := os.Stat(filepath.Join(dir, thumbConn, "a"+thumbExt))
+	require.NoError(t, err)
+	require.WithinDuration(t, now, info.ModTime(), 2*time.Second)
+	stamp := info.ModTime()
+	now = now.Add(time.Minute)
+	_, ok = c.get(thumbConn, "a"+thumbExt)
+	require.True(t, ok)
+	info, err = os.Stat(filepath.Join(dir, thumbConn, "a"+thumbExt))
+	require.NoError(t, err)
+	require.Equal(t, stamp, info.ModTime())
+
+	// After a restart with room for two, the one read last is among those that stay.
+	restarted := newThumbs(dir)
+	restarted.limit = int64(len(sealedPicture(picture))) * 2
+	_, ok = restarted.get(thumbConn, "a"+thumbExt)
+	require.True(t, ok)
+	require.Len(t, kept(t, dir), 1, "shrunk to nine tenths of two")
+}
+
+// A start removes what a connection left behind that ended while the server was down
+// or going down. When the connections cannot be read, nothing is removed.
+func TestThumbCacheStartTidiesUp(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "thumbs")
+	first := newThumbs(dir)
+	picture := testPicture(1)
+	ended, lives := "cccccccccccccccc", "dddddddddddddddd"
+	first.put(ended, "x"+thumbExt, picture)
+	first.put(lives, "x"+thumbExt, picture)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "notes"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes", "mine.txt"), []byte("x"), 0o600))
+
+	unsure := newThumbs(dir)
+	unsure.live = func() ([]string, error) { return nil, errors.New("the database is not there yet") }
+	_, ok := unsure.get(ended, "x"+thumbExt)
+	require.True(t, ok)
+	require.Len(t, kept(t, dir), 3)
+
+	started := newThumbs(dir)
+	started.live = func() ([]string, error) { return []string{lives}, nil }
+	_, ok = started.get(lives, "x"+thumbExt)
+	require.True(t, ok)
+	_, ok = started.get(ended, "x"+thumbExt)
+	require.False(t, ok)
+	require.ElementsMatch(t, []string{lives + "/x" + thumbExt, "notes/mine.txt"}, kept(t, dir))
+	require.Equal(t, int64(len(sealedPicture(picture))), started.total)
+
+	// Switched off, what was kept before goes; a folder that is not ours stays.
+	t.Setenv(EnvThumbCache, "0")
+	off := newThumbs(dir)
+	require.Empty(t, off.dir)
+	require.Equal(t, []string{"notes/mine.txt"}, kept(t, dir))
 }
 
 // The switch for the size of the cache: megabytes, and 0 keeps nothing on disk.
@@ -444,11 +636,24 @@ func TestSealStable(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, plain, opened)
 	require.NotContains(t, string(first), `"u":7`)
+	// It is marked as its own kind and has a key of its own: taken for an ordinary
+	// seal it does not open, and an ordinary one does not open as this kind.
+	require.EqualValues(t, sealStable, first[0])
+	asOrdinary := append([]byte{sealVersion}, first[1:]...)
+	_, err = s.Open(ctx, PurposeGrant, where, asOrdinary)
+	require.ErrorIs(t, err, ErrSealed)
 
 	// The ordinary seal is new every time.
 	random, err := s.Seal(ctx, PurposeGrant, where, plain)
 	require.NoError(t, err)
 	require.NotEqual(t, first, random)
+	require.EqualValues(t, sealVersion, random[0])
+	asStable := append([]byte{sealStable}, random[1:]...)
+	_, err = s.Open(ctx, PurposeGrant, where, asStable)
+	require.ErrorIs(t, err, ErrSealed)
+	opened, err = s.Open(ctx, PurposeGrant, where, random)
+	require.NoError(t, err)
+	require.Equal(t, plain, opened)
 
 	// Another value, another place, another purpose, another key: another nonce and
 	// another result.

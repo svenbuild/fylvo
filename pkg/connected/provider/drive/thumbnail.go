@@ -29,31 +29,47 @@ var thumbnailHosts = map[string]bool{
 	"lh6.googleusercontent.com": true,
 }
 
-// sizeSuffix is how a preview link of Drive names the size of its picture: "=s220".
+// sizeSuffix is how a preview link of Drive names the size of its picture, at the end
+// of its path: "=s220".
 var sizeSuffix = regexp.MustCompile(`=s[0-9]+$`)
+
+// thumbnailHostOK tells whether an address leads to a host previews are fetched from.
+func (c *client) thumbnailHostOK(u *url.URL) bool {
+	if u.User != nil || u.Fragment != "" || u.Opaque != "" {
+		return false
+	}
+	if c.thumbnailHost != "" {
+		// A simulated Drive serves its previews itself.
+		return u.Host == c.thumbnailHost
+	}
+	return u.Scheme == "https" && thumbnailHosts[u.Host]
+}
 
 // thumbnailAddress is the address of the preview of the given size behind a link Drive
 // handed out. ok is false for a link that does not lead to one of the hosts for
-// previews over https: nothing is sent there.
+// previews over https, or that names no picture: nothing is sent there. The size goes
+// into the path of the link, and the address that comes of it is checked like the link.
 func (c *client) thumbnailAddress(link string, size int) (address string, ok bool) {
 	u, err := url.Parse(link)
-	if err != nil || u.User != nil || u.Fragment != "" {
+	if err != nil || !c.thumbnailHostOK(u) || len(u.EscapedPath()) < 2 {
 		return "", false
 	}
-	switch {
-	case c.thumbnailHost != "":
-		// A simulated Drive serves its previews itself.
-		if u.Host != c.thumbnailHost {
-			return "", false
+	if u.RawQuery == "" {
+		// A link of another form is used as it is.
+		path := u.EscapedPath()
+		sized := "=s" + strconv.Itoa(size)
+		if sizeSuffix.MatchString(path) {
+			path = sizeSuffix.ReplaceAllString(path, sized)
+		} else {
+			path += sized
 		}
-	case u.Scheme != "https" || !thumbnailHosts[u.Host]:
+		link = u.Scheme + "://" + u.Host + path
+	}
+	final, err := url.Parse(link)
+	if err != nil || !c.thumbnailHostOK(final) || final.Host != u.Host || final.Scheme != u.Scheme {
 		return "", false
 	}
-	sized := "=s" + strconv.Itoa(size)
-	if sizeSuffix.MatchString(link) {
-		return sizeSuffix.ReplaceAllString(link, sized), true
-	}
-	return link + sized, true
+	return link, true
 }
 
 // Thumbnail starts a download of the preview Drive has of item, which fits into a

@@ -74,6 +74,17 @@ func TestConnectedPagesNeedNoSession(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Empty(t, rec.Body.String())
 
+	// The preview of a file in a connected storage: its grant is the permission. A
+	// sign-in that is no good changes nothing, and what is refused is never kept.
+	for _, headers := range []map[string]string{nil, badSession} {
+		rec = request("GET", "/api/v4/fylvo/connected/thumb/"+strings.Repeat("A", 60)+"/thumb.jpg", headers)
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Empty(t, rec.Body.String())
+		require.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+		require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+		require.Equal(t, "sandbox", rec.Header().Get("Content-Security-Policy"))
+	}
+
 	// A POST that is not the button is answered at once. The server does not wait for
 	// a body the client announces and then does not send.
 	server := httptest.NewServer(engine)

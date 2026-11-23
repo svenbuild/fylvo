@@ -87,6 +87,8 @@ type (
 		DeleteByUser(ctx context.Context, userID int) ([]*ent.ConnectedStorage, error)
 		// CountByAccount counts the connections to one account of a provider, over all users.
 		CountByAccount(ctx context.Context, provider, accountKey string) (int, error)
+		// PublicIDs returns the public ids of all connections of all users.
+		PublicIDs(ctx context.Context) ([]string, error)
 	}
 
 	CreateConnectedStorageArgs struct {
@@ -232,6 +234,10 @@ func (c *connectedStorageClient) CountByAccount(ctx context.Context, provider, a
 	return c.client.ConnectedStorage.Query().
 		Where(connectedstorage.Provider(provider), connectedstorage.AccountKey(accountKey)).
 		Count(ctx)
+}
+
+func (c *connectedStorageClient) PublicIDs(ctx context.Context) ([]string, error) {
+	return c.client.ConnectedStorage.Query().Select(connectedstorage.FieldPublicID).Strings(ctx)
 }
 
 // ensureConnectedStorages creates the table of connected storages when it is missing and,

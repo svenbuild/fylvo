@@ -178,6 +178,7 @@ type Server struct {
 	thumbnailRedirect bool
 	thumbnailSizes    []string
 	thumbnailStatus   int
+	contentStatus     int
 
 	sessions    map[string]*session
 	full        bool
@@ -480,6 +481,14 @@ func (s *Server) RefuseThumbnails(status int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.thumbnailStatus = status
+}
+
+// RefuseContent makes the content server answer every request with the given status, 0
+// to serve again.
+func (s *Server) RefuseContent(status int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.contentStatus = status
 }
 
 // ThumbnailSizes returns the size suffixes ("s400") the previews were asked with.
@@ -851,6 +860,10 @@ func (s *Server) serveContent(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.contentTokens = append(s.contentTokens, r.Header.Get("Authorization"))
+	if s.contentStatus != 0 {
+		w.WriteHeader(s.contentStatus)
+		return
+	}
 	if id, found := strings.CutPrefix(r.URL.Path, "/thumbnail/"); found {
 		if e, ok := s.items[id]; ok && e.preview() != nil {
 			_, _ = w.Write(e.preview())

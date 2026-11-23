@@ -128,6 +128,11 @@ func ServeConnectedThumb(c *gin.Context) {
 	case err != nil:
 		connectedContentError(c, err)
 		return
+	case ctx.Err() != nil:
+		// The connection ended, or was connected again, while this request was at it:
+		// nothing of it is handed out any more.
+		c.AbortWithStatus(http.StatusNotFound)
+		return
 	}
 
 	// The client may keep it as long as its address is valid, a day at most, as it

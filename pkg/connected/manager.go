@@ -141,7 +141,7 @@ func NewManager(o ManagerOptions) *Manager {
 	if o.HTTP == nil {
 		o.HTTP = provider.NewHTTPClient()
 	}
-	return &Manager{
+	m := &Manager{
 		storages: o.Storages,
 		settings: o.Settings,
 		sealer:   o.Sealer,
@@ -158,6 +158,10 @@ func NewManager(o ManagerOptions) *Manager {
 		usage:    map[string]usage{},
 		thumbs:   newThumbs(o.ThumbDir),
 	}
+	if o.Storages != nil {
+		m.thumbs.live = func() ([]string, error) { return o.Storages.PublicIDs(context.Background()) }
+	}
+	return m
 }
 
 // Tree returns what reads the folders of the connections.

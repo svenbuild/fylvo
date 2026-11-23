@@ -16,8 +16,10 @@ import (
 
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/group"
+	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/boolset"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive/drivetest"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -53,6 +55,21 @@ func (e *connectedEnv) picture(address string) *httptest.ResponseRecorder {
 	c.Params = gin.Params{{Key: "grant", Value: grant}, {Key: "name", Value: name}}
 	ServeConnectedThumb(c)
 	return rec
+}
+
+// reconnect stores a new token for Alex's connection, as a sign-in that renews it does:
+// the connection goes on under its id, in a new generation.
+func (e *connectedEnv) reconnect() {
+	e.t.Helper()
+	storages := inventory.NewConnectedStorageClient(e.client)
+	row, err := storages.Get(e.ctx, e.alex.ID, e.id)
+	require.NoError(e.t, err)
+	_, ok, err := storages.Renew(e.ctx, row.ID, row.Generation, &inventory.RenewConnectedStorageArgs{
+		Account: row.Account, Secret: row.Secret, Props: row.Props,
+	})
+	require.NoError(e.t, err)
+	require.True(e.t, ok)
+	e.m.Tree().Forget(e.id)
 }
 
 // keptPreviews are the files in the folder where previews are kept.
@@ -136,6 +153,22 @@ func TestConnectedThumbnail(t *testing.T) {
 	rec = e.picture(answer.Url)
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, testPNG(9), rec.Body.Bytes())
+
+	// A picture reached through a shortcut to a folder is not of the storage itself: no
+	// preview, in the listing as in the answer.
+	inside := e.sim.AddFolder("", "Album")
+	e.sim.AddFile(inside, "inside.png", testPNG(4))
+	e.sim.AddShortcut("", "to album", inside)
+	e.m.Tree().Forget(e.id)
+	through, err := e.list(e.alex, e.root+"/to album", 100, "")
+	require.NoError(t, err)
+	require.Len(t, through.Files, 1)
+	require.Contains(t, through.Files[0].Metadata, dbfs.ThumbDisabledKey)
+	_, err = e.thumb(e.alex, e.root+"/to album/inside.png")
+	require.Equal(t, serializer.CodeEntityNotExist, connectedCode(err))
+	direct, err := e.thumb(e.alex, e.root+"/Album/inside.png")
+	require.NoError(t, err)
+	require.Equal(t, testPNG(4), e.picture(direct.Url).Body.Bytes())
 
 	// No preview: the answer that makes a client stop asking for that version.
 	for _, path := range []string{"/notes.txt", "/Photos", "/to photo"} {
@@ -250,6 +283,18 @@ func TestConnectedThumbnailAddressIsAGrant(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, changed.Url, fresh.Url)
 	require.Equal(t, http.StatusOK, e.picture(fresh.Url).Code)
+
+	// Connected again: the address was for the connection as it was before. The picture
+	// stays on disk for the address of the new one.
+	before := e.sim.Calls(drivetest.CallThumbnail)
+	_, err = e.m.Create(e.ctx, e.sam.ID, connected.ProviderDrive, &connected.Identity{Key: "account-9", Label: "x"}, connectedTestToken)
+	require.NoError(t, err)
+	e.reconnect()
+	require.Equal(t, http.StatusNotFound, e.picture(fresh.Url).Code)
+	fresh, err = e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, e.picture(fresh.Url).Code)
+	require.Equal(t, before, e.sim.Calls(drivetest.CallThumbnail), "served from disk, not fetched again")
 
 	// The connection ends: at once the address is worth nothing, also for a picture
 	// that was on disk, and what was kept of the storage is gone.
