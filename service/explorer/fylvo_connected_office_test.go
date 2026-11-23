@@ -532,6 +532,73 @@ func TestConnectedOfficeLastSaveSentTwice(t *testing.T) {
 	list, err = e.list(e.alex, e.root, 100, "")
 	require.NoError(t, err)
 	require.Equal(t, "letter (conflict 2).docx|letter (conflict).docx|letter.docx", fileNames(list.Files))
+
+	// The first one comes once more, late: still its copy, no third one.
+	late := e.officeExit(session, token, []byte("what the user wrote"))
+	require.Equal(t, http.StatusOK, late.Code)
+	require.JSONEq(t, first.Body.String(), late.Body.String())
+	e.m.Tree().Forget(e.id)
+	list, err = e.list(e.alex, e.root, 100, "")
+	require.NoError(t, err)
+	require.Len(t, list.Files, 3)
+}
+
+// The file is deleted at the provider in the very moment of the last save, while the
+// upload for it is under way: a conflict like any other, and the content is kept.
+func TestConnectedOfficeLastSaveMeetsADeletionMidway(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	id := e.sim.AddFile("", "letter.docx", []byte("version one"))
+	res, err := e.officeSession(t, "/letter.docx", types.ViewerActionEdit)
+	require.NoError(t, err)
+	session, token := res.Session.ID, res.Session.AccessToken
+	rec, _ := e.office(ConnectedOfficeGet, http.MethodGet, session, token, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	e.sim.DeleteOnNextUpload(id)
+	rec = e.officeExit(session, token, []byte("what the user wrote"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	e.m.Tree().Forget(e.id)
+	list, err := e.list(e.alex, e.root, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "letter (conflict).docx", fileNames(list.Files))
+	require.Equal(t, []byte("what the user wrote"), e.download(e.root+"/letter (conflict).docx"))
+
+	// Without the window closing it is the conflict the editor asks about.
+	other := e.sim.AddFile("", "other.docx", []byte("version one"))
+	res, err = e.officeSession(t, "/other.docx", types.ViewerActionEdit)
+	require.NoError(t, err)
+	rec, _ = e.office(ConnectedOfficeGet, http.MethodGet, res.Session.ID, res.Session.AccessToken, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	e.sim.DeleteOnNextUpload(other)
+	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, res.Session.ID, res.Session.AccessToken, []byte("an edit"))
+	require.Equal(t, http.StatusConflict, rec.Code)
+}
+
+// Drive lets a file carry a name that Fylvo gives to nothing new. Such a file can be
+// edited, and its copy gets a name that keeps the rules.
+func TestConnectedOfficeLastSaveOfANameFylvoWouldNotGive(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	for name, want := range map[string]string{
+		"Notes 10:30.docx":   "Notes 10_30 (conflict).docx",
+		"A <b> | \"c\".docx": "A _b_ _ _c_ (conflict).docx",
+		" draft.docx":        "draft (conflict).docx",
+		".docx":              "(conflict).docx",
+	} {
+		id := e.sim.AddFile("", name, []byte("version one"))
+		e.m.Tree().Forget(e.id)
+		res, err := e.officeSession(t, "/"+name, types.ViewerActionEdit)
+		require.NoError(t, err, name)
+		require.True(t, *res.Edit, name)
+		rec, _ := e.office(ConnectedOfficeGet, http.MethodGet, res.Session.ID, res.Session.AccessToken, nil)
+		require.Equal(t, http.StatusOK, rec.Code, name)
+		e.sim.SetContent(id, []byte("changed at the provider"))
+		rec = e.officeExit(res.Session.ID, res.Session.AccessToken, []byte("kept of "+name))
+		require.Equal(t, http.StatusOK, rec.Code, name)
+		e.m.Tree().Forget(e.id)
+		require.Equal(t, []byte("kept of "+name), e.download(e.root+"/"+want), name)
+	}
 }
 
 // The file changes at the provider in the very moment of the last save, after the server

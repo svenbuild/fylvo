@@ -453,6 +453,16 @@ func (s *Server) ChangeOnNextUpload(id string, content []byte) {
 	s.changeOnStart = func() { s.setContent(s.must(id), content) }
 }
 
+// DeleteOnNextUpload deletes a file the moment the next upload session is opened.
+func (s *Server) DeleteOnNextUpload(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.changeOnStart = func() {
+		delete(s.items, id)
+		s.order = slices.DeleteFunc(s.order, func(o string) bool { return o == id })
+	}
+}
+
 // SetQuota sets what About answers. limit 0 means a storage without a limit.
 func (s *Server) SetQuota(usage, limit int64) {
 	s.mu.Lock()

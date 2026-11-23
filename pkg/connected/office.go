@@ -98,10 +98,9 @@ type OfficeSession struct {
 	// folderID is the id of the folder the file was in when the session was opened,
 	// for a session that edits. A copy beside the file goes into that folder or nowhere.
 	folderID string
-	// kept is the copy made of a last save, and keptSum the checksum of its content:
-	// the same save sent again answers that copy and makes no second one.
-	kept    *Row
-	keptSum [sha256.Size]byte
+	// kept are the copies made of last saves, by the checksum of their content: the
+	// same save sent again answers its copy and makes no second one.
+	kept map[[sha256.Size]byte]*Row
 	// work is taken by the call that runs (OfficeEnter). It guards version.
 	work chan struct{}
 	// version (VersionID) is that of the bytes last handed out, or of the last save
@@ -239,10 +238,17 @@ func (m *Manager) OpenOffice(ctx context.Context, c *Conn, r OfficeRequest) (*Of
 	s.Token = s.ID + "." + randomID() + randomID() + randomID() + randomID()
 	if s.Edit {
 		// The folder as it is now, by its id: a path can come to mean another folder.
+		// It is the folder of this session only if the file is in it: between the look
+		// at the file and this one another folder can have taken the path.
 		folderPath, _ := ParentOf(row.Path)
 		folder, err := m.tree.ResolveNow(ctx, c, folderPath)
 		if err != nil {
 			return nil, Error(ctx, err)
+		}
+		inside, err := m.tree.named(ctx, c, folder.ContentID(), row.Name)
+		if err != nil || inside.ID != row.ID {
+			// Moved in that moment. The caller asks again.
+			return nil, ErrBusy
 		}
 		s.folderID = folder.ContentID()
 	}
@@ -486,8 +492,10 @@ func (m *Manager) OfficeSave(ctx context.Context, c *Conn, s *OfficeSession, bod
 	}, body)
 	var app serializer.AppError
 	if errors.As(err, &app) && (app.Code == serializer.CodeStaleVersion || app.Code == serializer.CodeUploadTargetGone ||
-		app.Code == serializer.CodeParentNotExist) {
-		// Also when the folder of the file is no longer at its path.
+		app.Code == serializer.CodeParentNotExist || app.Code == serializer.CodeUploadSessionExpired) {
+		// Also when the folder of the file is no longer at its path, and when the
+		// provider no longer knows the file in the middle of the upload (it was deleted
+		// after the look at it).
 		return conflict()
 	}
 	if err != nil {
@@ -500,8 +508,12 @@ func (m *Manager) OfficeSave(ctx context.Context, c *Conn, s *OfficeSession, bod
 	return row, nil
 }
 
-// officeCopies is how many names are tried for a copy beside a file.
-const officeCopies = 20
+const (
+	// officeCopies is how many names are tried for a copy beside a file.
+	officeCopies = 20
+	// officeKept is how many copies a session remembers for a save that comes again.
+	officeKept = 8
+)
 
 // OfficeKeepBeside stores content as a new file beside the file of the session, in the
 // folder the session was opened in: "letter (word).docx", or with a number when that
@@ -518,15 +530,18 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 	if s.closed.Load() || s.Conn != c.ID || s.Generation != c.Generation {
 		return nil, ErrOfficeGone
 	}
-	if s.kept != nil && s.keptSum == sum {
+	if row := s.kept[sum]; row != nil {
 		// The answer to the first time did not arrive. It is this.
-		return s.kept, nil
+		return row, nil
 	}
 	folder, name := ParentOf(s.Path)
 	base, ext := name, ""
-	if dot := strings.LastIndex(name, "."); dot > 0 {
+	if dot := strings.LastIndex(name, "."); dot >= 0 {
 		base, ext = name[:dot], name[dot:]
 	}
+	// The file can carry a name Fylvo gives to nothing new (Drive allows more). The
+	// copy gets one that keeps the rules, as close to it as they allow.
+	base, ext = legalNamePart(base), legalNamePart(ext)
 	var err error
 	for n := 1; n <= officeCopies; n++ {
 		mark := " (" + word + ")"
@@ -534,6 +549,11 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 			mark = " (" + word + " " + strconv.Itoa(n) + ")"
 		}
 		path := besideName(base, mark, ext)
+		if err = m.settled(c.AccountKey, s.folderID, path); err != nil {
+			// Closed for a while after a change there whose outcome stayed open: the
+			// next name.
+			continue
+		}
 		if folder != "" {
 			path = folder + "/" + path
 		}
@@ -544,28 +564,48 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 		row, err = m.Save(ctx, c, UploadRequest{Path: path, Size: size, Folder: s.folderID}, body)
 		var app serializer.AppError
 		if err == nil {
-			s.kept, s.keptSum = row, sum
+			if s.kept == nil || len(s.kept) >= officeKept {
+				s.kept = map[[sha256.Size]byte]*Row{}
+			}
+			s.kept[sum] = row
 			return row, nil
 		}
-		if !errors.As(err, &app) || (app.Code != serializer.CodeObjectExist && app.Code != serializer.CodeNameCaseTaken &&
-			app.Code != serializer.CodeConnectedBusy) {
+		if !errors.As(err, &app) || (app.Code != serializer.CodeObjectExist && app.Code != serializer.CodeNameCaseTaken) {
+			// Also a provider that is busy: the next name would fare no better.
 			return nil, err
 		}
-		// The name is taken, or closed for a while after a change there whose outcome
-		// stayed open: the next one.
+		// The name is taken: the next one.
 	}
 	return nil, err
+}
+
+// legalNamePart makes a part of a name one that a new entry may carry: the characters
+// no new name may have become "_", and nothing is left that is not plain text.
+func legalNamePart(part string) string {
+	return strings.Map(func(r rune) rune {
+		if strings.ContainsRune(`:*?"<>|/\`, r) || r < 0x20 || r == 0x7f {
+			return '_'
+		}
+		return r
+	}, part)
 }
 
 // besideName puts a mark between the name of a file and its extension. A name that
 // would get too long gives up the end of its first part, never the mark or the
 // extension.
 func besideName(base, mark, ext string) string {
+	// A name may not start with a space or end with a space or a period.
+	base, ext = strings.TrimLeft(base, " "), strings.TrimRight(ext, " .")
 	for len(base)+len(mark)+len(ext) > maxNameLength && base != "" {
 		_, last := utf8.DecodeLastRuneInString(base)
 		base = base[:len(base)-last]
 	}
-	return strings.TrimRight(base, " ") + mark + ext
+	base = strings.TrimRight(base, " ")
+	if base == "" {
+		// A file whose name is its extension alone (".docx"): the mark is the name.
+		mark = strings.TrimLeft(mark, " ")
+	}
+	return base + mark + ext
 }
 
 // Save runs a whole upload from one body: the start, every chunk in its order, the
