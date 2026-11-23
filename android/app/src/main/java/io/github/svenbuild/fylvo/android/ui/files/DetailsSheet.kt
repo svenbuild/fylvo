@@ -26,6 +26,7 @@ import io.github.svenbuild.fylvo.android.util.CrUri
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import io.github.svenbuild.fylvo.android.util.Connected
 
 /** Read-only facts about a file, laid out as label/value rows like the Files app's Info. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,12 +49,14 @@ fun DetailsSheet(file: FileObject, thumbUrl: String?, onDismiss: () -> Unit) {
 
         SelectionContainer {
             Column {
-                if (!file.isFolder) {
+                if (!file.isFolder && !Connected.sizeUnknown(file)) {
                     DetailRow(stringResource(R.string.size), stringResource(R.string.size_with_bytes, formatSize(file.size), "%,d".format(file.size)))
                 }
                 DetailRow(stringResource(R.string.location), CrUri.displayPath(CrUri.parent(file.path)))
-                DetailRow(stringResource(R.string.modified), longDate(file.updatedAt))
-                DetailRow(stringResource(R.string.created), longDate(file.createdAt))
+                // Fylvo: connected storages may not know the time (0001-01-01).
+                if (Connected.knownTime(file.updatedAt)) DetailRow(stringResource(R.string.modified), longDate(file.updatedAt))
+                // Fylvo: connected storages report no creation date (the server repeats the modification).
+                if (!Connected.isConnected(file.path)) DetailRow(stringResource(R.string.created), longDate(file.createdAt))
                 val w = file.metadata?.get("exif:x")
                 val h = file.metadata?.get("exif:y")
                 if (w != null && h != null) DetailRow(stringResource(R.string.dimensions), "$w × $h")

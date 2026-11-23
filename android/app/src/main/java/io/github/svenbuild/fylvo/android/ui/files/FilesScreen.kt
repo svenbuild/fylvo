@@ -65,6 +65,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
@@ -90,6 +92,8 @@ import io.github.svenbuild.fylvo.android.data.ViewMode
 import io.github.svenbuild.fylvo.android.data.offline.EditEntry
 import io.github.svenbuild.fylvo.android.data.offline.needsAttention
 import io.github.svenbuild.fylvo.android.ui.settings.AccountScreen
+import io.github.svenbuild.fylvo.android.util.Connected
+import io.github.svenbuild.fylvo.android.data.SortBy
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.Permissions
 import io.github.svenbuild.fylvo.android.util.asString
@@ -167,6 +171,16 @@ fun FilesScreen(
 
     LaunchedEffect(Unit) { if (!state.home) viewModel.refresh() }
 
+    // Fylvo: back from the web app after connecting a storage again: its folder is asked again.
+    // Only after a real pause, never on entering the screen (that would ask in a loop).
+    val reconnectShown by rememberUpdatedState(state.inConnected && state.errorCode == Connected.CODE_RECONNECT)
+    var wasPaused by remember { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        if (wasPaused && reconnectShown) viewModel.refresh()
+        wasPaused = false
+        onPauseOrDispose { wasPaused = true }
+    }
+
     LaunchedEffect(state.snackbar) {
         val msg = state.snackbar ?: return@LaunchedEffect
         // Consume only after showing: clearing first would change this effect's
@@ -236,7 +250,8 @@ fun FilesScreen(
             sheetTarget = file
             return
         }
-        if (previewKindOf(file) == null) {
+        // Fylvo: a size the server does not know cannot be held to the preview limits.
+        if (previewKindOf(file) == null || Connected.sizeUnknown(file)) {
             openWithSystemApp(file)
             return
         }
@@ -258,6 +273,13 @@ fun FilesScreen(
                 // Fylvo: an unfinished upload joins a selection only by a long press.
                 state.selecting -> if (!file.isUploading || file.path in state.selected) viewModel.toggleSelected(file)
                 state.inTrash -> sheetTarget = file
+                // Fylvo: inside a connected storage the row's bits decide (Connected.tapAction).
+                Connected.isConnected(file.path) -> when (Connected.tapAction(file)) {
+                    Connected.Tap.ENTER -> viewModel.navigateTo(file)
+                    Connected.Tap.BROWSER -> Connected.externalUrl(file)?.let { openInBrowser(context, it) }
+                    Connected.Tap.OPEN -> openFile(file)
+                    Connected.Tap.SHEET -> sheetTarget = file
+                }
                 file.isFolder -> viewModel.navigateTo(file)
                 else -> openFile(file)
             }
@@ -290,6 +312,7 @@ fun FilesScreen(
             offlineShown = selectedOne != null && (state.offlineCovered(selectedOne) || state.offlineAllowed(selectedOne)),
             editable = selectedOne != null && state.canEdit(selectedOne),
             edited = selectedOne != null && state.editOf(selectedOne) != null,
+            connected = state.inConnected,
         ),
     )
     val listingBusy = state.loading || state.revalidating
@@ -332,12 +355,14 @@ fun FilesScreen(
     val currentTab = when {
         accountOpen -> Tab.ACCOUNT
         state.home -> Tab.HOME
+        // Fylvo: connected storages are reached from Home.
+        state.inConnected -> Tab.HOME
         state.category == Category.SHARED_WITH_ME || CrUri.isShare(state.currentUri) -> Tab.SHARED
         state.category == null || state.category == Category.TRASH -> Tab.FILES
         else -> Tab.HOME
     }
     val atTabRoot = state.category == Category.SHARED_WITH_ME ||
-        (state.category == null && CrUri.isRoot(state.currentUri) && !CrUri.isShare(state.currentUri))
+        (state.category == null && CrUri.isRoot(state.currentUri) && !CrUri.isShare(state.currentUri) && !state.inConnected)
 
     fun selectTab(tab: Tab) {
         // Fylvo: a tab change ends a selection, also towards Account.
@@ -411,6 +436,9 @@ fun FilesScreen(
                     onSort = { viewModel.sortBy(it) },
                     onRefresh = { viewModel.refresh() },
                     onTrash = { viewModel.openCategory(Category.TRASH) },
+                    showSearch = !state.inConnected,
+                    showTrash = !state.inConnected,
+                    sortOptions = if (state.inConnected) listOf(SortBy.NAME, SortBy.SIZE, SortBy.UPDATED) else SortBy.entries,
                 )
             } }
         },
@@ -510,18 +538,32 @@ fun FilesScreen(
                 state.loading && state.files.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-                state.error != null -> EmptyState(
+                state.error != null -> {
+                    EmptyState(
                     icon = Icons.Outlined.FolderOpen,
                     title = stringResource(R.string.load_folder_failed),
                     detail = state.error?.asString(),
-                    action = stringResource(R.string.retry) to { viewModel.refresh() },
+                    // Fylvo: a connected storage that must be connected again: that is done in the web app.
+                    action = if (state.inConnected && state.errorCode == Connected.CODE_RECONNECT) {
+                        stringResource(R.string.connected_open_web_app) to {
+                            scope.launch { openInBrowser(context, viewModel.connected.webSettingsUrl(Connected.storageId(state.currentUri))) }
+                            Unit
+                        }
+                    } else {
+                        stringResource(R.string.retry) to { viewModel.refresh() }
+                    },
                 )
+                }
                 state.files.isEmpty() && state.uploadsHere.isEmpty() -> when (state.category) {
-                    null -> EmptyState(
-                        icon = Icons.Outlined.FolderOpen,
-                        title = stringResource(R.string.folder_empty),
-                        detail = if (state.canAddHere) stringResource(R.string.folder_empty_hint) else null,
-                    )
+                    null -> Column(Modifier.fillMaxSize()) {
+                        // Fylvo: a connected folder whose entries were all left out says so.
+                        if (state.inConnected) ConnectedBanner(state.connected?.omitted ?: 0)
+                        EmptyState(
+                            icon = Icons.Outlined.FolderOpen,
+                            title = stringResource(R.string.folder_empty),
+                            detail = if (state.canAddHere) stringResource(R.string.folder_empty_hint) else null,
+                        )
+                    }
                     Category.TRASH -> EmptyState(icon = Icons.Outlined.Delete, title = stringResource(R.string.trash_empty), detail = stringResource(R.string.trash_empty_hint))
                     Category.RECENT -> EmptyState(icon = Icons.Outlined.History, title = stringResource(R.string.nothing_recent), detail = stringResource(R.string.recent_hint))
                     Category.IMAGES -> EmptyState(icon = Icons.Outlined.Image, title = stringResource(R.string.no_images))
@@ -532,6 +574,7 @@ fun FilesScreen(
                 }
                 else -> Column(Modifier.fillMaxSize()) {
                     if (state.offlineMode) OfflineBanner()
+                    if (state.inConnected) ConnectedBanner(state.connected?.omitted ?: 0)
                     Box(Modifier.weight(1f)) {
                         if (state.effectiveMode == ViewMode.GRID) FileGrid(state, viewModel, gridState, ::actionsFor)
                         else FileList(state, viewModel, listState, ::actionsFor)
@@ -636,7 +679,19 @@ fun FilesScreen(
         )
     }
 
-    sheetTarget?.let { file ->
+    sheetTarget?.takeIf { Connected.isConnected(it.path) }?.let { file ->
+        ConnectedFileSheet(
+            file = file,
+            onDismiss = { sheetTarget = null },
+            onEnter = { sheetTarget = null; viewModel.navigateTo(file) },
+            onOpen = { sheetTarget = null; openFile(file) },
+            onOpenExternal = { url -> sheetTarget = null; openInBrowser(context, url) },
+            onDownload = { sheetTarget = null; viewModel.saveToDevice(context, file) },
+            onDetails = { sheetTarget = null; detailsTarget = file },
+        )
+    }
+
+    sheetTarget?.takeIf { !Connected.isConnected(it.path) }?.let { file ->
         FileActionSheet(
             file = file,
             thumbUrl = rememberThumbUrl(viewModel, file),

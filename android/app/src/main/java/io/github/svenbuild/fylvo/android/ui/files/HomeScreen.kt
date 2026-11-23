@@ -121,6 +121,9 @@ fun HomeScreen(
                 )
             }
         }
+
+        // Fylvo: Google Drive, OneDrive and the like, connected in the web app.
+        ConnectedHomeSection(viewModel)
     }
 }
 

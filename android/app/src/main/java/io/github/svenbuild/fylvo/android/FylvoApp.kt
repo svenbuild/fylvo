@@ -108,6 +108,7 @@ class FylvoApp : Application(), ImageLoaderFactory {
                 WorkManager.getInstance(this@FylvoApp).pruneWork()
             }
             io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames()
+            io.github.svenbuild.fylvo.android.util.Connected.forgetNames()
             fileRepository.forgetThumbs()
             appUpdater.reset()
             favoritesStore.clear()

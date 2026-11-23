@@ -32,7 +32,13 @@ import java.io.File
  * A refused request: the server's envelope code (or the HTTP status), its message for the log, and
  * for a batch answer (40081) the codes of the single failures. Never shown as it is; see util/ErrorText.
  */
-class ApiException(val code: Int, message: String, val innerCodes: List<Int> = emptyList()) : Exception(message) {
+class ApiException(
+    val code: Int,
+    message: String,
+    val innerCodes: List<Int> = emptyList(),
+    /** Fylvo: `data.reason` of the answer (connected storages, 40925). */
+    val reason: String? = null,
+) : Exception(message) {
     companion object {
         /** Server envelope code for "login required" (session expired or revoked). */
         const val CODE_LOGIN_REQUIRED = 401
@@ -61,11 +67,14 @@ const val THUMB_TTL_MS = 50L * 60 * 1000
 
 class FileRepository(private val api: ApiClient) {
 
+    /** Fylvo: connected storages (Google Drive, OneDrive through the server). */
+    val connected = ConnectedRepository(api)
+
     private fun <T> Response<io.github.svenbuild.fylvo.android.api.ApiResponse<T>>.unwrap(): T {
         if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
         val body = body() ?: throw ApiException(-1, "Empty response")
         if (body.code != 0 || body.data == null) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes)
+            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes, body.reason)
         }
         return body.data
     }
@@ -74,7 +83,7 @@ class FileRepository(private val api: ApiClient) {
         if (!isSuccessful) throw ApiException(code(), "HTTP ${code()}")
         val body = body() ?: throw ApiException(-1, "Empty response")
         if (body.code != 0) {
-            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes)
+            throw ApiException(body.code, body.msg.ifEmpty { "API error ${body.code}" }, body.innerCodes, body.reason)
         }
     }
 
@@ -97,8 +106,8 @@ class FileRepository(private val api: ApiClient) {
     suspend fun downloadUrl(uri: String, archive: Boolean = false, entity: String = ""): String =
         signedUrl(uri, download = true, archive = archive, entity = entity)
 
-    /** Signed URL served inline (no attachment disposition), for streaming previews. */
-    suspend fun contentUrl(uri: String): String = signedUrl(uri, download = false)
+    /** Signed URL served inline (no attachment disposition), for streaming previews. Fylvo: [entity] as above. */
+    suspend fun contentUrl(uri: String, entity: String = ""): String = signedUrl(uri, download = false, entity = entity)
 
     private suspend fun signedUrl(uri: String, download: Boolean, archive: Boolean = false, entity: String = ""): String {
         val url = api.service().fileUrls(FileUrlRequest(listOf(uri), download = download, archive = archive, entity = entity))
