@@ -2,6 +2,7 @@ import { LoadingButton } from "@mui/lab";
 import {
   Alert,
   Box,
+  Button,
   CircularProgress,
   DialogContent,
   IconButton,
@@ -23,7 +24,7 @@ import {
   ConnectedCode,
   ConnectedFlowErrors,
   ConnectedListResponse,
-  ConnectedMaxNameLength,
+  ConnectedMaxNameBytes,
   ConnectedMaxPerUser,
   ConnectedProviderNames,
   ConnectedStatus,
@@ -64,6 +65,8 @@ export const ConnectedSettingTab = "connected";
 const providerName = (list: ConnectedListResponse | undefined, type: string) =>
   list?.providers.find((p) => p.type == type)?.name ?? ConnectedProviderNames[type] ?? type;
 
+const nameBytes = (name: string) => new TextEncoder().encode(name).length;
+
 // What the settings page needs to know to show the tab: hidden on a server where nobody
 // can connect anything and the account has nothing connected.
 export const useConnectedTabVisible = (openTab: string | null) => {
@@ -80,9 +83,65 @@ export const useConnectedTabVisible = (openTab: string | null) => {
   return visible || openTab == ConnectedSettingTab;
 };
 
+// Values of data.reason the server sends with errors of authorize and finish.
+const knownReasons = ["expired", "account", "other_account", "exists", "too_many", "setup", "not_configured", "not_allowed"];
+
+// Text for an error of authorize or finish: by data.reason, else by code, else general.
+const useErrorText = () => {
+  const { t } = useTranslation();
+  return useCallback(
+    (e: unknown) => {
+      if (e instanceof AppError) {
+        const reason = e.response?.data?.reason;
+        if (typeof reason == "string" && knownReasons.includes(reason)) {
+          return t(`connected.reason.${reason}`);
+        }
+        if (e.code == 40004) {
+          return t("connected.reason.exists");
+        }
+        if (e.code == ConnectedCode.Unavailable) {
+          return t("connected.reason.not_allowed");
+        }
+      }
+      return t("connected.finishFailed");
+    },
+    [t],
+  );
+};
+
+// Opens the consent page of the provider. The provider sends the browser back to the
+// first site URL of the installation, and the sign-in is bound to a cookie of this
+// address: started from another address it could not be completed. Returns that address
+// instead of leaving the page.
+const openProvider = (url: string): string | undefined => {
+  try {
+    const back = new URL(url).searchParams.get("redirect_uri");
+    const origin = back ? new URL(back).origin : undefined;
+    if (origin && origin != window.location.origin) {
+      return origin;
+    }
+  } catch (e) {
+    // Not a URL we can read; leave it to the provider.
+  }
+  window.location.assign(url);
+  return undefined;
+};
+
+// Calls reset when the browser shows this page again from its cache (back button after
+// leaving for the provider), so buttons do not stay in their loading state.
+const useResetOnBack = (reset: () => void) => {
+  useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => e.persisted && reset();
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, []);
+};
+
 interface FlowResult {
   severity: "success" | "error";
   message: string;
+  // Address of the installation to start connecting from.
+  origin?: string;
 }
 
 const RenameDialog = ({
@@ -105,8 +164,11 @@ const RenameDialog = ({
     }
   }, [storage]);
 
+  const tooLong = nameBytes(name.trim()) > ConnectedMaxNameBytes;
+  const invalid = !name.trim() || tooLong;
+
   const submit = () => {
-    if (!storage || !name.trim()) {
+    if (!storage || invalid || loading) {
       return;
     }
     setLoading(true);
@@ -125,7 +187,7 @@ const RenameDialog = ({
       showActions
       showCancel
       loading={loading}
-      disabled={!name.trim()}
+      disabled={invalid}
       onAccept={submit}
       dialogProps={{ open: !!storage, onClose, fullWidth: true, maxWidth: "xs" }}
     >
@@ -141,8 +203,9 @@ const RenameDialog = ({
             fullWidth
             label={t("connected.name")}
             value={name}
+            error={tooLong}
+            helperText={tooLong ? t("connected.nameTooLong") : undefined}
             onChange={(e) => setName(e.target.value)}
-            inputProps={{ maxLength: ConnectedMaxNameLength }}
           />
         </form>
       </DialogContent>
@@ -154,24 +217,37 @@ const ConnectDialog = ({
   open,
   list,
   onClose,
+  onFailed,
 }: {
   open: boolean;
   list?: ConnectedListResponse;
   onClose: () => void;
+  onFailed: (result: FlowResult) => void;
 }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  const errorText = useErrorText();
   const [loading, setLoading] = useState<string | undefined>(undefined);
   const providers = list?.providers.filter((p) => p.configured) ?? [];
+  useResetOnBack(() => setLoading(undefined));
 
   const connect = (provider: string) => {
     setLoading(provider);
     dispatch(sendConnectedAuthorize(provider))
       .then((res) => {
-        // The page is left; the loading state stays until the browser is gone.
-        window.location.assign(res.url);
+        // On success the page is left; the loading state stays until the browser is gone.
+        const origin = openProvider(res.url);
+        if (origin) {
+          setLoading(undefined);
+          onClose();
+          onFailed({ severity: "error", message: t("connected.otherOrigin"), origin });
+        }
       })
-      .catch(() => setLoading(undefined));
+      .catch((e) => {
+        setLoading(undefined);
+        onClose();
+        onFailed({ severity: "error", message: errorText(e) });
+      });
   };
 
   return (
@@ -209,35 +285,49 @@ const StorageRow = ({
   allowed,
   onRename,
   onDisconnected,
+  onFailed,
 }: {
   storage: ConnectedStorage;
   list: ConnectedListResponse;
   allowed: boolean;
   onRename: (s: ConnectedStorage) => void;
   onDisconnected: (id: string) => void;
+  onFailed: (result: FlowResult) => void;
 }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  const errorText = useErrorText();
   const [reconnecting, setReconnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const needsReconnect = storage.status == ConnectedStatus.reconnect;
   const configured = list.providers.some((p) => p.type == storage.provider && p.configured);
+  useResetOnBack(() => setReconnecting(false));
 
   const reconnect = () => {
     setReconnecting(true);
     dispatch(sendConnectedAuthorize(storage.provider, storage.id))
-      .then((res) => window.location.assign(res.url))
-      .catch(() => setReconnecting(false));
+      .then((res) => {
+        const origin = openProvider(res.url);
+        if (origin) {
+          setReconnecting(false);
+          onFailed({ severity: "error", message: t("connected.otherOrigin"), origin });
+        }
+      })
+      .catch((e) => {
+        setReconnecting(false);
+        onFailed({ severity: "error", message: errorText(e) });
+      });
   };
 
   const disconnect = () => {
-    dispatch(confirmOperation(t("connected.disconnectConfirm", { name: storage.name }))).then(() => {
-      setDisconnecting(true);
-      dispatch(sendConnectedDisconnect(storage.id))
-        .then(() => onDisconnected(storage.id))
-        .catch(() => {})
-        .finally(() => setDisconnecting(false));
-    });
+    dispatch(confirmOperation(t("connected.disconnectConfirm", { name: storage.name })))
+      .then(() => {
+        setDisconnecting(true);
+        return dispatch(sendConnectedDisconnect(storage.id))
+          .then(() => onDisconnected(storage.id))
+          .finally(() => setDisconnecting(false));
+      })
+      .catch(() => {});
   };
 
   return (
@@ -320,10 +410,12 @@ const ConnectedSetting = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const { enqueueSnackbar } = useSnackbar();
+  const errorText = useErrorText();
   const [finish, setFinish] = useQueryState("finish");
   const [flowError, setFlowError] = useQueryState("error");
   const [list, setList] = useState<ConnectedListResponse | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [result, setResult] = useState<FlowResult | undefined>(undefined);
   const [connectOpen, setConnectOpen] = useState(false);
@@ -336,26 +428,13 @@ const ConnectedSetting = () => {
   );
 
   const load = useCallback(() => {
+    setLoading(true);
+    setLoadFailed(false);
     return dispatch(getConnectedStorages())
       .then((res) => setList(res))
-      .catch(() => {})
+      .catch(() => setLoadFailed(true))
       .finally(() => setLoading(false));
   }, [dispatch]);
-
-  const flowErrorText = (value: string) =>
-    t(`connected.flowError.${ConnectedFlowErrors.includes(value) ? value : "provider"}`);
-
-  const finishErrorText = (e: unknown) => {
-    if (e instanceof AppError) {
-      switch (e.code) {
-        case ConnectedCode.Unavailable:
-          return t("connected.flowError.setup");
-        case 40004:
-          return t("connected.alreadyConnected");
-      }
-    }
-    return t("connected.finishFailed");
-  };
 
   useEffect(() => {
     // Both values are read once and taken out of the address, so a reload does not
@@ -366,7 +445,10 @@ const ConnectedSetting = () => {
     handled.current = true;
 
     if (flowError) {
-      setResult({ severity: "error", message: flowErrorText(flowError) });
+      setResult({
+        severity: "error",
+        message: t(`connected.flowError.${ConnectedFlowErrors.includes(flowError) ? flowError : "provider"}`),
+      });
       setFlowError(null);
     }
 
@@ -382,7 +464,7 @@ const ConnectedSetting = () => {
       .then((storage) => {
         setResult({ severity: "success", message: t("connected.connected", { name: storage.name }) });
       })
-      .catch((e) => setResult({ severity: "error", message: finishErrorText(e) }))
+      .catch((e) => setResult({ severity: "error", message: errorText(e) }))
       .finally(() => {
         setFinishing(false);
         load();
@@ -415,13 +497,20 @@ const ConnectedSetting = () => {
   const available = !!list?.available;
   const allowed = available && !!list?.allowed;
   const configured = allowed && !!list?.providers.some((p) => p.configured);
-  const full = storages.length >= ConnectedMaxPerUser;
+  const max = list?.max ?? ConnectedMaxPerUser;
+  const full = storages.length >= max;
 
   return (
     <Stack spacing={1.5}>
       {result && (
         <Alert severity={result.severity} onClose={() => setResult(undefined)}>
           {result.message}
+          {result.origin && (
+            <>
+              {" "}
+              <Link href={`${result.origin}/settings?tab=${ConnectedSettingTab}`}>{result.origin}</Link>
+            </>
+          )}
         </Alert>
       )}
       <SettingForm title={t("connected.title")} lgWidth={12}>
@@ -429,6 +518,19 @@ const ConnectedSetting = () => {
           {t("connected.des")}
         </Typography>
 
+        {loadFailed && (
+          <Alert
+            severity="error"
+            sx={{ mt: 1 }}
+            action={
+              <Button color="inherit" size="small" onClick={load}>
+                {t("connected.retry")}
+              </Button>
+            }
+          >
+            {t("connected.loadFailed")}
+          </Alert>
+        )}
         {list && !available && (
           <Alert severity="info" sx={{ mt: 1 }}>
             {t("connected.unavailable")}
@@ -483,6 +585,7 @@ const ConnectedSetting = () => {
               allowed={allowed}
               onRename={setRenameTarget}
               onDisconnected={onDisconnected}
+              onFailed={setResult}
             />
           ))}
 
@@ -498,13 +601,13 @@ const ConnectedSetting = () => {
             </SecondaryLoadingButton>
             {full && (
               <Typography variant="caption" color="text.secondary" component="div" sx={{ mt: 0.5 }}>
-                {t("connected.full", { max: ConnectedMaxPerUser })}
+                {t("connected.full", { max })}
               </Typography>
             )}
           </Box>
         )}
       </SettingForm>
-      <ConnectDialog open={connectOpen} list={list} onClose={() => setConnectOpen(false)} />
+      <ConnectDialog open={connectOpen} list={list} onClose={() => setConnectOpen(false)} onFailed={setResult} />
       <RenameDialog storage={renameTarget} onClose={() => setRenameTarget(undefined)} onRenamed={onRenamed} />
     </Stack>
   );

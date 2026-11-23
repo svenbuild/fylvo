@@ -1437,7 +1437,6 @@
     "callbackUrl": "Weiterleitungs-URI",
     "callbackUrlDes": "Diese Adresse bei jedem Anbieter als Weiterleitungs-URI eintragen. Sie wird aus der ersten Site-URL gebildet.",
     "copy": "Kopieren",
-    "copied": "Kopiert.",
     "clientId": "Client-ID",
     "clientIdDes": "Leer lassen und speichern, um diesen Anbieter zu entfernen.",
     "clientSecret": "Client-Geheimnis",
@@ -1450,6 +1449,9 @@
     "driveDes": "In der Google Cloud Console die Google Drive API aktivieren und einen OAuth-Client vom Typ \"Webanwendung\" mit der Weiterleitungs-URI oben anlegen.",
     "onedriveDes": "In Microsoft Entra eine App für private und geschäftliche Konten registrieren, die Weiterleitungs-URI oben für die Plattform \"Web\" eintragen und ein Client-Geheimnis anlegen.",
     "allow": "Speicher verbinden",
-    "allowDes": "Mitglieder können ihr Google Drive oder OneDrive verbinden. Dazu muss zuerst ein Anbieter in den Einstellungen eingerichtet sein."
+    "allowDes": "Mitglieder können ihr Google Drive oder OneDrive verbinden. Dazu muss zuerst ein Anbieter in den Einstellungen eingerichtet sein.",
+    "retry": "Nochmals versuchen",
+    "loadFailed": "Die Einstellungen konnten nicht geladen werden.",
+    "removeConfirm": "{{provider}} entfernen? Die Verbindungen der Benutzer dazu funktionieren erst wieder, wenn der Anbieter erneut eingerichtet ist."
   }
 }

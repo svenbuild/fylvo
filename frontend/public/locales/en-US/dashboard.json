@@ -1406,7 +1406,6 @@
     "callbackUrl": "Redirect URI",
     "callbackUrlDes": "Enter this address as redirect URI at each provider. It is built from the first site URL.",
     "copy": "Copy",
-    "copied": "Copied.",
     "clientId": "Client ID",
     "clientIdDes": "Leave empty and save to remove this provider.",
     "clientSecret": "Client secret",
@@ -1419,6 +1418,9 @@
     "driveDes": "In the Google Cloud console, enable the Google Drive API and create an OAuth client of type \"Web application\" with the redirect URI above.",
     "onedriveDes": "In Microsoft Entra, register an app for personal and work accounts, add the redirect URI above for the platform \"Web\" and create a client secret.",
     "allow": "Connect storages",
-    "allowDes": "Members can connect their Google Drive or OneDrive. A provider has to be set up in the settings first."
+    "allowDes": "Members can connect their Google Drive or OneDrive. A provider has to be set up in the settings first.",
+    "retry": "Retry",
+    "loadFailed": "The settings could not be loaded.",
+    "removeConfirm": "Remove {{provider}}? Connections of users to it stop working until it is set up again."
   }
 }

@@ -1224,7 +1224,6 @@
     "statusReconnectDes": "Der Anbieter nimmt den Zugriff nicht mehr an. Bitte mit demselben Konto neu verbinden.",
     "finishing": "Verbindung wird abgeschlossen ...",
     "connected": "\"{{name}}\" ist verbunden.",
-    "alreadyConnected": "Dieses Konto beim Anbieter ist schon verbunden.",
     "finishFailed": "Das Verbinden hat nicht geklappt. Bitte nochmals beginnen.",
     "full": "Es lassen sich höchstens {{max}} Speicher verbinden.",
     "unavailable": "Verbundene Speicher sind auf diesem Server nicht verfügbar.",
@@ -1240,6 +1239,20 @@
       "account": "Die Anmeldung gehört zu einem anderen Konto auf diesem Server. Bitte mit dem Konto anmelden, das das Verbinden begonnen hat, und nochmals versuchen.",
       "provider": "Der Anbieter hat die Anmeldung nicht abgeschlossen. Bitte später nochmals versuchen."
     },
-    "providerMissing": "Dieser Anbieter ist auf dem Server nicht mehr eingerichtet."
+    "providerMissing": "Dieser Anbieter ist auf dem Server nicht mehr eingerichtet.",
+    "nameTooLong": "Der Name ist zu lang.",
+    "otherOrigin": "Verbinden geht nur über die Hauptadresse dieses Servers. Bitte die Einstellungen dort öffnen:",
+    "retry": "Nochmals versuchen",
+    "loadFailed": "Die verbundenen Speicher konnten nicht geladen werden.",
+    "reason": {
+      "expired": "Die Anmeldung hat zu lange gedauert oder wurde schon verwendet. Bitte das Verbinden nochmals beginnen.",
+      "account": "Die Anmeldung wurde von einem anderen Konto auf diesem Server begonnen. Bitte mit diesem Konto anmelden und nochmals versuchen.",
+      "other_account": "Das ist ein anderes Konto beim Anbieter. Bitte mit demselben Konto wie bisher neu verbinden.",
+      "exists": "Dieses Konto beim Anbieter ist schon verbunden.",
+      "too_many": "Es lassen sich keine weiteren Speicher verbinden.",
+      "setup": "Der Anbieter hat die Einrichtung dieses Servers abgelehnt. Bitte an die Verwaltung wenden.",
+      "not_configured": "Dieser Anbieter ist auf diesem Server nicht eingerichtet.",
+      "not_allowed": "Dieses Konto darf keine Speicher verbinden."
+    }
   }
 }

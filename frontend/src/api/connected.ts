@@ -25,9 +25,10 @@ export const ConnectedStatus = {
 // provider (/settings?tab=connected&error=...).
 export const ConnectedFlowErrors = ["expired", "browser", "denied", "setup", "account", "provider"];
 
-// Most storages one account can connect, as on the server.
+// Most storages one account can connect, used when the server does not send "max".
 export const ConnectedMaxPerUser = 10;
-export const ConnectedMaxNameLength = 64;
+// Longest name of a connection in UTF-8 bytes, as the server counts.
+export const ConnectedMaxNameBytes = 64;
 
 export const ConnectedCode = {
   Unsupported: 40920,
@@ -62,6 +63,7 @@ export interface ConnectedListResponse {
   allowed: boolean;
   providers: ConnectedProviderInfo[];
   storages: ConnectedStorage[];
+  max?: number;
 }
 
 export interface ConnectedProviderSetup {
@@ -86,17 +88,19 @@ const quietOpts = {
   bypassSnackbar: () => true,
 };
 
+// Errors are left to the caller.
 export function getConnectedStorages(): ThunkResponse<ConnectedListResponse> {
   return async (dispatch) => {
-    return await dispatch(send("/fylvo/connected", { method: "GET" }, defaultOpts));
+    return await dispatch(send("/fylvo/connected", { method: "GET" }, quietOpts));
   };
 }
 
-// Starts a sign-in at the provider; the browser then goes to the returned url.
+// Starts a sign-in at the provider; the browser then goes to the returned url. Errors are
+// left to the caller, which shows its own text.
 export function sendConnectedAuthorize(provider: string, reconnect?: string): ThunkResponse<{ url: string }> {
   return async (dispatch) => {
     return await dispatch(
-      send("/fylvo/connected/authorize", { method: "POST", data: { provider, reconnect } }, defaultOpts),
+      send("/fylvo/connected/authorize", { method: "POST", data: { provider, reconnect } }, quietOpts),
     );
   };
 }
@@ -122,9 +126,10 @@ export function sendConnectedDisconnect(id: string): ThunkResponse {
   };
 }
 
+// Errors are left to the caller.
 export function getConnectedAdmin(): ThunkResponse<ConnectedAdminResponse> {
   return async (dispatch) => {
-    return await dispatch(send("/admin/fylvo/connected", { method: "GET" }, defaultOpts));
+    return await dispatch(send("/admin/fylvo/connected", { method: "GET" }, quietOpts));
   };
 }
 

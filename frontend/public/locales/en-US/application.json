@@ -1146,7 +1146,6 @@
     "statusReconnectDes": "The provider no longer accepts the access. Connect it again with the same account.",
     "finishing": "Completing the connection...",
     "connected": "\"{{name}}\" is connected.",
-    "alreadyConnected": "This account at the provider is already connected.",
     "finishFailed": "Connecting did not work. Please start again.",
     "full": "You can connect at most {{max}} storages.",
     "unavailable": "Connected storages are not available on this server.",
@@ -1162,6 +1161,20 @@
       "account": "The sign-in belongs to another account on this server. Sign in with the account that started connecting and try again.",
       "provider": "The provider did not complete the sign-in. Please try again later."
     },
-    "providerMissing": "This provider is no longer set up on this server."
+    "providerMissing": "This provider is no longer set up on this server.",
+    "nameTooLong": "The name is too long.",
+    "otherOrigin": "Connecting only works from the main address of this server. Please open the settings there:",
+    "retry": "Retry",
+    "loadFailed": "The connected storages could not be loaded.",
+    "reason": {
+      "expired": "The sign-in took too long or was already used. Please start connecting again.",
+      "account": "The sign-in was started by another account on this server. Sign in with that account and try again.",
+      "other_account": "This is another account at the provider. Please reconnect with the same account as before.",
+      "exists": "This account at the provider is already connected.",
+      "too_many": "No more storages can be connected.",
+      "setup": "The provider refused the setup of this server. Please ask the administrator.",
+      "not_configured": "This provider is not set up on this server.",
+      "not_allowed": "Your account may not connect storages."
+    }
   }
 }

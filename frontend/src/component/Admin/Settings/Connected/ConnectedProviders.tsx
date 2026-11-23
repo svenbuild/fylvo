@@ -1,5 +1,5 @@
 import { LoadingButton } from "@mui/lab";
-import { Box, FormControl, IconButton, InputAdornment, Stack, Tooltip, Typography } from "@mui/material";
+import { Alert, Box, Button, FormControl, IconButton, InputAdornment, Stack, Tooltip, Typography } from "@mui/material";
 import { useSnackbar } from "notistack";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,6 +12,7 @@ import {
   sendConnectedAdmin,
 } from "../../../../api/connected.ts";
 import { useAppDispatch } from "../../../../redux/hooks.ts";
+import { confirmOperation } from "../../../../redux/thunks/dialog.ts";
 import { copyToClipboard } from "../../../../util";
 import FacebookCircularProgress from "../../../Common/CircularProgress.tsx";
 import { DefaultCloseAction } from "../../../Common/Snackbar/snackbar.tsx";
@@ -32,7 +33,7 @@ const ProviderForm = ({
 }: {
   provider: string;
   setup: ConnectedProviderSetup;
-  onSaved: (res: ConnectedAdminResponse) => void;
+  onSaved: (provider: string, res: ConnectedAdminResponse) => void;
 }) => {
   const { t } = useTranslation("dashboard");
   const dispatch = useAppDispatch();
@@ -47,29 +48,38 @@ const ProviderForm = ({
 
   const changed = clientID.trim() != setup.client_id || secret.trim() != "";
   const ready = !!setup.client_id && setup.secret_set;
+  const providerTitle = ConnectedProviderNames[provider] ?? provider;
 
   const save = () => {
-    setSaving(true);
-    dispatch(
-      sendConnectedAdmin({
-        provider,
-        client_id: clientID.trim(),
-        client_secret: secret.trim() ? secret.trim() : undefined,
-      }),
-    )
-      .then((res) => {
-        setSecret("");
-        onSaved(res);
-        enqueueSnackbar({ message: t("settings.saved"), variant: "success", action: DefaultCloseAction });
+    // An empty client id removes the provider; connections to it stop working.
+    const confirm =
+      !clientID.trim() && setup.client_id
+        ? dispatch(confirmOperation(t("connected.removeConfirm", { provider: providerTitle })))
+        : Promise.resolve();
+    confirm
+      .then(() => {
+        setSaving(true);
+        return dispatch(
+          sendConnectedAdmin({
+            provider,
+            client_id: clientID.trim(),
+            client_secret: secret.trim() ? secret.trim() : undefined,
+          }),
+        )
+          .then((res) => {
+            setSecret("");
+            onSaved(provider, res);
+            enqueueSnackbar({ message: t("settings.saved"), variant: "success", action: DefaultCloseAction });
+          })
+          .finally(() => setSaving(false));
       })
-      .catch(() => {})
-      .finally(() => setSaving(false));
+      .catch(() => {});
   };
 
   return (
     <SettingSection>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <Typography variant="h6">{ConnectedProviderNames[provider] ?? provider}</Typography>
+        <Typography variant="h6">{providerTitle}</Typography>
         <SquareChip
           size="small"
           variant="outlined"
@@ -92,8 +102,14 @@ const ProviderForm = ({
           <FormControl fullWidth>
             <DenseFilledTextField
               value={clientID}
+              disabled={saving}
               onChange={(e) => setClientID(e.target.value)}
-              inputProps={{ maxLength: 512, autoComplete: "off", spellCheck: false }}
+              inputProps={{
+                maxLength: 512,
+                autoComplete: "off",
+                spellCheck: false,
+                "aria-label": `${providerTitle}: ${t("connected.clientId")}`,
+              }}
             />
             <NoMarginHelperText>{t("connected.clientIdDes")}</NoMarginHelperText>
           </FormControl>
@@ -103,10 +119,14 @@ const ProviderForm = ({
             <DenseFilledTextField
               type="password"
               value={secret}
-              disabled={!clientID.trim()}
+              disabled={saving || !clientID.trim()}
               placeholder={setup.secret_set ? t("connected.secretKept") : undefined}
               onChange={(e) => setSecret(e.target.value)}
-              inputProps={{ maxLength: 2048, autoComplete: "new-password" }}
+              inputProps={{
+                maxLength: 2048,
+                autoComplete: "new-password",
+                "aria-label": `${providerTitle}: ${t("connected.clientSecret")}`,
+              }}
             />
             <NoMarginHelperText>
               {t(setup.secret_set ? "connected.clientSecretSetDes" : "connected.clientSecretDes")}
@@ -126,14 +146,38 @@ const ProviderForm = ({
 const ConnectedProviders = () => {
   const { t } = useTranslation("dashboard");
   const dispatch = useAppDispatch();
-  const { enqueueSnackbar } = useSnackbar();
   const [setup, setSetup] = useState<ConnectedAdminResponse | undefined>(undefined);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
+    setLoadFailed(false);
     dispatch(getConnectedAdmin())
       .then(setSetup)
-      .catch(() => {});
-  }, []);
+      .catch(() => setLoadFailed(true));
+  };
+
+  useEffect(load, []);
+
+  // Each form takes over only its own provider, so answers of two saves cannot undo each
+  // other.
+  const onSaved = (provider: string, res: ConnectedAdminResponse) => {
+    setSetup((s) => s && { ...s, providers: { ...s.providers, [provider]: res.providers[provider] } });
+  };
+
+  if (loadFailed) {
+    return (
+      <Alert
+        severity="error"
+        action={
+          <Button color="inherit" size="small" onClick={load}>
+            {t("connected.retry")}
+          </Button>
+        }
+      >
+        {t("connected.loadFailed")}
+      </Alert>
+    );
+  }
 
   if (!setup) {
     return (
@@ -143,11 +187,6 @@ const ConnectedProviders = () => {
     );
   }
 
-  const copy = () => {
-    copyToClipboard(setup.callback_url).then(() =>
-      enqueueSnackbar({ message: t("connected.copied"), variant: "success", action: DefaultCloseAction }),
-    );
-  };
 
   const providers = [
     ...providerOrder.filter((p) => setup.providers[p]),
@@ -167,12 +206,12 @@ const ConnectedProviders = () => {
               <DenseFilledTextField
                 value={setup.callback_url}
                 slotProps={{
-                  htmlInput: { readOnly: true, spellCheck: false },
+                  htmlInput: { readOnly: true, spellCheck: false, "aria-label": t("connected.callbackUrl") },
                   input: {
                     endAdornment: (
                       <InputAdornment position="end">
                         <Tooltip title={t("connected.copy")}>
-                          <IconButton edge="end" size="small" onClick={copy} aria-label={t("connected.copy")}>
+                          <IconButton edge="end" size="small" onClick={() => copyToClipboard(setup.callback_url)} aria-label={t("connected.copy")}>
                             <CopyOutlined fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -187,7 +226,7 @@ const ConnectedProviders = () => {
         </SettingSectionContent>
       </SettingSection>
       {providers.map((p) => (
-        <ProviderForm key={p} provider={p} setup={setup.providers[p]} onSaved={setSetup} />
+        <ProviderForm key={p} provider={p} setup={setup.providers[p]} onSaved={onSaved} />
       ))}
     </Stack>
   );
