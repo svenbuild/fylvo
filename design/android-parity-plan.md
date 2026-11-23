@@ -94,12 +94,14 @@ wie `ShareSetting.tsx`:
 
 - Passwort (nur beim Anlegen; nur Buchstaben und Ziffern, höchstens 32, in der App geprüft; beim
   Bearbeiten zeigt eine Zeile "Mit Passwort", weil der Server es beim Bearbeiten nicht ändert).
-- Ablauf: Chips Nie, 1 Tag, 7 Tage, 30 Tage, "Datum ..." (Datumswahl, Ende des gewählten Tages in
+- Ablauf: Chips Nie, 1 Tag, 7 Tage, 30 Tage, "Datum ..." (Datumswahl bis höchstens 10 Jahre, Grenze des Servers; Ende des gewählten Tages in
   der Zeitzone des Geräts). Gesendet wird `expire` in Sekunden ab jetzt. Beim Bearbeiten ist die
   bestehende Frist als eigener Chip vorgewählt ("bis 12.12.") und wird als Restsekunden neu
   gesendet (aufgerundet, nie 0, weil 0 die Frist löscht); eine abgelaufene Frist muss neu gewählt werden.
 - Downloads (nur Dateien): Unbegrenzt, 1, 5, 25, "Anzahl ..." (Zahl). Beim Bearbeiten ist die
   Restzahl als eigener Chip vorgewählt; ist sie 0, muss neu gewählt werden (0 hiesse unbegrenzt).
+  Bleibt sie unverändert, holt die App sie direkt vor dem Speichern neu (sonst kämen inzwischen
+  verbrauchte Downloads zurück).
 - Nur Ordner: Hochladen Aus / Ansehen und hochladen / Nur hochladen (`allow_upload`,
   `hide_content`), Grenze Unbegrenzt, 1, 5, 20, 100 GB (`upload_limit`, nur bei Hochladen an; ein im
   Web gesetzter anderer Wert erscheint als eigener Chip und bleibt), "Meine Ansicht übernehmen"
@@ -148,7 +150,8 @@ wie `ShareSetting.tsx`:
   sonst vorher `GET /file/info` und bei neuer Fassung der Konflikt-Dialog). Bekannte, bewusst
   hingenommene Lücke: alle Dateien ohne Fassung haben dieselbe Null-Fassung; wird die leere Datei
   zwischen Laden und Speichern durch eine andere leere ersetzt, trifft das Speichern diese. Verloren
-  geht dabei nichts, denn beide sind leer.
+  geht dabei nichts, denn beide sind leer. Direkt vor dem Speichern prüft die App zusätzlich, dass
+  die Datei an der Adresse noch dieselbe ID hat; sonst Konflikt-Dialog.
 - **Editor:** ganze Seite, Textfeld mit `TextFieldState` (Code-Endungen in fester Schrift), oben
   Zurück, Name, "Speichern" (aktiv bei Änderungen). Markdown: Umschalter "Bearbeiten / Vorschau";
   die Vorschau mit einer gepflegten Compose-Bibliothek (`com.mikepenz:multiplatform-markdown-renderer`,
@@ -248,7 +251,8 @@ wie `ShareSetting.tsx`:
 
 ### 11. Archive und Aufgaben
 
-- Aktionsblatt einer Datei mit Endung zip, gz, xz, tar, rar, 7z, bz2 (Gruppen-Bit 5, Datei-Bit 7):
+- Aktionsblatt eines Archivs (zip, rar, 7z, tar, tar.gz/tgz, tar.xz, tar.bz2; einzelne .gz/.xz/.bz2
+  ohne tar kann der Server nicht entpacken) (Gruppen-Bit 5, Datei-Bit 7):
   "Entpacken" → Zielordner (vorhandene Ordnerauswahl, vorgewählt der aktuelle Ordner, wenn er als Ziel erlaubt ist (Bit 0 und Bit 6, dieselbe Regel wie oben), sonst Meine Dateien) →
   `POST /workflow/extract` (immer alles). **Kein Archiv-Passwort** in 1.6.0: der Server speichert
   es im Klartext im Zustand der Aufgabe (an den Haupt-Thread gemeldet).
