@@ -120,7 +120,8 @@ fun ConnectedPage(
                                 color = if (s.ok) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                             )
                         },
-                        leadingContent = { Icon(if (s.ok) Icons.Outlined.Cloud else Icons.Outlined.CloudOff, contentDescription = null) },
+                        // The provider's logo; a storage in trouble keeps the crossed-out cloud.
+                        leadingContent = { if (s.ok) StorageIcon(s.provider, Icons.Outlined.Cloud) else Icon(Icons.Outlined.CloudOff, contentDescription = null) },
                     )
                 }
                 if (usable && overview.storages.size < overview.max.coerceAtLeast(1)) {
@@ -131,7 +132,7 @@ fun ConnectedPage(
                             supportingContent = {
                                 Text(stringResource(if (overview.appSignin) R.string.connect_in_browser else R.string.connected_connect_hint))
                             },
-                            leadingContent = { Icon(Icons.Outlined.AddLink, contentDescription = null) },
+                            leadingContent = { StorageIcon(p.type, Icons.Outlined.AddLink) },
                         )
                     }
                 }
@@ -140,6 +141,15 @@ fun ConnectedPage(
                         headlineContent = { Text(stringResource(R.string.connect_waiting)) },
                         supportingContent = { Text(stringResource(R.string.connect_waiting_hint)) },
                         trailingContent = { TextButton(onClick = { app.connect.cancelAttempt() }) { Text(stringResource(R.string.cancel)) } },
+                    )
+                }
+                // Fylvo 1.6.2: the trademark notice for the logos, quietly at the end.
+                if (overview.storages.any { ProviderLogos.of(it.provider) != null } || (usable && overview.providers.any { it.configured && ProviderLogos.of(it.type) != null })) {
+                    Text(
+                        stringResource(R.string.connected_trademarks),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
                     )
                 }
                 Spacer(Modifier.height(96.dp))

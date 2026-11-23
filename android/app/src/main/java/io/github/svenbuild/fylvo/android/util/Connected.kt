@@ -189,6 +189,10 @@ object Connected {
      * their account: "Google Drive (alex@example.com)".
      */
     fun nameStorages(storages: List<ConnectedStorage>) {
+        // Fylvo 1.6.2: the provider of each storage (its logo in tabs and places).
+        val kinds = storages.mapNotNull { s -> storageId(s.uri)?.let { it to s.provider } }.toMap()
+        providers.keys.retainAll(kinds.keys)
+        providers.putAll(kinds)
         val counts = storages.groupingBy { it.name }.eachCount()
         val fresh = storages.filter { it.uri.isNotEmpty() && it.name.isNotEmpty() }.associate { s ->
             val label = if ((counts[s.name] ?: 0) > 1 && s.account.isNotEmpty()) "${s.name} (${s.account})" else s.name
@@ -197,6 +201,12 @@ object Connected {
         names.keys.retainAll(fresh.keys)
         names.putAll(fresh)
     }
+
+    /** Fylvo 1.6.2: provider by storage id, as the last overview told it. */
+    private val providers = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** The provider of storage [id] ("drive", "onedrive"), or null while unknown. */
+    fun providerOf(id: String): String? = providers[id]
 
     /** A root listing names its storage too (`parent.name`); used until the overview is there. */
     fun nameFromListing(uri: String, name: String?) {

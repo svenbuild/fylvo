@@ -46,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import io.github.svenbuild.fylvo.android.util.Connected
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -68,6 +69,17 @@ fun placeLabel(place: Place): String = when (place) {
     is Place.Category -> stringResource(categoryOf(place).label)
     is Place.Link -> place.name.ifEmpty { CrUri.displayName(place.uri) }
     is Place.Storage -> CrUri.rootLabel(storageUri(place))
+}
+
+/**
+ * Fylvo 1.6.2: the icon of [place] ([active]: the filled one of the active tab). A connected
+ * storage shows its provider's logo, untinted.
+ */
+@Composable
+fun PlaceIcon(place: Place, modifier: Modifier = Modifier, active: Boolean = false, tint: Color = androidx.compose.material3.LocalContentColor.current) {
+    val logo = (place as? Place.Storage)?.let { ProviderLogos.of(Connected.providerOf(it.id)) }
+    if (logo != null) Icon(logo, contentDescription = null, modifier = modifier, tint = Color.Unspecified)
+    else placeIcons(place).let { (outline, filled) -> Icon(if (active) filled else outline, contentDescription = null, modifier = modifier, tint = tint) }
 }
 
 /** Fylvo: outline and filled icon of a place (filled when it is the active tab). */
@@ -118,8 +130,8 @@ fun PlaceChips(places: List<Place>, onOpen: (Place) -> Unit) {
                 color = Color.Transparent,
             ) {
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        placeIcons(place).first, contentDescription = null,
+                    PlaceIcon(
+                        place,
                         tint = if (place == Place.Favorites) StarColor else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp),
                     )

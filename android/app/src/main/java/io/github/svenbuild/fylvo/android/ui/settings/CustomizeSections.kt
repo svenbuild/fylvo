@@ -126,7 +126,7 @@ fun TabsSection(
         val fixed = tab == Place.Files || tab == Place.Account || tabs.size <= 3
         OrderRow(
             label = placeLabel(tab),
-            leading = { Icon(placeIcons(tab).first, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+            leading = { io.github.svenbuild.fylvo.android.ui.files.PlaceIcon(tab, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
             canUp = i > 0, canDown = i < tabs.lastIndex,
             onUp = { move(tab, -1) }, onDown = { move(tab, 1) },
         ) {
@@ -168,7 +168,7 @@ fun TabsSection(
                                 }
                             },
                             headlineContent = { Text(placeLabel(place)) },
-                            leadingContent = { Icon(placeIcons(place).first, contentDescription = null) },
+                            leadingContent = { io.github.svenbuild.fylvo.android.ui.files.PlaceIcon(place) },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         )
                     }
