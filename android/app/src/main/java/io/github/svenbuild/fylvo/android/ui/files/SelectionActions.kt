@@ -33,6 +33,8 @@ enum class SelectionAction(
     TAGS,
     /** Fylvo: an own folder as its own icon on the home screen. */
     PIN_HOME(server = false),
+    /** Fylvo 1.6: the shares of one file. */
+    MANAGE_SHARES,
 }
 
 /** Where the selection is made; decides together with the selected files which actions exist. */
@@ -56,6 +58,10 @@ data class SelectionContext(
     val metadata: Boolean = false,
     /** Fylvo: the one selected folder can be put on the home screen. */
     val pinnable: Boolean = false,
+    /** Fylvo 1.6: the account's group right to share (null = not known yet). */
+    val groupShare: Boolean? = true,
+    /** Fylvo 1.6: further actions for one selected file (the same list as its sheet's). */
+    val more: List<SelectionAction> = emptyList(),
 )
 
 /**
@@ -116,7 +122,7 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
             val canModify = Permissions.canModifyFile(file)
             SelectionActions(
                 quick = listOfNotNull(
-                    SelectionAction.SHARE.takeIf { Permissions.canShareLink(file) },
+                    SelectionAction.SHARE.takeIf { Permissions.canShare(file, ctx.groupShare) },
                     SelectionAction.DOWNLOAD,
                     SelectionAction.DELETE.takeIf { canModify },
                 ),
@@ -129,7 +135,7 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
                     SelectionAction.MOVE.takeIf { canModify },
                     SelectionAction.OFFLINE.takeIf { ctx.offlineShown },
                     SelectionAction.SHOW_IN_FOLDER.takeIf { ctx.virtual },
-                ) + editActions(one, ctx),
+                ) + editActions(one, ctx) + ctx.more,
             )
         }
         else -> {

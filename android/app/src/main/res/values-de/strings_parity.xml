@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fylvo 1.6: mehr Funktionen der Web-App (design/android-parity-plan.md). -->
+<resources>
+    <string name="save">Speichern</string>
+
+    <!-- Freigaben -->
+    <string name="share_edit_link">Link bearbeiten</string>
+    <string name="share_until">bis %1$s</string>
+    <string name="share_pick_date">Datum …</string>
+    <string name="share_pick_count">Anzahl …</string>
+    <string name="share_expired_choose">Dieser Link ist abgelaufen. Wähle ein neues Ende, um ihn wieder einzuschalten.</string>
+    <string name="share_downloads_choose">Dieser Link hat keine Downloads mehr übrig. Wähle eine neue Grenze.</string>
+    <string name="share_uploads">Hochladen durch Besucher</string>
+    <string name="share_uploads_off">Aus</string>
+    <string name="share_view_and_upload">Ansehen und hochladen</string>
+    <string name="share_upload_only">Nur hochladen</string>
+    <string name="share_upload_limit">Grenze für Uploads</string>
+    <string name="share_gb">%1$d GB</string>
+    <string name="share_keep_view">Meine Ansicht übernehmen</string>
+    <string name="share_show_readme">README anzeigen</string>
+    <string name="share_password_rule">Nur Buchstaben und Ziffern, höchstens 32</string>
+    <string name="share_password_protected">Mit Passwort geschützt</string>
+    <string name="share_password_kept">Der Link behält sein Passwort. Um es zu ändern, lösche den Link und erstelle einen neuen.</string>
+    <string name="shared_by_me">Von mir geteilt</string>
+    <string name="my_shares">Meine Freigaben</string>
+    <string name="my_shares_hint">Links und Ordner, die du teilst</string>
+    <string name="shares_load_failed">Die Freigaben konnten nicht geladen werden. Prüfe die Verbindung.</string>
+    <string name="no_shares">Noch nichts geteilt</string>
+    <string name="no_shares_hint">Teile eine Datei oder einen Ordner mit einem Link, dann erscheint er hier.</string>
+    <string name="manage_shares">Freigaben verwalten</string>
+    <string name="copy_link">Link kopieren</string>
+    <string name="send_link">Link senden</string>
+    <string name="share_edit_people">Personen bearbeiten</string>
+    <string name="share_edit_reactivate">Bearbeiten und wieder einschalten</string>
+    <string name="share_reactivate_from_file">Ein abgelaufener Link lässt sich über die Datei selbst wieder einschalten (Freigaben verwalten).</string>
+    <string name="delete_share">Freigabe löschen</string>
+    <string name="delete_share_title">Freigabe löschen?</string>
+    <string name="delete_share_text">Der Link zu \"%1$s\" funktioniert dann nicht mehr. Die Datei selbst bleibt.</string>
+    <string name="delete_share_people_text">Die Personen sehen \"%1$s\" dann nicht mehr. Der Ordner selbst bleibt.</string>
+    <string name="share_deleted">Freigabe gelöscht</string>
+    <string name="share_expired">Abgelaufen</string>
+    <plurals name="share_people">
+        <item quantity="one">Mit %d Person</item>
+        <item quantity="other">Mit %d Personen</item>
+    </plurals>
+    <plurals name="share_views">
+        <item quantity="one">%d Aufruf</item>
+        <item quantity="other">%d Aufrufe</item>
+    </plurals>
+    <plurals name="share_downloads">
+        <item quantity="one">%d Download</item>
+        <item quantity="other">%d Downloads</item>
+    </plurals>
+    <plurals name="share_downloads_left">
+        <item quantity="one">noch %d</item>
+        <item quantity="other">noch %d</item>
+    </plurals>
+
+    <!-- Fehler -->
+    <string name="error_group_not_allowed">Dein Konto darf das nicht.</string>
+    <string name="error_share_password">Das Passwort dieser Freigabe ist falsch oder nicht mehr gültig.</string>
+</resources>

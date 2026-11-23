@@ -1696,13 +1696,6 @@ class FilesViewModel(
     /** The copy on this phone of a single offline file, for the Offline screen. */
     suspend fun offlineFile(uri: String): File? = offline.localCopy(uri)
 
-    suspend fun shareLink(
-        file: FileObject,
-        password: String = "",
-        expireSeconds: Int = 0,
-        downloads: Int = 0,
-    ): String = repo.createShare(file.path, password = password, expireSeconds = expireSeconds, downloads = downloads)
-
     /** Trash: put items back where they were. */
     fun restore(paths: List<String>) {
         if (paths.isEmpty()) return

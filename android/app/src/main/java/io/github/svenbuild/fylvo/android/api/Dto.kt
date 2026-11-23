@@ -95,6 +95,8 @@ data class FileObject(
     val owned: Boolean? = null,
     /** Fylvo: id of the file's current version (entity); changes with every new version. */
     @SerialName("primary_entity") val primaryEntity: String = "",
+    /** Fylvo: only from `file/info?extended=true`. */
+    @SerialName("extended_info") val extendedInfo: ExtendedInfo? = null,
 ) {
     val isFolder: Boolean get() = type == 1
 
@@ -320,4 +322,22 @@ data class ExplorerConfig(
     @SerialName("map_provider") val mapProvider: String = "",
     /** Fylvo: the server can search inside file contents (`GET /file/search`). */
     @SerialName("full_text_search") val fullTextSearch: Boolean = false,
+)
+
+/** Fylvo: `extended_info` of `GET /file/info?extended=true`. */
+@Serializable
+data class ExtendedInfo(
+    /** The owner's shares of the file. */
+    val shares: List<ShareInfo> = emptyList(),
+    /** Stored versions (type 0), thumbnails (1) and live photos (2). */
+    val entities: List<EntityDto> = emptyList(),
+    @SerialName("storage_used") val storageUsed: Long = 0,
+)
+
+@Serializable
+data class EntityDto(
+    val id: String = "",
+    val size: Long = 0,
+    val type: Int = 0,
+    @SerialName("created_at") val createdAt: String = "",
 )

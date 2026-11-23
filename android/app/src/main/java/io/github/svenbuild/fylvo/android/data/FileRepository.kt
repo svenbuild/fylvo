@@ -12,7 +12,6 @@ import io.github.svenbuild.fylvo.android.api.ListFileResponse
 import io.github.svenbuild.fylvo.android.api.MoveFileRequest
 import io.github.svenbuild.fylvo.android.api.RenameFileRequest
 import io.github.svenbuild.fylvo.android.api.RestoreFileRequest
-import io.github.svenbuild.fylvo.android.api.ShareCreateRequest
 import io.github.svenbuild.fylvo.android.api.UploadSessionResponse
 import io.github.svenbuild.fylvo.android.util.Connected
 import io.github.svenbuild.fylvo.android.util.CrUri
@@ -273,22 +272,6 @@ class FileRepository(private val api: ApiClient) {
     }
 
     private fun thumbKey(file: FileObject) = "${file.id}:${file.primaryEntity}"
-
-    /**
-     * Creates a share link. [expireSeconds] 0 = never; [password] empty = public.
-     * Mirrors the web app's link format: the password rides along as a path
-     * segment so the recipient does not have to type it.
-     */
-    suspend fun createShare(uri: String, password: String = "", expireSeconds: Int = 0, downloads: Int = 0): String {
-        val link = api.service().createShare(
-            ShareCreateRequest(uri = uri, password = password, expire = expireSeconds, downloads = downloads, isPrivate = password.isNotEmpty())
-        ).unwrap()
-        // PUT /share answers with the complete URL (`…/s/<id>[/<password>]`); older
-        // builds of this client assumed a bare id and produced a doubled URL.
-        if (link.startsWith("http")) return link
-        val base = api.serverBase().trimEnd('/')
-        return if (password.isEmpty()) "$base/s/$link" else "$base/s/$link/$password"
-    }
 
     /** Fylvo: inside a connected storage a taken name is refused instead of numbered. */
     suspend fun mkdir(uri: String) {

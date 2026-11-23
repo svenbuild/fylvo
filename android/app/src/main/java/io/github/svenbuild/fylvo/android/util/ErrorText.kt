@@ -55,6 +55,10 @@ object ErrorText {
             40049 -> R.string.error_file_too_large
             40050 -> R.string.error_file_type
             40019 -> R.string.error_feature_off
+            // Fylvo 1.6.
+            40007 -> R.string.error_group_not_allowed
+            40069 -> R.string.error_share_password
+            io.github.svenbuild.fylvo.android.data.ShareRepository.CODE_NO_DOWNLOADS_LEFT -> R.string.share_downloads_choose
             // Fylvo: connected storages (Google Drive, OneDrive).
             Connected.CODE_UNSUPPORTED -> R.string.error_connected_unsupported
             Connected.CODE_RECONNECT -> R.string.error_connected_reconnect

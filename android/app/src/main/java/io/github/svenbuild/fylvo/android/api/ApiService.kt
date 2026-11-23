@@ -114,6 +114,38 @@ interface ApiService {
     @PUT("api/v4/share")
     suspend fun createShare(@Body request: ShareCreateRequest): Response<ApiResponse<String>>
 
+    // ---- Fylvo 1.6: managing own shares (design/android-parity-plan.md, 1 and 2).
+
+    /** Own shares, newest first; [pageSize] 10 to 100, next page with `pagination.next_token`. */
+    @GET("api/v4/share")
+    suspend fun listShares(
+        @Query("page_size") pageSize: Int = 50,
+        @Query("order_direction") orderDirection: String = "desc",
+        @Query("next_page_token") nextPageToken: String? = null,
+    ): Response<ApiResponse<ShareListResponse>>
+
+    /** Replaces all settings of share [id] (the password stays); answers with the link. */
+    @POST("api/v4/share/{id}")
+    suspend fun editShare(@Path("id") id: String, @Body request: ShareCreateRequest): Response<ApiResponse<String>>
+
+    @HTTP(method = "DELETE", path = "api/v4/share/{id}")
+    suspend fun deleteShare(@Path("id") id: String): Response<ApiResponse<Unit>>
+
+    /**
+     * One share; [password] unlocks a protected one (also needed by its owner for
+     * [ownerExtended], which adds `source_uri`). A wrong password answers `unlocked: false`.
+     */
+    @GET("api/v4/share/info/{id}")
+    suspend fun shareDetails(
+        @Path("id") id: String,
+        @Query("password") password: String? = null,
+        @Query("owner_extended") ownerExtended: Boolean? = null,
+    ): Response<ApiResponse<ShareInfo>>
+
+    /** A file with `extended_info` (shares, versions, storage used). */
+    @GET("api/v4/file/info")
+    suspend fun fileInfoExtended(@Query("uri") uri: String, @Query("extended") extended: Boolean = true): Response<ApiResponse<FileObject>>
+
     /** Fylvo: the account's connected storages; a server without the feature answers HTTP 404. */
     @GET("api/v4/fylvo/connected")
     suspend fun connectedStorages(): Response<ApiResponse<ConnectedOverview>>

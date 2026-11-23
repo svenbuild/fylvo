@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.AddToHomeScreen
@@ -433,7 +434,7 @@ private fun MenuRowLayout(
 private val SelectionAction.danger: Boolean
     get() = this == SelectionAction.DELETE || this == SelectionAction.DELETE_FOREVER || this == SelectionAction.DISCARD_EDIT
 
-private val SelectionAction.icon: ImageVector
+internal val SelectionAction.icon: ImageVector
     get() = when (this) {
         SelectionAction.SELECT_ALL -> Icons.Default.SelectAll
         SelectionAction.DETAILS -> Icons.Outlined.Info
@@ -455,11 +456,12 @@ private val SelectionAction.icon: ImageVector
         SelectionAction.COLOR -> Icons.Outlined.Palette
         SelectionAction.TAGS -> Icons.AutoMirrored.Outlined.Label
         SelectionAction.PIN_HOME -> Icons.Outlined.AddToHomeScreen
+        SelectionAction.MANAGE_SHARES -> Icons.Outlined.Link
     }
 
 /** [quick]: the short label of a quick button ("Move" instead of "Move to"). */
 @Composable
-private fun SelectionAction.label(quick: Boolean): String = stringResource(
+internal fun SelectionAction.label(quick: Boolean): String = stringResource(
     when (this) {
         SelectionAction.SELECT_ALL -> R.string.select_all
         SelectionAction.DETAILS -> R.string.details
@@ -481,5 +483,6 @@ private fun SelectionAction.label(quick: Boolean): String = stringResource(
         SelectionAction.COLOR -> R.string.folder_color
         SelectionAction.TAGS -> R.string.tags
         SelectionAction.PIN_HOME -> R.string.pin_to_home_screen
+        SelectionAction.MANAGE_SHARES -> R.string.manage_shares
     },
 )

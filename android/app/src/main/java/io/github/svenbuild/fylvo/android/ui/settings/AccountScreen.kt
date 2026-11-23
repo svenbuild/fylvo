@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
@@ -82,6 +83,8 @@ import java.util.Date
 fun AccountScreen(
     offlineCount: Int,
     onOpenOffline: () -> Unit,
+    /** Fylvo 1.6: Account › My shares. */
+    onOpenShares: () -> Unit,
     /** Fylvo: Account › Customise. */
     onOpenCustomize: () -> Unit,
     onBack: () -> Unit,
@@ -198,6 +201,13 @@ fun AccountScreen(
                     )
                 },
                 leadingContent = { Icon(Icons.Default.OfflinePin, contentDescription = null) },
+            )
+            // Fylvo 1.6: the account's own shares ("Shared by me").
+            ListItem(
+                modifier = Modifier.clickable(onClick = onOpenShares),
+                headlineContent = { Text(stringResource(R.string.my_shares)) },
+                supportingContent = { Text(stringResource(R.string.my_shares_hint)) },
+                leadingContent = { Icon(Icons.Outlined.Link, contentDescription = null) },
             )
             ListItem(
                 modifier = Modifier.clickable(onClick = onOpenCustomize),

@@ -35,6 +35,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -154,6 +155,29 @@ fun FilesScreen(
     val app = context.applicationContext as io.github.svenbuild.fylvo.android.FylvoApp
     val prefsRepo = app.accountPrefs
     val prefsState by prefsRepo.state.collectAsState()
+    // Fylvo 1.6: the account's group rights (null while not known: nothing that needs them is offered).
+    val accountState by app.account.state.collectAsState()
+    val groupShare = accountState.group(Permissions.GROUP_SHARE)
+    /** Fylvo: the file whose shares are listed ("Manage shares"). */
+    var sharesOfTarget by remember { mutableStateOf<FileObject?>(null) }
+
+    /**
+     * Fylvo 1.6: the further actions of one file, the same in its sheet and in the selection menu
+     * (design/android-parity-plan.md). Each one follows its own rule (util/Permissions).
+     */
+    fun moreActions(file: FileObject): List<SelectionAction> {
+        if (state.offlineMode || file.isUploading || state.inTrash) return emptyList()
+        return listOfNotNull(
+            SelectionAction.MANAGE_SHARES.takeIf { file.shared == true && Permissions.canShare(file, groupShare) },
+        )
+    }
+
+    fun runMore(action: SelectionAction, file: FileObject) {
+        when (action) {
+            SelectionAction.MANAGE_SHARES -> sharesOfTarget = file
+            else -> Unit
+        }
+    }
 
     var pendingUpload by remember { mutableStateOf<PendingUpload?>(null) }
     val haptics = LocalHapticFeedback.current
@@ -417,7 +441,7 @@ fun FilesScreen(
         val star = starOf(file)
         fun allowed(action: io.github.svenbuild.fylvo.android.data.prefs.SwipeAction) = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.swipeAction(
             action, star,
-            canShare = Permissions.canShareLink(file),
+            canShare = Permissions.canShare(file, groupShare),
             canOffline = state.offlineAllowed(file) && !state.offlineCovered(file),
             canDelete = Permissions.canModifyFile(file),
             limited = limited,
@@ -454,6 +478,8 @@ fun FilesScreen(
                 ?: io.github.svenbuild.fylvo.android.data.prefs.StarState.NONE,
             metadata = !state.offlineMode && !state.inConnected && io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.canEditMetadata(selectedFiles) &&
                 selectedFiles.size == state.selected.size,
+            groupShare = groupShare,
+            more = selectedOne?.let(::moreActions).orEmpty(),
             pinnable = selectedOne != null && selectedOne.owned == true &&
                 io.github.svenbuild.fylvo.android.data.prefs.FylvoActions.openAllowed(selectedOne.path) &&
                 io.github.svenbuild.fylvo.android.widget.FolderShortcuts.canPin(context),
@@ -497,6 +523,7 @@ fun FilesScreen(
             SelectionAction.UNFAVORITE -> setFavorite(targets, false)
             SelectionAction.COLOR -> colorTarget = targets
             SelectionAction.TAGS -> tagsTarget = targets
+            SelectionAction.MANAGE_SHARES -> one?.let { runMore(action, it) }
             SelectionAction.PIN_HOME -> one?.let { folder ->
                 scope.launch { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.pin(context, folder, prefsRepo.accountHash()) }
             }
@@ -520,6 +547,8 @@ fun FilesScreen(
         storages = connectedState.storages.map { it.id },
     ).filter { it !is io.github.svenbuild.fylvo.android.data.prefs.Place.Storage || connectedState.storages.any { s -> s.id == it.id } } else emptyList()
     val showChips = !state.home && !inSearch && !state.selecting && state.currentUri == CrUri.MY_PREFIX
+    // Fylvo 1.6: "Shared by me" next to the shares of others.
+    val showSharedChips = !state.home && !inSearch && !state.selecting && state.currentUri == CrUri.SHARED_WITH_ME
     val startTab = io.github.svenbuild.fylvo.android.data.prefs.Navigation.startTab(prefsState.prefs?.startPage.takeIf { prefsState.usable }, tabs)
     /** The tab tapped last; a place that is no tab of its own keeps it lit. */
     var lastTab by rememberSaveable(stateSaver = placeSaver) { mutableStateOf<io.github.svenbuild.fylvo.android.data.prefs.Place?>(null) }
@@ -821,11 +850,15 @@ fun FilesScreen(
                     Category.VIDEOS -> EmptyState(icon = Icons.Outlined.Videocam, title = stringResource(R.string.no_videos))
                     Category.AUDIO -> EmptyState(icon = Icons.Outlined.MusicNote, title = stringResource(R.string.no_audio))
                     Category.DOCUMENTS -> EmptyState(icon = Icons.Outlined.Description, title = stringResource(R.string.no_documents))
-                    Category.SHARED_WITH_ME -> EmptyState(icon = Icons.Outlined.FolderOpen, title = stringResource(R.string.nothing_shared))
+                    Category.SHARED_WITH_ME -> Column(Modifier.fillMaxSize()) {
+                        if (showSharedChips) SharedChips { page = PAGE_SHARES }
+                        EmptyState(icon = Icons.Outlined.FolderOpen, title = stringResource(R.string.nothing_shared))
+                    }
                 }
                 else -> Column(Modifier.fillMaxSize()) {
                     // Fylvo: the places of the sidebar above My files.
                     if (showChips) PlaceChips(chips, ::openChip)
+                    if (showSharedChips) SharedChips { page = PAGE_SHARES }
                     if (state.offlineMode) OfflineBanner()
                     if (state.inConnected) ConnectedBanner(state.connected?.omitted ?: 0)
                     Box(Modifier.weight(1f)) {
@@ -889,7 +922,7 @@ fun FilesScreen(
             onDownload = { f -> viewModel.saveToDevice(context, f) },
             onOpenWith = { openWithSystemApp(it) },
             onDelete = { preview = null; deleteTarget = it },
-            canShare = Permissions::canShareLink,
+            canShare = { Permissions.canShare(it, groupShare) },
             canDelete = Permissions::canModifyFile,
         )
       }
@@ -925,13 +958,34 @@ fun FilesScreen(
     }
 
     shareTarget?.let { file ->
+        val thumbUrl = rememberThumbUrl(viewModel, file)
         ShareLinkSheet(
-            file = file,
-            thumbUrl = rememberThumbUrl(viewModel, file),
-            createLink = { pw, exp, dl -> viewModel.shareLink(file, pw, exp, dl) },
+            name = file.name,
+            isFolder = file.isFolder,
+            thumb = { FileThumb(file, thumbUrl, size = 48.dp) },
+            existing = null,
+            save = { options -> app.shares.create(file, options).also { viewModel.refresh() } },
             onDismiss = { shareTarget = null },
             onMessage = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
         )
+    }
+
+    // Fylvo 1.6: what the share lists may do (shared by "Shared by me" and a file's own list).
+    val shareActions = ShareActions(
+        openFolder = { uri ->
+            page = null
+            sharesOfTarget = null
+            accountOpen = false
+            offlineOpen = false
+            customizeOpen = false
+            viewModel.openPlace(uri)
+        },
+        editPeople = { _, _ -> },
+        message = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+        canEdit = groupShare == true,
+    )
+    sharesOfTarget?.let { file ->
+        FileSharesSheet(file, shareActions, onDismiss = { sharesOfTarget = null; viewModel.refresh() })
     }
 
     sheetTarget?.takeIf { Connected.isConnected(it.path) }?.let { file ->
@@ -976,7 +1030,9 @@ fun FilesScreen(
             onCopy = { sheetTarget = null; movePick = listOf(file.path) to true },
             onDetails = { sheetTarget = null; detailsTarget = file },
             canModify = Permissions.canModifyFile(file) && !limited,
-            canShare = Permissions.canShareLink(file) && !limited,
+            canShare = Permissions.canShare(file, groupShare) && !limited,
+            extras = if (limited) emptyList() else moreActions(file),
+            onExtra = { action -> sheetTarget = null; runMore(action, file) },
             // Fylvo: a sheet from a page (favourites) belongs to that page, never to the trash below it.
             inTrash = state.inTrash && page == null,
             onRestore = { sheetTarget = null; viewModel.restore(listOf(file.path)) },
@@ -1132,6 +1188,7 @@ fun FilesScreen(
         AccountScreen(
             offlineCount = state.offlineRoots.size,
             onOpenOffline = { offlineOpen = true },
+            onOpenShares = { page = PAGE_SHARES },
             onOpenCustomize = { customizeOpen = true },
             // Account is a tab: back goes to the start tab like every other tab.
             onBack = { selectTab(startTab) },
@@ -1166,6 +1223,9 @@ fun FilesScreen(
             loadFailed = prefsState.loadFailed || prefsState.favoritesFailed,
             onRetry = { scope.launch { prefsRepo.refreshFavorites(); prefsRepo.refresh() } },
         )
+    }
+    if (page == PAGE_SHARES) {
+        SharesPage(onBack = { page = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) }, actions = shareActions)
     }
     if (page == PAGE_TAGS) {
         TagsPage(
@@ -1424,5 +1484,7 @@ private fun openWithSystem(context: Context, local: File) {
 /** Fylvo: the pages of places that are not folder listings. */
 internal const val PAGE_FAVORITES = "favorites"
 internal const val PAGE_TAGS = "tags"
+/** Fylvo 1.6: "Shared by me", from the Shared tab or from Account. */
+internal const val PAGE_SHARES = "shares"
 /** Fylvo: [FilesUiState.origin] of a place opened from a page ("page:<page>"). */
 internal const val PAGE_ORIGIN = "page:"

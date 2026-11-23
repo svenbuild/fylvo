@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fylvo 1.6: more of the web app's functions (design/android-parity-plan.md). -->
+<resources>
+    <string name="save">Save</string>
+
+    <!-- Shares -->
+    <string name="share_edit_link">Edit link</string>
+    <string name="share_until">until %1$s</string>
+    <string name="share_pick_date">Date…</string>
+    <string name="share_pick_count">Number…</string>
+    <string name="share_expired_choose">This link has expired. Choose a new end to switch it on again.</string>
+    <string name="share_downloads_choose">No downloads are left on this link. Choose a new limit.</string>
+    <string name="share_uploads">Uploads by visitors</string>
+    <string name="share_uploads_off">Off</string>
+    <string name="share_view_and_upload">View and upload</string>
+    <string name="share_upload_only">Upload only</string>
+    <string name="share_upload_limit">Upload limit</string>
+    <string name="share_gb">%1$d GB</string>
+    <string name="share_keep_view">Keep my view</string>
+    <string name="share_show_readme">Show README</string>
+    <string name="share_password_rule">Letters and digits only, up to 32</string>
+    <string name="share_password_protected">Protected with a password</string>
+    <string name="share_password_kept">The link keeps its password. To change it, delete the link and create a new one.</string>
+    <string name="shared_by_me">Shared by me</string>
+    <string name="my_shares">My shares</string>
+    <string name="my_shares_hint">Links and folders you share</string>
+    <string name="shares_load_failed">The shares could not be loaded. Check the connection.</string>
+    <string name="no_shares">Nothing shared yet</string>
+    <string name="no_shares_hint">Share a file or folder with a link, and it shows up here.</string>
+    <string name="manage_shares">Manage shares</string>
+    <string name="copy_link">Copy link</string>
+    <string name="send_link">Send link</string>
+    <string name="share_edit_people">Edit people</string>
+    <string name="share_edit_reactivate">Edit and switch on again</string>
+    <string name="share_reactivate_from_file">An expired link can be switched on again from the file itself (Manage shares).</string>
+    <string name="delete_share">Delete share</string>
+    <string name="delete_share_title">Delete share?</string>
+    <string name="delete_share_text">The link to \"%1$s\" stops working. The file itself stays.</string>
+    <string name="delete_share_people_text">The people stop seeing \"%1$s\". The folder itself stays.</string>
+    <string name="share_deleted">Share deleted</string>
+    <string name="share_expired">Expired</string>
+    <plurals name="share_people">
+        <item quantity="one">With %d person</item>
+        <item quantity="other">With %d people</item>
+    </plurals>
+    <plurals name="share_views">
+        <item quantity="one">%d view</item>
+        <item quantity="other">%d views</item>
+    </plurals>
+    <plurals name="share_downloads">
+        <item quantity="one">%d download</item>
+        <item quantity="other">%d downloads</item>
+    </plurals>
+    <plurals name="share_downloads_left">
+        <item quantity="one">%d left</item>
+        <item quantity="other">%d left</item>
+    </plurals>
+
+    <!-- Errors -->
+    <string name="error_group_not_allowed">Your account may not do this.</string>
+    <string name="error_share_password">The password of this share is wrong or no longer valid.</string>
+</resources>
