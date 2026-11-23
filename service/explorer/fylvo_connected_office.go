@@ -472,6 +472,7 @@ func ConnectedOfficePut(c *gin.Context) {
 				// conflict is all there is to say. The operator is told, for this is
 				// where what somebody wrote can be lost.
 				logging.FromContext(c).Warning("Connected storage: a save of an editor met a changed file and could not be kept as a copy: %s", connected.Public(c, err))
+				o.req.m.OfficeNotKept(o.session)
 			case exit:
 				// Nobody is left to ask: the editor is told it is saved.
 				logging.FromContext(c).Info("Connected storage: the last save of an editor met a changed file and was kept as a copy beside it.")
@@ -565,6 +566,8 @@ type ConnectedOfficeStateResponse struct {
 	// Office server tells its user so once, and then sends nothing more of what is typed.
 	Conflict bool `json:"conflict"`
 	// Copy is the file beside the document that holds what the window wanted to save.
+	// Without it, what the window wanted to save could not be kept: it is in the editor
+	// and nowhere else.
 	Copy *FileResponse `json:"copy,omitempty"`
 }
 
@@ -577,15 +580,20 @@ func ConnectedOfficeState(c *gin.Context, id string) (*ConnectedOfficeStateRespo
 	if !mayUseConnected(user) {
 		return nil, connected.ErrNotAllowed
 	}
-	kept, err := connected.For(dependency.FromContext(c)).OfficeConflict(user.ID, id)
+	standing, err := connected.For(dependency.FromContext(c)).OfficeConflict(user.ID, id)
 	if err != nil {
 		return nil, err
 	}
-	if kept == nil {
-		return &ConnectedOfficeStateResponse{}, nil
+	if !inventory.SessionStillValid(user, standing.Fingerprint) {
+		// A window from before the password was changed is over, as for the Office server.
+		return nil, connected.ErrNoStorage
 	}
-	req := &connectedRequest{conn: &connected.Conn{ID: kept.Conn, Provider: kept.Provider}}
-	return &ConnectedOfficeStateResponse{Conflict: true, Copy: connectedFile(req, kept.Row, false)}, nil
+	res := &ConnectedOfficeStateResponse{Conflict: standing.Copy != nil || standing.Unkept}
+	if kept := standing.Copy; kept != nil {
+		req := &connectedRequest{conn: &connected.Conn{ID: kept.Conn, Provider: kept.Provider}}
+		res.Copy = connectedFile(req, kept.Row, false)
+	}
+	return res, nil
 }
 
 // ConnectedOfficeOther answers every other call (locks, rename, a copy beside the file):

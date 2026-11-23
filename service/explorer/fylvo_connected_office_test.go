@@ -1216,13 +1216,63 @@ func TestConnectedOfficeState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, &ConnectedOfficeStateResponse{}, got)
 
-	// A storage that is disconnected takes its windows with it.
+	// A save is refused and cannot be kept either (no room): the window cannot save,
+	// and there is no copy to name. A later one that is kept names its copy.
 	e.sim.SetContent(id, []byte("changed again"))
+	e.sim.SetFull(true)
 	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("more"))
 	require.Equal(t, http.StatusConflict, rec.Code)
 	got, err = state(e.alex, session)
 	require.NoError(t, err)
+	require.Equal(t, &ConnectedOfficeStateResponse{Conflict: true}, got)
+	e.sim.SetFull(false)
+	// Reading again clears it.
+	read()
+	got, err = state(e.alex, session)
+	require.NoError(t, err)
+	require.Equal(t, &ConnectedOfficeStateResponse{}, got)
+	e.sim.SetContent(id, []byte("changed a third time"))
+	e.sim.SetFull(true)
+	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("more"))
+	require.Equal(t, http.StatusConflict, rec.Code)
+	e.sim.SetFull(false)
+	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("more, kept this time"))
+	require.Equal(t, http.StatusConflict, rec.Code)
+	got, err = state(e.alex, session)
+	require.NoError(t, err)
 	require.True(t, got.Conflict)
+	require.NotNil(t, got.Copy)
+	require.Equal(t, []byte("more, kept this time"), e.download(got.Copy.Path))
+
+	// A group that may not use connected storages is told so.
+	g, err := e.client.Group.Query().Where(group.ID(2)).First(e.ctx)
+	require.NoError(t, err)
+	without := make(boolset.BooleanSet, len(*g.Permissions))
+	copy(without, *g.Permissions)
+	boolset.Set(types.GroupPermissionConnectedStorage, false, &without)
+	require.NoError(t, e.client.Group.Update().Where(group.ID(2)).SetPermissions(&without).Exec(e.ctx))
+	e.alex = e.reload(e.alex.ID)
+	_, err = state(e.alex, session)
+	require.Equal(t, serializer.CodeConnectedUnavailable, connectedCode(err))
+	require.NoError(t, e.client.Group.Update().Where(group.ID(2)).SetPermissions(g.Permissions).Exec(e.ctx))
+	e.alex = e.reload(e.alex.ID)
+	got, err = state(e.alex, session)
+	require.NoError(t, err)
+	require.True(t, got.Conflict)
+
+	// A new password ends the windows from before it, here as for the Office server.
+	old := e.alex
+	require.NoError(t, e.client.User.UpdateOneID(e.alex.ID).SetPassword("another-hash").Exec(e.ctx))
+	e.alex = e.reload(e.alex.ID)
+	_, err = state(e.alex, session)
+	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
+	require.NoError(t, e.client.User.UpdateOneID(e.alex.ID).SetPassword(old.Password).Exec(e.ctx))
+	e.alex = e.reload(e.alex.ID)
+	got, err = state(e.alex, session)
+	require.NoError(t, err)
+	require.True(t, got.Conflict)
+
+	// A storage that is disconnected takes its windows with it.
 	require.NoError(t, e.m.Disconnect(e.ctx, e.alex.ID, e.id))
 	_, err = state(e.alex, session)
 	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))

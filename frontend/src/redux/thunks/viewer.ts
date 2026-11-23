@@ -393,6 +393,7 @@ export function openWopiViewer(file: FileResponse, viewer: Viewer, preferredVers
         src: viewerSession.wopi_src,
         session: viewerSession.session,
         edit: viewerSession.edit,
+        viewer,
         file: file,
         version: preferredVersion,
       }),

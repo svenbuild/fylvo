@@ -113,7 +113,10 @@ type OfficeSession struct {
 	besideSum  [sha256.Size]byte
 	// copy tells whoever asks from outside the session (OfficeConflict) what beside
 	// tells inside it: set while the session cannot save and its last state is in a copy.
-	copy atomic.Pointer[OfficeCopy]
+	// unkept is set while the session cannot save and what it wanted to save could not
+	// be kept either.
+	copy   atomic.Pointer[OfficeCopy]
+	unkept atomic.Bool
 	// read tells that the file was read through this session at least once. Only then
 	// is there something of a user in what it saves.
 	read bool
@@ -134,6 +137,16 @@ type OfficeCopy struct {
 	// Conn and Provider are those of the storage, Row is the copy with its path.
 	Conn, Provider string
 	Row            *Row
+}
+
+// OfficeStanding is how an editor window stands, for whoever asks from outside it.
+type OfficeStanding struct {
+	// Fingerprint is that of the password the window was opened under.
+	Fingerprint string
+	// Copy is set while the window cannot save and what it wanted to save is in a copy.
+	Copy *OfficeCopy
+	// Unkept: the window cannot save, and what it wanted to save could not be kept.
+	Unkept bool
 }
 
 // forgetBeside lets go of the copy of the session: the next state that is refused gets
@@ -312,12 +325,11 @@ func (m *Manager) Office(id, token string) (*OfficeSession, error) {
 	return s, nil
 }
 
-// OfficeConflict tells whether an editor window of the account can no longer save,
-// because its file changed elsewhere, and returns the copy that holds what it wanted to
-// save; nil while the window can save. It asks no provider and waits for no call that
-// runs in the session. A session that is not there (any more), or not the account's,
-// answers ErrNoStorage.
-func (m *Manager) OfficeConflict(userID int, id string) (*OfficeCopy, error) {
+// OfficeConflict tells how an editor window of the account stands: whether it can no
+// longer save, because its file changed elsewhere, and where what it wanted to save is
+// kept. It asks no provider and waits for no call that runs in the session. A session
+// that is not there (any more), or not the account's, answers ErrNoStorage.
+func (m *Manager) OfficeConflict(userID int, id string) (*OfficeStanding, error) {
 	m.offices.mu.Lock()
 	s := m.offices.byID[id]
 	now := m.offices.now()
@@ -325,7 +337,16 @@ func (m *Manager) OfficeConflict(userID int, id string) (*OfficeCopy, error) {
 	if s == nil || s.User != userID || s.closed.Load() || !now.Before(s.Expires) {
 		return nil, ErrNoStorage
 	}
-	return s.copy.Load(), nil
+	return &OfficeStanding{Fingerprint: s.Fingerprint, Copy: s.copy.Load(), Unkept: s.unkept.Load()}, nil
+}
+
+// OfficeNotKept notes that a save of the session was refused because its file changed,
+// and that what it wanted to save could not be kept as a copy. The caller entered the
+// session.
+func (m *Manager) OfficeNotKept(s *OfficeSession) {
+	if s.copy.Load() == nil {
+		s.unkept.Store(true)
+	}
 }
 
 // OfficeEnter lets a call into its session: one at a time, the others wait, for as long
@@ -507,6 +528,7 @@ func (m *Manager) OfficeRead(ctx context.Context, c *Conn, s *OfficeSession, lim
 	// The editor starts again from what is stored. What it cannot save from here on
 	// is another state, and gets a copy of its own.
 	s.forgetBeside()
+	s.unkept.Store(false)
 	return nil
 }
 
@@ -615,6 +637,7 @@ func (m *Manager) OfficeKeepBeside(ctx context.Context, c *Conn, s *OfficeSessio
 		at := *row
 		at.Path = path
 		s.copy.Store(&OfficeCopy{Conn: c.ID, Provider: c.Provider, Row: &at})
+		s.unkept.Store(false)
 		if exit {
 			if s.exits == nil {
 				s.exits = map[[sha256.Size]byte]time.Time{}
