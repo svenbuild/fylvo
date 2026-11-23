@@ -11,6 +11,8 @@ export interface PaginationArgs {
 
 export interface ListFileService extends PaginationArgs {
   uri: string;
+  // Fylvo: everything below the folder; a search in a connected storage needs it.
+  recursive?: boolean;
 }
 
 export const FileType = {
@@ -185,6 +187,10 @@ export interface ConnectedListInfo {
   thumbnails: boolean;
   // Entries whose names cannot be shown here.
   omitted?: number;
+  // A walk through the folders (a search) did not see everything.
+  incomplete?: boolean;
+  // Shortcuts that were listed but not entered by such a walk.
+  links?: number;
 }
 
 export const Metadata = {
@@ -207,6 +213,8 @@ export const Metadata = {
   connected_link: "fylvo:link",
   // A document of the provider (e.g. Google Sheets): downloads in this format.
   connected_export: "fylvo:export",
+  // Every format a provider's document downloads in, the usual one first (comma separated).
+  connected_exports: "fylvo:exports",
   // Address of the item at the provider, to open it there.
   connected_external_url: "fylvo:external_url",
   // The size is not known; do not show it.
@@ -381,6 +389,8 @@ export interface FileURLService extends MultipleUriService {
   skip_error?: boolean;
   use_primary_site_url?: boolean;
   archive?: boolean;
+  // Fylvo: the format a provider's document of a connected storage is downloaded in.
+  export?: string;
 }
 
 export interface FileURLResponse {

@@ -14,6 +14,7 @@ import DraggableDialog from "../../../Dialogs/DraggableDialog.tsx";
 import { FileManagerIndex } from "../../FileManager.tsx";
 import AddCondition from "./AddCondition.tsx";
 import ConditionBox, { Condition, ConditionType } from "./ConditionBox.tsx";
+import { inConnectedStorage } from "../../../../api/connected.ts";
 
 const searchParamToConditions = (search_params: SearchParam, base: string): Condition[] => {
   const applied: Condition[] = [
@@ -170,7 +171,12 @@ const AdvanceSearch = () => {
       showActions
       onAccept={submitSearch}
       showCancel
-      secondaryAction={<AddCondition onConditionAdd={onConditionAdd} />}
+      secondaryAction={
+        <AddCondition
+          onConditionAdd={onConditionAdd}
+          connected={inConnectedStorage(conditions.find((c) => c.type == ConditionType.base)?.base_uri)}
+        />
+      }
       dialogProps={{
         open: open ?? false,
         onClose: onClose,

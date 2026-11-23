@@ -181,6 +181,7 @@ const EmptyFileList = memo(
     const currentFs = useAppSelector((state) => state.fileManager[fmIndex]?.current_fs);
     const search_params = useAppSelector((state) => state.fileManager[fmIndex]?.search_params);
     const recursion_limit_reached = useAppSelector((state) => state.fileManager[fmIndex].list?.recursion_limit_reached);
+    const connected = useAppSelector((state) => !!state.fileManager[fmIndex].list?.connected);
     const capability = useAppSelector((state) => state.fileManager[fmIndex].list?.props.capability);
 
     const parent = useAppSelector((state) => state.fileManager[fmIndex].list?.parent);
@@ -210,7 +211,7 @@ const EmptyFileList = memo(
         {currentFs == Filesystem.shared_with_me && (
           <>
             <SharedWithMeEmpty />
-            {recursion_limit_reached && <SearchLimitReached />}
+            {recursion_limit_reached && !connected && <SearchLimitReached />}
           </>
         )}
         {uploadOnly && (
@@ -243,7 +244,7 @@ const EmptyFileList = memo(
               />
             </Box>
             <ConnectedOmitted />
-            {recursion_limit_reached && <SearchLimitReached />}
+            {recursion_limit_reached && !connected && <SearchLimitReached />}
           </>
         )}
       </Box>

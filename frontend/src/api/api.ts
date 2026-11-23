@@ -283,7 +283,11 @@ export function sendSignout(req: RefreshTokenRequest): ThunkResponse<string> {
   };
 }
 
-export function getFileList(req: ListFileService, skipSnackbar = true): ThunkResponse<ListResponse> {
+export function getFileList(
+  req: ListFileService,
+  skipSnackbar = true,
+  signal?: AbortSignal,
+): ThunkResponse<ListResponse> {
   return async (dispatch, _getState) => {
     return await dispatch(
       send(
@@ -291,6 +295,7 @@ export function getFileList(req: ListFileService, skipSnackbar = true): ThunkRes
         {
           params: req,
           method: "GET",
+          signal,
         },
         {
           ...defaultOpts,

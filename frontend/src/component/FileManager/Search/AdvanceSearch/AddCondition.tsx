@@ -23,6 +23,8 @@ import { Condition, ConditionType } from "./ConditionBox.tsx";
 
 export interface AddConditionProps {
   onConditionAdd: (condition: Condition) => void;
+  // Fylvo: the search is in a connected storage (name and type only).
+  connected?: boolean;
 }
 
 interface ConditionOption {
@@ -199,6 +201,9 @@ const mediaMetaOptions: (ConditionOption | null)[] = [
   },
 ];
 
+// Fylvo: the conditions a search in a connected storage takes.
+const connectedConditions = [ConditionType.name, ConditionType.type];
+
 const AddCondition = (props: AddConditionProps) => {
   const { t } = useTranslation();
   const customPropsOptions = useAppSelector((state) => state.siteConfig.explorer?.config?.custom_props);
@@ -231,34 +236,38 @@ const AddCondition = (props: AddConditionProps) => {
         }}
         {...menuProps}
       >
-        {options.map((option, index) => (
-          <SquareMenuItem dense key={index} onClick={() => onConditionAdd(option.condition)}>
-            <ListItemIcon>{option.icon}</ListItemIcon>
-            {t(option.name)}
-          </SquareMenuItem>
-        ))}
-        <CascadingSubmenu
-          icon={<Info fontSize="small" />}
-          popupId={"mediaInfo"}
-          title={t("application:fileManager.mediaInfo")}
-        >
-          {mediaMetaOptions.map((option, index) =>
-            option ? (
-              <SquareMenuItem key={index} dense onClick={() => onConditionAdd(option.condition)}>
-                <ListItemText
-                  slotProps={{
-                    primary: { variant: "body2" },
-                  }}
-                >
-                  {t(option.name)}
-                </ListItemText>
-              </SquareMenuItem>
-            ) : (
-              <DenseDivider />
-            ),
-          )}
-        </CascadingSubmenu>
-        {customPropsOptions && customPropsOptions.length > 0 && (
+        {options
+          .filter((option) => !props.connected || connectedConditions.includes(option.condition.type))
+          .map((option, index) => (
+            <SquareMenuItem dense key={index} onClick={() => onConditionAdd(option.condition)}>
+              <ListItemIcon>{option.icon}</ListItemIcon>
+              {t(option.name)}
+            </SquareMenuItem>
+          ))}
+        {!props.connected && (
+          <CascadingSubmenu
+            icon={<Info fontSize="small" />}
+            popupId={"mediaInfo"}
+            title={t("application:fileManager.mediaInfo")}
+          >
+            {mediaMetaOptions.map((option, index) =>
+              option ? (
+                <SquareMenuItem key={index} dense onClick={() => onConditionAdd(option.condition)}>
+                  <ListItemText
+                    slotProps={{
+                      primary: { variant: "body2" },
+                    }}
+                  >
+                    {t(option.name)}
+                  </ListItemText>
+                </SquareMenuItem>
+              ) : (
+                <DenseDivider />
+              ),
+            )}
+          </CascadingSubmenu>
+        )}
+        {!props.connected && customPropsOptions && customPropsOptions.length > 0 && (
           <CascadingSubmenu
             icon={<TextBulletListSquareEdit fontSize="small" />}
             popupId={"customProps"}

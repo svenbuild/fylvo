@@ -21,7 +21,7 @@ import GalleryView from "./GalleryView/GalleryView.tsx";
 import { ListViewColumn } from "./ListView/Column.tsx";
 import ListView from "./ListView/ListView.tsx";
 import SingleFileView from "./SingleFileView.tsx";
-import { ConnectedOmitted } from "../Connected/ConnectedMark.tsx";
+import { ConnectedIncomplete, ConnectedOmitted } from "../Connected/ConnectedMark.tsx";
 
 export const ExplorerPage = {
   Error: 1,
@@ -58,6 +58,8 @@ const Explorer = () => {
   const explorerConfigLoading = useAppSelector((state) => state.siteConfig.explorer.loaded);
   const files = useAppSelector((state) => state.fileManager[fmIndex].list?.files);
   const recursion_limit_reached = useAppSelector((state) => state.fileManager[fmIndex].list?.recursion_limit_reached);
+  // Fylvo: a connected storage says what its search did not see (ConnectedIncomplete).
+  const connected = useAppSelector((state) => !!state.fileManager[fmIndex].list?.connected);
   const layout = useAppSelector((state) => state.fileManager[fmIndex].layout);
 
   const selectContainerRef = React.useRef<HTMLElement | null>(null);
@@ -141,6 +143,7 @@ const Explorer = () => {
                 <CircularProgress />
               </Box>
             )}
+            {index != ExplorerPage.SingleFileView && <ConnectedIncomplete sx={{ px: 2, pt: 1 }} />}
             {index == ExplorerPage.GridView && <GridView />}
             {index == ExplorerPage.SingleFileView && <SingleFileView />}
             {index == ExplorerPage.Empty && <EmptyFileList />}
@@ -149,11 +152,13 @@ const Explorer = () => {
             {(index == ExplorerPage.GridView || index == ExplorerPage.GalleryView) && (
               <ConnectedOmitted sx={{ px: 2, pb: 1 }} />
             )}
-            {recursion_limit_reached && (index == ExplorerPage.GridView || index == ExplorerPage.GalleryView) && (
-              <Box sx={{ px: 2, pb: 1 }}>
-                <SearchLimitReached />
-              </Box>
-            )}
+            {recursion_limit_reached &&
+              !connected &&
+              (index == ExplorerPage.GridView || index == ExplorerPage.GalleryView) && (
+                <Box sx={{ px: 2, pb: 1 }}>
+                  <SearchLimitReached />
+                </Box>
+              )}
           </Box>
         </CSSTransition>
       </SwitchTransition>

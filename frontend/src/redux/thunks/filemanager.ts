@@ -96,6 +96,8 @@ export function setTargetPath(index: number, path: string): AppThunk {
 }
 
 let generation = 0;
+// Fylvo: the running search of a connected storage, by file manager.
+const connectedSearch: { [index: number]: AbortController | undefined } = {};
 export interface NavigateReconcileOptions {
   next_page?: boolean;
   sync_view?: boolean;
@@ -200,21 +202,34 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
     const currentView = localCustomView[pure_path ?? ""];
     let useCustomView = currentLogin?.user.disable_view_sync || currentView;
 
+    // Fylvo: a search in a connected storage walks the folders on the server (everything below
+    // the folder, recursive); only a few such walks run at once there, so one that is no longer
+    // wanted (another search or folder) is stopped, which frees its place.
+    connectedSearch[index]?.abort();
+    const recursive = inConnectedStorage(path) && new CrUri(path).is_search();
+    const abort = recursive ? new AbortController() : undefined;
+    connectedSearch[index] = abort;
+
     let listRes: ListResponse | null = null;
     try {
       listRes = await dispatch(
-        getFileList({
-          next_page_token: opt && opt.next_page ? list?.pagination.next_token : undefined,
-          uri: path,
-          page: list?.pagination.page ?? undefined,
-          ...(useCustomView
-            ? {
-                page_size: currentView?.page_size ?? pageSize(fileManager[index]),
-                order_by: currentView?.order ?? fileManager[index].sortBy,
-                order_direction: currentView?.order_direction ?? fileManager[index].sortDirection,
-              }
-            : {}),
-        }),
+        getFileList(
+          {
+            next_page_token: opt && opt.next_page ? list?.pagination.next_token : undefined,
+            uri: path,
+            page: list?.pagination.page ?? undefined,
+            recursive: recursive || undefined,
+            ...(useCustomView
+              ? {
+                  page_size: currentView?.page_size ?? pageSize(fileManager[index]),
+                  order_by: currentView?.order ?? fileManager[index].sortBy,
+                  order_direction: currentView?.order_direction ?? fileManager[index].sortDirection,
+                }
+              : {}),
+          },
+          true,
+          abort?.signal,
+        ),
       );
 
       // DB sorting has limit on string comparison, so we need to
@@ -647,7 +662,12 @@ export function advancedSearch(index: number, conditions: Condition[]): AppThunk
     });
 
     const crUri = new CrUri(base);
-    crUri.setSearchParam(params);
+    // Fylvo: a connected storage is searched by name and type only.
+    crUri.setSearchParam(
+      inConnectedStorage(base)
+        ? { name: params.name, name_op_or: params.name_op_or, case_folding: params.case_folding, type: params.type }
+        : params,
+    );
     dispatch(navigateToPath(index, crUri.toString()));
     dispatch(closeAdvanceSearch());
   };
@@ -660,8 +680,7 @@ export function openAdvancedSearch(index: number, initialKeywords?: string): App
     dispatch(
       setAdvanceSearch({
         open: true,
-        // Fylvo: a connected storage cannot be searched yet; start in the own files.
-        basePath: current_base && !inConnectedStorage(current_base) ? current_base : defaultPath,
+        basePath: current_base ?? defaultPath,
         nameCondition: initialKeywords != undefined ? initialKeywords.split(SPACE_RE).filter((x) => x) : undefined,
       }),
     );
