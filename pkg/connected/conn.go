@@ -130,11 +130,64 @@ func (m *Manager) closeLive(publicID string) {
 	m.liveMu.Lock()
 	live := m.live[publicID]
 	delete(m.live, publicID)
+	for key := range m.usage {
+		if strings.HasPrefix(key, publicID+"#") {
+			delete(m.usage, key)
+		}
+	}
 	m.liveMu.Unlock()
 	if live != nil {
 		live.cancel()
 	}
 	m.tree.Forget(publicID)
+}
+
+// Refused implements provider.Refusable: the provider refused a token it had handed out
+// a moment before, so the connection has to be connected again, like after a refused
+// renewal.
+func (l *liveConn) Refused(ctx context.Context, token string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.token != nil && l.token.AccessToken == token {
+		l.markReconnect(context.WithoutCancel(ctx))
+	}
+}
+
+// Fresh reads the state of the content a row shows right now into the row: its own,
+// or for a link that of the item it points to. A listing can be some seconds old, and
+// of what a link points to it tells nothing.
+func Fresh(ctx context.Context, p provider.Provider, row *Row) error {
+	var (
+		current *provider.Item
+		err     error
+	)
+	if row.Link != nil {
+		current, err = p.Target(ctx, &row.Item)
+	} else {
+		current, err = p.Get(ctx, row.ID)
+	}
+	if err != nil {
+		return err
+	}
+	row.Size, row.ModTime, row.Hash = current.Size, current.ModTime, current.Hash
+	row.Version, row.Revision = current.Version, current.Revision
+	return nil
+}
+
+// Public returns err as it may show in a message to the client: an error of the API with
+// its code and text, without the cause, which goes to the log. The message of an answer
+// that sums up several errors is made of their texts.
+func Public(ctx context.Context, err error) error {
+	err = Error(ctx, err)
+	var app serializer.AppError
+	if !errors.As(err, &app) || app.RawError == nil {
+		return err
+	}
+	if _, isReason := app.RawError.(reasonError); isReason {
+		return err
+	}
+	logging.FromContext(ctx).Warning("Connected storage: %s", err)
+	return serializer.NewError(app.ErrCode(), app.Msg, nil)
 }
 
 // Token implements provider.Auth: it returns the access token of the connection and
@@ -337,7 +390,14 @@ const (
 	ReasonNotConfigured = "not_configured"
 	// ReasonNotAllowed: the group of the account may not connect storages.
 	ReasonNotAllowed = "not_allowed"
+	// ReasonOtherAddress: the sign-in was started under another address of the
+	// installation than its first one.
+	ReasonOtherAddress = "other_address"
 )
+
+// ErrOtherAddress is the answer to a sign-in started under another address of the
+// installation than its first one, which is the one the provider sends the browser back to.
+var ErrOtherAddress = reasoned(serializer.CodeParamErr, "Open Fylvo under its main address to connect a storage", ReasonOtherAddress)
 
 // ErrNotAllowed is the answer for an account whose group may not connect storages.
 var ErrNotAllowed = reasoned(serializer.CodeConnectedUnavailable, "Connected storages are not available", ReasonNotAllowed)

@@ -160,6 +160,11 @@ func (m *Manager) View(ctx context.Context, userID int, publicID string) (*types
 
 // SetView stores the view setting of a connection; nil removes it.
 func (m *Manager) SetView(ctx context.Context, userID int, publicID string, view *types.ExplorerView) error {
+	// Not while the connection is connected again: that step carries the view over to
+	// the new generation, and must not carry over one that is just being replaced.
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	row, err := m.row(ctx, userID, publicID)
 	if err != nil {
 		return err

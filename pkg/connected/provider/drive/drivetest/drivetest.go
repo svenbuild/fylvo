@@ -71,6 +71,8 @@ type entry struct {
 	version                    int64
 	trashed                    bool
 	resourceKey                string
+	// viewOnly: the account may read the file but not its revisions.
+	viewOnly bool
 
 	// Binary files only: the current revision and all stored ones.
 	revision  string
@@ -231,6 +233,14 @@ func (s *Server) setContent(e *entry, content []byte) {
 	s.n++
 	e.revision = fmt.Sprintf("rev%03d", s.n)
 	e.revisions[e.revision] = bytes.Clone(content)
+}
+
+// SetViewOnly makes a file one the account may read but whose revisions it may not, as
+// a file someone shared for viewing.
+func (s *Server) SetViewOnly(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.must(id).viewOnly = true
 }
 
 // SetResourceKey gives an item a resource key. Its content can then be downloaded only
@@ -553,6 +563,7 @@ func (s *Server) file(e *entry) map[string]any {
 	if e.resourceKey != "" {
 		f["resourceKey"] = e.resourceKey
 	}
+	f["capabilities"] = map[string]bool{"canReadRevisions": !e.viewOnly}
 	if e.binary() {
 		content := e.content()
 		sum := md5.Sum(content)
@@ -573,6 +584,10 @@ func (s *Server) file(e *entry) map[string]any {
 func (s *Server) media(w http.ResponseWriter, r *http.Request, e *entry, rev string) {
 	if !e.binary() {
 		writeError(w, http.StatusForbidden, "fileNotDownloadable", "Only files with binary content can be downloaded.")
+		return
+	}
+	if rev != "" && e.viewOnly {
+		writeError(w, http.StatusForbidden, "insufficientFilePermissions", "The user does not have sufficient permissions for this file.")
 		return
 	}
 	if rev == "" {

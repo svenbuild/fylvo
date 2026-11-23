@@ -171,6 +171,12 @@ func KindOf(err error) Kind {
 	return KindOther
 }
 
+// Refusable is an Auth that wants to know when the provider refused a token it had
+// handed out a moment before: no further token will help.
+type Refusable interface {
+	Refused(ctx context.Context, token string)
+}
+
 // Auth supplies the access token of a connection.
 type Auth interface {
 	// Token returns an access token to use now. rejected is a token the provider just

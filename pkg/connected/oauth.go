@@ -262,6 +262,10 @@ type Flow struct {
 	exchanging map[string]int
 	// revoking counts, per provider, the tokens that are being taken back right now.
 	revoking map[string]int
+	// talking counts, per account, the callbacks that are talking to a provider, and
+	// dropped marks the accounts whose callbacks must not store what they get.
+	talking map[int]int
+	dropped map[int]bool
 }
 
 func NewFlow(specs map[string]*Spec, client *http.Client) *Flow {
@@ -272,7 +276,7 @@ func NewFlow(specs map[string]*Spec, client *http.Client) *Flow {
 	return &Flow{
 		specs: specs, http: &fixed, now: time.Now,
 		states: map[string]*flowState{}, granted: map[string]*Granted{}, exchanging: map[string]int{},
-		revoking: map[string]int{},
+		revoking: map[string]int{}, talking: map[int]int{}, dropped: map[int]bool{},
 	}
 }
 
@@ -329,10 +333,10 @@ func (f *Flow) Begin(userID int, provider string, client Client, reconnect *Reco
 	if f.revoking[provider] > 0 {
 		return "", "", ErrFlowWait
 	}
-	var (
-		open   int
-		oldest string
-	)
+	// Everything an account has under way counts: sign-ins that wait for the provider,
+	// ones that talk to it, and ones that wait to be stored.
+	var oldest, oldestGranted string
+	open := f.talking[userID]
 	for k, s := range f.states {
 		if s.userID != userID {
 			continue
@@ -342,8 +346,23 @@ func (f *Flow) Begin(userID int, provider string, client Client, reconnect *Reco
 			oldest = k
 		}
 	}
-	if open >= maxStates {
+	for k, g := range f.granted {
+		if g.UserID != userID {
+			continue
+		}
+		open++
+		if oldestGranted == "" || g.expires.Before(f.granted[oldestGranted].expires) {
+			oldestGranted = k
+		}
+	}
+	switch {
+	case open < maxStates:
+	case oldest != "":
 		delete(f.states, oldest)
+	case oldestGranted != "":
+		delete(f.granted, oldestGranted)
+	default:
+		return "", "", ErrFlowWait
 	}
 	f.states[state] = &flowState{
 		userID: userID, provider: provider, verifier: verifier, browser: sha256.Sum256([]byte(cookie)),
@@ -373,6 +392,7 @@ func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError 
 	delete(f.states, state)
 	if s != nil {
 		f.exchanging[s.provider]++
+		f.talking[s.userID]++
 	}
 	f.mu.Unlock()
 
@@ -383,6 +403,10 @@ func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError 
 	defer func() {
 		f.mu.Lock()
 		f.exchanging[s.provider]--
+		if f.talking[s.userID]--; f.talking[s.userID] <= 0 {
+			delete(f.talking, s.userID)
+			delete(f.dropped, s.userID)
+		}
 		f.mu.Unlock()
 	}()
 	sum := sha256.Sum256([]byte(cookie))
@@ -454,6 +478,11 @@ func (f *Flow) Callback(ctx context.Context, state, cookie, code, providerError 
 
 	finish = randomToken(24)
 	f.mu.Lock()
+	if f.dropped[s.userID] {
+		// The account was removed while the provider answered: its token is let go.
+		f.mu.Unlock()
+		return "", ErrFlowExpired
+	}
 	f.granted[finish] = &Granted{
 		UserID: s.userID, Provider: s.provider, Identity: identity, Reconnect: s.reconnect,
 		Token: string(token), Scopes: tok.Scope, expires: f.now().Add(finishLife),
@@ -536,6 +565,9 @@ func (f *Flow) Forget(userID int) {
 		if g.UserID == userID {
 			delete(f.granted, k)
 		}
+	}
+	if f.talking[userID] > 0 {
+		f.dropped[userID] = true
 	}
 }
 

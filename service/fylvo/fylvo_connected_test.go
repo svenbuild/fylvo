@@ -18,6 +18,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent/user"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/auth/requestinfo"
 	"github.com/cloudreve/Cloudreve/v4/pkg/boolset"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
@@ -256,4 +257,25 @@ func TestConnectedManagerIsOnePerServer(t *testing.T) {
 	// Another server has another one.
 	other := newConnectedEnv(t, "https://cloud.example.com")
 	require.NotSame(t, connected.For(e.dep), connected.For(other.dep))
+}
+
+// The provider sends the browser back to the first site address, so a sign-in is
+// started only there.
+func TestConnectedAuthorizeOnlyUnderTheFirstAddress(t *testing.T) {
+	e := newConnectedEnv(t, "https://cloud.example.com,https://files.example.com")
+	alex := e.newUser("alex", 2)
+	secret := "the-client-secret"
+	c, _ := e.as(alex, "PUT", "/api/v4/admin/fylvo/connected")
+	_, err := (&ConnectedAdminService{Provider: "drive", ClientID: "client-id.example", ClientSecret: &secret}).Set(c)
+	require.NoError(t, err)
+
+	on := func(host string) *gin.Context {
+		c, _ := e.as(alex, "POST", "/api/v4/fylvo/connected/authorize")
+		util.WithValue(c, requestinfo.RequestInfoCtx{}, &requestinfo.RequestInfo{Host: host})
+		return c
+	}
+	_, err = (&ConnectedAuthorizeService{Provider: "drive"}).Authorize(on("files.example.com"))
+	require.Equal(t, connected.ReasonOtherAddress, connected.ReasonOf(err))
+	_, err = (&ConnectedAuthorizeService{Provider: "drive"}).Authorize(on("cloud.example.com"))
+	require.NoError(t, err)
 }

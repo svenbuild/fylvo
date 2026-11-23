@@ -2,10 +2,13 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -278,10 +281,18 @@ func TestClientBehindProxy(t *testing.T) {
 
 	// The proxy is for one name only, as with NO_PROXY for everything else.
 	client := newHTTPClient(func(r *http.Request) (*url.URL, error) {
-		if r.URL.Hostname() == "files.example.com" || r.URL.Hostname() == "192.168.1.10" {
+		if strings.HasSuffix(r.URL.Hostname(), ".example.com") || r.URL.Hostname() == "192.168.1.10" {
 			return proxyURL, nil
 		}
 		return nil, nil
+	}, func(_ context.Context, host string) ([]net.IPAddr, error) {
+		switch host {
+		case "files.example.com":
+			return []net.IPAddr{{IP: net.ParseIP("203.0.113.7")}}, nil
+		case "inside.example.com":
+			return []net.IPAddr{{IP: net.ParseIP("203.0.113.7")}, {IP: net.ParseIP("10.0.0.5")}}, nil
+		}
+		return nil, errors.New("no such host")
 	})
 	c := &Caller{HTTP: client, Auth: &testAuth{}, AllowHTTP: true}
 	ctx := context.Background()
@@ -301,9 +312,19 @@ func TestClientBehindProxy(t *testing.T) {
 	if _, err := c.Do(ctx, http.MethodGet, "http://192.168.1.10/x", nil, nil); KindOf(err) != KindUnsafe {
 		t.Errorf("an internal address through the proxy: %v, want refused", err)
 	}
+	// A name that leads inside is refused too, although the proxy would look it up.
+	if _, err := c.Do(ctx, http.MethodGet, "http://inside.example.com/x", nil, nil); KindOf(err) != KindUnsafe {
+		t.Errorf("a name that leads to an internal address: %v, want refused", err)
+	}
 	if len(proxied) != 1 {
 		t.Errorf("proxied %v", proxied)
 	}
+	// A name only the proxy knows is the proxy's to judge.
+	res, err = c.Do(ctx, http.MethodGet, "http://unknown.example.com/b", nil, nil)
+	if err != nil {
+		t.Fatalf("a name this machine cannot look up: %v", err)
+	}
+	res.Body.Close()
 }
 
 func TestAuthErrorIsPassedOn(t *testing.T) {

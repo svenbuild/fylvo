@@ -155,6 +155,12 @@ func (s *ConnectedAuthorizeService) Authorize(c *gin.Context) (*ConnectedAuthori
 	if !mayConnectStorages(user) {
 		return nil, connected.ErrNotAllowed
 	}
+	// The provider sends the browser back to the first site address, and the cookie
+	// of the sign-in is for one host. Started under another address of the
+	// installation, the sign-in could only fail after the consent.
+	if dep.SettingProvider().SiteURL(c).Host != primarySiteURL(c, dep).Host {
+		return nil, connected.ErrOtherAddress
+	}
 
 	address, cookie, err := connected.For(dep).Authorize(c, user.ID, s.Provider, s.Reconnect, connectedCallbackURL(c, dep))
 	if err != nil {

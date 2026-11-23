@@ -126,12 +126,15 @@ func (l *listing) find(name string) *Row {
 }
 
 type snapshot struct {
-	key      listKey
-	user     int
-	path     string
-	order    Order
-	parent   *Row
+	key    listKey
+	user   int
+	path   string
+	order  Order
+	parent *Row
+	// rows are the entries of the listing in the order of the snapshot. They belong
+	// to the listing and are not changed: a page gets copies with its paths.
 	rows     []*Row
+	viaLink  bool
 	omitted  int
 	lastUsed time.Time
 }
@@ -248,7 +251,6 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 	}
 
 	l := newListing(c.P.CaseInsensitive())
-	seen := 0
 	for page, pages := "", 0; ; pages++ {
 		p, err := c.P.Children(ctx, folderID, page)
 		if err != nil {
@@ -257,12 +259,12 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 			}
 			return nil, err
 		}
-		seen += len(p.Items)
-		if seen > maxRows {
-			return nil, ErrTooLarge
-		}
 		for _, it := range p.Items {
 			l.add(it)
+		}
+		// Counted by entry: one that shows up twice while the folder changes is one.
+		if len(l.ids) > maxRows {
+			return nil, ErrTooLarge
 		}
 		if p.Next == "" {
 			break
@@ -513,19 +515,15 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 		return nil, err
 	}
 
-	viaLink := parent.ViaLink
-	rows := make([]*Row, 0, len(l.entries))
-	for _, e := range l.entries {
-		row := *e
-		row.Path = joinPath(path, row.Name)
-		row.ViaLink = viaLink || row.Link != nil
-		rows = append(rows, &row)
-	}
+	// Only the order is made anew for this request. The rows stay the listing's.
+	rows := make([]*Row, len(l.entries))
+	copy(rows, l.entries)
 	sortRows(rows, o)
 
 	snap := &snapshot{
 		key:  listKey{conn: c.ID, gen: c.Generation, folder: parent.ContentID()},
-		user: c.UserID, path: path, order: o, parent: parent, rows: rows, omitted: l.omitted,
+		user: c.UserID, path: path, order: o, parent: parent, rows: rows, viaLink: parent.ViaLink,
+		omitted: l.omitted,
 	}
 	id := ""
 	if len(rows) > size {
@@ -543,7 +541,14 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 
 func (s *snapshot) page(id string, offset, size int) *Page {
 	end := min(offset+size, len(s.rows))
-	page := &Page{Parent: s.parent, Rows: s.rows[offset:end], Total: len(s.rows), Omitted: s.omitted}
+	rows := make([]*Row, 0, end-offset)
+	for _, e := range s.rows[offset:end] {
+		row := *e
+		row.Path = joinPath(s.path, row.Name)
+		row.ViaLink = s.viaLink || row.Link != nil
+		rows = append(rows, &row)
+	}
+	page := &Page{Parent: s.parent, Rows: rows, Total: len(s.rows), Omitted: s.omitted}
 	if end < len(s.rows) {
 		page.Next = id + "." + strconv.Itoa(end)
 	}

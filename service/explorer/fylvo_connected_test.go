@@ -613,3 +613,73 @@ func TestConnectedReasonInABatch(t *testing.T) {
 	require.Equal(t, serializer.CodeConnectedItem, entry.Code)
 	require.Equal(t, connected.ReasonData{Reason: connected.ReasonAmbiguous}, entry.Data)
 }
+
+// A HEAD request is answered from what is known of the file. No download is started.
+func TestConnectedHead(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "notes.txt", []byte("0123456789"))
+	address, err := e.urlOf(e.alex, e.root+"/notes.txt", true)
+	require.NoError(t, err)
+	u, err := url.Parse(address)
+	require.NoError(t, err)
+	grant, name, _ := strings.Cut(strings.TrimPrefix(u.Path, connectedContentPath), "/")
+
+	before := e.sim.Calls(drivetest.CallMedia)
+	c, rec := e.request(nil, http.MethodHead, u.EscapedPath())
+	c.Params = gin.Params{{Key: "grant", Value: grant}, {Key: "name", Value: name}}
+	ServeConnectedContent(c)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "10", rec.Header().Get("Content-Length"))
+	require.Equal(t, "bytes", rec.Header().Get("Accept-Ranges"))
+	require.Contains(t, rec.Header().Get("Content-Disposition"), "notes.txt")
+	require.Empty(t, rec.Body.String())
+	require.Equal(t, before, e.sim.Calls(drivetest.CallMedia))
+}
+
+// What people share with each other: a shortcut to a Google document, and a file one
+// may only view.
+func TestConnectedSharedItems(t *testing.T) {
+	e := newConnectedEnv(t)
+	doc := e.sim.AddNative("", "Budget", "gsheet")
+	e.sim.AddShortcut("", "Shared budget", doc)
+	viewOnly := e.sim.AddFile("", "minutes.txt", []byte("0123456789"))
+	e.sim.SetViewOnly(viewOnly)
+	e.sim.AddShortcut("", "Shared minutes", viewOnly)
+
+	res, err := e.list(e.alex, e.root, 0, "")
+	require.NoError(t, err)
+	require.Equal(t, "Budget.gsheet|minutes.txt|Shared budget.gsheet|Shared minutes", fileNames(res.Files))
+
+	export, err := e.urlOf(e.alex, e.root+"/Shared budget.gsheet", true)
+	require.NoError(t, err)
+	rec := e.fetch(export, "")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Header().Get("Content-Disposition"), "Shared budget.xlsx")
+	require.Contains(t, rec.Body.String(), "export of "+doc)
+
+	for _, name := range []string{"minutes.txt", "Shared minutes"} {
+		address, err := e.urlOf(e.alex, e.root+"/"+name, true)
+		require.NoError(t, err, name)
+		rec := e.fetch(address, "bytes=2-5")
+		require.Equal(t, http.StatusPartialContent, rec.Code, name)
+		require.Equal(t, "2345", rec.Body.String(), name)
+	}
+}
+
+// The version a client names is compared with the file as it is now, not as a listing
+// of a moment ago showed it.
+func TestConnectedURLLooksAtTheFileAsItIs(t *testing.T) {
+	e := newConnectedEnv(t)
+	id := e.sim.AddFile("", "notes.txt", []byte("first"))
+	res, err := e.list(e.alex, e.root, 0, "")
+	require.NoError(t, err)
+	seen := res.Files[0].PrimaryEntity
+
+	// Changed right after the listing, which the server still has in memory.
+	e.sim.SetContent(id, []byte("second"))
+	_, err = (&FileURLService{Uris: []string{e.root + "/notes.txt"}, Entity: seen}).Get(e.as(e.alex))
+	require.Error(t, err, "the version the client saw is gone")
+	address, err := e.urlOf(e.alex, e.root+"/notes.txt", true)
+	require.NoError(t, err)
+	require.Equal(t, "second", e.fetch(address, "").Body.String())
+}

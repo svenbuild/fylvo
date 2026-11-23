@@ -594,3 +594,52 @@ func TestListingWaitsOnlySoLong(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// The limit is on entries, not on how often the provider names them.
+func TestLimitCountsEntriesOnce(t *testing.T) {
+	p := newMem(false)
+	p.pageSize = 10000
+	items := make([]provider.Item, 0, maxRows+1)
+	for i := 0; i < maxRows; i++ {
+		items = append(items, provider.Item{ID: fmt.Sprintf("i%d", i), Name: fmt.Sprintf("f%06d", i)})
+	}
+	items = append(items, provider.Item{ID: "i0", Name: "renamed"})
+	p.children["root"] = items
+
+	page, err := NewTree().List(context.Background(), memConn(p), "", Order{}, 100, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != maxRows {
+		t.Fatalf("%d rows", page.Total)
+	}
+}
+
+// Rows of a page carry their paths; the rows kept for the listing are not touched.
+func TestPagesBuildTheirPaths(t *testing.T) {
+	p := newMem(false)
+	docs := p.dir("root", "Docs")
+	sub := p.dir(docs, "Sub")
+	for i := 0; i < 3; i++ {
+		p.file(sub, fmt.Sprintf("f%d", i), 1)
+	}
+	tree, c, ctx := NewTree(), memConn(p), context.Background()
+	first, err := tree.List(ctx, c, "Docs/Sub", Order{}, 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := tree.List(ctx, c, "Docs/Sub", Order{}, 2, first.Next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Rows[0].Path != "Docs/Sub/f0" || second.Rows[0].Path != "Docs/Sub/f2" {
+		t.Fatalf("paths %q %q", first.Rows[0].Path, second.Rows[0].Path)
+	}
+	for _, l := range tree.listings {
+		for _, e := range l.entries {
+			if e.Path != "" {
+				t.Fatalf("a kept row was given the path %q", e.Path)
+			}
+		}
+	}
+}

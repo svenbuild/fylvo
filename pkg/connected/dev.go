@@ -216,8 +216,32 @@ func devOptions(o *ManagerOptions) {
 		return drive.New(drive.Options{HTTP: d.sim.Client(), Auth: auth, BaseURL: d.sim.URL()})
 	}
 	// The simulated provider listens on this machine, which the client for real
-	// providers refuses to talk to.
-	o.HTTP = d.sim.Client()
+	// providers refuses to talk to. Only requests to it get past that.
+	hosts := map[string]bool{}
+	for _, address := range []string{d.tokens.URL, d.sim.URL()} {
+		if u, err := url.Parse(address); err == nil {
+			hosts[u.Host] = true
+		}
+	}
+	checked := provider.NewHTTPClient()
+	o.HTTP = &http.Client{
+		Transport:     devTransport{hosts: hosts, local: http.DefaultTransport, other: checked.Transport},
+		CheckRedirect: checked.CheckRedirect,
+	}
+}
+
+// devTransport sends requests to the simulated provider directly and all others the
+// way an ordinary build sends them.
+type devTransport struct {
+	hosts        map[string]bool
+	local, other http.RoundTripper
+}
+
+func (t devTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.hosts[req.URL.Host] {
+		return t.local.RoundTrip(req)
+	}
+	return t.other.RoundTrip(req)
 }
 
 // devReady enters the client of the simulated provider, so it shows as set up.

@@ -83,15 +83,15 @@ func TestChildrenLeavesOutTrashedAndUnsupported(t *testing.T) {
 	s.Trash(gone)
 	s.AddOther("", "Survey", "application/vnd.google-apps.form")
 	s.AddOther("", "Homepage", "application/vnd.google-apps.site")
-	doc := s.AddNative("", "Notes", "gdoc")
-	s.AddShortcut("", "Notes link", doc)
+	form := s.AddOther("", "Survey 2", "application/vnd.google-apps.form")
+	s.AddShortcut("", "Survey link", form)
 	s.AddFile("", "same", []byte("one"))
 	s.AddFile("", "same", []byte("two"))
 
 	page, err := d.Children(context.Background(), s.RootID(), "")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"Notes", "same", "same"}, names(page.Items))
-	assert.NotEqual(t, page.Items[1].ID, page.Items[2].ID)
+	assert.Equal(t, []string{"same", "same"}, names(page.Items))
+	assert.NotEqual(t, page.Items[0].ID, page.Items[1].ID)
 	assert.Empty(t, page.Next)
 }
 
@@ -519,4 +519,67 @@ func TestTarget(t *testing.T) {
 	assert.Equal(t, provider.KindNotFound, provider.KindOf(err))
 	_, err = d.Target(ctx, &provider.Item{ID: target})
 	assert.Equal(t, provider.KindNotFound, provider.KindOf(err), "not a link")
+}
+
+// A shortcut to a document that exists only at Google shows as such a document and is
+// exported by the document it points to.
+func TestShortcutToNativeDocument(t *testing.T) {
+	s, d, _ := setup(t)
+	ctx := context.Background()
+	doc := s.AddNative("", "Notes", "gdoc")
+	s.SetResourceKey(doc, "key-3")
+	linkID := s.AddShortcut("", "Notes link", doc)
+
+	link, err := d.Get(ctx, linkID)
+	require.NoError(t, err)
+	assert.Equal(t, "gdoc", link.Native)
+	assert.Equal(t, doc, link.ContentID())
+	assert.Empty(t, link.Version, "a listing does not tell the state of the target")
+
+	fresh, err := d.Target(ctx, link)
+	require.NoError(t, err)
+	assert.Equal(t, "gdoc", fresh.Native)
+	assert.NotEmpty(t, fresh.Version)
+
+	c, err := d.Export(ctx, fresh, "docx")
+	require.NoError(t, err)
+	assert.Contains(t, read(t, c), "export of "+doc)
+}
+
+// A file someone shared for viewing can be read, but not by the id of a revision.
+func TestViewOnlyFile(t *testing.T) {
+	s, d, _ := setup(t)
+	ctx := context.Background()
+	id := s.AddFile("", "shared.bin", []byte("0123456789"))
+	s.SetViewOnly(id)
+
+	item, err := d.Get(ctx, id)
+	require.NoError(t, err)
+	assert.Empty(t, item.Revision)
+	assert.NotEmpty(t, item.Version)
+	c, err := d.Open(ctx, item, "bytes=2-4")
+	require.NoError(t, err)
+	assert.Equal(t, "234", read(t, c))
+
+	// And through a shortcut, the usual way such a file gets into a drive.
+	link, err := d.Get(ctx, s.AddShortcut("", "shared link", id))
+	require.NoError(t, err)
+	fresh, err := d.Target(ctx, link)
+	require.NoError(t, err)
+	assert.Empty(t, fresh.Revision)
+	c, err = d.Open(ctx, fresh, "")
+	require.NoError(t, err)
+	assert.Equal(t, "0123456789", read(t, c))
+}
+
+// An entry without anything to tell its content by has no version.
+func TestNoVersionWithoutEvidence(t *testing.T) {
+	doc := file{ID: "a", Name: "a", MimeType: "application/vnd.google-apps.document"}
+	item, ok := doc.item()
+	require.True(t, ok)
+	assert.Empty(t, item.Version)
+	plain := file{ID: "b", Name: "b", MimeType: "text/plain"}
+	item, ok = plain.item()
+	require.True(t, ok)
+	assert.Empty(t, item.Version)
 }
