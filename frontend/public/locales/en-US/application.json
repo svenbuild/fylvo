@@ -1205,6 +1205,7 @@
     "deleteMultiple": "Move these {{num}} items to the trash of the provider?",
     "toProviderTrash": "Move to provider's trash",
     "emptySave": "An empty file cannot be saved into a connected storage. Add some content, or delete the file.",
-    "noFolderUpload": "Folders cannot be uploaded into a connected storage. Create the folder first and upload the files into it."
+    "noFolderUpload": "Folders cannot be uploaded into a connected storage. Create the folder first and upload the files into it.",
+    "nameTaken": "This name is already taken. Please choose another one."
   }
 }

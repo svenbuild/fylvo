@@ -1283,6 +1283,7 @@
     "deleteMultiple": "Diese {{num}} Objekte in den Papierkorb des Anbieters verschieben?",
     "toProviderTrash": "In den Papierkorb des Anbieters",
     "emptySave": "Eine leere Datei lässt sich in einem verbundenen Speicher nicht speichern. Bitte Inhalt ergänzen oder die Datei löschen.",
-    "noFolderUpload": "Ordner lassen sich nicht in einen verbundenen Speicher hochladen. Bitte erst den Ordner anlegen und die Dateien hineinladen."
+    "noFolderUpload": "Ordner lassen sich nicht in einen verbundenen Speicher hochladen. Bitte erst den Ordner anlegen und die Dateien hineinladen.",
+    "nameTaken": "Dieser Name ist schon vergeben. Bitte einen anderen wählen."
   }
 }

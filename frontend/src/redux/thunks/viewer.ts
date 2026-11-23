@@ -1,7 +1,16 @@
 import i18next from "i18next";
 import { enqueueSnackbar } from "notistack";
-import { getFileEntityUrl, getFileInfo, sendCreateViewerSession, sendUpdateFile } from "../../api/api.ts";
-import { FileResponse, Metadata, Viewer, ViewerAction, ViewerType } from "../../api/explorer.ts";
+import {
+  getFileEntityUrl,
+  getFileInfo,
+  sendCreateUploadSession,
+  sendCreateViewerSession,
+  sendDeleteUploadSession,
+  sendUpdateFile,
+  sendUploadChunk,
+} from "../../api/api.ts";
+import { newBusyState, ProviderGaveUp, retryBusy } from "../../component/FileManager/Connected/providerRetry.ts";
+import { FileResponse, Metadata, UploadCredential, Viewer, ViewerAction, ViewerType } from "../../api/explorer.ts";
 import { AppError, Code } from "../../api/request.ts";
 import { DefaultCloseAction } from "../../component/Common/Snackbar/snackbar.tsx";
 import { canUpdate, getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
@@ -494,6 +503,55 @@ export function saveImage(
   };
 }
 
+// Fylvo: a new file in a connected storage from an editor, through an upload session: it only
+// creates, so a taken name is refused (40004, at OneDrive also 40905 for another case), never
+// replaced, also when the name is taken while the parts go. Parts go one after another, busy
+// answers wait (as for downloads); an unknown outcome reloads the list and keeps the editor's
+// content. Errors are told here; undefined when nothing was saved.
+function connectedSaveNew(uri: string, data: any): AppThunk<Promise<FileResponse | undefined>> {
+  return async (dispatch) => {
+    const blob = data instanceof Blob ? data : new Blob([data]);
+    let session: UploadCredential | undefined;
+    try {
+      session = await dispatch(sendCreateUploadSession({ uri, size: blob.size, policy_id: "" }));
+      const id = session.session_id;
+      const partSize = session.chunk_size > 0 ? session.chunk_size : Math.max(blob.size, 1);
+      const parts = Math.max(1, Math.ceil(blob.size / partSize));
+      const busy = newBusyState();
+      let file: unknown;
+      for (let i = 0; i < parts; i++) {
+        const part = blob.slice(i * partSize, (i + 1) * partSize);
+        file = await retryBusy(busy, () => dispatch(sendUploadChunk(id, part, i)));
+      }
+      return file as FileResponse;
+    } catch (e) {
+      const code = e instanceof AppError ? e.code : undefined;
+      if (code == ConnectedCode.OutcomeUnknown) {
+        dispatch(refreshFileList(FileManagerIndex.main));
+      } else if (session) {
+        // Nothing stays open at the server.
+        dispatch(sendDeleteUploadSession({ id: session.session_id, uri })).catch(() => undefined);
+      }
+      const taken = code == ConnectedCode.ObjectExists || code == connectedCaseTaken;
+      enqueueSnackbar({
+        message: taken
+          ? i18next.t("application:connected.nameTaken")
+          : e instanceof ProviderGaveUp
+            ? i18next.t(e.message)
+            : e instanceof Error
+              ? e.message
+              : String(e),
+        variant: "warning",
+        action: DefaultCloseAction,
+      });
+      return undefined;
+    }
+  };
+}
+
+// A name that differs only in case from one that is there (OneDrive).
+const connectedCaseTaken = 40905;
+
 export function saveFile(
   uri: string,
   data: any,
@@ -501,7 +559,7 @@ export function saveFile(
   saveAsNew?: boolean,
   ignoreSnackbar?: boolean,
   // Fylvo: saved under a name the user chose (as saveAsNew, without asking for it here); in a
-  // connected storage it must be free.
+  // connected storage that name must be free.
   asNew?: boolean,
 ): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, _getState): Promise<FileResponse | undefined> => {
@@ -518,72 +576,54 @@ export function saveFile(
         return;
       }
     }
-    // Fylvo: saving there replaces a file of that name, so a copy under a chosen name needs a
-    // free name: only "not there" (40016) counts as free, any other answer stops. The version
-    // is still sent: should the name be taken meanwhile, the server answers "changed" (40076)
-    // instead of replacing that file.
+    // Fylvo: under a chosen name in a connected storage the file goes through an upload
+    // session, which only creates: a taken name is refused there, never replaced.
     if (inConnectedStorage(uri) && (saveAsNew || asNew)) {
-      // Why it stops: the name is taken, or the answer's own text (for example "reconnect").
-      const stop = await dispatch(getFileInfo({ uri }, true)).then(
-        () => i18next.t("common:errors.40004"),
-        (e) =>
-          e instanceof AppError && e.code == ConnectedCode.NotThere
-            ? undefined
-            : e instanceof Error
-              ? e.message
-              : String(e),
-      );
-      if (stop) {
+      savedFile = await dispatch(connectedSaveNew(uri, data));
+    } else {
+      // Fylvo: a connected storage keeps no empty replacement of a file; say so instead of
+      // sending it (the server would refuse it).
+      const size = data instanceof Blob ? data.size : typeof data == "string" ? data.length : data?.byteLength;
+      if (inConnectedStorage(uri) && size === 0) {
         enqueueSnackbar({
-          message: stop,
+          message: i18next.t("application:connected.emptySave"),
           variant: "warning",
           action: DefaultCloseAction,
         });
         return;
       }
-    }
-    // Fylvo: a connected storage keeps no empty replacement of a file (a new one may be empty); say so instead of
-    // sending it (the server would refuse it).
-    const size = data instanceof Blob ? data.size : typeof data == "string" ? data.length : data?.byteLength;
-    if (inConnectedStorage(uri) && size === 0 && !saveAsNew && !asNew) {
-      enqueueSnackbar({
-        message: i18next.t("application:connected.emptySave"),
-        variant: "warning",
-        action: DefaultCloseAction,
-      });
-      return;
-    }
-    try {
-      savedFile = await dispatch(
-        sendUpdateFile(
-          {
-            uri: uri,
-            previous: version,
-            // Fylvo: saving a file of a connected storage never brings back a deleted one.
-            // (also when "overwrite" sends no version).
-            previous_required: inConnectedStorage(uri) && !saveAsNew && !asNew ? true : undefined,
-          },
-          data,
-        ),
-      );
-    } catch (e) {
-      if (e instanceof AppError && e.code == Code.StaleVersion) {
-        // Handle version conflict
-        try {
-          const opt = await dispatch(askStaleVersionAction(uri));
-          if (opt.overwrite) {
-            return await dispatch(saveFile(uri, data));
-          } else if (opt.saveAs) {
-            return await dispatch(saveFile(opt.saveAs, data, version, false, false, true));
+      try {
+        savedFile = await dispatch(
+          sendUpdateFile(
+            {
+              uri: uri,
+              previous: version,
+              // Fylvo: saving a file of a connected storage never brings back a deleted one
+              // (also when "overwrite" sends no version).
+              previous_required: inConnectedStorage(uri) ? true : undefined,
+            },
+            data,
+          ),
+        );
+      } catch (e) {
+        if (e instanceof AppError && e.code == Code.StaleVersion) {
+          // Handle version conflict
+          try {
+            const opt = await dispatch(askStaleVersionAction(uri));
+            if (opt.overwrite) {
+              return await dispatch(saveFile(uri, data));
+            } else if (opt.saveAs) {
+              return await dispatch(saveFile(opt.saveAs, data, version, false, false, true));
+            }
+          } catch (e) {
+            // Cancel save action
+            throw e;
           }
-        } catch (e) {
-          // Cancel save action
-          throw e;
         }
-      }
-      // Fylvo: the save may have happened at the provider; the list shows what is there.
-      if (e instanceof AppError && e.code == ConnectedCode.OutcomeUnknown && inConnectedStorage(uri)) {
-        dispatch(refreshFileList(FileManagerIndex.main));
+        // Fylvo: the save may have happened at the provider; the list shows what is there.
+        if (e instanceof AppError && e.code == ConnectedCode.OutcomeUnknown && inConnectedStorage(uri)) {
+          dispatch(refreshFileList(FileManagerIndex.main));
+        }
       }
     }
 
