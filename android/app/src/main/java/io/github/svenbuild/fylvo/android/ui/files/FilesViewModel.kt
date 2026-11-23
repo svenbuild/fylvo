@@ -264,6 +264,8 @@ class FilesViewModel(
     private companion object {
         const val RECENT_COUNT = 12
         const val PREFETCH_THUMBS = 40
+        /** Fylvo 1.6: one reload of a folder for stale previews in this time at most. */
+        const val STALE_RELOAD_MS = 60_000L
         const val PREFETCH_PARALLELISM = 6
         const val PROGRESS_INTERVAL_MS = 200L
         const val UNDO_MAX_PAGES = 10
@@ -280,6 +282,17 @@ class FilesViewModel(
     init {
         loadRecent()
         observeUploads()
+        // Fylvo 1.6: a preview in a connected storage named an older version than the provider
+        // has: the folder on screen is read again, at most once per folder in STALE_RELOAD_MS.
+        viewModelScope.launch {
+            repo.staleThumbFolders.collect { folder ->
+                val now = System.currentTimeMillis()
+                if (CrUri.canonical(folder) != CrUri.canonical(_state.value.currentUri)) return@collect
+                if (now - (staleReloads[folder] ?: 0L) < STALE_RELOAD_MS) return@collect
+                staleReloads[folder] = now
+                refresh()
+            }
+        }
         viewModelScope.launch {
             runCatching { offline.start() }
         }
@@ -1284,6 +1297,8 @@ class FilesViewModel(
     // enabled FTS, and answered "feature not enabled" on a stock server.
 
     private var searchJob: Job? = null
+    /** Fylvo 1.6: when each folder was last read again for a stale preview. */
+    private val staleReloads = mutableMapOf<String, Long>()
     /** Fylvo 1.6: counts every new or ended search; a later page counts only for its own one. */
     private var searchRound = 0
 
@@ -1839,7 +1854,8 @@ class FilesViewModel(
      * a listing lands, so rows do not each pay a round trip as they scroll in.
      */
     private fun prefetchThumbs(files: List<FileObject>) {
-        val wanted = files.filter { !repo.hasNoThumb(it) }.take(PREFETCH_THUMBS)
+        // Fylvo 1.6: never ahead in a connected storage (each preview costs the provider a request).
+        val wanted = files.filter { !repo.hasNoThumb(it) && !Connected.isConnected(it.path) }.take(PREFETCH_THUMBS)
         if (wanted.isEmpty()) return
         viewModelScope.launch {
             val gate = kotlinx.coroutines.sync.Semaphore(PREFETCH_PARALLELISM)

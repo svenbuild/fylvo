@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
@@ -126,7 +127,28 @@ fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
 fun thumbCacheKey(thumbUrl: String?): String? =
     thumbUrl?.let { THUMB_ID.find(it)?.groupValues?.get(1) }?.let { "thumb:$it" }
 
+/**
+ * Fylvo 1.6: the key of [file]'s preview. In a connected storage the address changes daily and
+ * carries no stored id: the key is the storage, the file and its version (data/ConnectedThumbs).
+ */
+fun thumbCacheKey(file: FileObject, thumbUrl: String?): String? {
+    if (thumbUrl == null) return null
+    val storage = Connected.storageId(file.path) ?: return thumbCacheKey(thumbUrl)
+    if (file.id.isEmpty() || file.primaryEntity.isEmpty()) return null
+    return io.github.svenbuild.fylvo.android.data.ConnectedThumbs.key(storage, file.id, file.primaryEntity)
+}
+
 private val THUMB_ID = Regex("/file/content/([^/?]+)/")
+
+/**
+ * Fylvo 1.6: the request for [file]'s preview at [thumbUrl], kept under [thumbCacheKey] (rows and
+ * the image viewer use this one way; pictures of connected storages then go through
+ * ConnectedThumbs.Pictures).
+ */
+fun thumbRequest(context: android.content.Context, file: FileObject, thumbUrl: String): ImageRequest.Builder {
+    val key = thumbCacheKey(file, thumbUrl)
+    return ImageRequest.Builder(context).data(thumbUrl).memoryCacheKey(key).diskCacheKey(key)
+}
 
 /**
  * Thumbnail when the server has one, otherwise the file-kind icon on a soft
@@ -156,13 +178,9 @@ fun FileThumb(
         contentAlignment = Alignment.Center,
     ) {
         if (thumbUrl != null) {
+            val context = LocalContext.current
             SubcomposeAsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(thumbUrl)
-                    .memoryCacheKey(thumbCacheKey(thumbUrl))
-                    .diskCacheKey(thumbCacheKey(thumbUrl))
-                    .crossfade(180)
-                    .build(),
+                model = remember(file.id, file.primaryEntity, file.path, thumbUrl) { thumbRequest(context, file, thumbUrl).crossfade(180).build() },
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

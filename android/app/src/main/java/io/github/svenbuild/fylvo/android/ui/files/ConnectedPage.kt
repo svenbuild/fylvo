@@ -185,8 +185,9 @@ fun ConnectedPage(
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
                             runCatching {
                                 app.connectRepo.disconnect(s.id)
-                                // Uploads waiting for this storage go too.
-                                io.github.svenbuild.fylvo.android.work.UploadWorker.cancelForRoot(context.applicationContext, CrUri.root(s.uri))
+                                // Its previews leave the cache, and uploads waiting for it go too (each on its own).
+                                io.github.svenbuild.fylvo.android.data.ConnectedThumbs.forget(context.applicationContext, io.github.svenbuild.fylvo.android.util.Connected.storageId(s.uri) ?: s.id)
+                                runCatching { io.github.svenbuild.fylvo.android.work.UploadWorker.cancelForRoot(context.applicationContext, CrUri.root(s.uri)) }
                             }
                         }
                             .onSuccess { onMessage(context.getString(R.string.disconnected)); viewModel.connected.reload() }

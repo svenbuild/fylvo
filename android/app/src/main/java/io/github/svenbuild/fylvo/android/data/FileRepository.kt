@@ -16,6 +16,7 @@ import io.github.svenbuild.fylvo.android.api.UploadSessionResponse
 import io.github.svenbuild.fylvo.android.util.Connected
 import io.github.svenbuild.fylvo.android.util.CrUri
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -69,6 +70,10 @@ internal fun chunkRetryable(e: Throwable): Boolean =
     e is java.io.IOException || (e is ApiException && (e.code == Connected.CODE_BUSY || e.code == 429 || e.code in 502..504))
 /** Fylvo: the server's answer when a file has no preview ("Entity not exist"). */
 private const val CODE_NO_THUMB = 40077
+/** Fylvo 1.6: "not supported in a connected storage": no preview there, not asked again. */
+private const val CODE_CONNECTED_UNSUPPORTED = 40920
+/** Fylvo 1.6: the file is not the version the row names (a preview asked with entity). */
+private const val CODE_STALE_VERSION = 40076
 
 /** Signed thumbnail URLs are refetched after this; servers typically sign for ~1 h. */
 const val THUMB_TTL_MS = 50L * 60 * 1000
@@ -233,7 +238,10 @@ class FileRepository(private val api: ApiClient) {
      * server makes a missing preview on the first request; two at once for the same file made it
      * twice, and the losing one deleted the winner's preview file.
      */
-    suspend fun thumbUrl(uri: String): String? {
+    suspend fun thumbUrl(uri: String, entity: String? = null): String? {
+        // Fylvo 1.6: in a connected storage the address is asked by the row itself (it stops when
+        // the row goes away), a few at a time; the server makes nothing there at this point.
+        if (Connected.isConnected(uri)) return connectedLookups.withPermit { connectedThumbUrl(uri, entity) }
         // Per account: the same address of another account is another file.
         val key = api.accountTag() + "|" + CrUri.canonical(uri)
         val request = thumbInFlight.computeIfAbsent(key) {
@@ -253,6 +261,27 @@ class FileRepository(private val api: ApiClient) {
         return request.await()
     }
 
+    /** Fylvo 1.6: address requests into connected storages at a time (the pictures: ConnectedThumbs). */
+    private val connectedLookups = kotlinx.coroutines.sync.Semaphore(4)
+
+    /**
+     * Fylvo 1.6: the address of a connected file's preview (the picture behind it is loaded two at
+     * a time, ConnectedThumbs.Pictures, as the server fetches it from the provider then). No
+     * preview for this version, or not supported: null. "Connect again" or "not found" are
+     * failures, asked again later.
+     */
+    private suspend fun connectedThumbUrl(uri: String, entity: String?): String? = try {
+        readService(uri).thumb(uri, entity?.takeIf { it.isNotEmpty() }).unwrap().url
+    } catch (e: ApiException) {
+        // The row shows another version than the provider has now: the folder is read again (the
+        // screen decides, at most once per folder in a while); no "no preview" is remembered.
+        if (e.code == CODE_STALE_VERSION) staleThumbFolders.tryEmit(CrUri.parent(uri))
+        if (e.code == CODE_NO_THUMB || e.code == CODE_CONNECTED_UNSUPPORTED) null else throw e
+    }
+
+    /** Fylvo 1.6: folders of connected storages whose listing is older than a preview asked. */
+    val staleThumbFolders = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 8, onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.DROP_OLDEST)
+
     /**
      * Fylvo: [thumbUrl] of [file], remembered per file and version for [THUMB_TTL_MS]. Only the
      * server's clear "no preview" is remembered for good; a failure gives null and is asked again.
@@ -269,7 +298,7 @@ class FileRepository(private val api: ApiClient) {
             if (System.currentTimeMillis() - fetchedAt < THUMB_TTL_MS) return url
         }
         val url = try {
-            thumbUrl(file.path)
+            thumbUrl(file.path, file.primaryEntity)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {

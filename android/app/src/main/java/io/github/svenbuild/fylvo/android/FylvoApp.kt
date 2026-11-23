@@ -123,7 +123,14 @@ class FylvoApp : Application(), ImageLoaderFactory {
 
     /** Fylvo: previews and the image viewer name the app to the server like every other request. */
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
-        .okHttpClient { OkHttpClient.Builder().addInterceptor(ApiClient.userAgent).build() }
+        .okHttpClient {
+            OkHttpClient.Builder().addInterceptor(ApiClient.userAgent)
+                // Fylvo 1.6: pictures of connected storages are kept by version (30 days).
+                .addNetworkInterceptor(io.github.svenbuild.fylvo.android.data.ConnectedThumbs.keepLonger)
+                .build()
+        }
+        // Fylvo 1.6: pictures of connected storages: noted, two at a time, retried when busy.
+        .components { add(io.github.svenbuild.fylvo.android.data.ConnectedThumbs.Pictures) }
         .build()
 
     /**
@@ -195,11 +202,13 @@ class FylvoApp : Application(), ImageLoaderFactory {
             step { io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames() }
             step { io.github.svenbuild.fylvo.android.util.Connected.forgetNames() }
             step { fileRepository.forgetThumbs() }
+            step { io.github.svenbuild.fylvo.android.data.ConnectedThumbs.close(this@FylvoApp) }
             // Fylvo: previews and images the account loaded (Coil keeps previews by their stored id, thumbCacheKey).
             step {
                 imageLoader.memoryCache?.clear()
                 withContext(Dispatchers.IO) { imageLoader.diskCache?.clear() }
             }
+            io.github.svenbuild.fylvo.android.data.ConnectedThumbs.reopen()
             step { appUpdater.reset() }
             step { favoritesStore.clear() }
             // Synced copies are read-only, the server has them. After an expired session they stay
