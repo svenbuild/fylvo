@@ -125,6 +125,7 @@ class FylvoApp : Application(), ImageLoaderFactory {
             io.github.svenbuild.fylvo.android.widget.FolderShortcuts.disableAll(this@FylvoApp)
             io.github.svenbuild.fylvo.android.data.prefs.ShareTargetStore(this@FylvoApp).clear()
             io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = null
+            io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value = null
             // Synced copies are read-only, the server has them. After an expired session they stay
             // for the same account (bound to it, see OfflineStore). Working copies are never deleted
             // here: a sign-out handles them first (signOut), after an expired session they stay

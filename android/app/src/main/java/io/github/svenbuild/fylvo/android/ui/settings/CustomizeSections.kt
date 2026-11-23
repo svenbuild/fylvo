@@ -106,7 +106,8 @@ fun TabsSection(
 
     CustomizeLabel(stringResource(R.string.customize_tabs))
     tabs.forEachIndexed { i, tab ->
-        val fixed = tab == Place.Files || tab == Place.Account
+        // Files and Account always stay; at three tabs none can go (fewer would mean the default).
+        val fixed = tab == Place.Files || tab == Place.Account || tabs.size <= 3
         OrderRow(
             label = placeLabel(tab),
             leading = { Icon(placeIcons(tab).first, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },

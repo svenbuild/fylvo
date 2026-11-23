@@ -118,10 +118,17 @@ class SessionManager(private val context: Context) {
         )
     }
 
-    suspend fun saveTokens(accessToken: String, refreshToken: String, accessExpiresAt: Long) {
+    suspend fun saveTokens(
+        accessToken: String,
+        refreshToken: String,
+        accessExpiresAt: Long,
+        /** Fylvo: only while this session is current (checked inside the store's write, after a sign-out began nothing is written). */
+        forSession: io.github.svenbuild.fylvo.android.api.SessionTag? = null,
+    ) {
         val accessSealed = SecretBox.encrypt(accessToken)
         val refreshSealed = SecretBox.encrypt(refreshToken)
         context.sessionStore.edit {
+            if (forSession != null && !isCurrent(forSession)) return@edit
             it[Keys.accessToken] = accessSealed
             it[Keys.refreshToken] = refreshSealed
             it[Keys.accessExpiresAt] = accessExpiresAt

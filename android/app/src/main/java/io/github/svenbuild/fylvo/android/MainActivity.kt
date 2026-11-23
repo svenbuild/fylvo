@@ -149,10 +149,11 @@ fun App() {
     val prefsState by app.accountPrefs.state.collectAsState()
     LaunchedEffect(loggedIn) {
         if (loggedIn == true) {
-            app.accountPrefs.restore()
+            // A storage problem (full, broken file) must not end the app at every start.
+            runCatching { app.accountPrefs.restore() }.onFailure { app.accountPrefs.markRestored() }
             // Folders pinned for this account work again after a sign-in.
-            io.github.svenbuild.fylvo.android.widget.FolderShortcuts.enableFor(context, app.accountPrefs.accountHash())
-            app.accountPrefs.refresh()
+            runCatching { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.enableFor(context, app.accountPrefs.accountHash()) }
+            runCatching { app.accountPrefs.refresh(ifOlderThanMs = io.github.svenbuild.fylvo.android.data.prefs.AccountPrefsRepository.STALE_MS) }
         }
     }
     val prefs = prefsState.prefs.takeIf { prefsState.usable }

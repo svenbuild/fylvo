@@ -141,10 +141,25 @@ class AccountPrefsRepository(
         }
     }
 
+    /** The screen may draw even when the cached copy could not be read. */
+    fun markRestored() = _state.update { it.copy(restored = true) }
+
     /** Loads everything again; [ifOlderThanMs] skips it when the last load is more recent. */
     suspend fun refresh(ifOlderThanMs: Long = 0) {
-        if (ifOlderThanMs > 0 && System.currentTimeMillis() - lastLoad < ifOlderThanMs) return
-        queue.withLock { loadLocked() }
+        // Checked in the queue: two calls at the same time load once.
+        queue.withLock {
+            if (ifOlderThanMs > 0 && System.currentTimeMillis() - lastLoad < ifOlderThanMs) return@withLock
+            loadLocked()
+        }
+    }
+
+    /**
+     * Runs [block] in the queue for the session that was current when the change was asked for;
+     * a change that waited past a sign-out or account change is dropped.
+     */
+    private suspend fun <T> queued(failed: T, block: suspend (SessionTag) -> T): T {
+        val tag = session.sessionTag()
+        return queue.withLock { if (session.isCurrent(tag)) block(tag) else failed }
     }
 
     private suspend fun loadLocked() {
@@ -225,12 +240,8 @@ class AccountPrefsRepository(
     }
 
     /** `PATCH /fylvo/prefs` with [patch]; the answer replaces the state. */
-    suspend fun patch(patch: Map<String, JsonElement>): String? = queue.withLock {
-        val tag = session.sessionTag()
-        val before = _state.value.prefs
-        val result = applyPrefs(tag, call(tag) { api.service().patchPrefs(JsonObject(patch), tag) })
-        if (result != null && session.isCurrent(tag)) _state.update { it.copy(prefs = before) }
-        result
+    suspend fun patch(patch: Map<String, JsonElement>): String? = queued("") { tag ->
+        applyPrefs(tag, call(tag) { api.service().patchPrefs(JsonObject(patch), tag) })
     }
 
     fun densityPatch(density: Density) = mapOf("view" to JsonObject(mapOf("density" to JsonPrimitive(density.key))))
@@ -240,9 +251,15 @@ class AccountPrefsRepository(
 
     /** Shows [change] at once (optimistic) while it is saved; reverts on failure. */
     suspend fun patchOptimistic(change: (FylvoPrefs) -> FylvoPrefs, patch: Map<String, JsonElement>): String? {
+        val tag = session.sessionTag()
+        val before = _state.value.prefs
         _state.update { s -> s.prefs?.let { s.copy(prefs = change(it)) } ?: s }
         val result = patch(patch)
-        if (result != null) refresh()
+        if (result != null) {
+            // Not saved: back to what was shown before (also when the server cannot be asked).
+            if (session.isCurrent(tag)) _state.update { it.copy(prefs = before) }
+            refresh()
+        }
         return result
     }
 
@@ -250,10 +267,9 @@ class AccountPrefsRepository(
      * Changes one part of `mobile`: reads the current one from the server first and replaces
      * only that part, so a change of another device to another part is kept.
      */
-    suspend fun updateMobile(change: (JsonObject?) -> JsonObject): String? = queue.withLock {
-        val tag = session.sessionTag()
+    suspend fun updateMobile(change: (JsonObject?) -> JsonObject): String? = queued("") { tag ->
         val fresh = call(tag) { api.service().prefs(tag) }
-        if (fresh !is Outcome.Found) return@withLock (fresh as? Outcome.Refused)?.message ?: ""
+        if (fresh !is Outcome.Found) return@queued (fresh as? Outcome.Refused)?.message ?: ""
         val mobile = change(fresh.value.mobile)
         if (session.isCurrent(tag)) _state.update { it.copy(prefs = fresh.value.copy(mobile = mobile)) }
         val result = applyPrefs(tag, call(tag) { api.service().patchPrefs(JsonObject(mapOf("mobile" to mobile)), tag) })
@@ -262,8 +278,7 @@ class AccountPrefsRepository(
     }
 
     /** Back to the defaults for the whole account (also the web); `mobile` too. */
-    suspend fun reset(): String? = queue.withLock {
-        val tag = session.sessionTag()
+    suspend fun reset(): String? = queued("") { tag ->
         var result = applyPrefs(tag, call(tag) { api.service().resetPrefs(tag) })
         if (result == null) {
             result = applyPrefs(tag, call(tag) { api.service().patchPrefs(JsonObject(mapOf("mobile" to JsonNull)), tag) })
@@ -284,11 +299,10 @@ class AccountPrefsRepository(
 
     private suspend fun favoritesChange(
         request: suspend (SessionTag) -> Outcome<io.github.svenbuild.fylvo.android.api.FavoriteIds>,
-    ): String? = queue.withLock {
-        val tag = session.sessionTag()
+    ): String? = queued("") { tag ->
         when (val outcome = request(tag)) {
             is Outcome.Found -> {
-                if (!session.isCurrent(tag)) return@withLock ""
+                if (!session.isCurrent(tag)) return@queued ""
                 _state.update { s -> s.copy(prefs = s.prefs?.copy(favorites = outcome.value.favorites)) }
                 val list = (call(tag) { api.service().favorites(tag) } as? Outcome.Found)?.value
                 if (list != null && session.isCurrent(tag)) _state.update { it.copy(favorites = list) }
@@ -314,8 +328,7 @@ class AccountPrefsRepository(
     // ---- metadata and view -----------------------------------------------------
 
     /** Sets or removes metadata of [uris]; reloads the tags afterwards. */
-    suspend fun patchMetadata(uris: List<String>, patches: List<MetadataPatch>): String? = queue.withLock {
-        val tag = session.sessionTag()
+    suspend fun patchMetadata(uris: List<String>, patches: List<MetadataPatch>): String? = queued("") { tag ->
         when (val outcome = call(tag) { api.service().patchMetadata(MetadataPatchRequest(uris, patches), tag) }) {
             is Outcome.Found -> {
                 val tags = (call(tag) { api.service().tags(tag) } as? Outcome.Found)?.value
@@ -332,10 +345,9 @@ class AccountPrefsRepository(
      * Writes the view of the folder [uri] like the web app: the whole stored view is read
      * (without page size and sort in the request) and only [change] is applied to it.
      */
-    suspend fun writeView(uri: String, change: (JsonObject) -> JsonObject): String? = queue.withLock {
-        val tag = session.sessionTag()
+    suspend fun writeView(uri: String, change: (JsonObject) -> JsonObject): String? = queued("") { tag ->
         val current = call(tag) { api.service().folderView(uri, tag) }
-        if (current !is Outcome.Found) return@withLock (current as? Outcome.Refused)?.message ?: ""
+        if (current !is Outcome.Found) return@queued (current as? Outcome.Refused)?.message ?: ""
         val view = change(current.value.view ?: JsonObject(emptyMap()))
         val result = when (val outcome = call(tag) { api.service().patchView(ViewPatchRequest(uri, view), tag) }) {
             is Outcome.Found -> null
@@ -358,8 +370,9 @@ class AccountPrefsRepository(
             if (e.code == ApiException.CODE_LOGIN_REQUIRED && session.isCurrent(tag)) onSessionExpired()
             Outcome.Failed
         } catch (_: SerializationException) {
-            // Not the API's JSON: an older server answers unknown routes with a web page.
-            Outcome.Missing
+            // An unreadable answer (a captive portal's page, a proxy error): keep what is there.
+            // An older server answers unknown routes with HTTP 404, see outcomeOf.
+            Outcome.Failed
         } catch (_: Exception) {
             Outcome.Failed
         }

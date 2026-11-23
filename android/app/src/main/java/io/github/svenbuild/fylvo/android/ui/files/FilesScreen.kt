@@ -314,7 +314,7 @@ fun FilesScreen(
      */
     fun goUp() {
         val origin = state.origin
-        if (origin != null && origin.startsWith(PAGE_ORIGIN) && (CrUri.isRoot(state.currentUri) || state.virtual)) {
+        if (origin != null && origin.startsWith(PAGE_ORIGIN) && state.atPlaceRoot) {
             viewModel.openMyFiles()
             page = origin.removePrefix(PAGE_ORIGIN)
             return
@@ -385,7 +385,7 @@ fun FilesScreen(
         }
     }
     fun starOf(file: FileObject): io.github.svenbuild.fylvo.android.data.prefs.StarState =
-        if (!prefsState.usable || state.offlineMode || state.inTrash) io.github.svenbuild.fylvo.android.data.prefs.StarState.NONE
+        if (!prefsState.usable || state.offlineMode || (state.inTrash && page == null)) io.github.svenbuild.fylvo.android.data.prefs.StarState.NONE
         else io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.starState(file, prefsState.favoriteIds) { prefsState.memberShares[it] }
     var colorTarget by remember { mutableStateOf<List<FileObject>?>(null) }
 
@@ -410,7 +410,7 @@ fun FilesScreen(
         val swipe = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.swipe(prefs.mobile)
         if (swipe.left == io.github.svenbuild.fylvo.android.data.prefs.SwipeAction.NONE && swipe.right == io.github.svenbuild.fylvo.android.data.prefs.SwipeAction.NONE) return null
         if (state.selecting || state.offlineMode || file.isUploading || Connected.isConnected(file.path)) return null
-        if (!limited && !inSearch && (state.inTrash || state.category == Category.SHARED_WITH_ME)) return null
+        if (!limited && !inSearch && page == null && (state.inTrash || state.category == Category.SHARED_WITH_ME)) return null
         val star = starOf(file)
         fun allowed(action: io.github.svenbuild.fylvo.android.data.prefs.SwipeAction) = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.swipeAction(
             action, star,
@@ -559,8 +559,10 @@ fun FilesScreen(
     val pickToShare = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value = uris
     }
-    LaunchedEffect(incoming) {
+    LaunchedEffect(incoming, prefsState.supported, prefsState.prefs != null) {
         val request = incoming ?: return@LaunchedEffect
+        // Favourites: wait until it is known whether the server has them (cached copy or answer).
+        if (request == io.github.svenbuild.fylvo.android.data.prefs.Incoming.Favorites && prefsState.supported == null && prefsState.prefs == null) return@LaunchedEffect
         io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = null
         // A request decides where the app is; the start tab does not move it any more.
         startApplied = true
@@ -729,7 +731,7 @@ fun FilesScreen(
                     viewModel = viewModel,
                     onSearch = { openSearch() },
                     onOpenFile = { openFile(it) },
-                    onOpenRecent = { viewModel.openCategory(Category.RECENT) },
+                    onOpenRecent = { viewModel.openCategory(Category.RECENT, ORIGIN_HOME) },
                     onFileMore = { sheetTarget = it },
                     extras = homeExtras,
                     swipeFor = { swipeFor(it, limited = true) },
@@ -940,7 +942,8 @@ fun FilesScreen(
             onDetails = { sheetTarget = null; detailsTarget = file },
             canModify = Permissions.canModifyFile(file),
             canShare = Permissions.canShareLink(file),
-            inTrash = state.inTrash,
+            // Fylvo: a sheet from a page (favourites) belongs to that page, never to the trash below it.
+            inTrash = state.inTrash && page == null,
             onRestore = { sheetTarget = null; viewModel.restore(listOf(file.path)) },
             onDeleteForever = { sheetTarget = null; deleteForeverTarget = listOf(file.path) },
             canEdit = state.canEdit(file),

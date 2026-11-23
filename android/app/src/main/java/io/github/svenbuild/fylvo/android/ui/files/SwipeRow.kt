@@ -21,6 +21,7 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,16 +59,20 @@ fun SwipeRow(swipe: RowSwipe?, content: @Composable () -> Unit) {
         return
     }
     val haptics = LocalHapticFeedback.current
+    // The state is made once per row; the action must be the row's current one (a star set by
+    // the last swipe turns "add" into "remove").
+    val current by androidx.compose.runtime.rememberUpdatedState(swipe)
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
+            val now = current
             val action = when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> swipe.right
-                SwipeToDismissBoxValue.EndToStart -> swipe.left
+                SwipeToDismissBoxValue.StartToEnd -> now.right
+                SwipeToDismissBoxValue.EndToStart -> now.left
                 SwipeToDismissBoxValue.Settled -> null
             }
             if (action != null) {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                swipe.onSwipe(action)
+                now.onSwipe(action)
             }
             // Never stay swiped away: the row comes back.
             false

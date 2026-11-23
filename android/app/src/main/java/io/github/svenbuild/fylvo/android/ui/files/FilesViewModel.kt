@@ -134,6 +134,8 @@ data class FilesUiState(
      * when a place is opened from a chip, the home page or a page of the app.
      */
     val origin: String? = null,
+    /** Fylvo: the folder a place was opened at; "up" from there leads to [origin]. */
+    val placeRoot: String? = null,
     /** Landing page with Recent and Categories; false while browsing a folder or category. */
     val home: Boolean = true,
     val recent: List<FileObject> = emptyList(),
@@ -209,6 +211,8 @@ data class FilesUiState(
     /** Fylvo: offline can be switched here (My files, shared folders, with a connection). */
     fun offlineAllowed(file: FileObject): Boolean = canKeepOffline(file) && !offlineMode
     val selecting: Boolean get() = selected.isNotEmpty()
+    /** Fylvo: at the folder a place was opened at (or at a root, or in a search): "up" goes back. */
+    val atPlaceRoot: Boolean get() = currentUri == placeRoot || CrUri.isRoot(currentUri) || virtual
     /** Fylvo: the folder on screen is inside a connected storage. */
     val inConnected: Boolean get() = !home && Connected.isConnected(currentUri)
     /** Uploads landing in the folder on screen; shown inline above the files. */
@@ -304,6 +308,8 @@ class FilesViewModel(
         val files: List<FileObject>,
         val nextToken: String?,
         val sortKey: SortOrder,
+        /** Fylvo: the folder's stored view of this listing (account view), shown with it. */
+        val serverView: kotlinx.serialization.json.JsonObject? = null,
         val parent: FileObject?,
         val connected: ConnectedListing? = null,
     )
@@ -327,6 +333,7 @@ class FilesViewModel(
             error = null,
             errorCode = null,
             files = cached?.files ?: emptyList(),
+            serverView = cached?.serverView,
             nextToken = cached?.nextToken,
             parent = cached?.parent,
             connected = cached?.connected,
@@ -342,7 +349,7 @@ class FilesViewModel(
                 Connected.nameFromListing(uri, res.parent?.name)
                 val serverView = res.view?.takeIf { follows(uri) }
                 val files = sortFiles(res.files, serverView)
-                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, res.parent, res.connected)
+                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, serverView, res.parent, res.connected)
                 _state.value = _state.value.copy(
                     loading = false,
                     revalidating = false,
@@ -433,7 +440,7 @@ class FilesViewModel(
                     return@launch
                 }
                 val files = sortFiles(_state.value.files + res.files, shownView)
-                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, _state.value.parent, _state.value.connected)
+                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, shownView, _state.value.parent, _state.value.connected)
                 _state.value = _state.value.copy(
                     loadingMore = false,
                     files = files,
@@ -512,7 +519,10 @@ class FilesViewModel(
         val s = _state.value
         // Fylvo: going deeper keeps the way back of the opened place; elsewhere it ends.
         val origin = s.origin.takeIf { !s.home && !s.virtual && target.startsWith(s.currentUri) }
-        _state.value = s.copy(currentUri = target, home = false, selected = emptySet(), placeTitle = null, origin = origin)
+        _state.value = s.copy(
+            currentUri = target, home = false, selected = emptySet(), placeTitle = null, origin = origin,
+            placeRoot = s.placeRoot.takeIf { origin != null },
+        )
         refresh()
     }
 
@@ -521,7 +531,9 @@ class FilesViewModel(
      * [title]; "up" from its top leads to [origin] ([ORIGIN_HOME], a URI, or null for the usual way).
      */
     fun openPlace(uri: String, title: String? = null, origin: String? = null) {
-        _state.value = _state.value.copy(currentUri = uri, home = false, selected = emptySet(), placeTitle = title, origin = origin)
+        _state.value = _state.value.copy(
+            currentUri = uri, home = false, selected = emptySet(), placeTitle = title, origin = origin, placeRoot = uri.takeIf { origin != null },
+        )
         refresh()
     }
 
@@ -536,7 +548,7 @@ class FilesViewModel(
         }
         // Fylvo: back to where the place was opened from (chip, home, a page).
         val origin = s.origin
-        if (origin != null && (CrUri.isRoot(s.currentUri) || s.virtual)) {
+        if (origin != null && s.atPlaceRoot) {
             if (origin == ORIGIN_HOME) goHome() else openPlace(origin)
             return true
         }
@@ -554,17 +566,17 @@ class FilesViewModel(
     }
 
     fun goHome() {
-        _state.value = _state.value.copy(home = true, currentUri = CrUri.MY_PREFIX, selected = emptySet(), placeTitle = null, origin = null)
+        _state.value = _state.value.copy(home = true, currentUri = CrUri.MY_PREFIX, selected = emptySet(), placeTitle = null, origin = null, placeRoot = null)
         loadRecent()
     }
 
     fun openMyFiles() {
-        _state.value = _state.value.copy(home = false, currentUri = CrUri.MY_PREFIX, selected = emptySet(), placeTitle = null, origin = null)
+        _state.value = _state.value.copy(home = false, currentUri = CrUri.MY_PREFIX, selected = emptySet(), placeTitle = null, origin = null, placeRoot = null)
         refresh()
     }
 
     fun openCategory(category: Category, origin: String? = null) {
-        _state.value = _state.value.copy(home = false, currentUri = category.uri, selected = emptySet(), placeTitle = null, origin = origin)
+        _state.value = _state.value.copy(home = false, currentUri = category.uri, selected = emptySet(), placeTitle = null, origin = origin, placeRoot = null)
         refresh()
     }
 
@@ -1230,13 +1242,13 @@ class FilesViewModel(
      * may be entered, and the listed folder itself is kept for [pickerAllowsMoveInto].
      */
     suspend fun listFolders(uri: String): List<FileObject> {
-        if (!Connected.isConnected(uri)) return repo.listFolders(uri)
-        // Only what this listing says counts: an earlier one is forgotten first.
+        // Only what this listing says counts: an earlier one is forgotten first. Fylvo: kept for
+        // every folder, so a share target chosen in the picker has its id.
         val key = CrUri.canonical(uri)
         pickerFolders.remove(key)
         val (folders, parent) = repo.listFoldersWithParent(uri)
         if (parent != null) pickerFolders[key] = parent
-        return folders.filter(Connected::canEnter)
+        return if (Connected.isConnected(uri)) folders.filter(Connected::canEnter) else folders
     }
 
     /**

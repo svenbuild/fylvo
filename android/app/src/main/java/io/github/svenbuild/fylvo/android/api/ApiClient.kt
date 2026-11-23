@@ -159,7 +159,7 @@ class ApiClient(private val session: SessionManager) {
         val tokens = body.data
         // Signed out or signed in again while the request ran: drop the result.
         if (session.refreshTokenNow() != refreshToken || !session.isCurrent(asked)) return@withLock null
-        session.saveTokens(tokens.accessToken, tokens.refreshToken, parseExpiresAt(tokens.accessExpires))
+        session.saveTokens(tokens.accessToken, tokens.refreshToken, parseExpiresAt(tokens.accessExpires), forSession = asked)
         tokens.accessToken
     }
 

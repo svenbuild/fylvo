@@ -57,22 +57,6 @@ data class Appearance(
     val accent: String = "",
 )
 
-/** Body of `PATCH /fylvo/prefs`: only the parts that are set are sent (explicitNulls off). */
-@Serializable
-data class PrefsPatch(
-    @SerialName("start_page") val startPage: String? = null,
-    val view: DensityPatch? = null,
-    val appearance: AppearancePatch? = null,
-    val home: JsonElement? = null,
-    val mobile: JsonElement? = null,
-)
-
-@Serializable
-data class DensityPatch(val density: String)
-
-@Serializable
-data class AppearancePatch(val mode: String? = null, val accent: String? = null)
-
 @Serializable
 data class FavoritesList(
     val files: List<FileObject> = emptyList(),
@@ -100,7 +84,6 @@ data class TagInfo(
 data class SiteBasic(
     /** JSON text: theme key (dark accent colour) to an MUI theme with `light`/`dark` palettes. */
     val themes: String = "",
-    @SerialName("default_theme") val defaultTheme: String = "",
 )
 
 /** Fylvo: `GET /user/setting`; only what the app needs. */

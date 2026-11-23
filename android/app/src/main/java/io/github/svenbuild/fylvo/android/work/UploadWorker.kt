@@ -77,8 +77,11 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val parentUri = batch.parentUri
         val total = batch.items.size
         /** Fylvo: the chosen target folder is still the same (by id); null: cannot be told now. */
-        suspend fun targetStillThere(): Boolean? =
-            batch.expectedParentId?.let { app.fileRepository.folderIdMatches(parentUri, it) } ?: true
+        suspend fun targetStillThere(): Boolean? {
+            val expected = batch.expectedParentId ?: return true
+            // Null (no answer now) stays null: the run waits and asks again, it never guesses.
+            return app.fileRepository.folderIdMatches(parentUri, expected)
+        }
         val targetChanged = applicationContext.localized().getString(R.string.upload_target_changed)
         when (targetStillThere()) {
             null -> return Result.retry()
