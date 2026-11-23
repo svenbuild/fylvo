@@ -911,6 +911,10 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					middleware.RequiredScopes(types.ScopeFilesRead),
 					controllers.FylvoConnectedCapacity,
 				)
+				fylvoConnected.GET("upload/:session",
+					middleware.RequiredScopes(types.ScopeFilesWrite),
+					controllers.FylvoConnectedUploadState,
+				)
 				manage := fylvoConnected.Group("", middleware.RequiredScopes(types.ScopeUserSecurityInfoWrite))
 				manage.POST("authorize",
 					controllers.FromJSON[fylvosvc.ConnectedAuthorizeService](fylvosvc.ConnectedAuthorizeParamCtx{}),

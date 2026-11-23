@@ -114,6 +114,8 @@ type Manager struct {
 	live   map[string]*liveConn
 	// tree reads the folders of all connections.
 	tree *Tree
+	// uploads are the upload sessions of all connections (see upload.go).
+	uploads *uploads
 	// usage remembers the fill level of connections for a short while (under liveMu).
 	usage map[string]usage
 	// leaving counts, per account, the deletions of that account that are under way.
@@ -139,6 +141,7 @@ func NewManager(o ManagerOptions) *Manager {
 		leaving:  map[int]int{},
 		live:     map[string]*liveConn{},
 		tree:     NewTree(),
+		uploads:  newUploads(),
 		usage:    map[string]usage{},
 	}
 }

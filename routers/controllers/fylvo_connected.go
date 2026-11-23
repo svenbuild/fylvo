@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"github.com/cloudreve/Cloudreve/v4/pkg/request"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/service/explorer"
 	"github.com/cloudreve/Cloudreve/v4/service/fylvo"
@@ -57,6 +58,29 @@ func FylvoConnectedDisconnect(c *gin.Context) {
 // FylvoConnectedCapacity returns the fill level of a connected storage.
 func FylvoConnectedCapacity(c *gin.Context) {
 	res, err := explorer.ConnectedCapacity(c, c.Param("id"))
+	fylvoAnswer(c, res, err)
+}
+
+// FylvoConnectedUploadChunk takes a chunk of an upload into a connected storage. The
+// chunk that completes the upload is answered with the file.
+func FylvoConnectedUploadChunk(c *gin.Context, service *explorer.UploadService) {
+	res, err := service.ConnectedUploadChunk(c)
+	if err != nil {
+		c.JSON(200, serializer.Err(c, err))
+		request.BlackHole(c.Request.Body)
+		c.Abort()
+		return
+	}
+	if res == nil {
+		c.JSON(200, serializer.Response{})
+		return
+	}
+	c.JSON(200, serializer.Response{Data: res})
+}
+
+// FylvoConnectedUploadState tells where an upload into a connected storage stands.
+func FylvoConnectedUploadState(c *gin.Context) {
+	res, err := explorer.ConnectedUploadState(c, c.Param("session"))
 	fylvoAnswer(c, res, err)
 }
 

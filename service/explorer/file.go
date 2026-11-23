@@ -353,6 +353,10 @@ func (service *FileUpdateService) PutContent(c *gin.Context, ls fs.LockSession) 
 	if fileSize > settings.MaxOnlineEditSize(c) {
 		return nil, fs.ErrFileSizeTooBig
 	}
+	// Fylvo: a connected storage saves through an upload session at its provider.
+	if uri, ok := connectedURI(service.Uri); ok {
+		return connectedPutContent(c, uri, service, rc, fileSize)
+	}
 
 	uri, err := fs.NewUriFromString(service.Uri)
 	if err != nil {

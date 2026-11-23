@@ -486,8 +486,7 @@ func TestConnectedIsKeptFromTheDatabaseFileSystem(t *testing.T) {
 	require.Error(t, (&DeleteVersionService{Uri: file, Version: "x"}).Delete(e.as(e.alex)))
 	_, err = (&CreateViewerSessionService{Uri: file, ViewerID: "x", PreferredAction: types.ViewerActionView}).Create(e.as(e.alex))
 	require.Error(t, err)
-	_, err = (&CreateUploadSessionService{Uri: e.root + "/new.txt", Size: 3}).Create(e.as(e.alex))
-	require.Error(t, err)
+	// An upload session that is not one of a connected storage.
 	require.Error(t, (&DeleteUploadSessionService{ID: "x", Uri: file}).Delete(e.as(e.alex)))
 	_, err = (&ArchiveListFilesService{Uri: file}).List(e.as(e.alex))
 	require.Error(t, err)

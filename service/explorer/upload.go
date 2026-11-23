@@ -10,6 +10,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cluster"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
@@ -38,6 +39,10 @@ type (
 
 // Create 创建新的上传会话
 func (service *CreateUploadSessionService) Create(c context.Context) (*UploadSessionResponse, error) {
+	// Fylvo: an upload into a connected storage goes straight on to its provider.
+	if uri, ok := connectedURI(service.Uri); ok {
+		return connectedCreateUpload(c, uri, service)
+	}
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	m := manager.NewFileManager(dep, user)
@@ -232,6 +237,10 @@ type (
 
 // Delete deletes the specified upload session
 func (service *DeleteUploadSessionService) Delete(c *gin.Context) error {
+	// Fylvo: an upload into a connected storage is cancelled at its provider.
+	if uri, ok := connectedURI(service.Uri); ok || connected.IsUploadID(service.ID) {
+		return connectedCancelUpload(c, uri, service)
+	}
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	m := manager.NewFileManager(dep, user)

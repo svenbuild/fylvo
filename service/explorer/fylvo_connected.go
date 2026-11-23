@@ -164,6 +164,7 @@ func connectedCapability(row *connected.Row) *boolset.BooleanSet {
 			// A folder is downloaded by the client, which lists it and fetches its files
 			// one by one. Not through a link: links can lead back up.
 			flags[dbfs.NavigatorCapabilityDownloadFile] = row.Enterable() && row.Link == nil
+			flags[dbfs.NavigatorCapabilityUploadFile] = flags[dbfs.NavigatorCapabilityCreateFile]
 		} else {
 			flags[dbfs.NavigatorCapabilityDownloadFile] = row.Native == "" || len(connected.ExportFormats[row.Native]) > 0
 		}
@@ -233,7 +234,7 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 	if extended {
 		res.ExtendedInfo = &ExtendedInfo{
 			StorageUsed:   row.Size,
-			StoragePolicy: &StoragePolicy{ID: "connected", Name: req.conn.Name, Type: types.PolicyTypeLocal},
+			StoragePolicy: connectedPolicy(req),
 		}
 	}
 	return res
@@ -310,6 +311,7 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 			OrderByOptions:        []string{"name", "size", "updated_at"},
 			OrderDirectionOptions: []string{"asc", "desc"},
 		},
+		StoragePolicy: connectedPolicy(req),
 		Connected: &ConnectedListInfo{
 			ID:       req.conn.ID,
 			Provider: req.conn.Provider,

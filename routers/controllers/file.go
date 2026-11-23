@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/request"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/service/explorer"
@@ -218,6 +219,11 @@ func PutContent(c *gin.Context) {
 // FileUpload 本地策略文件上传
 func FileUpload(c *gin.Context) {
 	service := ParametersFromContext[*explorer.UploadService](c, explorer.UploadParameterCtx{})
+	// Fylvo: the chunks of an upload into a connected storage, before anything is looked up.
+	if connected.IsUploadID(service.ID) {
+		FylvoConnectedUploadChunk(c, service)
+		return
+	}
 	err := service.LocalUpload(c)
 	if err != nil {
 		c.JSON(200, serializer.Err(c, err))
