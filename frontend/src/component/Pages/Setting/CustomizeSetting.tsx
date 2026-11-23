@@ -120,16 +120,20 @@ const CustomizeSetting = () => {
     if (!rootViewRead || savingViewRef.current) return;
     savingViewRef.current = true;
     setSavingView(true);
-    // Read again right before writing, so a change made meanwhile (another tab) is kept.
-    let current = rootView;
+    // Read again right before writing, so a change made meanwhile (another tab) is kept. Nothing is
+    // written when the account changed meanwhile or the view no longer syncs.
+    const uid = SessionManager.currentLoginOrNull()?.user.id;
+    let current: ExplorerView | undefined;
     try {
-      current = (await dispatch(getFileList({ uri: defaultPath }))).view ?? current;
-    } catch (e) {
+      current = (await dispatch(getFileList({ uri: defaultPath }))).view;
+    } catch (e) {}
+    if (!current || uid != SessionManager.currentLoginOrNull()?.user.id) {
       savingViewRef.current = false;
       setSavingView(false);
+      dispatch(loadPrefs());
       return;
     }
-    const base = current ?? { page_size: 0 };
+    const base = current;
     const view: ExplorerView = {
       page_size: base.page_size || SessionManager.getWithFallback(UserSettings.PageSize),
       order: base.order,

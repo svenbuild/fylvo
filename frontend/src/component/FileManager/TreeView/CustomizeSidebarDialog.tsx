@@ -82,19 +82,21 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
     }
     const thisOpen = ++openCount.current;
     setFresh(false);
-    if (prefs) {
-      setRows(toRows(prefs.sidebar.items));
-    }
+    setRows([]);
     dispatch(loadTags());
     dispatch(getPrefs())
       .then((loaded) => {
-        if (thisOpen == openCount.current) {
+        if (thisOpen == openCount.current && loaded) {
           setRows(toRows(loaded.sidebar.items));
           setBaseLinks(loaded.sidebar.items.filter((i) => i.type == "link" && i.uri).map((i) => i.uri as string));
           setFresh(true);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (thisOpen == openCount.current) {
+          onClose();
+        }
+      });
   }, [open]);
 
   const move = (from: number, to: number) => {
@@ -281,7 +283,7 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
             placeholder={t("customize.headingName")}
             value={heading}
             onChange={(e) => setHeading(e.target.value)}
-            onKeyDown={(e) => e.key == "Enter" && addHeading()}
+            onKeyDown={(e) => e.key == "Enter" && fresh && addHeading()}
             sx={{ flexGrow: 1, "& input": { py: "6px" } }}
             inputProps={{ maxLength: 64 }}
           />
