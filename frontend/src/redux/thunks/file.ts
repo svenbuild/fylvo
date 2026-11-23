@@ -30,7 +30,7 @@ import {
   NewFileTemplate,
   Viewer,
 } from "../../api/explorer.ts";
-import { AppError, Response } from "../../api/request.ts";
+import { AppError, Code, Response } from "../../api/request.ts";
 import { DefaultCloseAction, ViewDstAction } from "../../component/Common/Snackbar/snackbar.tsx";
 import { canShowInfo, getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { DeleteOption } from "../../component/FileManager/Dialogs/DeleteConfirmation.tsx";
@@ -166,6 +166,23 @@ const loadConnectedImage = async (url: string, listed: () => boolean): Promise<b
   return false;
 };
 
+// Fylvo: reloads the folder of a connected file whose preview was asked for an older version,
+// at most once per folder within half a minute (several rows of one listing, no loop).
+const staleRefreshes = new Map<string, number>();
+const staleRefreshPause = 30000;
+function refreshForNewVersion(index: number, file: FileResponse): AppThunk {
+  return (dispatch, getState) => {
+    const folder = new CrUri(file.path).parent().toString();
+    const shown = getState().fileManager[index].pure_path;
+    const last = staleRefreshes.get(folder) ?? 0;
+    if (!shown || new CrUri(shown).toString() != folder || Date.now() - last < staleRefreshPause) {
+      return;
+    }
+    staleRefreshes.set(folder, Date.now());
+    dispatch(refreshFileList(index));
+  };
+}
+
 export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promise<string | null>> {
   return (dispatch) => {
     // Fylvo: callers for the same version of a connected file share one load.
@@ -221,7 +238,13 @@ function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string |
       for (let i = 0; ; i++) {
         try {
           const request = () =>
-            dispatch(getFileThumb(getFileLinkedUri(file), getState().fileManager[index].list?.context_hint));
+            dispatch(
+              getFileThumb(
+                getFileLinkedUri(file),
+                getState().fileManager[index].list?.context_hint,
+                connected ? file.primary_entity : undefined,
+              ),
+            );
           thumb = connected
             ? await connectedThumbAddresses((waited) => (waited && !listed() ? Promise.reject(dropped) : request()))
             : await request();
@@ -253,6 +276,12 @@ function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string |
       return thumb.url;
     } catch (e) {
       if (e === dropped || outdated()) {
+        return null;
+      }
+      // Fylvo: the file is another version at the provider by now: the folder is shown again
+      // (the new row asks for its own preview), and nothing is remembered for this version.
+      if (connected && e instanceof AppError && e.code == Code.StaleVersion) {
+        dispatch(refreshForNewVersion(index, file));
         return null;
       }
       // Fylvo: remembered for this version of the file only, in the thumbnail cache, and for a

@@ -306,13 +306,15 @@ export function getFileList(
   };
 }
 
-export function getFileThumb(path: string, contextHint?: string): ThunkResponse<FileThumbResponse> {
+// Fylvo: entity names the version the preview is for (a connected storage answers 40076 when the
+// file is another version by now).
+export function getFileThumb(path: string, contextHint?: string, entity?: string): ThunkResponse<FileThumbResponse> {
   return async (dispatch, _getState) => {
     return await dispatch(
       send(
         "/file/thumb",
         {
-          params: { uri: path },
+          params: { uri: path, entity },
           method: "GET",
           headers: contextHint
             ? {
