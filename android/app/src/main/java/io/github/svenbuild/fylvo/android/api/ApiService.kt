@@ -223,6 +223,26 @@ interface ApiService {
     @GET("api/v4/fylvo/connected")
     suspend fun connectedStorages(): Response<ApiResponse<ConnectedOverview>>
 
+    // ---- Fylvo 1.6: connecting storages from the app (data/ConnectFlow).
+
+    @POST("api/v4/fylvo/connected/authorize")
+    suspend fun connectAuthorize(@Body request: ConnectAuthorizeRequest, @Tag session: SessionTag): Response<ApiResponse<ConnectAuthorizeResponse>>
+
+    @POST("api/v4/fylvo/connected/finish")
+    suspend fun connectPreview(@Body request: ConnectFinishRequest, @Tag session: SessionTag): Response<ApiResponse<ConnectPreview>>
+
+    @POST("api/v4/fylvo/connected/finish")
+    suspend fun connectFinish(@Body request: ConnectFinishRequest, @Tag session: SessionTag): Response<ApiResponse<ConnectedStorage>>
+
+    @POST("api/v4/fylvo/connected/finish")
+    suspend fun connectCancel(@Body request: ConnectFinishRequest, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    @PATCH("api/v4/fylvo/connected/{id}")
+    suspend fun connectRename(@Path("id") id: String, @Body request: ConnectRenameRequest, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
+    @HTTP(method = "DELETE", path = "api/v4/fylvo/connected/{id}")
+    suspend fun connectDelete(@Path("id") id: String, @Tag session: SessionTag): Response<ApiResponse<Unit>>
+
     @GET("api/v4/fylvo/connected/upload/{session}")
     suspend fun connectedUploadState(@Path("session") session: String): Response<ApiResponse<ConnectedUploadState>>
 

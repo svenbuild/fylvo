@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
@@ -91,6 +92,8 @@ fun AccountScreen(
     onOpenProfile: () -> Unit,
     onOpenSecurity: () -> Unit,
     onOpenTasks: () -> Unit,
+    /** Fylvo 1.6: connected storages (null when the account cannot use them). */
+    onOpenConnected: (() -> Unit)? = null,
     /** Fylvo: Account › Customise. */
     onOpenCustomize: () -> Unit,
     onBack: () -> Unit,
@@ -216,6 +219,12 @@ fun AccountScreen(
                 headlineContent = { Text(stringResource(R.string.security)) },
                 supportingContent = { Text(stringResource(R.string.security_hint)) },
                 leadingContent = { Icon(Icons.Outlined.Lock, contentDescription = null) },
+            )
+            if (onOpenConnected != null) ListItem(
+                modifier = Modifier.clickable(onClick = onOpenConnected),
+                headlineContent = { Text(stringResource(R.string.connected_storages)) },
+                supportingContent = { Text(stringResource(R.string.connected_manage_hint)) },
+                leadingContent = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
             )
             ListItem(
                 modifier = Modifier.clickable(onClick = onOpenTasks),

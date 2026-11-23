@@ -293,4 +293,38 @@
     <string name="folder_upload_unreadable">The folder could not be read.</string>
     <string name="folder_upload_started">The folder is being uploaded</string>
     <string name="folder_upload_failed">The upload could not start (the target folder changed or there is no connection).</string>
+
+    <!-- Connected storages from the app -->
+    <string name="connected_manage_hint">Connect, rename, disconnect</string>
+    <string name="connect_provider">Connect %1$s</string>
+    <string name="connect_in_browser">The sign-in opens in the browser</string>
+    <string name="connect_again">Connect again</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="disconnect_title">Disconnect %1$s?</string>
+    <string name="disconnect_text">Fylvo forgets this storage. Its files stay with the provider; waiting uploads into it are cancelled.</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="connect_name_rule">Enter a name of up to 64 bytes.</string>
+    <string name="connect_waiting">Waiting for the sign-in</string>
+    <string name="connect_waiting_hint">Finish it in the browser, then tap \"Back to Fylvo\" there.</string>
+    <string name="connect_confirm_title">Connect %1$s?</string>
+    <string name="connect_confirm_address">Connect %1$s of %2$s with your Fylvo account %3$s?</string>
+    <string name="connect_confirm_sign_in">Connect %1$s, signed in as %2$s, with your Fylvo account %3$s?</string>
+    <string name="connect_confirm_name">Connect %1$s of \"%2$s\" with your Fylvo account %3$s? The provider only gives a freely chosen name.</string>
+    <string name="connect_confirm_none">Connect %1$s with your Fylvo account %2$s? The provider does not say which account it is.</string>
+    <string name="connect_yes">Connect</string>
+    <string name="connect_no">No</string>
+    <string name="connect_saved">The storage is connected</string>
+    <string name="connect_reconnected">The storage is connected again</string>
+    <string name="connect_failed">The storage could not be connected.</string>
+    <string name="connect_exists">This account is already connected.</string>
+    <string name="connect_other_account">To connect again, sign in with the same account as before.</string>
+    <string name="connect_too_many">You have connected as many storages as allowed.</string>
+    <string name="connect_not_allowed">Your account may not connect storages.</string>
+    <string name="connect_not_offered">This server does not let apps connect storages. Use the web app.</string>
+    <string name="connect_storage_gone">This storage is no longer connected.</string>
+    <string name="connect_https_only">Storages can be connected only over a secure (https) connection.</string>
+    <string name="connect_no_answer">No answer from the server. Come back to the app to try again.</string>
+    <string name="connect_link_denied">The sign-in was cancelled at the provider. You can start again.</string>
+    <string name="connect_link_expired">The sign-in took too long. Start again.</string>
+    <string name="connect_link_failed">The sign-in did not work. You can start again.</string>
 </resources>

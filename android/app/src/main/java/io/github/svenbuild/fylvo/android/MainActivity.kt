@@ -72,6 +72,16 @@ class MainActivity : AppCompatActivity() {
     // or a folder. Only while signed in; the screen takes the request once (IncomingQueue).
     private fun handleShareIntent(intent: Intent?) {
         val app = application as FylvoApp
+        // Fylvo 1.6: the link back of a storage sign-in (fylvo://connected?...). Only exactly its
+        // forms are taken (data/ConnectFlow), and only for the attempt of this account.
+        if (intent?.action == Intent.ACTION_VIEW && intent.data?.scheme == "fylvo") {
+            val link = intent.dataString?.let(io.github.svenbuild.fylvo.android.data.ConnectFlow::parseReturn)
+            setIntent(Intent(this, MainActivity::class.java))
+            if (link != null) lifecycleScope.launch {
+                if (app.sessionManager.isLoggedIn.first()) runCatching { app.connect.onReturn(link) }
+            }
+            return
+        }
         if (intent?.action?.startsWith("io.github.svenbuild.fylvo.android.action.") == true) {
             lifecycleScope.launch {
                 if (!app.sessionManager.isLoggedIn.first()) return@launch

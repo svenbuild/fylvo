@@ -1583,6 +1583,7 @@ fun FilesScreen(
             onOpenProfile = { accountPage = ACCOUNT_PROFILE },
             onOpenSecurity = { accountPage = ACCOUNT_SECURITY },
             onOpenTasks = { accountPage = ACCOUNT_TASKS },
+            onOpenConnected = if (connectedState.overview?.let { it.available && it.allowed } == true) ({ accountPage = ACCOUNT_CONNECTED }) else null,
             onOpenCustomize = { customizeOpen = true },
             // Account is a tab: back goes to the start tab like every other tab.
             onBack = { selectTab(startTab) },
@@ -1621,6 +1622,33 @@ fun FilesScreen(
     // Fylvo 1.6: profile and security, over Account.
     if (accountOpen && accountPage == ACCOUNT_PROFILE) {
         io.github.svenbuild.fylvo.android.ui.settings.ProfilePage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) })
+    }
+    if (accountOpen && accountPage == ACCOUNT_CONNECTED) {
+        ConnectedPage(
+            viewModel = viewModel,
+            onBack = { accountPage = null },
+            bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
+            onOpen = { s -> accountPage = null; accountOpen = false; viewModel.openPlace(s.uri) },
+            onMessage = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+        )
+    }
+    // Fylvo 1.6: the question before a new storage is saved, and messages of the sign-in.
+    val connectUi by app.connect.ui.collectAsState()
+    val connectMessage by app.connect.message.collectAsState()
+    (connectUi as? ConnectController.Ui.Confirm)?.let { c ->
+        ConnectConfirmDialog(
+            preview = c.preview,
+            myName = accountState.me?.let { it.nickname.ifEmpty { it.email } }.orEmpty(),
+            onAnswer = { yes -> scope.launch { app.connect.answer(yes) } },
+        )
+    }
+    LaunchedEffect(connectMessage) {
+        connectMessage?.let { snackbar.showSnackbar(it.resolve(context)); app.connect.messageShown() }
+    }
+    LaunchedEffect(Unit) {
+        app.reloadConnected = { viewModel.connected.reload() }
+        // A sign-in that was said yes to, but whose answer was lost (the app was stopped): sent again.
+        runCatching { app.connect.resume() }
     }
     if (accountOpen && accountPage == ACCOUNT_TASKS) {
         TasksPage(onBack = { accountPage = null }, bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) }, onOpenFolder = { uri ->
@@ -1692,6 +1720,13 @@ fun FilesScreen(
             onEditDiscard = { discardTarget = it },
             onEditDismissNotice = viewModel::dismissEditNotice,
         )
+    }
+
+    // Fylvo 1.6: messages also show over the pages above the list (Account pages, shares, ...).
+    if (accountOpen || page != null || customizeOpen || offlineOpen) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            SnackbarHost(snackbar, Modifier.padding(bottom = 104.dp))
+        }
     }
 
     // Fylvo: "Save in Fylvo" for shared files: the folder is chosen first.
@@ -1897,6 +1932,7 @@ internal const val PAGE_TAGS = "tags"
 internal const val ACCOUNT_PROFILE = "profile"
 internal const val ACCOUNT_SECURITY = "security"
 internal const val ACCOUNT_TASKS = "tasks"
+internal const val ACCOUNT_CONNECTED = "connected"
 /** Fylvo 1.6: "Shared by me", from the Shared tab or from Account. */
 internal const val PAGE_SHARES = "shares"
 /** Fylvo: [FilesUiState.origin] of a place opened from a page ("page:<page>"). */

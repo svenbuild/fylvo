@@ -56,6 +56,13 @@ class FylvoApp : Application(), ImageLoaderFactory {
     /** Fylvo: the account's group rights and the server's explorer switches (memory only). */
     lateinit var account: io.github.svenbuild.fylvo.android.data.AccountRepository
         private set
+    /** Fylvo 1.6: connecting storages from the app. */
+    lateinit var connectRepo: io.github.svenbuild.fylvo.android.data.ConnectRepository
+        private set
+    lateinit var connect: io.github.svenbuild.fylvo.android.ui.files.ConnectController
+        private set
+    /** Fylvo 1.6: the storages list to read again after a connection (set by the files screen). */
+    @Volatile var reloadConnected: (suspend () -> Unit)? = null
     /** Fylvo 1.6: archives and tasks. */
     lateinit var archives: io.github.svenbuild.fylvo.android.data.ArchiveRepository
         private set
@@ -83,6 +90,11 @@ class FylvoApp : Application(), ImageLoaderFactory {
         texts = io.github.svenbuild.fylvo.android.data.TextRepository(apiClient, fileRepository, cacheDir, sessionManager)
         history = io.github.svenbuild.fylvo.android.data.HistoryRepository(apiClient, sessionManager)
         archives = io.github.svenbuild.fylvo.android.data.ArchiveRepository(apiClient, sessionManager)
+        connectRepo = io.github.svenbuild.fylvo.android.data.ConnectRepository(apiClient, sessionManager)
+        connect = io.github.svenbuild.fylvo.android.ui.files.ConnectController(
+            apiClient, connectRepo, io.github.svenbuild.fylvo.android.data.ConnectAttemptStore(this),
+            reload = { reloadConnected?.invoke() },
+        )
         security = io.github.svenbuild.fylvo.android.data.SecurityRepository(apiClient, account, sessionManager)
         favoritesStore = FavoritesStore(this)
         taskNotifySettings = TaskNotifySettings(this)
@@ -173,6 +185,7 @@ class FylvoApp : Application(), ImageLoaderFactory {
             // Fylvo: what names the account's files on this device goes first.
             step { accountPrefs.clear() }
             step { account.clear() }
+            step { connect.clear() }
             step { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.disableAll(this@FylvoApp) }
             step { io.github.svenbuild.fylvo.android.data.prefs.ShareTargetStore(this@FylvoApp).clear() }
             io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = null

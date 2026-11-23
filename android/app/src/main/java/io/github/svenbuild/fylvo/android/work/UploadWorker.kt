@@ -789,6 +789,18 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             File(context.cacheDir, "upload_staging").listFiles { f -> f.name.startsWith("$workId-") }?.forEach { it.delete() }
         }
 
+        /** Fylvo 1.6: cancels the uploads into [root] (a disconnected storage). Off the main thread. */
+        suspend fun cancelForRoot(context: Context, root: String) {
+            val wm = WorkManager.getInstance(context)
+            val queue = queue(context)
+            val works = runCatching { wm.getWorkInfosByTag(TAG).get() }.getOrDefault(emptyList())
+            works.filter { !it.state.isFinished }.forEach { info ->
+                val batchId = info.tags.firstOrNull { it.startsWith(BATCH_TAG_PREFIX) }?.removePrefix(BATCH_TAG_PREFIX) ?: info.id.toString()
+                val batch = queue.load(batchId) ?: return@forEach
+                if (io.github.svenbuild.fylvo.android.util.CrUri.root(batch.parentUri) == root) cancel(context, info.id)
+            }
+        }
+
         /**
          * Sign-out: stops all uploads and cancels their open server sessions while the sign-in is
          * still valid, so no locked 0 B placeholders stay behind. Then forgets the lists.

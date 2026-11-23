@@ -293,4 +293,38 @@
     <string name="folder_upload_unreadable">Der Ordner konnte nicht gelesen werden.</string>
     <string name="folder_upload_started">Der Ordner wird hochgeladen</string>
     <string name="folder_upload_failed">Das Hochladen konnte nicht starten (der Zielordner hat sich geändert oder es gibt keine Verbindung).</string>
+
+    <!-- Verbundene Speicher aus der App -->
+    <string name="connected_manage_hint">Verbinden, umbenennen, trennen</string>
+    <string name="connect_provider">%1$s verbinden</string>
+    <string name="connect_in_browser">Die Anmeldung öffnet sich im Browser</string>
+    <string name="connect_again">Neu verbinden</string>
+    <string name="disconnect">Trennen</string>
+    <string name="disconnect_title">%1$s trennen?</string>
+    <string name="disconnect_text">Fylvo vergisst diesen Speicher. Seine Dateien bleiben beim Anbieter; wartende Uploads dorthin werden abgebrochen.</string>
+    <string name="disconnected">Getrennt</string>
+    <string name="connect_name_rule">Gib einen Namen mit höchstens 64 Bytes ein.</string>
+    <string name="connect_waiting">Warte auf die Anmeldung</string>
+    <string name="connect_waiting_hint">Schliesse sie im Browser ab und tippe dort auf \"Zurück zu Fylvo\".</string>
+    <string name="connect_confirm_title">%1$s verbinden?</string>
+    <string name="connect_confirm_address">%1$s von %2$s mit deinem Fylvo-Konto %3$s verbinden?</string>
+    <string name="connect_confirm_sign_in">%1$s, angemeldet als %2$s, mit deinem Fylvo-Konto %3$s verbinden?</string>
+    <string name="connect_confirm_name">%1$s von \"%2$s\" mit deinem Fylvo-Konto %3$s verbinden? Der Anbieter nennt nur einen frei wählbaren Namen.</string>
+    <string name="connect_confirm_none">%1$s mit deinem Fylvo-Konto %2$s verbinden? Der Anbieter nennt das Konto nicht.</string>
+    <string name="connect_yes">Verbinden</string>
+    <string name="connect_no">Nein</string>
+    <string name="connect_saved">Der Speicher ist verbunden</string>
+    <string name="connect_reconnected">Der Speicher ist wieder verbunden</string>
+    <string name="connect_failed">Der Speicher konnte nicht verbunden werden.</string>
+    <string name="connect_exists">Dieses Konto ist schon verbunden.</string>
+    <string name="connect_other_account">Melde dich zum Neu-Verbinden mit demselben Konto wie vorher an.</string>
+    <string name="connect_too_many">Du hast so viele Speicher verbunden, wie erlaubt sind.</string>
+    <string name="connect_not_allowed">Dein Konto darf keine Speicher verbinden.</string>
+    <string name="connect_not_offered">Dieser Server lässt Apps keine Speicher verbinden. Nutze die Web-App.</string>
+    <string name="connect_storage_gone">Dieser Speicher ist nicht mehr verbunden.</string>
+    <string name="connect_https_only">Speicher lassen sich nur über eine sichere Verbindung (https) verbinden.</string>
+    <string name="connect_no_answer">Keine Antwort vom Server. Komm zur App zurück, um es nochmals zu versuchen.</string>
+    <string name="connect_link_denied">Die Anmeldung wurde beim Anbieter abgebrochen. Du kannst neu beginnen.</string>
+    <string name="connect_link_expired">Die Anmeldung hat zu lange gedauert. Beginne neu.</string>
+    <string name="connect_link_failed">Die Anmeldung hat nicht geklappt. Du kannst neu beginnen.</string>
 </resources>
