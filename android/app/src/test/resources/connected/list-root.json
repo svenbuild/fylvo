@@ -1,0 +1,143 @@
+{
+  "code": 0,
+  "data": {
+    "files": [
+      {
+        "type": 1,
+        "id": "cse172955ee25049642a7f44c9",
+        "name": "Docs",
+        "created_at": "2026-01-01T09:00:01Z",
+        "updated_at": "2026-01-01T09:00:01Z",
+        "size": 0,
+        "metadata": {},
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs",
+        "capability": "AAKI"
+      },
+      {
+        "type": 1,
+        "id": "csaa1595118be2874e3c84f601",
+        "name": "Empty",
+        "created_at": "2026-01-01T09:00:02Z",
+        "updated_at": "2026-01-01T09:00:02Z",
+        "size": 0,
+        "metadata": {},
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/Empty",
+        "capability": "AAKI"
+      },
+      {
+        "type": 1,
+        "id": "cs0675e1a3e774a2897b2a2e47",
+        "name": "Link to Docs",
+        "created_at": "2026-01-01T09:00:08Z",
+        "updated_at": "2026-01-01T09:00:08Z",
+        "size": 0,
+        "metadata": {
+          "fylvo:link": "1"
+        },
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/Link%20to%20Docs",
+        "capability": "AAKI"
+      },
+      {
+        "type": 0,
+        "id": "csc2fd44a2efb7e122b9e117eb",
+        "name": "Budget.gsheet",
+        "created_at": "2026-01-01T09:00:04Z",
+        "updated_at": "2026-01-01T09:00:04Z",
+        "size": 0,
+        "metadata": {
+          "fylvo:export": "xlsx",
+          "fylvo:external_url": "https://drive.example.com/file/d/id005/view",
+          "fylvo:size_unknown": "1",
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/Budget.gsheet",
+        "capability": "gAAI",
+        "primary_entity": "v826b0a51a670c41ef9084c6f"
+      },
+      {
+        "type": 0,
+        "id": "cs5f601429d42b8114edcde247",
+        "name": "Link to notes.txt",
+        "created_at": "2026-01-01T09:00:09Z",
+        "updated_at": "2026-01-01T09:00:09Z",
+        "size": 0,
+        "metadata": {
+          "fylvo:link": "1",
+          "fylvo:size_unknown": "1",
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/Link%20to%20notes.txt",
+        "capability": "gAAI"
+      },
+      {
+        "type": 0,
+        "id": "cs009717623afcf280015593c1",
+        "name": "notes.txt",
+        "created_at": "2026-01-01T09:00:03Z",
+        "updated_at": "2026-01-01T09:00:03Z",
+        "size": 5,
+        "metadata": {
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/notes.txt",
+        "capability": "gAAI",
+        "primary_entity": "v5cb5a1b0d6c07849a3e74e07"
+      },
+      {
+        "type": 0,
+        "id": "cs425caab702ba1cbbba063315",
+        "name": "twice.txt",
+        "created_at": "0001-01-01T00:00:00Z",
+        "updated_at": "0001-01-01T00:00:00Z",
+        "size": 0,
+        "metadata": {
+          "fylvo:unsupported": "duplicate",
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/twice.txt",
+        "capability": "AAAI"
+      }
+    ],
+    "parent": {
+      "type": 1,
+      "id": "cs5282faa4a2bd62fac7ce94c7",
+      "name": "Google Drive",
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z",
+      "size": 0,
+      "metadata": {},
+      "path": "cloudreve://nvgt4tqg126n0ast@connected",
+      "capability": "AAKI"
+    },
+    "pagination": {
+      "page": 0,
+      "page_size": 100,
+      "total_items": 7,
+      "is_cursor": true
+    },
+    "props": {
+      "capability": "AAKI",
+      "max_page_size": 2000,
+      "order_by_options": [
+        "name",
+        "size",
+        "updated_at"
+      ],
+      "order_direction_options": [
+        "asc",
+        "desc"
+      ]
+    },
+    "context_hint": null,
+    "mixed_type": false,
+    "connected": {
+      "id": "nvgt4tqg126n0ast",
+      "provider": "drive",
+      "read_only": true,
+      "search": false,
+      "thumbnails": false,
+      "omitted": 1
+    }
+  },
+  "msg": ""
+}

@@ -457,4 +457,42 @@
     <string name="edit_waiting">Waiting for upload</string>
     <string name="edit_dismiss_notice">Hide note</string>
     <string name="edit_retry_now">Try again now</string>
+
+    <!-- Fylvo: connected storages (Google Drive, OneDrive shown through the server) -->
+    <string name="connected_storages">Connected storages</string>
+    <string name="connected_storage">Connected storage</string>
+    <string name="connected_connect_title">Connect Google Drive or OneDrive</string>
+    <string name="connected_connect_hint">Done once in the Fylvo web app, under Settings</string>
+    <string name="connected_status_reconnect">Needs to be connected again</string>
+    <string name="connected_status_unavailable">Not available right now</string>
+    <string name="connected_usage">%1$s of %2$s used</string>
+    <string name="connected_usage_only">%1$s used</string>
+    <string name="connected_reconnect_title">Connect %1$s again</string>
+    <string name="connected_reconnect_text">The provider no longer accepts the access of Fylvo to this storage. Connect it again in the Fylvo web app, under Settings, Connected storages. Your files stay where they are.</string>
+    <string name="connected_unavailable_text">This storage cannot be used right now. Try again later, or look at it in the Fylvo web app under Settings, Connected storages.</string>
+    <string name="connected_open_web_app">Open web app</string>
+    <string name="connected_open_at_provider">Open at the provider</string>
+    <string name="connected_open_office">Open as .%1$s file</string>
+    <string name="connected_duplicate_subtitle">Name exists more than once, cannot be used</string>
+    <string name="connected_duplicate_note">This name exists more than once in this folder. Rename one of them at the provider to use it in Fylvo.</string>
+    <string name="connected_link">Shortcut</string>
+    <string name="connected_link_note">Shortcut, read only</string>
+    <string name="connected_not_downloadable">This item cannot be opened in Fylvo.</string>
+    <plurals name="connected_omitted">
+        <item quantity="one">%d entry with a name Fylvo cannot show is hidden</item>
+        <item quantity="other">%d entries with names Fylvo cannot show are hidden</item>
+    </plurals>
+    <string name="error_connected_unsupported">This is not possible in a connected storage.</string>
+    <string name="error_connected_reconnect">This storage has to be connected again. Do this in the Fylvo web app, under Settings, Connected storages.</string>
+    <string name="error_connected_unavailable">Connected storages are not available on this server for your account.</string>
+    <string name="error_connected_busy">The provider is busy. Please try again in a moment.</string>
+    <string name="error_connected_listing_expired">The list has expired. Please refresh it.</string>
+    <string name="error_connected_item">This item cannot be used.</string>
+    <string name="error_connected_ambiguous">This name exists more than once in the folder. Rename one of them at the provider.</string>
+    <string name="error_connected_changed">The file has changed. The list was refreshed, please open it again.</string>
+    <string name="error_connected_forbidden">The provider does not allow access to this file.</string>
+    <string name="error_connected_flagged">The provider has blocked this file.</string>
+    <string name="error_connected_export_too_large">This document is too large for the provider to export.</string>
+    <string name="error_connected_daily_limit">The daily limit of the provider for this file is reached. Please try again tomorrow.</string>
+    <string name="error_connected_too_large">This folder has too many entries to be shown in Fylvo.</string>
 </resources>

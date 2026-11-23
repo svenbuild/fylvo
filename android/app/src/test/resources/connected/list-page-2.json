@@ -1,0 +1,76 @@
+{
+  "code": 0,
+  "data": {
+    "files": [
+      {
+        "type": 0,
+        "id": "cs72762fbe75c272df62808f1b",
+        "name": "c.pdf",
+        "created_at": "2026-01-01T09:00:12Z",
+        "updated_at": "2026-01-01T09:00:12Z",
+        "size": 5,
+        "metadata": {
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs/c.pdf",
+        "capability": "gAAI",
+        "primary_entity": "vbbb29d21e51083291564bf8f"
+      },
+      {
+        "type": 0,
+        "id": "cs1a5ebbda5c486b63fe50833b",
+        "name": "d.pdf",
+        "created_at": "2026-01-01T09:00:13Z",
+        "updated_at": "2026-01-01T09:00:13Z",
+        "size": 5,
+        "metadata": {
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs/d.pdf",
+        "capability": "gAAI",
+        "primary_entity": "v4cdb9c96cde43ea814f4bff7"
+      }
+    ],
+    "parent": {
+      "type": 1,
+      "id": "",
+      "name": "Docs",
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z",
+      "size": 0,
+      "metadata": null,
+      "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs",
+      "capability": "AAKI"
+    },
+    "pagination": {
+      "page": 0,
+      "page_size": 2,
+      "total_items": 5,
+      "next_token": "56e9c232edf2149f2afc6c3e.4",
+      "is_cursor": true
+    },
+    "props": {
+      "capability": "AAKI",
+      "max_page_size": 2000,
+      "order_by_options": [
+        "name",
+        "size",
+        "updated_at"
+      ],
+      "order_direction_options": [
+        "asc",
+        "desc"
+      ]
+    },
+    "context_hint": null,
+    "mixed_type": false,
+    "connected": {
+      "id": "nvgt4tqg126n0ast",
+      "provider": "drive",
+      "read_only": true,
+      "search": false,
+      "thumbnails": false
+    }
+  },
+  "msg": ""
+}

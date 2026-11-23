@@ -1,0 +1,30 @@
+{
+  "code": 0,
+  "data": {
+    "type": 0,
+    "id": "csc2fd44a2efb7e122b9e117eb",
+    "name": "Budget.gsheet",
+    "created_at": "2026-01-01T09:00:04Z",
+    "updated_at": "2026-01-01T09:00:04Z",
+    "size": 0,
+    "metadata": {
+      "fylvo:export": "xlsx",
+      "fylvo:external_url": "https://drive.example.com/file/d/id005/view",
+      "fylvo:size_unknown": "1",
+      "thumb:disabled": ""
+    },
+    "path": "cloudreve://nvgt4tqg126n0ast@connected/Budget.gsheet",
+    "capability": "gAAI",
+    "primary_entity": "v826b0a51a670c41ef9084c6f",
+    "extended_info": {
+      "storage_policy": {
+        "id": "connected",
+        "name": "Google Drive",
+        "type": "local",
+        "max_size": 0
+      },
+      "storage_used": 0
+    }
+  },
+  "msg": ""
+}

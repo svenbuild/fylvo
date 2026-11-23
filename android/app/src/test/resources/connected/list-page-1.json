@@ -1,0 +1,76 @@
+{
+  "code": 0,
+  "data": {
+    "files": [
+      {
+        "type": 0,
+        "id": "cs14b71c37c4f4df5b3f361503",
+        "name": "a.pdf",
+        "created_at": "2026-01-01T09:00:10Z",
+        "updated_at": "2026-01-01T09:00:10Z",
+        "size": 5,
+        "metadata": {
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs/a.pdf",
+        "capability": "gAAI",
+        "primary_entity": "v31b91d762ba9b543134bc62a"
+      },
+      {
+        "type": 0,
+        "id": "cs511808cb1acc1c5862af001c",
+        "name": "b.pdf",
+        "created_at": "2026-01-01T09:00:11Z",
+        "updated_at": "2026-01-01T09:00:11Z",
+        "size": 5,
+        "metadata": {
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs/b.pdf",
+        "capability": "gAAI",
+        "primary_entity": "ve6dd0dcf7a169bf3480b0a20"
+      }
+    ],
+    "parent": {
+      "type": 1,
+      "id": "cse172955ee25049642a7f44c9",
+      "name": "Docs",
+      "created_at": "2026-01-01T09:00:01Z",
+      "updated_at": "2026-01-01T09:00:01Z",
+      "size": 0,
+      "metadata": {},
+      "path": "cloudreve://nvgt4tqg126n0ast@connected/Docs",
+      "capability": "AAKI"
+    },
+    "pagination": {
+      "page": 0,
+      "page_size": 2,
+      "total_items": 5,
+      "next_token": "56e9c232edf2149f2afc6c3e.2",
+      "is_cursor": true
+    },
+    "props": {
+      "capability": "AAKI",
+      "max_page_size": 2000,
+      "order_by_options": [
+        "name",
+        "size",
+        "updated_at"
+      ],
+      "order_direction_options": [
+        "asc",
+        "desc"
+      ]
+    },
+    "context_hint": null,
+    "mixed_type": false,
+    "connected": {
+      "id": "nvgt4tqg126n0ast",
+      "provider": "drive",
+      "read_only": true,
+      "search": false,
+      "thumbnails": false
+    }
+  },
+  "msg": ""
+}

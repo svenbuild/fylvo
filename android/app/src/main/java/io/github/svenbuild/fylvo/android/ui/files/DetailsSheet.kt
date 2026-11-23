@@ -1,5 +1,6 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
+import io.github.svenbuild.fylvo.android.util.Connected
 import androidx.compose.ui.res.stringResource
 import io.github.svenbuild.fylvo.android.R
 
@@ -48,12 +49,13 @@ fun DetailsSheet(file: FileObject, thumbUrl: String?, onDismiss: () -> Unit) {
 
         SelectionContainer {
             Column {
-                if (!file.isFolder) {
+                if (!file.isFolder && !Connected.sizeUnknown(file)) {
                     DetailRow(stringResource(R.string.size), stringResource(R.string.size_with_bytes, formatSize(file.size), "%,d".format(file.size)))
                 }
                 DetailRow(stringResource(R.string.location), CrUri.displayPath(CrUri.parent(file.path)))
                 DetailRow(stringResource(R.string.modified), longDate(file.updatedAt))
-                DetailRow(stringResource(R.string.created), longDate(file.createdAt))
+                // Fylvo: connected storages report no creation date (the server repeats the modification).
+                if (!Connected.isConnected(file.path)) DetailRow(stringResource(R.string.created), longDate(file.createdAt))
                 val w = file.metadata?.get("exif:x")
                 val h = file.metadata?.get("exif:y")
                 if (w != null && h != null) DetailRow(stringResource(R.string.dimensions), "$w × $h")

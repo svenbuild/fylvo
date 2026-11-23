@@ -39,6 +39,8 @@ data class SelectionContext(
     val editable: Boolean = false,
     /** Fylvo: one file with a working copy in use. */
     val edited: Boolean = false,
+    /** Fylvo: inside a connected storage (see connectedSelectionActions). */
+    val connected: Boolean = false,
 )
 
 /** [quick]: the small buttons left of the selection button, nearest first. [menu]: the card above it. */
@@ -56,6 +58,7 @@ fun selectionActions(selected: List<FileObject>, ctx: SelectionContext, count: I
         count == 0 -> SelectionActions(emptyList(), emptyList())
         // Nothing of it listed yet: only what needs no row.
         selected.isEmpty() -> SelectionActions(emptyList(), listOf(SelectionAction.SELECT_ALL))
+        ctx.connected -> connectedSelectionActions(selected, count)
         ctx.inTrash -> SelectionActions(
             quick = listOf(SelectionAction.RESTORE, SelectionAction.DELETE_FOREVER),
             menu = listOf(SelectionAction.SELECT_ALL),

@@ -16,14 +16,17 @@ object Permissions {
 
     /** May create folders and upload into this folder. */
     fun canAddTo(folder: FileObject?): Boolean =
-        folder != null && (shareCapability(folder, UPLOAD_FILE) ?: (folder.owned == true))
+        folder != null && writable(folder) && (shareCapability(folder, UPLOAD_FILE) ?: (folder.owned == true))
 
     /** May rename, move, delete or overwrite this file. */
     fun canModifyFile(file: FileObject): Boolean =
-        shareCapability(file, RENAME_FILE) ?: (file.owned == true)
+        writable(file) && (shareCapability(file, RENAME_FILE) ?: (file.owned == true))
 
     /** Only the owner creates share links, and never from inside someone else's share. */
-    fun canShareLink(file: FileObject): Boolean = file.owned == true && !CrUri.isShare(file.path)
+    fun canShareLink(file: FileObject): Boolean = file.owned == true && !CrUri.isShare(file.path) && writable(file)
+
+    /** Fylvo: false inside a connected storage until the app can write there (Connected.writesAllowed). */
+    private fun writable(file: FileObject): Boolean = !Connected.isConnected(file.path) || Connected.writesAllowed(file.path)
 
     private fun shareCapability(file: FileObject, bit: Int): Boolean? =
         if (CrUri.isShare(file.path)) enabled(file.capability, bit) else null

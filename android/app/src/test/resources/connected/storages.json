@@ -1,0 +1,42 @@
+{
+  "code": 0,
+  "data": {
+    "available": true,
+    "allowed": true,
+    "max": 10,
+    "providers": [
+      {
+        "type": "drive",
+        "name": "Google Drive",
+        "configured": true
+      },
+      {
+        "type": "onedrive",
+        "name": "OneDrive",
+        "configured": false
+      }
+    ],
+    "storages": [
+      {
+        "id": "cdd255pa64jyicxm",
+        "provider": "drive",
+        "name": "Google Drive",
+        "account": "user@example.com",
+        "status": "ok",
+        "uri": "cloudreve://cdd255pa64jyicxm@connected",
+        "created_at": "2026-11-23T01:21:34.2967738+01:00"
+      },
+      {
+        "id": "6yrc882vbxzwnba1",
+        "provider": "drive",
+        "name": "Google Drive",
+        "account": "alex@example.com",
+        "status": "reconnect",
+        "message": "The provider no longer accepts the stored access.",
+        "uri": "cloudreve://6yrc882vbxzwnba1@connected",
+        "created_at": "2026-11-23T01:21:34.3193223+01:00"
+      }
+    ]
+  },
+  "msg": ""
+}

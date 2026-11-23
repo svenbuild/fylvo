@@ -38,6 +38,7 @@ import io.github.svenbuild.fylvo.android.data.SortOrder
 import io.github.svenbuild.fylvo.android.data.ViewMode
 import io.github.svenbuild.fylvo.android.data.ViewPrefs
 import io.github.svenbuild.fylvo.android.data.ViewSettings
+import io.github.svenbuild.fylvo.android.util.Connected
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.ErrorText
 import io.github.svenbuild.fylvo.android.util.Permissions
@@ -125,6 +126,8 @@ data class FilesUiState(
     val loadingMore: Boolean = false,
     val nextToken: String? = null,
     val error: UiText? = null,
+    /** Fylvo: the code that caused [error] (connected storages show a way to the web app for 40921). */
+    val errorCode: Int? = null,
     val snackbar: UiMessage? = null,
     val view: ViewPrefs = ViewPrefs(),
     /** Paths of files picked in selection mode; empty means not selecting. */
@@ -159,6 +162,8 @@ data class FilesUiState(
     val staleCopies: Set<String> = emptySet(),
     /** Fylvo: the folder on screen as the server describes it, with its capability set. */
     val parent: FileObject? = null,
+    /** Fylvo: the `connected` block of the listing on screen (inside a connected storage). */
+    val connected: io.github.svenbuild.fylvo.android.api.ConnectedListing? = null,
     /** Fylvo: every working copy of this account (also finished ones), see OfflineEdits. */
     val editEntries: List<EditEntry> = emptyList(),
     val editPrompt: EditPrompt? = null,
@@ -183,6 +188,8 @@ data class FilesUiState(
     /** Fylvo: offline can be switched here (My files, shared folders, with a connection). */
     fun offlineAllowed(file: FileObject): Boolean = canKeepOffline(file) && !offlineMode
     val selecting: Boolean get() = selected.isNotEmpty()
+    /** Fylvo: the folder on screen is inside a connected storage. */
+    val inConnected: Boolean get() = !home && Connected.isConnected(currentUri)
     /** Uploads landing in the folder on screen; shown inline above the files. */
     val uploadsHere: List<UploadStatus> get() = uploads.filter { it.parentUri == currentUri }
     val category: Category? get() = Category.fromUri(currentUri)
@@ -221,6 +228,9 @@ class FilesViewModel(
     }
 
     private val downloadJobs = ConcurrentHashMap<String, Job>()
+
+    /** Fylvo: the account's connected storages (Home section, names, status). */
+    val connected = ConnectedStorages(repo.connected, viewModelScope) { onSessionExpired() }
     /** Finished upload ids already reported, so a replayed WorkInfo is not announced twice. */
     private val announcedUploads = HashSet<java.util.UUID>()
 
@@ -260,22 +270,34 @@ class FilesViewModel(
 
     /** Last good listing per folder, so going back (or returning) paints instantly. */
     private val listingCache = HashMap<String, Listing>()
-    private data class Listing(val files: List<FileObject>, val nextToken: String?, val sortKey: SortOrder, val parent: FileObject?)
+    private data class Listing(
+        val files: List<FileObject>,
+        val nextToken: String?,
+        val sortKey: SortOrder,
+        val parent: FileObject?,
+        val connected: io.github.svenbuild.fylvo.android.api.ConnectedListing? = null,
+    )
 
     /** Fylvo: counts refreshes; only the newest one may change the listing. */
     private var refreshGeneration = 0
+    /** Fylvo: the refresh that restarted a connected listing after 40926; it is not restarted again. */
+    private var restartedGeneration = -1
 
-    fun refresh() {
+    /** [restart]: Fylvo, a connected listing starts again after its cursor expired (40926). */
+    fun refresh(restart: Boolean = false) {
         val uri = _state.value.currentUri
         val generation = ++refreshGeneration
+        if (restart) restartedGeneration = generation
         val cached = listingCache[uri]?.takeIf { it.sortKey == _state.value.view.sort }
         _state.value = _state.value.copy(
             loading = cached == null,
             revalidating = cached != null,
             error = null,
+            errorCode = null,
             files = cached?.files ?: emptyList(),
             nextToken = cached?.nextToken,
             parent = cached?.parent,
+            connected = cached?.connected,
             loadingMore = false,
             offlineMode = false,
         )
@@ -285,20 +307,33 @@ class FilesViewModel(
                 // The user may have moved on while this was in flight, or a newer refresh started.
                 if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
                 rememberShareNames(uri, res)
+                Connected.nameFromListing(uri, res.parent?.name)
                 val files = sortFiles(res.files)
-                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, res.parent)
+                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, res.parent, res.connected)
                 _state.value = _state.value.copy(
                     loading = false,
                     revalidating = false,
                     files = files,
                     nextToken = res.pagination.nextToken,
                     parent = res.parent,
+                    connected = res.connected,
                     selected = keepListed(files),
                 )
                 prefetchThumbs(files)
             } catch (e: Exception) {
                 if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
                 if (handleSessionExpiry(e)) return@launch
+                // Fylvo: a connected storage that is gone or must be connected again shows its error,
+                // never rows of it from before; the Home section learns the new state.
+                if (Connected.isConnected(uri) && Connected.isStorageTrouble(e)) {
+                    forgetConnectedListings(uri)
+                    connected.load()
+                    _state.value = _state.value.copy(
+                        loading = false, revalidating = false, files = emptyList(), nextToken = null, parent = null,
+                        connected = null, selected = emptySet(), error = userError(e), errorCode = Connected.codeOf(e),
+                    )
+                    return@launch
+                }
                 // Fylvo: no connection inside an offline folder: show the copies on this phone.
                 val local = if (e is CancellationException || (e is ApiException && !e.isTransient)) null else offline.browse(uri)
                 if (local != null && _state.value.currentUri == uri && generation == refreshGeneration) {
@@ -310,11 +345,16 @@ class FilesViewModel(
                 }
                 // Fylvo: the offline lookup may have taken a while; the user may be elsewhere now.
                 if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
+                // Fylvo: the cursor of a cached connected listing may have expired; never use it.
+                val dropToken = cached != null && Connected.isConnected(uri)
+                if (dropToken) listingCache[uri] = cached!!.copy(nextToken = null)
                 // Keep showing the cached files if we had them; only surface the error otherwise.
                 _state.value = _state.value.copy(
                     loading = false,
                     revalidating = false,
+                    nextToken = if (dropToken) null else _state.value.nextToken,
                     error = if (cached == null) userError(e) else null,
+                    errorCode = if (cached == null) Connected.codeOf(e) else null,
                     snackbar = if (cached != null) failure(e) else null,
                     // Fylvo: nothing listed to act on behind the error screen.
                     selected = if (cached == null) emptySet() else _state.value.selected,
@@ -349,16 +389,36 @@ class FilesViewModel(
                 // refresh since then has a newer first page; this one would bring back old rows.
                 if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
                 val files = sortFiles(_state.value.files + res.files)
-                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, _state.value.parent)
+                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, _state.value.parent, _state.value.connected)
                 _state.value = _state.value.copy(
                     loadingMore = false,
                     files = files,
                     nextToken = res.pagination.nextToken,
                 )
             } catch (e: Exception) {
-                if (_state.value.currentUri == uri && generation == refreshGeneration) {
-                    _state.value = _state.value.copy(loadingMore = false, snackbar = failure(e))
+                if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
+                if (handleSessionExpiry(e)) return@launch
+                if (Connected.isConnected(uri)) {
+                    when {
+                        // Fylvo: the cursor expired: the listing starts again, once.
+                        Connected.codeOf(e) == Connected.CODE_LISTING_EXPIRED && generation != restartedGeneration -> {
+                            listingCache.remove(uri)
+                            refresh(restart = true)
+                            return@launch
+                        }
+                        Connected.isStorageTrouble(e) -> {
+                            refresh()
+                            return@launch
+                        }
+                        // A cursor that failed is not sent again; pull to refresh starts anew.
+                        Connected.codeOf(e) == Connected.CODE_LISTING_EXPIRED -> {
+                            listingCache[uri]?.let { listingCache[uri] = it.copy(nextToken = null) }
+                            _state.value = _state.value.copy(loadingMore = false, nextToken = null, snackbar = failure(e))
+                            return@launch
+                        }
+                    }
                 }
+                _state.value = _state.value.copy(loadingMore = false, snackbar = failure(e))
             }
         }
     }
@@ -374,10 +434,12 @@ class FilesViewModel(
             // Categories read like a timeline, as in the Files app.
             repo.list(uri, pageToken = token, orderBy = "updated_at", orderDirection = "desc")
         } else {
+            val by = _state.value.view.sort.by
             repo.list(
                 uri,
                 pageToken = token,
-                orderBy = _state.value.view.sort.by.apiName,
+                // Fylvo: connected storages sort by name, size and modification time only.
+                orderBy = (if (Connected.isConnected(uri)) Connected.sortFor(by) else by).apiName,
                 orderDirection = _state.value.view.sort.apiDirection,
             )
         }
@@ -439,6 +501,7 @@ class FilesViewModel(
 
     /** Newest files across the drive for the home page's Recent strip. */
     fun loadRecent() {
+        connected.load()
         if (_state.value.recentLoading) return
         _state.value = _state.value.copy(recentLoading = true)
         viewModelScope.launch {
@@ -556,7 +619,7 @@ class FilesViewModel(
                 // Fylvo: no connection: an older copy kept offline is better than nothing.
                 val local = anyOfflineCopy(file)
                 if (local != null) onReady(local)
-                else _state.value = _state.value.copy(snackbar = failure(e, fallback = R.string.download_failed))
+                else _state.value = _state.value.copy(snackbar = downloadFailure(file, e))
             } finally {
                 releaseSingle(file.path, file.path, coroutineContext[Job])
             }
@@ -581,13 +644,42 @@ class FilesViewModel(
         _state.update { it.copy(downloading = it.downloading - path) }
     }
 
-    /** Fylvo: keyed by the file's version too, so an older copy of the same size is never reused. */
+    /**
+     * Fylvo: keyed by the file's version too, so an older copy of the same size is never reused.
+     * A Google document is stored under its export name (Budget.xlsx), so apps know the type.
+     */
     private fun cacheFileFor(context: Context, file: FileObject): File =
-        File(File(context.cacheDir, "downloads"), file.id).resolve(file.primaryEntity.ifEmpty { "unknown" }).resolve(file.name)
+        File(File(context.cacheDir, "downloads"), file.id).resolve(file.primaryEntity.ifEmpty { "unknown" }).resolve(Connected.downloadName(file))
 
-    /** A cached download of exactly this version (none when the version is unknown). */
+    /**
+     * A cached download of exactly this version (none when the version is unknown). Fylvo: never
+     * when the size is unknown (an export of a connected storage): a short copy could not be told.
+     */
     private fun cachedCopy(dest: File, file: FileObject): Boolean =
-        file.primaryEntity.isNotEmpty() && dest.exists() && dest.length() == file.size
+        file.primaryEntity.isNotEmpty() && !Connected.sizeUnknown(file) && dest.exists() && dest.length() == file.size
+
+    /**
+     * Fylvo: the message for a failed download. Inside a connected storage a changed file
+     * refreshes the listing, and trouble with the storage reloads the overview first, so a
+     * storage that must be connected again says so.
+     */
+    private suspend fun downloadFailure(file: FileObject, e: Exception): UiMessage {
+        if (!Connected.isConnected(file.path)) return failure(e, fallback = R.string.download_failed)
+        val normalized = Connected.normalize(e)
+        if (Connected.isChanged(normalized)) {
+            if (!_state.value.home && CrUri.root(_state.value.currentUri) == CrUri.root(file.path)) refresh()
+        } else if (Connected.isStorageTrouble(e)) {
+            connected.reload()
+            if (connected.storageOf(file.path)?.needsReconnect == true) {
+                return UiMessage(UiText.Res(R.string.error_connected_reconnect), long = true)
+            }
+        }
+        return failure(normalized, fallback = R.string.download_failed)
+    }
+
+    /** Fylvo: the version to ask for when saving: pinned inside connected storages (the listed file). */
+    private fun saveEntity(file: FileObject): String =
+        if (Connected.isConnected(file.path)) file.primaryEntity else ""
 
     /**
      * Downloads [file] somewhere the user can actually find it: the MediaStore
@@ -608,7 +700,7 @@ class FilesViewModel(
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
             } catch (e: Exception) {
-                _state.value = _state.value.copy(snackbar = failure(e, fallback = R.string.download_failed))
+                _state.value = _state.value.copy(snackbar = downloadFailure(file, e))
             } finally {
                 releaseSingle(key, file.path, coroutineContext[Job])
             }
@@ -646,6 +738,7 @@ class FilesViewModel(
         val job = viewModelScope.launch {
             var saved = 0
             var lastError: Exception? = null
+            var lastFailed: FileObject? = null
             try {
                 for (file in mine) {
                     try {
@@ -655,6 +748,7 @@ class FilesViewModel(
                         throw e
                     } catch (e: Exception) {
                         lastError = e
+                        lastFailed = file
                     } finally {
                         batchPaths -= file.path
                         clearDownloading(file.path)
@@ -663,7 +757,7 @@ class FilesViewModel(
                 val failed = lastError
                 val message = when {
                     saved == mine.size -> UiMessage(UiText.Plural(R.plurals.saved_files, saved, saved))
-                    saved == 0 && failed != null -> failure(failed, fallback = R.string.download_failed)
+                    saved == 0 && failed != null -> lastFailed?.let { downloadFailure(it, failed) } ?: failure(failed, fallback = R.string.download_failed)
                     else -> UiMessage(UiText.Res(R.string.saved_some_files, saved, mine.size))
                 }
                 _state.update { it.copy(snackbar = message) }
@@ -679,8 +773,8 @@ class FilesViewModel(
 
     private suspend fun saveToDeviceIo(context: Context, file: FileObject): String {
         val archive = file.isFolder
-        val url = repo.downloadUrl(file.path, archive = archive)
-        val displayName = if (archive) "${file.name}.zip" else file.name
+        val url = repo.downloadUrl(file.path, archive = archive, entity = saveEntity(file))
+        val displayName = if (archive) "${file.name}.zip" else Connected.downloadName(file)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val resolver = context.contentResolver
             val values = ContentValues().apply {
@@ -719,7 +813,7 @@ class FilesViewModel(
         // Fylvo: the name is taken at once (createNewFile is atomic), so two saves of files with the
         // same name running at the same time never write into the same file.
         while (!dest.createNewFile()) {
-            dest = File(dir, "${file.name} ($n)${if (archive) ".zip" else ""}")
+            dest = File(dir, if (archive) "${file.name} ($n).zip" else numberedName(displayName, n))
             n++
         }
         try {
@@ -731,6 +825,12 @@ class FilesViewModel(
             throw e
         }
         return dest.name
+    }
+
+    /** Fylvo: "Budget (1).xlsx" for a taken "Budget.xlsx"; a name without extension gets " (1)" at the end. */
+    private fun numberedName(name: String, n: Int): String {
+        val dot = name.lastIndexOf('.')
+        return if (dot > 0) "${name.substring(0, dot)} ($n)${name.substring(dot)}" else "$name ($n)"
     }
 
     /** Streams a download [url] into [out] with throttled progress for [path]. */
@@ -762,11 +862,12 @@ class FilesViewModel(
     suspend fun previewUrl(file: FileObject): String {
         currentOfflineCopy(file)?.let { return android.net.Uri.fromFile(it).toString() }
         return try {
-            repo.contentUrl(file.path).also { markFresh(file) }
+            // Fylvo: inside a connected storage the listed version, so a replaced file is not shown.
+            repo.contentUrl(file.path, entity = saveEntity(file)).also { markFresh(file) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            anyOfflineCopy(file)?.let { android.net.Uri.fromFile(it).toString() } ?: throw e
+            anyOfflineCopy(file)?.let { android.net.Uri.fromFile(it).toString() } ?: throw Connected.normalize(e)
         }
     }
 
@@ -815,7 +916,7 @@ class FilesViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            anyOfflineCopy(file) ?: throw e
+            anyOfflineCopy(file) ?: throw Connected.normalize(e)
         }
     }
 
@@ -824,7 +925,8 @@ class FilesViewModel(
         val kind = FileKind.of(file)
         val gallery = kind == FileKind.IMAGE || kind == FileKind.VIDEO
         return _state.value.files.filter {
-            !it.isFolder && !it.isUploading && if (gallery) FileKind.of(it).let { k -> k == FileKind.IMAGE || k == FileKind.VIDEO } else FileKind.of(it) == kind
+            // Fylvo: inside a connected storage only rows that may be opened in the app.
+            !it.isFolder && !it.isUploading && (!Connected.isConnected(it.path) || Connected.tapAction(it) == Connected.Tap.OPEN) && if (gallery) FileKind.of(it).let { k -> k == FileKind.IMAGE || k == FileKind.VIDEO } else FileKind.of(it) == kind
         }.ifEmpty { listOf(file) }
     }
 
@@ -1386,6 +1488,12 @@ class FilesViewModel(
      * Fylvo: a human sentence for a failed request on [paths]. When one of them is a file whose
      * upload has not finished, a lock answer also says that such uploads go away by themselves.
      */
+    /** Fylvo: cached listings of the connected storage of [uri] (gone or not usable any more). */
+    private fun forgetConnectedListings(uri: String) {
+        val root = CrUri.root(uri)
+        listingCache.keys.removeAll { CrUri.root(it) == root }
+    }
+
     private fun failure(e: Throwable, paths: List<String> = emptyList(), @StringRes fallback: Int? = null): UiMessage {
         val involvesUpload = paths.isNotEmpty() && paths.any { it in uploadingPaths() }
         return UiMessage(userError(e, involvesUpload, fallback))
