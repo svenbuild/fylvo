@@ -150,15 +150,20 @@ func (t *thumbs) load() {
 			continue
 		}
 		if known != nil && !known[conn.Name()] {
-			// The connection ended and its folder was left behind.
-			_ = os.RemoveAll(filepath.Join(t.dir, conn.Name()))
-			continue
+			// The connection ended and its folder was left behind. What cannot be
+			// removed is counted below like the rest: it still takes its room.
+			if removeFolder(filepath.Join(t.dir, conn.Name())) == nil {
+				continue
+			}
+			t.gone[conn.Name()] = true
 		}
 		entries, _ := os.ReadDir(filepath.Join(t.dir, conn.Name()))
 		for _, e := range entries {
 			path := filepath.Join(t.dir, conn.Name(), e.Name())
 			info, err := e.Info()
-			if err != nil || !info.Mode().IsRegular() || !strings.HasSuffix(e.Name(), thumbExt) || strings.HasPrefix(e.Name(), thumbTemp) {
+			if err != nil || !info.Mode().IsRegular() || !strings.HasSuffix(e.Name(), thumbExt) || strings.HasPrefix(e.Name(), thumbTemp) ||
+				info.Size() > thumbStoredMax {
+				// Not a preview this server wrote, or not a whole one.
 				_ = os.Remove(path)
 				continue
 			}
@@ -221,10 +226,14 @@ func (t *thumbs) kept(conn, name string) ([]byte, bool) {
 		return nil, false
 	}
 	path := filepath.Join(t.dir, conn, name)
-	stored, err := os.ReadFile(path)
+	if t.gone[conn] {
+		// Left over of a connection that ended (it could not be deleted): never served.
+		return nil, false
+	}
+	stored, err := readUpTo(path, thumbStoredMax)
 	data, whole := unsealed(stored)
 	if err != nil || int64(len(stored)) != f.size || !whole || !isPicture(data) {
-		// Gone or damaged: as if it had never been kept.
+		// Gone, damaged or grown: as if it had never been kept.
 		t.remove(key)
 		return nil, false
 	}
@@ -235,6 +244,27 @@ func (t *thumbs) kept(conn, name string) ([]byte, bool) {
 		}
 	}
 	return data, true
+}
+
+// thumbStoredMax is the most a kept preview takes on disk: the picture and its checksum.
+const thumbStoredMax = thumbMaxBytes + sha256.Size
+
+// removeFolder removes a folder with all that is in it.
+var removeFolder = os.RemoveAll
+
+// readUpTo reads a file that may have at most limit bytes. A longer one is an error,
+// and no more than a byte beyond the limit is read of it.
+func readUpTo(path string, limit int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err == nil && int64(len(data)) > limit {
+		err = errors.New("too large")
+	}
+	return data, err
 }
 
 // A kept preview is the picture followed by its SHA-256, so a file that is not whole,
@@ -258,7 +288,7 @@ func unsealed(stored []byte) (data []byte, whole bool) {
 // complete, so a full disk or a crash leaves nothing that could be taken for a preview.
 // When it cannot be kept it is not: the caller has the picture anyway.
 func (t *thumbs) put(conn, name string, data []byte) {
-	if t.dir == "" || !validPublicID(conn) || int64(len(data)) > t.limit {
+	if t.dir == "" || !validPublicID(conn) || int64(len(data))+sha256.Size > t.limit {
 		return
 	}
 	// What a start finds on disk is looked at before anything new is written there.
@@ -307,16 +337,30 @@ func (t *thumbs) put(conn, name string, data []byte) {
 	}
 }
 
+// end marks a connection as ended: from now on nothing of it is served and nothing more
+// is kept for it. It touches no file, so it is fit to run while the manager is locked.
+func (t *thumbs) end(conn string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.gone[conn] = true
+	prefix := conn + "/"
+	for key := range t.misses {
+		if strings.HasPrefix(key, prefix) {
+			delete(t.misses, key)
+		}
+	}
+}
+
 // drop removes everything kept for a connection that ended, and keeps nothing more for it.
 func (t *thumbs) drop(conn string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.gone[conn] = true
 	prefix := conn + "/"
-	for key, f := range t.files {
+	for key := range t.files {
 		if strings.HasPrefix(key, prefix) {
-			t.total -= f.size
-			delete(t.files, key)
+			// One that cannot be deleted stays counted (and is never served: see kept).
+			t.remove(key)
 		}
 	}
 	for key := range t.misses {
@@ -398,7 +442,15 @@ func HasThumbnail(row *Row) bool {
 // NoThumbnail tells whether the provider is known to have no preview of the item in the
 // given size, from an earlier try.
 func (m *Manager) NoThumbnail(c *Conn, item *provider.Item, size int) bool {
-	return m.thumbs.missing(c.ID + "/" + thumbName(item, size))
+	return m.thumbs.missing(thumbAsked(c, thumbName(item, size)))
+}
+
+// thumbAsked names a preview as it was asked of the provider: for one generation of a
+// connection. What is known as "none", and what is under way, was told to that
+// generation; connected again, the provider is asked anew. What is kept on disk is the
+// picture of a version of a file and goes on from one generation to the next.
+func thumbAsked(c *Conn, name string) string {
+	return c.ID + "/" + strconv.Itoa(c.Generation) + "/" + name
 }
 
 // Thumbnail returns the preview of an item of a connection in the given size, a JPEG or
@@ -411,7 +463,7 @@ func (m *Manager) Thumbnail(ctx context.Context, c *Conn, item *provider.Item, s
 		return nil, ErrNoThumbnail
 	}
 	t, name := m.thumbs, thumbName(item, size)
-	key := c.ID + "/" + name
+	key := thumbAsked(c, name)
 
 	// One fetch per preview: who asks for the same one meanwhile waits for its result.
 	// What is kept, what is known to be missing and what is under way are looked at in
@@ -473,7 +525,7 @@ func (m *Manager) fetchThumbnail(ctx context.Context, source provider.Thumbnaile
 	ctx, cancel := context.WithTimeout(ctx, thumbFetchTime)
 	defer cancel()
 	none := func() ([]byte, error) {
-		m.thumbs.miss(c.ID + "/" + name)
+		m.thumbs.miss(thumbAsked(c, name))
 		return nil, ErrNoThumbnail
 	}
 	content, err := source.Thumbnail(ctx, item, size)

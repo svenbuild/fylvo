@@ -493,3 +493,33 @@ func TestSavingAViewKeepsTheStatus(t *testing.T) {
 	require.Equal(t, "refused", row.StatusMessage)
 	require.Equal(t, 50, row.Props.View.PageSize)
 }
+
+// A request that was let in asks, before it hands anything out, whether its connection
+// is still the one it was let in for: not after a disconnect, and not after it was
+// connected again.
+func TestStillConnected(t *testing.T) {
+	f := newManagerFixture(t)
+	ctx := context.Background()
+	secret := "client-secret"
+	require.NoError(t, f.SetProvider(ctx, ProviderDrive, "client-id", &secret))
+	storage, err := f.connect(t, 7, "")
+	require.NoError(t, err)
+
+	first, _, done, err := f.Use(ctx, 7, storage.ID)
+	require.NoError(t, err)
+	defer done()
+	require.True(t, f.StillConnected(first))
+
+	// Connected again: the request of before belongs to the connection as it was.
+	_, err = f.connect(t, 7, storage.ID)
+	require.NoError(t, err)
+	require.False(t, f.StillConnected(first))
+	second, _, doneSecond, err := f.Use(ctx, 7, storage.ID)
+	require.NoError(t, err)
+	defer doneSecond()
+	require.True(t, f.StillConnected(second))
+
+	require.NoError(t, f.Disconnect(ctx, 7, storage.ID))
+	require.False(t, f.StillConnected(second))
+	require.False(t, f.StillConnected(first))
+}

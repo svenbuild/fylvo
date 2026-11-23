@@ -137,9 +137,9 @@ func TestThumbnailIsFetchedOnceAndKept(t *testing.T) {
 // again for that version for a while.
 func TestThumbnailThatIsNone(t *testing.T) {
 	for name, answer := range map[string]func(*provider.Item, int) ([]byte, error){
-		"the provider has none":   func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: provider.KindNotFound} },
-		"not for this account":    func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: provider.KindForbidden} },
-		"it lies somewhere else":  func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: provider.KindUnsafe} },
+		"the provider has none":  func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: provider.KindNotFound} },
+		"not for this account":   func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: provider.KindForbidden} },
+		"it lies somewhere else": func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: provider.KindUnsafe} },
 		"refused after a redirect": func(*provider.Item, int) ([]byte, error) {
 			return nil, &provider.Error{Kind: provider.KindOther, Status: http.StatusUnauthorized}
 		},
@@ -438,9 +438,14 @@ func TestThumbCacheIsBounded(t *testing.T) {
 	_, ok = c.get(thumbConn, name(1))
 	require.False(t, ok)
 
-	// A picture bigger than the whole bound is not kept at all.
-	c.put(thumbConn, "big"+thumbExt, make([]byte, c.limit+1))
-	require.NotContains(t, kept(t, dir), thumbConn+"/big"+thumbExt)
+	// A picture that alone would not fit, with its checksum, is not kept at all, and
+	// nothing else gives way for it.
+	before := len(kept(t, dir))
+	for _, size := range []int64{c.limit + 1, c.limit, c.limit - 1} {
+		c.put(thumbConn, "big"+thumbExt, make([]byte, size))
+		require.NotContains(t, kept(t, dir), thumbConn+"/big"+thumbExt)
+	}
+	require.Len(t, kept(t, dir), before)
 
 	// Started on a folder that holds more than the bound allows, it tidies up.
 	smaller := newThumbs(dir)
@@ -561,6 +566,46 @@ func TestThumbCacheCountsWhatItCannotRemove(t *testing.T) {
 	require.False(t, ok, "no room could be made, so the new one is not kept")
 	_, err := os.Stat(filepath.Join(dir, thumbConn, "c"+thumbExt))
 	require.True(t, os.IsNotExist(err))
+
+	// The connection ends and its previews cannot be deleted: they stay counted, and
+	// are served to nobody.
+	c.drop(thumbConn)
+	require.Equal(t, one*2, c.total)
+	_, ok = c.get(thumbConn, "a"+thumbExt)
+	require.False(t, ok)
+	// A start that finds a folder it cannot remove counts what is in it.
+	stuck := filepath.Join(t.TempDir(), "thumbs")
+	old := newThumbs(stuck)
+	old.put(thumbConn, "a"+thumbExt, picture)
+	started := newThumbs(stuck)
+	started.live = func() ([]string, error) { return nil, nil }
+	removeAll := removeFolder
+	removeFolder = func(string) error { return errors.New("in use") }
+	defer func() { removeFolder = removeAll }()
+	_, ok = started.get(thumbConn, "a"+thumbExt)
+	require.False(t, ok, "of a connection that is no more: never served")
+	require.Equal(t, one, started.total, "and still counted")
+}
+
+// The end of a connection in its two steps: at once nothing of it is served or kept, and
+// the files go right after.
+func TestThumbCacheEndThenDrop(t *testing.T) {
+	m, _, conn, dir := thumbFixture(t)
+	item := &provider.Item{ID: "file-1", Version: "r:1"}
+	_, err := m.Thumbnail(context.Background(), conn, item, 400)
+	require.NoError(t, err)
+	name := thumbName(item, 400)
+
+	m.thumbs.end(thumbConn)
+	require.Len(t, kept(t, dir), 1, "the files wait for the second step")
+	_, ok := m.thumbs.get(thumbConn, name)
+	require.False(t, ok, "but nothing of them is served")
+	m.thumbs.put(thumbConn, "late"+thumbExt, testPicture(2))
+	require.Len(t, kept(t, dir), 1, "and nothing more is kept")
+
+	m.thumbs.drop(thumbConn)
+	require.Empty(t, kept(t, dir))
+	require.Zero(t, m.thumbs.total)
 }
 
 // A grant is good up to its last second, not through it.
@@ -577,6 +622,61 @@ func TestGrantEndsAtItsExpiry(t *testing.T) {
 			require.ErrorIs(t, err, ErrGrant, offset)
 		}
 	}
+}
+
+// What the provider said to one generation of a connection is not held against the
+// next: connected again, it is asked anew. The picture on disk goes on.
+func TestThumbnailMissEndsWithItsGeneration(t *testing.T) {
+	m, p, conn, _ := thumbFixture(t)
+	ctx := context.Background()
+	refused, fine := &provider.Item{ID: "file-1", Version: "r:1"}, &provider.Item{ID: "file-2", Version: "r:1"}
+	_, err := m.Thumbnail(ctx, conn, fine, 400)
+	require.NoError(t, err)
+	p.answer = func(*provider.Item, int) ([]byte, error) { return nil, &provider.Error{Kind: provider.KindForbidden} }
+	_, err = m.Thumbnail(ctx, conn, refused, 400)
+	require.ErrorIs(t, err, ErrNoThumbnail)
+	require.True(t, m.NoThumbnail(conn, refused, 400))
+	calls := p.calls.Load()
+
+	again := &Conn{ID: conn.ID, Generation: conn.Generation + 1, P: p}
+	require.False(t, m.NoThumbnail(again, refused, 400))
+	p.answer = func(*provider.Item, int) ([]byte, error) { return testPicture(5), nil }
+	data, err := m.Thumbnail(ctx, again, refused, 400)
+	require.NoError(t, err)
+	require.Equal(t, testPicture(5), data)
+	require.Equal(t, calls+1, p.calls.Load())
+	// What was kept before is served to the new generation without asking.
+	data, err = m.Thumbnail(ctx, again, fine, 400)
+	require.NoError(t, err)
+	require.Equal(t, testPicture(1), data)
+	require.Equal(t, calls+1, p.calls.Load())
+}
+
+// A file on disk that is larger than a preview can be is not read into memory and not
+// served, whatever its checksum says.
+func TestThumbCacheReadsNoMoreThanAPreview(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "thumbs")
+	conn := filepath.Join(dir, thumbConn)
+	require.NoError(t, os.MkdirAll(conn, 0o700))
+	huge := sealedPicture(append(testPicture(1), make([]byte, thumbMaxBytes)...))
+	require.NoError(t, os.WriteFile(filepath.Join(conn, "huge"+thumbExt), huge, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(conn, "grows"+thumbExt), sealedPicture(testPicture(1)), 0o600))
+
+	c := newThumbs(dir)
+	_, ok := c.get(thumbConn, "huge"+thumbExt)
+	require.False(t, ok)
+	require.Equal(t, []string{thumbConn + "/grows" + thumbExt}, kept(t, dir), "the start removed it")
+	// A kept preview that grows behind the server's back.
+	_, ok = c.get(thumbConn, "grows"+thumbExt)
+	require.True(t, ok)
+	require.NoError(t, os.WriteFile(filepath.Join(conn, "grows"+thumbExt), huge, 0o600))
+	_, ok = c.get(thumbConn, "grows"+thumbExt)
+	require.False(t, ok)
+	require.Empty(t, kept(t, dir))
+
+	data, err := readUpTo(filepath.Join(t.TempDir(), "missing"), 10)
+	require.Error(t, err)
+	require.Empty(t, data)
 }
 
 // The switch for the size of the cache: megabytes, and 0 keeps nothing on disk.

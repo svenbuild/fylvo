@@ -228,14 +228,14 @@ func TestConnectedThumbnailEndsWithTheConnectionMidway(t *testing.T) {
 	answer, err := e.thumb(e.alex, e.root+"/photo.png")
 	require.NoError(t, err)
 	var once sync.Once
-	var ended error
+	ended := make(chan error, 1)
 	e.sim.OnThumbnail(func() {
 		// The simulated Drive is in the middle of this call: the connection ends now,
 		// and the provider answers after it is gone.
-		once.Do(func() { ended = e.m.Disconnect(e.ctx, e.alex.ID, e.id) })
+		once.Do(func() { ended <- e.m.Disconnect(e.ctx, e.alex.ID, e.id) })
 	})
 	rec := e.picture(answer.Url)
-	require.NoError(t, ended)
+	require.NoError(t, <-ended)
 	require.Equal(t, 1, e.sim.Calls(drivetest.CallThumbnail), "the provider was asked, and answered")
 	require.NotEqual(t, http.StatusOK, rec.Code)
 	require.Empty(t, rec.Body.Bytes())

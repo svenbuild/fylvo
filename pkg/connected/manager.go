@@ -824,6 +824,7 @@ func (m *Manager) Disconnect(ctx context.Context, userID int, publicID string) e
 	if err != nil {
 		return err
 	}
+	m.thumbs.drop(publicID)
 	m.takeBack(ctx, revoke)
 	return nil
 }
@@ -855,6 +856,11 @@ func (m *Manager) DisconnectUser(ctx context.Context, userID int) error {
 		revokes = append(revokes, m.afterDelete(ctx, row))
 	}
 	m.mu.Unlock()
+	// The previews kept of their files, after the lock: deleting many files takes
+	// time, and every request of every account waits for that lock.
+	for _, row := range rows {
+		m.thumbs.drop(row.PublicID)
+	}
 	if err != nil {
 		return serializer.NewError(serializer.CodeDBError, "Failed to delete connected storages", err)
 	}
@@ -882,8 +888,9 @@ func (m *Manager) takeBack(ctx context.Context, revokes ...revoke) {
 // returned, if anything, once it has released it.
 func (m *Manager) afterDelete(ctx context.Context, row *ent.ConnectedStorage) revoke {
 	m.closeLive(row.PublicID)
-	// The previews kept of its files go with the connection.
-	m.thumbs.drop(row.PublicID)
+	// Nothing of its previews is served or kept from here on. The files themselves are
+	// removed once the lock is released (see dropThumbs).
+	m.thumbs.end(row.PublicID)
 	if m.hooks.Closed != nil {
 		m.hooks.Closed(row.PublicID, row.Generation)
 	}
