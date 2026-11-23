@@ -180,7 +180,7 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
           <ListItemText>{t("application:fileManager.enter")}</ListItemText>
         </SquareMenuItem>
       )}
-      {displayOpt.showUpload && (
+      {displayOpt.showUploadFolder && (
         <SquareMenuItem onClick={() => dispatch(uploadClicked(0, SelectType.Directory))}>
           <ListItemIcon>
             <FolderArrowUp fontSize="small" />

@@ -83,7 +83,10 @@ const DrawIOViewer = () => {
         break;
       case "save":
         try {
-          dispatch(saveDrawIO(msg.xml, viewerState.file, false));
+          // Only a save that went through is shown as saved.
+          if (!(await dispatch(saveDrawIO(msg.xml, viewerState.file, false)))) {
+            break;
+          }
           pp.current?.contentWindow?.postMessage(
             JSON.stringify({
               action: "status",

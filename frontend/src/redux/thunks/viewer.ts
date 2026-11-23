@@ -522,6 +522,8 @@ export function saveFile(
           {
             uri: uri,
             previous: version,
+            // Fylvo: saving a file of a connected storage never brings back a deleted one.
+            previous_required: inConnectedStorage(uri) && !saveAsNew && !!version ? true : undefined,
           },
           data,
         ),
@@ -600,7 +602,7 @@ export function saveCode(
   file: FileResponse,
   version?: string,
   saveAsNew?: boolean,
-): AppThunk<Promise<void>> {
+): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState) => {
     const isLinkedFile = file.metadata?.[Metadata.share_redirect] ?? false;
     if (!version && !isLinkedFile) {
@@ -622,6 +624,7 @@ export function saveCode(
         );
       }
     }
+    return savedFile;
   };
 }
 
@@ -631,7 +634,9 @@ export function saveDrawIO(
   saveAsNew?: boolean,
 ): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState): Promise<FileResponse | undefined> => {
-    const savedFile = await dispatch(saveFile(getFileLinkedUri(file), data, undefined, saveAsNew, true));
+    // Fylvo: in a connected storage only over the version the editor holds.
+    const version = inConnectedStorage(file.path) ? file.primary_entity : undefined;
+    const savedFile = await dispatch(saveFile(getFileLinkedUri(file), data, version, saveAsNew, true));
 
     if (savedFile) {
       const {
@@ -656,7 +661,7 @@ export function saveExcalidraw(
   file: FileResponse,
   version?: string,
   saveAsNew?: boolean,
-): AppThunk<Promise<void>> {
+): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState) => {
     const isLinkedFile = file.metadata?.[Metadata.share_redirect] ?? false;
     if (!version && !isLinkedFile) {
@@ -678,6 +683,7 @@ export function saveExcalidraw(
         );
       }
     }
+    return savedFile;
   };
 }
 
@@ -686,7 +692,7 @@ export function saveMarkdown(
   file: FileResponse,
   version?: string,
   saveAsNew?: boolean,
-): AppThunk<Promise<void>> {
+): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState) => {
     const isLinkedFile = file.metadata?.[Metadata.share_redirect] ?? false;
     if (!version && !isLinkedFile) {
@@ -708,6 +714,7 @@ export function saveMarkdown(
         );
       }
     }
+    return savedFile;
   };
 }
 

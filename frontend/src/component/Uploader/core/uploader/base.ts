@@ -86,6 +86,8 @@ export default abstract class Base {
   protected subscriber: UploadHandlers;
   // 用于取消请求
   protected cancelToken: CancelTokenSource = CancelToken.source();
+  // Fylvo: set by the user's cancel, apart from the token the chunk pool also cancels on errors.
+  protected canceledByUser = false;
 
   public lastTime = Date.now();
   public startTime = Date.now();
@@ -192,6 +194,7 @@ export default abstract class Base {
       return;
     }
 
+    this.canceledByUser = true;
     this.cancelToken.cancel();
     await this.cancelUploadSession();
     this.transit(Status.canceled);
@@ -208,6 +211,7 @@ export default abstract class Base {
   };
 
   protected reset = () => {
+    this.canceledByUser = false;
     this.cancelToken = axios.CancelToken.source();
     this.progress = {
       total: {

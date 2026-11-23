@@ -466,6 +466,8 @@ export interface ViewerGroup {
 export interface FileUpdateService {
   uri: string;
   previous?: string;
+  // Fylvo: refuse (40904) instead of creating the file when it is gone.
+  previous_required?: boolean;
 }
 
 export interface ViewerSession {

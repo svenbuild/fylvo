@@ -551,7 +551,7 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
     const connected = files.some((f) => inConnectedStorage(f.path));
     const groups = connected ? inGroups(files, connectedBatchSize) : [files];
     let failed = false;
-    for (const group of groups) {
+    for (const [i, group] of groups.entries()) {
       try {
         await dispatch(
           sendDeleteFiles({
@@ -569,7 +569,9 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
             dispatch(setFileDeleteModal({ index, value: [false, files, undefined, true] }));
             return;
           }
-          deleted = deleted.filter((f) => !group.includes(f));
+          // This group and the ones after it were not deleted.
+          const notSent = groups.slice(i).flat();
+          deleted = deleted.filter((f) => !notSent.includes(f));
           break;
         }
 
@@ -738,10 +740,22 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
     try {
       await longRunningTaskWithSnackbar(
         (async () => {
+          // A partial failure of one group (shown by the request) does not stop the next ones.
+          let partial: unknown;
           for (const group of groups) {
-            await dispatch(
-              sendMoveFile({ uris: group.map((f) => f.path), dst, copy: isCopy, ids: connectedIds(group, dstFile) }),
-            );
+            try {
+              await dispatch(
+                sendMoveFile({ uris: group.map((f) => f.path), dst, copy: isCopy, ids: connectedIds(group, dstFile) }),
+              );
+            } catch (e) {
+              if (!(connected && e instanceof AppError && e.aggregatedError)) {
+                throw e;
+              }
+              partial ??= e;
+            }
+          }
+          if (partial) {
+            throw partial;
           }
         })(),
         isCopy ? "application:modals.processingCopying" : "application:modals.processingMoving",

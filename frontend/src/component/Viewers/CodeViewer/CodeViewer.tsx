@@ -189,8 +189,11 @@ const CodeViewer = () => {
 
       setLoading(true);
       dispatch(saveCode(value, viewerState.file, viewerState.version, saveAs))
-        .then(() => {
-          setSaved(true);
+        .then((saved) => {
+          // Only a save that went through; a refused one keeps the changes marked.
+          if (saved) {
+            setSaved(true);
+          }
         })
         .finally(() => {
           setLoading(false);
