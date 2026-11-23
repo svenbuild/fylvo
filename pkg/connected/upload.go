@@ -766,6 +766,10 @@ func (m *Manager) sendFailed(ctx context.Context, u *upload, err error) error {
 	case provider.KindOf(err) == provider.KindRetry:
 		// Refused before any byte was taken, and the reason is gone.
 		return ErrSendAgain
+	case !provider.Sent(err):
+		// Not carried out: no token could be had, or the provider refused the one it
+		// was shown. Nothing was taken.
+		return Error(ctx, err)
 	case provider.KindOf(err) == provider.KindOpen:
 		m.endUnknown(u)
 		u.held = nil
@@ -825,6 +829,8 @@ func (m *Manager) endUnknown(u *upload) {
 	if u.replace == "" {
 		m.unsettle(u.account, u.folderID, u.name)
 	}
+	// The folder may have a new file or new content now: what is in memory of it goes.
+	m.tree.Changed(&Conn{ID: u.conn, Generation: u.generation, AccountKey: u.account}, u.folderID)
 }
 
 // fail ends an upload before its commit and cancels it at the provider. Nothing was
@@ -918,6 +924,10 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 	case provider.KindOf(err) == provider.KindRetry:
 		// Refused before the tail was taken, for a reason that is gone.
 		return nil, ErrSendAgain
+	case err != nil && !provider.Sent(err):
+		// Not carried out, however much of the tail was read on the way: the provider
+		// refused the token, or none could be had. The commit can be tried again.
+		return nil, Error(ctx, err)
 	case provider.KindOf(err) == provider.KindOpen:
 		m.endUnknown(u)
 		u.held = nil

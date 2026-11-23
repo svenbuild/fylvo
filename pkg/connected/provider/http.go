@@ -222,6 +222,8 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 		renewed  bool
 		tries    int
 	)
+	// sent: a try of this call may have been carried out by the provider. A try that
+	// the provider answered with a plain "no" (401, 429) leaves it as it was before.
 	sent := false
 	for {
 		token, err := c.Auth.Token(ctx, rejected)
@@ -232,6 +234,7 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 			}
 			return nil, err
 		}
+		before := sent
 		sent = true
 
 		var reader io.Reader
@@ -271,7 +274,10 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 				// A new token for the next try, which the client makes: this one
 				// would read the bytes long after the caller looked at the file.
 				if _, err := c.Auth.Token(ctx, token); err != nil {
-					return nil, notSent{err}
+					if !before {
+						return nil, notSent{err}
+					}
+					return nil, err
 				}
 				return nil, &Error{Kind: KindBusy, Status: res.StatusCode}
 			}
@@ -282,8 +288,8 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 				}
 				return nil, &Error{Kind: KindReconnect, Status: res.StatusCode}
 			}
-			// The provider refused this try outright: so far nothing was carried out.
-			renewed, rejected, sent = true, token, false
+			// The provider refused this try outright: it carried nothing out.
+			renewed, rejected, sent = true, token, before
 			continue
 		}
 
@@ -299,10 +305,17 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 			if waited+wait <= maxWait && tries < MaxTries {
 				tries++
 				waited += wait
+				if res.StatusCode == http.StatusTooManyRequests {
+					// A plain "slow down": this try was not carried out.
+					sent = before
+				}
 				select {
 				case <-time.After(wait):
 					continue
 				case <-ctx.Done():
+					if !sent {
+						return nil, notSent{ctx.Err()}
+					}
 					return nil, ctx.Err()
 				}
 			}

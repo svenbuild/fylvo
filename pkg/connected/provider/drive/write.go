@@ -232,7 +232,13 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 			// stays so.
 			return nil, &provider.Error{Kind: provider.KindOpen, Status: res.StatusCode}
 		}
-		return receipt(res)
+		item, err := receipt(res)
+		if err != nil {
+			// Drive said "stored" and the receipt tells nothing to go by: what it
+			// stored is open, however much of the range it had read.
+			return nil, &provider.Error{Kind: provider.KindOpen, Status: res.StatusCode}
+		}
+		return item, nil
 	case res.StatusCode >= 400:
 		return nil, refusal(u.c.call.Failure(res))
 	}

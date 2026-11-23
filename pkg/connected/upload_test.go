@@ -766,7 +766,7 @@ func TestUploadSessionsExpire(t *testing.T) {
 }
 
 func TestUploadReceiptMustMatch(t *testing.T) {
-	m := &Manager{uploads: newUploads()}
+	m := &Manager{uploads: newUploads(), tree: NewTree()}
 	sum := func(s string) string {
 		h := md5.Sum([]byte(s))
 		return hex.EncodeToString(h[:])
@@ -1393,4 +1393,123 @@ func TestUploadStatusNamesTheProvider(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, e.kind, e.status(info.ID).Provider)
 	})
+}
+
+// The provider reads the whole end of the file, refuses the token (401), and no new one
+// can be had: the file was not stored, the upload stays open and its name too.
+func TestUploadLastRangeRefusedForItsToken(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		if e.kind == ProviderOneDrive {
+			// Its upload address takes no token, so it cannot be refused for one.
+			t.Skip()
+		}
+		data := payload(testChunk + 1000)
+		info, err := e.start("a.bin", len(data), UploadRequest{})
+		require.NoError(t, err)
+		_, err = e.chunk(info.ID, 0, data)
+		require.NoError(t, err)
+
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if isLastRange(r, len(data)) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: http.NoBody}, nil
+			}
+			return nil, nil
+		}
+		// No new token: the provider of tokens fails.
+		e.f.provider.tokenAnswer = func(w http.ResponseWriter) bool {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return true
+		}
+		_, err = e.chunk(info.ID, 1, data)
+		require.Error(t, err)
+		require.NotEqual(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+		require.Equal(t, UploadReceiving, e.status(info.ID).State)
+		e.http.hook = nil
+		e.f.provider.tokenAnswer = nil
+	})
+}
+
+// Names are compared through their capitals where case does not count.
+func TestFold(t *testing.T) {
+	require.Equal(t, Fold("Docs"), Fold("dOCS"))
+	require.Equal(t, Fold("\u03a3"), Fold("\u03c2"), "both small forms of the Greek sigma")
+	require.Equal(t, Fold("\u03a3"), Fold("\u03c3"))
+	require.NotEqual(t, Fold("a"), Fold("b"))
+}
+
+// "Slow down" and then no time left for the next try: the call was not carried out.
+func TestSlowDownThenOutOfTimeIsAClearNo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	call := provider.Caller{HTTP: server.Client(), Auth: fixedAuth("token"), AllowHTTP: true}
+	_, err := call.Do(ctx, http.MethodPost, server.URL+"/files", nil, []byte("{}"))
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.False(t, provider.Sent(err))
+	require.False(t, unclear(err))
+}
+
+type fixedAuth string
+
+func (f fixedAuth) Token(context.Context, string) (string, error) { return string(f), nil }
+
+// An upload whose outcome becomes open in its middle may have put a file into the
+// folder: the listing in memory is dropped, so the next look asks the provider.
+func TestUploadOpenOutcomeDropsTheListing(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	e.sim.AddFile("", "first.txt", []byte("1"))
+	page, err := e.f.Tree().List(e.ctx, e.conn, "", Order{By: "name"}, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "first.txt", rowNames(page.Rows))
+	// Appears at the provider without Fylvo knowing; the listing in memory hides it.
+	e.sim.AddFile("", "second.txt", []byte("2"))
+	page, err = e.f.Tree().List(e.ctx, e.conn, "", Order{By: "name"}, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "first.txt", rowNames(page.Rows))
+
+	data := payload(2*testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	page, err = e.f.Tree().List(e.ctx, e.conn, "", Order{By: "name"}, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "first.txt", rowNames(page.Rows), "still from memory")
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes 0-") {
+			_, _ = io.Copy(io.Discard, r.Body)
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":"x"}`))}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 0, data)
+	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	e.http.hook = nil
+
+	page, err = e.f.Tree().List(e.ctx, e.conn, "", Order{By: "name"}, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "first.txt|second.txt", rowNames(page.Rows))
+}
+
+// Drive answers the last range "stored" before it read a byte, with a receipt that tells
+// nothing: what it stored is open. The upload ends unknown, it is not sent again.
+func TestUploadStoredWithoutAReceiptToGoBy(t *testing.T) {
+	e := newUploadEnv(t, ProviderDrive)
+	data := payload(testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	_, err = e.chunk(info.ID, 0, data)
+	require.NoError(t, err)
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		if isLastRange(r, len(data)) {
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"id":"x"}`))}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 1, data)
+	require.Equal(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	require.Equal(t, UploadUnknown, e.status(info.ID).State)
 }

@@ -1,7 +1,6 @@
 package explorer
 
 import (
-	"strings"
 
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
@@ -27,7 +26,7 @@ func addressKey(uri *fs.URI, fold bool) (string, bool) {
 	}
 	if fold {
 		// Where the provider takes "Docs" and "docs" for one name, they are one address.
-		path = strings.ToLower(path)
+		path = connected.Fold(path)
 	}
 	return connectionOf(uri) + "\x00" + path, true
 }
@@ -102,7 +101,7 @@ func connectedSources(c *gin.Context, uris []*fs.URI, ids connectedIDs) (*connec
 		path, err := connected.CheckPath(uri.U.Path)
 		key := path
 		if req.conn.P.CaseInsensitive() {
-			key = strings.ToLower(path)
+			key = connected.Fold(path)
 		}
 		if err == nil && seen[key] {
 			// One entry named twice: which of the two results would be whose?

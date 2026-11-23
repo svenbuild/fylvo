@@ -422,3 +422,16 @@ func TestConnectedIdsFollowTheCaseRuleOfTheProvider(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "current", id)
 }
+
+// The case rule is the provider's: by capitals, so the two small forms of one capital
+// are one address as well.
+func TestConnectedIdsFoldLikeTheProvider(t *testing.T) {
+	root := "cloudreve://abcdefghijklmnop@connected"
+	big, _ := connectedURI(root + "/\u03a3")
+	ids := connectedIDs{root + "/\u03a3": "current", root + "/\u03c2": "stale"}
+	_, err := ids.byAddress(true).of(big)
+	require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err))
+	id, err := ids.byAddress(false).of(big)
+	require.NoError(t, err)
+	require.Equal(t, "current", id)
+}

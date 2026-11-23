@@ -102,7 +102,7 @@ type openNames struct {
 }
 
 func nameKey(account, folderID, name string) string {
-	return account + "\x00" + folderID + "\x00" + strings.ToLower(name)
+	return account + "\x00" + folderID + "\x00" + Fold(name)
 }
 
 // unsettle closes a name in a folder for a while. The caller holds the lock of the
@@ -358,7 +358,7 @@ func (m *Manager) move(ctx context.Context, c *Conn, w provider.Writer, src Sour
 	}
 	below := IsBelow(dstPath, src.Path)
 	if c.P.CaseInsensitive() {
-		below = IsBelow(strings.ToLower(dstPath), strings.ToLower(src.Path))
+		below = IsBelow(Fold(dstPath), Fold(src.Path))
 	}
 	if row.IsDir && below {
 		return serializer.NewError(serializer.CodeParamErr, "A folder cannot be moved into itself", nil)

@@ -160,7 +160,7 @@ func newListing(fold bool) *listing {
 
 func (l *listing) find(name string) *Row {
 	if l.fold {
-		name = strings.ToLower(name)
+		name = Fold(name)
 	}
 	return l.byName[name]
 }
@@ -268,7 +268,7 @@ func (l *listing) add(it provider.Item) {
 	}
 	key := name
 	if l.fold {
-		key = strings.ToLower(name)
+		key = Fold(name)
 	}
 	if first, taken := l.byName[key]; taken {
 		// The row stands for none of them. It keeps a time to show: the newest.
