@@ -438,6 +438,15 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             return Outcome.Failed(applicationContext.localized().getString(R.string.could_not_read_file, item.name))
         }
         val connected = Connected.isConnected(parentUri)
+        // Fylvo: a name with "/" (from the picked file's provider) would address another folder there.
+        if (connected && '/' in item.name) {
+            tmp.delete()
+            return Outcome.Failed(
+                applicationContext.localized().getString(
+                    R.string.could_not_upload_reason, item.name, applicationContext.localized().getString(R.string.error_bad_name),
+                )
+            )
+        }
         return try {
             val mime = applicationContext.contentResolver.getType(uri)
             // Fylvo: a connected session that is gone stored nothing (40011): sent again once at once.
@@ -904,7 +913,9 @@ internal fun connectedResume(state: ConnectedUploadState): UploadWorker.Resume? 
     UPLOAD_DONE -> UploadWorker.Resume.Done
     UPLOAD_FAILED -> when (val code = state.code) {
         // Nothing was stored (session gone or cancelled), or the provider was busy: send again.
-        null, ApiException.CODE_UPLOAD_SESSION_EXPIRED, Connected.CODE_BUSY -> UploadWorker.Resume.Resend
+        ApiException.CODE_UPLOAD_SESSION_EXPIRED, Connected.CODE_BUSY -> UploadWorker.Resume.Resend
+        // No code: not clear what happened, never sent again.
+        null -> UploadWorker.Resume.Unknown
         Connected.CODE_OUTCOME_UNKNOWN -> UploadWorker.Resume.Unknown
         else -> UploadWorker.Resume.Failed(code)
     }

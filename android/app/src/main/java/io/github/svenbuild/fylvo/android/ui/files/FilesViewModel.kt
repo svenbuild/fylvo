@@ -1128,13 +1128,19 @@ class FilesViewModel(
      */
     suspend fun listFolders(uri: String): List<FileObject> {
         if (!Connected.isConnected(uri)) return repo.listFolders(uri)
+        // Only what this listing says counts: an earlier one is forgotten first.
+        val key = CrUri.canonical(uri)
+        pickerFolders.remove(key)
         val (folders, parent) = repo.listFoldersWithParent(uri)
-        if (parent != null) pickerFolders[CrUri.canonical(uri)] = parent
+        if (parent != null) pickerFolders[key] = parent
         return folders.filter(Connected::canEnter)
     }
 
-    /** Fylvo: folders the picker listed inside connected storages, by address. */
-    private val pickerFolders = ConcurrentHashMap<String, FileObject>()
+    /**
+     * Fylvo: folders the picker listed inside connected storages, by address. A state map, so the
+     * picker's buttons follow when a listing arrives (written on the main thread by the picker).
+     */
+    private val pickerFolders = androidx.compose.runtime.mutableStateMapOf<String, FileObject>()
 
     /** Fylvo: the picker may move into (and create in) [uri]: always outside connected storages. */
     fun pickerAllowsMoveInto(uri: String): Boolean =
@@ -1270,13 +1276,17 @@ class FilesViewModel(
             _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.error_bad_name))) }
             return false
         }
-        return runCatching { repo.mkdir(CrUri.join(parent, name)) }
-            .onSuccess {
-                listingCache.remove(parent)
-                if (parent == _state.value.currentUri) refresh()
-            }
-            .onFailure { e -> _state.update { it.copy(snackbar = failure(e)) } }
-            .isSuccess
+        return try {
+            repo.mkdir(CrUri.join(parent, name))
+            listingCache.remove(parent)
+            if (parent == _state.value.currentUri) refresh()
+            true
+        } catch (e: CancellationException) {
+            throw e // the picker closed meanwhile: nothing to say
+        } catch (e: Exception) {
+            _state.update { it.copy(snackbar = failure(e)) }
+            false
+        }
     }
 
     fun rename(file: FileObject, newName: String) {

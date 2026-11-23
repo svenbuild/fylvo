@@ -112,6 +112,11 @@ class ConnectedWriteTest {
         assertTrue(paths.drop(200).none { it in partly.done }) // never sent
         assertEquals(40081, (partly.error as ApiException).code)
 
+        // A batch answer naming no address of the request: nothing of it counts.
+        call = 0
+        val unnamed = connectedBatches(paths) { if (++call == 1) throw ApiException(40081, "batch", listOf(40004)) }
+        assertTrue(unnamed.done.isEmpty())
+
         // Any other failure: nothing of that request counts.
         call = 0
         val failed = connectedBatches(paths) { if (++call == 1) throw ApiException(40925, "x", reason = "changed") }
@@ -157,6 +162,7 @@ class ConnectedWriteTest {
         assertEquals(UploadWorker.Resume.Unknown, connectedResume(ConnectedUploadState("unknown")))
         assertEquals(UploadWorker.Resume.Unknown, connectedResume(ConnectedUploadState("failed", code = 40927)))
         assertEquals(UploadWorker.Resume.Unknown, connectedResume(ConnectedUploadState("")))
+        assertEquals(UploadWorker.Resume.Unknown, connectedResume(ConnectedUploadState("failed")))
     }
 
     @Test

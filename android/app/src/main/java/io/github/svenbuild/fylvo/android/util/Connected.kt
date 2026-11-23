@@ -228,7 +228,8 @@ suspend fun connectedBatches(paths: List<String>, send: suspend (List<String>) -
             if (e is ApiException && e.code == ErrorText.CODE_BATCH_NOT_COMPLETED) {
                 // The server names the addresses as it reads them: compared in one spelling.
                 val failed = e.failedPaths.mapTo(HashSet(), CrUri::canonical)
-                done += chunk.filter { CrUri.canonical(it) !in failed }
+                // Without a failed address of this request nothing of it is counted as done.
+                if (chunk.any { CrUri.canonical(it) in failed }) done += chunk.filter { CrUri.canonical(it) !in failed }
             }
             return BatchResult(done, e)
         }
