@@ -8,6 +8,8 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,6 +42,9 @@ const (
 	// Metadata of rows of a connected storage, for clients.
 	connectedMetaExternalURL = "fylvo:external_url"
 	connectedMetaExport      = "fylvo:export"
+	// connectedMetaExports lists every format the document can be read in, the usual
+	// one first, separated by commas.
+	connectedMetaExports     = "fylvo:exports"
 	connectedMetaSizeUnknown = "fylvo:size_unknown"
 	connectedMetaUnsupported = "fylvo:unsupported"
 	connectedMetaLink        = "fylvo:link"
@@ -60,6 +65,12 @@ type ConnectedListInfo struct {
 	// Omitted counts entries the provider has but the listing leaves out, because
 	// their names cannot be part of an address.
 	Omitted int `json:"omitted,omitempty"`
+	// Incomplete and Links are told by a listing of everything below a folder
+	// (recursive): it did not see everything (a bound was reached, a folder below could
+	// not be read whole, entries were left out or share a name), and how many links it
+	// met, which it never enters.
+	Incomplete bool `json:"incomplete,omitempty"`
+	Links      int  `json:"links,omitempty"`
 }
 
 // connectedURI parses an address and tells whether it lies in a connected storage.
@@ -221,6 +232,7 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 		res.Metadata[connectedMetaSizeUnknown] = "1"
 		if formats := connected.ExportFormats[row.Native]; len(formats) > 0 {
 			res.Metadata[connectedMetaExport] = formats[0]
+			res.Metadata[connectedMetaExports] = strings.Join(formats, ",")
 		}
 	}
 	// A link itself, and what was reached through one further up: a client that walks
@@ -248,11 +260,51 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 	return res
 }
 
+// connectedScan reads what a listing asks for beyond the folder itself. A plain listing
+// takes no search parameters, so it can never be mistaken for a look at everything
+// below; a recursive one takes parts of a name and a kind, as the search of Fylvo's own
+// files spells them, and nothing else.
+func connectedScan(uri *fs.URI, recursive bool) (*connected.Scan, error) {
+	query := uri.U.Query()
+	if !recursive {
+		if len(query) > 0 {
+			return nil, connected.ErrUnsupported
+		}
+		return nil, nil
+	}
+	scan := &connected.Scan{}
+	for name, values := range query {
+		switch name {
+		case fs.QuerySearchName:
+			for _, part := range values {
+				if part != "" {
+					scan.Names = append(scan.Names, part)
+				}
+			}
+		case fs.QuerySearchNameOpOr:
+			scan.Any = true
+		case fs.QuerySearchCaseFolding:
+			scan.Fold = true
+		case fs.QuerySearchType:
+			if len(values) != 1 || (values[0] != "file" && values[0] != "folder") {
+				return nil, connected.ErrUnsupported
+			}
+			scan.Kind = values[0]
+		default:
+			// By size, time, tag or category: not in a connected storage.
+			return nil, connected.ErrUnsupported
+		}
+	}
+	// The order of the names is the address's own, so the same search is the same scan.
+	sort.Strings(scan.Names)
+	return scan, nil
+}
+
 // connectedList answers GET /file for a folder of a connected storage.
 func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListResponse, error) {
-	if len(uri.U.Query()) > 0 {
-		// Search and recursive listing are not there yet.
-		return nil, connected.ErrUnsupported
+	scan, err := connectedScan(uri, s.Recursive)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := openConnected(c, uri)
@@ -291,7 +343,12 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 	}
 	size = min(size, connectedMaxPageSize)
 
-	page, err := req.m.Tree().List(req.ctx, req.conn, req.path, order, size, s.NextPageToken)
+	var page *connected.Page
+	if s.Recursive {
+		page, err = req.m.Tree().Walk(req.ctx, req.conn, req.path, *scan, order, size, s.NextPageToken)
+	} else {
+		page, err = req.m.Tree().List(req.ctx, req.conn, req.path, order, size, s.NextPageToken)
+	}
 	if err != nil {
 		return nil, connected.Error(c, err)
 	}
@@ -327,8 +384,14 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 			// Previews are there: a client asks for one for every file of the listing
 			// that is not marked as having none.
 			Thumbnails: true,
+			// Everything below a folder can be listed, and searched by name and kind.
+			Search:     true,
 			Omitted:    page.Omitted,
+			Incomplete: page.Incomplete,
+			Links:      page.Links,
 		},
+		// The name clients know from the search of Fylvo's own files for "not all of it".
+		RecursionLimitReached: page.Incomplete,
 	}
 	for _, row := range page.Rows {
 		res.Files = append(res.Files, *connectedFile(req, row, false))
@@ -427,6 +490,20 @@ func connectedURL(c *gin.Context, uri *fs.URI, s *FileURLService, base *url.URL,
 		return "", fs.ErrEntityNotExist
 	}
 
+	// The format a document that exists only at the provider is read in: the one asked
+	// for, if that kind of document has it, else its usual one. A file with bytes of
+	// its own has no formats to choose from.
+	export := ""
+	if row.Native != "" {
+		export = connected.ExportFormats[row.Native][0]
+	}
+	if s.Export != "" {
+		if !slices.Contains(connected.ExportFormats[row.Native], s.Export) {
+			return "", connected.ErrUnsupported
+		}
+		export = s.Export
+	}
+
 	grant := &connected.Grant{
 		Kind:        connected.GrantContent,
 		User:        req.user.ID,
@@ -439,7 +516,7 @@ func connectedURL(c *gin.Context, uri *fs.URI, s *FileURLService, base *url.URL,
 	}
 	name := row.Name
 	if row.Native != "" {
-		grant.Export = connected.ExportFormats[row.Native][0]
+		grant.Export = export
 		name = connected.ExportName(row.Name, row.Native, grant.Export)
 	}
 
