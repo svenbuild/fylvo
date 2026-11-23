@@ -3,6 +3,7 @@ package connected
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -59,10 +60,21 @@ func checkNewName(name string) error {
 	return nil
 }
 
-// writer returns the changing half of the provider of a connection.
+// EnvWrite is the switch for changes in connected storages. An installation only reads
+// them unless its operator sets the variable to "1": nothing is written to somebody's
+// Google Drive or OneDrive because of an update alone.
+const EnvWrite = "FYLVO_CONNECTED_WRITE"
+
+// Writes tells whether this installation changes connected storages at all.
+func Writes() bool {
+	return os.Getenv(EnvWrite) == "1"
+}
+
+// writer returns the changing half of the provider of a connection. Every change and
+// every upload gets it here, so with the switch off none of them reaches a provider.
 func writer(c *Conn) (provider.Writer, error) {
 	w, ok := c.P.(provider.Writer)
-	if !ok {
+	if !ok || !Writes() {
 		return nil, ErrUnsupported
 	}
 	return w, nil

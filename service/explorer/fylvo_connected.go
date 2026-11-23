@@ -51,7 +51,8 @@ const (
 type ConnectedListInfo struct {
 	ID       string `json:"id"`
 	Provider string `json:"provider"`
-	// ReadOnly: nothing can be changed in this folder (it is reached through a link).
+	// ReadOnly: nothing can be changed in this folder (it is reached through a link, or
+	// the installation only reads connected storages).
 	ReadOnly bool `json:"read_only"`
 	// Search and Thumbnails tell whether these are available yet.
 	Search     bool `json:"search"`
@@ -155,21 +156,27 @@ func connectedRowURI(connection, path string) string {
 func connectedCapability(row *connected.Row) *boolset.BooleanSet {
 	set := &boolset.BooleanSet{}
 	flags := map[dbfs.NavigatorCapability]bool{dbfs.NavigatorCapabilityInfo: true}
+	// Nothing that changes the storage is offered where the installation only reads.
+	writes := connected.Writes()
 	if row.Unsupported == "" {
 		if row.IsDir {
 			flags[dbfs.NavigatorCapabilityListChildren] = row.Enterable()
 			flags[dbfs.NavigatorCapabilityEnterFolder] = row.Enterable()
 			// Something new can be put into a folder of the storage itself.
-			flags[dbfs.NavigatorCapabilityCreateFile] = row.Enterable() && !row.ViaLink
+			flags[dbfs.NavigatorCapabilityCreateFile] = writes && row.Enterable() && !row.ViaLink
 			// A folder is downloaded by the client, which lists it and fetches its files
 			// one by one. Not through a link: links can lead back up.
 			flags[dbfs.NavigatorCapabilityDownloadFile] = row.Enterable() && row.Link == nil
 			flags[dbfs.NavigatorCapabilityUploadFile] = flags[dbfs.NavigatorCapabilityCreateFile]
 		} else {
 			flags[dbfs.NavigatorCapabilityDownloadFile] = row.Native == "" || len(connected.ExportFormats[row.Native]) > 0
+			// On a file the bit says that its content can be replaced: by a save from an
+			// editor (PUT /file/content) or by an upload that asks for a new version.
+			// Never by an upload that only names it: that stays "name taken".
+			flags[dbfs.NavigatorCapabilityUploadFile] = writes && !row.ReadOnly() && row.Version != ""
 		}
 	}
-	if !row.ReadOnly() && row.Path != "" {
+	if writes && !row.ReadOnly() && row.Path != "" {
 		flags[dbfs.NavigatorCapabilityRenameFile] = true
 		flags[dbfs.NavigatorCapabilityDeleteFile] = true
 	}
@@ -315,7 +322,7 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 		Connected: &ConnectedListInfo{
 			ID:       req.conn.ID,
 			Provider: req.conn.Provider,
-			ReadOnly: page.Parent.ViaLink,
+			ReadOnly: page.Parent.ViaLink || !connected.Writes(),
 			Omitted:  page.Omitted,
 		},
 	}

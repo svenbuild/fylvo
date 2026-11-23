@@ -2,16 +2,22 @@ package explorer
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive/drivetest"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/stretchr/testify/require"
 )
 
 // Fylvo: the routes that change a connected storage, down to a simulated Google Drive.
+
+// The tests of this package run on an installation whose operator switched changes on.
+func init() { _ = os.Setenv(connected.EnvWrite, "1") }
 
 // idsOf lists a folder and returns the ids of its rows by address, as a client has them.
 func (e *connectedEnv) idsOf(t *testing.T, folder string) connectedIDs {
@@ -228,4 +234,116 @@ func TestConnectedBatchSize(t *testing.T) {
 	err = (&DeleteFileService{Uris: uris[:connected.MaxBatch], Ids: ids}).Delete(e.as(e.alex))
 	require.Equal(t, serializer.CodeBatchOperationNotFullyCompleted, connectedCode(err))
 	require.Equal(t, "Docs", e.names(t, e.root))
+}
+
+// An installation whose operator did not switch changes on only reads connected
+// storages: nothing in a listing offers a change, and every route that changes
+// something refuses before a provider is asked.
+func TestConnectedOnlyReadsUnlessSwitchedOn(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFolder("", "Docs")
+	e.sim.AddFile("", "notes.txt", []byte("hello"))
+	ids := e.idsOf(t, e.root)
+
+	changing := []dbfs.NavigatorCapability{
+		dbfs.NavigatorCapabilityCreateFile, dbfs.NavigatorCapabilityRenameFile,
+		dbfs.NavigatorCapabilityUploadFile, dbfs.NavigatorCapabilityDeleteFile,
+	}
+	offered := func(res *ListResponse) (bits []string) {
+		rows := append([]FileResponse{}, res.Files...)
+		rows = append(rows, FileResponse{Name: "(folder)", Capability: res.Props.Capability})
+		for _, row := range rows {
+			for _, bit := range changing {
+				if row.Capability.Enabled(int(bit)) {
+					bits = append(bits, fmt.Sprintf("%s:%d", row.Name, bit))
+				}
+			}
+		}
+		return bits
+	}
+	bit := func(name string, capability dbfs.NavigatorCapability) string {
+		return fmt.Sprintf("%s:%d", name, capability)
+	}
+
+	// Switched on: a folder takes new entries; a file can be renamed, deleted and saved over.
+	res, err := e.list(e.alex, e.root, 0, "")
+	require.NoError(t, err)
+	require.False(t, res.Connected.ReadOnly)
+	require.ElementsMatch(t, []string{
+		bit("(folder)", dbfs.NavigatorCapabilityCreateFile), bit("(folder)", dbfs.NavigatorCapabilityUploadFile),
+		bit("Docs", dbfs.NavigatorCapabilityCreateFile), bit("Docs", dbfs.NavigatorCapabilityUploadFile),
+		bit("Docs", dbfs.NavigatorCapabilityRenameFile), bit("Docs", dbfs.NavigatorCapabilityDeleteFile),
+		bit("notes.txt", dbfs.NavigatorCapabilityUploadFile),
+		bit("notes.txt", dbfs.NavigatorCapabilityRenameFile), bit("notes.txt", dbfs.NavigatorCapabilityDeleteFile),
+	}, offered(res))
+
+	t.Setenv(connected.EnvWrite, "")
+	res, err = e.list(e.alex, e.root, 0, "")
+	require.NoError(t, err)
+	require.True(t, res.Connected.ReadOnly)
+	require.Empty(t, offered(res))
+
+	calls := func() int {
+		return e.sim.Calls(drivetest.CallCreate) + e.sim.Calls(drivetest.CallUpdate) + e.sim.Calls(drivetest.CallStart)
+	}
+	before := calls()
+	unsupported := func(err error) {
+		t.Helper()
+		require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
+	}
+	_, err = (&CreateFileService{Uri: e.root + "/New", Type: "folder"}).Create(e.as(e.alex))
+	unsupported(err)
+	_, err = (&RenameFileService{Uri: e.root + "/notes.txt", NewName: "n.txt", Ids: ids}).Rename(e.as(e.alex))
+	unsupported(err)
+	unsupported((&MoveFileService{Uris: []string{e.root + "/notes.txt"}, Dst: e.root + "/Docs", Ids: ids}).Move(e.as(e.alex)))
+	unsupported((&DeleteFileService{Uris: []string{e.root + "/notes.txt"}, Ids: ids}).Delete(e.as(e.alex)))
+	_, err = (&CreateUploadSessionService{Uri: e.root + "/up.bin", Size: 10}).Create(e.as(e.alex))
+	unsupported(err)
+	_, err = (&FileUpdateService{Uri: e.root + "/notes.txt"}).PutContent(e.withBody(e.alex, "PUT", []byte("other")), nil)
+	unsupported(err)
+	require.Equal(t, before, calls(), "nothing of that reached the provider")
+	require.Equal(t, "Docs|notes.txt", e.names(t, e.root))
+	// Reading goes on as before.
+	require.Equal(t, []byte("hello"), e.download(e.root+"/notes.txt"))
+}
+
+// The key of an id names an address, however the client spells it: escaped in "ids" and
+// plain in "uri", or the other way round, is the same entry.
+func TestConnectedIdsBySpellingOfTheAddress(t *testing.T) {
+	e := newConnectedEnv(t)
+	folder := e.sim.AddFolder("", "Trial x")
+	e.sim.AddFile(folder, "note one.txt", []byte("a"))
+	e.sim.AddFile(folder, "note two.txt", []byte("b"))
+	plain, escaped := e.root+"/Trial x", e.root+"/Trial%20x"
+
+	var one, two string
+	for key, id := range e.idsOf(t, plain) {
+		switch {
+		case strings.HasSuffix(key, "one.txt"):
+			one = id
+		case strings.HasSuffix(key, "two.txt"):
+			two = id
+		}
+	}
+	require.NotEmpty(t, one)
+	require.NotEmpty(t, two)
+
+	// The address plain, its key escaped.
+	_, err := (&RenameFileService{Uri: plain + "/note one.txt", NewName: "first.txt",
+		Ids: connectedIDs{escaped + "/note%20one.txt": one}}).Rename(e.as(e.alex))
+	require.NoError(t, err)
+	// The address escaped, its key plain.
+	require.NoError(t, (&DeleteFileService{Uris: []string{escaped + "/note%20two.txt"},
+		Ids: connectedIDs{plain + "/note two.txt": two}}).Delete(e.as(e.alex)))
+	require.Equal(t, "first.txt", e.names(t, plain))
+
+	// Two keys for one address that name different rows say nothing: no id, no change.
+	_, err = (&RenameFileService{Uri: plain + "/first.txt", NewName: "x.txt",
+		Ids: connectedIDs{plain + "/first.txt": one, escaped + "/first.txt": two}}).Rename(e.as(e.alex))
+	require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err))
+	// The id of another row is refused as before.
+	_, err = (&RenameFileService{Uri: plain + "/first.txt", NewName: "x.txt",
+		Ids: connectedIDs{escaped + "/first.txt": two}}).Rename(e.as(e.alex))
+	require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err))
+	require.Equal(t, "first.txt", e.names(t, plain))
 }
