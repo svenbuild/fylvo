@@ -2,7 +2,7 @@
 // See service/fylvo/fylvo_connected.go on the server.
 import { defaultOpts, send, ThunkResponse } from "./request.ts";
 
-// Filesystem name in the address of a connected storage: cloudreve://<id>@connected/<path>
+// Filesystem name in the address of a connected storage: <scheme>://<id>@connected/<path>
 export const ConnectedFileSystem = "connected";
 
 export const ConnectedProvider = {
