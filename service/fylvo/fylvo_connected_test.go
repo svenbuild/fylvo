@@ -13,7 +13,6 @@ import (
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
-	"github.com/cloudreve/Cloudreve/v4/ent/enttest"
 	"github.com/cloudreve/Cloudreve/v4/ent/group"
 	"github.com/cloudreve/Cloudreve/v4/ent/user"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
@@ -22,6 +21,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/boolset"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected/connectedtest"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -43,10 +43,7 @@ type connectedEnv struct {
 func newConnectedEnv(t *testing.T, siteURL string) *connectedEnv {
 	logger := logging.NewConsoleLogger(logging.LevelError)
 	kv := cache.NewMemoStore("", logger)
-	client := enttest.Open(t, "sqlite3", filepath.Join(t.TempDir(), "fylvo.db"))
-	t.Cleanup(func() { _ = client.Close() })
-	client, err := inventory.InitializeDBClient(logger, client, kv, "4.19.1")
-	require.NoError(t, err)
+	client := connectedtest.Database(t, logger, kv)
 	hasher, err := hashid.New("fylvo-test")
 	require.NoError(t, err)
 
