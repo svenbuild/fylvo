@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,7 +15,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.AddLink
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CloudOff
@@ -295,7 +300,7 @@ fun connectedSubtitle(file: FileObject): String {
 
 /**
  * Fylvo: the sheet of a row inside a connected storage. Offers only what the row's bits allow
- * and this version can do; writing comes with Android 2 (Connected.writesAllowed).
+ * allow (reading, and writing as the bits of util/Connected say).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -307,64 +312,94 @@ fun ConnectedFileSheet(
     onOpenExternal: (String) -> Unit,
     onDownload: () -> Unit,
     onDetails: () -> Unit,
+    onRename: () -> Unit = {},
+    onMove: () -> Unit = {},
+    onDelete: () -> Unit = {},
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            FileThumb(file, null, size = 56.dp)
-            Column(Modifier.padding(start = 16.dp)) {
-                Text(file.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(connectedSubtitle(file), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Scrolls when the actions do not fit (landscape).
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                FileThumb(file, null, size = 56.dp)
+                Column(Modifier.padding(start = 16.dp)) {
+                    Text(file.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(connectedSubtitle(file), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
+            val note = when {
+                Connected.isUnusable(file) -> stringResource(R.string.connected_duplicate_note)
+                Connected.isLink(file) && Connected.readOnly(file) -> stringResource(R.string.connected_link_note)
+                Connected.isLink(file) -> stringResource(R.string.connected_link)
+                !file.isFolder && !Connected.canDownload(file) && Connected.externalUrl(file) == null -> stringResource(R.string.connected_not_downloadable)
+                else -> null
+            }
+            if (note != null) {
+                Text(
+                    note,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+            }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            if (Connected.canEnter(file)) SheetRow(Icons.Outlined.FolderOpen, stringResource(R.string.open_folder), onEnter)
+            Connected.externalUrl(file)?.takeIf { !Connected.isUnusable(file) }?.let { url ->
+                SheetRow(Icons.Outlined.Language, stringResource(R.string.connected_open_at_provider), onClick = { onOpenExternal(url) })
+            }
+            if (Connected.canDownload(file)) {
+                val export = Connected.exportExt(file)
+                SheetRow(
+                    Icons.AutoMirrored.Filled.OpenInNew,
+                    if (export != null) stringResource(R.string.connected_open_office, export) else stringResource(R.string.open),
+                    onOpen,
+                )
+                SheetRow(Icons.Default.Download, stringResource(R.string.download), onDownload)
+            }
+            // Writing as the row's bits allow (move stays inside the storage, delete goes to the provider's trash).
+            if (Connected.canRename(file)) {
+                SheetRow(Icons.AutoMirrored.Filled.DriveFileMove, stringResource(R.string.move_to), onMove)
+                SheetRow(Icons.Default.DriveFileRenameOutline, stringResource(R.string.rename), onRename)
+            }
+            if (Connected.canInfo(file)) SheetRow(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
+            if (Connected.canDelete(file)) SheetRow(Icons.Default.Delete, stringResource(R.string.connected_delete), onDelete, error = true)
+            Spacer(Modifier.height(24.dp))
         }
-        val note = when {
-            Connected.isUnusable(file) -> stringResource(R.string.connected_duplicate_note)
-            Connected.isLink(file) && Connected.readOnly(file) -> stringResource(R.string.connected_link_note)
-            Connected.isLink(file) -> stringResource(R.string.connected_link)
-            !file.isFolder && !Connected.canDownload(file) && Connected.externalUrl(file) == null -> stringResource(R.string.connected_not_downloadable)
-            else -> null
-        }
-        if (note != null) {
-            Text(
-                note,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-            )
-        }
-        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-        if (Connected.canEnter(file)) SheetRow(Icons.Outlined.FolderOpen, stringResource(R.string.open_folder), onEnter)
-        Connected.externalUrl(file)?.takeIf { !Connected.isUnusable(file) }?.let { url ->
-            SheetRow(Icons.Outlined.Language, stringResource(R.string.connected_open_at_provider)) { onOpenExternal(url) }
-        }
-        if (Connected.canDownload(file)) {
-            val export = Connected.exportExt(file)
-            SheetRow(
-                Icons.AutoMirrored.Filled.OpenInNew,
-                if (export != null) stringResource(R.string.connected_open_office, export) else stringResource(R.string.open),
-                onOpen,
-            )
-            SheetRow(Icons.Default.Download, stringResource(R.string.download), onDownload)
-        }
-        if (Connected.canInfo(file)) SheetRow(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
-        Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit, error: Boolean = false) {
+    val tint = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
-        headlineContent = { Text(label) },
-        leadingContent = { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+        headlineContent = { Text(label, color = if (error) tint else Color.Unspecified) },
+        leadingContent = { Icon(icon, contentDescription = null, tint = tint) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
     )
 }
 
-/** Fylvo: the selection button inside a connected storage: download (when every row allows it) and details. */
+/**
+ * Fylvo: the selection button inside a connected storage: each action only when every selected
+ * row allows it (download, move, delete; rename and details for one). No copy.
+ */
 fun connectedSelectionActions(selected: List<FileObject>, count: Int): SelectionActions {
     val one = selected.singleOrNull()?.takeIf { count == 1 }
+    val all = selected.size == count
     return SelectionActions(
-        quick = listOfNotNull(SelectionAction.DOWNLOAD.takeIf { selected.size == count && selected.all(Connected::canDownload) }),
-        menu = listOfNotNull(SelectionAction.SELECT_ALL, SelectionAction.DETAILS.takeIf { one != null && Connected.canInfo(one) }),
+        quick = listOfNotNull(
+            SelectionAction.MOVE.takeIf { all && selected.all(Connected::canRename) },
+            SelectionAction.DOWNLOAD.takeIf { all && selected.all(Connected::canDownload) },
+            SelectionAction.DELETE.takeIf { all && selected.all(Connected::canDelete) },
+        ),
+        menu = listOfNotNull(
+            SelectionAction.SELECT_ALL,
+            SelectionAction.DETAILS.takeIf { one != null && Connected.canInfo(one) },
+            SelectionAction.RENAME.takeIf { one != null && Connected.canRename(one) },
+        ),
     )
 }
+
+/** Fylvo: the text of the delete question inside a connected storage: it goes to the provider's trash. */
+@Composable
+fun connectedDeleteNote(path: String): String? =
+    if (Connected.isConnected(path)) stringResource(R.string.connected_delete_note, CrUri.rootLabel(path)) else null

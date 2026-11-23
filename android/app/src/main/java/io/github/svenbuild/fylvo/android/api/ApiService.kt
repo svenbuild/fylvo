@@ -118,6 +118,9 @@ interface ApiService {
     @GET("api/v4/fylvo/connected")
     suspend fun connectedStorages(): Response<ApiResponse<ConnectedOverview>>
 
+    @GET("api/v4/fylvo/connected/upload/{session}")
+    suspend fun connectedUploadState(@Path("session") session: String): Response<ApiResponse<ConnectedUploadState>>
+
     @GET("api/v4/fylvo/connected/{id}/capacity")
     suspend fun connectedCapacity(@Path("id") id: String): Response<ApiResponse<CapacityResponse>>
 

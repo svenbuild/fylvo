@@ -1,0 +1,115 @@
+{
+  "code": 0,
+  "data": {
+    "files": [
+      {
+        "type": 1,
+        "id": "cs81d00cb5e3aac32a1c21ba7d",
+        "name": "Docs",
+        "created_at": "2026-01-01T09:00:01Z",
+        "updated_at": "2026-01-01T09:00:01Z",
+        "size": 0,
+        "metadata": {},
+        "path": "cloudreve://gb6zyqzl9859nkg1@connected/Docs",
+        "capability": "w0KI",
+        "owned": true
+      },
+      {
+        "type": 0,
+        "id": "csfca5ebc9dba21ac1569f36e2",
+        "name": "Budget.gsheet",
+        "created_at": "2026-01-01T09:00:05Z",
+        "updated_at": "2026-01-01T09:00:05Z",
+        "size": 0,
+        "metadata": {
+          "fylvo:export": "xlsx",
+          "fylvo:external_url": "https://drive.example.com/file/d/id008/view",
+          "fylvo:size_unknown": "1",
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://gb6zyqzl9859nkg1@connected/Budget.gsheet",
+        "capability": "gAAI",
+        "owned": true,
+        "primary_entity": "vdd850aff69d75c68802f75e8"
+      },
+      {
+        "type": 0,
+        "id": "cs7cf4e39225227d0f43101b36",
+        "name": "notes.txt",
+        "created_at": "2026-01-01T09:00:03Z",
+        "updated_at": "2026-01-01T09:00:03Z",
+        "size": 5,
+        "metadata": {
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://gb6zyqzl9859nkg1@connected/notes.txt",
+        "capability": "gkAI",
+        "owned": true,
+        "primary_entity": "vd0fbd908d595620c35ac2e85"
+      },
+      {
+        "type": 0,
+        "id": "cse2a89ed88da2b73abf05b7fd",
+        "name": "taken.txt",
+        "created_at": "2026-01-01T09:00:04Z",
+        "updated_at": "2026-01-01T09:00:04Z",
+        "size": 4,
+        "metadata": {
+          "thumb:disabled": ""
+        },
+        "path": "cloudreve://gb6zyqzl9859nkg1@connected/taken.txt",
+        "capability": "gkAI",
+        "owned": true,
+        "primary_entity": "v6cc29b3dde1a7255dcb106de"
+      }
+    ],
+    "parent": {
+      "type": 1,
+      "id": "cs2a95a711954e65d56abb3671",
+      "name": "Google Drive",
+      "created_at": "0001-01-01T00:00:00Z",
+      "updated_at": "0001-01-01T00:00:00Z",
+      "size": 0,
+      "metadata": {},
+      "path": "cloudreve://gb6zyqzl9859nkg1@connected",
+      "capability": "wQKI",
+      "owned": true
+    },
+    "pagination": {
+      "page": 0,
+      "page_size": 100,
+      "total_items": 4,
+      "is_cursor": true
+    },
+    "props": {
+      "capability": "wQKI",
+      "max_page_size": 2000,
+      "order_by_options": [
+        "name",
+        "size",
+        "updated_at"
+      ],
+      "order_direction_options": [
+        "asc",
+        "desc"
+      ]
+    },
+    "context_hint": null,
+    "mixed_type": false,
+    "storage_policy": {
+      "id": "connected",
+      "name": "Google Drive",
+      "type": "local",
+      "max_size": 0,
+      "relay": true
+    },
+    "connected": {
+      "id": "gb6zyqzl9859nkg1",
+      "provider": "drive",
+      "read_only": false,
+      "search": false,
+      "thumbnails": false
+    }
+  },
+  "msg": ""
+}

@@ -131,6 +131,8 @@ fun FilesScreen(
     var discardTarget by remember { mutableStateOf<EditEntry?>(null) }
     /** Paths to move/copy and whether it is a copy; non-null shows the folder picker. */
     var movePick by remember { mutableStateOf<Pair<List<String>, Boolean>?>(null) }
+    /** Fylvo: row ids of a connected storage, taken when a move or delete of several rows starts. */
+    var actionIds by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     /** Folder the search was opened from (scope chip), null when opened at root/home. */
     var searchOpenedFrom by remember { mutableStateOf<String?>(null) }
     /** Fylvo: the Account tab, and the offline files page reached from it. */
@@ -146,10 +148,14 @@ fun FilesScreen(
     var pendingUpload by remember { mutableStateOf<PendingUpload?>(null) }
     val haptics = LocalHapticFeedback.current
 
+    /** Fylvo: the folder an upload was started in; kept when Android recreates the app behind the picker. */
+    var uploadTarget by rememberSaveable { mutableStateOf<String?>(null) }
     val uploadLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val parentUri = uploadTarget ?: state.currentUri
+        uploadTarget = null
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        val parentUri = state.currentUri
-        val loaded = state.files.map { it.name }.toSet()
+        // Fylvo: the names on screen only when they are of the target folder.
+        val loaded = if (parentUri == state.currentUri) state.files.map { it.name }.toSet() else emptySet()
         // Fylvo: names and the upload list are read and written off the main thread; with a few
         // hundred picked photos that takes a moment and must not freeze the screen.
         scope.launch {
@@ -328,6 +334,7 @@ fun FilesScreen(
         val paths = targets.map { it.path }
         val one = targets.singleOrNull()?.takeIf { state.selected.size == 1 }
         menuOpen = false
+        actionIds = Connected.idsOf(targets)
         when (action) {
             SelectionAction.SELECT_ALL -> viewModel.selectAll()
             SelectionAction.DETAILS -> one?.let { detailsTarget = it }
@@ -647,16 +654,18 @@ fun FilesScreen(
 
     if (addSheetOpen) {
         ModalBottomSheet(onDismissRequest = { addSheetOpen = false }) {
-            ListItem(
+            // Fylvo: in a connected storage each entry follows the folder's own bit.
+            if (!state.inConnected || Connected.canUploadTo(state.parent)) ListItem(
                 modifier = Modifier.clickable {
                     addSheetOpen = false
+                    uploadTarget = state.currentUri
                     uploadLauncher.launch(arrayOf("*/*"))
                 },
                 headlineContent = { Text(stringResource(R.string.upload_files)) },
                 supportingContent = { Text(stringResource(R.string.into_folder, state.folderTitle())) },
                 leadingContent = { Icon(Icons.Default.UploadFile, contentDescription = null) },
             )
-            ListItem(
+            if (!state.inConnected || Connected.canCreateIn(state.parent)) ListItem(
                 modifier = Modifier.clickable {
                     addSheetOpen = false
                     mkdirOpen = true
@@ -691,6 +700,9 @@ fun FilesScreen(
             onOpenExternal = { url -> sheetTarget = null; openInBrowser(context, url) },
             onDownload = { sheetTarget = null; viewModel.saveToDevice(context, file) },
             onDetails = { sheetTarget = null; detailsTarget = file },
+            onRename = { sheetTarget = null; renameTarget = file },
+            onMove = { sheetTarget = null; actionIds = Connected.idsOf(listOf(file)); movePick = listOf(file.path) to false },
+            onDelete = { sheetTarget = null; deleteTarget = file },
         )
     }
 
@@ -744,10 +756,13 @@ fun FilesScreen(
             startUri = CrUri.parent(paths.first()),
             excluded = if (copy) emptySet() else paths.toSet(),
             loadFolders = { viewModel.listFolders(it) },
-            onCreateFolder = { parent, name -> viewModel.mkdirIn(parent, name) },
+            onCreateFolder = { parent, name -> viewModel.createFolder(parent, name) },
+            // Fylvo: in a connected storage only into folders that allow it.
+            canPick = { viewModel.pickerAllowsMoveInto(it) },
+            canCreateIn = { viewModel.pickerAllowsMoveInto(it) },
             onPick = { dst ->
                 movePick = null
-                viewModel.moveTo(paths, dst, copy)
+                viewModel.moveTo(paths, dst, copy, ids = actionIds.takeIf { Connected.isConnected(dst) }, dstId = viewModel.pickerFolderId(dst))
             },
             onDismiss = { movePick = null },
         )
@@ -786,6 +801,7 @@ fun FilesScreen(
     deleteTarget?.let { file ->
         ConfirmDeleteDialog(
             title = stringResource(R.string.delete_file_title, file.name),
+            note = connectedDeleteNote(file.path),
             onConfirm = {
                 viewModel.delete(file)
                 deleteTarget = null
@@ -813,8 +829,9 @@ fun FilesScreen(
         val n = paths.size
         ConfirmDeleteDialog(
             title = pluralStringResource(R.plurals.delete_items_title, n, n),
+            note = connectedDeleteNote(paths.first()),
             onConfirm = {
-                viewModel.deletePaths(paths)
+                viewModel.deletePaths(paths, actionIds.takeIf { Connected.isConnected(paths.first()) })
                 deleteSelectedTarget = null
             },
             onDismiss = { deleteSelectedTarget = null },

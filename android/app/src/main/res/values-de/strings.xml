@@ -507,4 +507,16 @@
     <string name="density_compact">Kompakt</string>
     <string name="density_normal">Normal</string>
     <string name="density_comfortable">Luftig</string>
+    <!-- Fylvo: schreiben in verbundenen Speichern -->
+    <string name="connected_delete">In den Papierkorb</string>
+    <string name="connected_delete_note">Es landet im Papierkorb von %1$s. Wiederherstellen geht dort, nicht in Fylvo.</string>
+    <string name="connected_deleted_one">%1$s in den Papierkorb von %2$s gelegt</string>
+    <string name="connected_deleted_many">%1$d Einträge in den Papierkorb von %2$s gelegt</string>
+    <string name="connected_partly_done">%1$d von %2$d erledigt. %3$s</string>
+    <string name="error_connected_full">Der Speicher beim Anbieter ist voll.</string>
+    <string name="error_connected_outcome_unknown">Es ist nicht bekannt, ob diese Änderung angekommen ist. Fylvo hat sie nicht wiederholt; bitte im Ordner nachsehen.</string>
+    <string name="upload_outcome_unknown">%1$s: Es ist nicht bekannt, ob das Hochladen angekommen ist. Fylvo hat die Datei nicht nochmal gesendet; sie bleibt auf dem Handy. Bitte im Ordner nachsehen.</string>
+    <string name="could_not_upload_reason">%1$s: %2$s</string>
+    <string name="uploaded_some_failed_reason">%1$d hochgeladen, %2$d fehlgeschlagen. %3$s</string>
+    <string name="upload_conflict_note_connected">Beide behalten lädt unter neuem Namen hoch. Überspringen lässt diese Dateien weg.</string>
 </resources>

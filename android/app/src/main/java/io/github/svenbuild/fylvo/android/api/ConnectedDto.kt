@@ -46,6 +46,19 @@ data class ConnectedStorage(
     }
 }
 
+/**
+ * Fylvo: `GET fylvo/connected/upload/{session}`: where an upload into a connected storage stands,
+ * for an app that lost the answer. [state] is `receiving`, `done`, `failed` or `unknown`.
+ */
+@Serializable
+data class ConnectedUploadState(
+    val state: String = "",
+    val received: Long = 0,
+    val file: FileObject? = null,
+    /** The code of a failed upload. */
+    val code: Int? = null,
+)
+
 /** Fylvo: the `connected` block of a listing inside a connected storage. */
 @Serializable
 data class ConnectedListing(

@@ -51,6 +51,12 @@ data class UploadItem(
     val uploadSize: Long = 0,
     /** Runs this file stopped with server trouble (not a lost network); it is given up after a few. */
     val serverRetries: Int = 0,
+    /**
+     * Fylvo: connected storages only. It is not known whether this upload arrived (40927, or a
+     * session that could not be cleared up): the file ends as failed, is never sent again by the
+     * worker, and the batch says so.
+     */
+    val unknownOutcome: Boolean = false,
 ) {
     @Serializable
     enum class State { Pending, Done, Failed }

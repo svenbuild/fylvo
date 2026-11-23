@@ -1,0 +1,19 @@
+{
+  "code": 0,
+  "data": {
+    "type": 0,
+    "id": "csb83e8d381be024116823aea0",
+    "name": "big.bin",
+    "created_at": "2026-01-01T09:00:08Z",
+    "updated_at": "2026-01-01T09:00:08Z",
+    "size": 10486760,
+    "metadata": {
+      "thumb:disabled": ""
+    },
+    "path": "cloudreve://gb6zyqzl9859nkg1@connected/Work/big.bin",
+    "capability": "gkAI",
+    "owned": true,
+    "primary_entity": "v73f49e01ca12408bcd84e489"
+  },
+  "msg": ""
+}

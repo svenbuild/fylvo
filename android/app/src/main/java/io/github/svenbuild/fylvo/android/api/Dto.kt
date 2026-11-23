@@ -13,6 +13,8 @@ data class ApiResponse<T>(
     @Transient val innerCodes: List<Int> = emptyList(),
     /** Fylvo: `data.reason` of an error (40925), also from inside a batch answer. */
     @Transient val reason: String? = null,
+    /** Fylvo: the addresses that failed in a batch answer (keys of `aggregated_error`). */
+    @Transient val failedPaths: Set<String> = emptySet(),
 )
 
 @Serializable
@@ -188,6 +190,8 @@ data class CreateFileRequest(
 data class RenameFileRequest(
     val uri: String,
     @SerialName("new_name") val newName: String,
+    /** Fylvo: inside a connected storage the row id per address (`{uri: id}`); not sent elsewhere. */
+    val ids: Map<String, String>? = null,
 )
 
 @Serializable
@@ -195,6 +199,8 @@ data class MoveFileRequest(
     val uris: List<String>,
     val dst: String,
     val copy: Boolean = false,
+    /** Fylvo: inside a connected storage the row id per address, also for [dst]; not sent elsewhere. */
+    val ids: Map<String, String>? = null,
 )
 
 @Serializable
@@ -203,6 +209,8 @@ data class DeleteFileRequest(
     val unlink: Boolean = false,
     /** Bypass the trash and remove right away (used from the trash view). */
     @SerialName("skip_soft_delete") val skipSoftDelete: Boolean = false,
+    /** Fylvo: inside a connected storage the row id per address; not sent elsewhere. */
+    val ids: Map<String, String>? = null,
 )
 
 @Serializable

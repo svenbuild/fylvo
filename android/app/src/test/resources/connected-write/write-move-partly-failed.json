@@ -1,0 +1,12 @@
+{
+  "code": 40081,
+  "aggregated_error": {
+    "cloudreve://gb6zyqzl9859nkg1@connected/taken.txt": {
+      "code": 40004,
+      "msg": "Object existed",
+      "correlation_id": "00000000-0000-0000-0000-000000000000"
+    }
+  },
+  "msg": "Object existed",
+  "correlation_id": "00000000-0000-0000-0000-000000000000"
+}
