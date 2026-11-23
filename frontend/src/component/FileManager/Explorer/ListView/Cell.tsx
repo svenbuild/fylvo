@@ -56,7 +56,7 @@ import {
 import { MediaMetaElements } from "../../Sidebar/MediaMetaCard.tsx";
 import FileTagSummary from "../FileTagSummary.tsx";
 import FavoriteMark from "../FavoriteMark.tsx";
-import ConnectedMark, { rowUnsupported, sizeKnown } from "../../Connected/ConnectedMark.tsx";
+import ConnectedMark, { rowUnsupported, sizeKnown, timeKnown } from "../../Connected/ConnectedMark.tsx";
 import { ThumbLoadingPlaceholder, ThumbPopoverImg } from "../GridView/GridFile.tsx";
 import UploadingTag from "../UploadingTag.tsx";
 import { useInlineRename } from "../useInlineRename.ts";
@@ -238,7 +238,7 @@ const FileNameCell = memo((props: CellProps) => {
 
   if (showThumb) {
     const showSize = nameMeta?.size && !isFolder && !file.metadata?.[Metadata.share_redirect] && sizeKnown(file);
-    const showModified = nameMeta?.modified;
+    const showModified = nameMeta?.modified && timeKnown(file.updated_at);
     return (
       <>
         <Box
@@ -376,7 +376,7 @@ const FolderDateCell = memo(({ file, dateType }: FolderDateCellProps) => {
         : "";
   }
 
-  if (!datetime) {
+  if (!datetime || (typeof datetime == "string" && !timeKnown(datetime))) {
     return <Box />;
   }
   return <TimeBadge variant={"inherit"} datetime={datetime} />;

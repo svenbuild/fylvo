@@ -20,7 +20,7 @@ import ShieldDismiss from "../../Icons/ShieldDismiss.tsx";
 import ShieldLockFilled from "../../Icons/ShieldLockFilled.tsx";
 import FileBadge from "../FileBadge.tsx";
 import InfoRow from "./InfoRow.tsx";
-import { sizeKnown } from "../Connected/ConnectedMark.tsx";
+import { sizeKnown, timeKnown } from "../Connected/ConnectedMark.tsx";
 
 export interface BasicInfoProps {
   target: FileResponse;
@@ -304,14 +304,18 @@ const BasicInfo = ({ target }: BasicInfoProps) => {
           }
         />
       )}
-      <InfoRow
-        title={t("application:fileManager.createdAt")}
-        content={<TimeBadge variant={"body2"} datetime={target.created_at} />}
-      />
-      <InfoRow
-        title={t("application:fileManager.modifiedAt")}
-        content={<TimeBadge variant={"body2"} datetime={target.updated_at} />}
-      />
+      {timeKnown(target.created_at) && (
+        <InfoRow
+          title={t("application:fileManager.createdAt")}
+          content={<TimeBadge variant={"body2"} datetime={target.created_at} />}
+        />
+      )}
+      {timeKnown(target.updated_at) && (
+        <InfoRow
+          title={t("application:fileManager.modifiedAt")}
+          content={<TimeBadge variant={"body2"} datetime={target.updated_at} />}
+        />
+      )}
       {target.type == FileType.folder && !isSymbolicLink && !inConnected && (
         <>
           {!folderSummary && (

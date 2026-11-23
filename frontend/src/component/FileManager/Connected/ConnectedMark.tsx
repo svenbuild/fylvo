@@ -37,6 +37,10 @@ export const sizeKnown = (file: FileResponse) =>
   file.metadata?.[Metadata.connected_size_unknown] === undefined &&
   file.metadata?.[Metadata.connected_unsupported] === undefined;
 
+// Whether a time is known: the server sends the zero time (year 1) when the provider names
+// none, for example for the root of a connected storage.
+export const timeKnown = (time?: string) => !!time && !time.startsWith("0001-01-01");
+
 // A row that is listed but cannot be used; shown dimmed.
 export const rowUnsupported = (file: FileResponse) => file.metadata?.[Metadata.connected_unsupported] !== undefined;
 
