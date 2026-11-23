@@ -216,6 +216,9 @@ func (s *ConnectedFinishService) Finish(c *gin.Context) (*connected.Storage, err
 func (s *ConnectedRenameService) Rename(c *gin.Context, id string) (*connected.Storage, error) {
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
+	if !mayConnectStorages(user) {
+		return nil, connected.ErrNotAllowed
+	}
 	return connected.For(dep).Rename(c, user.ID, id, s.Name)
 }
 

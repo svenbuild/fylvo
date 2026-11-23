@@ -236,4 +236,24 @@ func TestConnectedNeedsGroupPermission(t *testing.T) {
 	_, err = (&ConnectedFinishService{Code: "anything"}).Finish(c)
 	require.Equal(t, serializer.CodeConnectedUnavailable, appCode(err))
 	require.Equal(t, connected.ReasonNotAllowed, connected.ReasonOf(err))
+	c, _ = e.as(alex, "PATCH", "/api/v4/fylvo/connected/aaaaaaaaaaaaaaaa")
+	_, err = (&ConnectedRenameService{Name: "Photos"}).Rename(c, "aaaaaaaaaaaaaaaa")
+	require.Equal(t, connected.ReasonNotAllowed, connected.ReasonOf(err))
+}
+
+// Every request gets a Dep of its own. All of them lead to the one Manager of the
+// server: a sign-in is started by one request and completed by others.
+func TestConnectedManagerIsOnePerServer(t *testing.T) {
+	e := newConnectedEnv(t, "https://cloud.example.com")
+	fork := func() dependency.Dep {
+		return dependency.FromContext(e.dep.ForkWithLogger(e.ctx, logging.NewConsoleLogger(logging.LevelError)))
+	}
+	first, second := fork(), fork()
+	require.NotSame(t, first, second)
+	require.Same(t, connected.For(first), connected.For(second))
+	require.Same(t, connected.For(e.dep), connected.For(first))
+
+	// Another server has another one.
+	other := newConnectedEnv(t, "https://cloud.example.com")
+	require.NotSame(t, connected.For(e.dep), connected.For(other.dep))
 }

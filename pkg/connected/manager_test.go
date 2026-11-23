@@ -14,6 +14,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/enttest"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
+	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/cache"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -51,6 +52,10 @@ type managerFixture struct {
 	settings *memSettings
 	closed   []string
 	revoked  []string
+	// onRevoke runs while access is taken back at the provider.
+	onRevoke func()
+	// gone are the accounts that no longer exist.
+	gone map[int]bool
 }
 
 const testRedirect = "https://cloud.example.com/api/v4/fylvo/connected/callback"
@@ -71,6 +76,9 @@ func newManagerFixture(t *testing.T) *managerFixture {
 	}
 	spec.Revoke = func(ctx context.Context, client *http.Client, refreshToken string) error {
 		f.revoked = append(f.revoked, refreshToken)
+		if f.onRevoke != nil {
+			f.onRevoke()
+		}
 		return nil
 	}
 
@@ -83,6 +91,7 @@ func newManagerFixture(t *testing.T) *managerFixture {
 		Hooks: Hooks{Closed: func(id string, generation int) {
 			f.closed = append(f.closed, id)
 		}},
+		UserExists: func(_ context.Context, userID int) bool { return !f.gone[userID] },
 	})
 	return f
 }
@@ -286,7 +295,7 @@ func (f *managerFixture) SetProviderForTest(ctx context.Context, publicID string
 	if err != nil {
 		return err
 	}
-	_, err = f.storages.UpdateState(ctx, row.ID, row.Generation, inventory.ConnectedStatusReconnect, "refused", row.Props)
+	_, err = f.storages.UpdateStatus(ctx, row.ID, row.Generation, inventory.ConnectedStatusReconnect, "refused")
 	return err
 }
 
@@ -394,4 +403,81 @@ func TestNothingStoredForAnAccountBeingDeleted(t *testing.T) {
 	gone()
 	_, err = f.connect(t, 7, "")
 	require.NoError(t, err)
+}
+
+// While access is taken back at the provider, the manager is not locked, so other
+// requests go on, and no sign-in at that provider starts: it could be for the same
+// provider account and would lose its new token to the revoke.
+func TestRevokeHoldsNothingUpButSignIns(t *testing.T) {
+	f := newManagerFixture(t)
+	ctx := context.Background()
+	secret := "client-secret"
+	require.NoError(t, f.SetProvider(ctx, ProviderDrive, "client-id", &secret))
+	storage, err := f.connect(t, 7, "")
+	require.NoError(t, err)
+
+	ran := false
+	f.onRevoke = func() {
+		ran = true
+		require.True(t, f.mu.TryLock(), "the manager is locked during the revoke")
+		f.mu.Unlock()
+		_, _, err := f.Authorize(ctx, 8, ProviderDrive, "", testRedirect)
+		require.Equal(t, serializer.CodeConnectedBusy, codeOf(err))
+	}
+	require.NoError(t, f.Disconnect(ctx, 7, storage.ID))
+	require.True(t, ran)
+
+	// Afterwards signing in works again.
+	_, err = f.connect(t, 8, "")
+	require.NoError(t, err)
+}
+
+// A request that was let in before its account was deleted stores nothing afterwards.
+func TestNothingIsStoredForAnAccountThatIsGone(t *testing.T) {
+	f := newManagerFixture(t)
+	ctx := context.Background()
+	secret := "client-secret"
+	require.NoError(t, f.SetProvider(ctx, ProviderDrive, "client-id", &secret))
+
+	address, cookie, err := f.Authorize(ctx, 7, ProviderDrive, "", testRedirect)
+	require.NoError(t, err)
+	state, code := f.provider.consent(t, address)
+	finish, err := f.Callback(ctx, state, cookie, code, "")
+	require.NoError(t, err)
+
+	// The account is deleted, completely, and only then the request goes on.
+	f.gone = map[int]bool{7: true}
+	_, err = f.Finish(ctx, 7, finish)
+	require.Error(t, err)
+	rows, err := f.storages.ListByUser(ctx, 7)
+	require.NoError(t, err)
+	require.Empty(t, rows)
+
+	// Deleting an account also ends the sign-ins it has under way.
+	address, cookie, err = f.Authorize(ctx, 8, ProviderDrive, "", testRedirect)
+	require.NoError(t, err)
+	state, code = f.provider.consent(t, address)
+	finish, err = f.Callback(ctx, state, cookie, code, "")
+	require.NoError(t, err)
+	require.NoError(t, f.DisconnectUser(ctx, 8))
+	_, err = f.Finish(ctx, 8, finish)
+	require.Equal(t, ReasonExpired, ReasonOf(err))
+}
+
+// A view that is saved does not take back the note that the storage has to be connected again.
+func TestSavingAViewKeepsTheStatus(t *testing.T) {
+	f := newManagerFixture(t)
+	ctx := context.Background()
+	secret := "client-secret"
+	require.NoError(t, f.SetProvider(ctx, ProviderDrive, "client-id", &secret))
+	storage, err := f.connect(t, 7, "")
+	require.NoError(t, err)
+
+	require.NoError(t, f.SetProviderForTest(ctx, storage.ID, 7))
+	require.NoError(t, f.SetView(ctx, 7, storage.ID, &types.ExplorerView{PageSize: 50}))
+	row, err := f.storages.Get(ctx, 7, storage.ID)
+	require.NoError(t, err)
+	require.Equal(t, inventory.ConnectedStatusReconnect, row.Status)
+	require.Equal(t, "refused", row.StatusMessage)
+	require.Equal(t, 50, row.Props.View.PageSize)
 }

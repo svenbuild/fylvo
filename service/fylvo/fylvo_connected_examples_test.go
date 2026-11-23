@@ -62,8 +62,8 @@ func TestConnectedExamples(t *testing.T) {
 	storages := inventory.NewConnectedStorageClient(e.client)
 	row, err := storages.Get(e.ctx, alex.ID, second.ID)
 	require.NoError(t, err)
-	_, err = storages.UpdateState(e.ctx, row.ID, row.Generation, inventory.ConnectedStatusReconnect,
-		"The provider no longer accepts the stored access.", row.Props)
+	_, err = storages.UpdateStatus(e.ctx, row.ID, row.Generation, inventory.ConnectedStatusReconnect,
+		"The provider no longer accepts the stored access.")
 	require.NoError(t, err)
 
 	c, _ = e.as(alex, "GET", "/api/v4/fylvo/connected")

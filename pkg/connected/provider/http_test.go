@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -70,7 +71,7 @@ func TestDoRenewsTokenOnce(t *testing.T) {
 	// A provider that keeps answering 401 is asked twice, not for ever.
 	seen = nil
 	err := c.JSON(context.Background(), http.MethodGet, api.URL+"/always", nil, nil)
-	if err == nil || len(seen) != 2 {
+	if KindOf(err) != KindReconnect || len(seen) != 2 {
 		t.Fatalf("err %v, %d calls", err, len(seen))
 	}
 }
@@ -257,6 +258,51 @@ func TestClientRefusesInternalAddresses(t *testing.T) {
 		if _, err := c.Do(context.Background(), http.MethodGet, address, nil, nil); KindOf(err) != KindUnsafe {
 			t.Errorf("%s: %v, want refused", address, err)
 		}
+	}
+}
+
+// With a proxy in use the check stays on for everything that is dialed directly, and a
+// request that goes through the proxy is refused when its address names an internal one.
+func TestClientBehindProxy(t *testing.T) {
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("an internal address was reached: %s", r.URL)
+	}))
+	defer internal.Close()
+	var proxied []string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxied = append(proxied, r.URL.String())
+		_, _ = w.Write([]byte("through the proxy"))
+	}))
+	defer proxy.Close()
+	proxyURL, _ := url.Parse(proxy.URL)
+
+	// The proxy is for one name only, as with NO_PROXY for everything else.
+	client := newHTTPClient(func(r *http.Request) (*url.URL, error) {
+		if r.URL.Hostname() == "files.example.com" || r.URL.Hostname() == "192.168.1.10" {
+			return proxyURL, nil
+		}
+		return nil, nil
+	})
+	c := &Caller{HTTP: client, Auth: &testAuth{}, AllowHTTP: true}
+	ctx := context.Background()
+
+	res, err := c.Do(ctx, http.MethodGet, "http://files.example.com/a", nil, nil)
+	if err != nil {
+		t.Fatalf("through the proxy, which itself is on the loopback address: %v", err)
+	}
+	res.Body.Close()
+	if len(proxied) != 1 || proxied[0] != "http://files.example.com/a" {
+		t.Fatalf("proxied %v", proxied)
+	}
+
+	if _, err := c.Do(ctx, http.MethodGet, internal.URL+"/x", nil, nil); KindOf(err) != KindUnsafe {
+		t.Errorf("dialed directly beside the proxy: %v, want refused", err)
+	}
+	if _, err := c.Do(ctx, http.MethodGet, "http://192.168.1.10/x", nil, nil); KindOf(err) != KindUnsafe {
+		t.Errorf("an internal address through the proxy: %v, want refused", err)
+	}
+	if len(proxied) != 1 {
+		t.Errorf("proxied %v", proxied)
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -44,7 +43,7 @@ func NewExamples(t *testing.T) *Examples {
 func (x *Examples) Add(name string, data any, err error) {
 	res := serializer.Response{Data: data}
 	if err != nil {
-		res = connected.ErrResponse(context.Background(), err)
+		res = serializer.Err(context.Background(), err)
 	}
 	text, marshalErr := json.MarshalIndent(res, "", "  ")
 	require.NoError(x.t, marshalErr, name)

@@ -84,6 +84,36 @@ type client struct {
 
 	mu   sync.Mutex
 	root string
+	// keys are the resource keys some items need to be reached, by item id. They come
+	// with the shortcuts that point to these items.
+	keys map[string]string
+}
+
+// maxKeys bounds what is remembered of resource keys. Few items have one.
+const maxKeys = 10000
+
+// remember keeps the resource key a shortcut carries for its target.
+func (c *client) remember(item *provider.Item) {
+	if item.Link == nil || item.Link.ResourceKey == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.keys == nil || len(c.keys) >= maxKeys {
+		c.keys = map[string]string{}
+	}
+	c.keys[item.Link.TargetID] = item.Link.ResourceKey
+}
+
+// keyed marks a call about the item with the given id with its resource key, if it has one.
+func (c *client) keyed(ctx context.Context, id string) context.Context {
+	c.mu.Lock()
+	key := c.keys[id]
+	c.mu.Unlock()
+	if key == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, resourceKeyContext{}, id+"/"+key)
 }
 
 // New returns the Drive client of one connection.
@@ -128,7 +158,7 @@ func (c *client) Root(ctx context.Context) (string, error) {
 }
 
 func (c *client) Children(ctx context.Context, folderID, page string) (*provider.Page, error) {
-	list, err := c.list(ctx, parentQuery(folderID), page)
+	list, err := c.list(c.keyed(ctx, folderID), parentQuery(folderID), page)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +166,7 @@ func (c *client) Children(ctx context.Context, folderID, page string) (*provider
 	res := &provider.Page{Items: make([]provider.Item, 0, len(list.Files)), Next: list.NextPageToken}
 	for _, f := range list.Files {
 		if item, ok := f.item(); ok {
+			c.remember(&item)
 			res.Items = append(res.Items, item)
 		}
 	}
@@ -148,6 +179,7 @@ func (c *client) Named(ctx context.Context, folderID, name string) ([]provider.I
 		res  []provider.Item
 		page string
 	)
+	ctx = c.keyed(ctx, folderID)
 	for n := 0; n < maxNamedPages; n++ {
 		list, err := c.list(ctx, q, page)
 		if err != nil {
@@ -159,6 +191,7 @@ func (c *client) Named(ctx context.Context, folderID, name string) ([]provider.I
 				continue
 			}
 			if item, ok := f.item(); ok {
+				c.remember(&item)
 				res = append(res, item)
 			}
 		}
@@ -172,7 +205,7 @@ func (c *client) Named(ctx context.Context, folderID, name string) ([]provider.I
 func (c *client) Get(ctx context.Context, id string) (*provider.Item, error) {
 	var f file
 	address := c.api + "files/" + url.PathEscape(id) + "?fields=" + url.QueryEscape(itemFields)
-	if err := c.call.JSON(ctx, http.MethodGet, address, nil, &f); err != nil {
+	if err := c.call.JSON(c.keyed(ctx, id), http.MethodGet, address, nil, &f); err != nil {
 		return nil, err
 	}
 	item, ok := f.item()
@@ -180,7 +213,27 @@ func (c *client) Get(ctx context.Context, id string) (*provider.Item, error) {
 		// Trashed, or a Google type that has nothing to show.
 		return nil, &provider.Error{Kind: provider.KindNotFound}
 	}
+	c.remember(&item)
 	return &item, nil
+}
+
+func (c *client) Target(ctx context.Context, link *provider.Item) (*provider.Item, error) {
+	if link.Link == nil {
+		return nil, &provider.Error{Kind: provider.KindNotFound}
+	}
+	c.remember(link)
+	target, err := c.Get(ctx, link.Link.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	if target.IsDir != link.IsDir || target.Link != nil || target.Native != "" {
+		// Not what the shortcut was made for: nothing that can be read through it.
+		return nil, &provider.Error{Kind: provider.KindNotFound}
+	}
+	fresh := *link
+	fresh.Size, fresh.ModTime, fresh.Hash = target.Size, target.ModTime, target.Hash
+	fresh.Version, fresh.Revision = target.Version, target.Revision
+	return &fresh, nil
 }
 
 func (c *client) Open(ctx context.Context, item *provider.Item, rangeHeader string) (*provider.Content, error) {
@@ -189,16 +242,16 @@ func (c *client) Open(ctx context.Context, item *provider.Item, rangeHeader stri
 	}
 
 	id := item.ContentID()
-	byRevision := item.Link == nil && item.Revision != ""
+	byRevision := item.Revision != ""
 	address := c.api + "files/" + url.PathEscape(id) + "?alt=media"
 	if byRevision {
 		address = c.api + "files/" + url.PathEscape(id) + "/revisions/" + url.PathEscape(item.Revision) + "?alt=media"
 	}
-	if item.Link != nil && item.Link.ResourceKey != "" {
-		ctx = context.WithValue(ctx, resourceKeyContext{}, id+"/"+item.Link.ResourceKey)
-	}
-	// Drive refuses every range of an empty file, and the whole of it is the answer anyway.
-	if item.Link == nil && item.Size == 0 {
+	c.remember(item)
+	ctx = c.keyed(ctx, id)
+	// Drive refuses every range of an empty file, and the whole of it is the answer
+	// anyway. A shortcut from a listing does not tell the size of its target.
+	if item.Size == 0 && (item.Link == nil || item.Version != "") {
 		rangeHeader = ""
 	}
 

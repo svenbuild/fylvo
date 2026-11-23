@@ -341,3 +341,38 @@ func TestSpecsAreFixed(t *testing.T) {
 		}
 	}
 }
+
+// One account cannot pile up sign-ins: a further one takes the place of the oldest.
+func TestFlowBoundsStatesPerAccount(t *testing.T) {
+	flow, p, client := testFlow(t)
+	ctx := context.Background()
+	now := time.Unix(1800000000, 0)
+	flow.now = func() time.Time { return now }
+
+	type started struct{ address, cookie string }
+	var all []started
+	for i := 0; i < maxStates+1; i++ {
+		address, cookie, err := flow.Begin(7, ProviderDrive, client, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		all = append(all, started{address, cookie})
+		now = now.Add(time.Second)
+	}
+	if len(flow.states) != maxStates {
+		t.Fatalf("%d sign-ins are kept", len(flow.states))
+	}
+	// Another account is not affected by that.
+	if _, _, err := flow.Begin(8, ProviderDrive, client, nil); err != nil || len(flow.states) != maxStates+1 {
+		t.Fatalf("other account: %v, %d kept", err, len(flow.states))
+	}
+
+	state, code := p.consent(t, all[0].address)
+	if _, err := flow.Callback(ctx, state, all[0].cookie, code, ""); !errors.Is(err, ErrFlowExpired) {
+		t.Fatalf("the oldest sign-in: %v", err)
+	}
+	state, code = p.consent(t, all[maxStates].address)
+	if _, err := flow.Callback(ctx, state, all[maxStates].cookie, code, ""); err != nil {
+		t.Fatalf("the newest sign-in: %v", err)
+	}
+}

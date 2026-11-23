@@ -292,6 +292,10 @@ type (
 )
 
 func (service *ImportWorkflowService) CreateImportTask(c *gin.Context) (*TaskResponse, error) {
+	// Fylvo: an import goes into the files of an account, never into a connected storage.
+	if err := refuseConnectedSources(service.Dst); err != nil {
+		return nil, err
+	}
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	hasher := dep.HashIDEncoder()

@@ -99,9 +99,13 @@ type Provider interface {
 	Named(ctx context.Context, folderID, name string) ([]Item, error)
 	// Get returns the entry with the given id, KindNotFound when it is gone or trashed.
 	Get(ctx context.Context, id string) (*Item, error)
-	// Open starts a download of the content of item, which came from Children, Named
-	// or Get of this provider. rangeHeader is an HTTP Range value or empty. Where the
-	// provider can serve item.Revision, exactly that content is read.
+	// Target returns link, an entry that points to another item, with the size, time,
+	// version, revision and checksum of that item as it is now. A listing does not
+	// tell these. KindNotFound when the target is gone.
+	Target(ctx context.Context, link *Item) (*Item, error)
+	// Open starts a download of the content of item, which came from Children, Named,
+	// Get or Target of this provider. rangeHeader is an HTTP Range value or empty.
+	// Where the provider can serve item.Revision, exactly that content is read.
 	Open(ctx context.Context, item *Item, rangeHeader string) (*Content, error)
 	// Export starts a download of a native document in the given format ("docx",
 	// "xlsx", "pptx", "pdf", "svg").

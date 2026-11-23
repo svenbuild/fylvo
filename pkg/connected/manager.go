@@ -89,6 +89,8 @@ type ManagerOptions struct {
 	// HTTP talks to the providers; nil takes provider.NewHTTPClient().
 	HTTP  *http.Client
 	Hooks Hooks
+	// UserExists tells whether an account (still) exists. nil: every account does.
+	UserExists func(ctx context.Context, userID int) bool
 }
 
 // Manager keeps the connections of all accounts: who connected what, the sealed tokens
@@ -101,6 +103,7 @@ type Manager struct {
 	http     *http.Client
 	flow     *Flow
 	hooks    Hooks
+	exists   func(ctx context.Context, userID int) bool
 
 	// mu orders the steps that decide over tokens of a provider account: storing the
 	// result of a sign-in, disconnecting and revoking hold it exclusively. Requests that
@@ -132,6 +135,7 @@ func NewManager(o ManagerOptions) *Manager {
 		http:     o.HTTP,
 		flow:     NewFlow(o.Specs, o.HTTP),
 		hooks:    o.Hooks,
+		exists:   o.UserExists,
 		leaving:  map[int]int{},
 		live:     map[string]*liveConn{},
 		tree:     NewTree(),
@@ -385,6 +389,9 @@ func (m *Manager) Authorize(ctx context.Context, userID int, provider, reconnect
 	}
 
 	address, cookie, err = m.flow.Begin(userID, provider, client, renew)
+	if errors.Is(err, ErrFlowWait) {
+		return "", "", ErrBusy
+	}
 	if err != nil {
 		return "", "", serializer.NewError(serializer.CodeParamErr, "Failed to start the sign-in", err)
 	}
@@ -469,17 +476,19 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 			Secret:  secret,
 			Props:   props,
 		})
+		if ok {
+			// What ran with the old token ends here, whatever else went wrong.
+			m.closeLive(row.PublicID)
+			if m.hooks.Closed != nil {
+				m.hooks.Closed(row.PublicID, granted.Reconnect.Generation)
+			}
+		}
 		if err != nil {
 			return nil, serializer.NewError(serializer.CodeDBError, "Failed to store the token", err)
 		}
 		if !ok {
 			// Connected again meanwhile, by another sign-in.
 			return nil, flowError(ErrFlowExpired)
-		}
-		// What ran with the old token ends here.
-		m.closeLive(row.PublicID)
-		if m.hooks.Closed != nil {
-			m.hooks.Closed(row.PublicID, granted.Reconnect.Generation)
 		}
 		return storageOf(renewed), nil
 	}
@@ -505,6 +514,11 @@ func (m *Manager) Create(ctx context.Context, userID int, kind string, identity 
 func (m *Manager) createLocked(ctx context.Context, userID int, kind string, identity *Identity, token string,
 	props *types.ConnectedStorageProps) (*Storage, error) {
 	if m.leaving[userID] > 0 {
+		return nil, flowError(ErrFlowExpired)
+	}
+	// A request can have been let in for an account that was deleted since: nothing is
+	// stored for an account that is gone.
+	if m.exists != nil && !m.exists(ctx, userID) {
 		return nil, flowError(ErrFlowExpired)
 	}
 	rows, err := m.storages.ListByUser(ctx, userID)
@@ -561,6 +575,15 @@ func (m *Manager) Rename(ctx context.Context, userID int, publicID, name string)
 // Disconnect ends a connection. The row with its token is deleted first; what follows is
 // clean-up that cannot bring it back.
 func (m *Manager) Disconnect(ctx context.Context, userID int, publicID string) error {
+	revoke, err := m.disconnect(ctx, userID, publicID)
+	if err != nil {
+		return err
+	}
+	m.takeBack(ctx, revoke)
+	return nil
+}
+
+func (m *Manager) disconnect(ctx context.Context, userID int, publicID string) (revoke, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -568,31 +591,51 @@ func (m *Manager) Disconnect(ctx context.Context, userID int, publicID string) e
 	// either stored its token before, and that generation ends here, or finds no row.
 	row, err := m.row(ctx, userID, publicID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := m.storages.Delete(ctx, row.ID); err != nil {
-		return serializer.NewError(serializer.CodeDBError, "Failed to delete the connected storage", err)
+		return nil, serializer.NewError(serializer.CodeDBError, "Failed to delete the connected storage", err)
 	}
-	m.afterDelete(ctx, row)
-	return nil
+	return m.afterDelete(ctx, row), nil
 }
 
-// DisconnectUser ends all connections of an account that is being removed.
+// DisconnectUser ends all connections of an account that is being removed, and the
+// sign-ins it has under way.
 func (m *Manager) DisconnectUser(ctx context.Context, userID int) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.flow.Forget(userID)
 	rows, err := m.storages.DeleteByUser(ctx, userID)
+	revokes := make([]revoke, 0, len(rows))
+	for _, row := range rows {
+		revokes = append(revokes, m.afterDelete(ctx, row))
+	}
+	m.mu.Unlock()
 	if err != nil {
 		return serializer.NewError(serializer.CodeDBError, "Failed to delete connected storages", err)
 	}
-	for _, row := range rows {
-		m.afterDelete(ctx, row)
-	}
+	m.takeBack(ctx, revokes...)
 	return nil
 }
 
-// afterDelete cleans up after a row was deleted. The caller holds m.mu.
-func (m *Manager) afterDelete(ctx context.Context, row *ent.ConnectedStorage) {
+// revoke takes the access of a deleted connection back at its provider.
+type revoke func(ctx context.Context)
+
+// takeBack runs revokes, which may be nil, after the lock of the manager was released:
+// a provider that is slow to answer must not hold up every other request. All of them
+// together get ten seconds; it is best effort, the tokens are gone from here either way.
+func (m *Manager) takeBack(ctx context.Context, revokes ...revoke) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	for _, r := range revokes {
+		if r != nil {
+			r(ctx)
+		}
+	}
+}
+
+// afterDelete cleans up after a row was deleted. The caller holds m.mu, and runs what is
+// returned, if anything, once it has released it.
+func (m *Manager) afterDelete(ctx context.Context, row *ent.ConnectedStorage) revoke {
 	m.closeLive(row.PublicID)
 	if m.hooks.Closed != nil {
 		m.hooks.Closed(row.PublicID, row.Generation)
@@ -600,23 +643,28 @@ func (m *Manager) afterDelete(ctx context.Context, row *ent.ConnectedStorage) {
 
 	// Taking the access back at the provider ends it for every connection to that
 	// provider account, also one that is being set up right now. So only when there is
-	// no other, and best effort: the token is gone from here either way.
+	// no other, and none can come up before the provider was told.
 	spec := m.specs[row.Provider]
-	if spec == nil || spec.Revoke == nil || m.flow.Busy(row.Provider) {
-		return
+	if spec == nil || spec.Revoke == nil {
+		return nil
 	}
 	if n, err := m.storages.CountByAccount(ctx, row.Provider, row.AccountKey); err != nil || n > 0 {
-		return
+		return nil
 	}
 	token, err := m.sealer.Open(ctx, PurposeToken, tokenContext(row.PublicID, row.UserID, row.Provider), row.Secret)
 	if err != nil {
-		return
+		return nil
 	}
 	stored, err := ParseToken(string(token))
 	if err != nil || stored.RefreshToken == "" {
-		return
+		return nil
 	}
-	revokeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	_ = spec.Revoke(revokeCtx, m.http, stored.RefreshToken)
+	done, ok := m.flow.Revoking(row.Provider)
+	if !ok {
+		return nil
+	}
+	return func(ctx context.Context) {
+		defer done()
+		_ = spec.Revoke(ctx, m.http, stored.RefreshToken)
+	}
 }

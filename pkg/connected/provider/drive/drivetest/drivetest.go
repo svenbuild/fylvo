@@ -107,9 +107,11 @@ type Server struct {
 	incompleteNext bool
 	emptyNext      bool
 	token          string
+	rejects        func(token string) bool
 	tokens         []string
 	contentTokens  []string
 	failRevisions  bool
+	breakExports   bool
 	redirect       bool
 	calls          map[Call]int
 	usage, limit   int64
@@ -117,6 +119,19 @@ type Server struct {
 
 // New starts a simulated Drive with an empty root folder and closes it at the end of t.
 func New(t testing.TB) *Server {
+	s := Start()
+	t.Cleanup(s.Close)
+	return s
+}
+
+// Close stops the servers of the simulated Drive.
+func (s *Server) Close() {
+	s.api.Close()
+	s.content.Close()
+}
+
+// Start starts a simulated Drive with an empty root folder. The caller closes it.
+func Start() *Server {
 	s := &Server{
 		items:    map[string]*entry{},
 		root:     "root0",
@@ -127,8 +142,6 @@ func New(t testing.TB) *Server {
 	s.items[s.root] = &entry{id: s.root, name: "My Drive", mimeType: FolderType, modTime: s.clock}
 	s.api = httptest.NewServer(http.HandlerFunc(s.serveAPI))
 	s.content = httptest.NewServer(http.HandlerFunc(s.serveContent))
-	t.Cleanup(s.api.Close)
-	t.Cleanup(s.content.Close)
 	return s
 }
 
@@ -317,6 +330,13 @@ func (s *Server) RequireToken(token string) {
 	s.token = token
 }
 
+// RejectTokens makes the simulator answer 401 to every token rejects says yes to.
+func (s *Server) RejectTokens(rejects func(token string) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rejects = rejects
+}
+
 // Tokens returns the bearer tokens of all API calls so far, in order.
 func (s *Server) Tokens() []string {
 	s.mu.Lock()
@@ -330,6 +350,14 @@ func (s *Server) FailRevisions(fail bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failRevisions = fail
+}
+
+// BreakExports makes exports break off in the middle: a part of the content is sent,
+// then the connection is cut.
+func (s *Server) BreakExports(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.breakExports = on
 }
 
 // Redirect makes downloads answer with a redirect to a second server that serves the
@@ -402,7 +430,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 
 	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	s.tokens = append(s.tokens, token)
-	if token == "" || (s.token != "" && token != s.token) {
+	if token == "" || (s.token != "" && token != s.token) || (s.rejects != nil && s.rejects(token)) {
 		writeError(w, http.StatusUnauthorized, "authError", "Invalid Credentials")
 		return
 	}
@@ -430,7 +458,7 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			id = s.root
 		}
 		e, found := s.items[id]
-		if !found {
+		if !found || !s.keyGiven(r, e) {
 			writeError(w, http.StatusNotFound, "notFound", "File not found: "+id+".")
 			return
 		}
@@ -445,12 +473,24 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// keyGiven tells whether the request carries the resource key of e, if e needs one.
+func (s *Server) keyGiven(r *http.Request, e *entry) bool {
+	return e.resourceKey == "" || strings.Contains(r.Header.Get("X-Goog-Drive-Resource-Keys"), e.id+"/"+e.resourceKey)
+}
+
 func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	match, err := parseQuery(query.Get("q"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid", "Invalid Value")
 		return
+	}
+	// A folder that needs a resource key shows nothing to a request without it.
+	for _, e := range s.items {
+		if strings.Contains(query.Get("q"), "'"+e.id+"' in parents") && !s.keyGiven(r, e) {
+			writeJSON(w, map[string]any{"files": []any{}})
+			return
+		}
 	}
 	size := s.pageSize
 	if n, err := strconv.Atoi(query.Get("pageSize")); err == nil && n > 0 {
@@ -535,10 +575,6 @@ func (s *Server) media(w http.ResponseWriter, r *http.Request, e *entry, rev str
 		writeError(w, http.StatusForbidden, "fileNotDownloadable", "Only files with binary content can be downloaded.")
 		return
 	}
-	if e.resourceKey != "" && !strings.Contains(r.Header.Get("X-Goog-Drive-Resource-Keys"), e.id+"/"+e.resourceKey) {
-		writeError(w, http.StatusNotFound, "notFound", "File not found: "+e.id+".")
-		return
-	}
 	if rev == "" {
 		rev = e.revision
 	} else if _, ok := e.revisions[rev]; !ok || s.failRevisions {
@@ -580,6 +616,11 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request, e *entry) {
 	for _, f := range formats {
 		if f == mimeType {
 			w.Header().Set("Content-Type", mimeType)
+			if s.breakExports {
+				_, _ = fmt.Fprintf(w, "export of %s", e.id)
+				w.(http.Flusher).Flush()
+				panic(http.ErrAbortHandler)
+			}
 			_, _ = fmt.Fprintf(w, "export of %s as %s", e.id, mimeType)
 			return
 		}

@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
@@ -61,11 +62,28 @@ func (entry *driveItem) asItem() *provider.Item {
 		item.Size = content.Size
 		item.Hash = content.File.Hashes.QuickXorHash
 		if item.Link == nil {
+			// What a listing tells of the target of a link can be old: see Target.
 			item.ETag = content.ETag
-			if content.CTag != "" {
-				item.Version = "c:" + content.CTag
-			}
+			item.Version = content.version()
 		}
 	}
 	return item
+}
+
+// version names the state of the content of a file. It is never empty: an answer
+// without a cTag still tells a checksum or at least a time.
+func (entry *driveItem) version() string {
+	switch {
+	case entry.CTag != "":
+		return "c:" + entry.CTag
+	case entry.File != nil && entry.File.Hashes.QuickXorHash != "":
+		return "h:" + entry.File.Hashes.QuickXorHash + ":" + strconv.FormatInt(entry.Size, 10)
+	case entry.ETag != "":
+		return "e:" + entry.ETag
+	}
+	modTime := entry.FileSystemInfo.LastModifiedDateTime
+	if modTime.IsZero() {
+		modTime = entry.LastModifiedDateTime
+	}
+	return "t:" + modTime.UTC().Format(time.RFC3339Nano) + ":" + strconv.FormatInt(entry.Size, 10)
 }

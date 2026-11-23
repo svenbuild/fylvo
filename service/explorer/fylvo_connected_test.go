@@ -142,7 +142,7 @@ func (e *connectedEnv) fetch(address, rangeHeader string) *httptest.ResponseReco
 	require.True(e.t, strings.HasPrefix(u.Path, connectedContentPath), u.Path)
 	grant, name, _ := strings.Cut(strings.TrimPrefix(u.Path, connectedContentPath), "/")
 
-	c, rec := e.request(nil, http.MethodGet, u.Path)
+	c, rec := e.request(nil, http.MethodGet, u.EscapedPath())
 	if rangeHeader != "" {
 		c.Request.Header.Set("Range", rangeHeader)
 	}
@@ -504,6 +504,8 @@ func TestConnectedIsKeptFromTheDatabaseFileSystem(t *testing.T) {
 	require.Error(t, err)
 	_, err = (&DownloadWorkflowService{Src: []string{"https://example.com/a.bin"}, Dst: own.URI}).CreateDownloadTask(e.as(admin))
 	require.Error(t, err)
+	_, err = (&ImportWorkflowService{Src: "/srv/import", Dst: own.URI, UserID: hashid.EncodeUserID(e.dep.HashIDEncoder(), admin.ID), PolicyID: 1}).CreateImportTask(e.as(admin))
+	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
 
 	after, err := e.client.Task.Query().Count(e.ctx)
 	require.NoError(t, err)
@@ -541,4 +543,73 @@ func TestConnectedViewAndCapacity(t *testing.T) {
 	res, err = e.list(e.alex, e.root, 0, "")
 	require.NoError(t, err)
 	require.Nil(t, res.View)
+}
+
+// A link shows the content of another item. An address for it is tied to the state of
+// that item, like any other address.
+func TestConnectedDownloadThroughALink(t *testing.T) {
+	e := newConnectedEnv(t)
+	target := e.sim.AddFile("", "notes.txt", []byte("0123456789"))
+	link := e.sim.AddShortcut("", "Link to notes", target)
+
+	address, err := e.urlOf(e.alex, e.root+"/Link to notes", true)
+	require.NoError(t, err)
+	rec := e.fetch(address, "bytes=2-5")
+	require.Equal(t, http.StatusPartialContent, rec.Code)
+	require.Equal(t, "2345", rec.Body.String())
+
+	// The target changes: the address made before does not deliver the new content.
+	e.sim.SetContent(target, []byte("changed"))
+	require.Equal(t, http.StatusConflict, e.fetch(address, "").Code)
+	fresh, err := e.urlOf(e.alex, e.root+"/Link to notes", true)
+	require.NoError(t, err)
+	require.Equal(t, "changed", e.fetch(fresh, "").Body.String())
+
+	// The link is removed: its address ends, although the target is still there.
+	e.sim.Trash(link)
+	require.Equal(t, http.StatusNotFound, e.fetch(fresh, "").Code)
+}
+
+func TestConnectedRanges(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "notes.txt", []byte("0123456789"))
+	address, err := e.urlOf(e.alex, e.root+"/notes.txt", true)
+	require.NoError(t, err)
+
+	// A range past the end is answered as such, not as a file that changed.
+	require.Equal(t, http.StatusRequestedRangeNotSatisfiable, e.fetch(address, "bytes=50-60").Code)
+	// Several ranges at once are not passed on: the whole file is the answer.
+	rec := e.fetch(address, "bytes=0-1,4-5")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "0123456789", rec.Body.String())
+	require.Equal(t, "bytes=0-1", singleRange("bytes=0-1"))
+	require.Empty(t, singleRange("items=0-1"))
+}
+
+// When the provider's stream breaks off, the answer is cut, not ended: an export has no
+// length a client could check it against.
+func TestConnectedBrokenStreamIsNotACompleteAnswer(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddNative("", "Budget", "gsheet")
+	address, err := e.urlOf(e.alex, e.root+"/Budget.gsheet", true)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, e.fetch(address, "").Code)
+
+	e.sim.BreakExports(true)
+	require.PanicsWithValue(t, http.ErrAbortHandler, func() { e.fetch(address, "") })
+}
+
+// The reason of a failure is told for each address of a batch.
+func TestConnectedReasonInABatch(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "twice.txt", []byte("a"))
+	e.sim.AddFile("", "twice.txt", []byte("b"))
+
+	_, err := (&FileURLService{Uris: []string{e.root + "/twice.txt"}}).Get(e.as(e.alex))
+	require.Equal(t, serializer.CodeBatchOperationNotFullyCompleted, connectedCode(err))
+	res := serializer.Err(e.ctx, err)
+	entry, ok := res.AggregatedError.(map[string]serializer.Response)[e.root+"/twice.txt"]
+	require.True(t, ok, "%+v", res.AggregatedError)
+	require.Equal(t, serializer.CodeConnectedItem, entry.Code)
+	require.Equal(t, connected.ReasonData{Reason: connected.ReasonAmbiguous}, entry.Data)
 }

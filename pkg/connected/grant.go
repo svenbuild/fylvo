@@ -169,8 +169,13 @@ func (m *Manager) SetView(ctx context.Context, userID int, publicID string, view
 		props = *row.Props
 	}
 	props.View = view
-	if _, err := m.storages.UpdateState(ctx, row.ID, row.Generation, row.Status, row.StatusMessage, &props); err != nil {
+	saved, err := m.storages.UpdateProps(ctx, row.ID, row.Generation, &props)
+	if err != nil {
 		return serializer.NewError(serializer.CodeDBError, "Failed to save the view", err)
+	}
+	if !saved {
+		// Connected again at this very moment: the view of the new generation was not touched.
+		return ErrBusy
 	}
 	return nil
 }

@@ -69,13 +69,16 @@ type (
 		// Rename changes the name shown to the user.
 		Rename(ctx context.Context, id int, name string) (*ent.ConnectedStorage, error)
 		// Renew stores a new token after the account signed in again and raises the
-		// generation. It reports false when the row no longer has the given generation.
+		// generation. It reports false when the row no longer has the given generation,
+		// and true whenever the new generation was stored, also next to an error.
 		Renew(ctx context.Context, id, generation int, args *RenewConnectedStorageArgs) (*ent.ConnectedStorage, bool, error)
 		// UpdateSecret stores a refreshed token. It reports false, and changes nothing,
 		// when the row no longer has the given generation.
 		UpdateSecret(ctx context.Context, id, generation int, secret []byte) (bool, error)
-		// UpdateState stores status and props under the same condition.
-		UpdateState(ctx context.Context, id, generation int, status, message string, props *types.ConnectedStorageProps) (bool, error)
+		// UpdateStatus stores the status under the same condition, and nothing else.
+		UpdateStatus(ctx context.Context, id, generation int, status, message string) (bool, error)
+		// UpdateProps stores the props under the same condition, and nothing else.
+		UpdateProps(ctx context.Context, id, generation int, props *types.ConnectedStorageProps) (bool, error)
 		// Touch notes that the connection was used.
 		Touch(ctx context.Context, id int) error
 		// Delete removes a connection for good.
@@ -165,8 +168,9 @@ func (c *connectedStorageClient) Renew(ctx context.Context, id, generation int, 
 		return nil, false, err
 	}
 
+	// The new generation is stored, whatever becomes of reading it back.
 	row, err := c.client.ConnectedStorage.Get(ctx, id)
-	return row, err == nil, err
+	return row, true, err
 }
 
 func (c *connectedStorageClient) UpdateSecret(ctx context.Context, id, generation int, secret []byte) (bool, error) {
@@ -177,11 +181,10 @@ func (c *connectedStorageClient) UpdateSecret(ctx context.Context, id, generatio
 	return n > 0, err
 }
 
-func (c *connectedStorageClient) UpdateState(ctx context.Context, id, generation int, status, message string, props *types.ConnectedStorageProps) (bool, error) {
+func (c *connectedStorageClient) UpdateStatus(ctx context.Context, id, generation int, status, message string) (bool, error) {
 	update := c.client.ConnectedStorage.Update().
 		Where(connectedstorage.ID(id), connectedstorage.Generation(generation)).
-		SetStatus(status).
-		SetProps(props)
+		SetStatus(status)
 	if message == "" {
 		update.ClearStatusMessage()
 	} else {
@@ -189,6 +192,14 @@ func (c *connectedStorageClient) UpdateState(ctx context.Context, id, generation
 	}
 
 	n, err := update.Save(ctx)
+	return n > 0, err
+}
+
+func (c *connectedStorageClient) UpdateProps(ctx context.Context, id, generation int, props *types.ConnectedStorageProps) (bool, error) {
+	n, err := c.client.ConnectedStorage.Update().
+		Where(connectedstorage.ID(id), connectedstorage.Generation(generation)).
+		SetProps(props).
+		Save(ctx)
 	return n > 0, err
 }
 

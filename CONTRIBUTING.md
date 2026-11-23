@@ -40,6 +40,33 @@ FYLVO_ARCH="amd64 arm64" scripts/build.sh
 docker buildx build --platform linux/amd64,linux/arm64 -t <registry>/fylvo:dev --push .
 ```
 
+## Connected storages without an account at a provider
+
+To work on connected storages (Google Drive, OneDrive) in the web app or a phone app, the
+server can play the provider itself:
+
+```bash
+go build -tags fylvo_dev -o fylvo-dev .
+FYLVO_DEV_STORAGE=1 ./fylvo-dev
+```
+
+Both are needed: the code is only part of a build with that tag, and it only does something
+with that variable. An ordinary build contains none of it. The log says so at the first use.
+
+- "Google Drive" is then set up and leads to a storage with sample data (folders, files,
+  pictures, Google documents, two entries with one name, shortcuts, a folder with 250 files).
+  The data lives in memory and is the same after every start. OneDrive stays "not set up".
+- Connecting works as with a real provider, but the sign-in page is one of the server:
+  "Allow" as one of two sample accounts, or "Deny".
+- `http://<your server>/api/v4/fylvo/dev/expire` ends all access, so every sample storage
+  has to be connected again.
+- The browser has to reach the server under its first site address (admin area, "Site URL"):
+  `http://localhost:5212` for the web app on the same machine, the address of the machine as
+  the emulator sees it for a phone app.
+
+Never use such a build for a server with real data: the sign-in page lets anyone who can
+reach it choose the account.
+
 ## Pull requests
 
 - One change per pull request, with a short description of what and why.

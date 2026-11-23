@@ -241,6 +241,18 @@ func TestBounds(t *testing.T) {
 		t.Fatalf("the huge folder was read to the end: %d pages", p.lists[huge])
 	}
 
+	// Four folders of 20,000 entries, listed within a second: what is kept of them
+	// never goes over the bound, fresh listings and paged ones counted together.
+	kept := func() int {
+		total := 0
+		for _, l := range tree.listings {
+			total += len(l.entries)
+		}
+		for _, s := range tree.snapshots {
+			total += len(s.rows)
+		}
+		return total
+	}
 	var tokens []string
 	for d := range ids {
 		page, err := tree.List(ctx, c, fmt.Sprintf("d%d", d), Order{}, 100, "")
@@ -248,14 +260,10 @@ func TestBounds(t *testing.T) {
 			t.Fatalf("listing %d: %v", d, err)
 		}
 		tokens = append(tokens, page.Next)
-		now = now.Add(listingFresh + time.Second)
-	}
-	total := 0
-	for _, s := range tree.snapshots {
-		total += len(s.rows)
-	}
-	if total > maxRows {
-		t.Fatalf("%d rows are kept, the bound is %d", total, maxRows)
+		if total := kept(); total > maxRows {
+			t.Fatalf("after listing %d: %d rows are kept, the bound is %d", d, total, maxRows)
+		}
+		now = now.Add(time.Millisecond)
 	}
 	if _, err := tree.List(ctx, c, "d0", Order{}, 100, tokens[0]); !errors.Is(err, ErrListingGone) {
 		t.Fatalf("the oldest listing is still there: %v", err)
@@ -504,5 +512,85 @@ func TestFreshListingIsReused(t *testing.T) {
 	}
 	if _, err := tree.List(ctx, c, "Gone", Order{}, 10, ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("listing a missing folder: %v", err)
+	}
+}
+
+// cyclingProvider answers a folder with pages that lead to each other for ever.
+type cyclingProvider struct {
+	*memProvider
+	pages int
+}
+
+func (p *cyclingProvider) Children(ctx context.Context, folderID, page string) (*provider.Page, error) {
+	p.pages++
+	if page == "a" {
+		return &provider.Page{Next: "b"}, nil
+	}
+	return &provider.Page{Next: "a"}, nil
+}
+
+func TestListingOfABrokenProviderEnds(t *testing.T) {
+	p := &cyclingProvider{memProvider: newMem(false)}
+	tree, ctx := NewTree(), context.Background()
+	_, err := tree.List(ctx, memConn(p), "", Order{}, 100, "")
+	if provider.KindOf(err) != provider.KindIncomplete {
+		t.Fatalf("pages in a circle: %v", err)
+	}
+	if p.pages > maxPages+2 {
+		t.Fatalf("%d pages were read", p.pages)
+	}
+}
+
+// An entry that was renamed while the provider sent its pages shows up twice. It is one row.
+func TestRenamedWhilePagingCountsOnce(t *testing.T) {
+	p := newMem(false)
+	p.pageSize = 2
+	p.add("root", provider.Item{ID: "x", Name: "before.txt"})
+	p.file("root", "other.txt", 1)
+	p.add("root", provider.Item{ID: "x", Name: "after.txt"})
+	tree, ctx := NewTree(), context.Background()
+	page, err := tree.List(ctx, memConn(p), "", Order{}, 100, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rowNames(page.Rows); got != "before.txt|other.txt" {
+		t.Fatalf("rows %q", got)
+	}
+}
+
+// Every page of a listing names the folder that is listed, with its id.
+func TestEveryPageNamesTheFolder(t *testing.T) {
+	p := newMem(false)
+	docs := p.dir("root", "Docs")
+	for i := 0; i < 5; i++ {
+		p.file(docs, fmt.Sprintf("f%d", i), 1)
+	}
+	tree, c, ctx := NewTree(), memConn(p), context.Background()
+	first, err := tree.List(ctx, c, "Docs", Order{}, 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := tree.List(ctx, c, "Docs", Order{}, 2, first.Next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Parent == nil || second.Parent.ID != docs || second.Parent.Name != "Docs" {
+		t.Fatalf("parent of the second page: %+v", second.Parent)
+	}
+}
+
+// When all places for reading folders stay taken, a further listing gives up as busy.
+func TestListingWaitsOnlySoLong(t *testing.T) {
+	wait := listingWait
+	listingWait = 20 * time.Millisecond
+	defer func() { listingWait = wait }()
+
+	tree := NewTree()
+	for i := 0; i < parallelListings; i++ {
+		tree.sem <- struct{}{}
+	}
+	_, err := tree.List(context.Background(), memConn(newMem(false)), "", Order{}, 100, "")
+	if provider.KindOf(err) != provider.KindBusy {
+		t.Fatalf("got %v", err)
 	}
 }
