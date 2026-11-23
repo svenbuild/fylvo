@@ -146,6 +146,12 @@ const PathSelection = () => {
   const sourcePath = useAppSelector((state) => state.fileManager[FileManagerIndex.main].path);
   // The folder open in the picker, the destination when no row is selected.
   const openFolder = useAppSelector((state) => state.fileManager[FileManagerIndex.selector].list?.parent);
+  // Its rights count only once its listing is there (not those of the folder before).
+  const destinationRow =
+    selectedFile ??
+    (openFolder && selectedPath && new CrUri(openFolder.path).toString() == new CrUri(selectedPath).toString()
+      ? openFolder
+      : undefined);
 
   const onClose = useCallback(() => {
     dispatch(closePathSelectionDialog());
@@ -183,7 +189,7 @@ const PathSelection = () => {
           if (
             !inConnectedStorage(dst) ||
             crUri.id() != new CrUri(sourcePath!).id() ||
-            !new Boolset((selectedFile ?? openFolder)?.capability).enabled(NavigatorCapability.create_file)
+            !new Boolset(destinationRow?.capability).enabled(NavigatorCapability.create_file)
           ) {
             return true;
           }
@@ -194,7 +200,7 @@ const PathSelection = () => {
     }
 
     return !selectedPath;
-  }, [selectedPath, selectedFile, openFolder, sourcePath, variant, variantProps]);
+  }, [selectedPath, destinationRow, sourcePath, variant, variantProps]);
 
   return (
     <DraggableDialog

@@ -106,6 +106,12 @@ export function getResumeCtx(task: Task | string, logger: Logger): Task | null {
     logger.warn(new UploaderError(UploaderErrorName.InvalidCtxData, `getResumeCtx failed to parse. key: ${ctxKey}`));
   }
 
+  // Fylvo: also an entry stored before connected uploads were left out of this cache.
+  if (localInfo && notResumed(localInfo)) {
+    removeResumeCtx(task, logger);
+    return null;
+  }
+
   if (localInfo && localInfo.session && localInfo.session.expires < Math.floor(Date.now() / 1000)) {
     removeResumeCtx(task, logger);
     logger.warn(

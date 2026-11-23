@@ -71,7 +71,8 @@ export default abstract class Chunk extends Base {
       for (let ask = 0; ; ask++) {
         const state = await store.dispatch(getConnectedUploadState(session));
         if (state.state == "done") {
-          return !this.canceledByUser;
+          // Also after a cancel that came too late: the file is there.
+          return true;
         }
         if (state.state == "failed") {
           failedCode = state.code;

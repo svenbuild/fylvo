@@ -18,7 +18,7 @@ import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
 import SessionManager, { UserSettings } from "../../session";
 import { isTrueVal } from "../../session/utils.ts";
 import { usableViewers } from "../../component/FileManager/Connected/usableViewers.ts";
-import { ConnectedCode, inConnectedStorage } from "../../api/connected.ts";
+import { ConnectedCode, getConnectedUploadState, inConnectedStorage } from "../../api/connected.ts";
 import { dataUrlToBytes, fileExtension, fileNameNoExt, getFileLinkedUri, sizeToString } from "../../util";
 import { base64Encode } from "../../util/base64.ts";
 import CrUri, { CrUriPrefix } from "../../util/uri.ts";
@@ -523,24 +523,50 @@ function connectedSaveNew(uri: string, data: any): AppThunk<Promise<FileResponse
         const part = blob.slice(i * partSize, (i + 1) * partSize);
         file = await retryBusy(busy, () => dispatch(sendUploadChunk(id, part, i)));
       }
+      if (!file) {
+        // The last part was answered without the file: where it stands is not known.
+        throw new AppError({ code: ConnectedCode.OutcomeUnknown, msg: "", data: undefined });
+      }
       return file as FileResponse;
     } catch (e) {
-      const code = e instanceof AppError ? e.code : undefined;
+      let code = e instanceof AppError ? e.code : undefined;
+      let message = e instanceof Error ? e.message : String(e);
+      if (e instanceof ProviderGaveUp) {
+        // Busy too often, or the storage needs a reconnect.
+        message = i18next.t(e.message == new ProviderGaveUp().message ? "common:errors.40923" : e.message);
+      } else if (session && code === undefined) {
+        // An answer lost on the way: the server says where the upload stands.
+        try {
+          const state = await dispatch(getConnectedUploadState(session.session_id));
+          if (state.state == "done" && state.file) {
+            return state.file;
+          }
+          if (state.state == "failed" && state.code) {
+            code = state.code;
+          } else if (!(state.state == "receiving" && state.received < blob.size)) {
+            code = ConnectedCode.OutcomeUnknown;
+          }
+        } catch (_) {
+          code = ConnectedCode.OutcomeUnknown;
+        }
+        if (code !== undefined) {
+          message = i18next.t(`common:errors.${code}`);
+        }
+      }
       if (code == ConnectedCode.OutcomeUnknown) {
+        // It may be there: the list shows it; the editor keeps its content, nothing is sent again.
         dispatch(refreshFileList(FileManagerIndex.main));
       } else if (session) {
-        // Nothing stays open at the server.
-        dispatch(sendDeleteUploadSession({ id: session.session_id, uri })).catch(() => undefined);
+        // Nothing stays open at the server (also when it is busy at first).
+        const id = session.session_id;
+        retryBusy(newBusyState(), () => dispatch(sendDeleteUploadSession({ id, uri }))).catch(() => undefined);
+      }
+      if (!message && code !== undefined) {
+        message = i18next.t(`common:errors.${code}`);
       }
       const taken = code == ConnectedCode.ObjectExists || code == connectedCaseTaken;
       enqueueSnackbar({
-        message: taken
-          ? i18next.t("application:connected.nameTaken")
-          : e instanceof ProviderGaveUp
-            ? i18next.t(e.message)
-            : e instanceof Error
-              ? e.message
-              : String(e),
+        message: taken ? i18next.t("application:connected.nameTaken") : message,
         variant: "warning",
         action: DefaultCloseAction,
       });
@@ -666,8 +692,9 @@ export function savePhotopea(data: ArrayBuffer, file: FileResponse, version?: st
       const {
         globalState: { photopeaViewer },
       } = getState();
-      // Fylvo: only while the editor still holds the file this save started from.
-      if (photopeaViewer && photopeaViewer.file.path == file.path) {
+      // Fylvo: only while the same opening of the editor still holds the file this save
+      // started from (a late answer does not change a file opened since).
+      if (photopeaViewer && photopeaViewer.file === file) {
         dispatch(
           setPhotopeaViewer({
             ...photopeaViewer,
@@ -698,7 +725,7 @@ export function saveCode(
         globalState: { codeViewer },
       } = getState();
       // Fylvo: only while the editor still holds the file this save started from.
-      if (codeViewer && codeViewer.file.path == file.path) {
+      if (codeViewer && codeViewer.file === file) {
         dispatch(
           setCodeViewer({
             ...codeViewer,
@@ -762,7 +789,7 @@ export function saveExcalidraw(
         globalState: { excalidrawViewer },
       } = getState();
       // Fylvo: only while the editor still holds the file this save started from.
-      if (excalidrawViewer && excalidrawViewer.file.path == file.path) {
+      if (excalidrawViewer && excalidrawViewer.file === file) {
         dispatch(
           setExcalidrawViewer({
             ...excalidrawViewer,
@@ -794,7 +821,7 @@ export function saveMarkdown(
         globalState: { markdownViewer },
       } = getState();
       // Fylvo: only while the editor still holds the file this save started from.
-      if (markdownViewer && markdownViewer.file.path == file.path) {
+      if (markdownViewer && markdownViewer.file === file) {
         dispatch(
           setMarkdownViewer({
             ...markdownViewer,
