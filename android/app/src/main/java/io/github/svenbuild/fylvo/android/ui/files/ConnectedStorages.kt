@@ -151,7 +151,7 @@ class ConnectedStorages(
             }
             OverviewResult.Missing -> {
                 Connected.nameStorages(emptyList())
-                _state.value = State(missing = true, loading = true)
+                _state.value = State(missing = true)
             }
             OverviewResult.Failed -> _state.update { it.copy(failed = true) }
         }

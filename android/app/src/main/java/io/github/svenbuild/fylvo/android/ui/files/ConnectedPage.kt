@@ -155,8 +155,9 @@ fun ConnectedPage(
             if (s.ok && canUse) SheetAction(Icons.Outlined.FolderOpen, stringResource(R.string.open), { target = null; onOpen(s) })
             // Without the right to connect only disconnect is left.
             if (canUse) SheetAction(Icons.Outlined.DriveFileRenameOutline, stringResource(R.string.rename), { target = null; renaming = s })
-            if (canUse) SheetAction(
-                if (overview?.appSignin == true) Icons.Outlined.Sync else Icons.AutoMirrored.Outlined.OpenInNew,
+            // Connect again only while its provider is set up on the server (as the web app).
+            if (canUse && overview?.providers?.any { it.type == s.provider && it.configured } == true) SheetAction(
+                if (overview.appSignin) Icons.Outlined.Sync else Icons.AutoMirrored.Outlined.OpenInNew,
                 stringResource(R.string.connect_again),
                 { target = null; connect(s.provider, s.id) },
             )
