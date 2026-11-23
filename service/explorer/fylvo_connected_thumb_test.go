@@ -45,6 +45,11 @@ func (e *connectedEnv) thumb(u *ent.User, uri string) (*FileThumbResponse, error
 	return (&FileThumbService{Uri: uri}).Get(e.as(u))
 }
 
+// thumbOf asks for the preview of a file in the version the client's row has.
+func (e *connectedEnv) thumbOf(u *ent.User, uri, entity string) (*FileThumbResponse, error) {
+	return (&FileThumbService{Uri: uri, Entity: entity}).Get(e.as(u))
+}
+
 // picture loads the address of a preview, as a browser would: without a sign-in.
 func (e *connectedEnv) picture(address string) *httptest.ResponseRecorder {
 	e.t.Helper()
@@ -328,4 +333,71 @@ func TestConnectedThumbnailAddressIsAGrant(t *testing.T) {
 	require.Empty(t, e.keptPreviews())
 	_, err = os.Stat(filepath.Join(e.thumbDir, e.id))
 	require.True(t, os.IsNotExist(err))
+}
+
+// A client can name the version of the row it shows. It gets the preview of that version
+// or is told that its row is old, never the picture of another version.
+func TestConnectedThumbnailOfTheVersionShown(t *testing.T) {
+	e := newConnectedEnv(t)
+	photo := e.sim.AddFile("", "photo.png", testPNG(1))
+	e.sim.AddFile("", "notes.txt", []byte("notes"))
+	e.sim.AddFolder("", "Photos")
+
+	entity := func(name string) string {
+		t.Helper()
+		res, err := e.list(e.alex, e.root, 100, "")
+		require.NoError(t, err)
+		for _, f := range res.Files {
+			if f.Name == name {
+				return f.PrimaryEntity
+			}
+		}
+		t.Fatalf("no row %q", name)
+		return ""
+	}
+	shown := entity("photo.png")
+	require.NotEmpty(t, shown)
+
+	// The version the server has too: the same address as without naming it.
+	plain, err := e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	named, err := e.thumbOf(e.alex, e.root+"/photo.png", shown)
+	require.NoError(t, err)
+	require.Equal(t, plain.Url, named.Url)
+
+	// The file changes at the provider, and the server reads the folder again while the
+	// client still shows its old row.
+	e.sim.SetContent(photo, testPNG(2))
+	e.m.Tree().Forget(e.id)
+	_, err = e.thumbOf(e.alex, e.root+"/photo.png", shown)
+	require.Equal(t, serializer.CodeStaleVersion, connectedCode(err))
+	require.Empty(t, e.keptPreviews(), "and nothing is fetched for it")
+	// Without a version the client gets what is there now, as before.
+	latest, err := e.thumb(e.alex, e.root+"/photo.png")
+	require.NoError(t, err)
+	require.NotEqual(t, plain.Url, latest.Url)
+	// After listing again it names the new version and gets that address.
+	renewed := entity("photo.png")
+	require.NotEqual(t, shown, renewed)
+	named, err = e.thumbOf(e.alex, e.root+"/photo.png", renewed)
+	require.NoError(t, err)
+	require.Equal(t, latest.Url, named.Url)
+	require.Equal(t, testPNG(2), e.picture(named.Url).Body.Bytes())
+
+	// A version that is not this file's is old too, whatever else is true of the row:
+	// a made-up one, that of another file, one for a row that has none.
+	_, err = e.thumbOf(e.alex, e.root+"/photo.png", "made-up")
+	require.Equal(t, serializer.CodeStaleVersion, connectedCode(err))
+	_, err = e.thumbOf(e.alex, e.root+"/photo.png", entity("notes.txt"))
+	require.Equal(t, serializer.CodeStaleVersion, connectedCode(err))
+	_, err = e.thumbOf(e.alex, e.root+"/Photos", renewed)
+	require.Equal(t, serializer.CodeStaleVersion, connectedCode(err))
+	// A file without a preview says so when the version is right.
+	_, err = e.thumbOf(e.alex, e.root+"/notes.txt", entity("notes.txt"))
+	require.Equal(t, serializer.CodeEntityNotExist, connectedCode(err))
+	// What is not there, or is somebody else's, answers as without a version.
+	_, err = e.thumbOf(e.alex, e.root+"/missing.png", renewed)
+	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
+	_, err = e.thumbOf(e.sam, e.root+"/photo.png", renewed)
+	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
 }

@@ -116,6 +116,10 @@ func TestConnectedExamples(t *testing.T) {
 	_, err = e.thumb(e.alex, e.root+"/notes.txt")
 	require.Equal(t, serializer.CodeEntityNotExist, connectedCode(err))
 	x.Add("error-thumb-none", nil, err)
+	// The client names the version of the row it shows, and the file is in another.
+	_, err = e.thumbOf(e.alex, e.root+"/photo.png", "v0000000000000000")
+	require.Equal(t, serializer.CodeStaleVersion, connectedCode(err))
+	x.Add("error-thumb-stale", nil, err)
 
 	usage, err := ConnectedCapacity(e.as(e.alex), e.id)
 	require.NoError(t, err)

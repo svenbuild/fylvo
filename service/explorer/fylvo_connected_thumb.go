@@ -45,7 +45,12 @@ func connectedThumbSize(c *gin.Context, settings setting.Provider) int {
 // provider is not asked here: the row is as the last listing told it, and the address
 // names exactly that state of the file. It is the same address for the whole day (see
 // StableThumbExpire), so a client loads the picture once.
-func connectedThumb(c *gin.Context, uri *fs.URI) (*FileThumbResponse, error) {
+//
+// entity is the version of the row the client shows, when it names one. If the file is
+// in another state by now (the listing here is newer than the client's), the preview
+// would be of content the client does not show, and it would keep the picture under the
+// wrong version. It is told that its row is old (ErrStale) and lists the folder again.
+func connectedThumb(c *gin.Context, uri *fs.URI, entity string) (*FileThumbResponse, error) {
 	req, err := openConnected(c, uri)
 	if err != nil {
 		return nil, err
@@ -55,6 +60,9 @@ func connectedThumb(c *gin.Context, uri *fs.URI) (*FileThumbResponse, error) {
 	row, err := req.m.Tree().Resolve(req.ctx, req.conn, req.path)
 	if err != nil {
 		return nil, connected.Error(c, err)
+	}
+	if entity != "" && entity != connected.VersionID(req.conn.ID, row) {
+		return nil, connected.ErrStale
 	}
 	settings := dependency.FromContext(c).SettingProvider()
 	// The grant of a preview names the item and its state and nothing more: a new name
