@@ -5,8 +5,11 @@
 // listings by a query of the form "'<id>' in parents and trashed = false" (with "and
 // name = '...'", "and mimeType = '...'" added), paging, metadata, downloads with ranges,
 // downloads of revisions, exports, the storage quota and errors in Drive's JSON shape.
-// The fields parameter is ignored: every answer carries all fields the drive package
-// asks for.
+// It also takes changes: new folders and empty files, renames, moves and trashing, and
+// resumable uploads of new files and of new content for a file (start, ranges answered
+// with 308 and Range, completion with the stored file, status queries, cancel). Every
+// new content is a new revision with a new checksum. The fields parameter is ignored:
+// every answer carries all fields the drive package asks for.
 //
 // Like Drive it allows several entries with one name in a folder. Unlike Drive, which
 // may or may not, its name filter ignores case, so that callers have to check names
@@ -22,6 +25,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,7 +66,23 @@ const (
 	// CallMedia is a download of content, of the current one or of a revision.
 	CallMedia  Call = "media"
 	CallExport Call = "export"
+	// CallCreate makes a folder or a file without content.
+	CallCreate Call = "create"
+	// CallUpdate renames, moves or trashes an entry.
+	CallUpdate Call = "update"
+	// CallStart opens an upload session, for a new file or for new content.
+	CallStart Call = "start"
+	// CallRange passes on a range of an upload.
+	CallRange Call = "range"
+	// CallStatus asks where an upload stands.
+	CallStatus Call = "status"
+	// CallCancel ends an upload session.
+	CallCancel Call = "cancel"
 )
+
+// Granularity is what Drive wants every range of an upload but the last to be a
+// multiple of.
+const Granularity = 256 * 1024
 
 // entry is one item in the store.
 type entry struct {
@@ -83,6 +103,17 @@ type entry struct {
 func (e *entry) content() []byte { return e.revisions[e.revision] }
 
 func (e *entry) binary() bool { return !strings.HasPrefix(e.mimeType, "application/vnd.google-apps.") }
+
+// session is a resumable upload.
+type session struct {
+	id string
+	// parent and name of a new file, or target, the file whose content is replaced.
+	parent, name, target string
+	size                 int64
+	data                 []byte
+	// done is the id of the stored file once all bytes arrived.
+	done string
+}
 
 // failure is an answer queued for a coming call.
 type failure struct {
@@ -115,6 +146,14 @@ type Server struct {
 	redirect       bool
 	calls          map[Call]int
 	usage, limit   int64
+
+	sessions    map[string]*session
+	full        bool
+	checkRanges bool
+	breakNext   bool
+	breakKeep   int64
+	loseNext    bool
+	elsewhere   bool
 }
 
 // New starts a simulated Drive with an empty root folder and closes it at the end of t.
@@ -138,6 +177,7 @@ func Start() *Server {
 		clock:    time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC),
 		pageSize: 1000,
 		calls:    map[Call]int{},
+		sessions: map[string]*session{},
 	}
 	s.items[s.root] = &entry{id: s.root, name: "My Drive", mimeType: FolderType, modTime: s.clock}
 	s.api = httptest.NewServer(http.HandlerFunc(s.serveAPI))
@@ -271,6 +311,15 @@ func (s *Server) Trash(id string) {
 	e.version++
 }
 
+// Delete removes an entry for good, as when it was deleted from the trash.
+func (s *Server) Delete(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.must(id)
+	delete(s.items, id)
+	s.order = slices.DeleteFunc(s.order, func(o string) bool { return o == id })
+}
+
 func (s *Server) must(id string) *entry {
 	e, ok := s.items[id]
 	if !ok {
@@ -390,16 +439,95 @@ func (s *Server) SetQuota(usage, limit int64) {
 	s.usage, s.limit = usage, limit
 }
 
+// SetFull makes the storage full: new entries, new upload sessions and ranges are
+// refused with storageQuotaExceeded, as Drive does.
+func (s *Server) SetFull(full bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.full = full
+}
+
+// CheckRanges refuses every range of an upload but the last whose size is not a
+// multiple of Granularity, as Drive does. While it is off, tests may send small ranges.
+func (s *Server) CheckRanges(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.checkRanges = on
+}
+
+// BreakNextRange makes the next range break off midway: its first keep bytes arrive
+// and are kept, then the connection is cut.
+func (s *Server) BreakNextRange(keep int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.breakNext, s.breakKeep = true, keep
+}
+
+// LoseNextAnswer makes the answer to the next range get lost: the range is taken as
+// usual (a last one stores the file), then the connection is cut instead of answering.
+func (s *Server) LoseNextAnswer() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loseNext = true
+}
+
+// ForgetSessions drops every upload session, as Drive does with expired ones.
+func (s *Server) ForgetSessions() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	clear(s.sessions)
+}
+
+// SessionsElsewhere makes new upload sessions point to a host other than the API's:
+// the second server, whose requests ContentTokens shows.
+func (s *Server) SessionsElsewhere(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.elsewhere = on
+}
+
 // Serving.
 
-// route tells which call a request is, and the ids in its path.
+// route tells which call a request is, and the ids in its path. For the calls on an
+// upload session id is the id of the session.
 func route(r *http.Request) (kind Call, id, rev string, ok bool) {
-	path, found := strings.CutPrefix(r.URL.Path, "/drive/v3/")
-	if !found || r.Method != http.MethodGet {
+	query := r.URL.Query()
+	if path, found := strings.CutPrefix(r.URL.Path, "/upload/drive/v3/files"); found {
+		fileID, isFile := strings.CutPrefix(path, "/")
+		if path != "" && (!isFile || fileID == "" || strings.Contains(fileID, "/")) {
+			return "", "", "", false
+		}
+		sessionID := query.Get("upload_id")
+		switch {
+		case query.Get("uploadType") != "resumable":
+		case sessionID != "" && r.Method == http.MethodPut && strings.HasPrefix(r.Header.Get("Content-Range"), "bytes */"):
+			return CallStatus, sessionID, "", true
+		case sessionID != "" && r.Method == http.MethodPut:
+			return CallRange, sessionID, "", true
+		case sessionID != "" && r.Method == http.MethodDelete:
+			return CallCancel, sessionID, "", true
+		case sessionID == "" && r.Method == http.MethodPost && fileID == "":
+			return CallStart, "", "", true
+		case sessionID == "" && r.Method == http.MethodPatch && fileID != "":
+			return CallStart, fileID, "", true
+		}
 		return "", "", "", false
 	}
-	media := r.URL.Query().Get("alt") == "media"
+
+	path, found := strings.CutPrefix(r.URL.Path, "/drive/v3/")
+	if !found {
+		return "", "", "", false
+	}
 	parts := strings.Split(path, "/")
+	switch {
+	case r.Method == http.MethodPost && path == "files":
+		return CallCreate, "", "", true
+	case r.Method == http.MethodPatch && len(parts) == 2 && parts[0] == "files":
+		return CallUpdate, parts[1], "", true
+	case r.Method != http.MethodGet:
+		return "", "", "", false
+	}
+	media := query.Get("alt") == "media"
 	switch {
 	case path == "about":
 		return CallAbout, "", "", true
@@ -453,6 +581,20 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"storageQuota": quota})
 	case CallList:
 		s.list(w, r)
+	case CallCreate:
+		s.create(w, r)
+	case CallStart:
+		s.start(w, r, id)
+	case CallRange, CallStatus:
+		s.put(w, r, id, kind == CallStatus)
+	case CallCancel:
+		if _, found := s.sessions[id]; !found {
+			writeError(w, http.StatusNotFound, "notFound", "Upload session not found.")
+			return
+		}
+		delete(s.sessions, id)
+		// Drive's answer to a cancelled upload.
+		w.WriteHeader(499)
 	default:
 		if id == "root" {
 			id = s.root
@@ -469,6 +611,8 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			s.media(w, r, e, rev)
 		case CallExport:
 			s.export(w, r, e)
+		case CallUpdate:
+			s.update(w, r, e)
 		}
 	}
 }
