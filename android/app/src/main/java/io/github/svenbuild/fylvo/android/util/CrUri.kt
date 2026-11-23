@@ -63,6 +63,8 @@ object CrUri {
         val sharedWithMe: String = "Shared with me",
         val trash: String = "Trash",
         val sharedFolder: String = "Shared folder",
+        /** Fylvo: a connected storage whose name is not known yet. */
+        val connectedStorage: String = "Connected storage",
     )
 
     @Volatile
@@ -75,6 +77,7 @@ object CrUri {
             sharedWithMe = context.getString(R.string.shared_with_me),
             trash = context.getString(R.string.trash),
             sharedFolder = context.getString(R.string.shared_folder),
+            connectedStorage = context.getString(R.string.connected_storage),
         )
     }
 
@@ -92,11 +95,12 @@ object CrUri {
         MY_PREFIX -> labels.myFiles
         SHARED_WITH_ME -> labels.sharedWithMe
         "cloudreve://trash" -> labels.trash
-        else -> shareNames[root] ?: labels.sharedFolder
+        else -> if (Connected.isConnected(root)) Connected.rootName(root) ?: labels.connectedStorage
+        else shareNames[root] ?: labels.sharedFolder
     }
 
     /** A folder search can be limited to: any folder below a root, or a whole shared folder. */
-    fun isSearchScope(uri: String): Boolean = !isRoot(uri) || isShare(uri)
+    fun isSearchScope(uri: String): Boolean = !Connected.isConnected(uri) && (!isRoot(uri) || isShare(uri))
 
     /** Display name of the folder at [uri]: its last segment, or the root's label. */
     fun displayName(uri: String): String = if (isRoot(uri)) rootLabel(uri) else fileName(uri)
