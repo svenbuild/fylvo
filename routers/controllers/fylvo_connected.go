@@ -1,16 +1,23 @@
 package controllers
 
 import (
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
+	"github.com/cloudreve/Cloudreve/v4/service/explorer"
 	"github.com/cloudreve/Cloudreve/v4/service/fylvo"
 	"github.com/gin-gonic/gin"
 )
 
 // Fylvo connected storages.
 
+// fylvoErr is the answer for an error, with data.reason where connected storages know it.
+func fylvoErr(c *gin.Context, err error) serializer.Response {
+	return connected.ErrResponse(c, err)
+}
+
 func fylvoAnswer(c *gin.Context, data any, err error) {
 	if err != nil {
-		c.JSON(200, serializer.Err(c, err))
+		c.JSON(200, fylvoErr(c, err))
 		return
 	}
 	c.JSON(200, serializer.Response{Data: data})
@@ -51,6 +58,17 @@ func FylvoConnectedRename(c *gin.Context) {
 // FylvoConnectedDisconnect disconnects a storage.
 func FylvoConnectedDisconnect(c *gin.Context) {
 	fylvoAnswer(c, nil, fylvo.ConnectedDisconnect(c, c.Param("id")))
+}
+
+// FylvoConnectedCapacity returns the fill level of a connected storage.
+func FylvoConnectedCapacity(c *gin.Context) {
+	res, err := explorer.ConnectedCapacity(c, c.Param("id"))
+	fylvoAnswer(c, res, err)
+}
+
+// FylvoConnectedContent serves the content of a file in a connected storage.
+func FylvoConnectedContent(c *gin.Context) {
+	explorer.ServeConnectedContent(c)
 }
 
 // FylvoConnectedAdmin returns the setup of the providers.

@@ -4,10 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // ErrBadPath is returned for a path that is not a plain list of names.
@@ -58,39 +56,24 @@ func shortHash(prefix string, fields ...string) string {
 	return prefix + hex.EncodeToString(h.Sum(nil))[:24]
 }
 
-// FileID is the id clients see for an entry. It follows the provider's item id,
-// so it survives a rename or a move; backends without ids fall back to the path.
-// It is not a hashid and no route accepts it.
-func FileID(connection, providerID, path string) string {
-	if providerID == "" {
-		return shortHash("cs", connection, "path", path)
+// FileID is the id clients see for a row, and send back to say which row they mean. It
+// follows the provider's id of the entry, so it survives a rename or a move. A row that
+// was reached through a link gets an id from its path instead: the same item reached two
+// ways must show as two rows. It is not a hashid and no route accepts it as an address.
+func FileID(connection string, row *Row) string {
+	if row.ViaLink || row.ID == "" {
+		return shortHash("cs", connection, "path", row.Path)
 	}
-	return shortHash("cs", connection, "id", providerID)
+	return shortHash("cs", connection, "id", row.ID)
 }
 
-// VersionID is what clients see as the version of a file. It changes with the
-// content: built from the provider's hashes and the size, and from size and
-// modification time when the provider has no hash for the file.
-func VersionID(connection, providerID, path string, size int64, modTime time.Time, hashes map[string]string) string {
-	item := providerID
-	if item == "" {
-		item = "path:" + path
+// VersionID is what clients see as the version of a file. It is built from the item that
+// holds the content and the provider's own marker for the state of that content, so it
+// changes exactly when the provider says the content did. Empty when the provider gave
+// no marker (a folder, a link whose target was not read).
+func VersionID(connection string, row *Row) string {
+	if row.IsDir || row.Version == "" {
+		return ""
 	}
-	fields := []string{connection, item, strconv.FormatInt(size, 10)}
-
-	kinds := make([]string, 0, len(hashes))
-	for kind, value := range hashes {
-		if value != "" {
-			kinds = append(kinds, kind)
-		}
-	}
-	if len(kinds) == 0 {
-		fields = append(fields, "time", strconv.FormatInt(modTime.UnixMilli(), 10))
-	} else {
-		sort.Strings(kinds)
-		for _, kind := range kinds {
-			fields = append(fields, kind, hashes[kind])
-		}
-	}
-	return shortHash("v", fields...)
+	return shortHash("v", connection, row.ContentID(), row.Version)
 }

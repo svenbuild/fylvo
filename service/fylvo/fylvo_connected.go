@@ -1,6 +1,7 @@
 package fylvo
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
 	"github.com/gin-gonic/gin"
 )
@@ -32,7 +34,9 @@ type (
 		// Available is false when connected storages cannot work on this server.
 		Available bool `json:"available"`
 		// Allowed tells whether the group of the account may connect storages.
-		Allowed   bool                     `json:"allowed"`
+		Allowed bool `json:"allowed"`
+		// Max is the most storages one account can connect.
+		Max       int                      `json:"max"`
 		Providers []connected.ProviderInfo `json:"providers"`
 		Storages  []*connected.Storage     `json:"storages"`
 	}
@@ -73,6 +77,38 @@ type (
 	}
 )
 
+// The sidebar of an account knows connected storages through these two hooks of the
+// preferences: which ones there are, and whether a link leads into one of them.
+func init() {
+	ConnectedStorages = func(ctx context.Context, dep dependency.Dep, u *ent.User) []string {
+		storages, err := connected.For(dep).List(ctx, u.ID)
+		if err != nil {
+			return nil
+		}
+		ids := make([]string, 0, len(storages))
+		for _, s := range storages {
+			ids = append(ids, s.ID)
+		}
+		return ids
+	}
+
+	CheckConnectedLink = func(ctx context.Context, dep dependency.Dep, u *ent.User, uri *fs.URI) error {
+		if _, err := connected.CheckPath(uri.U.Path); err != nil || len(uri.U.Query()) > 0 {
+			return paramError("invalid link into a connected storage")
+		}
+		id := ""
+		if uri.U.User != nil {
+			id = uri.U.User.Username()
+		}
+		// Only that the storage is one of the account. Whether the folder still exists
+		// shows when the link is opened, as for any other link.
+		if !connected.For(dep).Has(ctx, u.ID, id) {
+			return paramError("the link leads into a storage that is not connected")
+		}
+		return nil
+	}
+}
+
 func mayConnectStorages(u *ent.User) bool {
 	return u != nil && u.Edges.Group != nil && u.Edges.Group.Permissions != nil &&
 		u.Edges.Group.Permissions.Enabled(int(types.GroupPermissionConnectedStorage))
@@ -106,6 +142,7 @@ func ConnectedList(c *gin.Context) (*ConnectedListResponse, error) {
 	return &ConnectedListResponse{
 		Available: true,
 		Allowed:   mayConnectStorages(user),
+		Max:       connected.MaxPerUser,
 		Providers: providers,
 		Storages:  storages,
 	}, nil
@@ -116,7 +153,7 @@ func (s *ConnectedAuthorizeService) Authorize(c *gin.Context) (*ConnectedAuthori
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	if !mayConnectStorages(user) {
-		return nil, connected.ErrUnavailable
+		return nil, connected.ErrNotAllowed
 	}
 
 	address, cookie, err := connected.For(dep).Authorize(c, user.ID, s.Provider, s.Reconnect, connectedCallbackURL(c, dep))
@@ -170,7 +207,7 @@ func (s *ConnectedFinishService) Finish(c *gin.Context) (*connected.Storage, err
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
 	if !mayConnectStorages(user) {
-		return nil, connected.ErrUnavailable
+		return nil, connected.ErrNotAllowed
 	}
 	return connected.For(dep).Finish(c, user.ID, s.Code)
 }

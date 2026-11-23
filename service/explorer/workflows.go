@@ -94,6 +94,12 @@ func (service *DownloadWorkflowService) CreateDownloadTask(c *gin.Context) ([]*T
 		return nil, serializer.NewError(serializer.CodeParamErr, "No source files", nil)
 	}
 
+	// Fylvo: the sources are kept as text until the task runs. Nothing of a connected
+	// storage may get that far.
+	if err := refuseConnectedSources(append([]string{service.SrcFile}, service.Src...)...); err != nil {
+		return nil, err
+	}
+
 	// Only one of src and src_file can be set
 	if service.SrcFile != "" && len(service.Src) > 0 {
 		return nil, serializer.NewError(serializer.CodeParamErr, "Invalid source files", nil)
@@ -190,6 +196,12 @@ func (service *ArchiveWorkflowService) CreateExtractTask(c *gin.Context) (*TaskR
 		return nil, serializer.NewError(serializer.CodeGroupNotAllowed, "Group not allowed to compress files", nil)
 	}
 
+	// Fylvo: the sources are kept as text until the task runs. Nothing of a connected
+	// storage may get that far, and nothing is created or queued before this is known.
+	if err := refuseConnectedSources(service.Src...); err != nil {
+		return nil, err
+	}
+
 	dst, err := fs.NewUriFromString(service.Dst)
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeParamErr, "Invalid destination", err)
@@ -227,6 +239,12 @@ func (service *ArchiveWorkflowService) CreateCompressTask(c *gin.Context) (*Task
 
 	if !user.Edges.Group.Permissions.Enabled(int(types.GroupPermissionArchiveTask)) {
 		return nil, serializer.NewError(serializer.CodeGroupNotAllowed, "Group not allowed to compress files", nil)
+	}
+
+	// Fylvo: the sources are kept as text until the task runs. Nothing of a connected
+	// storage may get that far, and nothing is created or queued before this is known.
+	if err := refuseConnectedSources(service.Src...); err != nil {
+		return nil, err
 	}
 
 	dst, err := fs.NewUriFromString(service.Dst)

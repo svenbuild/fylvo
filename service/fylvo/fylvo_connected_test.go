@@ -112,6 +112,7 @@ func TestConnectedSetupAndAuthorize(t *testing.T) {
 	list, err := ConnectedList(c)
 	require.NoError(t, err)
 	require.True(t, list.Allowed)
+	require.Equal(t, connected.MaxPerUser, list.Max)
 	require.Empty(t, list.Storages)
 	require.Len(t, list.Providers, 2)
 	for _, p := range list.Providers {
@@ -180,6 +181,7 @@ func TestConnectedSetupAndAuthorize(t *testing.T) {
 	c, _ = e.as(alex, "POST", "/api/v4/fylvo/connected/finish")
 	_, err = (&ConnectedFinishService{Code: "made-up"}).Finish(c)
 	require.Error(t, err)
+	require.Equal(t, connected.ReasonExpired, connected.ReasonOf(err))
 	c, _ = e.as(alex, "GET", "/api/v4/fylvo/connected")
 	list, err = ConnectedList(c)
 	require.NoError(t, err)
@@ -233,4 +235,5 @@ func TestConnectedNeedsGroupPermission(t *testing.T) {
 	c, _ = e.as(alex, "POST", "/api/v4/fylvo/connected/finish")
 	_, err = (&ConnectedFinishService{Code: "anything"}).Finish(c)
 	require.Equal(t, serializer.CodeConnectedUnavailable, appCode(err))
+	require.Equal(t, connected.ReasonNotAllowed, connected.ReasonOf(err))
 }

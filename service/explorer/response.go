@@ -260,6 +260,8 @@ type ListResponse struct {
 	SingleFileView        bool                `json:"single_file_view,omitempty"`
 	StoragePolicy         *StoragePolicy      `json:"storage_policy,omitempty"`
 	View                  *types.ExplorerView `json:"view,omitempty"`
+	// Fylvo: set when the folder lies in a connected storage.
+	Connected *ConnectedListInfo `json:"connected,omitempty"`
 }
 
 type FileResponse struct {

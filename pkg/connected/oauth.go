@@ -15,6 +15,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/graph"
 )
 
 // Spec describes how a provider signs accounts in. The addresses are constants of
@@ -32,6 +36,9 @@ type Spec struct {
 	// Revoke takes the access back at the provider, for providers that can. It ends the
 	// access of every token the account granted to this installation.
 	Revoke func(ctx context.Context, client *http.Client, refreshToken string) error
+	// NewProvider returns the client that reads and writes files for one connection.
+	// props are the stored properties of the connection (drive_id, drive_type).
+	NewProvider func(client *http.Client, auth provider.Auth, props map[string]string) provider.Provider
 }
 
 // Token is the OAuth token of a connection, in the JSON form it is sealed in.
@@ -86,6 +93,9 @@ func Specs() map[string]*Spec {
 			Revoke: func(ctx context.Context, client *http.Client, refreshToken string) error {
 				return revokeGoogle(ctx, client, "https://oauth2.googleapis.com/revoke", refreshToken)
 			},
+			NewProvider: func(client *http.Client, auth provider.Auth, _ map[string]string) provider.Provider {
+				return drive.New(drive.Options{HTTP: client, Auth: auth})
+			},
 		},
 		ProviderOneDrive: {
 			Type:     ProviderOneDrive,
@@ -95,6 +105,9 @@ func Specs() map[string]*Spec {
 			Scopes:   []string{"Files.ReadWrite", "offline_access", "User.Read"},
 			Identify: func(ctx context.Context, call APICall) (*Identity, error) {
 				return identifyOneDrive(ctx, call, "https://graph.microsoft.com")
+			},
+			NewProvider: func(client *http.Client, auth provider.Auth, props map[string]string) provider.Provider {
+				return graph.New(graph.Options{HTTP: client, Auth: auth, DriveID: props["drive_id"]})
 			},
 		},
 	}

@@ -16,7 +16,7 @@ func ListDirectory(c *gin.Context) {
 			return
 		}
 
-		c.JSON(200, serializer.Err(c, err))
+		c.JSON(200, fylvoErr(c, err))
 		c.Abort()
 		return
 	}

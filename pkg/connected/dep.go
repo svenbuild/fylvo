@@ -30,6 +30,23 @@ func For(dep dependency.Dep) *Manager {
 	return actual.(*Manager)
 }
 
+// Install makes m the Manager of a server. For tests that bring their own providers.
+func Install(dep dependency.Dep, m *Manager) {
+	managers.Store(dep, m)
+}
+
+// DepSettings returns the settings of a server as a Manager reads and writes them.
+func DepSettings(dep dependency.Dep) SettingStore {
+	return &depSettings{client: dep.SettingClient(), kv: dep.KV()}
+}
+
+// DepSealer returns the Sealer that works with the master key of a server.
+func DepSealer(dep dependency.Dep) *Sealer {
+	return NewSealer(func(ctx context.Context) ([]byte, error) {
+		return dep.MasterEncryptKeyVault(ctx).GetMasterKey(ctx)
+	})
+}
+
 // depSettings reads the settings from the database and clears the cached copies of what
 // it writes, like the settings page of the admin area does.
 type depSettings struct {

@@ -18,12 +18,13 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
+	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 )
 
 const (
-	// maxPerUser is the most storages one account can connect.
-	maxPerUser = 10
+	// MaxPerUser is the most storages one account can connect.
+	MaxPerUser = 10
 	maxNameLen = 64
 )
 
@@ -85,7 +86,7 @@ type ManagerOptions struct {
 	Sealer   *Sealer
 	// Specs are the providers; nil takes Specs().
 	Specs map[string]*Spec
-	// HTTP talks to the providers; nil takes a client with a timeout.
+	// HTTP talks to the providers; nil takes provider.NewHTTPClient().
 	HTTP  *http.Client
 	Hooks Hooks
 }
@@ -102,8 +103,16 @@ type Manager struct {
 	hooks    Hooks
 
 	// mu orders the steps that decide over tokens of a provider account: storing the
-	// result of a sign-in, disconnecting and revoking.
-	mu sync.Mutex
+	// result of a sign-in, disconnecting and revoking hold it exclusively. Requests that
+	// use a connection hold it shared while they are admitted (see Use).
+	mu sync.RWMutex
+	// live holds, per connection, what is open in memory while it is in use.
+	liveMu sync.Mutex
+	live   map[string]*liveConn
+	// tree reads the folders of all connections.
+	tree *Tree
+	// usage remembers the fill level of connections for a short while (under liveMu).
+	usage map[string]usage
 	// leaving counts, per account, the deletions of that account that are under way.
 	leaving map[int]int
 }
@@ -113,7 +122,7 @@ func NewManager(o ManagerOptions) *Manager {
 		o.Specs = Specs()
 	}
 	if o.HTTP == nil {
-		o.HTTP = &http.Client{Timeout: 30 * time.Second}
+		o.HTTP = provider.NewHTTPClient()
 	}
 	return &Manager{
 		storages: o.Storages,
@@ -124,8 +133,14 @@ func NewManager(o ManagerOptions) *Manager {
 		flow:     NewFlow(o.Specs, o.HTTP),
 		hooks:    o.Hooks,
 		leaving:  map[int]int{},
+		live:     map[string]*liveConn{},
+		tree:     NewTree(),
+		usage:    map[string]usage{},
 	}
 }
+
+// Tree returns what reads the folders of the connections.
+func (m *Manager) Tree() *Tree { return m.tree }
 
 // Leaving marks an account as being deleted until the returned function is called. In
 // between nothing new is stored for it: a sign-in that completes meanwhile is refused, so
@@ -285,6 +300,12 @@ func (m *Manager) List(ctx context.Context, userID int) ([]*Storage, error) {
 	return res, nil
 }
 
+// Has tells whether the account has a connection with this id.
+func (m *Manager) Has(ctx context.Context, userID int, publicID string) bool {
+	_, err := m.row(ctx, userID, publicID)
+	return err == nil
+}
+
 // row returns the connection of an account, ErrNoStorage when it has none with this id.
 func (m *Manager) row(ctx context.Context, userID int, publicID string) (*ent.ConnectedStorage, error) {
 	if !validPublicID(publicID) {
@@ -339,7 +360,7 @@ func (m *Manager) Authorize(ctx context.Context, userID int, provider, reconnect
 		return "", "", err
 	}
 	if !ok {
-		return "", "", ErrUnavailable
+		return "", "", reasoned(serializer.CodeConnectedUnavailable, "The provider is not set up", ReasonNotConfigured)
 	}
 	client.Redirect = redirect
 
@@ -358,8 +379,8 @@ func (m *Manager) Authorize(ctx context.Context, userID int, provider, reconnect
 		if err != nil {
 			return "", "", serializer.NewError(serializer.CodeDBError, "Failed to list connected storages", err)
 		}
-		if len(rows) >= maxPerUser {
-			return "", "", serializer.NewError(serializer.CodeParamErr, "Too many connected storages", nil)
+		if len(rows) >= MaxPerUser {
+			return "", "", reasoned(serializer.CodeParamErr, "Too many connected storages", ReasonTooMany)
 		}
 	}
 
@@ -399,7 +420,7 @@ func flowError(err error) error {
 		code = serializer.CodeConnectedUnavailable
 	}
 	// The texts of these errors are fixed, nothing of a provider's answer is in them.
-	return serializer.NewError(code, err.Error(), nil)
+	return reasoned(code, err.Error(), FlowErrorCode(err))
 }
 
 func tokenContext(publicID string, userID int, provider string) []byte {
@@ -433,8 +454,8 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 			return nil, err
 		}
 		if row.AccountKey != granted.Identity.Key {
-			return nil, serializer.NewError(serializer.CodeParamErr,
-				"This is another account at the provider than the one the storage belongs to", nil)
+			return nil, reasoned(serializer.CodeParamErr,
+				"This is another account at the provider than the one the storage belongs to", ReasonOtherAccount)
 		}
 		secret, err := m.sealer.Seal(ctx, PurposeToken, tokenContext(row.PublicID, userID, row.Provider), []byte(granted.Token))
 		if err != nil {
@@ -455,37 +476,62 @@ func (m *Manager) Finish(ctx context.Context, userID int, code string) (*Storage
 			// Connected again meanwhile, by another sign-in.
 			return nil, flowError(ErrFlowExpired)
 		}
+		// What ran with the old token ends here.
+		m.closeLive(row.PublicID)
 		if m.hooks.Closed != nil {
 			m.hooks.Closed(row.PublicID, granted.Reconnect.Generation)
 		}
 		return storageOf(renewed), nil
 	}
 
+	return m.createLocked(ctx, userID, granted.Provider, granted.Identity, granted.Token, props)
+}
+
+// Create stores a new connection of an account from a token its provider granted. The
+// sign-in flow ends here; other callers are tests and tools that hold such a token.
+func (m *Manager) Create(ctx context.Context, userID int, kind string, identity *Identity, token string) (*Storage, error) {
+	if m.specs[kind] == nil {
+		return nil, serializer.NewError(serializer.CodeParamErr, "Unknown provider", nil)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.createLocked(ctx, userID, kind, identity, token, &types.ConnectedStorageProps{
+		DriveID:   identity.Props["drive_id"],
+		DriveType: identity.Props["drive_type"],
+	})
+}
+
+// createLocked stores a new connection. The caller holds m.mu.
+func (m *Manager) createLocked(ctx context.Context, userID int, kind string, identity *Identity, token string,
+	props *types.ConnectedStorageProps) (*Storage, error) {
+	if m.leaving[userID] > 0 {
+		return nil, flowError(ErrFlowExpired)
+	}
 	rows, err := m.storages.ListByUser(ctx, userID)
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeDBError, "Failed to list connected storages", err)
 	}
-	if len(rows) >= maxPerUser {
-		return nil, serializer.NewError(serializer.CodeParamErr, "Too many connected storages", nil)
+	if len(rows) >= MaxPerUser {
+		return nil, reasoned(serializer.CodeParamErr, "Too many connected storages", ReasonTooMany)
 	}
 	for _, row := range rows {
-		if row.Provider == granted.Provider && row.AccountKey == granted.Identity.Key {
-			return nil, serializer.NewError(serializer.CodeObjectExist, "This account is already connected", nil)
+		if row.Provider == kind && row.AccountKey == identity.Key {
+			return nil, reasoned(serializer.CodeObjectExist, "This account is already connected", ReasonExists)
 		}
 	}
 
 	publicID := newPublicID()
-	secret, err := m.sealer.Seal(ctx, PurposeToken, tokenContext(publicID, userID, granted.Provider), []byte(granted.Token))
+	secret, err := m.sealer.Seal(ctx, PurposeToken, tokenContext(publicID, userID, kind), []byte(token))
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeInternalSetting, "Failed to seal the token", err)
 	}
 	row, err := m.storages.Create(ctx, &inventory.CreateConnectedStorageArgs{
 		UserID:     userID,
 		PublicID:   publicID,
-		Provider:   granted.Provider,
-		Name:       m.specs[granted.Provider].Name,
-		Account:    granted.Identity.Label,
-		AccountKey: granted.Identity.Key,
+		Provider:   kind,
+		Name:       m.specs[kind].Name,
+		Account:    identity.Label,
+		AccountKey: identity.Key,
 		Secret:     secret,
 		Props:      props,
 	})
@@ -547,6 +593,7 @@ func (m *Manager) DisconnectUser(ctx context.Context, userID int) error {
 
 // afterDelete cleans up after a row was deleted. The caller holds m.mu.
 func (m *Manager) afterDelete(ctx context.Context, row *ent.ConnectedStorage) {
+	m.closeLive(row.PublicID)
 	if m.hooks.Closed != nil {
 		m.hooks.Closed(row.PublicID, row.Generation)
 	}
