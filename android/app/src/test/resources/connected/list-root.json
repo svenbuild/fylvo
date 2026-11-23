@@ -4,29 +4,29 @@
     "files": [
       {
         "type": 1,
-        "id": "csc5a4cf1bfa5776912fa3e1d0",
+        "id": "csf8e8aebffe567bee91a0830d",
         "name": "Docs",
         "created_at": "2026-01-01T09:00:01Z",
         "updated_at": "2026-01-01T09:00:01Z",
         "size": 0,
         "metadata": {},
-        "path": "cloudreve://ubfigsjawa79inth@connected/Docs",
+        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Docs",
         "capability": "AAKI"
       },
       {
         "type": 1,
-        "id": "cs41b39971c97dc5b344a3eb98",
+        "id": "cs99b758c9fe028ff8797f9a16",
         "name": "Empty",
         "created_at": "2026-01-01T09:00:02Z",
         "updated_at": "2026-01-01T09:00:02Z",
         "size": 0,
         "metadata": {},
-        "path": "cloudreve://ubfigsjawa79inth@connected/Empty",
+        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Empty",
         "capability": "AAKI"
       },
       {
         "type": 1,
-        "id": "cs798e12ad0c77a60dcbd38b63",
+        "id": "cs41b5e360f8a89fde43cd1c67",
         "name": "Link to Docs",
         "created_at": "2026-01-01T09:00:08Z",
         "updated_at": "2026-01-01T09:00:08Z",
@@ -34,12 +34,12 @@
         "metadata": {
           "fylvo:link": "1"
         },
-        "path": "cloudreve://ubfigsjawa79inth@connected/Link%20to%20Docs",
+        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Link%20to%20Docs",
         "capability": "AAKI"
       },
       {
         "type": 0,
-        "id": "csbc0e71d096dd2868883d5114",
+        "id": "cs0486e0f38acbd2cd1b299947",
         "name": "Budget.gsheet",
         "created_at": "2026-01-01T09:00:04Z",
         "updated_at": "2026-01-01T09:00:04Z",
@@ -50,13 +50,13 @@
           "fylvo:size_unknown": "1",
           "thumb:disabled": ""
         },
-        "path": "cloudreve://ubfigsjawa79inth@connected/Budget.gsheet",
+        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Budget.gsheet",
         "capability": "gAAI",
-        "primary_entity": "v3c10be87cf6223267aab7b1f"
+        "primary_entity": "v9e30db61b785d002ed979aa5"
       },
       {
         "type": 0,
-        "id": "cs43b71591e65b9994e0a3a06e",
+        "id": "cs2bcbf36b87f2e203115d225f",
         "name": "Link to notes.txt",
         "created_at": "2026-01-01T09:00:09Z",
         "updated_at": "2026-01-01T09:00:09Z",
@@ -66,12 +66,12 @@
           "fylvo:size_unknown": "1",
           "thumb:disabled": ""
         },
-        "path": "cloudreve://ubfigsjawa79inth@connected/Link%20to%20notes.txt",
+        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Link%20to%20notes.txt",
         "capability": "gAAI"
       },
       {
         "type": 0,
-        "id": "cs23947e92c1f73207f029695a",
+        "id": "cs376239f6bfef75129faab354",
         "name": "notes.txt",
         "created_at": "2026-01-01T09:00:03Z",
         "updated_at": "2026-01-01T09:00:03Z",
@@ -79,34 +79,34 @@
         "metadata": {
           "thumb:disabled": ""
         },
-        "path": "cloudreve://ubfigsjawa79inth@connected/notes.txt",
+        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/notes.txt",
         "capability": "gAAI",
-        "primary_entity": "v010d7bd64b8a23e8980d438e"
+        "primary_entity": "v3b6ff72cc10b614db8cbea94"
       },
       {
         "type": 0,
-        "id": "cs6b4d4abfa1693698eebd1d8c",
+        "id": "csc577c3128445a3acfe0f028a",
         "name": "twice.txt",
-        "created_at": "0001-01-01T00:00:00Z",
-        "updated_at": "0001-01-01T00:00:00Z",
+        "created_at": "2026-01-01T09:00:06Z",
+        "updated_at": "2026-01-01T09:00:06Z",
         "size": 0,
         "metadata": {
           "fylvo:unsupported": "duplicate",
           "thumb:disabled": ""
         },
-        "path": "cloudreve://ubfigsjawa79inth@connected/twice.txt",
+        "path": "cloudreve://r0jnl8wzg2rvkcng@connected/twice.txt",
         "capability": "AAAI"
       }
     ],
     "parent": {
       "type": 1,
-      "id": "cs391c97a5bf9900bc88955daa",
+      "id": "csf83c4c99d4d46d8de36bd383",
       "name": "Google Drive",
       "created_at": "0001-01-01T00:00:00Z",
       "updated_at": "0001-01-01T00:00:00Z",
       "size": 0,
       "metadata": {},
-      "path": "cloudreve://ubfigsjawa79inth@connected",
+      "path": "cloudreve://r0jnl8wzg2rvkcng@connected",
       "capability": "AAKI"
     },
     "pagination": {
@@ -131,7 +131,7 @@
     "context_hint": null,
     "mixed_type": false,
     "connected": {
-      "id": "ubfigsjawa79inth",
+      "id": "r0jnl8wzg2rvkcng",
       "provider": "drive",
       "read_only": true,
       "search": false,

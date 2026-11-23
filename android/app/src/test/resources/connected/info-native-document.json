@@ -2,7 +2,7 @@
   "code": 0,
   "data": {
     "type": 0,
-    "id": "csbc0e71d096dd2868883d5114",
+    "id": "cs0486e0f38acbd2cd1b299947",
     "name": "Budget.gsheet",
     "created_at": "2026-01-01T09:00:04Z",
     "updated_at": "2026-01-01T09:00:04Z",
@@ -13,9 +13,9 @@
       "fylvo:size_unknown": "1",
       "thumb:disabled": ""
     },
-    "path": "cloudreve://ubfigsjawa79inth@connected/Budget.gsheet",
+    "path": "cloudreve://r0jnl8wzg2rvkcng@connected/Budget.gsheet",
     "capability": "gAAI",
-    "primary_entity": "v3c10be87cf6223267aab7b1f",
+    "primary_entity": "v9e30db61b785d002ed979aa5",
     "extended_info": {
       "storage_policy": {
         "id": "connected",
