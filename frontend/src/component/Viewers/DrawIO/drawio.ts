@@ -9,6 +9,16 @@ import { getFileInfo } from "../../../api/api.ts";
 
 const defaultHost = "https://embed.diagrams.net";
 
+// Fylvo: the origin the editor's messages must come from.
+// The host may be relative to this site; undefined when it is no address at all.
+export const drawIOOrigin = (host?: string) => {
+  try {
+    return new URL(host || defaultHost, window.location.href).origin;
+  } catch (_) {
+    return undefined;
+  }
+};
+
 export const generateIframeSrc = (
   host: string | undefined,
   file: FileResponse,
@@ -37,7 +47,7 @@ export const generateIframeSrc = (
     query.set("chrome", "0");
   }
 
-  return (host ?? defaultHost) + "?" + query.toString();
+  return (host || defaultHost) + "?" + query.toString();
 };
 
 export const handleRemoteInvoke = async (
@@ -61,6 +71,10 @@ export const handleRemoteInvoke = async (
       ]);
       break;
     case "saveFile":
+      if (!writeable) {
+        sendResponse(w, msg, null, "read only");
+        break;
+      }
       try {
         const res = await dispatch(saveDrawIO(msg.functionArgs[2], viewerState.file, false));
         if (res) {
@@ -70,6 +84,9 @@ export const handleRemoteInvoke = async (
               size: res.size,
             },
           ]);
+        } else {
+          // Fylvo: a refused save is answered as well, so the editor does not wait for it.
+          sendResponse(w, msg, null, "not saved");
         }
       } catch (e) {
         sendResponse(w, msg, null, `${e}`);
@@ -77,7 +94,9 @@ export const handleRemoteInvoke = async (
       break;
     case "getFileInfo":
       try {
-        const res = await dispatch(getFileInfo({ uri: viewerState.file.path }));
+        // Fylvo: the file the editor holds now (also after a save under a new name).
+        const current = dispatch((_d, getState) => getState().globalState.drawIOViewer?.file) ?? viewerState.file;
+        const res = await dispatch(getFileInfo({ uri: current.path }));
         if (res) {
           sendResponse(w, msg, [
             {

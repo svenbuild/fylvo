@@ -71,6 +71,16 @@ func (r *Row) ReadOnly() bool {
 	return r.ViaLink || r.Unsupported != "" || r.Native != ""
 }
 
+// Replaceable tells whether a save can replace the content of a row: a file with bytes
+// of its own whose state the provider tells. At OneDrive that includes its tag, without
+// which a replace cannot be tied to the state it was started on.
+func (c *Conn) Replaceable(row *Row) bool {
+	if row.IsDir || row.ReadOnly() || row.Version == "" {
+		return false
+	}
+	return c.Provider != ProviderOneDrive || row.ETag != ""
+}
+
 // displayName is the name a provider item has in Fylvo.
 func displayName(it *provider.Item) string {
 	if it.Native != "" {
@@ -140,6 +150,8 @@ type listing struct {
 	omitted int
 	fold    bool
 	at      time.Time
+	// account is the account at the provider the folder belongs to (Conn.AccountKey).
+	account string
 }
 
 func newListing(fold bool) *listing {
@@ -148,17 +160,18 @@ func newListing(fold bool) *listing {
 
 func (l *listing) find(name string) *Row {
 	if l.fold {
-		name = strings.ToLower(name)
+		name = Fold(name)
 	}
 	return l.byName[name]
 }
 
 type snapshot struct {
-	key    listKey
-	user   int
-	path   string
-	order  Order
-	parent *Row
+	key     listKey
+	account string
+	user    int
+	path    string
+	order   Order
+	parent  *Row
 	// rows are the entries of the listing in the order of the snapshot. They belong
 	// to the listing and are not changed: a page gets copies with its paths.
 	rows     []*Row
@@ -203,12 +216,13 @@ type Tree struct {
 // read may be from before the write, so it is not kept for anybody who asks later.
 type reading struct {
 	key     listKey
+	account string
 	changed bool
 }
 
 // read notes that a folder is being read from now on. The returned function ends that.
-func (t *Tree) read(key listKey) (*reading, func()) {
-	r := &reading{key: key}
+func (t *Tree) read(key listKey, account string) (*reading, func()) {
+	r := &reading{key: key, account: account}
 	t.mu.Lock()
 	t.reads[r] = struct{}{}
 	t.mu.Unlock()
@@ -254,7 +268,7 @@ func (l *listing) add(it provider.Item) {
 	}
 	key := name
 	if l.fold {
-		key = strings.ToLower(name)
+		key = Fold(name)
 	}
 	if first, taken := l.byName[key]; taken {
 		// The row stands for none of them. It keeps a time to show: the newest.
@@ -308,7 +322,7 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 		return l, nil
 	}
 
-	r, done := t.read(key)
+	r, done := t.read(key, c.AccountKey)
 	defer done()
 	l := newListing(c.P.CaseInsensitive())
 	for page, pages := "", 0; ; pages++ {
@@ -337,6 +351,7 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 	}
 	l.ids = nil
 	l.at = t.now()
+	l.account = c.AccountKey
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -599,7 +614,7 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 		return nil, ErrNotFound
 	}
 	key := listKey{conn: c.ID, gen: c.Generation, folder: parent.ContentID()}
-	r, done := t.read(key)
+	r, done := t.read(key, c.AccountKey)
 	defer done()
 	l, err := t.load(ctx, c, parent.ContentID())
 	if err != nil {
@@ -612,7 +627,7 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 	sortRows(rows, o)
 
 	snap := &snapshot{
-		key:  key,
+		key: key, account: c.AccountKey,
 		user: c.UserID, path: path, order: o, parent: parent, rows: rows, viaLink: parent.ViaLink,
 		omitted: l.omitted,
 	}
@@ -679,19 +694,30 @@ func parseToken(token string) (id string, offset int, ok bool) {
 
 // Changed forgets what is known about the folders with the given ids after a write
 // there. Paged listings of these folders end: their next page answers ErrListingGone.
+// That goes for every connection to the same account at the provider: it is the same
+// folder, whoever in Fylvo looks at it.
 func (t *Tree) Changed(c *Conn, folderIDs ...string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, folder := range folderIDs {
-		key := listKey{conn: c.ID, gen: c.Generation, folder: folder}
-		delete(t.listings, key)
+		same := func(key listKey, account string) bool {
+			if key.folder != folder {
+				return false
+			}
+			return (key.conn == c.ID && key.gen == c.Generation) || (c.AccountKey != "" && account == c.AccountKey)
+		}
+		for key, l := range t.listings {
+			if same(key, l.account) {
+				delete(t.listings, key)
+			}
+		}
 		for id, s := range t.snapshots {
-			if s.key == key {
+			if same(s.key, s.account) {
 				delete(t.snapshots, id)
 			}
 		}
 		for r := range t.reads {
-			if r.key == key {
+			if same(r.key, r.account) {
 				r.changed = true
 			}
 		}

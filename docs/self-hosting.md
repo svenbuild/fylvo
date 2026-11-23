@@ -209,6 +209,17 @@ their files in Fylvo. For this, you register Fylvo once at each provider and ent
 secret in the admin panel: [Google Drive](connect-google-drive.md),
 [OneDrive](connect-onedrive.md). Both need Fylvo with https under a domain name (step 1).
 
+Fylvo only reads connected storages at first: users can browse, open and download. To let them
+also upload, create, rename, move, delete and save there, add this to `.env` and start Fylvo
+again:
+
+```bash
+FYLVO_CONNECTED_WRITE=1
+```
+
+Without the line nothing in a Google Drive or OneDrive is changed by Fylvo, and the apps offer
+no such action there.
+
 Fylvo checks every connection to a provider and refuses internal addresses. If the server goes
 out through a proxy (`HTTPS_PROXY`), the proxy decides which targets are reachable: Fylvo can
 only check the address and its own name lookup, so the proxy itself has to block internal

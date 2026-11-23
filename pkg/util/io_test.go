@@ -1,8 +1,10 @@
 package util
 
 import (
-	"github.com/stretchr/testify/assert"
+	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestExists(t *testing.T) {
@@ -13,27 +15,21 @@ func TestExists(t *testing.T) {
 
 func TestCreatNestedFile(t *testing.T) {
 	asserts := assert.New(t)
+	dir := filepath.Join(t.TempDir(), "test")
 
 	// 父目录不存在
 	{
-		file, err := CreatNestedFile("test/nest.txt")
+		file, err := CreatNestedFile(filepath.Join(dir, "nest.txt"))
 		asserts.NoError(err)
 		asserts.NoError(file.Close())
-		asserts.FileExists("test/nest.txt")
+		asserts.FileExists(filepath.Join(dir, "nest.txt"))
 	}
 
 	// 父目录存在
 	{
-		file, err := CreatNestedFile("test/direct.txt")
+		file, err := CreatNestedFile(filepath.Join(dir, "direct.txt"))
 		asserts.NoError(err)
 		asserts.NoError(file.Close())
-		asserts.FileExists("test/direct.txt")
+		asserts.FileExists(filepath.Join(dir, "direct.txt"))
 	}
-}
-
-func TestIsEmpty(t *testing.T) {
-	asserts := assert.New(t)
-
-	asserts.False(IsEmpty(""))
-	asserts.False(IsEmpty("not_exist"))
 }

@@ -7,25 +7,6 @@ import (
 	"testing"
 )
 
-func TestBuildLogger(t *testing.T) {
-	asserts := assert.New(t)
-	asserts.NotPanics(func() {
-		BuildLogger("error")
-	})
-	asserts.NotPanics(func() {
-		BuildLogger("warning")
-	})
-	asserts.NotPanics(func() {
-		BuildLogger("info")
-	})
-	asserts.NotPanics(func() {
-		BuildLogger("?")
-	})
-	asserts.NotPanics(func() {
-		BuildLogger("debug")
-	})
-}
-
 func TestLog(t *testing.T) {
 	asserts := assert.New(t)
 	asserts.NotNil(Log())

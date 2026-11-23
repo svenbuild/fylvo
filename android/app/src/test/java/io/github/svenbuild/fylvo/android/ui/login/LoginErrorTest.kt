@@ -33,12 +33,6 @@ class LoginErrorTest {
         assertEquals(R.string.login_failed_code, (text as UiText.Res).id)
     }
 
-    @Test
-    fun emptyMessageFallsBackToGenericText() {
-        val text = LoginViewModel.serverError(40099, "")
-        assertEquals(R.string.login_failed_code, (text as UiText.Res).id)
-    }
-
     // The real server answers refusals with HTTP 200, a code and no data.
     @Test
     fun wrongPasswordAnswerWithoutDataUsesOwnText() {

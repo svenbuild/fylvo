@@ -286,6 +286,7 @@
     "mapProvider": "Fournisseur de cartes",
     "mapProviderDes": "Fournisseur de cartes utilisé pour afficher les informations de localisation des médias.",
     "mapGoogle": "Google Maps (Leaflet)",
+    "mapNone": "Désactivé (pas de carte)",
     "mapOpenStreetMap": "OpenStreetMap (Leaflet)",
     "mapboxMap": "OpenStreetMap (Mapbox)",
     "mapboxAccessToken": "Jeton d'accès Mapbox",

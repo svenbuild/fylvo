@@ -104,6 +104,8 @@ const CodeViewer = () => {
   const [value, setValue] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saved, setSaved] = useState(true);
+  // Fylvo: counts edits, so a save only marks as saved what it sent.
+  const edits = useRef(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [optionAnchorEl, setOptionAnchorEl] = useState<null | HTMLElement>(null);
   const [language, setLng] = useState<string | null>(null);
@@ -188,9 +190,14 @@ const CodeViewer = () => {
       }
 
       setLoading(true);
+      const sentAt = edits.current;
       dispatch(saveCode(value, viewerState.file, viewerState.version, saveAs))
-        .then(() => {
-          setSaved(true);
+        .then((saved) => {
+          // Only a save that went through, and not edits made meanwhile; a refused one keeps
+          // the changes marked.
+          if (saved && edits.current == sentAt) {
+            setSaved(true);
+          }
         })
         .finally(() => {
           setLoading(false);
@@ -200,6 +207,7 @@ const CodeViewer = () => {
   );
 
   const onChange = useCallback((v: string) => {
+    edits.current++;
     setValue(v);
     setSaved(false);
   }, []);

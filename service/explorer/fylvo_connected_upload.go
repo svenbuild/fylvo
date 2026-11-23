@@ -5,8 +5,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/cloudreve/Cloudreve/v4/application/constants"
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
@@ -111,14 +113,24 @@ func connectedCancelUpload(c *gin.Context, uri *fs.URI, s *DeleteUploadSessionSe
 	return connected.Public(c, req.m.CancelUpload(req.ctx, req.conn, s.ID))
 }
 
+// meantForConnected tells whether an address names the connected storages, also when it
+// is no address one of them has (connectedURI refuses it).
+func meantForConnected(raw string) bool {
+	return strings.Contains(raw, "@"+string(constants.FileSystemConnected))
+}
+
 // connectedPutContent answers PUT /file/content: one request that runs a whole upload
 // session, from the start to the commit. The body is passed on chunk by chunk as it
 // arrives.
-func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body io.Reader, size, limit int64) (*FileResponse, error) {
+func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService) (*FileResponse, error) {
 	// Whoever throws away what is left of the body after an error does not wait for a
-	// client that stands still.
+	// client that stands still. Set before anything can go wrong, the length included.
 	defer func() { _ = http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(connectedIdle)) }()
-	if size > limit {
+	body, size, err := request.SniffContentLength(c.Request)
+	if err != nil {
+		return nil, serializer.NewError(serializer.CodeParamErr, "invalid content length", err)
+	}
+	if size > dependency.FromContext(c).SettingProvider().MaxOnlineEditSize(c) {
 		return nil, fs.ErrFileSizeTooBig
 	}
 	if len(uri.U.Query()) > 0 {
@@ -129,7 +141,7 @@ func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body
 	if size < 0 || c.Request.ContentLength != size {
 		return nil, connected.ErrChunkLength
 	}
-	body = movingBody(c, body)
+	moving := movingBody(c, body)
 	req, err := openConnected(c, uri)
 	if err != nil {
 		return nil, err
@@ -148,7 +160,7 @@ func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body
 	}
 	for index := 0; ; index++ {
 		length := min(info.ChunkSize, size-int64(index)*info.ChunkSize)
-		row, err := req.m.UploadChunk(req.ctx, req.conn, info.ID, index, io.LimitReader(body, length), length)
+		row, err := req.m.UploadChunk(req.ctx, req.conn, info.ID, index, io.LimitReader(moving, length), length)
 		if err != nil {
 			// The body cannot be read a second time. Unless the outcome is open, the
 			// upload ends here, and nothing was stored.
@@ -215,7 +227,7 @@ func ConnectedUploadState(c *gin.Context, id string) (*ConnectedUploadStateRespo
 	}
 	res := &ConnectedUploadStateResponse{State: status.State, Received: status.Received}
 	if status.Row != nil {
-		req := &connectedRequest{conn: &connected.Conn{ID: status.Conn}}
+		req := &connectedRequest{conn: &connected.Conn{ID: status.Conn, Provider: status.Provider}}
 		res.File = connectedFile(req, status.Row, false)
 	}
 	var app serializer.AppError

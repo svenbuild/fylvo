@@ -1,13 +1,14 @@
 import React, { useCallback, useContext } from "react";
 import { useTranslation } from "react-i18next";
-import { useAppDispatch } from "../../../redux/hooks.ts";
+import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { SubMenuItemsProps } from "./OrganizeMenuItems.tsx";
 import { ViewersByID } from "../../../redux/siteConfigSlice.ts";
 import { ListItemIcon, ListItemText } from "@mui/material";
 import { ViewerIcon } from "../Dialogs/OpenWith.tsx";
 import { SquareMenuItem } from "./ContextMenu.tsx";
 import { CascadingContext, CascadingMenuItem, CascadingSubmenu } from "./CascadingMenu.tsx";
-import { NewFileTemplate, Viewer } from "../../../api/explorer.ts";
+import { FileResponse, NewFileTemplate, Viewer } from "../../../api/explorer.ts";
+import { usableViewers } from "../Connected/usableViewers.ts";
 import { createNew } from "../../../redux/thunks/file.ts";
 import { CreateNewDialogType } from "../../../redux/globalStateSlice.ts";
 
@@ -47,6 +48,8 @@ const MultiTemplatesMenuItems = ({ viewer }: MultiTemplatesMenuItemsProps) => {
 };
 
 const NewFileTemplateMenuItems = (props: SubMenuItemsProps) => {
+  // Fylvo: a connected storage offers templates only of viewers that work there.
+  const path = useAppSelector((state) => state.fileManager[0].path);
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
 
@@ -59,7 +62,7 @@ const NewFileTemplateMenuItems = (props: SubMenuItemsProps) => {
 
   return (
     <>
-      {Object.values(ViewersByID)
+      {usableViewers({ path } as FileResponse, Object.values(ViewersByID))
         .filter((viewer) => viewer.templates)
         .map((viewer) => {
           if (!viewer.templates) {

@@ -23,7 +23,7 @@
 ## Why Fylvo
 
 - **Small.** One container with a built-in database. Under 200 MB of memory under load in our tests, no PHP, no separate database server.
-- **Private.** Nothing calls home. Only the map in the details of a photo with a location loads map tiles from OpenStreetMap (the admin panel can switch the map provider). Registration closes after the first account, wrong passwords lock an address out for a while, passwords are stored with bcrypt.
+- **Private.** Nothing calls home. The map for photos with a location is off by default; if you switch it on in the admin panel, it loads map tiles from the provider you choose. Registration closes after the first account, wrong passwords lock an address out for a while, passwords are stored with bcrypt.
 - **Complete.** Web app, office in the browser, WebDAV, and apps for Android, Windows and Linux.
 
 ## Features

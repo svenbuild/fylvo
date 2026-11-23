@@ -1,6 +1,10 @@
 import * as utils from "../utils";
 import Base from "./base";
 import { EncryptedBlob } from "./encrypt/blob";
+import { ConnectedCode, getConnectedUploadState, inConnectedStorage } from "../../../../api/connected.ts";
+import { firstWait, longestWait, maxBusyInARow } from "../../../FileManager/Connected/providerRetry.ts";
+import { store } from "../../../../redux/store.ts";
+import { LocalChunkUploadError } from "../errors";
 
 export interface ChunkProgress {
   loaded: number;
@@ -18,16 +22,81 @@ export default abstract class Chunk extends Base {
   private readonly DEFAULT_CONCURRENCY = 1; // Default concurrent uploads
   private readonly MAX_RETRIES = 3;
   private progressUpdateMutex = Promise.resolve(); // Ensure progress updates are serialized
+  // Fylvo: busy answers of a connected storage in a row, and the next wait.
+  private busyInARow = 0;
+  private busyWait = firstWait;
+
+  private get connected() {
+    return inConnectedStorage(this.task.dst);
+  }
 
   public upload = async () => {
+    this.busyInARow = 0;
+    this.busyWait = firstWait;
     this.logger.info("Preparing uploading file chunks.");
     this.initBeforeUploadChunks();
 
     this.logger.info("Starting concurrent uploading of file chunks:", this.chunks);
     this.updateLocalCache();
 
-    await this.uploadChunksWithDynamicPool();
+    if (!this.connected) {
+      await this.uploadChunksWithDynamicPool();
+      return;
+    }
+    try {
+      await this.uploadChunksWithDynamicPool();
+    } catch (e) {
+      // An answer lost on the way does not mean the upload failed: ask where it stands.
+      if (await this.connectedUploadDone(e)) {
+        return;
+      }
+      throw e;
+    }
   };
+
+  // Fylvo: after a failure without an answer of the server (for example a dropped
+  // connection), the state route says whether the upload into a connected storage went
+  // through. A failure there is shown with its code; anything else but "done" is an unknown
+  // outcome: the user is told, nothing is sent again.
+  private async connectedUploadDone(e: unknown): Promise<boolean> {
+    const code = (e as { response?: { code?: number } })?.response?.code;
+    const session = this.task.session?.session_id;
+    // The pool cancels the token after any failure, so only the user's cancel counts here.
+    if (code !== undefined || !session || this.canceledByUser) {
+      return false;
+    }
+    let failedCode: number | undefined;
+    try {
+      // All bytes there and still "receiving": the server is storing it, asked again a few times.
+      for (let ask = 0; ; ask++) {
+        const state = await store.dispatch(getConnectedUploadState(session));
+        if (state.state == "done") {
+          // Also after a cancel that came too late: the file is there.
+          return true;
+        }
+        if (state.state == "failed") {
+          failedCode = state.code;
+        }
+        // Not all bytes arrived: nothing is stored yet, so it is an ordinary failure.
+        if (state.state == "receiving" && state.received < this.task.file.size) {
+          return false;
+        }
+        if (state.state != "receiving" || ask >= 3) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, firstWait));
+        if (this.canceledByUser) {
+          return false;
+        }
+      }
+    } catch (_) {
+      // The server no longer knows the session (40016 or a restart): unknown as well.
+    }
+    throw new LocalChunkUploadError(
+      { code: failedCode ?? ConnectedCode.OutcomeUnknown, msg: "", data: undefined },
+      this.chunks.length - 1,
+    );
+  }
 
   private async uploadChunksWithDynamicPool() {
     // Get chunks that need to be uploaded
@@ -124,11 +193,33 @@ export default abstract class Chunk extends Base {
       }
       await this.uploadChunk(chunkInfo);
       this.logger.info(`Chunk [${chunkInfo.index}] uploaded successfully.`);
+      this.busyInARow = 0;
+      this.busyWait = firstWait;
       onComplete(); // Call callback immediately after successful upload
     } catch (error) {
       // Don't retry if upload was cancelled
       if (this.cancelToken.token.reason) {
         throw error;
+      }
+
+      // Fylvo: in a connected storage an answer of the server is final, except "busy": the
+      // same chunk is sent again after a wait (2 s doubling up to 60, at most 5 in a row).
+      // "Outcome unknown" (40927) is never sent again.
+      const code = (error as { response?: { code?: number } })?.response?.code;
+      if (this.connected && code !== undefined) {
+        if (code != ConnectedCode.Busy || ++this.busyInARow >= maxBusyInARow) {
+          throw error;
+        }
+        const wait = this.busyWait;
+        this.busyWait = Math.min(this.busyWait * 2, longestWait);
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(resolve, wait);
+          this.cancelToken.token.promise?.then(() => {
+            clearTimeout(timeout);
+            reject(new Error("Upload cancelled during retry delay"));
+          });
+        });
+        return this.uploadChunkWithRetryAndCallback(chunkInfo, onComplete, retryCount);
       }
 
       if (retryCount < this.MAX_RETRIES) {

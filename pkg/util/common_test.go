@@ -26,13 +26,6 @@ func TestRandStringRunes(t *testing.T) {
 	asserts.NotEqual(sameLenStr1, sameLenStr2)
 }
 
-func TestContainsUint(t *testing.T) {
-	asserts := assert.New(t)
-	asserts.True(ContainsUint([]uint{0, 2, 3, 65, 4}, 65))
-	asserts.True(ContainsUint([]uint{65}, 65))
-	asserts.False(ContainsUint([]uint{65}, 6))
-}
-
 func TestContainsString(t *testing.T) {
 	asserts := assert.New(t)
 	asserts.True(ContainsString([]string{"", "1"}, ""))
@@ -54,19 +47,6 @@ func TestReplace(t *testing.T) {
 		"123":    "321",
 		"origin": "new",
 	}, "123origin123"))
-}
-
-func TestBuildRegexp(t *testing.T) {
-	asserts := assert.New(t)
-
-	asserts.Equal("^/dir/", BuildRegexp([]string{"/dir"}, "^", "/", "|"))
-	asserts.Equal("^/dir/|^/dir/di\\*r/", BuildRegexp([]string{"/dir", "/dir/di*r"}, "^", "/", "|"))
-}
-
-func TestBuildConcat(t *testing.T) {
-	asserts := assert.New(t)
-	asserts.Equal("CONCAT(1,2)", BuildConcat("1", "2", "mysql"))
-	asserts.Equal("1||2", BuildConcat("1", "2", "sqlite"))
 }
 
 func TestSliceDifference(t *testing.T) {

@@ -286,6 +286,7 @@
     "mapProvider": "مزود الخرائط",
     "mapProviderDes": "مزود الخرائط المستخدم لعرض معلومات موقع الوسائط.",
     "mapGoogle": "خرائط Google (Leaflet)",
+    "mapNone": "إيقاف (بدون خريطة)",
     "mapOpenStreetMap": "OpenStreetMap (Leaflet)",
     "mapboxMap": "OpenStreetMap (Mapbox)",
     "mapboxAccessToken": "رمز الوصول إلى Mapbox",

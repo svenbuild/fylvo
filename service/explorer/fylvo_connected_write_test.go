@@ -2,16 +2,23 @@ package explorer
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider/drive/drivetest"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
+	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/stretchr/testify/require"
 )
 
 // Fylvo: the routes that change a connected storage, down to a simulated Google Drive.
+
+// The tests of this package run on an installation whose operator switched changes on.
+func init() { _ = os.Setenv(connected.EnvWrite, "1") }
 
 // idsOf lists a folder and returns the ids of its rows by address, as a client has them.
 func (e *connectedEnv) idsOf(t *testing.T, folder string) connectedIDs {
@@ -228,4 +235,213 @@ func TestConnectedBatchSize(t *testing.T) {
 	err = (&DeleteFileService{Uris: uris[:connected.MaxBatch], Ids: ids}).Delete(e.as(e.alex))
 	require.Equal(t, serializer.CodeBatchOperationNotFullyCompleted, connectedCode(err))
 	require.Equal(t, "Docs", e.names(t, e.root))
+}
+
+// An installation whose operator did not switch changes on only reads connected
+// storages: nothing in a listing offers a change, and every route that changes
+// something refuses before a provider is asked.
+func TestConnectedOnlyReadsUnlessSwitchedOn(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFolder("", "Docs")
+	e.sim.AddFile("", "notes.txt", []byte("hello"))
+	ids := e.idsOf(t, e.root)
+
+	changing := []dbfs.NavigatorCapability{
+		dbfs.NavigatorCapabilityCreateFile, dbfs.NavigatorCapabilityRenameFile,
+		dbfs.NavigatorCapabilityUploadFile, dbfs.NavigatorCapabilityDeleteFile,
+	}
+	offered := func(res *ListResponse) (bits []string) {
+		rows := append([]FileResponse{}, res.Files...)
+		rows = append(rows, FileResponse{Name: "(folder)", Capability: res.Props.Capability})
+		for _, row := range rows {
+			for _, bit := range changing {
+				if row.Capability.Enabled(int(bit)) {
+					bits = append(bits, fmt.Sprintf("%s:%d", row.Name, bit))
+				}
+			}
+		}
+		return bits
+	}
+	bit := func(name string, capability dbfs.NavigatorCapability) string {
+		return fmt.Sprintf("%s:%d", name, capability)
+	}
+
+	// Switched on: a folder takes new entries; a file can be renamed, deleted and saved over.
+	res, err := e.list(e.alex, e.root, 0, "")
+	require.NoError(t, err)
+	require.False(t, res.Connected.ReadOnly)
+	require.ElementsMatch(t, []string{
+		bit("(folder)", dbfs.NavigatorCapabilityCreateFile), bit("(folder)", dbfs.NavigatorCapabilityUploadFile),
+		bit("Docs", dbfs.NavigatorCapabilityCreateFile), bit("Docs", dbfs.NavigatorCapabilityUploadFile),
+		bit("Docs", dbfs.NavigatorCapabilityRenameFile), bit("Docs", dbfs.NavigatorCapabilityDeleteFile),
+		bit("notes.txt", dbfs.NavigatorCapabilityUploadFile),
+		bit("notes.txt", dbfs.NavigatorCapabilityRenameFile), bit("notes.txt", dbfs.NavigatorCapabilityDeleteFile),
+	}, offered(res))
+
+	t.Setenv(connected.EnvWrite, "")
+	res, err = e.list(e.alex, e.root, 0, "")
+	require.NoError(t, err)
+	require.True(t, res.Connected.ReadOnly)
+	require.Empty(t, offered(res))
+
+	calls := func() int {
+		return e.sim.Calls(drivetest.CallCreate) + e.sim.Calls(drivetest.CallUpdate) + e.sim.Calls(drivetest.CallStart)
+	}
+	before := calls()
+	unsupported := func(err error) {
+		t.Helper()
+		require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
+	}
+	_, err = (&CreateFileService{Uri: e.root + "/New", Type: "folder"}).Create(e.as(e.alex))
+	unsupported(err)
+	_, err = (&RenameFileService{Uri: e.root + "/notes.txt", NewName: "n.txt", Ids: ids}).Rename(e.as(e.alex))
+	unsupported(err)
+	unsupported((&MoveFileService{Uris: []string{e.root + "/notes.txt"}, Dst: e.root + "/Docs", Ids: ids}).Move(e.as(e.alex)))
+	unsupported((&DeleteFileService{Uris: []string{e.root + "/notes.txt"}, Ids: ids}).Delete(e.as(e.alex)))
+	_, err = (&CreateUploadSessionService{Uri: e.root + "/up.bin", Size: 10}).Create(e.as(e.alex))
+	unsupported(err)
+	_, err = (&FileUpdateService{Uri: e.root + "/notes.txt"}).PutContent(e.withBody(e.alex, "PUT", []byte("other")), nil)
+	unsupported(err)
+	require.Equal(t, before, calls(), "nothing of that reached the provider")
+	require.Equal(t, "Docs|notes.txt", e.names(t, e.root))
+	// Reading goes on as before.
+	require.Equal(t, []byte("hello"), e.download(e.root+"/notes.txt"))
+}
+
+// The key of an id names an address, however the client spells it: escaped in "ids" and
+// plain in "uri", or the other way round, is the same entry.
+func TestConnectedIdsBySpellingOfTheAddress(t *testing.T) {
+	e := newConnectedEnv(t)
+	folder := e.sim.AddFolder("", "Trial x")
+	e.sim.AddFile(folder, "note one.txt", []byte("a"))
+	e.sim.AddFile(folder, "note two.txt", []byte("b"))
+	plain, escaped := e.root+"/Trial x", e.root+"/Trial%20x"
+
+	var one, two string
+	for key, id := range e.idsOf(t, plain) {
+		switch {
+		case strings.HasSuffix(key, "one.txt"):
+			one = id
+		case strings.HasSuffix(key, "two.txt"):
+			two = id
+		}
+	}
+	require.NotEmpty(t, one)
+	require.NotEmpty(t, two)
+
+	// The address plain, its key escaped.
+	_, err := (&RenameFileService{Uri: plain + "/note one.txt", NewName: "first.txt",
+		Ids: connectedIDs{escaped + "/note%20one.txt": one}}).Rename(e.as(e.alex))
+	require.NoError(t, err)
+	// The address escaped, its key plain.
+	require.NoError(t, (&DeleteFileService{Uris: []string{escaped + "/note%20two.txt"},
+		Ids: connectedIDs{plain + "/note two.txt": two}}).Delete(e.as(e.alex)))
+	require.Equal(t, "first.txt", e.names(t, plain))
+
+	// Two keys for one address that name different rows say nothing: no id, no change.
+	_, err = (&RenameFileService{Uri: plain + "/first.txt", NewName: "x.txt",
+		Ids: connectedIDs{plain + "/first.txt": one, escaped + "/first.txt": two}}).Rename(e.as(e.alex))
+	require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err))
+	// The id of another row is refused as before.
+	_, err = (&RenameFileService{Uri: plain + "/first.txt", NewName: "x.txt",
+		Ids: connectedIDs{escaped + "/first.txt": two}}).Rename(e.as(e.alex))
+	require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err))
+	require.Equal(t, "first.txt", e.names(t, plain))
+}
+
+// Ids that contradict each other are no ids: a change that names such an address is
+// refused, also for the folder a move goes into, whose id may otherwise be left out.
+func TestConnectedIdsThatContradictEachOther(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFolder("", "Trial x")
+	e.sim.AddFile("", "note.txt", []byte("a"))
+	plain, escaped := e.root+"/Trial x", e.root+"/Trial%20x"
+	ids := e.idsOf(t, e.root)
+	// A listing spells the address of the folder one way; which, does not matter here.
+	note, folder := ids[e.root+"/note.txt"], ids[plain]+ids[escaped]
+	require.NotEmpty(t, note)
+	require.NotEmpty(t, folder)
+
+	err := (&MoveFileService{Uris: []string{e.root + "/note.txt"}, Dst: plain,
+		Ids: connectedIDs{e.root + "/note.txt": note, plain: folder, escaped: "another-id"}}).Move(e.as(e.alex))
+	require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err))
+	require.Equal(t, "Trial x|note.txt", e.names(t, e.root), "nothing was moved")
+	require.NoError(t, (&DeleteFileService{Uris: []string{e.root + "/note.txt"},
+		Ids: connectedIDs{e.root + "/note.txt": note, e.root + "/note%2Etxt": note}}).Delete(e.as(e.alex)),
+		"the same id twice contradicts nothing")
+
+	// Without an id for the folder the move goes through, as before.
+	e.sim.AddFile("", "second.txt", []byte("b"))
+	ids = e.idsOf(t, e.root)
+	require.NoError(t, (&MoveFileService{Uris: []string{e.root + "/second.txt"}, Dst: escaped,
+		Ids: connectedIDs{e.root + "/second.txt": ids[e.root+"/second.txt"]}}).Move(e.as(e.alex)))
+	require.Equal(t, "second.txt", e.names(t, plain))
+}
+
+// A save whose length cannot be read is refused like any other request with a bad
+// parameter, before anything is opened.
+func TestConnectedSaveWithABadLength(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "notes.txt", []byte("hello"))
+	c := e.withBody(e.alex, "PUT", []byte("other"))
+	c.Request.ContentLength = -1
+	c.Request.Header.Del("Content-Length")
+	c.Request.Header.Set("X-Expected-Entity-Length", "not a number")
+	_, err := (&FileUpdateService{Uri: e.root + "/notes.txt"}).PutContent(c, nil)
+	require.Equal(t, serializer.CodeParamErr, connectedCode(err))
+	require.Equal(t, []byte("hello"), e.download(e.root+"/notes.txt"))
+}
+
+// Where the provider takes names in any case for one, so do the keys of "ids".
+func TestConnectedIdsFollowTheCaseRuleOfTheProvider(t *testing.T) {
+	uri := func(raw string) *fs.URI {
+		parsed, ok := connectedURI(raw)
+		require.True(t, ok, raw)
+		return parsed
+	}
+	root := "cloudreve://abcdefghijklmnop@connected"
+	ids := connectedIDs{root + "/Docs": "current", root + "/docs": "stale"}
+
+	// Drive: two names, two addresses, each with its id.
+	exact := ids.byAddress(false)
+	id, err := exact.of(uri(root + "/Docs"))
+	require.NoError(t, err)
+	require.Equal(t, "current", id)
+	id, err = exact.of(uri(root + "/DOCS"))
+	require.NoError(t, err)
+	require.Empty(t, id)
+
+	// OneDrive: one address with two ids that contradict each other, however it is asked for.
+	folded := ids.byAddress(true)
+	for _, spelling := range []string{"/Docs", "/docs", "/DOCS"} {
+		_, err = folded.of(uri(root + spelling))
+		require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err), spelling)
+	}
+	same := connectedIDs{root + "/Docs": "current"}.byAddress(true)
+	id, err = same.of(uri(root + "/docs"))
+	require.NoError(t, err)
+	require.Equal(t, "current", id)
+}
+
+// The case rule is the provider's: by capitals, so the two small forms of one capital
+// are one address as well.
+func TestConnectedIdsFoldLikeTheProvider(t *testing.T) {
+	root := "cloudreve://abcdefghijklmnop@connected"
+	big, _ := connectedURI(root + "/\u03a3")
+	ids := connectedIDs{root + "/\u03a3": "current", root + "/\u03c2": "stale"}
+	_, err := ids.byAddress(true).of(big)
+	require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err))
+	id, err := ids.byAddress(false).of(big)
+	require.NoError(t, err)
+	require.Equal(t, "current", id)
+}
+
+// An address that is meant for a connected storage and is none (an empty name at its
+// end) is refused like any other bad address.
+func TestConnectedSaveToAnAddressThatIsNone(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "notes.txt", []byte("hello"))
+	_, err := (&FileUpdateService{Uri: e.root + "/notes.txt//"}).PutContent(e.withBody(e.alex, "PUT", []byte("other")), nil)
+	require.Error(t, err)
+	require.Equal(t, []byte("hello"), e.download(e.root+"/notes.txt"))
 }

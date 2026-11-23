@@ -344,16 +344,22 @@ type (
 func (service *FileUpdateService) PutContent(c *gin.Context, ls fs.LockSession) (*FileResponse, error) {
 	dep := dependency.FromContext(c)
 	settings := dep.SettingProvider()
+	// Fylvo: a connected storage saves through an upload session at its provider.
+	if uri, ok := connectedURI(service.Uri); ok {
+		return connectedPutContent(c, uri, service)
+	}
+	if meantForConnected(service.Uri) {
+		// Fylvo: meant for a connected storage, but no address of one (it is refused
+		// below). Whoever throws away the rest of its body does not wait for a client
+		// that stands still, as for every other save into a connected storage.
+		defer func() { _ = http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(connectedIdle)) }()
+	}
 	// 取得文件大小
 	rc, fileSize, err := request.SniffContentLength(c.Request)
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeParamErr, "invalid content length", err)
 	}
 
-	// Fylvo: a connected storage saves through an upload session at its provider.
-	if uri, ok := connectedURI(service.Uri); ok {
-		return connectedPutContent(c, uri, service, rc, fileSize, settings.MaxOnlineEditSize(c))
-	}
 	if fileSize > settings.MaxOnlineEditSize(c) {
 		return nil, fs.ErrFileSizeTooBig
 	}

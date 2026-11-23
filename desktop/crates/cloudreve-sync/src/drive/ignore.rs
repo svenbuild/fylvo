@@ -203,21 +203,6 @@ impl IgnoreMatcher {
         self.globset.is_match(&normalized) || (!is_folder && self.files_only.is_match(&normalized))
     }
 
-    /// Check if a path (given as relative path from sync root) matches any patterns.
-    ///
-    /// Use this when you already have a relative path.
-    ///
-    /// # Arguments
-    /// * `relative_path` - Path relative to sync root
-    ///
-    /// # Returns
-    /// `true` if the path matches any ignore pattern, `false` otherwise
-    pub fn is_match_relative<P: AsRef<Path>>(&self, relative_path: P) -> bool {
-        let normalized = relative_path.as_ref().to_string_lossy().replace('\\', "/");
-
-        self.globset.is_match(&normalized)
-    }
-
     /// Check if a filename (without path) matches any of the ignore patterns.
     ///
     /// This is useful for quick checks on just the filename.
@@ -384,17 +369,5 @@ mod tests {
 
         // Path outside sync root should never match
         assert!(!matcher.is_match(native("C:\\Other\\path\\debug.log")));
-    }
-
-    #[test]
-    fn test_relative_path_matching() {
-        let sync_root = PathBuf::from(native("C:\\Users\\test\\sync"));
-        let patterns = vec!["*.log".to_string(), "/build".to_string()];
-        let matcher = IgnoreMatcher::new(&patterns, sync_root).unwrap();
-
-        assert!(matcher.is_match_relative("debug.log"));
-        assert!(matcher.is_match_relative("subdir/error.log"));
-        assert!(matcher.is_match_relative("build"));
-        assert!(!matcher.is_match_relative("src/build"));
     }
 }

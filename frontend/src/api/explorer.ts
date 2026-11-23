@@ -274,6 +274,9 @@ export interface DeleteFileService {
   uris: string[];
   unlink?: boolean;
   skip_soft_delete?: boolean;
+  // Fylvo: in a connected storage, the id of each listed row by the address sent for it
+  // (rename, move and delete act on exactly the row the user saw).
+  ids?: { [uri: string]: string };
 }
 
 export interface LockApplication {
@@ -300,6 +303,9 @@ export interface UnlockFileService {
 export interface RenameFileService {
   uri: string;
   new_name: string;
+  // Fylvo: in a connected storage, the id of each listed row by the address sent for it
+  // (rename, move and delete act on exactly the row the user saw).
+  ids?: { [uri: string]: string };
 }
 
 export const NavigatorCapability = {
@@ -328,6 +334,9 @@ export interface PinFileService {
 export interface MoveFileService extends MultipleUriService {
   dst: string;
   copy?: boolean;
+  // Fylvo: in a connected storage, the id of each listed row by the address sent for it
+  // (rename, move and delete act on exactly the row the user saw).
+  ids?: { [uri: string]: string };
 }
 
 export interface MetadataPatch {
@@ -457,6 +466,8 @@ export interface ViewerGroup {
 export interface FileUpdateService {
   uri: string;
   previous?: string;
+  // Fylvo: refuse (40904) instead of creating the file when it is gone.
+  previous_required?: boolean;
 }
 
 export interface ViewerSession {

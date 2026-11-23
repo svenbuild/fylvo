@@ -17,6 +17,10 @@ const MapLoader = (props: MapLoaderProps) => {
   const mapProvider = useAppSelector((state) => state.siteConfig.explorer.config.map_provider);
   const mapboxAk = useAppSelector((state) => state.siteConfig.explorer.config.mapbox_ak);
   const googleTileType = useAppSelector((state) => state.siteConfig.explorer.config.google_map_tile_type);
+  // "none" (the default) loads nothing from outside.
+  if (!mapProvider || mapProvider === "none") {
+    return null;
+  }
   return (
     <Suspense fallback={<Skeleton variant="rounded" width={"100%"} height={props.height} />}>
       {mapProvider !== "mapbox" && (

@@ -119,25 +119,6 @@ func (ll *Logger) Debug(format string, v ...interface{}) {
 //	ll.println(msg)
 //}
 
-// BuildLogger 构建logger
-func BuildLogger(level string) {
-	intLevel := LevelError
-	switch level {
-	case "error":
-		intLevel = LevelError
-	case "warning":
-		intLevel = LevelWarning
-	case "info":
-		intLevel = LevelInformational
-	case "debug":
-		intLevel = LevelDebug
-	}
-	l := Logger{
-		level: intLevel,
-	}
-	GloablLogger = &l
-}
-
 // Log 返回日志对象
 func Log() *Logger {
 	if GloablLogger == nil {

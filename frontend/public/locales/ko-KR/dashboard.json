@@ -285,6 +285,7 @@
     "mapProvider": "지도 제공업체",
     "mapProviderDes": "미디어 위치 정보를 표시할 때 사용하는 지도 제공업체",
     "mapGoogle": "Google Maps (Leaflet)",
+    "mapNone": "끄기 (지도 없음)",
     "mapOpenStreetMap": "OpenStreetMap (Leaflet)",
     "mapboxMap": "OpenStreetMap (Mapbox)",
     "mapboxAccessToken": "Mapbox 액세스 토큰",

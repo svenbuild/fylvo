@@ -1200,6 +1200,12 @@
     "downloadProviderOnly_one": "{{count}} entry only opens at the provider and has no file to download: {{names}}.",
     "downloadProviderOnly_other": "{{count}} entries only open at the provider and have no file to download: {{names}}.",
     "downloadNotReached_one": "{{count}} file was not downloaded any more.",
-    "downloadNotReached_other": "{{count}} files were not downloaded any more."
+    "downloadNotReached_other": "{{count}} files were not downloaded any more.",
+    "deleteOne": "Move <0>{{name}}</0> to the trash of the provider?",
+    "deleteMultiple": "Move these {{num}} items to the trash of the provider?",
+    "toProviderTrash": "Move to provider's trash",
+    "emptySave": "An empty file cannot be saved into a connected storage. Add some content, or delete the file.",
+    "noFolderUpload": "Folders cannot be uploaded into a connected storage. Create the folder first and upload the files into it.",
+    "nameTaken": "This name is already taken. Please choose another one."
   }
 }
