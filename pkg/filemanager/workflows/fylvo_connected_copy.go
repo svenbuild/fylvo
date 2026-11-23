@@ -260,6 +260,15 @@ func (m *ConnectedCopyTask) run(ctx context.Context, dep dependency.Dep) (task.S
 		}
 		return task.StatusError, fmt.Errorf("the target cannot be used: %w (%w)", err, queue.CriticalErr)
 	}
+	if _, isFylvo := dst.(*fylvoTarget); isFylvo {
+		for _, raw := range m.state.Uris {
+			if _, _, isConnected, err := connectedAddress(raw); err != nil || !isConnected {
+				// Fylvo into Fylvo is the ordinary copy: a folder of the source could be
+				// taken as a folder of the target.
+				return task.StatusError, fmt.Errorf("files of Fylvo cannot be copied into Fylvo here (%w)", queue.CriticalErr)
+			}
+		}
+	}
 
 	// What to copy, at most copyMaxEntries entries.
 	var items []*copyItem
@@ -294,16 +303,16 @@ func (m *ConnectedCopyTask) run(ctx context.Context, dep dependency.Dep) (task.S
 	// name is free at the target are new there and count whole; the others may be a
 	// run again of this copy, and their files are found as there already, or not.
 	if room, ok := dst.room(ctx); ok {
+		// Every file whose place at the target is free, or taken by something else,
+		// needs its room. (A folder that gets a number moves its files to free places.)
 		var needed int64
-		fresh := map[string]bool{}
 		for _, it := range items {
-			if it.parent == "" {
-				there, err := dst.look(ctx, "", it.name)
-				fresh[it.rel] = err == nil && there == nil
+			if it.dir || it.skip != "" || it.size <= 0 {
+				continue
 			}
-			top, _, _ := strings.Cut(it.rel, "/")
-			if fresh[top] && !it.dir && it.skip == "" {
-				needed += max(it.size, 0)
+			there, err := dst.look(ctx, it.parent, it.name)
+			if err != nil || there == nil || there.dir || there.size != it.size {
+				needed += it.size
 			}
 		}
 		if needed > room {
@@ -359,12 +368,21 @@ func (m *ConnectedCopyTask) run(ctx context.Context, dep dependency.Dep) (task.S
 		reason, err := m.copyFile(ctx, sides, dst, parent, it, written)
 		count := m.progress[ProgressTypeCopyCount]
 		atomic.AddInt64(&count.Current, 1)
+		if it.conn != nil && it.conn.ctx.Err() != nil {
+			// The connection ended: the task ends, even if the watch has not stopped it yet.
+			sides.onEnd()
+		}
 		switch {
 		case ctx.Err() != nil:
 			return m.ended(ctx)
 		case err != nil:
 			m.count(func(s *ConnectedCopyState) { s.Failed++ })
-			m.note(it.show, copyReason(err))
+			why := copyReason(err)
+			if why == CopyNoteStopped {
+				// Cancelled while the task goes on: a read that stood still for too long.
+				why = CopyNoteFailed
+			}
+			m.note(it.show, why)
 			m.l.Warning("Connected copy: %s could not be copied: %s", it.show, err)
 			if copyReason(err) == CopyNoteFull {
 				// No room for anything more.
@@ -380,6 +398,9 @@ func (m *ConnectedCopyTask) run(ctx context.Context, dep dependency.Dep) (task.S
 		default:
 			m.count(func(s *ConnectedCopyState) { s.Copied++ })
 		}
+	}
+	if ctx.Err() != nil {
+		return m.ended(ctx)
 	}
 	return task.StatusCompleted, nil
 }
@@ -418,6 +439,8 @@ func (m *ConnectedCopyTask) copyFile(ctx context.Context, sides *copySides, dst 
 		}
 		defer spooled.drop()
 		size = spooled.size
+		// Its length is part of the work from now on.
+		atomic.AddInt64(&m.progress[ProgressTypeCopySize].Total, size)
 	}
 	sizeProgress := m.progress[ProgressTypeCopySize]
 
@@ -431,6 +454,8 @@ func (m *ConnectedCopyTask) copyFile(ctx context.Context, sides *copySides, dst 
 		if there != nil {
 			if !written[key] && !there.dir && there.size == size && !(sum.value != "" && there.sum.value != "" &&
 				sum.kind == there.sum.kind && sum.value != there.sum.value) {
+				// This source is that file: no other source of this run is.
+				written[key] = true
 				return CopyNoteSame, nil
 			}
 			continue
@@ -450,8 +475,13 @@ func (m *ConnectedCopyTask) copyFile(ctx context.Context, sides *copySides, dst 
 				return "", err
 			}
 		}
-		err = dst.write(ctx, parent, name, size, &countingReader{r: body, n: &sizeProgress.Current})
+		counted := &countingReader{r: body, n: &sizeProgress.Current}
+		err = dst.write(ctx, parent, name, size, counted)
 		closeBody()
+		if err != nil {
+			// What was read of a try that is not kept is not progress.
+			atomic.AddInt64(&sizeProgress.Current, -counted.read)
+		}
 		if errors.Is(err, errTargetTaken) {
 			// Taken in the moment it was written: the next name, with the bytes read anew.
 			continue
@@ -535,12 +565,14 @@ func (m *ConnectedCopyTask) Summarize(hasher hashid.Encoder) *queue.Summary {
 }
 
 type countingReader struct {
-	r io.Reader
-	n *int64
+	r    io.Reader
+	n    *int64
+	read int64
 }
 
 func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
+	c.read += int64(n)
 	atomic.AddInt64(c.n, int64(n))
 	return n, err
 }
@@ -692,9 +724,10 @@ func (s *copySides) listFylvo(ctx context.Context, raw string, limit int, note f
 		return []*copyItem{{rel: rootName, name: rootName, show: raw, size: root.Size(), fylvo: root}}, nil
 	}
 	var items []*copyItem
+	seen := 0
 	errFull := errors.New("full")
 	err = s.fm.Walk(ctx, root.Uri(false), 1<<30, func(f fs.File, level int) error {
-		if len(items) >= limit {
+		if seen++; seen > limit {
 			return errFull
 		}
 		if f.IsSymbolic() {

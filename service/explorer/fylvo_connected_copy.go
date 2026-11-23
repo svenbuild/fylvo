@@ -72,6 +72,10 @@ func (s *ConnectedCopyService) CreateConnectedCopy(c *gin.Context) (*TaskRespons
 		if err != nil {
 			return nil, err
 		}
+		if dst.connection == "" && src.connection == "" {
+			// Within Fylvo the ordinary copy does it, also beside sources of a storage.
+			return nil, serializer.NewError(serializer.CodeParamErr, "Files of Fylvo cannot be copied into Fylvo here", nil)
+		}
 		involvesConnected = involvesConnected || src.connection != ""
 		if src.contains(dst, uid) {
 			// Into itself, or below itself.
@@ -117,8 +121,9 @@ func (s *ConnectedCopyService) checkEnd(c *gin.Context, fm manager.FileManager, 
 			if !connected.Writes() || !row.Enterable() || row.ViaLink || row.Link != nil {
 				return copyEnd{}, connected.ErrUnsupported
 			}
-		} else if req.path == "" || row.ViaLink {
-			// Not the whole storage, and nothing through a shortcut.
+		} else if req.path == "" || (row.ViaLink && row.Link == nil) {
+			// Not the whole storage, and nothing through a shortcut. A shortcut itself
+			// may be chosen: the copy reports it as not followed.
 			return copyEnd{}, connected.ErrUnsupported
 		}
 		// Compared as the provider compares names.

@@ -14,7 +14,9 @@ const ConnectedCopyReport = ({ task }: { task: TaskResponse }) => {
   const dispatch = useAppDispatch();
   const [stopping, setStopping] = useState(false);
   const report = task.summary?.props.connected_copy;
-  const running = task.status == TaskStatus.queued || task.status == TaskStatus.processing;
+  // Also a copy that waits for a place, or to be resumed.
+  const running =
+    task.status == TaskStatus.queued || task.status == TaskStatus.processing || task.status == TaskStatus.suspending;
 
   const stop = () => {
     dispatch(confirmOperation(t("setting.connectedCopyStopConfirm"))).then(() => {

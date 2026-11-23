@@ -326,6 +326,8 @@ func TestConnectedCopyChecks(t *testing.T) {
 	// Somebody else's storage, or files.
 	require.Equal(t, serializer.CodeParentNotExist, connectedCode(create(e.sam, []string{e.root + "/Docs"}, "cloudreve://my")))
 	require.Error(t, create(e.sam, []string{"cloudreve://my/mine.txt"}, e.root))
+	// Files of Fylvo into Fylvo, also beside a source of a storage.
+	require.Equal(t, serializer.CodeParamErr, connectedCode(create(e.alex, []string{"cloudreve://my/mine.txt", e.root + "/Docs"}, "cloudreve://my/Out")))
 	// Whole file systems, and what is reached through a shortcut.
 	require.Equal(t, serializer.CodeParamErr, connectedCode(create(e.alex, []string{"cloudreve://my"}, e.root)))
 	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(create(e.alex, []string{e.root}, "cloudreve://my/Out")))
@@ -371,6 +373,11 @@ func TestConnectedCopyNamesAndEmptyFiles(t *testing.T) {
 	require.ElementsMatch(t, []string{"one", "two"}, []string{tree["Docs/a_b.txt"], tree["Docs/a_b (2).txt"]})
 	require.Contains(t, tree, "Docs/empty.txt")
 	require.Equal(t, "", tree["Docs/empty.txt"])
+	// Again: each of the two finds its own copy, nothing is copied twice or left out.
+	_, state = e.runCopy(e.alex, []string{e.root + "/Docs"}, "cloudreve://my/In", nil)
+	require.Equal(t, 0, state.Copied, "%+v", state.Notes)
+	require.Equal(t, 3, state.Skipped)
+	require.Len(t, e.fylvoTree(e.alex, "In"), 4)
 
 	// An empty file of Fylvo, which never had content, into the storage.
 	fm := manager.NewFileManager(e.dep, e.alex)

@@ -158,6 +158,10 @@ func (r *CopyReader) Read(p []byte) (int, error) {
 		}
 		return n, err
 	}
+	if err != nil && err != io.EOF {
+		// The last bytes came with an error: they are not handed out.
+		return 0, ErrCopyChanged
+	}
 	// The last bytes: they are handed out only when the whole file was that version.
 	if verr := r.verify(); verr != nil {
 		return 0, verr

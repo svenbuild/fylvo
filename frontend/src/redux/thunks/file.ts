@@ -901,21 +901,17 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
       return dispatch(deleteFile(index, src));
     }
 
-    if (checkMovePrecondition(src, dst)) {
-      return;
-    }
-
-    if (!canCopyMoveTo(src, dst, isCopy)) {
-      enqueueSnackbar({
-        message: i18next.t("application:modals.cannotPerformAction"),
-        variant: "warning",
-        action: DefaultCloseAction,
-      });
-      return;
-    }
-
-    // Fylvo: a copy from or into a connected storage is a task on the server.
+    // Fylvo: a copy from or into a connected storage is a task on the server, which checks
+    // where it goes (also into the folder it is in, where it makes "name (2)").
     if (isCopy && (inConnectedStorage(dst) || src.some((f) => inConnectedStorage(f.path)))) {
+      if (!canCopyMoveTo(src, dst, isCopy)) {
+        enqueueSnackbar({
+          message: i18next.t("application:modals.cannotPerformAction"),
+          variant: "warning",
+          action: DefaultCloseAction,
+        });
+        return;
+      }
       try {
         await dispatch(sendConnectedCopy({ src: src.map((f) => f.path), dst }));
         enqueueSnackbar({
@@ -926,6 +922,19 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
       } catch (e) {
         // Shown by the request.
       }
+      return;
+    }
+
+    if (checkMovePrecondition(src, dst)) {
+      return;
+    }
+
+    if (!canCopyMoveTo(src, dst, isCopy)) {
+      enqueueSnackbar({
+        message: i18next.t("application:modals.cannotPerformAction"),
+        variant: "warning",
+        action: DefaultCloseAction,
+      });
       return;
     }
 

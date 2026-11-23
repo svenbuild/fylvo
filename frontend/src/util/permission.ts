@@ -56,8 +56,8 @@ export function canCopyMoveTo(files: FileResponse[], dst: string, isCopy: boolea
         uri.fs() == Filesystem.my ||
         uri.fs() == Filesystem.share ||
         uri.fs() == Filesystem.shared_with_me;
-      const writable = (uri: CrUri) =>
-        uri.fs() == Filesystem.connected || uri.fs() == Filesystem.my || uri.fs() == Filesystem.share;
+      // Into Fylvo only into the account's own files.
+      const writable = (uri: CrUri) => uri.fs() == Filesystem.connected || uri.fs() == Filesystem.my;
       return readable(srcUri) && writable(dstUri);
     }
     const ownOrShared = (uri: CrUri) => uri.fs() == Filesystem.my || uri.fs() == Filesystem.share;
