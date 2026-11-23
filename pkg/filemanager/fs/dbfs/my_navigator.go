@@ -51,6 +51,8 @@ func (n *myNavigator) Recycle() {
 	}
 	if n.root != nil && !n.disableRecycle {
 		n.root.Recycle()
+		// Fylvo: a second Recycle must not put the same files back twice.
+		n.root = nil
 	}
 }
 

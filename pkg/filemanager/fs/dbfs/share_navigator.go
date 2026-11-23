@@ -138,6 +138,8 @@ func (n *shareNavigator) Recycle() {
 		} else if n.shareRoot != nil {
 			n.shareRoot.Recycle()
 		}
+		// Fylvo: a second Recycle must not put the same files back twice.
+		n.ownerRoot, n.shareRoot = nil, nil
 	}
 }
 

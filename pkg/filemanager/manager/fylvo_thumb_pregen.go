@@ -209,7 +209,6 @@ func (p *thumbPregen) one(ctx context.Context, f *ent.File) bool {
 		if !stored {
 			// The storage makes previews itself; nothing was made here.
 			p.skip[key] = struct{}{}
-			fm.Recycle()
 			return true
 		}
 		p.made++
