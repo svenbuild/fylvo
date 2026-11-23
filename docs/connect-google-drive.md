@@ -79,8 +79,10 @@ You see the Google Auth Platform overview with the sections **Branding**, **Audi
    **Application privacy policy link:** your privacy policy.
 4. Click **Save**.
 
-Without the domain, Google refuses the return address in step 7. Without the links, Google
-may refuse to publish in step 6.
+Without the domain, Google refuses the return address in step 7. Without the home page and
+the privacy policy link, the **Publish app** button in step 6 stays grey: Google then says
+that an app name, a support email and URLs for the home page and the privacy policy are
+required, and sends you back to **Branding**.
 
 ## 5. Allow access to Drive
 
@@ -180,6 +182,7 @@ before. You can restore it within about 30 days on the **Deleted credentials** p
 | What you see | Cause | Fix |
 | --- | --- | --- |
 | `Error 400: redirect_uri_mismatch` | The return address at Google differs from the one Fylvo uses, even by `http`/`https`, `www` or a trailing `/` | Copy the address from the Fylvo admin panel into the client (step 7). Changes can take from 5 minutes to a few hours. |
+| **Publish app** is grey and cannot be clicked | Home page or privacy policy link missing under **Branding** | Step 4, then come back to step 6 |
 | Google refuses the return address in step 7 | Domain not in **Authorized domains**, or no https | Step 4 |
 | "Access blocked: Fylvo has not completed the Google verification process", `Error 403: access_denied` | App is still in **Testing** and the user is not a test user | Publish the app (step 6) |
 | Drive connections stop working after 7 days | App was in **Testing** when the user connected | Publish the app, then let users reconnect |
