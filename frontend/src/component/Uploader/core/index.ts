@@ -260,6 +260,10 @@ export default class UploadManager {
         this.o.onToast("warning", i18next.t("application:connected.noFolderUpload"));
       }
       files = plain;
+      if (files.length == 0) {
+        resolve([]);
+        return;
+      }
     }
 
     if (files.length > 0) {

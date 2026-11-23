@@ -67,16 +67,23 @@ export default abstract class Chunk extends Base {
     }
     let failedCode: number | undefined;
     try {
-      const state = await store.dispatch(getConnectedUploadState(session));
-      if (state.state == "done") {
-        return true;
-      }
-      if (state.state == "failed") {
-        failedCode = state.code;
-      }
-      // Not all bytes arrived: nothing is stored yet, so it is an ordinary failure.
-      if (state.state == "receiving" && state.received < this.task.file.size) {
-        return false;
+      // All bytes there and still "receiving": the server is storing it, asked again a few times.
+      for (let ask = 0; ; ask++) {
+        const state = await store.dispatch(getConnectedUploadState(session));
+        if (state.state == "done") {
+          return true;
+        }
+        if (state.state == "failed") {
+          failedCode = state.code;
+        }
+        // Not all bytes arrived: nothing is stored yet, so it is an ordinary failure.
+        if (state.state == "receiving" && state.received < this.task.file.size) {
+          return false;
+        }
+        if (state.state != "receiving" || ask >= 3) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, firstWait));
       }
     } catch (_) {
       // The server no longer knows the session (40016 or a restart): unknown as well.

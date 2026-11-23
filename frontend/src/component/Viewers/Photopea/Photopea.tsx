@@ -98,6 +98,8 @@ const Photopea = () => {
       }
     }
 
+    // Each save starts with an empty buffer, also after a refused one.
+    buffer.current = new ArrayBuffer(0);
     pp.current.contentWindow?.postMessage(`app.activeDocument.saveToOE("${ext}")`, "*");
     saveStarted.current = newFile ? saveOpt.saveAs : saveOpt.started;
   };

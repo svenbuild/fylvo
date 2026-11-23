@@ -37,8 +37,9 @@ const ExcalidrawViewer = () => {
   const [changedValue, setChangedValue] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saved, setSaved] = useState(true);
-  // Fylvo: counts edits, so a save only marks as saved what it sent.
-  const edits = useRef(0);
+  // Fylvo: the content last reported, so a save only marks as saved what it sent (Excalidraw
+  // reports every change of its state, also selection and zoom).
+  const lastChange = useRef<string | undefined>(undefined);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const saveFunction = useRef(() => {});
 
@@ -87,12 +88,12 @@ const ExcalidrawViewer = () => {
       }
 
       setLoading(true);
-      const sentAt = edits.current;
+      const sent = changedValue;
       dispatch(saveExcalidraw(changedValue, viewerState.file, viewerState.version, saveAs))
         .then((saved) => {
           // Only a save that went through, and not edits made meanwhile; a refused one keeps
           // the changes marked.
-          if (saved && edits.current == sentAt) {
+          if (saved && (lastChange.current === undefined || lastChange.current == sent)) {
             setSaved(true);
           }
         })
@@ -104,7 +105,7 @@ const ExcalidrawViewer = () => {
   );
 
   const onChange = useCallback((v: string) => {
-    edits.current++;
+    lastChange.current = v;
     setChangedValue(v);
     setSaved(false);
   }, []);

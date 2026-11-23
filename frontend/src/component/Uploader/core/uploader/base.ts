@@ -161,6 +161,10 @@ export default abstract class Base {
     // Fylvo: the place is taken before the session is opened, and kept until the end.
     await takeConnectedSlot();
     try {
+      // Cancelled while it waited for its place: nothing is opened.
+      if (this.canceledByUser) {
+        return;
+      }
       await this.runTask();
     } finally {
       giveConnectedSlot();

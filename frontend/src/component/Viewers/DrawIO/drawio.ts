@@ -9,6 +9,9 @@ import { getFileInfo } from "../../../api/api.ts";
 
 const defaultHost = "https://embed.diagrams.net";
 
+// Fylvo: the origin the editor's messages must come from.
+export const drawIOOrigin = (host?: string) => new URL(host ?? defaultHost).origin;
+
 export const generateIframeSrc = (
   host: string | undefined,
   file: FileResponse,
@@ -61,6 +64,10 @@ export const handleRemoteInvoke = async (
       ]);
       break;
     case "saveFile":
+      if (!writeable) {
+        sendResponse(w, msg, null, "read only");
+        break;
+      }
       try {
         const res = await dispatch(saveDrawIO(msg.functionArgs[2], viewerState.file, false));
         if (res) {

@@ -474,8 +474,9 @@ export function saveImage(
 
     // Fylvo: a copy under a new name in a connected storage replaces nothing.
     const uri = originFileUri.toString();
-    const previous = name != file.name && inConnectedStorage(uri) ? undefined : version;
-    const savedImageFile = await dispatch(saveFile(uri, await dataUrlToBytes(data), previous));
+    const savedImageFile = await dispatch(
+      saveFile(uri, await dataUrlToBytes(data), version, false, false, name != file.name),
+    );
     if (savedImageFile) {
       const {
         globalState: { imageViewer },
@@ -499,6 +500,9 @@ export function saveFile(
   version?: string,
   saveAsNew?: boolean,
   ignoreSnackbar?: boolean,
+  // Fylvo: saved under a name the user chose (as saveAsNew, without asking for it here); in a
+  // connected storage it must be free.
+  asNew?: boolean,
 ): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, _getState): Promise<FileResponse | undefined> => {
     let savedFile: FileResponse | undefined;
@@ -511,6 +515,23 @@ export function saveFile(
           uri = dst.toString();
         }
       } catch (e) {
+        return;
+      }
+    }
+    // Fylvo: saving there replaces a file of that name, so a copy under a chosen name needs a
+    // free name. The version is still sent: should the name be taken meanwhile, the server
+    // answers "changed" (40076) instead of replacing that file.
+    if (inConnectedStorage(uri) && (saveAsNew || asNew)) {
+      const taken = await dispatch(getFileInfo({ uri }, true)).then(
+        () => true,
+        () => false,
+      );
+      if (taken) {
+        enqueueSnackbar({
+          message: i18next.t("common:errors.40004"),
+          variant: "warning",
+          action: DefaultCloseAction,
+        });
         return;
       }
     }
@@ -532,7 +553,7 @@ export function saveFile(
             uri: uri,
             previous: version,
             // Fylvo: saving a file of a connected storage never brings back a deleted one.
-            previous_required: inConnectedStorage(uri) && !saveAsNew && !!version ? true : undefined,
+            previous_required: inConnectedStorage(uri) && !saveAsNew && !asNew && !!version ? true : undefined,
           },
           data,
         ),
@@ -545,8 +566,7 @@ export function saveFile(
           if (opt.overwrite) {
             return await dispatch(saveFile(uri, data));
           } else if (opt.saveAs) {
-            // Fylvo: a copy under a new name in a connected storage replaces nothing.
-            return await dispatch(saveFile(opt.saveAs, data, inConnectedStorage(opt.saveAs) ? undefined : version));
+            return await dispatch(saveFile(opt.saveAs, data, version, false, false, true));
           }
         } catch (e) {
           // Cancel save action
@@ -644,12 +664,12 @@ export function saveDrawIO(
   saveAsNew?: boolean,
 ): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState): Promise<FileResponse | undefined> => {
-    // Fylvo: in a connected storage only over the version saved last (the editor's messages
-    // may still name the file as it was opened).
-    const current = getState().globalState.drawIOViewer?.file;
-    const latest = current?.path == file.path ? current : file;
-    const version = inConnectedStorage(file.path) ? latest.primary_entity : undefined;
-    const savedFile = await dispatch(saveFile(getFileLinkedUri(file), data, version, saveAsNew, true));
+    // Fylvo: the file the editor holds now: its messages may still name the file as it was
+    // opened, before saves and saves under a new name. In a connected storage only over the
+    // version saved last.
+    const target = getState().globalState.drawIOViewer?.file ?? file;
+    const version = inConnectedStorage(target.path) ? target.primary_entity : undefined;
+    const savedFile = await dispatch(saveFile(getFileLinkedUri(target), data, version, saveAsNew, true));
 
     if (savedFile) {
       const {
