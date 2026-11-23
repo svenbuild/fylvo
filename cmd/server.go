@@ -35,6 +35,7 @@ var serverCmd = &cobra.Command{
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
 		go shutdown(sigChan, logger, server)
+		watchStackDump()
 
 		if err := server.Start(); err != nil {
 			logger.Error("Failed to start server: %s", err)

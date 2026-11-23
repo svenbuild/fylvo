@@ -158,6 +158,10 @@ func NewRawEntClient(l logging.Logger, config conf.ConfigProvider) (*ent.Client,
 	return ent.NewClient(driverOpt), nil
 }
 
+// sqliteBusyTimeout is how long, in milliseconds, a statement waits for a lock that
+// someone else holds before it fails with "database is locked".
+const sqliteBusyTimeout = 5000
+
 type sqlite3Driver struct {
 	*sqlite.Driver
 }
@@ -171,7 +175,7 @@ func (d sqlite3Driver) Open(name string) (conn driver.Conn, err error) {
 	if err != nil {
 		return
 	}
-	_, err = conn.(sqlite3DriverConn).Exec("PRAGMA foreign_keys = ON;", nil)
+	_, err = conn.(sqlite3DriverConn).Exec(fmt.Sprintf("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = %d;", sqliteBusyTimeout), nil)
 	if err != nil {
 		_ = conn.Close()
 	}
