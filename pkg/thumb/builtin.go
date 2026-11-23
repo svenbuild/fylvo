@@ -29,20 +29,20 @@ const maxDecodePixels = 64 * 1000 * 1000
 
 // maxDecodeBytes caps the memory the decoder needs (Fylvo): 64 MP with 8 bytes per pixel (16-bit
 // RGBA) would need about 490 MiB, more than a small container has. Such images are left to vips.
-// The estimate errs on the high side; a 40 MP baseline JPEG still goes through.
+// The estimate errs on the high side; a 40 MP baseline or 8 MP progressive JPEG still goes through.
 const maxDecodeBytes = 160 << 20
 
 // bytesPerPixel is at most what the standard decoders allocate per pixel for a color model; head
 // is the start of the file. Grey PNGs with a transparent colour become RGBA; progressive JPEGs
-// (marker SOF2) keep 4-byte coefficients per sample besides the pixels.
+// (marker SOF2) keep 4-byte coefficients for up to 4 samples per pixel besides the pixels.
 func bytesPerPixel(m color.Model, head []byte) int64 {
+	if bytes.Contains(head, []byte{0xFF, 0xC2}) {
+		return 20
+	}
 	switch m {
 	case color.RGBA64Model, color.NRGBA64Model, color.Gray16Model:
 		return 8
 	case color.YCbCrModel:
-		if bytes.Contains(head, []byte{0xFF, 0xC2}) {
-			return 8
-		}
 		return 3
 	}
 	if _, ok := m.(color.Palette); ok {

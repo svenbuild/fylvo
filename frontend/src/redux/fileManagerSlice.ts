@@ -284,19 +284,23 @@ export const fileManagerSlice = createSlice({
         state[index].list.pagination.next_token = undefined;
       }
     },
-    setThumbCache: (state, action: PayloadAction<FileManagerArgsBase<[string, FileThumbResponse | undefined, string?]>>) => {
+    setThumbCache: (
+      state,
+      action: PayloadAction<FileManagerArgsBase<[string, FileThumbResponse, string?, boolean?]>>,
+    ) => {
       const index = action.payload.index;
       const path = action.payload.value[0];
       const thumb = action.payload.value[1];
       const entity = action.payload.value[2];
+      const failed = action.payload.value[3];
       if (!state[index].tree[path]) {
         state[index].tree[path] = {};
       }
       state[index].tree[path].thumb = {
-        src: thumb?.url ?? "",
+        src: thumb?.url,
         expires: thumb?.expires,
         entity,
-        failed: !thumb,
+        failed,
       };
     },
     clearSessionCache: (state, action: PayloadAction<FileManagerArgsBase<any>>) => {

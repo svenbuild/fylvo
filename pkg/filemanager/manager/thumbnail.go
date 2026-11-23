@@ -210,7 +210,7 @@ func (m *manager) generateThumb(ctx context.Context, uri *fs.URI, ext string, es
 		// at once for the same file) can never clean up the file of the one that succeeded.
 		savePath, ok := util.UniqueThumbPath(path.Clean(util.ReplaceMagicVar(m.settings.ThumbEntitySuffix(ctx), fs.Separator, true, true, time.Now(), m.user.ID, uri.Name(), uri.Path(), es.Entity().Source())))
 		if !ok {
-			if !isThumbPregen(ctx) {
+			if !isThumbPregen(ctx) && m.isCurrentVersion(ctx, uri, es.Entity().ID()) {
 				if err := disableThumb(ctx, m, uri); err != nil {
 					m.l.Warning("Failed to disable thumb: %v", err)
 				}
@@ -312,6 +312,9 @@ func (m *GenerateThumbTask) Do(ctx context.Context) (task.Status, error) {
 	if m.pregen {
 		ctx = withThumbPregen(ctx)
 	}
+	// Fylvo: the source reads with the worker's context, not with the request that asked (which
+	// can be over, and its context reused, while this runs).
+	m.es.Apply(entitysource.WithContext(ctx))
 	res, err := m.m.generateThumb(ctx, m.uri, m.ext, m.es)
 	if err != nil {
 		if errors.Is(err, thumb.ErrNotAvailable) {

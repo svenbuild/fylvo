@@ -121,11 +121,8 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
     const cache = fileManager[index].tree[file.path]?.thumb;
     // Fylvo: a thumbnail belongs to one version of the file (its address stays the same for a day).
     if (cache && cache.entity == file.primary_entity) {
-      if (cache.failed) {
-        return null;
-      }
       if (!cache.expires || dayjs(cache.expires).isAfter(dayjs())) {
-        return cache.src;
+        return cache.failed ? null : cache.src;
       }
     }
 
@@ -134,9 +131,15 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
       dispatch(setThumbCache({ index, value: [file.path, thumb, file.primary_entity] }));
       return thumb.url;
     } catch (e) {
-      // Fylvo: remembered for this version of the file only, in the thumbnail cache; the file
-      // entry itself is not touched (an answer that comes late must not bring back an older one).
-      dispatch(setThumbCache({ index, value: [file.path, undefined, file.primary_entity] }));
+      // Fylvo: remembered for this version of the file only, in the thumbnail cache, and for a
+      // minute (a busy server may have it later); the file entry itself is not touched (an answer
+      // that comes late must not bring back an older one).
+      dispatch(
+        setThumbCache({
+          index,
+          value: [file.path, { url: "", expires: dayjs().add(1, "minute").toISOString() }, file.primary_entity, true],
+        }),
+      );
       console.warn("Failed to load thumb", e);
       return null;
     }

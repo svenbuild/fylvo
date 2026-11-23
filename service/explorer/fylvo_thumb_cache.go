@@ -29,6 +29,11 @@ func StableThumbExpire(now time.Time) time.Time {
 // A thumbnail that cannot be read (still being stored, file gone) is not kept at all, so the
 // same address works once it is there.
 func prepareThumbResponse(c *gin.Context, es entitysource.EntitySource) {
+	// Other storage answers with its own headers through the proxy; reading it here first would
+	// cost a second request there.
+	if !es.IsLocal() {
+		return
+	}
 	var head [512]byte
 	n, _ := io.ReadFull(es, head[:])
 	if _, err := es.Seek(0, io.SeekStart); err != nil || n == 0 || es.Entity().UploadSessionID() != nil {

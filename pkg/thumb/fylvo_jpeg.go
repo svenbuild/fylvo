@@ -47,5 +47,15 @@ func toJPEGIfOpaque(path string, encode *setting.ThumbEncode, maxWidth, maxHeigh
 	if err := jpeg.Encode(&out, img, &jpeg.Options{Quality: encode.Quality}); err != nil {
 		return fmt.Errorf("failed to encode JPEG: %w", err)
 	}
-	return os.WriteFile(path, out.Bytes(), 0644)
+	// Written next to it and renamed, so a failed write leaves the PNG whole.
+	tmp := path + ".jpg"
+	if err := os.WriteFile(tmp, out.Bytes(), 0644); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }

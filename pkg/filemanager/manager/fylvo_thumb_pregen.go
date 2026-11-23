@@ -10,6 +10,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/ent"
 	"github.com/cloudreve/Cloudreve/v4/ent/user"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
+	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -53,7 +54,7 @@ func StartThumbPregen(ctx context.Context, dep dependency.Dep) <-chan struct{} {
 	l := dep.Logger().CopyWithPrefix("[ThumbPregen]")
 	ctx = dep.ForkWithLogger(ctx, l)
 	ctx = context.WithValue(ctx, logging.LoggerCtx{}, l)
-	p := &thumbPregen{dep: dep, l: l, failedFiles: map[[2]int]struct{}{}, top: -1}
+	p := &thumbPregen{dep: dep, l: l, skip: map[[2]int]struct{}{}, top: -1}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -65,9 +66,10 @@ func StartThumbPregen(ctx context.Context, dep dependency.Dep) <-chan struct{} {
 type thumbPregen struct {
 	dep dependency.Dep
 	l   logging.Logger
-	// failedFiles holds file id and version of files whose thumbnail failed in this run of the
-	// server; they are left to the first view.
-	failedFiles map[[2]int]struct{}
+	// skip holds file id and version of files not to look at again in this run of the server:
+	// the thumbnail failed (left to the first view), the storage makes its own, the file is in
+	// the trash or its owner's account is full.
+	skip map[[2]int]struct{}
 	// top is the highest file id seen; a wake-up looks only above it. -1: no pass yet.
 	top int
 	// Per batch.
@@ -157,7 +159,7 @@ func (p *thumbPregen) walk(ctx context.Context, after int) bool {
 // one has the thumbnail of one file made if it is a candidate. It returns false when stopped.
 func (p *thumbPregen) one(ctx context.Context, f *ent.File) bool {
 	key := [2]int{f.ID, f.PrimaryEntity}
-	if _, failed := p.failedFiles[key]; failed || !p.supported(ctx, f.Name) {
+	if _, skip := p.skip[key]; skip || !p.supported(ctx, f.Name) {
 		return true
 	}
 
@@ -172,12 +174,18 @@ func (p *thumbPregen) one(ctx context.Context, f *ent.File) bool {
 	// A full account gets no thumbnail (they count towards the quota).
 	if capacity, err := fm.fs.Capacity(userCtx, owner); err != nil || capacity.Used >= capacity.Total {
 		fm.Recycle()
+		if err == nil {
+			p.skip[key] = struct{}{}
+		}
 		return true
 	}
 
 	target, err := fm.fs.TraverseFile(userCtx, f.ID)
 	if err != nil || target.Uri(true).FileSystem() == constants.FileSystemTrash {
 		fm.Recycle()
+		if err == nil {
+			p.skip[key] = struct{}{}
+		}
 		return true
 	}
 	uri := target.Uri(true)
@@ -192,11 +200,18 @@ func (p *thumbPregen) one(ctx context.Context, f *ent.File) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		p.failedFiles[key] = struct{}{}
+		p.skip[key] = struct{}{}
 		p.failed++
 		p.l.Debug("No thumbnail for %q: %s", uri.String(), err)
 	} else {
+		stored := src.Entity().Type() == types.EntityTypeThumbnail
 		src.Close()
+		if !stored {
+			// The storage makes previews itself; nothing was made here.
+			p.skip[key] = struct{}{}
+			fm.Recycle()
+			return true
+		}
 		p.made++
 	}
 
@@ -226,11 +241,15 @@ func (p *thumbPregen) owner(ctx context.Context, id int) (*ent.User, bool) {
 	return u, u != nil
 }
 
-// supported tells if an enabled generator makes thumbnails of this file name. Office files are
-// left to the first view: LibreOffice needs more memory than a small server has to spare.
+// supported tells if an enabled generator makes thumbnails of this file name. Office files (and
+// all others LibreOffice would take, it runs before the others) are left to the first view:
+// LibreOffice needs more memory than a small server has to spare.
 func (p *thumbPregen) supported(ctx context.Context, name string) bool {
 	s := p.dep.SettingProvider()
 	ext := util.Ext(name)
+	if s.LibreOfficeThumbGeneratorEnabled(ctx) && util.IsInExtensionListExt(s.LibreOfficeThumbExts(ctx), ext) {
+		return false
+	}
 	switch {
 	case s.BuiltinThumbGeneratorEnabled(ctx) && util.IsInExtensionListExt([]string{"jpg", "jpeg", "png", "gif"}, ext),
 		s.VipsThumbGeneratorEnabled(ctx) && util.IsInExtensionListExt(s.VipsThumbExts(ctx), ext),
