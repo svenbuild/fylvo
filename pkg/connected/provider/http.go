@@ -29,6 +29,9 @@ const (
 	maxErrorBody = 64 * 1024
 	// maxJSONBody bounds every JSON answer. A page of a listing is far below it.
 	maxJSONBody = 32 * 1024 * 1024
+	// jsonTimeout bounds a call that is answered with JSON, from the first try to the
+	// end of the answer: a provider that stalls in the middle holds nothing up for long.
+	jsonTimeout = 2 * time.Minute
 )
 
 // RetryBase is the first wait before a call is sent again when the provider asked to slow
@@ -110,7 +113,7 @@ func (g *guard) RoundTrip(req *http.Request) (*http.Response, error) {
 	// request refused when it leads to an internal address. A name this machine cannot
 	// look up (a network where only the proxy knows the outside) is left to the proxy.
 	if u, err := g.proxy(req); err == nil && u != nil {
-		host := req.URL.Hostname()
+		host := strings.TrimSuffix(req.URL.Hostname(), ".")
 		addresses := []net.IPAddr{{IP: net.ParseIP(host)}}
 		if addresses[0].IP == nil {
 			if strings.EqualFold(host, "localhost") {
@@ -281,6 +284,8 @@ func (c *Caller) Do(ctx context.Context, method, address string, header http.Hea
 
 // JSON sends a call and reads the JSON answer into out. in, when not nil, is sent as JSON.
 func (c *Caller) JSON(ctx context.Context, method, address string, in, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, jsonTimeout)
+	defer cancel()
 	var (
 		body   []byte
 		header = http.Header{"Accept": {"application/json"}}

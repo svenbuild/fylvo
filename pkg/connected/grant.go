@@ -59,11 +59,13 @@ type GrantItem struct {
 	Drive    string `json:"d,omitempty"`
 	Key      string `json:"k,omitempty"`
 	Link     bool   `json:"l,omitempty"`
+	// Own is the resource key of the entry itself, where it has one.
+	Own string `json:"o,omitempty"`
 }
 
 // GrantItemOf keeps what a grant needs of a row.
 func GrantItemOf(row *Row) GrantItem {
-	g := GrantItem{ID: row.ID, Name: row.Name, Version: row.Version, Revision: row.Revision, Size: row.Size, Native: row.Native}
+	g := GrantItem{ID: row.ID, Name: row.Name, Version: row.Version, Revision: row.Revision, Size: row.Size, Native: row.Native, Own: row.ResourceKey}
 	if row.Link != nil {
 		g.Link, g.Target, g.Drive, g.Key = true, row.Link.TargetID, row.Link.TargetDrive, row.Link.ResourceKey
 	}
@@ -72,7 +74,7 @@ func GrantItemOf(row *Row) GrantItem {
 
 // ProviderItem turns the item of a grant back into what a provider reads.
 func (g *GrantItem) ProviderItem() *provider.Item {
-	it := &provider.Item{ID: g.ID, Name: g.Name, Version: g.Version, Revision: g.Revision, Size: g.Size, Native: g.Native}
+	it := &provider.Item{ID: g.ID, Name: g.Name, Version: g.Version, Revision: g.Revision, Size: g.Size, Native: g.Native, ResourceKey: g.Own}
 	if g.Link {
 		it.Link = &provider.Link{TargetID: g.Target, TargetDrive: g.Drive, ResourceKey: g.Key}
 	}
@@ -207,7 +209,10 @@ func (m *Manager) Capacity(ctx context.Context, c *Conn) (*provider.Usage, error
 		return nil, err
 	}
 	m.liveMu.Lock()
-	m.usage[key] = usage{at: time.Now(), u: *u}
+	// Not for a connection that ended while the provider answered.
+	if m.live[c.ID] == c.live {
+		m.usage[key] = usage{at: time.Now(), u: *u}
+	}
 	m.liveMu.Unlock()
 	return u, nil
 }

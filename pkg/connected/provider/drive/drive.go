@@ -1,4 +1,5 @@
-// Package drive reads a Google Drive through the Drive API v3.
+// Package drive reads and changes a Google Drive through the Drive API v3, with
+// resumable uploads for content (write.go).
 //
 // It speaks plain HTTPS through provider.Caller, which adds the access token, renews
 // it on a 401, obeys rate limits and follows content redirects without the token.
@@ -107,18 +108,31 @@ func (c *client) rememberKey(id, key string) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.keys == nil || len(c.keys) >= maxKeys {
+	if c.keys == nil {
 		c.keys = map[string]string{}
 	}
+	if _, known := c.keys[id]; !known && len(c.keys) >= maxKeys {
+		// One has to go, whichever. The others stay: a folder that is being read
+		// right now must not lose its key to a full memory.
+		for other := range c.keys {
+			delete(c.keys, other)
+			break
+		}
+	}
 	c.keys[id] = key
+}
+
+// Known keeps the resource keys an entry carries: its own and that of its target.
+func (c *client) Known(item *provider.Item) {
+	c.rememberKey(item.ID, item.ResourceKey)
+	c.remember(item)
 }
 
 // mapped maps an entry of Drive to an Item and keeps the resource keys it tells.
 func (c *client) mapped(f *file) (provider.Item, bool) {
 	item, ok := f.item()
 	if ok {
-		c.rememberKey(f.ID, f.ResourceKey)
-		c.remember(&item)
+		c.Known(&item)
 	}
 	return item, ok
 }
@@ -262,7 +276,7 @@ func (c *client) Open(ctx context.Context, item *provider.Item, rangeHeader stri
 	if byRevision {
 		address = c.api + "files/" + url.PathEscape(id) + "/revisions/" + url.PathEscape(item.Revision) + "?alt=media"
 	}
-	c.remember(item)
+	c.Known(item)
 	ctx = c.keyed(ctx, id)
 	// Drive refuses every range of an empty file, and the whole of it is the answer
 	// anyway. A shortcut from a listing does not tell the size of its target.
@@ -273,10 +287,12 @@ func (c *client) Open(ctx context.Context, item *provider.Item, rangeHeader stri
 	content, err := c.call.Download(ctx, address, rangeHeader)
 	if err != nil && byRevision {
 		// Drive answers 404, or 403 without a more telling reason, for a revision it no
-		// longer serves. Rate limits and blocked files keep their own kind.
+		// longer serves. Rate limits, blocked files and a plain "you may not" keep
+		// their own kind: asking again would not help there.
 		var e *provider.Error
-		if errors.As(err, &e) && (e.Status == http.StatusNotFound || e.Status == http.StatusForbidden) &&
-			(e.Kind == provider.KindNotFound || e.Kind == provider.KindForbidden) {
+		if errors.As(err, &e) && (e.Kind == provider.KindNotFound ||
+			(e.Kind == provider.KindForbidden && (e.Code == "forbidden" || e.Code == ""))) &&
+			(e.Status == http.StatusNotFound || e.Status == http.StatusForbidden) {
 			return nil, &provider.Error{Kind: provider.KindStale, Status: e.Status, Code: e.Code}
 		}
 	}
@@ -376,7 +392,7 @@ func (f *file) item() (item provider.Item, ok bool) {
 		return item, false
 	}
 	modTime, _ := time.Parse(time.RFC3339Nano, f.ModifiedTime)
-	item = provider.Item{ID: f.ID, Name: f.Name, ModTime: modTime, WebURL: f.WebViewLink}
+	item = provider.Item{ID: f.ID, Name: f.Name, ModTime: modTime, WebURL: f.WebViewLink, ResourceKey: f.ResourceKey}
 
 	switch {
 	case f.MimeType == folderType:
@@ -454,6 +470,11 @@ var reasons = map[string]provider.Kind{
 	"appNotAuthorizedToFile":      provider.KindForbidden,
 	"forbidden":                   provider.KindForbidden,
 	"domainPolicy":                provider.KindForbidden,
+
+	// Limits on the number of items: of the account, of a folder, of a shared drive.
+	"activeItemCreationLimitExceeded":   provider.KindFull,
+	"numChildrenInNonRootLimitExceeded": provider.KindFull,
+	"teamDriveFileLimitExceeded":        provider.KindFull,
 }
 
 // safeCode is what a reason must look like to be kept as Error.Code: a short word.

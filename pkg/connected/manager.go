@@ -368,6 +368,14 @@ func (m *Manager) Authorize(ctx context.Context, userID int, provider, reconnect
 	}
 	client.Redirect = redirect
 
+	// Not for an account that is being removed or is gone: its sign-ins were dropped,
+	// and one that started now would leave a token behind when the provider answers.
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.leaving[userID] > 0 || (m.exists != nil && !m.exists(ctx, userID)) {
+		return "", "", flowError(ErrFlowExpired)
+	}
+
 	var renew *Reconnect
 	if reconnect != "" {
 		row, err := m.row(ctx, userID, reconnect)

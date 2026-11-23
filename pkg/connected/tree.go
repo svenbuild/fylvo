@@ -194,8 +194,10 @@ func (l *listing) add(it provider.Item) {
 		return
 	}
 	l.ids[it.ID] = true
+	// The provider's own name decides: "." does not become a name by the extension a
+	// document gets here.
 	name := displayName(&it)
-	if !plainName(name) {
+	if !plainName(it.Name) || !plainName(name) {
 		l.omitted++
 		return
 	}
@@ -204,8 +206,13 @@ func (l *listing) add(it provider.Item) {
 		key = strings.ToLower(name)
 	}
 	if first, taken := l.byName[key]; taken {
+		// The row stands for none of them. It keeps a time to show: the newest.
+		newest := first.ModTime
+		if it.ModTime.After(newest) {
+			newest = it.ModTime
+		}
 		*first = Row{
-			Item:        provider.Item{Name: first.Name, IsDir: first.IsDir && it.IsDir},
+			Item:        provider.Item{Name: first.Name, IsDir: first.IsDir && it.IsDir, ModTime: newest},
 			Unsupported: UnsupportedDuplicate,
 		}
 		return
@@ -419,6 +426,9 @@ func (t *Tree) Resolve(ctx context.Context, c *Conn, path string) (*Row, error) 
 			return nil, err
 		}
 
+		// A row from a listing in memory: the provider may need to be told again what
+		// it takes to reach the entry.
+		c.P.Known(&found.Item)
 		walked = joinPath(walked, found.Name)
 		viaLink = viaLink || found.Link != nil
 		next := *found

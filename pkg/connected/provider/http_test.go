@@ -21,6 +21,14 @@ type testAuth struct {
 	n        int
 	renewals int
 	fail     error
+	// refused are the tokens the provider refused right after handing them out.
+	refused []string
+}
+
+func (a *testAuth) Refused(_ context.Context, token string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.refused = append(a.refused, token)
 }
 
 func (a *testAuth) Token(ctx context.Context, rejected string) (string, error) {
@@ -70,12 +78,19 @@ func TestDoRenewsTokenOnce(t *testing.T) {
 	if len(seen) != 2 || seen[1] != "Bearer token-2" || auth.renewals != 1 {
 		t.Fatalf("seen %v renewals %d", seen, auth.renewals)
 	}
+	if len(auth.refused) != 0 {
+		t.Fatalf("one refusal is an old token, not a refused connection: %v", auth.refused)
+	}
 
 	// A provider that keeps answering 401 is asked twice, not for ever.
 	seen = nil
 	err := c.JSON(context.Background(), http.MethodGet, api.URL+"/always", nil, nil)
 	if KindOf(err) != KindReconnect || len(seen) != 2 {
 		t.Fatalf("err %v, %d calls", err, len(seen))
+	}
+	// The connection is told that its brand-new token was refused, once.
+	if len(auth.refused) != 1 || "Bearer "+auth.refused[0] != seen[1] {
+		t.Fatalf("refused %v, sent %v", auth.refused, seen)
 	}
 }
 
@@ -281,7 +296,7 @@ func TestClientBehindProxy(t *testing.T) {
 
 	// The proxy is for one name only, as with NO_PROXY for everything else.
 	client := newHTTPClient(func(r *http.Request) (*url.URL, error) {
-		if strings.HasSuffix(r.URL.Hostname(), ".example.com") || r.URL.Hostname() == "192.168.1.10" {
+		if strings.HasSuffix(r.URL.Hostname(), ".example.com") || r.URL.Hostname() == "192.168.1.10" || r.URL.Hostname() == "localhost." {
 			return proxyURL, nil
 		}
 		return nil, nil
@@ -318,6 +333,10 @@ func TestClientBehindProxy(t *testing.T) {
 	}
 	if len(proxied) != 1 {
 		t.Errorf("proxied %v", proxied)
+	}
+	// The machine itself, spelled with the dot that ends a full name.
+	if _, err := c.Do(ctx, http.MethodGet, "http://localhost.:1/x", nil, nil); KindOf(err) != KindUnsafe {
+		t.Errorf("localhost with a trailing dot through the proxy: %v, want refused", err)
 	}
 	// A name only the proxy knows is the proxy's to judge.
 	res, err = c.Do(ctx, http.MethodGet, "http://unknown.example.com/b", nil, nil)

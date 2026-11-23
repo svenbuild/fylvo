@@ -60,6 +60,7 @@ func (p *memProvider) file(folder, name string, size int64) provider.Item {
 	return p.add(folder, provider.Item{Name: name, Size: size})
 }
 
+func (p *memProvider) Known(*provider.Item)                     {}
 func (p *memProvider) Root(ctx context.Context) (string, error) { return "root", nil }
 func (p *memProvider) CaseInsensitive() bool                    { return p.fold }
 
@@ -641,5 +642,24 @@ func TestPagesBuildTheirPaths(t *testing.T) {
 				t.Fatalf("a kept row was given the path %q", e.Path)
 			}
 		}
+	}
+}
+
+// A document of the provider named "." is no entry of a path, whatever extension it
+// would get here. A name that is there twice keeps the newest time of its entries.
+func TestOddNamesAndTimes(t *testing.T) {
+	p := newMem(false)
+	p.add("root", provider.Item{Name: ".", Native: "gdoc"})
+	p.add("root", provider.Item{Name: "twice.txt", ModTime: time.Unix(1700000100, 0)})
+	p.add("root", provider.Item{Name: "twice.txt", ModTime: time.Unix(1700000900, 0)})
+	page, err := NewTree().List(context.Background(), memConn(p), "", Order{}, 100, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rowNames(page.Rows) != "twice.txt" || page.Omitted != 1 {
+		t.Fatalf("rows %q, %d omitted", rowNames(page.Rows), page.Omitted)
+	}
+	if !page.Rows[0].ModTime.Equal(time.Unix(1700000900, 0)) {
+		t.Fatalf("time of the row: %v", page.Rows[0].ModTime)
 	}
 }

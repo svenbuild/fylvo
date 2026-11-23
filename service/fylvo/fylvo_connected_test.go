@@ -151,7 +151,7 @@ func TestConnectedSetupAndAuthorize(t *testing.T) {
 	require.Equal(t, "client-id.example", consent.Query().Get("client_id"))
 	require.NotContains(t, res.URL, secret)
 
-	cookie := cookieNamed(rec, connectedCookie)
+	cookie := cookieNamed(rec, connectedCookieName(res.URL))
 	require.NotNil(t, cookie)
 	require.True(t, cookie.HttpOnly)
 	require.True(t, cookie.Secure, "the installation runs on https")
@@ -174,7 +174,7 @@ func TestConnectedSetupAndAuthorize(t *testing.T) {
 	require.Equal(t, "browser", back.Query().Get("error"))
 	require.Empty(t, back.Query().Get("finish"))
 	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
-	cleared := cookieNamed(rec, connectedCookie)
+	cleared := cookieNamed(rec, connectedCookieName(res.URL))
 	require.NotNil(t, cleared)
 	require.Negative(t, cleared.MaxAge)
 
@@ -204,7 +204,7 @@ func TestConnectedCookieOnHTTP(t *testing.T) {
 	res, err := (&ConnectedAuthorizeService{Provider: "onedrive"}).Authorize(c)
 	require.NoError(t, err)
 	require.True(t, strings.HasPrefix(res.URL, "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?"))
-	require.False(t, cookieNamed(rec, connectedCookie).Secure)
+	require.False(t, cookieNamed(rec, connectedCookieName(res.URL)).Secure)
 }
 
 // A group without the permission can neither start nor complete connecting a storage.
@@ -231,7 +231,7 @@ func TestConnectedNeedsGroupPermission(t *testing.T) {
 	c, rec := e.as(alex, "POST", "/api/v4/fylvo/connected/authorize")
 	_, err = (&ConnectedAuthorizeService{Provider: "drive"}).Authorize(c)
 	require.Equal(t, serializer.CodeConnectedUnavailable, appCode(err))
-	require.Nil(t, cookieNamed(rec, connectedCookie))
+	require.Empty(t, rec.Result().Cookies())
 
 	c, _ = e.as(alex, "POST", "/api/v4/fylvo/connected/finish")
 	_, err = (&ConnectedFinishService{Code: "anything"}).Finish(c)
@@ -278,4 +278,42 @@ func TestConnectedAuthorizeOnlyUnderTheFirstAddress(t *testing.T) {
 	require.Equal(t, connected.ReasonOtherAddress, connected.ReasonOf(err))
 	_, err = (&ConnectedAuthorizeService{Provider: "drive"}).Authorize(on("cloud.example.com"))
 	require.NoError(t, err)
+}
+
+// Two sign-ins started side by side, as in two tabs, each have their own cookie: the
+// return of one does not end the other.
+func TestConnectedSignInsSideBySide(t *testing.T) {
+	e := newConnectedEnv(t, "https://cloud.example.com")
+	alex := e.newUser("alex", 2)
+	secret := "the-client-secret"
+	c, _ := e.as(alex, "PUT", "/api/v4/admin/fylvo/connected")
+	_, err := (&ConnectedAdminService{Provider: "drive", ClientID: "client-id.example", ClientSecret: &secret}).Set(c)
+	require.NoError(t, err)
+
+	start := func() (*url.URL, *http.Cookie) {
+		c, rec := e.as(alex, "POST", "/api/v4/fylvo/connected/authorize")
+		res, err := (&ConnectedAuthorizeService{Provider: "drive"}).Authorize(c)
+		require.NoError(t, err)
+		consent, err := url.Parse(res.URL)
+		require.NoError(t, err)
+		cookies := rec.Result().Cookies()
+		require.Len(t, cookies, 1)
+		return consent, cookies[0]
+	}
+	firstConsent, first := start()
+	_, second := start()
+	require.NotEqual(t, first.Name, second.Name)
+
+	// The first one comes back, denied at the provider. Only its own cookie is taken away.
+	c, rec := e.as(nil, "GET", "/api/v4/fylvo/connected/callback?state="+firstConsent.Query().Get("state")+"&error=access_denied")
+	c.Request.AddCookie(first)
+	c.Request.AddCookie(second)
+	ConnectedCallback(c)
+	back, err := url.Parse(rec.Header().Get("Location"))
+	require.NoError(t, err)
+	require.Equal(t, "denied", back.Query().Get("error"))
+	cleared := rec.Result().Cookies()
+	require.Len(t, cleared, 1)
+	require.Equal(t, first.Name, cleared[0].Name)
+	require.Negative(t, cleared[0].MaxAge)
 }

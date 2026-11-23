@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -582,4 +583,55 @@ func TestNoVersionWithoutEvidence(t *testing.T) {
 	item, ok = plain.item()
 	require.True(t, ok)
 	assert.Empty(t, item.Version)
+}
+
+// A file that needs a resource key of its own is reached with it, also by a client that
+// has only been told about the entry (after a restart, from an address handed out before).
+func TestOwnResourceKey(t *testing.T) {
+	s, d, _ := setup(t)
+	ctx := context.Background()
+	id := s.AddFile("", "old share.bin", []byte("0123456789"))
+	s.SetResourceKey(id, "key-9")
+
+	page, err := d.Children(ctx, s.RootID(), "")
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "key-9", page.Items[0].ResourceKey)
+	_, err = d.Get(ctx, id)
+	require.NoError(t, err, "the listing told the key")
+
+	other := New(Options{HTTP: s.Client(), Auth: &drivetest.Auth{}, BaseURL: s.URL()})
+	_, err = other.Get(ctx, id)
+	assert.Equal(t, provider.KindNotFound, provider.KindOf(err))
+	other.Known(&page.Items[0])
+	item, err := other.Get(ctx, id)
+	require.NoError(t, err)
+	c, err := other.Open(ctx, item, "")
+	require.NoError(t, err)
+	assert.Equal(t, "0123456789", read(t, c))
+}
+
+// A full memory of keys loses one key, not all of them.
+func TestKeysAreDroppedOneByOne(t *testing.T) {
+	_, d, _ := setup(t)
+	c := d.(*client)
+	for i := 0; i < maxKeys+10; i++ {
+		c.rememberKey(strconv.Itoa(i), "k")
+	}
+	assert.Len(t, c.keys, maxKeys)
+}
+
+// "You may not" is not "this version is gone": asking for a new address would not help.
+func TestRevisionRefusedForLackOfRights(t *testing.T) {
+	s, d, _ := setup(t)
+	ctx := context.Background()
+	id := s.AddFile("", "shared.bin", []byte("0123456789"))
+	item, err := d.Get(ctx, id)
+	require.NoError(t, err)
+	require.NotEmpty(t, item.Revision)
+
+	// The right to read revisions is taken away after the entry was read.
+	s.SetViewOnly(id)
+	_, err = d.Open(ctx, item, "")
+	assert.Equal(t, provider.KindForbidden, provider.KindOf(err))
 }
