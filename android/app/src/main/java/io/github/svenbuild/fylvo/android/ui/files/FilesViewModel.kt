@@ -540,9 +540,12 @@ class FilesViewModel(
             u.failed == 0 -> UiText.Plural(R.plurals.uploaded_files, u.uploaded, u.uploaded)
             u.uploaded == 0 -> u.error?.let { UiText.Res(R.string.upload_failed_reason, it) }
                 ?: UiText.Res(R.string.upload_failed)
+            // Fylvo: in a connected folder the reason is told too (an unknown outcome must not get lost).
+            Connected.isConnected(u.parentUri) && u.error != null ->
+                UiText.Res(R.string.uploaded_some_failed_reason, u.uploaded, u.failed, u.error)
             else -> UiText.Res(R.string.uploaded_some_failed, u.uploaded, u.failed)
         }
-        _state.value = _state.value.copy(snackbar = UiMessage(message))
+        _state.value = _state.value.copy(snackbar = UiMessage(message, long = Connected.isConnected(u.parentUri) && u.failed > 0))
         // Fylvo: a connected folder is listed again after any upload into it (an unknown outcome too).
         if (u.uploaded > 0 || Connected.isConnected(u.parentUri)) {
             if (_state.value.home) loadRecent() else if (u.parentUri == _state.value.currentUri) refresh()
@@ -1025,10 +1028,6 @@ class FilesViewModel(
     }
 
     /**
-     * Fylvo: a failed request on [paths]. A batch that failed only in part changed the folder
-     * anyway, so the listing is reloaded too (the message stays).
-     */
-    /**
      * Fylvo: a move or delete inside a connected storage. The row ids are those taken when the
      * action started ([ids]) or, if none were given, those of the listed rows. At most
      * [Connected.BATCH_LIMIT] addresses per request, one request after the other; the first
@@ -1060,6 +1059,10 @@ class FilesViewModel(
         }
     }
 
+    /**
+     * Fylvo: a failed request on [paths]. A batch that failed only in part changed the folder
+     * anyway, so the listing is reloaded too (the message stays).
+     */
     private fun reportFailure(e: Throwable, paths: List<String>) {
         _state.value = _state.value.copy(snackbar = failure(e, paths))
         if (e is ApiException && e.code == ErrorText.CODE_BATCH_NOT_COMPLETED) refresh()
@@ -1086,10 +1089,11 @@ class FilesViewModel(
         }
     }
 
-    /** Move or copy [paths] into [dst]; the list refreshes and the cache for both folders is dropped. */
     /**
+     * Move or copy [paths] into [dst]; the list refreshes and the cache for both folders is dropped.
      * Fylvo: inside a connected storage [ids] are the row ids taken when the action started (the
-     * listed rows are asked otherwise) and [dstId] the id of the target folder as listed.
+     * listed rows are asked otherwise) and [dstId] the id of the target folder as listed. Copy is
+     * never offered there.
      */
     fun moveTo(paths: List<String>, dst: String, copy: Boolean, ids: Map<String, String>? = null, dstId: String? = null) {
         if (paths.isEmpty()) return
@@ -1252,18 +1256,35 @@ class FilesViewModel(
     /** Creates [name] under [parent]; refreshes if that is the folder on screen. */
     fun mkdirIn(parent: String, name: String) {
         if (name.isBlank()) return
-        viewModelScope.launch {
-            runCatching { repo.mkdir(CrUri.join(parent, name)) }
-                .onSuccess {
-                    listingCache.remove(parent)
-                    if (parent == _state.value.currentUri) refresh()
-                }
-                .onFailure { _state.value = _state.value.copy(snackbar = failure(it)) }
+        viewModelScope.launch { createFolder(parent, name) }
+    }
+
+    /**
+     * Fylvo: creates [name] under [parent] and tells whether it worked (the folder picker lists
+     * again only then). Inside a connected storage a name with "/" is refused (it would address a
+     * folder further down).
+     */
+    suspend fun createFolder(parent: String, name: String): Boolean {
+        if (name.isBlank()) return false
+        if (Connected.isConnected(parent) && '/' in name) {
+            _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.error_bad_name))) }
+            return false
         }
+        return runCatching { repo.mkdir(CrUri.join(parent, name)) }
+            .onSuccess {
+                listingCache.remove(parent)
+                if (parent == _state.value.currentUri) refresh()
+            }
+            .onFailure { e -> _state.update { it.copy(snackbar = failure(e)) } }
+            .isSuccess
     }
 
     fun rename(file: FileObject, newName: String) {
         if (newName.isBlank() || newName == file.name) return
+        if (Connected.isConnected(file.path) && '/' in newName) {
+            _state.update { it.copy(snackbar = UiMessage(UiText.Res(R.string.error_bad_name))) }
+            return
+        }
         viewModelScope.launch {
             // Fylvo: inside a connected storage the row's id goes along (taken from the row acted on).
             runCatching { repo.rename(file.path, newName, Connected.idsOf(listOf(file))) }

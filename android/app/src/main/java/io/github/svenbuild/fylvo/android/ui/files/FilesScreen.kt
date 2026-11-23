@@ -748,7 +748,7 @@ fun FilesScreen(
             startUri = CrUri.parent(paths.first()),
             excluded = if (copy) emptySet() else paths.toSet(),
             loadFolders = { viewModel.listFolders(it) },
-            onCreateFolder = { parent, name -> viewModel.mkdirIn(parent, name) },
+            onCreateFolder = { parent, name -> viewModel.createFolder(parent, name) },
             // Fylvo: in a connected storage only into folders that allow it.
             canPick = { viewModel.pickerAllowsMoveInto(it) },
             canCreateIn = { viewModel.pickerAllowsMoveInto(it) },

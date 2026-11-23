@@ -505,4 +505,5 @@
     <string name="error_connected_outcome_unknown">It is not known whether this change arrived. Fylvo did not repeat it; please look at the folder.</string>
     <string name="upload_outcome_unknown">%1$s: it is not known whether the upload arrived. Fylvo did not send it again; the file stays on your phone. Please look at the folder.</string>
     <string name="could_not_upload_reason">%1$s: %2$s</string>
+    <string name="uploaded_some_failed_reason">%1$d uploaded, %2$d failed. %3$s</string>
 </resources>

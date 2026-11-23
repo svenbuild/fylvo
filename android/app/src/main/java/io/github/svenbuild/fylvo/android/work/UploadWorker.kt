@@ -33,7 +33,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import io.github.svenbuild.fylvo.android.FylvoApp
 import io.github.svenbuild.fylvo.android.R
+import io.github.svenbuild.fylvo.android.api.ConnectedUploadState
 import io.github.svenbuild.fylvo.android.data.ApiException
+import io.github.svenbuild.fylvo.android.data.UPLOAD_DONE
+import io.github.svenbuild.fylvo.android.data.UPLOAD_FAILED
+import io.github.svenbuild.fylvo.android.data.UPLOAD_RECEIVING
 import io.github.svenbuild.fylvo.android.util.Connected
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.ErrorText
@@ -102,7 +106,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                             lastError = describe(ApiException(r.code, "upload failed"), item.name)
                         }
                         Resume.Later -> {
-                            // Counted like a run without progress, so it cannot wait for ever.
+                            // Counted like a run without progress (network trouble too), so it cannot
+                            // wait for ever; it then ends as unknown and is never sent again.
                             val runs = batch.serverRetries + 1
                             if (runs < MAX_IDLE_RUNS) {
                                 synchronized(lock) { batch = batch.copy(serverRetries = runs).also(queue::save) }
@@ -188,11 +193,16 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                             progressed = true
                                         }
                                         is Outcome.Failed -> {
-                                            val unknown = endSession(app, synchronized(lock) { batch.items[i] }) == Resume.Unknown
+                                            val end = endSession(app, synchronized(lock) { batch.items[i] })
                                             synchronized(lock) {
                                                 inFlight.remove(i)
-                                                update(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null, interrupted = false, unknownOutcome = unknown) }
-                                                lastError = outcome.message
+                                                update(i) {
+                                                    it.copy(
+                                                        state = if (end == Resume.Done) UploadItem.State.Done else UploadItem.State.Failed,
+                                                        sessionId = null, targetUri = null, interrupted = false, unknownOutcome = end == Resume.Unknown,
+                                                    )
+                                                }
+                                                if (end != Resume.Done) lastError = outcome.message
                                             }
                                         }
                                         // Fylvo: never sent again, the file on the phone stays as it is.
@@ -375,13 +385,17 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             when (val cancel = app.fileRepository.cancelUploadStrict(session, target)) {
                 null -> return Resume.Later
                 0, ApiException.CODE_UPLOAD_SESSION_EXPIRED, ApiException.CODE_PATH_NOT_EXIST -> Unit
-                ApiException.CODE_LOGIN_REQUIRED, in 500..599, in 50000..59999 -> return Resume.Later
-                else -> if (cancel == Connected.CODE_BUSY) return Resume.Later else return Resume.Unknown
+                // HTTP statuses of a proxy or a busy server (404 aside) and login trouble: ask again later.
+                ApiException.CODE_LOGIN_REQUIRED, Connected.CODE_BUSY, in 400..403, in 405..599, in 50000..59999 -> return Resume.Later
+                else -> return Resume.Unknown
             }
             connectedResume(app.fileRepository.connected.uploadState(session)) ?: Resume.Later
         } catch (e: CancellationException) {
             throw e
         } catch (_: java.io.IOException) {
+            Resume.Later
+        } catch (_: kotlinx.serialization.SerializationException) {
+            // Not the server's answer (a login page of a public Wi-Fi): ask again later.
             Resume.Later
         } catch (e: ApiException) {
             if (e.isTransient || e.code == Connected.CODE_BUSY) Resume.Later else Resume.Unknown
@@ -886,14 +900,14 @@ data class UploadStatus(
  * Fylvo: the decision for one answer of the state route of a connected upload (unit-tested).
  * Null: still receiving, the session has to be cancelled before anything is decided.
  */
-internal fun connectedResume(state: io.github.svenbuild.fylvo.android.api.ConnectedUploadState): UploadWorker.Resume? = when (state.state) {
-    io.github.svenbuild.fylvo.android.data.UPLOAD_DONE -> UploadWorker.Resume.Done
-    io.github.svenbuild.fylvo.android.data.UPLOAD_FAILED -> when (val code = state.code) {
+internal fun connectedResume(state: ConnectedUploadState): UploadWorker.Resume? = when (state.state) {
+    UPLOAD_DONE -> UploadWorker.Resume.Done
+    UPLOAD_FAILED -> when (val code = state.code) {
         // Nothing was stored (session gone or cancelled), or the provider was busy: send again.
         null, ApiException.CODE_UPLOAD_SESSION_EXPIRED, Connected.CODE_BUSY -> UploadWorker.Resume.Resend
         Connected.CODE_OUTCOME_UNKNOWN -> UploadWorker.Resume.Unknown
         else -> UploadWorker.Resume.Failed(code)
     }
-    io.github.svenbuild.fylvo.android.data.UPLOAD_RECEIVING -> null
+    UPLOAD_RECEIVING -> null
     else -> UploadWorker.Resume.Unknown
 }

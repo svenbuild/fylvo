@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.svenbuild.fylvo.android.work.UploadWorker
+import io.github.svenbuild.fylvo.android.util.Connected
 
 /** A picked batch with its resolved target names, waiting for a conflict decision. */
 data class PendingUpload(
@@ -54,7 +55,7 @@ fun UploadConflictDialog(
     onDismiss: () -> Unit,
 ) {
     val conflicts = pending.conflicts
-    val connected = io.github.svenbuild.fylvo.android.util.Connected.isConnected(pending.parentUri)
+    val connected = Connected.isConnected(pending.parentUri)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {

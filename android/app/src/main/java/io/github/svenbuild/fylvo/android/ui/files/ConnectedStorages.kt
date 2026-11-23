@@ -298,7 +298,7 @@ fun connectedSubtitle(file: FileObject): String {
 
 /**
  * Fylvo: the sheet of a row inside a connected storage. Offers only what the row's bits allow
- * and this version can do; writing comes with Android 2 (Connected.writesAllowed).
+ * allow (reading, and writing as the bits of util/Connected say).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
