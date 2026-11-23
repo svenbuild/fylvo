@@ -42,6 +42,8 @@ const Wopi = () => {
   const displayOpt = useActionDisplayOpt(viewerState?.file ? [viewerState?.file] : []);
   const canEdit = canUpdate(displayOpt);
   const [noticeClosed, setNoticeClosed] = useState(false);
+  // A new session (also one opened over a running one) shows the notice again.
+  useEffect(() => setNoticeClosed(false), [viewerState?.session?.id]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -74,12 +76,9 @@ const Wopi = () => {
   // Fylvo: editing in a connected storage: each editor window is a document of its own. The
   // server may open it for viewing only; the view addresses of the bundled Office viewers say
   // "permission=readonly" (another WOPI viewer may not, then this counts as editing).
+  const connected = !!viewerState?.file && inConnectedStorage(viewerState.file.path);
   const connectedEdit =
-    !!viewerState?.file &&
-    inConnectedStorage(viewerState.file.path) &&
-    canEdit &&
-    !!replacedSrc &&
-    new URL(replacedSrc).searchParams.get("permission") != "readonly";
+    connected && canEdit && !!replacedSrc && new URL(replacedSrc).searchParams.get("permission") != "readonly";
 
   const handlePostMessage = (e: MessageEvent) => {
     console.log("Received PostMessage from " + e.origin, e.data);
@@ -141,7 +140,7 @@ const Wopi = () => {
       <ViewerDialog
         file={viewerState?.file}
         loading={loading}
-        readOnly={viewerState?.file && inConnectedStorage(viewerState.file.path) ? !connectedEdit : !canEdit}
+        readOnly={connected ? !connectedEdit : !canEdit}
         fullScreenToggle
         dialogProps={{
           open: !!(viewerState && viewerState.open),
