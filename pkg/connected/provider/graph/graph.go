@@ -1,4 +1,4 @@
-// Package graph reads OneDrive through Microsoft Graph.
+// Package graph reads and writes OneDrive through Microsoft Graph.
 package graph
 
 import (

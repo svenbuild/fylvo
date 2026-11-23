@@ -1,4 +1,5 @@
-// Package graphtest serves an in-memory OneDrive for tests.
+// Package graphtest serves an in-memory OneDrive with metadata, downloads,
+// recycle-bin deletes and resumable upload sessions for tests.
 package graphtest
 
 import (
@@ -7,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -44,7 +44,7 @@ type item struct {
 
 func (i *item) isFolder() bool { return i.kind == folder || i.kind == vault }
 
-// Server holds the test drive and the separate host that serves its downloads.
+// Server holds the test drive and the separate host for downloads and uploads.
 type Server struct {
 	api, download *httptest.Server
 
@@ -61,15 +61,23 @@ type Server struct {
 	tokens        []string
 	calls         map[string]int
 	downloadAuth  bool
+
+	uploads       map[string]*uploadSession
+	uploadNumber  int
+	uploadAuth    bool
+	breakAfter    int64
+	loseUploadEnd bool
+	uploadFull    bool
 }
 
 // New starts both hosts and closes them when the test ends.
 func New(t testing.TB) *Server {
 	t.Helper()
 	s := &Server{
-		items: map[string]*item{},
-		calls: map[string]int{},
-		now:   time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+		items:   map[string]*item{},
+		calls:   map[string]int{},
+		uploads: map[string]*uploadSession{},
+		now:     time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 	s.items[rootID] = &item{id: rootID, drive: driveID, name: "root", kind: folder, itemTime: s.now}
 	s.download = httptest.NewServer(http.HandlerFunc(s.serveDownload))
@@ -123,7 +131,7 @@ func (s *Server) Tokens() []string {
 	return slices.Clone(s.tokens)
 }
 
-// Calls counts API attempts for "root", "children", "item", "content" or "quota".
+// Calls counts attempts by route, including "createUploadSession" and "upload".
 // Name and id lookups both count as "item". Retries count as separate attempts.
 func (s *Server) Calls(kind string) int {
 	s.mu.Lock()
@@ -173,21 +181,26 @@ func (s *Server) add(parentID, name string, kind itemKind, content []byte, targe
 	defer s.mu.Unlock()
 	parent := s.parent(parentID)
 	s.checkName(parent.id, name, "")
+	return s.addItem(parent.id, name, kind, content, target).id
+}
+
+func (s *Server) addItem(parentID, name string, kind itemKind, content []byte, target *item) *item {
 	s.sequence++
 	id := fmt.Sprintf("item!%08d", s.sequence)
-	entry := &item{id: id, drive: driveID, parent: parent.id, name: name, kind: kind, target: target}
+	entry := &item{id: id, drive: driveID, parent: parentID, name: name, kind: kind, target: target}
 	s.touch(entry)
 	s.items[id] = entry
+	contentItem := entry
 	if target != nil {
 		target.id = fmt.Sprintf("target!%08d", s.sequence)
 		s.touch(target)
 		s.items[target.id] = target
-		entry = target
+		contentItem = target
 	}
-	if entry.kind == file {
-		s.setContent(entry, content)
+	if contentItem.kind == file {
+		s.setContent(contentItem, content)
 	}
-	return id
+	return entry
 }
 
 func (s *Server) liveItem(id string) *item {
@@ -210,10 +223,8 @@ func (s *Server) parent(id string) *item {
 }
 
 func (s *Server) checkName(parentID, name, exceptID string) {
-	for _, entry := range s.items {
-		if entry.parent == parentID && entry.id != exceptID && !entry.deleted && strings.EqualFold(entry.name, name) {
-			panic(fmt.Sprintf("the name %q is already in use in %q", name, parentID))
-		}
+	if entry := s.findChild(parentID, name, exceptID); entry != nil {
+		panic(fmt.Sprintf("the name %q is already in use in %q", name, parentID))
 	}
 }
 
@@ -262,14 +273,21 @@ func (s *Server) Move(id, newParentID string) {
 	defer s.mu.Unlock()
 	entry := s.liveItem(id)
 	parent := s.parent(newParentID)
-	for ancestor := parent; ancestor != nil; ancestor = s.items[ancestor.parent] {
-		if ancestor == entry {
-			panic(fmt.Sprintf("cannot move item %q into itself", id))
-		}
+	if s.within(parent, entry) {
+		panic(fmt.Sprintf("cannot move item %q into itself", id))
 	}
 	s.checkName(parent.id, entry.name, id)
 	entry.parent = parent.id
 	s.touch(entry)
+}
+
+func (s *Server) within(parent, entry *item) bool {
+	for ancestor := parent; ancestor != nil; ancestor = s.items[ancestor.parent] {
+		if ancestor == entry {
+			return true
+		}
+	}
+	return false
 }
 
 // Delete marks the entry deleted so tests can exercise the deleted facet.
