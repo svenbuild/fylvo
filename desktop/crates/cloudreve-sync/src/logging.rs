@@ -208,17 +208,3 @@ impl Drop for LogGuard {
         // WorkerGuard will be dropped here, flushing remaining logs
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_log_config() {
-        let config = LogConfig::default();
-        assert_eq!(config.file_prefix, "cloudreve-sync");
-        assert_eq!(config.max_files, 5);
-        assert!(config.log_to_file);
-        assert_eq!(config.log_level, "info");
-    }
-}

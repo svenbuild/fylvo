@@ -19,8 +19,7 @@ cargo build                    # Build all workspace crates
 cargo build --release          # Release build
 cargo check                    # Check for compilation errors
 cargo test                     # Run all tests
-cargo test --package cloudreve-sync --lib inventory::db::tests  # Run specific module tests
-cargo test --package cloudreve-api  # Run API crate tests
+cargo test --package cloudreve-sync --lib drive::ignore::tests  # Run specific module tests
 
 # Frontend (React/TypeScript) - run from ui/ directory
 cd ui

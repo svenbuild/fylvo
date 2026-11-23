@@ -56,16 +56,6 @@ func RandString(n int, variant []rune) string {
 	return string(b)
 }
 
-// ContainsUint 返回list中是否包含
-func ContainsUint(s []uint, e uint) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
-}
-
 // IsInExtensionList 返回文件的扩展名是否在给定的列表范围内
 func IsInExtensionList(extList []string, fileName string) bool {
 	ext := Ext(fileName)
@@ -185,28 +175,6 @@ func ReplaceMagicVar(rawString string, fsSeparator string, pathAvailable bool, b
 			return match
 		}
 	})
-}
-
-// BuildRegexp 构建用于SQL查询用的多条件正则
-func BuildRegexp(search []string, prefix, suffix, condition string) string {
-	var res string
-	for key, value := range search {
-		res += prefix + regexp.QuoteMeta(value) + suffix
-		if key < len(search)-1 {
-			res += condition
-		}
-	}
-	return res
-}
-
-// BuildConcat 根据数据库类型构建字符串连接表达式
-func BuildConcat(str1, str2 string, DBType string) string {
-	switch DBType {
-	case "mysql":
-		return "CONCAT(" + str1 + "," + str2 + ")"
-	default:
-		return str1 + "||" + str2
-	}
 }
 
 // SliceIntersect 求两个切片交集

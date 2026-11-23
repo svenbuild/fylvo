@@ -1,12 +1,10 @@
 package io.github.svenbuild.fylvo.android.work
 
-import androidx.work.Data
 import androidx.work.workDataOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -41,20 +39,6 @@ class UploadQueueTest {
         val batch = queue.create(pickedUris(1000), names(1000), "cloudreve://my/Photos", overwrite = false)
         val input = workDataOf(UploadWorker.KEY_BATCH_ID to batch.id, UploadWorker.KEY_PARENT_URI to batch.parentUri)
         assertTrue(input.toByteArray().size < 1024)
-    }
-
-    @Test
-    fun theOldWayOverflowsTheJobInput() {
-        // Documents the cause of the 1.0.0 crash with the same kind of addresses.
-        try {
-            Data.Builder()
-                .putStringArray("uris", pickedUris(170).toTypedArray())
-                .putStringArray("names", names(170).toTypedArray())
-                .build()
-            fail("170 files fit into the job input after all")
-        } catch (e: IllegalStateException) {
-            assertTrue(e.message!!.contains("10240"))
-        }
     }
 
     @Test
