@@ -1,5 +1,5 @@
 import { inConnectedStorage } from "../../../api/connected.ts";
-import { FileResponse, Metadata, Viewer, ViewerType } from "../../../api/explorer.ts";
+import { FileResponse, FileType, Metadata, Viewer, ViewerType } from "../../../api/explorer.ts";
 import { fileExtension } from "../../../util";
 
 // Id of the built-in archive viewer (builtInViewers.archive in redux/thunks/viewer.ts, not
@@ -21,9 +21,12 @@ export const usableViewers = (file: FileResponse, viewers?: Viewer[]) => {
     Metadata.connected_external_url,
     Metadata.connected_unsupported,
   ].some((key) => file.metadata?.[key] !== undefined);
-  // An Office viewer also only for its own types ("show all" lists every viewer).
-  const ext = fileExtension(file.name) ?? "";
+  // For a file an Office viewer also only for its own types ("show all" lists every viewer); a
+  // folder (the place of a new document from a template) has no type.
+  const ext = file.type == FileType.file ? fileExtension(file.name) ?? "" : undefined;
   return (viewers ?? []).filter(
-    (v) => v.id != archiveViewer && !(v.type == ViewerType.wopi && (noOffice || !v.exts.includes(ext))),
+    (v) =>
+      v.id != archiveViewer &&
+      !(v.type == ViewerType.wopi && (noOffice || (ext !== undefined && !v.exts.includes(ext)))),
   );
 };

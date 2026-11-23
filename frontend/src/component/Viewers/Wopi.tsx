@@ -108,7 +108,6 @@ const Wopi = () => {
   useEffect(() => {
     if (!viewerState || !viewerState.open) {
       submitedRef.current = false;
-      setNoticeClosed(false);
       return;
     }
 
