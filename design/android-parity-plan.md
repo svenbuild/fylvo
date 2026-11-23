@@ -286,20 +286,22 @@ wie `ShareSetting.tsx`:
   Satz statt Stille, wenn keine App passt, Fortschritt bei grossen Dateien, auch aus "Mit mir
   geteilt" und verbundenen Speichern (Export-Endung). Im Emulator mit einer Office-App geprüft,
   soweit eine installierbar ist.
-- Änderungen kommen heute nur bei offline gehaltenen Dateien zurück ("Bearbeiten"). Offene Frage an
-  Sven (nicht ungefragt bauen): "Bearbeiten" auch ohne offline halten (die App holt eine
-  Arbeitskopie und lädt jedes Speichern als neue Fassung hoch, mit dem vorhandenen Weg).
+- Entscheid von Sven (2026-11-23): "Bearbeiten" auch ohne offline halten. Die App holt genau die
+  aktuelle Fassung als eigenständige Arbeitskopie; der vorhandene Weg lädt jedes ruhige Speichern als
+  neue Fassung hoch (bei Konflikt eine Kopie). Die Datei wird beim Server über ihre ID verfolgt. Eine
+  Arbeitskopie, die ganz am Server ist und einen Tag ruht, wird von selbst abgeschlossen und einen Tag
+  später gelöscht; ein spätes Speichern geht dann als Konflikt-Kopie hoch.
 
 ### 14. Verbundene Speicher in der App verbinden, neu verbinden, trennen
 
 - **Trennen** (`DELETE /fylvo/connected/{id}`, Rückfrage) und **Umbenennen** (`PATCH`) gehen ohne
   Änderung am Server: Seite "Verbundene Speicher" unter Konto. Nach dem Trennen werden Reiter, Orte
   und wartende Uploads, die auf diesen Speicher zeigen, aufgeräumt.
-- **Verbinden / Neu verbinden** braucht den Server (Anmeldung heute an ein Browser-Cookie gebunden,
-  Ende auf der Webseite; Google verbietet WebViews). Entscheid des Haupt-Threads: der Server bekommt
-  einen eigenen Weg für Apps (Prüfwert/Geheimnis statt Cookie, Rückweg über System-Browser). Die App
-  öffnet den Ablauf in einem Custom Tab; gebaut wird das als letzte Etappe mit der fertigen
-  Schnittstelle.
+- **Verbinden / Neu verbinden** über den Weg des Servers für Apps (`app_signin`): Prüfwert des
+  App-Geheimnisses an `authorize`, Start-Adresse sofort im Custom Tab, Rück-Link
+  `fylvo://connected?attempt=…&finish=…`, Vorschau des Anbieter-Kontos und Speichern erst nach "Ja"
+  (Neu verbinden ohne Rückfrage). Ein Versuch zur Zeit, App-privat gespeichert, höchstens 20 Minuten.
+  Ohne `app_signin` öffnet wie bisher die Webseite.
 
 ### 15. Ganzen Ordner hochladen
 
