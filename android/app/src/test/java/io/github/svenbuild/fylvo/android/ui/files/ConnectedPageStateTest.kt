@@ -35,4 +35,14 @@ class ConnectedPageStateTest {
         assertTrue(state(null, failed = true).pageWanted)
         assertFalse(state(null).pageWanted)
     }
+
+    @Test fun aFailedRefreshKeepsTheRetryReachable() {
+        // An overview without anything to show was read before; the next load failed.
+        val nothing = ConnectedOverview(available = true, allowed = true, providers = listOf(notSetUp))
+        assertTrue(state(nothing, failed = true).pageWanted)
+    }
+
+    @Test fun aServerWithoutTheFeatureHidesIt() {
+        assertFalse(ConnectedStorages.State(missing = true).pageWanted)
+    }
 }

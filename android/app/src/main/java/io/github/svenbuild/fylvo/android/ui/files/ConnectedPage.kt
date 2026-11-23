@@ -88,13 +88,18 @@ fun ConnectedPage(
         Box(Modifier.fillMaxSize().padding(padding)) {
             // Fylvo 1.6.1: every state says what is the matter (never an empty page).
             if (overview == null) {
-                if (state.failed) LoadFailed(onRetry = { viewModel.connected.load() })
-                else CircularProgressIndicator(Modifier.align(Alignment.Center))
+                when {
+                    state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    state.failed -> LoadFailed(onRetry = { viewModel.connected.load() })
+                    state.missing -> Notice(stringResource(R.string.connected_unavailable))
+                    else -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                }
                 return@Box
             }
             val configured = overview.providers.any { it.configured }
+            val usable = overview.available && overview.allowed
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                if (state.failed) LoadFailed(onRetry = { viewModel.connected.load() })
+                if (state.failed) LoadFailed(onRetry = { viewModel.connected.load() }, busy = state.loading)
                 when {
                     !overview.available -> Notice(stringResource(R.string.connected_unavailable))
                     !overview.allowed -> Notice(stringResource(if (overview.storages.isEmpty()) R.string.connect_not_allowed else R.string.connected_not_allowed_with))
@@ -118,7 +123,7 @@ fun ConnectedPage(
                         leadingContent = { Icon(if (s.ok) Icons.Outlined.Cloud else Icons.Outlined.CloudOff, contentDescription = null) },
                     )
                 }
-                if (overview.allowed && overview.storages.size < overview.max.coerceAtLeast(1)) {
+                if (usable && overview.storages.size < overview.max.coerceAtLeast(1)) {
                     overview.providers.filter { it.configured }.forEach { p ->
                         ListItem(
                             modifier = Modifier.clickable(enabled = connectUi == ConnectController.Ui.Idle || connectUi is ConnectController.Ui.Waiting) { connect(p.type, null) },
@@ -142,13 +147,15 @@ fun ConnectedPage(
         }
     }
 
+    // As in the web app: only an available feature the account may use offers more than disconnecting.
+    val canUse = overview?.let { it.available && it.allowed } == true
     target?.let { s ->
         ModalBottomSheet(onDismissRequest = { target = null }) {
             Text(CrUri.rootLabel(s.uri), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-            if (s.ok && overview?.allowed == true) SheetAction(Icons.Outlined.FolderOpen, stringResource(R.string.open), { target = null; onOpen(s) })
+            if (s.ok && canUse) SheetAction(Icons.Outlined.FolderOpen, stringResource(R.string.open), { target = null; onOpen(s) })
             // Without the right to connect only disconnect is left.
-            if (overview?.allowed == true) SheetAction(Icons.Outlined.DriveFileRenameOutline, stringResource(R.string.rename), { target = null; renaming = s })
-            if (overview?.allowed == true) SheetAction(
+            if (canUse) SheetAction(Icons.Outlined.DriveFileRenameOutline, stringResource(R.string.rename), { target = null; renaming = s })
+            if (canUse) SheetAction(
                 if (overview?.appSignin == true) Icons.Outlined.Sync else Icons.AutoMirrored.Outlined.OpenInNew,
                 stringResource(R.string.connect_again),
                 { target = null; connect(s.provider, s.id) },
@@ -223,10 +230,11 @@ private fun Notice(text: String) {
 
 /** Fylvo 1.6.1: the storages could not be read; a retry. */
 @Composable
-private fun LoadFailed(onRetry: () -> Unit) {
+private fun LoadFailed(onRetry: () -> Unit, busy: Boolean = false) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
         Text(stringResource(R.string.connected_load_failed), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-        TextButton(onClick = onRetry, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text(stringResource(R.string.retry)) }
+        // While the retry runs the button waits (the answer replaces this message).
+        TextButton(onClick = onRetry, enabled = !busy) { Text(stringResource(R.string.retry)) }
     }
 }
 

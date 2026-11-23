@@ -89,15 +89,19 @@ class ConnectedStorages(
         val capacity: Map<String, CapacityResponse> = emptyMap(),
         /** Fylvo 1.6.1: the last load failed (an overview shown before stays). */
         val failed: Boolean = false,
+        /** Fylvo 1.6.1: the server has no connected storages at all (an older server). */
+        val missing: Boolean = false,
+        /** Fylvo 1.6.1: a load is under way. */
+        val loading: Boolean = false,
     ) {
         /**
          * Fylvo 1.6.1: Account shows the storages page like the web app shows its tab: when the
          * account can connect one (a provider is set up), has storages, or the load failed (so
          * its retry can be reached).
          */
-        val pageWanted: Boolean get() = overview?.let {
+        val pageWanted: Boolean get() = failed || overview?.let {
             (it.available && it.allowed && it.providers.any { p -> p.configured }) || it.storages.isNotEmpty()
-        } ?: failed
+        } == true
 
         /** Shown on Home: the feature is there and this account may use it. */
         val visible: Boolean get() = overview != null && overview.available && overview.allowed &&
@@ -121,6 +125,15 @@ class ConnectedStorages(
     suspend fun reload() = load().join()
 
     private suspend fun fetch() {
+        _state.update { it.copy(loading = true) }
+        try {
+            fetchOnce()
+        } finally {
+            _state.update { it.copy(loading = false) }
+        }
+    }
+
+    private suspend fun fetchOnce() {
         val result = try {
             repo.overview()
         } catch (e: CancellationException) {
@@ -133,12 +146,12 @@ class ConnectedStorages(
         when (result) {
             is OverviewResult.Found -> {
                 Connected.nameStorages(result.overview.storages)
-                _state.update { it.copy(overview = result.overview, failed = false) }
+                _state.update { it.copy(overview = result.overview, failed = false, missing = false) }
                 loadCapacities()
             }
             OverviewResult.Missing -> {
                 Connected.nameStorages(emptyList())
-                _state.value = State()
+                _state.value = State(missing = true, loading = true)
             }
             OverviewResult.Failed -> _state.update { it.copy(failed = true) }
         }
