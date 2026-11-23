@@ -672,12 +672,20 @@ func TestConnectedSharedItems(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Budget.gsheet|minutes.txt|Shared budget.gsheet|Shared minutes", fileNames(res.Files))
 	// The address at the provider is told for what opens only there. A link to a file
-	// that Fylvo can read has none: clients take it for "not to be opened here".
+	// that Fylvo can read has none of that kind (clients take it for "not to be opened
+	// here"); it tells where it opens at the provider as well. A file of the storage
+	// itself tells neither.
 	for _, f := range res.Files {
-		if f.Name == "Budget.gsheet" || f.Name == "Shared budget.gsheet" {
+		switch f.Name {
+		case "Budget.gsheet", "Shared budget.gsheet":
 			require.NotEmpty(t, f.Metadata[connectedMetaExternalURL], f.Name)
-		} else {
+			require.NotContains(t, f.Metadata, connectedMetaProviderURL, f.Name)
+		case "Shared minutes":
 			require.NotContains(t, f.Metadata, connectedMetaExternalURL, f.Name)
+			require.True(t, strings.HasPrefix(f.Metadata[connectedMetaProviderURL], "https://"), f.Name)
+		default:
+			require.NotContains(t, f.Metadata, connectedMetaExternalURL, f.Name)
+			require.NotContains(t, f.Metadata, connectedMetaProviderURL, f.Name)
 		}
 	}
 

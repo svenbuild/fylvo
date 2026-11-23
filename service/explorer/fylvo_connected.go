@@ -41,6 +41,10 @@ const (
 
 	// Metadata of rows of a connected storage, for clients.
 	connectedMetaExternalURL = "fylvo:external_url"
+	// connectedMetaProviderURL is where a row that Fylvo can read opens at the provider
+	// as well (a link to a file). Other than connectedMetaExternalURL it does not say
+	// that the row opens only there.
+	connectedMetaProviderURL = "fylvo:provider_url"
 	connectedMetaExport      = "fylvo:export"
 	// connectedMetaExports lists every format the document can be read in, the usual
 	// one first, separated by commas.
@@ -248,6 +252,10 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 		}
 		if row.Link != nil && !row.IsDir && row.Version == "" {
 			res.Metadata[connectedMetaSizeUnknown] = "1"
+		}
+		if _, only := res.Metadata[connectedMetaExternalURL]; !only && !row.IsDir && row.Unsupported == "" && row.WebURL != "" {
+			// A link to a file: it can be read here, and opened at the provider too.
+			res.Metadata[connectedMetaProviderURL] = row.WebURL
 		}
 	}
 
