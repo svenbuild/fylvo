@@ -452,11 +452,11 @@ func ConnectedOfficePut(c *gin.Context) {
 	}()
 	// The last save of a window that is closing: after it nobody is there to be asked.
 	exit, typed := officeSaveKind(c)
-	if beside := o.req.m.OfficeKept(o.session, sum); exit && typed && beside != nil {
-		// This very content went into a copy before, and the answer to that did
-		// not arrive. It is not stored a second time, and not over the file either
-		// (the window may have read the file again since).
-		c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(beside.ModTime)})
+	if when, kept := o.req.m.OfficeExitKept(o.session, sum); exit && typed && kept {
+		// This very content was a last save before and went into a copy, and the
+		// answer to that did not arrive. It is not stored a second time, and not over
+		// the file either (the window may have read the file again since).
+		c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(when)})
 		return
 	}
 
@@ -464,13 +464,8 @@ func ConnectedOfficePut(c *gin.Context) {
 	var app serializer.AppError
 	if errors.As(err, &app) && app.Code == serializer.CodeStaleVersion {
 		if typed {
-			// What the user wrote is stored as a new file beside the one that changed,
-			// under the name the file has now.
-			name := ""
-			if !missing {
-				name = item.Name
-			}
-			beside, err := o.req.m.OfficeKeepBeside(o.req.ctx, o.req.conn, o.session, last, size, sum, name, officeConflictWord(o.req.user))
+			// What the user wrote is stored as a file beside the one that changed.
+			beside, err := o.req.m.OfficeKeepBeside(o.req.ctx, o.req.conn, o.session, last, size, sum, officeConflictWord(o.req.user), exit)
 			switch {
 			case err != nil:
 				// It could not be kept either (no room, the folder is gone): the

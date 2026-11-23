@@ -671,10 +671,10 @@ func TestConnectedSharedItems(t *testing.T) {
 	res, err := e.list(e.alex, e.root, 0, "")
 	require.NoError(t, err)
 	require.Equal(t, "Budget.gsheet|minutes.txt|Shared budget.gsheet|Shared minutes", fileNames(res.Files))
-	// A link to a file can be opened at the provider, like a document that exists only
-	// there. A file of the storage itself has no address for that.
+	// The address at the provider is told for what opens only there. A link to a file
+	// that Fylvo can read has none: clients take it for "not to be opened here".
 	for _, f := range res.Files {
-		if _, link := f.Metadata[connectedMetaLink]; link || f.Name == "Budget.gsheet" {
+		if f.Name == "Budget.gsheet" || f.Name == "Shared budget.gsheet" {
 			require.NotEmpty(t, f.Metadata[connectedMetaExternalURL], f.Name)
 		} else {
 			require.NotContains(t, f.Metadata, connectedMetaExternalURL, f.Name)

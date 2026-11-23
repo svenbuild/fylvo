@@ -708,3 +708,32 @@ func TestOfficeInfoWithoutAVersionForAMoment(t *testing.T) {
 	_, _, err = e.readOffice(s)
 	require.Equal(t, serializer.CodeConnectedUnsupported, codeOf(err))
 }
+
+// The mark of a copy is taken off a name before a further copy gets its own.
+func TestUnmarked(t *testing.T) {
+	for name, want := range map[string]string{
+		"letter":                       "letter",
+		"letter (conflict)":            "letter",
+		"letter (conflict 2)":          "letter",
+		"letter (conflict 17)":         "letter",
+		"letter (conflict) (conflict)": "letter (conflict)",
+		"(conflict)":                   "",
+		"(conflict 3)":                 "",
+		"letter(conflict)":             "letter(conflict)",
+		"letter (conflict 1)":          "letter (conflict 1)",
+		"letter (conflict 02)":         "letter (conflict 02)",
+		"letter (conflict x)":          "letter (conflict x)",
+		"letter (Konflikt)":            "letter (Konflikt)",
+		"letter (conflict) more":       "letter (conflict) more",
+		"letter (2)":                   "letter (2)",
+		"letter )":                     "letter )",
+		"":                             "",
+	} {
+		if got := unmarked(name, "conflict"); got != want {
+			t.Errorf("%q: got %q, want %q", name, got, want)
+		}
+	}
+	if got := besideName(unmarked("(conflict)", "conflict"), " (conflict 2)", ".docx"); got != "(conflict 2).docx" {
+		t.Errorf("a name that is the mark alone: %q", got)
+	}
+}
