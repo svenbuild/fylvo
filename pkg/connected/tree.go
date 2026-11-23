@@ -320,7 +320,10 @@ func (t *Tree) fresh(key listKey) *listing {
 }
 
 // load returns the listing of the folder with the given id, from memory when fresh.
-func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, error) {
+// folder is the entry the folder was reached as. The provider is told about it before
+// every page it is asked for: what it takes to reach the folder may have been forgotten
+// since the entry was listed, or while the pages before were read.
+func (t *Tree) load(ctx context.Context, c *Conn, folderID string, folder *provider.Item) (*listing, error) {
 	key := listKey{conn: c.ID, gen: c.Generation, folder: folderID}
 	if l := t.fresh(key); l != nil {
 		return l, nil
@@ -345,6 +348,7 @@ func (t *Tree) load(ctx context.Context, c *Conn, folderID string) (*listing, er
 	defer done()
 	l := newListing(c.P.CaseInsensitive())
 	for page, pages := "", 0; ; pages++ {
+		c.P.Known(folder)
 		p, err := c.P.Children(ctx, folderID, page)
 		if err != nil {
 			if provider.KindOf(err) == provider.KindNotFound {
@@ -621,7 +625,7 @@ func (t *Tree) List(ctx context.Context, c *Conn, path string, o Order, size int
 	key := listKey{conn: c.ID, gen: c.Generation, folder: parent.ContentID()}
 	r, done := t.read(key, c.AccountKey)
 	defer done()
-	l, err := t.load(ctx, c, parent.ContentID())
+	l, err := t.load(ctx, c, parent.ContentID(), &parent.Item)
 	if err != nil {
 		return nil, err
 	}

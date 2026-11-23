@@ -151,10 +151,10 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 	type folder struct {
 		id, path string
 		viaLink  bool
-		// item is the entry the folder was listed as; nil for the folder asked for.
+		// item is the entry the folder was reached as.
 		item *provider.Item
 	}
-	queue := []folder{{id: parent.ContentID(), path: path, viaLink: parent.ViaLink}}
+	queue := []folder{{id: parent.ContentID(), path: path, viaLink: parent.ViaLink, item: &parent.Item}}
 	// full is set when a bound of the walk is reached: it ends there. What it could
 	// not see of a single folder only marks it incomplete, and it goes on.
 	seen, full := 0, false
@@ -169,24 +169,24 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 		r, done := t.read(listKey{conn: c.ID, gen: c.Generation, folder: f.id}, c.AccountKey)
 		reads, unread = append(reads, r), append(unread, done)
 
-		if f.item != nil {
-			// The provider may have to be told again what it takes to reach the folder:
-			// it was listed a while ago, many folders before this one.
-			c.P.Known(f.item)
-		}
-		l, err := t.load(ctx, c, f.id)
+		l, err := t.load(ctx, c, f.id, f.item)
 		if err == nil {
 			// A provider that does not look at its caller's patience is asked here.
 			err = ctx.Err()
 		}
 		if err != nil {
+			if provider.KindOf(err) == provider.KindReconnect {
+				// The connection has to be renewed. That is the answer, also when the
+				// time of the walk ran out in the same moment.
+				return nil, err
+			}
 			below := f.id != parent.ContentID() && (errors.Is(err, ErrNotFound) || errors.Is(err, ErrTooLarge) ||
 				provider.KindOf(err) == provider.KindIncomplete || provider.KindOf(err) == provider.KindForbidden)
 			if (late() || below) && c.ended() {
 				// What is left out below is only left out of a connection that is still there.
 				return nil, context.Canceled
 			}
-			if late() {
+			if late() && f.id != parent.ContentID() {
 				// Out of time: what was found is the answer, marked as not all.
 				snap.incomplete, full = true, true
 				break
@@ -197,9 +197,9 @@ func (t *Tree) Walk(ctx context.Context, c *Conn, path string, scan Scan, o Orde
 				snap.incomplete = true
 				continue
 			}
-			// The folder asked for itself, or trouble that is not about one folder (the
-			// provider is busy, the connection has to be renewed, the client is gone): no
-			// answer, and the error is the provider's own.
+			// The folder asked for itself (also when all the time went into it: nothing
+			// was found yet), or trouble that is not about one folder (the provider is
+			// busy, the client is gone): no answer, and the error is the provider's own.
 			return nil, err
 		}
 		if l.omitted > 0 {

@@ -247,7 +247,7 @@ func TestWalkSaysWhenItIsIncomplete(t *testing.T) {
 		require.Equal(t, 1, last.Omitted)
 	})
 
-	t.Run("a folder below that is gone or too large", func(t *testing.T) {
+	t.Run("a folder below that is gone", func(t *testing.T) {
 		p := newMem(false)
 		gone := p.dir("root", "Gone")
 		p.file("root", "a.txt", 1)
@@ -259,10 +259,32 @@ func TestWalkSaysWhenItIsIncomplete(t *testing.T) {
 		require.True(t, last.Incomplete)
 	})
 
+	t.Run("a folder below that cannot be read whole", func(t *testing.T) {
+		for name, trouble := range map[string]error{
+			"too large":        ErrTooLarge,
+			"not all of it":    &provider.Error{Kind: provider.KindIncomplete},
+			"not allowed":      &provider.Error{Kind: provider.KindForbidden},
+			"gone at the call": &provider.Error{Kind: provider.KindNotFound},
+		} {
+			p := newMem(false)
+			hard := p.dir("root", "Hard")
+			p.file(hard, "unseen.txt", 1)
+			p.file("root", "a.txt", 1)
+			p.file(p.dir("root", "Zeta"), "z.txt", 1)
+			tree, c := NewTree(), memConn(p)
+			c.P = &failing{memProvider: p, at: hard, err: trouble}
+			rows, last := walkAll(t, tree, c, "", Scan{}, 100)
+			require.Equal(t, "Hard|Zeta|a.txt|Zeta/z.txt", rowPaths(rows), name)
+			require.True(t, last.Incomplete, name)
+		}
+	})
+
 	t.Run("the bound of rows", func(t *testing.T) {
 		p := newMem(false)
+		var dirs []string
 		for d := 0; d < 3; d++ {
 			dir := p.dir("root", fmt.Sprintf("d%d", d))
+			dirs = append(dirs, dir)
 			for i := 0; i < walkRows/2; i++ {
 				p.add(dir, provider.Item{Name: fmt.Sprintf("f%05d", i), ID: fmt.Sprintf("d%d-%d", d, i), Version: "v"})
 			}
@@ -272,6 +294,9 @@ func TestWalkSaysWhenItIsIncomplete(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, page.Incomplete)
 		require.Equal(t, "d0|d1|d2", rowPaths(page.Rows))
+		// The folder that crosses the bound is the last one that is read.
+		require.Equal(t, 1, p.lists[dirs[1]])
+		require.Zero(t, p.lists[dirs[2]])
 		// Within the bound it is complete.
 		page, err = tree.Walk(ctx, c, "d0", Scan{}, order, 10, "")
 		require.NoError(t, err)
@@ -352,6 +377,18 @@ func TestWalkSaysWhenItIsIncomplete(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, page.Incomplete)
 		require.Equal(t, "Slow|a.txt", rowPaths(page.Rows))
+		// All the time went into the folder that was asked for: nothing was found, and
+		// that is no answer.
+		c.P = &stalling{memProvider: p, at: "root", as: &provider.Error{Kind: provider.KindBusy}}
+		_, err = NewTree().Walk(ctx, c, "", Scan{}, order, 10, "")
+		require.Equal(t, provider.KindBusy, provider.KindOf(err))
+		c.P = &stalling{memProvider: p, at: "root"}
+		_, err = NewTree().Walk(ctx, c, "", Scan{}, order, 10, "")
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		// But a connection that has to be renewed is said, also at the end of the time.
+		c.P = &stalling{memProvider: p, at: slow, as: &provider.Error{Kind: provider.KindReconnect}}
+		_, err = NewTree().Walk(ctx, c, "", Scan{}, order, 10, "")
+		require.Equal(t, provider.KindReconnect, provider.KindOf(err))
 	})
 
 	t.Run("trouble that is not about one folder is no answer", func(t *testing.T) {
@@ -460,6 +497,32 @@ func TestWalkTellsTheProviderAboutEveryFolder(t *testing.T) {
 		require.Contains(t, events, "known "+ids[name]+"|list "+ids[name], name)
 	}
 	require.Equal(t, 5, strings.Count(events, "list "))
+
+	// Before every page of a folder, not only the first: reading a page can make the
+	// provider forget. The same goes for a plain listing.
+	told := func(events []string) {
+		t.Helper()
+		lists := 0
+		for i, event := range events {
+			if id, ok := strings.CutPrefix(event, "list "); ok {
+				lists++
+				require.Greater(t, i, 0)
+				require.Equal(t, "known "+id, events[i-1], "event %d", i)
+			}
+		}
+		require.Greater(t, lists, 5)
+	}
+	mem.pageSize = 1
+	p.events = nil
+	_, last = walkAll(t, NewTree(), c, "", Scan{}, 100)
+	require.False(t, last.Incomplete)
+	told(p.events)
+	p.events = nil
+	for _, path := range []string{"", "Docs", "Docs/Work"} {
+		_, err := NewTree().List(context.Background(), c, path, Order{}, 100, "")
+		require.NoError(t, err)
+	}
+	told(p.events)
 }
 
 // What happens while a walk runs: a write, the end of the connection, a client that
@@ -576,7 +639,7 @@ func TestWalkWhileThingsHappen(t *testing.T) {
 		})
 		_, err := tree.Walk(asked, c, "", Scan{}, order, 2, "")
 		require.ErrorIs(t, err, context.Canceled)
-		require.Equal(t, "list root|known "+ids["Docs"]+"|list "+ids["Docs"], strings.Join(p.events, "|"), "the walk ends at the next folder")
+		require.Equal(t, "known root|list root|known "+ids["Docs"]+"|list "+ids["Docs"], strings.Join(p.events, "|"), "the walk ends at the next folder")
 		require.Empty(t, tree.walks, "and its place is free")
 		require.Empty(t, tree.snapshots)
 	})
