@@ -47,7 +47,7 @@ export const generateIframeSrc = (
     query.set("chrome", "0");
   }
 
-  return (host ?? defaultHost) + "?" + query.toString();
+  return (host || defaultHost) + "?" + query.toString();
 };
 
 export const handleRemoteInvoke = async (

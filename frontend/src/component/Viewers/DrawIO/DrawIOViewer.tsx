@@ -91,8 +91,11 @@ const DrawIOViewer = () => {
           break;
         }
         try {
-          // Only a save that went through is shown as saved.
+          // Only a save that went through is shown as saved, and only in the editor that sent it.
           if (!(await dispatch(saveDrawIO(msg.xml, viewerState.file, false)))) {
+            break;
+          }
+          if (frame.current?.contentWindow !== e.source) {
             break;
           }
           pp.current?.contentWindow?.postMessage(

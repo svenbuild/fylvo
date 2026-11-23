@@ -3,6 +3,7 @@ import { UploaderError, UploaderErrorName } from "../errors";
 import Logger from "../logger";
 import { Task } from "../types";
 import { ChunkProgress } from "../uploader/chunk";
+import { inConnectedStorage } from "../../../../api/connected.ts";
 
 // 文件分块
 export function getChunks(file: Blob, chunkByteSize: number | undefined): Blob[] {
@@ -42,7 +43,14 @@ export function getResumeCtxKey(task: Task | string): string {
   return task;
 }
 
+// Fylvo: an upload into a connected storage is not resumed from this cache: a file is only
+// known by name and size here, and another file of that name and size would be mixed in.
+const notResumed = (task: Task | string) => isTask(task) && inConnectedStorage(task.dst);
+
 export function setResumeCtx(task: Task, logger: Logger) {
+  if (notResumed(task)) {
+    return;
+  }
   const ctxKey = getResumeCtxKey(task);
   try {
     localStorage.setItem(ctxKey, JSON.stringify(task));
@@ -74,6 +82,9 @@ export function cleanupResumeCtx(logger: Logger) {
 }
 
 export function getResumeCtx(task: Task | string, logger: Logger): Task | null {
+  if (notResumed(task)) {
+    return null;
+  }
   const ctxKey = getResumeCtxKey(task);
   let localInfoString: string | null = null;
   try {

@@ -9,7 +9,7 @@ import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
 import SessionManager, { UserSettings } from "../../session";
 import { isTrueVal } from "../../session/utils.ts";
 import { usableViewers } from "../../component/FileManager/Connected/usableViewers.ts";
-import { inConnectedStorage } from "../../api/connected.ts";
+import { ConnectedCode, inConnectedStorage } from "../../api/connected.ts";
 import { dataUrlToBytes, fileExtension, fileNameNoExt, getFileLinkedUri, sizeToString } from "../../util";
 import { base64Encode } from "../../util/base64.ts";
 import CrUri, { CrUriPrefix } from "../../util/uri.ts";
@@ -38,7 +38,7 @@ import { Viewers, ViewersByID } from "../siteConfigSlice.ts";
 import { AppThunk } from "../store.ts";
 import { askSaveAs, askStaleVersionAction } from "./dialog.ts";
 import { longRunningTaskWithSnackbar, refreshSingleFileSymbolicLinks } from "./file.ts";
-import { uploadRawFile } from "./filemanager.ts";
+import { refreshFileList, uploadRawFile } from "./filemanager.ts";
 
 export interface ExpandedViewerSetting {
   [key: string]: Viewer[];
@@ -494,9 +494,6 @@ export function saveImage(
   };
 }
 
-// Fylvo: the answer of /file/info for a name that is not there in a connected storage.
-const connectedNotThere = 40016;
-
 export function saveFile(
   uri: string,
   data: any,
@@ -526,13 +523,19 @@ export function saveFile(
     // is still sent: should the name be taken meanwhile, the server answers "changed" (40076)
     // instead of replacing that file.
     if (inConnectedStorage(uri) && (saveAsNew || asNew)) {
-      const free = await dispatch(getFileInfo({ uri }, true)).then(
-        () => false,
-        (e) => e instanceof AppError && e.code == connectedNotThere,
+      // Why it stops: the name is taken, or the answer's own text (for example "reconnect").
+      const stop = await dispatch(getFileInfo({ uri }, true)).then(
+        () => i18next.t("common:errors.40004"),
+        (e) =>
+          e instanceof AppError && e.code == ConnectedCode.NotThere
+            ? undefined
+            : e instanceof Error
+              ? e.message
+              : String(e),
       );
-      if (!free) {
+      if (stop) {
         enqueueSnackbar({
-          message: i18next.t("common:errors.40004"),
+          message: stop,
           variant: "warning",
           action: DefaultCloseAction,
         });
@@ -578,6 +581,10 @@ export function saveFile(
           throw e;
         }
       }
+      // Fylvo: the save may have happened at the provider; the list shows what is there.
+      if (e instanceof AppError && e.code == ConnectedCode.OutcomeUnknown && inConnectedStorage(uri)) {
+        dispatch(refreshFileList(FileManagerIndex.main));
+      }
     }
 
     if (!savedFile) {
@@ -619,7 +626,8 @@ export function savePhotopea(data: ArrayBuffer, file: FileResponse, version?: st
       const {
         globalState: { photopeaViewer },
       } = getState();
-      if (photopeaViewer) {
+      // Fylvo: only while the editor still holds the file this save started from.
+      if (photopeaViewer && photopeaViewer.file.path == file.path) {
         dispatch(
           setPhotopeaViewer({
             ...photopeaViewer,
@@ -649,7 +657,8 @@ export function saveCode(
       const {
         globalState: { codeViewer },
       } = getState();
-      if (codeViewer) {
+      // Fylvo: only while the editor still holds the file this save started from.
+      if (codeViewer && codeViewer.file.path == file.path) {
         dispatch(
           setCodeViewer({
             ...codeViewer,
@@ -712,7 +721,8 @@ export function saveExcalidraw(
       const {
         globalState: { excalidrawViewer },
       } = getState();
-      if (excalidrawViewer) {
+      // Fylvo: only while the editor still holds the file this save started from.
+      if (excalidrawViewer && excalidrawViewer.file.path == file.path) {
         dispatch(
           setExcalidrawViewer({
             ...excalidrawViewer,
@@ -743,7 +753,8 @@ export function saveMarkdown(
       const {
         globalState: { markdownViewer },
       } = getState();
-      if (markdownViewer) {
+      // Fylvo: only while the editor still holds the file this save started from.
+      if (markdownViewer && markdownViewer.file.path == file.path) {
         dispatch(
           setMarkdownViewer({
             ...markdownViewer,
