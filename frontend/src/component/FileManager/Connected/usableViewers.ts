@@ -23,7 +23,8 @@ export const usableViewers = (file: FileResponse, viewers?: Viewer[]) => {
   ].some((key) => file.metadata?.[key] !== undefined);
   // For a file an Office viewer also only for its own types ("show all" lists every viewer); a
   // folder (the place of a new document from a template) has no type.
-  const ext = file.type == FileType.file ? fileExtension(file.name) ?? "" : undefined;
+  // A name without a dot has no type (as the server sees it).
+  const ext = file.type == FileType.file ? (file.name.includes(".") ? fileExtension(file.name) ?? "" : "") : undefined;
   return (viewers ?? []).filter(
     (v) =>
       v.id != archiveViewer &&

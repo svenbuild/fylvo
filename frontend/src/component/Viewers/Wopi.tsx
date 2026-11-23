@@ -115,7 +115,8 @@ const Wopi = () => {
     return () => {
       window.removeEventListener("message", handlePostMessage, false);
     };
-  }, [viewerState?.open]);
+    // Fylvo: bound again for a new session, so the editor's requests name its own file.
+  }, [viewerState?.open, viewerState?.session?.id]);
 
   const onClose = useCallback(() => {
     dispatch(closeWopiViewer());
