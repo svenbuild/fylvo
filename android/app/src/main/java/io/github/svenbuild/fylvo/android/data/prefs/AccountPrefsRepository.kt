@@ -115,6 +115,9 @@ class AccountPrefsRepository(
 
     private val key = stringPreferencesKey("cache")
 
+    /** Fylvo: short hash of [accountKey] for shortcuts and the widget; empty while signed out. */
+    suspend fun accountHash(): String = FylvoActions.accountHash(accountKey())
+
     /** "server|user id"; empty while signed out. */
     suspend fun accountKey(): String {
         val server = session.serverUrlNow()
@@ -176,6 +179,7 @@ class AccountPrefsRepository(
                 lastLoad = System.currentTimeMillis()
                 _state.update { AccountPrefsState(supported = false, restored = true) }
                 saveCache(tag, account)
+                local.withLock { io.github.svenbuild.fylvo.android.widget.FylvoWidget.clear(context) }
             }
             else -> Unit
         }
@@ -184,6 +188,8 @@ class AccountPrefsRepository(
     private suspend fun saveCache(tag: SessionTag, account: String) = local.withLock {
         if (!session.isCurrent(tag)) return@withLock
         val s = _state.value
+        // The widget's favourites follow the same copy (only while the session is still this one).
+        s.favorites?.let { io.github.svenbuild.fylvo.android.widget.FylvoWidget.save(context, FylvoActions.accountHash(account), it.files) }
         context.accountPrefsStore.edit { store ->
             // Only this account's entry; a copy of another account on this device is dropped.
             val entry = if (s.supported == false || s.prefs == null) emptyMap()
@@ -196,6 +202,7 @@ class AccountPrefsRepository(
     suspend fun clear() {
         local.withLock {
             context.accountPrefsStore.edit { it.clear() }
+            io.github.svenbuild.fylvo.android.widget.FylvoWidget.clear(context)
             _state.value = AccountPrefsState(restored = true)
             lastLoad = 0
         }

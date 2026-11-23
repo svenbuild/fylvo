@@ -76,6 +76,28 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         }
         val parentUri = batch.parentUri
         val total = batch.items.size
+        /** Fylvo: the chosen target folder is still the same (by id); null: cannot be told now. */
+        suspend fun targetStillThere(): Boolean? =
+            batch.expectedParentId?.let { app.fileRepository.folderIdMatches(parentUri, it) } ?: true
+        val targetChanged = applicationContext.localized().getString(R.string.upload_target_changed)
+        when (targetStillThere()) {
+            null -> return Result.retry()
+            false -> {
+                // Before anything is sent or resumed: the folder was replaced or removed.
+                batch.items.forEachIndexed { i, item ->
+                    if (item.state == UploadItem.State.Pending) {
+                        if (item.sessionId != null) cancelSession(app, item)
+                        batch = batch.with(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null) }
+                    }
+                }
+                queue.save(batch)
+                finish(queue, batch)
+                return Result.success(
+                    workDataOf(KEY_UPLOADED to batch.uploaded, KEY_FAILED to batch.failed, KEY_PARENT_URI to parentUri, KEY_ERROR to targetChanged),
+                )
+            }
+            true -> Unit
+        }
 
         // Copies of this job left in the cache by a stop during the copy.
         stagingFiles().forEach { it.delete() }
@@ -184,6 +206,19 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                 withMemory(permits) {
                                     // Another upload may have stopped the run while this one waited.
                                     if (stop.get() != null) return@withMemory
+                                    // Fylvo: the chosen folder is checked again before every file.
+                                    when (targetStillThere()) {
+                                        null -> {
+                                            stop.compareAndSet(null, Outcome.TryLater(targetChanged, network = true))
+                                            return@withMemory
+                                        }
+                                        false -> {
+                                            update(i) { it.copy(state = UploadItem.State.Failed) }
+                                            synchronized(lock) { lastError = targetChanged }
+                                            return@withMemory
+                                        }
+                                        true -> Unit
+                                    }
                                     synchronized(lock) { inFlight[i] = 0 }
                                     reportAll(item.name, i, 0, 0, force = true)
                                     val outcome = uploadOne(app, item, parentUri, item.overwrite ?: batch.overwrite, onSession = { sessionId, targetUri, size ->
@@ -660,6 +695,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             names: List<String>? = null,
             overwrite: Boolean = false,
             overwriteOnly: Set<String>? = null,
+            /** Fylvo: the target folder's id, checked before every file (sharing into Fylvo). */
+            expectedParentId: String? = null,
         ) {
             if (uris.isEmpty()) return
             // Shared files (no folder listing here): two with the same name would race for one
@@ -680,6 +717,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             var batch = queue(context).create(uris.map { it.toString() }, fileNames, parentUri, overwrite, account = account)
             if (overwrite && overwriteOnly != null) {
                 batch = batch.copy(items = batch.items.map { it.copy(overwrite = it.name in overwriteOnly) })
+                queue(context).save(batch)
+            }
+            if (expectedParentId != null) {
+                batch = batch.copy(expectedParentId = expectedParentId)
                 queue(context).save(batch)
             }
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
@@ -758,9 +799,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             names: List<String>? = null,
             overwrite: Boolean = false,
             overwriteOnly: Set<String>? = null,
+            expectedParentId: String? = null,
         ) {
             try {
-                enqueue(context, uris, parentUri, names, overwrite, overwriteOnly)
+                enqueue(context, uris, parentUri, names, overwrite, overwriteOnly, expectedParentId)
             } catch (e: Exception) {
                 Log.w(LOG_TAG, "Could not queue an upload: ${e.javaClass.simpleName}")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {

@@ -4,4 +4,12 @@
     <color name="ic_launcher_background">#111A2B</color>
     <!-- Matches LightColors.background in ui/theme/Theme.kt. -->
     <color name="window_background">#FAFAFA</color>
+    <!-- Fylvo: the home screen widget, light; values-night has the dark ones. -->
+    <color name="widget_background">#F4F4F5</color>
+    <color name="widget_outline">#E4E4E7</color>
+    <color name="widget_field">#E6E6EA</color>
+    <color name="widget_text">#18181B</color>
+    <color name="widget_text_secondary">#5F5F68</color>
+    <!-- Fylvo: background of the launcher shortcut icons. -->
+    <color name="shortcut_background">#111A2B</color>
 </resources>

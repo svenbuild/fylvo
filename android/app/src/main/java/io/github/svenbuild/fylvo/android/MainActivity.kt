@@ -67,8 +67,19 @@ class MainActivity : AppCompatActivity() {
         handleShareIntent(intent)
     }
 
-    // Share-sheet target: files other apps hand to Fylvo go to My files.
+    // Share-sheet target: files other apps hand to Fylvo. Fylvo: they wait for the sheet "Save in
+    // Fylvo" (a folder is chosen first); shortcuts and the widget ask for search, upload, favourites
+    // or a folder. Only while signed in; the screen takes the request once (IncomingQueue).
     private fun handleShareIntent(intent: Intent?) {
+        val app = application as FylvoApp
+        if (intent?.action?.startsWith("io.github.svenbuild.fylvo.android.action.") == true) {
+            lifecycleScope.launch {
+                if (!app.sessionManager.isLoggedIn.first()) return@launch
+                io.github.svenbuild.fylvo.android.data.prefs.FylvoActions.parse(intent, app.accountPrefs.accountHash())
+                    ?.let { io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = it }
+            }
+            return
+        }
         val uris = when (intent?.action) {
             Intent.ACTION_SEND -> listOfNotNull(
                 @Suppress("DEPRECATION")
@@ -82,9 +93,11 @@ class MainActivity : AppCompatActivity() {
         // Fylvo: only content:// documents of other apps, never file:// or our own providers.
         val accepted = uris.orEmpty().filter { UploadWorker.isForeignContentUri(this, it) }
         if (accepted.isNotEmpty()) {
-            // Fylvo: names and the upload list off the main thread (a share can hold hundreds).
-            val context = applicationContext
-            lifecycleScope.launch(Dispatchers.IO) { UploadWorker.enqueueSafely(context, accepted, CrUri.MY_PREFIX) }
+            lifecycleScope.launch {
+                if (!app.sessionManager.isLoggedIn.first()) return@launch
+                io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value =
+                    io.github.svenbuild.fylvo.android.data.prefs.Incoming.Share(accepted)
+            }
         }
     }
 }
@@ -137,6 +150,8 @@ fun App() {
     LaunchedEffect(loggedIn) {
         if (loggedIn == true) {
             app.accountPrefs.restore()
+            // Folders pinned for this account work again after a sign-in.
+            io.github.svenbuild.fylvo.android.widget.FolderShortcuts.enableFor(context, app.accountPrefs.accountHash())
             app.accountPrefs.refresh()
         }
     }

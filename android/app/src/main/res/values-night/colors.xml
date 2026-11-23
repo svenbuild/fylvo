@@ -2,4 +2,9 @@
 <resources>
     <!-- Matches DarkColors.background in ui/theme/Theme.kt. -->
     <color name="window_background">#0A0A0A</color>
+    <color name="widget_background">#141416</color>
+    <color name="widget_outline">#242428</color>
+    <color name="widget_field">#1E1E22</color>
+    <color name="widget_text">#F4F4F5</color>
+    <color name="widget_text_secondary">#A9A9B0</color>
 </resources>

@@ -45,6 +45,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.AddToHomeScreen
 import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Add
@@ -453,6 +454,7 @@ private val SelectionAction.icon: ImageVector
         SelectionAction.UNFAVORITE -> Icons.Default.Star
         SelectionAction.COLOR -> Icons.Outlined.Palette
         SelectionAction.TAGS -> Icons.AutoMirrored.Outlined.Label
+        SelectionAction.PIN_HOME -> Icons.Outlined.AddToHomeScreen
     }
 
 /** [quick]: the short label of a quick button ("Move" instead of "Move to"). */
@@ -478,5 +480,6 @@ private fun SelectionAction.label(quick: Boolean): String = stringResource(
         SelectionAction.UNFAVORITE -> R.string.remove_from_favorites
         SelectionAction.COLOR -> R.string.folder_color
         SelectionAction.TAGS -> R.string.tags
+        SelectionAction.PIN_HOME -> R.string.pin_to_home_screen
     },
 )

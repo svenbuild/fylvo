@@ -558,4 +558,24 @@
     <string name="customize_reset_text">Reiter, Wischen, Startseite, Inhalt der Startseite, Seitenleiste, Aussehen und Dichte gehen für dein ganzes Konto auf den Standard zurück, auch im Web. Verknüpfungen, Favoriten und die Ansicht der Ordner bleiben.</string>
     <string name="customize_reset_confirm">Zurücksetzen</string>
     <string name="view_saved_account">Ansicht für diesen Ordner gespeichert; sie gilt auch im Web.</string>
+    <string name="upload_target_changed">Der gewählte Ordner wurde verschoben oder ersetzt. Es wurde nichts in einen anderen Ordner hochgeladen; bitte nochmals teilen.</string>
+    <string name="widget_search">In Fylvo suchen</string>
+    <string name="widget_upload">Hochladen</string>
+    <string name="widget_description">Suchen, Hochladen und deine Favoriten</string>
+    <string name="widget_signed_out">Melde dich bei Fylvo an, um deine Favoriten zu sehen.</string>
+    <string name="shortcut_search">Suchen</string>
+    <string name="shortcut_upload">Hochladen</string>
+    <string name="shortcut_signed_out">Von Fylvo abgemeldet</string>
+    <string name="pin_to_home_screen">Zum Startbildschirm</string>
+    <string name="share_into_fylvo">In Fylvo speichern</string>
+    <string name="share_last_used">Zuletzt benutzt</string>
+    <string name="share_other_places">Andere Orte</string>
+    <string name="share_pick_folder">Anderen Ordner wählen …</string>
+    <string name="share_save_here">In %1$s speichern</string>
+    <string name="share_folder_changed">Dieser Ordner wurde verschoben oder ersetzt. Bitte wähle den Ordner neu.</string>
+    <string name="upload">Hochladen</string>
+    <plurals name="share_files_count">
+        <item quantity="one">%d Datei</item>
+        <item quantity="other">%d Dateien</item>
+    </plurals>
 </resources>

@@ -64,6 +64,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.rememberUpdatedState
@@ -147,7 +148,8 @@ fun FilesScreen(
 
     val inSearch = state.searchQuery != null
     // Fylvo: the account's customisation (star, colours, tags); empty on an older server.
-    val prefsRepo = (context.applicationContext as io.github.svenbuild.fylvo.android.FylvoApp).accountPrefs
+    val app = context.applicationContext as io.github.svenbuild.fylvo.android.FylvoApp
+    val prefsRepo = app.accountPrefs
     val prefsState by prefsRepo.state.collectAsState()
 
     var pendingUpload by remember { mutableStateOf<PendingUpload?>(null) }
@@ -449,6 +451,9 @@ fun FilesScreen(
                 ?: io.github.svenbuild.fylvo.android.data.prefs.StarState.NONE,
             metadata = !state.offlineMode && !state.inConnected && io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.canEditMetadata(selectedFiles) &&
                 selectedFiles.size == state.selected.size,
+            pinnable = selectedOne != null && selectedOne.owned == true &&
+                io.github.svenbuild.fylvo.android.data.prefs.FylvoActions.openAllowed(selectedOne.path) &&
+                io.github.svenbuild.fylvo.android.widget.FolderShortcuts.canPin(context),
         ),
     )
     val listingBusy = state.loading || state.revalidating
@@ -489,6 +494,9 @@ fun FilesScreen(
             SelectionAction.UNFAVORITE -> setFavorite(targets, false)
             SelectionAction.COLOR -> colorTarget = targets
             SelectionAction.TAGS -> tagsTarget = targets
+            SelectionAction.PIN_HOME -> one?.let { folder ->
+                scope.launch { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.pin(context, folder, prefsRepo.accountHash()) }
+            }
         }
     }
 
@@ -544,8 +552,43 @@ fun FilesScreen(
     /** Fylvo: back at the top of a tab: to the start tab (at the start tab the app is left). */
     val backToStart = io.github.svenbuild.fylvo.android.data.prefs.Navigation.backAtTabRoot(currentTab, startTab)
 
-    // Fylvo: the account's start tab, once per app start (an opened target is not thrown away).
+    // ---- Fylvo: requests of other apps, shortcuts and the widget (IncomingQueue) ----------------
     var startApplied by rememberSaveable { mutableStateOf(false) }
+    val incoming by io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.collectAsState()
+    val shareUris by io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.collectAsState()
+    val pickToShare = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value = uris
+    }
+    LaunchedEffect(incoming) {
+        val request = incoming ?: return@LaunchedEffect
+        io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = null
+        // A request decides where the app is; the start tab does not move it any more.
+        startApplied = true
+        menuOpen = false
+        viewModel.clearSelection()
+        if (inSearch) closeSearch()
+        when (request) {
+            is io.github.svenbuild.fylvo.android.data.prefs.Incoming.Share ->
+                io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value = request.uris
+            io.github.svenbuild.fylvo.android.data.prefs.Incoming.Search -> {
+                accountOpen = false
+                page = null
+                openSearch()
+            }
+            io.github.svenbuild.fylvo.android.data.prefs.Incoming.Upload -> runCatching { pickToShare.launch(arrayOf("*/*")) }
+            io.github.svenbuild.fylvo.android.data.prefs.Incoming.Favorites ->
+                if (!prefsState.usable) selectTab(io.github.svenbuild.fylvo.android.data.prefs.Place.Files)
+                else if (io.github.svenbuild.fylvo.android.data.prefs.Place.Favorites in tabs) selectTab(io.github.svenbuild.fylvo.android.data.prefs.Place.Favorites)
+                else { accountOpen = false; openChip(io.github.svenbuild.fylvo.android.data.prefs.Place.Favorites) }
+            is io.github.svenbuild.fylvo.android.data.prefs.Incoming.Open -> {
+                accountOpen = false
+                page = null
+                viewModel.openPlace(if (request.folder) request.uri else CrUri.parent(request.uri))
+            }
+        }
+    }
+
+    // Fylvo: the account's start tab, once per app start (an opened target is not thrown away).
     LaunchedEffect(prefsState.usable, startTab) {
         if (startApplied || !prefsState.usable || prefsState.prefs == null) return@LaunchedEffect
         startApplied = true
@@ -1136,6 +1179,73 @@ fun FilesScreen(
             onEditDiscard = { discardTarget = it },
             onEditDismissNotice = viewModel::dismissEditNotice,
         )
+    }
+
+    // Fylvo: "Save in Fylvo" for shared files: the folder is chosen first.
+    shareUris?.let { uris ->
+        val shareStore = remember { io.github.svenbuild.fylvo.android.data.prefs.ShareTargetStore(context.applicationContext) }
+        // First: whether the folder used last was read yet; second: that folder.
+        val lastRead by produceState<Pair<Boolean, ShareTarget?>>(initialValue = false to null) {
+            value = true to shareStore.get()?.let { (uri, id) -> ShareTarget(uri, id) }
+        }
+        val last = lastRead.second
+        var chosen by remember(uris) { mutableStateOf<ShareTarget?>(null) }
+        var shareBusy by remember(uris) { mutableStateOf(false) }
+        var shareNotice by remember(uris) { mutableStateOf<String?>(null) }
+        var pickingShareFolder by remember(uris) { mutableStateOf(false) }
+        val favoriteFolders = prefsState.favorites?.files.orEmpty()
+            .filter { it.isFolder && io.github.svenbuild.fylvo.android.data.prefs.FylvoActions.openAllowed(it.path) && it.path != last?.uri }
+            .map { ShareTarget(it.path, it.id, io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.folderColor(it)) }
+        // Preselected: the folder used last, else My files.
+        LaunchedEffect(lastRead.first) { if (lastRead.first && chosen == null) chosen = last ?: ShareTarget(CrUri.MY_PREFIX, null) }
+        fun closeShare() { io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.share.value = null }
+        if (pickingShareFolder) {
+            FolderPicker(
+                title = stringResource(R.string.share_into_fylvo),
+                confirmLabel = R.string.share_save_here,
+                startUri = CrUri.MY_PREFIX,
+                excluded = emptySet(),
+                loadFolders = { viewModel.listFolders(it) },
+                onCreateFolder = { parent, name -> viewModel.createFolder(parent, name) },
+                onPick = { dst ->
+                    pickingShareFolder = false
+                    chosen = ShareTarget(dst, viewModel.pickerFolderId(dst).takeIf { !CrUri.isRoot(dst) })
+                },
+                onDismiss = { pickingShareFolder = false },
+            )
+        } else {
+            ShareTargetSheet(
+                count = uris.size,
+                last = last,
+                favorites = favoriteFolders,
+                chosen = chosen,
+                busy = shareBusy,
+                notice = shareNotice,
+                onChoose = { chosen = it; shareNotice = null },
+                onPickOther = { pickingShareFolder = true },
+                onUpload = {
+                    val target = chosen ?: return@ShareTargetSheet
+                    shareBusy = true
+                    scope.launch {
+                        // The folder must still be the chosen one (by id); without a connection the
+                        // upload checks it itself before every file.
+                        val same = target.id?.let { app.fileRepository.folderIdMatches(target.uri, it) } ?: true
+                        if (same == false) {
+                            shareBusy = false
+                            chosen = null
+                            shareNotice = context.getString(R.string.share_folder_changed)
+                            return@launch
+                        }
+                        withContext(Dispatchers.IO) {
+                            UploadWorker.enqueueSafely(context, uris, target.uri, expectedParentId = target.id)
+                            if (target.id != null) shareStore.set(target.uri, target.id) else shareStore.set(target.uri, "")
+                        }
+                        closeShare()
+                    }
+                },
+                onDismiss = { closeShare() },
+            )
+        }
     }
 
     // Fylvo: folder colour and tags of the selection (or of the file of a sheet).

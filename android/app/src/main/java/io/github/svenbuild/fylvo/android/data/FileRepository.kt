@@ -111,6 +111,23 @@ class FileRepository(private val api: ApiClient) {
             orderDirection = orderDirection,
         ).unwrap()
 
+    /**
+     * Fylvo: whether the folder at [uri] is still the one with [id]: true or false, or null when
+     * the server cannot be asked now. "My files" itself is read from its listing (file/info does
+     * not answer for a root).
+     */
+    suspend fun folderIdMatches(uri: String, id: String): Boolean? = try {
+        val folder = if (io.github.svenbuild.fylvo.android.util.CrUri.isRoot(uri)) list(uri, pageSize = 50).parent
+        else api.service().fileInfo(uri).unwrap()
+        folder != null && folder.isFolder && folder.id == id
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: ApiException) {
+        if (e.code == ApiException.CODE_PATH_NOT_EXIST) false else if (e.isTransient) null else false
+    } catch (_: Exception) {
+        null
+    }
+
     /** [entity] asks for that exact version of the file (empty = the current one). */
     suspend fun downloadUrl(uri: String, archive: Boolean = false, entity: String = ""): String =
         signedUrl(uri, download = true, archive = archive, entity = entity)

@@ -31,6 +31,8 @@ enum class SelectionAction(
     /** Fylvo: folder colour and tags (metadata, owner only). */
     COLOR,
     TAGS,
+    /** Fylvo: an own folder as its own icon on the home screen. */
+    PIN_HOME(server = false),
 }
 
 /** Where the selection is made; decides together with the selected files which actions exist. */
@@ -52,6 +54,8 @@ data class SelectionContext(
     val star: StarState = StarState.NONE,
     /** Fylvo: colour (folders) and tags can be changed for every selected file. */
     val metadata: Boolean = false,
+    /** Fylvo: the one selected folder can be put on the home screen. */
+    val pinnable: Boolean = false,
 )
 
 /**
@@ -72,6 +76,7 @@ private fun customizeActions(selected: List<FileObject>, ctx: SelectionContext):
     SelectionAction.UNFAVORITE.takeIf { ctx.star == StarState.CAN_REMOVE },
     SelectionAction.COLOR.takeIf { ctx.metadata && selected.all { it.isFolder } },
     SelectionAction.TAGS.takeIf { ctx.metadata },
+    SelectionAction.PIN_HOME.takeIf { ctx.pinnable && selected.size == 1 && selected[0].isFolder },
 )
 
 /** [quick]: the small buttons left of the selection button, nearest first. [menu]: the card above it. */

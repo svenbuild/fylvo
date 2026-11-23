@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fylvo: long press on the app icon. Only navigation; the app checks every action itself. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_search"
+        android:shortcutId="search"
+        android:shortcutShortLabel="@string/shortcut_search">
+        <intent
+            android:action="io.github.svenbuild.fylvo.android.action.SEARCH"
+            android:targetClass="io.github.svenbuild.fylvo.android.MainActivity"
+            android:targetPackage="io.github.svenbuild.fylvo.android" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_upload"
+        android:shortcutId="upload"
+        android:shortcutShortLabel="@string/shortcut_upload">
+        <intent
+            android:action="io.github.svenbuild.fylvo.android.action.UPLOAD"
+            android:targetClass="io.github.svenbuild.fylvo.android.MainActivity"
+            android:targetPackage="io.github.svenbuild.fylvo.android" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_star"
+        android:shortcutId="favorites"
+        android:shortcutShortLabel="@string/favorites">
+        <intent
+            android:action="io.github.svenbuild.fylvo.android.action.FAVORITES"
+            android:targetClass="io.github.svenbuild.fylvo.android.MainActivity"
+            android:targetPackage="io.github.svenbuild.fylvo.android" />
+    </shortcut>
+</shortcuts>
