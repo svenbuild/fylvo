@@ -54,6 +54,8 @@ import io.github.svenbuild.fylvo.android.data.offline.EditEntry
 import io.github.svenbuild.fylvo.android.data.offline.EditState
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.material.icons.filled.Folder
+import io.github.svenbuild.fylvo.android.ui.theme.rowExtra
 
 /**
  * Gestures a row or tile responds to. Fylvo: no menu button on rows any more; a long press
@@ -171,10 +173,16 @@ fun FileThumb(
 @Composable
 private fun KindIcon(file: FileObject, size: Dp, uploading: Boolean = false) {
     // Fylvo: the web app's colour per file type; an unfinished upload stays neutral.
+    // Fylvo: a folder with a colour (set on the web or here) is drawn filled in that colour.
+    val folderColor = if (uploading) null else colorOf(io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.folderColor(file))
     Icon(
-        if (uploading) Icons.Outlined.CloudUpload else fileIconOf(file),
+        when {
+            uploading -> Icons.Outlined.CloudUpload
+            folderColor != null -> Icons.Filled.Folder
+            else -> fileIconOf(file)
+        },
         contentDescription = null,
-        tint = if (uploading) MaterialTheme.colorScheme.onSurfaceVariant else fileIconTint(file),
+        tint = folderColor ?: if (uploading) MaterialTheme.colorScheme.onSurfaceVariant else fileIconTint(file),
         modifier = Modifier.size(size),
     )
 }
@@ -202,8 +210,12 @@ fun FileListItem(
     subtitle: String = fileSubtitle(file),
     /** Fylvo: the file's working copy in use; shown as "Bearbeitet" with its state. */
     edit: EditEntry? = null,
-) {
+    /** Fylvo: what swiping the row does (account setting); null: no swiping. */
+    swipe: RowSwipe? = null,
+) = SwipeRow(swipe) {
     val shape = RoundedCornerShape(12.dp)
+    // Fylvo: more room per row with the account's density "normal" or "comfortable".
+    val extra = io.github.svenbuild.fylvo.android.ui.theme.LocalListDensity.current.rowExtra
     val background by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
         animationSpec = tween(160), label = "rowBg",
@@ -215,7 +227,7 @@ fun FileListItem(
             .clip(shape)
             .background(background)
             .fileClicks(actions, selectionState(selecting, selected))
-            .padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = 0.dp),
+            .padding(start = 10.dp, top = 6.dp + extra, bottom = 6.dp + extra, end = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FileThumb(
@@ -227,12 +239,16 @@ fun FileListItem(
                 .weight(1f)
                 .padding(horizontal = 14.dp),
         ) {
-            Text(
-                file.name,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    file.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                FavoriteStar(file)
+            }
             if (subtitle.isNotEmpty() || offline || edit != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (offline) {
@@ -249,7 +265,9 @@ fun FileListItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
+                    TagMarks(file, MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -312,12 +330,16 @@ fun FileGridItem(
             }
         }
         if (!gallery) Column(Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp, end = 4.dp)) {
-            Text(
-                file.name,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    file.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                FavoriteStar(file, 12.dp)
+            }
             val subtitle = fileSubtitle(file)
             if (subtitle.isNotEmpty() || offline || edit != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

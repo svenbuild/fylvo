@@ -115,7 +115,27 @@ data class RootEditPrompt(val rootId: String, val name: String, val entries: Lis
 /** One-off message for the snackbar, optionally with an action such as Undo. [long]: stays longer (hints). */
 data class UiMessage(val text: UiText, val actionLabel: UiText? = null, val action: (() -> Unit)? = null, val long: Boolean = false)
 
+private fun kotlinx.serialization.json.JsonObject.text(key: String): String? =
+    (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.let { if (it.isString) it.content else null }
+
+/** Fylvo: [FilesUiState.origin] for "back to the home page". */
+const val ORIGIN_HOME = "home"
+
 data class FilesUiState(
+    /**
+     * Fylvo: the stored view of the folder on screen while the phone follows the account's views
+     * (see FilesViewModel.followAccountView); null: the phone's own view and sort.
+     */
+    val serverView: kotlinx.serialization.json.JsonObject? = null,
+    /** Fylvo: title of a place opened from a chip or widget (a tag search, a shortcut). */
+    val placeTitle: String? = null,
+    /**
+     * Fylvo: where "up" leads from the top of the place on screen ([ORIGIN_HOME] or a URI); set
+     * when a place is opened from a chip, the home page or a page of the app.
+     */
+    val origin: String? = null,
+    /** Fylvo: the folder a place was opened at; "up" from there leads to [origin]. */
+    val placeRoot: String? = null,
     /** Landing page with Recent and Categories; false while browsing a folder or category. */
     val home: Boolean = true,
     val recent: List<FileObject> = emptyList(),
@@ -191,18 +211,25 @@ data class FilesUiState(
     /** Fylvo: offline can be switched here (My files, shared folders, with a connection). */
     fun offlineAllowed(file: FileObject): Boolean = canKeepOffline(file) && !offlineMode
     val selecting: Boolean get() = selected.isNotEmpty()
+    /** Fylvo: at the folder a place was opened at (or at a root, or in a search): "up" goes back. */
+    val atPlaceRoot: Boolean get() = currentUri == placeRoot || CrUri.isRoot(currentUri) || virtual
     /** Fylvo: the folder on screen is inside a connected storage. */
     val inConnected: Boolean get() = !home && Connected.isConnected(currentUri)
     /** Uploads landing in the folder on screen; shown inline above the files. */
     val uploadsHere: List<UploadStatus> get() = uploads.filter { it.parentUri == currentUri }
     val category: Category? get() = Category.fromUri(currentUri)
     /** Category listings mix folders; the row subtitle names each file's folder. */
-    val virtual: Boolean get() = category != null
+    val virtual: Boolean get() = category != null || CrUri.isSearch(currentUri)
     val inTrash: Boolean get() = category == Category.TRASH
     /** Fylvo: may upload and create folders here (share capability or ownership). */
-    val canAddHere: Boolean get() = !home && category == null && !offlineMode && Permissions.canAddTo(parent)
+    val canAddHere: Boolean get() = !home && !virtual && !offlineMode && Permissions.canAddTo(parent)
     /** Effective display mode: galleries keep their own preference. */
-    val effectiveMode: ViewMode get() = if (category?.gallery == true) view.galleryMode else view.mode
+    val effectiveMode: ViewMode get() = serverView?.let { io.github.svenbuild.fylvo.android.data.prefs.MobileView.modeOf(it.text("view")) }
+        ?: if (category?.gallery == true) view.galleryMode else view.mode
+    /** Fylvo: the sort shown and used: the folder's stored one when following the account, else the phone's. */
+    val activeSort: SortOrder get() = serverView?.let {
+        io.github.svenbuild.fylvo.android.data.prefs.MobileView.sortOf(it.text("order"), it.text("order_direction"))
+    } ?: view.sort
 }
 
 class FilesViewModel(
@@ -213,6 +240,10 @@ class FilesViewModel(
     private val workManager: WorkManager,
     /** Invoked when the server no longer accepts our session; the caller returns to login. */
     private val onSessionExpired: suspend () -> Unit,
+    /** Fylvo: true while the account syncs a default view (prefs `view` customised, view sync on). */
+    private val followAccountView: () -> Boolean = { false },
+    /** Fylvo: writes a folder's stored view (AccountPrefsRepository.writeView); null when it worked. */
+    private val writeFolderView: suspend (String, (kotlinx.serialization.json.JsonObject) -> kotlinx.serialization.json.JsonObject) -> String? = { _, _ -> "" },
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(FilesUiState())
@@ -277,6 +308,8 @@ class FilesViewModel(
         val files: List<FileObject>,
         val nextToken: String?,
         val sortKey: SortOrder,
+        /** Fylvo: the folder's stored view of this listing (account view), shown with it. */
+        val serverView: kotlinx.serialization.json.JsonObject? = null,
         val parent: FileObject?,
         val connected: ConnectedListing? = null,
     )
@@ -300,6 +333,7 @@ class FilesViewModel(
             error = null,
             errorCode = null,
             files = cached?.files ?: emptyList(),
+            serverView = cached?.serverView,
             nextToken = cached?.nextToken,
             parent = cached?.parent,
             connected = cached?.connected,
@@ -313,11 +347,13 @@ class FilesViewModel(
                 if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
                 rememberShareNames(uri, res)
                 Connected.nameFromListing(uri, res.parent?.name)
-                val files = sortFiles(res.files)
-                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, res.parent, res.connected)
+                val serverView = res.view?.takeIf { follows(uri) }
+                val files = sortFiles(res.files, serverView)
+                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, serverView, res.parent, res.connected)
                 _state.value = _state.value.copy(
                     loading = false,
                     revalidating = false,
+                    serverView = serverView,
                     files = files,
                     nextToken = res.pagination.nextToken,
                     parent = res.parent,
@@ -395,8 +431,16 @@ class FilesViewModel(
                 // The user may have navigated away; the page belongs to the old folder. Fylvo: a
                 // refresh since then has a newer first page; this one would bring back old rows.
                 if (_state.value.currentUri != uri || generation != refreshGeneration) return@launch
-                val files = sortFiles(_state.value.files + res.files)
-                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, _state.value.parent, _state.value.connected)
+                // Fylvo: the sort changed on the web meanwhile: the cursor belongs to the old one.
+                val shownView = _state.value.serverView
+                if (shownView != null && res.view != null && (res.view["order"] != shownView["order"] || res.view["order_direction"] != shownView["order_direction"])) {
+                    _state.value = _state.value.copy(loadingMore = false)
+                    listingCache.remove(uri)
+                    refresh()
+                    return@launch
+                }
+                val files = sortFiles(_state.value.files + res.files, shownView)
+                listingCache[uri] = Listing(files, res.pagination.nextToken, _state.value.view.sort, shownView, _state.value.parent, _state.value.connected)
                 _state.value = _state.value.copy(
                     loadingMore = false,
                     files = files,
@@ -436,8 +480,15 @@ class FilesViewModel(
         if (CrUri.isShare(uri) && CrUri.isRoot(uri)) res.parent?.let { CrUri.nameShare(uri, it.name) }
     }
 
+    /** Fylvo: a normal folder below My files whose stored view the phone follows (no sort sent). */
+    private fun follows(uri: String): Boolean =
+        followAccountView() && uri.startsWith(CrUri.MY_PREFIX) && !CrUri.isSearch(uri) && Category.fromUri(uri) == null
+
     private suspend fun list(uri: String, token: String? = null) =
-        if (Category.fromUri(uri) != null) {
+        if (follows(uri)) {
+            // Fylvo: the server sorts by the folder's stored (or inherited) view.
+            repo.list(uri, pageToken = token)
+        } else if (Category.fromUri(uri) != null) {
             // Categories read like a timeline, as in the Files app.
             repo.list(uri, pageToken = token, orderBy = "updated_at", orderDirection = "desc")
         } else {
@@ -465,7 +516,24 @@ class FilesViewModel(
         // Fylvo: a "Shared with me" entry opens the share it points to.
         file.sharedRedirect?.let { CrUri.nameShare(it, file.name) }
         val target = file.sharedRedirect ?: file.path
-        _state.value = _state.value.copy(currentUri = target, home = false, selected = emptySet())
+        val s = _state.value
+        // Fylvo: going deeper keeps the way back of the opened place; elsewhere it ends.
+        val origin = s.origin.takeIf { !s.home && !s.virtual && target.startsWith(s.currentUri) }
+        _state.value = s.copy(
+            currentUri = target, home = false, selected = emptySet(), placeTitle = null, origin = origin,
+            placeRoot = s.placeRoot.takeIf { origin != null },
+        )
+        refresh()
+    }
+
+    /**
+     * Fylvo: opens [uri] (a folder, a category, a search such as a tag) as a place of its own with
+     * [title]; "up" from its top leads to [origin] ([ORIGIN_HOME], a URI, or null for the usual way).
+     */
+    fun openPlace(uri: String, title: String? = null, origin: String? = null) {
+        _state.value = _state.value.copy(
+            currentUri = uri, home = false, selected = emptySet(), placeTitle = title, origin = origin, placeRoot = uri.takeIf { origin != null },
+        )
         refresh()
     }
 
@@ -476,6 +544,12 @@ class FilesViewModel(
         // Fylvo: from the top of a shared folder back to the list of shared folders.
         if (CrUri.isShare(s.currentUri) && CrUri.isRoot(s.currentUri)) {
             openCategory(Category.SHARED_WITH_ME)
+            return true
+        }
+        // Fylvo: back to where the place was opened from (chip, home, a page).
+        val origin = s.origin
+        if (origin != null && s.atPlaceRoot) {
+            if (origin == ORIGIN_HOME) goHome() else openPlace(origin)
             return true
         }
         if (s.category == Category.TRASH) {
@@ -492,17 +566,17 @@ class FilesViewModel(
     }
 
     fun goHome() {
-        _state.value = _state.value.copy(home = true, currentUri = CrUri.MY_PREFIX, selected = emptySet())
+        _state.value = _state.value.copy(home = true, currentUri = CrUri.MY_PREFIX, selected = emptySet(), placeTitle = null, origin = null, placeRoot = null)
         loadRecent()
     }
 
     fun openMyFiles() {
-        _state.value = _state.value.copy(home = false, currentUri = CrUri.MY_PREFIX, selected = emptySet())
+        _state.value = _state.value.copy(home = false, currentUri = CrUri.MY_PREFIX, selected = emptySet(), placeTitle = null, origin = null, placeRoot = null)
         refresh()
     }
 
-    fun openCategory(category: Category) {
-        _state.value = _state.value.copy(home = false, currentUri = category.uri, selected = emptySet())
+    fun openCategory(category: Category, origin: String? = null) {
+        _state.value = _state.value.copy(home = false, currentUri = category.uri, selected = emptySet(), placeTitle = null, origin = origin, placeRoot = null)
         refresh()
     }
 
@@ -993,6 +1067,11 @@ class FilesViewModel(
     fun toggleViewMode() {
         val s = _state.value
         val next = if (s.effectiveMode == ViewMode.LIST) ViewMode.GRID else ViewMode.LIST
+        // Fylvo: following the account: the folder's view is saved on the server, like the web app.
+        if (s.serverView != null) {
+            writeViewHere { io.github.svenbuild.fylvo.android.data.prefs.MobileView.withLayout(it, if (next == ViewMode.LIST) "list" else "grid") }
+            return
+        }
         viewModelScope.launch {
             if (s.category?.gallery == true) viewSettings.setGalleryMode(next) else viewSettings.setMode(next)
         }
@@ -1000,12 +1079,34 @@ class FilesViewModel(
 
     /** Picking the active key again flips the direction, like the Files app. */
     fun sortBy(by: SortBy) {
-        val cur = _state.value.view.sort
+        val cur = _state.value.activeSort
         // Fylvo: inside a connected storage a saved "created" sort counts as the "modified" it is shown as.
         val shown = if (_state.value.inConnected) Connected.sortFor(cur.by) else cur.by
         val next = if (shown == by) SortOrder(by, ascending = !cur.ascending)
         else SortOrder(by, ascending = by == SortBy.NAME)
+        if (_state.value.serverView != null) {
+            writeViewHere { io.github.svenbuild.fylvo.android.data.prefs.MobileView.withSort(it, next.by.apiName, next.ascending) }
+            return
+        }
         viewModelScope.launch { viewSettings.setSort(next) }
+    }
+
+    /** Fylvo: saves the view of the folder on screen on the server, then lists it again. */
+    private fun writeViewHere(change: (kotlinx.serialization.json.JsonObject) -> kotlinx.serialization.json.JsonObject) {
+        val uri = _state.value.currentUri
+        viewModelScope.launch {
+            val failed = writeFolderView(uri, change)
+            if (failed != null) {
+                _state.value = _state.value.copy(snackbar = UiMessage(if (failed.isEmpty()) UiText.Res(R.string.customize_save_failed) else UiText.Raw(failed)))
+                return@launch
+            }
+            listingCache.remove(uri)
+            if (!viewSettings.viewSyncHintShown.first()) {
+                viewSettings.setViewSyncHintShown()
+                _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.view_saved_account)))
+            }
+            if (_state.value.currentUri == uri) refresh()
+        }
     }
 
     // ---- selection --------------------------------------------------------
@@ -1141,13 +1242,13 @@ class FilesViewModel(
      * may be entered, and the listed folder itself is kept for [pickerAllowsMoveInto].
      */
     suspend fun listFolders(uri: String): List<FileObject> {
-        if (!Connected.isConnected(uri)) return repo.listFolders(uri)
-        // Only what this listing says counts: an earlier one is forgotten first.
+        // Only what this listing says counts: an earlier one is forgotten first. Fylvo: kept for
+        // every folder, so a share target chosen in the picker has its id.
         val key = CrUri.canonical(uri)
         pickerFolders.remove(key)
         val (folders, parent) = repo.listFoldersWithParent(uri)
         if (parent != null) pickerFolders[key] = parent
-        return folders.filter(Connected::canEnter)
+        return if (Connected.isConnected(uri)) folders.filter(Connected::canEnter) else folders
     }
 
     /**
@@ -1697,10 +1798,10 @@ class FilesViewModel(
      * case-sensitive (uppercase first), which reads as random to people, so the
      * name sort is redone here case-insensitively; size and date come as-is.
      */
-    private fun sortFiles(files: List<FileObject>): List<FileObject> {
+    private fun sortFiles(files: List<FileObject>, serverView: kotlinx.serialization.json.JsonObject? = _state.value.serverView): List<FileObject> {
         // Fylvo: a connected listing keeps the server order (folders first, pages fit together).
         if (Connected.isConnected(_state.value.currentUri)) return files
-        val sort = _state.value.view.sort
+        val sort = _state.value.copy(serverView = serverView).activeSort
         val byType = compareByDescending<FileObject> { it.isFolder }
         if (sort.by != SortBy.NAME) return files.sortedWith(byType)
         val byName = compareBy<FileObject, String>(String.CASE_INSENSITIVE_ORDER) { it.name }

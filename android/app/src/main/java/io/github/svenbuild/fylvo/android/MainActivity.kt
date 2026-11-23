@@ -27,6 +27,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import io.github.svenbuild.fylvo.android.ui.files.FilesScreen
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
 import io.github.svenbuild.fylvo.android.ui.login.LoginScreen
@@ -53,6 +54,12 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         val app = application as FylvoApp
         lifecycleScope.launch { runCatching { app.offlineEdits.start() } }
+        // Fylvo: settings changed on the web show up when coming back after a while.
+        lifecycleScope.launch {
+            if (app.sessionManager.isLoggedIn.first()) {
+                runCatching { app.accountPrefs.refresh(ifOlderThanMs = io.github.svenbuild.fylvo.android.data.prefs.AccountPrefsRepository.STALE_MS) }
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -60,8 +67,23 @@ class MainActivity : AppCompatActivity() {
         handleShareIntent(intent)
     }
 
-    // Share-sheet target: files other apps hand to Fylvo go to My files.
+    // Share-sheet target: files other apps hand to Fylvo. Fylvo: they wait for the sheet "Save in
+    // Fylvo" (a folder is chosen first); shortcuts and the widget ask for search, upload, favourites
+    // or a folder. Only while signed in; the screen takes the request once (IncomingQueue).
     private fun handleShareIntent(intent: Intent?) {
+        val app = application as FylvoApp
+        if (intent?.action?.startsWith("io.github.svenbuild.fylvo.android.action.") == true) {
+            lifecycleScope.launch {
+                if (!app.sessionManager.isLoggedIn.first()) return@launch
+                val tag = app.sessionManager.sessionTag()
+                io.github.svenbuild.fylvo.android.data.prefs.FylvoActions.parse(intent, app.accountPrefs.accountHash())
+                    ?.let {
+                        io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.session = tag
+                        io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value = it
+                    }
+            }
+            return
+        }
         val uris = when (intent?.action) {
             Intent.ACTION_SEND -> listOfNotNull(
                 @Suppress("DEPRECATION")
@@ -75,9 +97,12 @@ class MainActivity : AppCompatActivity() {
         // Fylvo: only content:// documents of other apps, never file:// or our own providers.
         val accepted = uris.orEmpty().filter { UploadWorker.isForeignContentUri(this, it) }
         if (accepted.isNotEmpty()) {
-            // Fylvo: names and the upload list off the main thread (a share can hold hundreds).
-            val context = applicationContext
-            lifecycleScope.launch(Dispatchers.IO) { UploadWorker.enqueueSafely(context, accepted, CrUri.MY_PREFIX) }
+            lifecycleScope.launch {
+                if (!app.sessionManager.isLoggedIn.first()) return@launch
+                io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.session = app.sessionManager.sessionTag()
+                io.github.svenbuild.fylvo.android.data.prefs.IncomingQueue.pending.value =
+                    io.github.svenbuild.fylvo.android.data.prefs.Incoming.Share(accepted)
+            }
         }
     }
 }
@@ -95,6 +120,11 @@ private class AppViewModelFactory(private val app: FylvoApp) : ViewModelProvider
                 app.viewSettings,
                 androidx.work.WorkManager.getInstance(app),
                 onSessionExpired = { app.endSession(expired = true) },
+                followAccountView = {
+                    val p = app.accountPrefs.state.value
+                    p.usable && !p.disableViewSync && p.prefs?.customized?.contains("view") == true
+                },
+                writeFolderView = { uri, change -> app.accountPrefs.writeView(uri, change) },
             ) as T
         else -> throw IllegalArgumentException("Unknown ViewModel ${modelClass.name}")
     }
@@ -120,7 +150,30 @@ fun App() {
         }
     }
 
-    FylvoTheme {
+    // Fylvo: the account's light/dark choice, accent and density (cached copy first, then the server).
+    val prefsState by app.accountPrefs.state.collectAsState()
+    LaunchedEffect(loggedIn) {
+        // Fylvo: not signed in (also when the stored sign-in cannot be read any more): the widget
+        // shows no names of files.
+        if (loggedIn == false) runCatching { io.github.svenbuild.fylvo.android.widget.FylvoWidget.clear(context) }
+        if (loggedIn == true) {
+            // A storage problem (full, broken file) must not end the app at every start.
+            runCatching { app.accountPrefs.restore() }.onFailure { app.accountPrefs.markRestored() }
+            // Folders pinned for this account work again after a sign-in.
+            runCatching { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.enableFor(context, app.accountPrefs.accountHash()) }
+            runCatching { app.accountPrefs.refresh(ifOlderThanMs = io.github.svenbuild.fylvo.android.data.prefs.AccountPrefsRepository.STALE_MS) }
+        }
+    }
+    val prefs = prefsState.prefs.takeIf { prefsState.usable }
+    val accent = prefs?.appearance?.accent?.let { key -> prefsState.accents.firstOrNull { it.key.equals(key, ignoreCase = true) } }
+    FylvoTheme(
+        mode = io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.mode(prefs),
+        accent = accent,
+    ) {
+      androidx.compose.runtime.CompositionLocalProvider(
+        io.github.svenbuild.fylvo.android.ui.theme.LocalListDensity provides io.github.svenbuild.fylvo.android.data.prefs.MobilePrefs.density(prefs),
+        io.github.svenbuild.fylvo.android.ui.files.LocalFavoriteIds provides (if (prefs != null) prefsState.favoriteIds else emptySet()),
+      ) {
         // Android 13+ needs a runtime grant before sync/upload notifications
         // can post; ask once the session is known to be signed in.
         val notifPermission = rememberLauncherForActivityResult(
@@ -146,9 +199,11 @@ fun App() {
             null -> Unit // session store still loading; keep frame empty
             // Signing in flips loggedIn, which swaps in the files screen by itself.
             false -> LoginScreen(viewModel = viewModel(factory = factory), onLoggedIn = {})
-            true -> {
+            // Fylvo: the cached customisation is read first, so the screen does not flicker.
+            true -> if (prefsState.restored) {
                 FilesScreen(viewModel = viewModel(factory = factory))
             }
         }
+      }
     }
 }

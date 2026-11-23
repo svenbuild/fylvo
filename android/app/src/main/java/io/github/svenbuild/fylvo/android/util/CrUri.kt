@@ -100,6 +100,9 @@ object CrUri {
     }
 
     /** A folder search can be limited to: any folder below a root, or a whole shared folder. */
+    /** Fylvo: a search or filter (a query after the root), such as a tag search of the sidebar. */
+    fun isSearch(uri: String): Boolean = '?' in uri
+
     fun isSearchScope(uri: String): Boolean = !Connected.isConnected(uri) && (!isRoot(uri) || isShare(uri))
 
     /** Display name of the folder at [uri]: its last segment, or the root's label. */

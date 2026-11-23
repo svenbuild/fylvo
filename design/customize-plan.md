@@ -324,6 +324,12 @@ Empfohlenes Format für `mobile` (der Server prüft nur Objekt und Grösse, die 
 
 - `tabs`: Reihenfolge der Reiter, aus `home`, `files`, `favorites`, `shared`, `tags`, `account`;
   `account` ist immer dabei (sonst kommt man nicht an die Einstellungen), 3 bis 5 Reiter.
+  Gebaut (Android 1.5.0): `files` ist ebenfalls immer dabei (die Orte-Chips stehen dort), und
+  zusätzlich wählbar sind `recent`, `offline`, `trash`, `category:<image|video|audio|document>`,
+  `link:<Adresse einer Verknüpfung der Seitenleiste>` und `connected:<id>`. Bleiben nach dem
+  Filtern nur `files` und `account`, gilt der Standard. Andere Geräte lassen Werte, die sie nicht
+  kennen, weg und schreiben `mobile` nur mit dem frisch gelesenen Objekt zurück (fremde Felder
+  bleiben).
 - `swipe.left` und `swipe.right`: `none`, `favorite`, `share`, `offline`, `delete`.
 - Fehlt `mobile` oder ein Feld darin, gilt das heutige Verhalten (Reiter Home, Files, Shared,
   Account; keine Wischgesten). Unbekannte Werte überspringt die App; ein Schreiben ersetzt

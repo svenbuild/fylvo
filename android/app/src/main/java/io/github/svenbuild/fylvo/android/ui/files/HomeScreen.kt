@@ -5,6 +5,7 @@ import io.github.svenbuild.fylvo.android.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,6 +71,10 @@ fun HomeScreen(
     onOpenFile: (FileObject) -> Unit,
     onOpenRecent: () -> Unit,
     onFileMore: (FileObject) -> Unit,
+    /** Fylvo: the account's building blocks; null shows Home as before customisation. */
+    extras: HomeExtras? = null,
+    /** Fylvo: swipe actions of the Recent rows (only removing the star there). */
+    swipeFor: (FileObject) -> RowSwipe? = { null },
 ) {
     // Home has no top app bar, so the Scaffold gives it no top inset: take the
     // status bar height here or the search field draws under the clock.
@@ -87,6 +92,35 @@ fun HomeScreen(
             ActivityCard(state, onOpenUploads = onOpenRecent)
         }
 
+        if (extras == null) {
+            RecentSection(state, viewModel, onOpenFile, onOpenRecent, onFileMore, swipeFor)
+        } else {
+            extras.widgets.forEach { widget ->
+                when (widget) {
+                    "recent" -> RecentSection(state, viewModel, onOpenFile, onOpenRecent, onFileMore, swipeFor)
+                    "favorites" -> FavoritesSection(extras)
+                    "links" -> LinksSection(extras)
+                    "tags" -> TagsSection(extras)
+                    "storage" -> StorageSection()
+                }
+            }
+        }
+
+        // Fylvo: Google Drive, OneDrive and the like, connected in the web app.
+        ConnectedHomeSection(viewModel)
+    }
+}
+
+/** Fylvo: the newest files anywhere, as a calm list with each file's folder. */
+@Composable
+private fun RecentSection(
+    state: FilesUiState,
+    viewModel: FilesViewModel,
+    onOpenFile: (FileObject) -> Unit,
+    onOpenRecent: () -> Unit,
+    onFileMore: (FileObject) -> Unit,
+    swipeFor: (FileObject) -> RowSwipe?,
+) {
         SectionHeader(stringResource(R.string.category_recent), action = if (state.recent.isNotEmpty()) stringResource(R.string.see_all) to onOpenRecent else null)
         when {
             state.recent.isEmpty() && state.recentLoading -> Box(
@@ -118,13 +152,122 @@ fun HomeScreen(
                         longPressOnRow = true,
                     ),
                     subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
+                    swipe = swipeFor(file),
                 )
             }
         }
+}
 
-        // Fylvo: Google Drive, OneDrive and the like, connected in the web app.
-        ConnectedHomeSection(viewModel)
+/** Fylvo: what the customised home page shows besides Recent, and what a tap does. */
+data class HomeExtras(
+    /** Visible building blocks in the account's order: recent, favorites, links, tags, storage. */
+    val widgets: List<String>,
+    val favorites: List<FileObject>,
+    val links: List<io.github.svenbuild.fylvo.android.data.prefs.Place.Link>,
+    val tags: List<io.github.svenbuild.fylvo.android.api.TagInfo>,
+    val onOpenFavorite: (FileObject) -> Unit,
+    val onFavoriteMore: (FileObject) -> Unit,
+    val onAllFavorites: () -> Unit,
+    val onOpenLink: (io.github.svenbuild.fylvo.android.data.prefs.Place.Link) -> Unit,
+    val onOpenTag: (io.github.svenbuild.fylvo.android.api.TagInfo) -> Unit,
+)
+
+/** Fylvo: favourites as tiles that scroll sideways (like Google Drive's suggested folders). */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun FavoritesSection(extras: HomeExtras) {
+    if (extras.favorites.isEmpty()) return
+    SectionHeader(stringResource(R.string.favorites), action = stringResource(R.string.see_all) to extras.onAllFavorites)
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(extras.favorites.take(MAX_FAVORITE_TILES), key = { it.id }) { file ->
+            val options = stringResource(R.string.options)
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier
+                    .width(120.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .combinedClickable(
+                        onClick = { extras.onOpenFavorite(file) },
+                        onLongClick = { extras.onFavoriteMore(file) },
+                        onLongClickLabel = options,
+                    ),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FileThumb(file, thumbUrl = null, size = 24.dp, iconSize = 22.dp, plain = true)
+                    Text(file.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        if (file.isFolder) stringResource(R.string.folder) else CrUri.parentDisplayName(file.path),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
     }
+}
+
+private const val MAX_FAVORITE_TILES = 12
+
+/** Fylvo: the sidebar's shortcuts as rows. */
+@Composable
+private fun LinksSection(extras: HomeExtras) {
+    if (extras.links.isEmpty()) return
+    SectionHeader(stringResource(R.string.home_links))
+    extras.links.forEach { link ->
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { extras.onOpenLink(link) }
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(placeIcons(link).first, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+            Text(placeLabel(link), style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 16.dp))
+        }
+    }
+}
+
+/** Fylvo: the account's tags as chips with their count. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun TagsSection(extras: HomeExtras) {
+    if (extras.tags.isEmpty()) return
+    SectionHeader(stringResource(R.string.tags))
+    androidx.compose.foundation.layout.FlowRow(
+        Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        extras.tags.forEach { tag -> TagChip(tag) { extras.onOpenTag(tag) } }
+    }
+}
+
+/** Fylvo: how much of the account's storage is used. */
+@Composable
+private fun StorageSection() {
+    val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.svenbuild.fylvo.android.FylvoApp
+    val capacity by androidx.compose.runtime.produceState<io.github.svenbuild.fylvo.android.api.CapacityResponse?>(initialValue = null) {
+        value = app.fileRepository.capacity()
+    }
+    val cap = capacity?.takeIf { it.total > 0 } ?: return
+    SectionHeader(stringResource(R.string.storage))
+    LinearProgressIndicator(
+        progress = { (cap.used.toDouble() / cap.total).toFloat().coerceIn(0f, 1f) },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+    )
+    Text(
+        stringResource(R.string.storage_used, formatSize(cap.used), formatSize(cap.total)),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 20.dp),
+    )
 }
 
 @Composable

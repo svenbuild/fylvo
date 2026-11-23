@@ -245,7 +245,7 @@ fun ConnectedHomeSection(viewModel: FilesViewModel) {
     val scope = rememberCoroutineScope()
     ConnectedSection(
         state = state,
-        onOpen = { viewModel.navigateTo(FileObject(type = 1, name = it.name, path = it.uri)) },
+        onOpen = { viewModel.openPlace(it.uri, origin = ORIGIN_HOME) },
         onOpenWeb = { id -> scope.launch { openInBrowser(context, viewModel.connected.webSettingsUrl(id)) } },
         onResume = { viewModel.connected.load() },
     )

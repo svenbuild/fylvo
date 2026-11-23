@@ -111,6 +111,26 @@ class FileRepository(private val api: ApiClient) {
             orderDirection = orderDirection,
         ).unwrap()
 
+    /**
+     * Fylvo: whether the folder at [uri] is still the one with [id]: true or false, or null when
+     * the server cannot be asked now. Not for a root (its id is never stored, a root cannot be
+     * replaced).
+     */
+    suspend fun folderIdMatches(uri: String, id: String): Boolean? = try {
+        val folder = api.service().fileInfo(uri).unwrap()
+        folder != null && folder.isFolder && folder.id == id
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: ApiException) {
+        // Not found: gone. Login needed or server trouble: no answer now (asked again later).
+        if (e.code == ApiException.CODE_PATH_NOT_EXIST) false else if (e.isTransient) null else false
+    } catch (_: Exception) {
+        null
+    }
+
+    /** Fylvo: one file or folder as the server describes it now. */
+    suspend fun folderInfo(uri: String): FileObject = api.service().fileInfo(uri).unwrap()
+
     /** [entity] asks for that exact version of the file (empty = the current one). */
     suspend fun downloadUrl(uri: String, archive: Boolean = false, entity: String = ""): String =
         signedUrl(uri, download = true, archive = archive, entity = entity)

@@ -55,6 +55,17 @@ Neither project is affiliated with or endorses Fylvo.
 - "Shared with me": folders other Fylvo users share with you. Inside a
   shared folder the app offers only what the server's capability set allows
   (mirrors `frontend/src/util/permission.ts`).
+- Customisation from the account (`api/v4/fylvo/prefs`, the same settings as the web app, see
+  `design/customize-plan.md`): light, dark or like the device, six accent colours, list density,
+  bottom tabs to choose and order (Files and Account always stay), swipe actions for list rows,
+  the home page from building blocks, the start page, the places of the web sidebar as chips above
+  My files, favourites (star), folder colours and tags (shown and set), the default view of My
+  files. Under Account › Customise. With an older server everything stays as before.
+- Sharing into Fylvo asks for the target folder first (the one used last, favourite folders, My
+  files, any other); the upload checks before every file that the folder is still the chosen one.
+- Shortcuts on the app icon (search, upload, favourites), a folder as its own icon on the home
+  screen, and a home screen widget (search, upload, up to four favourites). Sign-out empties the
+  widget and switches pinned folders off; they only open for the account they were made for.
 
 ## Build
 

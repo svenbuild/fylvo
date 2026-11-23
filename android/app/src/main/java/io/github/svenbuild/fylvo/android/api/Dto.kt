@@ -144,6 +144,8 @@ data class ListFileResponse(
     @SerialName("recursion_limit_reached") val recursionLimitReached: Boolean = false,
     /** Fylvo: set inside a connected storage (util/Connected). */
     val connected: ConnectedListing? = null,
+    /** Fylvo: the folder's stored view (layout and sort), followed when the account syncs views. */
+    val view: kotlinx.serialization.json.JsonObject? = null,
 )
 
 @Serializable

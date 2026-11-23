@@ -22,6 +22,12 @@ data class UploadBatch(
     val account: String? = null,
     /** Runs in a row that ended in server trouble without finishing a file; ends the batch at a limit. */
     val serverRetries: Int = 0,
+    /**
+     * Fylvo: the id of the target folder when it was chosen (sharing into Fylvo). Before every
+     * file the folder at [parentUri] must still have it, so nothing lands in another folder that
+     * took its place; null: not checked (uploads from a folder on screen, folder sync).
+     */
+    val expectedParentId: String? = null,
 ) {
     /** Index of the next file to upload, or -1 when every file is done or failed. */
     fun next(): Int = items.indexOfFirst { it.state == UploadItem.State.Pending }

@@ -76,6 +76,31 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         }
         val parentUri = batch.parentUri
         val total = batch.items.size
+        /** Fylvo: the chosen target folder is still the same (by id); null: cannot be told now. */
+        suspend fun targetStillThere(): Boolean? {
+            val expected = batch.expectedParentId ?: return true
+            // Null (no answer now) stays null: the run waits and asks again, it never guesses.
+            return app.fileRepository.folderIdMatches(parentUri, expected)
+        }
+        val targetChanged = applicationContext.localized().getString(R.string.upload_target_changed)
+        when (targetStillThere()) {
+            null -> return Result.retry()
+            false -> {
+                // Before anything is sent or resumed: the folder was replaced or removed.
+                batch.items.forEachIndexed { i, item ->
+                    if (item.state == UploadItem.State.Pending) {
+                        if (item.sessionId != null) cancelSession(app, item)
+                        batch = batch.with(i) { it.copy(state = UploadItem.State.Failed, sessionId = null, targetUri = null) }
+                    }
+                }
+                queue.save(batch)
+                finish(queue, batch)
+                return Result.success(
+                    workDataOf(KEY_UPLOADED to batch.uploaded, KEY_FAILED to batch.failed, KEY_PARENT_URI to parentUri, KEY_ERROR to targetChanged),
+                )
+            }
+            true -> Unit
+        }
 
         // Copies of this job left in the cache by a stop during the copy.
         stagingFiles().forEach { it.delete() }
@@ -186,9 +211,20 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                                     if (stop.get() != null) return@withMemory
                                     synchronized(lock) { inFlight[i] = 0 }
                                     reportAll(item.name, i, 0, 0, force = true)
-                                    val outcome = uploadOne(app, item, parentUri, item.overwrite ?: batch.overwrite, onSession = { sessionId, targetUri, size ->
-                                        update(i) { it.copy(sessionId = sessionId, targetUri = targetUri, uploadSize = size) }
-                                    }) { sent, size -> reportAll(item.name, i, sent, size) }
+                                    val outcome = uploadOne(
+                                        app, item, parentUri, item.overwrite ?: batch.overwrite,
+                                        onSession = { sessionId, targetUri, size ->
+                                            update(i) { it.copy(sessionId = sessionId, targetUri = targetUri, uploadSize = size) }
+                                        },
+                                        // Fylvo: the chosen folder is checked right before every upload session.
+                                        beforeSend = {
+                                            when (targetStillThere()) {
+                                                null -> Outcome.TryLater(targetChanged, network = true)
+                                                false -> Outcome.Failed(targetChanged)
+                                                true -> null
+                                            }
+                                        },
+                                    ) { sent, size -> reportAll(item.name, i, sent, size) }
                                     when (outcome) {
                                         is Outcome.Done -> synchronized(lock) {
                                             inFlight.remove(i)
@@ -431,6 +467,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         parentUri: String,
         overwrite: Boolean,
         onSession: (String, String, Long) -> Unit,
+        /** Fylvo: asked right before the upload session is made; an outcome stops this file. */
+        beforeSend: suspend () -> Outcome? = { null },
         onProgress: (sent: Long, size: Long) -> Unit,
     ): Outcome {
         val uri = Uri.parse(item.uri)
@@ -453,15 +491,22 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 )
             )
         }
+        // Fylvo: what the provider says about the file first, so the folder check below is the
+        // last step before the upload session.
+        val mime = runCatching { applicationContext.contentResolver.getType(uri) }.getOrNull()
+        val modified = lastModifiedOf(uri) ?: tmp.lastModified()
+        beforeSend()?.let { stop ->
+            tmp.delete()
+            return stop
+        }
         return try {
-            val mime = applicationContext.contentResolver.getType(uri)
             // Fylvo: a connected session that is gone stored nothing (40011): sent again once at once.
             var tries = 0
             while (true) {
                 try {
                     app.fileRepository.uploadFile(
                         tmp, parentUri, remoteName = item.name, overwrite = overwrite, mimeType = mime,
-                        lastModified = lastModifiedOf(uri) ?: tmp.lastModified(),
+                        lastModified = modified,
                         onSession = { sessionId, target, _ -> onSession(sessionId, target, tmp.length()) }, onProgress = onProgress,
                     )
                     break
@@ -660,6 +705,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             names: List<String>? = null,
             overwrite: Boolean = false,
             overwriteOnly: Set<String>? = null,
+            /** Fylvo: the target folder's id, checked before every file (sharing into Fylvo). */
+            expectedParentId: String? = null,
+            /** Fylvo: the account at the moment the upload was confirmed (instead of the one now). */
+            account: String? = null,
         ) {
             if (uris.isEmpty()) return
             // Shared files (no folder listing here): two with the same name would race for one
@@ -676,10 +725,14 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             uris.take(room.coerceAtLeast(0)).forEach { uri ->
                 runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             }
-            val account = kotlinx.coroutines.runBlocking { currentAccount(context.applicationContext as FylvoApp) }
+            val account = account ?: kotlinx.coroutines.runBlocking { currentAccount(context.applicationContext as FylvoApp) }
             var batch = queue(context).create(uris.map { it.toString() }, fileNames, parentUri, overwrite, account = account)
             if (overwrite && overwriteOnly != null) {
                 batch = batch.copy(items = batch.items.map { it.copy(overwrite = it.name in overwriteOnly) })
+                queue(context).save(batch)
+            }
+            if (expectedParentId != null) {
+                batch = batch.copy(expectedParentId = expectedParentId)
                 queue(context).save(batch)
             }
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
@@ -758,9 +811,11 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
             names: List<String>? = null,
             overwrite: Boolean = false,
             overwriteOnly: Set<String>? = null,
+            expectedParentId: String? = null,
+            account: String? = null,
         ) {
             try {
-                enqueue(context, uris, parentUri, names, overwrite, overwriteOnly)
+                enqueue(context, uris, parentUri, names, overwrite, overwriteOnly, expectedParentId, account)
             } catch (e: Exception) {
                 Log.w(LOG_TAG, "Could not queue an upload: ${e.javaClass.simpleName}")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -817,9 +872,18 @@ class UploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         /** Display name of a picked document, as the picker shows it. */
         fun displayName(context: Context, uri: Uri): String {
             context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-                if (it.moveToFirst() && !it.isNull(0)) return it.getString(0)
+                if (it.moveToFirst() && !it.isNull(0)) return plainName(it.getString(0))
             }
-            return uri.lastPathSegment?.substringAfterLast('/') ?: "upload.bin"
+            return plainName(uri.lastPathSegment?.substringAfterLast('/') ?: "upload.bin")
+        }
+
+        /**
+         * Fylvo: a name another app gives a file, as one plain file name: no folder parts (so it
+         * always lands in the chosen folder), never "." or "..".
+         */
+        fun plainName(name: String): String {
+            val plain = name.replace('/', '_').replace('\\', '_').trim()
+            return if (plain.isEmpty() || plain == "." || plain == "..") "upload.bin" else plain
         }
 
         /**

@@ -104,6 +104,8 @@ fun SearchResults(
     listState: LazyListState,
     openedFrom: String?,
     actionsFor: (FileObject) -> FileActions,
+    /** Fylvo: swipe actions per row. */
+    swipeFor: (FileObject) -> RowSwipe? = { null },
 ) {
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -153,6 +155,7 @@ fun SearchResults(
                         subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                         actions = actionsFor(file),
                         edit = state.editOf(file),
+                        swipe = swipeFor(file),
                     )
                 }
                 if (state.searchLoadingMore) {
