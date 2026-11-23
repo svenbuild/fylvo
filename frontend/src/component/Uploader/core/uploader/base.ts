@@ -144,7 +144,7 @@ export default abstract class Base {
       return this.runTask();
     }
     // Fylvo: the place is taken before the session is opened, and kept until the end.
-    await connectedUploads(async () => {
+    await connectedUploads(async (_waited) => {
       // Cancelled while it waited for its place: nothing is opened.
       if (this.canceledByUser) {
         return;

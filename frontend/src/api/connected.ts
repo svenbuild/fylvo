@@ -64,19 +64,21 @@ export const inGroups = <T>(items: T[], size: number): T[][] => {
   return groups;
 };
 
-// Runs at most size of the given tasks at once, the others wait in order. For requests that make
-// the server ask the provider, which it does at most two at a time per account.
+// Runs at most size of the given tasks at once, the others wait in order (a task is told whether
+// it waited). For requests that make the server ask the provider, which it does only a few at a
+// time.
 export const limiter = (size: number) => {
   let free = size;
   const waiting: (() => void)[] = [];
-  return async <T>(task: () => Promise<T>): Promise<T> => {
-    if (free > 0) {
+  return async <T>(task: (waited: boolean) => Promise<T>): Promise<T> => {
+    const waited = free <= 0;
+    if (!waited) {
       free--;
     } else {
       await new Promise<void>((resolve) => waiting.push(resolve));
     }
     try {
-      return await task();
+      return await task(waited);
     } finally {
       const next = waiting.shift();
       if (next) {

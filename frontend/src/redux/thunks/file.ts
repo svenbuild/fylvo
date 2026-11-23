@@ -116,11 +116,67 @@ export const isMac = () => {
 
 export const isMacbook = isMac();
 
-// Fylvo: previews of connected storages asked at once, and the answer for a version without one.
+// Fylvo: the server asks the provider for a preview of a connected storage when its image is
+// loaded, only a few at a time (it answers 503 when busy). So the web app loads them itself, two
+// at a time, a few times 5 seconds apart, before the row shows the address (the browser keeps the
+// image). The answer for a version without a preview: 40077.
 const connectedThumbs = limiter(2);
 const connectedNoPreview = 40077;
+const connectedThumbTries = 3;
+const connectedThumbPause = 5000;
+const connectedThumbTimeout = 30000;
+
+const imageLoads = (url: string) =>
+  new Promise<boolean>((resolve) => {
+    const img = new Image();
+    const timer = setTimeout(() => resolve(false), connectedThumbTimeout);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    img.src = url;
+  });
+
+// Loads the preview image of a connected file: true when it loaded, false when it did not after a
+// few tries, undefined when the file is no longer listed anywhere (a waiting load is dropped).
+const loadConnectedImage = async (url: string, listed: () => boolean): Promise<boolean | undefined> => {
+  for (let i = 0; i < connectedThumbTries; i++) {
+    if (i > 0) {
+      await new Promise((resolve) => setTimeout(resolve, connectedThumbPause));
+    }
+    const loaded = await connectedThumbs((waited) =>
+      (waited || i > 0) && !listed() ? Promise.resolve(undefined) : imageLoads(url),
+    );
+    if (loaded !== false) {
+      return loaded;
+    }
+  }
+  return false;
+};
 
 export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promise<string | null>> {
+  return (dispatch) => {
+    // Fylvo: callers for the same version of a connected file share one load.
+    if (!inConnectedStorage(file.path)) {
+      return dispatch(loadThumb(index, file));
+    }
+    const key = `${index}|${file.path}|${file.primary_entity}`;
+    let load = connectedThumbLoads.get(key);
+    if (!load) {
+      load = dispatch(loadThumb(index, file)).finally(() => connectedThumbLoads.delete(key));
+      connectedThumbLoads.set(key, load);
+    }
+    return load;
+  };
+}
+
+const connectedThumbLoads = new Map<string, Promise<string | null>>();
+
+function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string | null>> {
   return async (dispatch, getState) => {
     const { fileManager } = getState();
     const cache = fileManager[index].tree[file.path]?.thumb;
@@ -131,21 +187,28 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
       }
     }
 
-    const request = () =>
-      dispatch(getFileThumb(getFileLinkedUri(file), getState().fileManager[index].list?.context_hint));
     const connected = inConnectedStorage(file.path);
     try {
-      // Fylvo: in a connected storage the server asks the provider for each preview, so only a
-      // few go at once, and one that waited is dropped when its row is no longer listed.
-      const thumb = connected
-        ? await connectedThumbs(() =>
-            getState().fileManager[index].list?.files.some((f) => f.path == file.path)
-              ? request()
-              : Promise.resolve(undefined),
-          )
-        : await request();
-      if (!thumb) {
-        return null;
+      const thumb = await dispatch(getFileThumb(getFileLinkedUri(file), fileManager[index].list?.context_hint));
+      if (connected) {
+        // Still wanted: this version is listed somewhere and may have a preview.
+        const listed = () =>
+          getState().fileManager.some(
+            (fm) =>
+              fm.list?.files.some(
+                (f) =>
+                  f.path == file.path &&
+                  f.primary_entity == file.primary_entity &&
+                  f.metadata?.[Metadata.thumbDisabled] === undefined,
+              ),
+          );
+        const loaded = await loadConnectedImage(thumb.url, listed);
+        if (loaded === undefined) {
+          return null;
+        }
+        if (!loaded) {
+          throw new Error("The preview image did not load");
+        }
       }
       dispatch(setThumbCache({ index, value: [file.path, thumb, file.primary_entity] }));
       return thumb.url;

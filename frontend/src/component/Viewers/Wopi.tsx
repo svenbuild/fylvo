@@ -11,6 +11,8 @@ import { FileManagerIndex } from "../FileManager/FileManager.tsx";
 import ViewerDialog, { ViewerLoading } from "./ViewerDialog.tsx";
 import { inConnectedStorage } from "../../api/connected.ts";
 import { refreshFileList } from "../../redux/thunks/filemanager.ts";
+import CrUri from "../../util/uri.ts";
+import { AppThunk } from "../../redux/store.ts";
 
 const WopiForm = ({
   replacedSrc,
@@ -33,6 +35,16 @@ const WopiForm = ({
     </form>
   );
 };
+
+// Fylvo: reloads the main list when it shows folder.
+const refreshFolderIfOpen =
+  (folder: string): AppThunk =>
+  (dispatch, getState) => {
+    const path = getState().fileManager[FileManagerIndex.main].pure_path;
+    if (path && new CrUri(path).toString() == folder) {
+      dispatch(refreshFileList(FileManagerIndex.main));
+    }
+  };
 
 const Wopi = () => {
   const { t } = useTranslation();
@@ -120,12 +132,16 @@ const Wopi = () => {
 
   const onClose = useCallback(() => {
     dispatch(closeWopiViewer());
-    // Fylvo: on closing with unsaved changes after a conflict, the server puts them next to the
-    // file as a copy; the folder shows it.
-    if (connected) {
-      dispatch(refreshFileList(FileManagerIndex.main));
+    // Fylvo: on closing an editing window after a conflict, the server puts the unsaved changes
+    // next to the file as a copy, once the editor has noticed the window is gone (a few seconds).
+    // The folder is shown again then, while it is still open.
+    if (connectedEdit && viewerState?.file) {
+      const folder = new CrUri(viewerState.file.path).parent().toString();
+      for (const delay of [0, 5000, 15000]) {
+        setTimeout(() => dispatch(refreshFolderIfOpen(folder)), delay);
+      }
     }
-  }, [dispatch, connected]);
+  }, [dispatch, connectedEdit, viewerState?.file]);
 
   const openMore = useCallback(
     (e: React.MouseEvent<any>) => {

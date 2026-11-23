@@ -1207,6 +1207,6 @@
     "emptySave": "An empty file cannot be saved into a connected storage. Add some content, or delete the file.",
     "noFolderUpload": "Folders cannot be uploaded into a connected storage. Create the folder first and upload the files into it.",
     "nameTaken": "This name is already taken. Please choose another one.",
-    "officeOneWindow": "When you edit in a connected storage, every editor window is a document of its own. Edit it in one window on one device only. If the document changed elsewhere in the meantime (another window, another device, at the provider), the editor says on saving that it changed in storage. Closing the window then keeps your unsaved changes as a copy next to the file (“Name (conflict)”)."
+    "officeOneWindow": "When you edit in a connected storage, every editor window is a document of its own. Edit it in one window on one device only. If the document changed elsewhere in the meantime (another window, another device, at the provider), the editor says on saving that it changed in storage. Closing the window then tries to keep your unsaved changes as a copy next to the file (“Name (conflict)”); to be safe, download a copy in the editor first."
   }
 }
