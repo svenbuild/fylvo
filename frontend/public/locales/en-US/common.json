@@ -125,6 +125,13 @@
     "50006": "Internal cache error.",
     "50007": "The storage callback failed.",
     "50010": "Desired node is unavailable.",
-    "50011": "Failed to query file metadata."
+    "50011": "Failed to query file metadata.",
+    "40925_ambiguous": "This name exists more than once at the provider. Rename one of them there.",
+    "40925_changed": "This item was changed at the provider meanwhile. Please reload the folder.",
+    "40925_forbidden": "The provider does not allow this for this item.",
+    "40925_flagged": "The provider has blocked this file.",
+    "40925_export_too_large": "This document is too large to be exported by the provider.",
+    "40925_daily_limit": "The provider's daily limit is reached. Please try again tomorrow.",
+    "40925_too_large": "This folder has too many entries to be shown here."
   }
 }

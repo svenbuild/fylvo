@@ -1,6 +1,8 @@
 import dayjs from "dayjs";
 import { getFileInfo, getFileList, getUserCapacity, sendPatchViewSync } from "../../api/api.ts";
 import { ExplorerView, FileResponse, FileType, ListResponse, Metadata } from "../../api/explorer.ts";
+import { ConnectedCode } from "../../api/connected.ts";
+import { AppError } from "../../api/request.ts";
 import { getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { ListViewColumnSetting } from "../../component/FileManager/Explorer/ListView/Column.tsx";
 import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
@@ -223,6 +225,16 @@ export function navigateReconcile(index: number, opt?: NavigateReconcileOptions)
         listRes.files = sortByLocalCompare(listRes.files, listRes.mixed_type, orderDirection == "desc");
       }
     } catch (e) {
+      if (
+        opt?.next_page &&
+        e instanceof AppError &&
+        e.code == ConnectedCode.ListingGone &&
+        currentGeneration == generation
+      ) {
+        // Fylvo: the server no longer keeps this listing (connected storage); start again.
+        dispatch(setFmLoading({ index, value: false }));
+        return dispatch(navigateReconcile(index));
+      }
       if (currentGeneration == generation) {
         dispatch(
           setFmError({
@@ -747,7 +759,10 @@ export function syncViewSettings(
     const shouldUpdatedView =
       currentLogin &&
       !currentLogin.user.disable_view_sync &&
-      (parent?.owned || crUri.fs() == Filesystem.trash || crUri.fs() == Filesystem.shared_with_me);
+      (parent?.owned ||
+        crUri.fs() == Filesystem.trash ||
+        crUri.fs() == Filesystem.shared_with_me ||
+        crUri.fs() == Filesystem.connected);
 
     const currentView: ExplorerView = {
       page_size: Math.max(MinPageSize, pageSize(fm)),

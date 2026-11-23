@@ -1,9 +1,17 @@
 // Fylvo connected storages: Google Drive or OneDrive shown live next to the own files.
 // See service/fylvo/fylvo_connected.go on the server.
+import { CrUriPrefix } from "../util/uri.ts";
 import { defaultOpts, send, ThunkResponse } from "./request.ts";
 
 // Filesystem name in the address of a connected storage: <scheme>://<id>@connected/<path>
 export const ConnectedFileSystem = "connected";
+
+// Whether an address lies in a connected storage.
+export const inConnectedStorage = (path?: string) => !!path && connectedPathPattern.test(path);
+const connectedPathPattern = new RegExp(`^${CrUriPrefix}[^/@?#]+@${ConnectedFileSystem}(?:[/?#]|$)`);
+
+// Address of the root of a connected storage, as the server builds it.
+export const connectedRootUri = (id: string) => `${CrUriPrefix}${id}@${ConnectedFileSystem}`;
 
 export const ConnectedProvider = {
   drive: "drive",

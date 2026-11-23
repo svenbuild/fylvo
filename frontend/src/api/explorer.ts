@@ -172,6 +172,19 @@ export interface ListResponse {
   parent?: FileResponse;
   storage_policy?: StoragePolicy;
   view?: ExplorerView;
+  // Fylvo: set when the folder is in a connected storage.
+  connected?: ConnectedListInfo;
+}
+
+// Fylvo: what a listing of a connected storage tells about it.
+export interface ConnectedListInfo {
+  id: string;
+  provider: string;
+  read_only: boolean;
+  search: boolean;
+  thumbnails: boolean;
+  // Entries whose names cannot be shown here.
+  omitted?: number;
 }
 
 export const Metadata = {
@@ -186,6 +199,18 @@ export const Metadata = {
   restore_uri: "sys:restore_uri",
   expected_collect_time: "sys:expected_collect_time",
   full_text_index: "sys:fulltext_index",
+
+  // Fylvo: rows of a connected storage
+  // A name that exists more than once in the folder: shown, but nothing can be done with it.
+  connected_unsupported: "fylvo:unsupported",
+  // A shortcut at the provider: read only.
+  connected_link: "fylvo:link",
+  // A document of the provider (e.g. Google Sheets): downloads in this format.
+  connected_export: "fylvo:export",
+  // Address of the item at the provider, to open it there.
+  connected_external_url: "fylvo:external_url",
+  // The size is not known; do not show it.
+  connected_size_unknown: "fylvo:size_unknown",
 
   // Exif
   gps_lng: "exif:longitude",

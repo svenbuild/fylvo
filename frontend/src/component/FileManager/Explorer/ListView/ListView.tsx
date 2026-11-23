@@ -8,6 +8,7 @@ import { SearchLimitReached } from "../EmptyFileList.tsx";
 import { getColumnTypeDefaults, ListViewColumn, ListViewColumnSetting } from "./Column.tsx";
 import ListBody from "./ListBody.tsx";
 import ListHeader from "./ListHeader.tsx";
+import { ConnectedOmitted } from "../../Connected/ConnectedMark.tsx";
 
 const ListView = React.forwardRef(
   (
@@ -85,6 +86,7 @@ const ListView = React.forwardRef(
       >
         <ListHeader commitColumnSetting={commitColumnSetting} setColumns={setColumns} columns={columns} />
         <ListBody columns={columns} />
+        <ConnectedOmitted sx={{ px: 1, py: 1 }} />
         {recursion_limit_reached && (
           <Box sx={{ px: 1, py: 1 }}>
             <SearchLimitReached />

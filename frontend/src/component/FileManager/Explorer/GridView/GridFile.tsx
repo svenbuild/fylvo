@@ -26,6 +26,7 @@ import FileIcon from "../FileIcon.tsx";
 import FileSmallIcon from "../FileSmallIcon.tsx";
 import FileTagSummary from "../FileTagSummary.tsx";
 import FavoriteMark from "../FavoriteMark.tsx";
+import ConnectedMark, { rowUnsupported } from "../../Connected/ConnectedMark.tsx";
 // @ts-ignore
 import Highlighter from "react-highlight-words";
 
@@ -392,7 +393,12 @@ const GridFile = memo((props: FileBlockProps) => {
             )}
             {!isLoadingIndicator && !isEditing && (
               <Tooltip title={file.name}>
-                <FileNameText variant="body2" onClick={onNameClick} onDoubleClick={onNameDoubleClick}>
+                <FileNameText
+                  variant="body2"
+                  onClick={onNameClick}
+                  onDoubleClick={onNameDoubleClick}
+                  sx={rowUnsupported(file) ? { opacity: 0.6 } : undefined}
+                >
                   {search?.name ? (
                     <Highlighter
                       highlightClassName="highlight-marker"
@@ -407,6 +413,7 @@ const GridFile = memo((props: FileBlockProps) => {
               </Tooltip>
             )}
             {!isEditing && !isLoadingIndicator && <FavoriteMark file={file} />}
+            {!isEditing && !isLoadingIndicator && <ConnectedMark file={file} />}
             {!isEditing && !uploading && fileTag && fileTag.length > 0 && (
               <FileTagSummary sx={{ maxWidth: "50%" }} tags={fileTag} />
             )}

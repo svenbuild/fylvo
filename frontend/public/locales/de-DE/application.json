@@ -1254,6 +1254,11 @@
       "not_configured": "Dieser Anbieter ist auf diesem Server nicht eingerichtet.",
       "not_allowed": "Dieses Konto darf keine Speicher verbinden.",
       "unavailable": "Verbundene Speicher sind nicht verfügbar."
-    }
+    },
+    "openAtProvider": "Beim Anbieter öffnen",
+    "rowDuplicate": "Diesen Namen gibt es beim Anbieter mehrfach, darum lässt er sich hier nicht verwenden. Bitte einen davon beim Anbieter umbenennen.",
+    "rowLink": "Verknüpfung beim Anbieter, nur lesen",
+    "omitted_one": "{{count}} Eintrag wird nicht angezeigt: sein Name lässt sich hier nicht verwenden.",
+    "omitted_other": "{{count}} Einträge werden nicht angezeigt: ihre Namen lassen sich hier nicht verwenden."
   }
 }

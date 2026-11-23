@@ -8,6 +8,7 @@ import { canUpdate, getActionOpt } from "../../component/FileManager/ContextMenu
 import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
 import SessionManager, { UserSettings } from "../../session";
 import { isTrueVal } from "../../session/utils.ts";
+import { inConnectedStorage } from "../../api/connected.ts";
 import { dataUrlToBytes, fileExtension, fileNameNoExt, getFileLinkedUri, sizeToString } from "../../util";
 import { base64Encode } from "../../util/base64.ts";
 import CrUri, { CrUriPrefix } from "../../util/uri.ts";
@@ -56,6 +57,13 @@ export const builtInViewers = {
   archive: "archive",
 };
 
+// Fylvo: in a connected storage only viewers that read the file through its address work;
+// Office (WOPI sessions) and the archive viewer need a file of this server.
+export const usableViewers = (file: FileResponse, viewers?: Viewer[]) =>
+  inConnectedStorage(file.path)
+    ? (viewers ?? []).filter((v) => v.type != ViewerType.wopi && v.id != builtInViewers.archive)
+    : viewers ?? [];
+
 export function openViewers(
   index: number,
   file: FileResponse,
@@ -74,12 +82,13 @@ export function openViewers(
 
     // Try user preference
     const userPreference = SessionManager.get(UserSettings.OpenWithPrefix + ext);
-    if (!ignorePreference && userPreference && ViewersByID[userPreference]) {
+    const usable = (id?: string) => !!id && !!ViewersByID[id] && usableViewers(file, [ViewersByID[id]]).length > 0;
+    if (!ignorePreference && usable(userPreference)) {
       dispatch(openViewer(file, ViewersByID[userPreference], entitySize, preferredVersion));
       return;
     }
 
-    const viewerOptions = Viewers[ext];
+    const viewerOptions = usableViewers(file, Viewers[ext]);
 
     if (!ignorePreference && viewerOptions.length == 1) {
       dispatch(openViewer(file, viewerOptions[0], entitySize, preferredVersion));
@@ -87,7 +96,7 @@ export function openViewers(
     }
 
     const globalDefaultViewer = explorer?.config?.default_viewer_mapping?.[ext];
-    if (!ignorePreference && globalDefaultViewer && ViewersByID[globalDefaultViewer]) {
+    if (!ignorePreference && globalDefaultViewer && usable(globalDefaultViewer)) {
       dispatch(openViewer(file, ViewersByID[globalDefaultViewer], entitySize, preferredVersion));
       return;
     }

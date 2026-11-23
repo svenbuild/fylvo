@@ -16,6 +16,7 @@ import { Metadata } from "../../../api/explorer.ts";
 import { FileManagerIndex } from "../FileManager.tsx";
 import CustomizeSidebarDialog from "./CustomizeSidebarDialog.tsx";
 import TreeFiles from "./TreeFiles.tsx";
+import { connectedRootUri } from "../../../api/connected.ts";
 
 // Fylvo: the sidebar as the account arranged it (prefs.sidebar). Rendered inside the tree of the
 // main file manager; the folder tree under "My files" stays.
@@ -185,8 +186,22 @@ const CustomSidebar = memo(
         }
         case "heading":
           return <SectionLabel key={"heading" + index} label={item.name ?? ""} />;
+        case "connected": {
+          // The server keeps these entries in line with the connections of the account.
+          if (!item.id) {
+            return null;
+          }
+          const root = connectedRootUri(item.id);
+          return (
+            <TreeFiles
+              level={0}
+              path={root}
+              key={"connected" + item.id}
+              elements={root == pathRoot ? elements : undefined}
+            />
+          );
+        }
         default:
-          // Connected storages render once their feature is there.
           return null;
       }
     };

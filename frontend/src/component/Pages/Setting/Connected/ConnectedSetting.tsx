@@ -56,6 +56,7 @@ import CloudOutlined from "../../../Icons/CloudOutlined.tsx";
 import Dismiss from "../../../Icons/Dismiss.tsx";
 import Edit from "../../../Icons/Edit.tsx";
 import SettingForm from "../SettingForm.tsx";
+import { publishConnectedStorages } from "../../../FileManager/Connected/useConnectedStorages.ts";
 
 // The settings tab of connected storages: list, connect, rename, reconnect, disconnect.
 // The browser comes back here from the provider with ?finish=<code> or ?error=<value>.
@@ -108,6 +109,9 @@ const useErrorText = () => {
         }
         if (e.code == ConnectedCode.ObjectExists) {
           return t("connected.reason.exists");
+        }
+        if (e.code == ConnectedCode.Busy) {
+          return t("common:errors.40923");
         }
         if (e.code == ConnectedCode.Unavailable) {
           return t("connected.reason.unavailable");
@@ -445,6 +449,13 @@ const ConnectedSetting = () => {
       mounted.current = false;
     };
   }, []);
+
+  // The sidebar and the breadcrumb show the same names.
+  useEffect(() => {
+    if (list) {
+      publishConnectedStorages(list.storages);
+    }
+  }, [list]);
 
   const isAdmin = useMemo(
     () => GroupBS(SessionManager.currentLoginOrNull()?.user).enabled(GroupPermission.is_admin),

@@ -11,6 +11,8 @@ export const Filesystem = {
   shared_by_me: "shared_by_me",
   shared_with_me: "shared_with_me",
   trash: "trash",
+  // Fylvo: a storage at another provider, see api/connected.ts
+  connected: "connected",
 };
 
 export const UriQuery = {

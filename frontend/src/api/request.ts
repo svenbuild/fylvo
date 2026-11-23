@@ -65,7 +65,11 @@ export class AppError extends Error {
     this.rawMessage = message;
     this.error = error;
 
-    if (i18n.exists(`errors.${code}`, { ns: "common" })) {
+    // Fylvo: some errors name a reason in data (for example 40925 of a connected storage).
+    const reason = typeof resp.data?.reason == "string" ? resp.data.reason : undefined;
+    if (reason && i18n.exists(`errors.${code}_${reason}`, { ns: "common" })) {
+      this.message = i18n.t(`errors.${code}_${reason}`, { ns: "common", message });
+    } else if (i18n.exists(`errors.${code}`, { ns: "common" })) {
       this.message = i18n.t(`errors.${code}`, {
         ns: "common",
         message,

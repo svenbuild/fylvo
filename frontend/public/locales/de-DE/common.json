@@ -126,7 +126,14 @@
     "50006": "Interner Fehler im Zwischenspeicher.",
     "50007": "Die Rückmeldung des Speichers ist fehlgeschlagen.",
     "50010": "Gewünschter Knoten ist nicht verfügbar.",
-    "50011": "Fehler beim Abfragen der Datei-Metadaten."
+    "50011": "Fehler beim Abfragen der Datei-Metadaten.",
+    "40925_ambiguous": "Diesen Namen gibt es beim Anbieter mehrfach. Bitte einen davon dort umbenennen.",
+    "40925_changed": "Dieses Element wurde beim Anbieter inzwischen geändert. Bitte den Ordner neu laden.",
+    "40925_forbidden": "Der Anbieter erlaubt das für dieses Element nicht.",
+    "40925_flagged": "Der Anbieter hat diese Datei gesperrt.",
+    "40925_export_too_large": "Dieses Dokument ist zu gross, um vom Anbieter exportiert zu werden.",
+    "40925_daily_limit": "Das Tageslimit des Anbieters ist erreicht. Bitte morgen nochmals versuchen.",
+    "40925_too_large": "Dieser Ordner hat zu viele Einträge, um hier angezeigt zu werden."
   },
   "vasErrors": {
     "40031": "Dieser E-Mail-Anbieter ist verboten. Bitte wechseln Sie zu einem anderen.",

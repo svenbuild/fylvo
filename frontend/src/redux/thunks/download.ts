@@ -26,6 +26,7 @@ import { DialogSelectOption, setBatchDownloadLog, setBatchDownloadProgress } fro
 import { AppThunk } from "../store.ts";
 import { promiseId, selectOption } from "./dialog.ts";
 import { longRunningTaskWithSnackbar, refreshSingleFileSymbolicLinks, walk, walkAll } from "./file.ts";
+import { inConnectedStorage } from "../../api/connected.ts";
 
 enum MultipleDownloadOption {
   Browser,
@@ -63,7 +64,9 @@ export function downloadMultipleFiles(files: FileResponse[]): AppThunk {
     const groupPermission = new Boolset(SessionManager.currentUser()?.group?.permission);
     if (
       groupPermission.enabled(GroupPermission.archive_download) &&
-      (files.length > 1 || !files[0].metadata?.[Metadata.share_redirect])
+      (files.length > 1 || !files[0].metadata?.[Metadata.share_redirect]) &&
+      // Fylvo: the server builds no archives from a connected storage.
+      !files.some((f) => inConnectedStorage(f.path))
     ) {
       options.push(MultipleDownloadOption.Backend);
     }

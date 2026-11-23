@@ -33,6 +33,9 @@ import { useFileDrag } from "../Dnd/DndWrappedFile.tsx";
 import { FileManagerIndex } from "../FileManager.tsx";
 import { FmIndexContext } from "../FmIndexContext.tsx";
 import ShareInfoPopover from "./ShareInfoPopover.tsx";
+import { useConnectedStorage } from "../Connected/useConnectedStorages.ts";
+import CloudFilled from "../../Icons/CloudFilled.tsx";
+import CloudOutlined from "../../Icons/CloudOutlined.tsx";
 
 export const BreadcrumbButtonBase = styled(Button, {
   shouldForwardProp: (prop) => prop !== "isDropOver",
@@ -79,6 +82,10 @@ export const useBreadcrumbButtons = ({
   const uri = useMemo(() => {
     return new CrUri(path);
   }, [path]);
+  // Fylvo: the name of a connected storage, at its root.
+  const connectedStorage = useConnectedStorage(
+    uri.is_root() && uri.fs() == Filesystem.connected ? uri.id() : undefined,
+  );
 
   useEffect(() => {
     if (uri.is_root() && uri.fs() == Filesystem.share) {
@@ -154,13 +161,15 @@ export const useBreadcrumbButtons = ({
           }
 
           return "";
+        case Filesystem.connected:
+          return connectedStorage?.name ?? "";
         default:
           "Root";
       }
     }
 
     return name;
-  }, [name, uri, t, shareInfo]);
+  }, [name, uri, t, shareInfo, connectedStorage]);
 
   const startIcon = useMemo(() => {
     if (uri.is_root()) {
@@ -214,6 +223,8 @@ export const useBreadcrumbButtons = ({
             return { Icons: [LinkDismiss, LinkDismiss] };
           }
           return undefined;
+        case Filesystem.connected:
+          return { Icons: [CloudFilled, CloudOutlined] };
         default:
           return undefined;
       }

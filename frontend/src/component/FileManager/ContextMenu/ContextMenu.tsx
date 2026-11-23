@@ -21,6 +21,7 @@ import {
   goToParent,
   goToSharedLink,
   newRemoteDownload,
+  openAtProvider,
   openShareDialog,
   openSidebar,
   renameFile,
@@ -130,6 +131,7 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
   const showOpenWith = displayOpt.showOpenWith && displayOpt.showOpenWith();
   let part1 =
     displayOpt.showOpen ||
+    displayOpt.showOpenAtProvider ||
     showOpenWithCascading ||
     showOpenWith ||
     displayOpt.showEnter ||
@@ -207,6 +209,14 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
             <Open fontSize="small" />
           </ListItemIcon>
           <ListItemText>{t("application:fileManager.open")}</ListItemText>
+        </SquareMenuItem>
+      )}
+      {displayOpt.showOpenAtProvider && (
+        <SquareMenuItem onClick={() => dispatch(openAtProvider(fmIndex, targets[0]))}>
+          <ListItemIcon>
+            <Open fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>{t("application:connected.openAtProvider")}</ListItemText>
         </SquareMenuItem>
       )}
       {showOpenWithCascading && (

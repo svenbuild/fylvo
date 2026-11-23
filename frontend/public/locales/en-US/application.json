@@ -1176,6 +1176,11 @@
       "not_configured": "This provider is not set up on this server.",
       "not_allowed": "Your account may not connect storages.",
       "unavailable": "Connected storages are not available."
-    }
+    },
+    "openAtProvider": "Open at provider",
+    "rowDuplicate": "This name exists more than once at the provider, so it cannot be used here. Rename one of them at the provider.",
+    "rowLink": "Shortcut at the provider, read only",
+    "omitted_one": "{{count}} entry is not shown: its name cannot be used here.",
+    "omitted_other": "{{count}} entries are not shown: their names cannot be used here."
   }
 }

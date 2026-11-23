@@ -156,6 +156,18 @@ export function goToParent(index: number, folder: FileResponse): AppThunk {
   };
 }
 
+// Fylvo: a document of a connected storage's provider (for example a Google Sheet) opens at
+// the provider in a new tab.
+export function openAtProvider(index: number, file: FileResponse): AppThunk {
+  return async (dispatch) => {
+    dispatch(closeContextMenu({ index, value: undefined }));
+    const url = file.metadata?.[Metadata.connected_external_url];
+    if (url && /^https?:\/\//i.test(url)) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  };
+}
+
 export function openFile(index: number, file: FileResponse): AppThunk {
   return async (dispatch, _getState) => {
     if (file.type == FileType.folder) {
@@ -254,7 +266,9 @@ export function fileClicked(index: number, file: FileResponse, e?: React.MouseEv
 export function fileDoubleClicked(index: number, file: FileResponse, e?: React.MouseEvent<HTMLElement>): AppThunk {
   return async (dispatch, _getState) => {
     const actionOpt = getActionOpt([file], Viewers);
-    if (actionOpt.showOpen || actionOpt.showEnter) {
+    if (actionOpt.showOpenAtProvider) {
+      dispatch(openAtProvider(index, file));
+    } else if (actionOpt.showOpen || actionOpt.showEnter) {
       dispatch(openFile(index, file));
     } else if (file.type == FileType.file && actionOpt.showDownload) {
       dispatch(downloadSingleFile(file));
