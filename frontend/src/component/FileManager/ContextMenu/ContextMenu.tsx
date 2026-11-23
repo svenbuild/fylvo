@@ -61,6 +61,7 @@ import OpenWithMenuItems from "./OpenWithMenuItems.tsx";
 import OrganizeMenuItems from "./OrganizeMenuItems.tsx";
 import TagMenuItems from "./TagMenuItems.tsx";
 import useActionDisplayOpt from "./useActionDisplayOpt.ts";
+import { deleteLabel } from "../Connected/ConnectedMark.tsx";
 
 export const SquareMenu = styled(Menu)(() => ({
   "& .MuiPaper-root": {
@@ -416,7 +417,7 @@ const ContextMenu = ({ fmIndex = 0 }: ContextMenuProps) => {
           <ListItemIcon>
             <DeleteOutlined fontSize="small" />
           </ListItemIcon>
-          <ListItemText>{t("application:fileManager.delete")}</ListItemText>
+          <ListItemText>{t(deleteLabel(targets))}</ListItemText>
         </SquareMenuItem>
       )}
       {displayOpt.showRefresh && (

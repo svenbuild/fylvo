@@ -9,6 +9,7 @@ import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
 import SessionManager, { UserSettings } from "../../session";
 import { isTrueVal } from "../../session/utils.ts";
 import { usableViewers } from "../../component/FileManager/Connected/usableViewers.ts";
+import { inConnectedStorage } from "../../api/connected.ts";
 import { dataUrlToBytes, fileExtension, fileNameNoExt, getFileLinkedUri, sizeToString } from "../../util";
 import { base64Encode } from "../../util/base64.ts";
 import CrUri, { CrUriPrefix } from "../../util/uri.ts";
@@ -503,6 +504,17 @@ export function saveFile(
       } catch (e) {
         return;
       }
+    }
+    // Fylvo: a connected storage keeps no empty replacement of a file; say so instead of
+    // sending it (the server would refuse it).
+    const size = data instanceof Blob ? data.size : typeof data == "string" ? data.length : data?.byteLength;
+    if (inConnectedStorage(uri) && size === 0) {
+      enqueueSnackbar({
+        message: i18next.t("application:connected.emptySave"),
+        variant: "warning",
+        action: DefaultCloseAction,
+      });
+      return;
     }
     try {
       savedFile = await dispatch(

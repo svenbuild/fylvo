@@ -28,6 +28,7 @@ import MoreHorizontal from "../../Icons/MoreHorizontal.tsx";
 import Open from "../../Icons/Open.tsx";
 import RenameOutlined from "../../Icons/RenameOutlined.tsx";
 import ShareOutlined from "../../Icons/ShareOutlined.tsx";
+import { deleteLabel } from "../../FileManager/Connected/ConnectedMark.tsx";
 
 export interface FileSelectedActionsProps {
   targets: FileResponse[];
@@ -168,7 +169,7 @@ const FileSelectedActions = forwardRef(({ targets }: FileSelectedActionsProps, r
               </Tooltip>
             )}
             {displayOpt.showDelete && (
-              <Tooltip title={t("application:fileManager.delete")}>
+              <Tooltip title={t(deleteLabel(targets))}>
                 <ActionButton onClick={() => dispatch(deleteFile(0, targets))}>
                   <DeleteOutlined fontSize="small" />
                 </ActionButton>

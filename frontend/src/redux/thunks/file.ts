@@ -65,6 +65,7 @@ import {
   setRenameFileModalLoading,
   setSelected,
   setThumbCache,
+  SingleManager,
 } from "../fileManagerSlice.ts";
 import {
   CreateNewDialogType,
@@ -83,7 +84,14 @@ import { navigateToPath, refreshFileList, updateUserCapacity } from "./filemanag
 import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers } from "./viewer.ts";
-import { ConnectedCode, folderEnterable } from "../../api/connected.ts";
+import {
+  connectedBatchSize,
+  connectedIds,
+  ConnectedCode,
+  folderEnterable,
+  inConnectedStorage,
+  inGroups,
+} from "../../api/connected.ts";
 import { rowUnsupported } from "../../component/FileManager/Connected/ConnectedMark.tsx";
 import { BusyState, codeOf, ProviderGaveUp, retryBusy } from "../../component/FileManager/Connected/providerRetry.ts";
 
@@ -405,9 +413,14 @@ export function submitRenameFile(index: number, file: FileResponse, newName: str
         sendRenameFile({
           uri: file.path,
           new_name: newName,
+          ids: connectedIds([file]),
         }),
       );
     } catch (e) {
+      // Fylvo: in a connected storage the row may have changed at the provider; show its state.
+      if (inConnectedStorage(file.path)) {
+        dispatch(refreshFileList(index));
+      }
       return false;
     }
 
@@ -534,25 +547,37 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
     dispatch(setFileDeleteModalLoading({ index, value: true }));
 
     let deleted = files;
-    try {
-      await dispatch(
-        sendDeleteFiles({
-          uris: files.map((f) => f.path),
-          unlink: opt.unlink,
-          skip_soft_delete: opt.skip_soft_delete,
-        }),
-      );
-    } catch (e) {
-      dispatch(setFileDeleteModal({ index, value: [false, files, undefined, true] }));
-      const partialSuccess = e instanceof AppError && e.aggregatedError;
-      if (!partialSuccess) {
-        return;
-      }
+    // Fylvo: a connected storage takes at most 100 entries per request, each with its row id.
+    const connected = files.some((f) => inConnectedStorage(f.path));
+    const groups = connected ? inGroups(files, connectedBatchSize) : [files];
+    let failed = false;
+    for (const group of groups) {
+      try {
+        await dispatch(
+          sendDeleteFiles({
+            uris: group.map((f) => f.path),
+            unlink: opt.unlink,
+            skip_soft_delete: opt.skip_soft_delete,
+            ids: connectedIds(group),
+          }),
+        );
+      } catch (e) {
+        failed = true;
+        const partialSuccess = e instanceof AppError && e.aggregatedError;
+        if (!partialSuccess) {
+          if (!connected) {
+            dispatch(setFileDeleteModal({ index, value: [false, files, undefined, true] }));
+            return;
+          }
+          deleted = deleted.filter((f) => !group.includes(f));
+          break;
+        }
 
-      // remove failed files from list
-      if (e instanceof AppError) {
-        const err = e.aggregatedError;
-        deleted = deleted.filter((f) => !err || !err[f.path]);
+        // remove failed files from list
+        if (e instanceof AppError) {
+          const err = e.aggregatedError;
+          deleted = deleted.filter((f) => !group.includes(f) || !err || !err[f.path]);
+        }
       }
     }
 
@@ -560,6 +585,10 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
 
     await dispatch(processFileListDiff(FileManagerIndex.main, deleted));
     await dispatch(processFileListDiff(FileManagerIndex.selector, deleted, false));
+    // Fylvo: after a refusal in a connected storage the list shows the state at the provider.
+    if (connected && failed) {
+      dispatch(refreshFileList(index));
+    }
 
     dispatch(updateUserCapacity(index));
   };
@@ -666,6 +695,16 @@ function checkMovePrecondition(srcFiles: FileResponse[], dst: string) {
   });
 }
 
+// Fylvo: the row of a folder the file manager has listed (the open folder or one in its tree),
+// for the id of a move's destination.
+const listedFolder = (fm: SingleManager, path: string): FileResponse | undefined => {
+  const parent = fm.list?.parent;
+  if (parent && (parent.path == path || fm.pure_path == path)) {
+    return parent;
+  }
+  return fm.tree[path]?.file;
+};
+
 export function moveFiles(index: number, src: FileResponse[], dst: string, isCopy: boolean): AppThunk {
   return async (dispatch, getState) => {
     const dstUri = new CrUri(dst);
@@ -691,9 +730,20 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
     }
 
     let success = true;
+    // Fylvo: a connected storage takes at most 100 entries per request, each with its row id,
+    // and the destination's id when the list knows it.
+    const connected = inConnectedStorage(dst);
+    const groups = connected ? inGroups(src, connectedBatchSize) : [src];
+    const dstFile = connected ? listedFolder(getState().fileManager[index], dst) : undefined;
     try {
       await longRunningTaskWithSnackbar(
-        dispatch(sendMoveFile({ uris: src.map((f) => f.path), dst, copy: isCopy })),
+        (async () => {
+          for (const group of groups) {
+            await dispatch(
+              sendMoveFile({ uris: group.map((f) => f.path), dst, copy: isCopy, ids: connectedIds(group, dstFile) }),
+            );
+          }
+        })(),
         isCopy ? "application:modals.processingCopying" : "application:modals.processingMoving",
       );
     } catch (e) {
@@ -704,6 +754,9 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
       if (dst == getState().fileManager[index].path) dispatch(refreshFileList(index));
     } else if (success) {
       dispatch(processFileListDiff(index, src));
+    } else if (connected) {
+      // Fylvo: part of a move may have happened; the list shows the state at the provider.
+      dispatch(refreshFileList(index));
     }
 
     if (success) {

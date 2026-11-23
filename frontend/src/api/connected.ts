@@ -41,6 +41,29 @@ export const downloadFileName = (file: FileResponse, name: string = file.name, t
 export const folderEnterable = (folder: FileResponse) =>
   !inConnectedStorage(folder.path) || new Boolset(folder.capability).enabled(NavigatorCapability.enter_folder);
 
+// Fylvo: changes in a connected storage name the rows the user saw: their ids by address.
+// Undefined outside connected storages.
+export const connectedIds = (files: FileResponse[], extra?: FileResponse) => {
+  if (!files.some((f) => inConnectedStorage(f.path))) {
+    return undefined;
+  }
+  const ids: { [uri: string]: string } = {};
+  [...files, ...(extra ? [extra] : [])].forEach((f) => (ids[f.path] = f.id));
+  return ids;
+};
+
+// At most this many entries go into one change request of a connected storage.
+export const connectedBatchSize = 100;
+
+// The items in groups of at most size.
+export const inGroups = <T>(items: T[], size: number): T[][] => {
+  const groups: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    groups.push(items.slice(i, i + size));
+  }
+  return groups;
+};
+
 // Address of the root of a connected storage, as the server builds it.
 export const connectedRootUri = (id: string) => `${CrUriPrefix}${id}@${ConnectedFileSystem}`;
 
@@ -180,6 +203,23 @@ export function getConnectedFileUrl(uri: string): ThunkResponse<string | undefin
       ),
     );
     return res.urls[0]?.url;
+  };
+}
+
+// Where an upload into a connected storage stands, for a client that lost an answer.
+// Errors are left to the caller (40016 when the server no longer knows the session).
+export interface ConnectedUploadState {
+  state: "receiving" | "done" | "failed" | "unknown";
+  received: number;
+  file?: FileResponse;
+  code?: number;
+}
+
+export function getConnectedUploadState(session: string): ThunkResponse<ConnectedUploadState> {
+  return async (dispatch) => {
+    return await dispatch(
+      send(`/fylvo/connected/upload/${encodeURIComponent(session)}`, { method: "GET" }, quietOpts()),
+    );
   };
 }
 

@@ -2,23 +2,19 @@ import { FileResponse, NavigatorCapability } from "../api/explorer.ts";
 import Boolset from "./boolset.ts";
 import CrUri, { Filesystem } from "./uri.ts";
 
-// Fylvo: the two places that decide what the current user may do with files. Outside shares ownership
-// decides. Inside a share the capability set sent by the backend decides:
-// - upload_file: add new files and folders (editors of member shares and visitors of upload links).
-// - rename_file: change existing files (only editors of member shares). Upload visitors never get it.
+// Fylvo: the two places that decide what the current user may do with files. Outside shares and
+// connected storages ownership decides. Inside them the capability set sent by the backend decides:
+// - upload_file: add new files and folders (editors of member shares and visitors of upload links,
+//   writable folders of a connected storage).
+// - rename_file: change existing files (only editors of member shares, writable rows of a
+//   connected storage). Upload visitors never get it.
 function shareCapability(file: FileResponse, capability: number): boolean | undefined {
   // Some lists (the empty trash) come with a parent that has no path. That is never a share.
   if (!file.path) {
     return undefined;
   }
   const fs = new CrUri(file.path).fs();
-  // Fylvo: nothing in a connected storage can be changed from the web app yet. Changes there
-  // need the ids of the listed rows, which the web package for writing adds together with
-  // following the capability bits of its rows here.
-  if (fs == Filesystem.connected) {
-    return false;
-  }
-  if (fs == Filesystem.share) {
+  if (fs == Filesystem.share || fs == Filesystem.connected) {
     return new Boolset(file.capability).enabled(capability);
   }
   return undefined;
@@ -38,6 +34,8 @@ export function canModifyFile(file: FileResponse): boolean {
 export function isUploadOnly(folder?: FileResponse): boolean {
   return (
     !!folder &&
+    !!folder.path &&
+    new CrUri(folder.path).fs() == Filesystem.share &&
     shareCapability(folder, NavigatorCapability.upload_file) === true &&
     !new Boolset(folder.capability).enabled(NavigatorCapability.download_file)
   );
@@ -55,6 +53,10 @@ export function canCopyMoveTo(files: FileResponse[], dst: string, isCopy: boolea
   }
   if (srcUri.fs() == Filesystem.share) {
     return dstUri.fs() == Filesystem.share && dstUri.id() == srcUri.id() && files.every(canModifyFile);
+  }
+  // Fylvo: a connected storage moves only inside itself (no copies, nothing between storages).
+  if (srcUri.fs() == Filesystem.connected) {
+    return dstUri.fs() == Filesystem.connected && dstUri.id() == srcUri.id() && files.every(canModifyFile);
   }
   switch (srcUri.fs()) {
     case Filesystem.my:

@@ -1278,6 +1278,10 @@
     "downloadProviderOnly_one": "{{count}} Eintrag lässt sich nur beim Anbieter öffnen und hat keine Datei zum Herunterladen: {{names}}.",
     "downloadProviderOnly_other": "{{count}} Einträge lassen sich nur beim Anbieter öffnen und haben keine Datei zum Herunterladen: {{names}}.",
     "downloadNotReached_one": "{{count}} Datei wurde nicht mehr heruntergeladen.",
-    "downloadNotReached_other": "{{count}} Dateien wurden nicht mehr heruntergeladen."
+    "downloadNotReached_other": "{{count}} Dateien wurden nicht mehr heruntergeladen.",
+    "deleteOne": "<0>{{name}}</0> in den Papierkorb des Anbieters verschieben?",
+    "deleteMultiple": "Diese {{num}} Objekte in den Papierkorb des Anbieters verschieben?",
+    "toProviderTrash": "In den Papierkorb des Anbieters",
+    "emptySave": "Eine leere Datei lässt sich in einem verbundenen Speicher nicht speichern. Bitte Inhalt ergänzen oder die Datei löschen."
   }
 }
