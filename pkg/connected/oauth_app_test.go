@@ -31,6 +31,9 @@ func TestAppChallenge(t *testing.T) {
 	for _, bad := range []string{"", "abc", appChallenge + "A", appChallenge[:42], appChallenge[:42] + "=", strings.Repeat("!", 43)} {
 		require.False(t, ValidChallenge(bad), bad)
 	}
+	// Another spelling of the same bytes: it decodes, and no verifier gives this text.
+	require.True(t, strings.HasSuffix(appChallenge, "M"))
+	require.False(t, ValidChallenge(appChallenge[:42]+"N"))
 }
 
 // appStart plays the app and its browser up to the consent address.
@@ -776,9 +779,46 @@ func TestManagerAppStartChecksAgain(t *testing.T) {
 		ticket, confirm, attempt := open(t, f, "")
 		refused(t, f, ticket, confirm, attempt, ReasonExpired, func(context.Context, int) error { return ErrFlowExpired })
 
-		ticket, confirm, attempt = open(t, f, "")
+		// The caller read the account a moment ago and says it is there: it is not
+		// asked for a second time, so trouble at that second look cannot end the ticket.
+		ticket, confirm, _ = open(t, f, "")
 		f.gone = map[int]bool{7: true}
-		refused(t, f, ticket, confirm, attempt, ReasonExpired, anyAccount)
+		_, _, _, err := f.StartTicket(ctx, ticket, confirm, testRedirect, anyAccount)
+		require.NoError(t, err)
+	})
+
+	t.Run("two presses at once decide the same", func(t *testing.T) {
+		f := newManagerFixture(t)
+		f.setUp(t)
+		ticket, confirm, _ := open(t, f, "")
+		// The first press is in its checks while the second arrives; by then the account
+		// may no longer start. The second finds the sign-in of the first and repeats it.
+		inside, release := make(chan struct{}), make(chan struct{})
+		type answer struct {
+			address string
+			err     error
+		}
+		first, second := make(chan answer, 1), make(chan answer, 1)
+		go func() {
+			address, _, _, err := f.StartTicket(ctx, ticket, confirm, testRedirect, func(context.Context, int) error {
+				close(inside)
+				<-release
+				return nil
+			})
+			first <- answer{address, err}
+		}()
+		<-inside
+		go func() {
+			address, _, _, err := f.StartTicket(ctx, ticket, confirm, testRedirect, func(context.Context, int) error { return ErrNotAllowed })
+			second <- answer{address, err}
+		}()
+		time.Sleep(50 * time.Millisecond)
+		close(release)
+		a, b := <-first, <-second
+		require.NoError(t, a.err)
+		require.NoError(t, b.err)
+		require.Equal(t, a.address, b.address)
+		require.Len(t, f.flow.states, 1)
 	})
 
 	t.Run("account being removed", func(t *testing.T) {

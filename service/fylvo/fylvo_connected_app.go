@@ -15,6 +15,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/application/constants"
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/ent"
+	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/gin-gonic/gin"
@@ -42,6 +43,9 @@ const (
 	// connectedConfirmField is the field of the form that carries the value derived from
 	// the confirmation cookie.
 	connectedConfirmField = "confirm"
+	// connectedFormSize is the most a POST of the start page is read of: its form is one
+	// short field.
+	connectedFormSize = 4096
 )
 
 // appSigninHere tells whether apps can connect storages through the address this request
@@ -109,8 +113,21 @@ func ownOrigin(c *gin.Context, primary *url.URL) bool {
 	if site := c.GetHeader("Sec-Fetch-Site"); site != "" {
 		return site == "same-origin"
 	}
-	origin := c.GetHeader("Origin")
-	return origin != "" && strings.EqualFold(origin, primary.Scheme+"://"+primary.Host)
+	origin, err := url.Parse(c.GetHeader("Origin"))
+	return err == nil && origin.Host != "" && origin.Scheme == primary.Scheme &&
+		strings.EqualFold(origin.Hostname(), primary.Hostname()) && portOf(origin) == portOf(primary)
+}
+
+// portOf is the port of an address, the one of its scheme when it names none: a browser
+// leaves that one out of an origin, a site address may spell it out.
+func portOf(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	if u.Scheme == "https" {
+		return "443"
+	}
+	return "80"
 }
 
 // isPrefetch tells whether a browser loads the address ahead of the user going there.
@@ -161,23 +178,32 @@ func ConnectedStart(c *gin.Context) {
 
 	// The button. It counts only from the browser that owns the ticket, from the form
 	// of the page above, and from that page: no other site can send it for the user.
+	// Nothing of the body is read before the cookie and the origin are there, and then
+	// only as much as the form of the page can be.
+	if cookie == "" || !ownOrigin(c, primarySiteURL(c, dep)) ||
+		!strings.HasPrefix(c.ContentType(), "application/x-www-form-urlencoded") {
+		page.invalid()
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, connectedFormSize)
 	hidden := c.PostForm(connectedConfirmField)
-	if cookie == "" || hidden == "" ||
-		subtle.ConstantTimeCompare([]byte(hidden), []byte(confirmValue(cookie))) != 1 ||
-		!ownOrigin(c, primarySiteURL(c, dep)) {
+	if hidden == "" || subtle.ConstantTimeCompare([]byte(hidden), []byte(confirmValue(cookie))) != 1 {
 		page.invalid()
 		return
 	}
 
 	address, signIn, view, err := m.StartTicket(c, ticket, cookie, connectedCallbackURL(c, dep),
 		func(ctx context.Context, userID int) error {
-			// As for a sign-in to Fylvo: the account is there and active.
+			// As for a request of the signed-in account: it is there, active, and not
+			// held until it has set a new password.
 			u, err := dep.UserClient().GetLoginUserByID(ctx, userID)
 			switch {
 			case ent.IsNotFound(err):
 				return connected.ErrFlowExpired
 			case err != nil:
 				return serializer.NewError(serializer.CodeDBError, "Failed to load the account", err)
+			case inventory.MustChangePassword(u):
+				return connected.ErrFlowExpired
 			case !mayConnectStorages(u):
 				return connected.ErrNotAllowed
 			}
@@ -251,6 +277,7 @@ type connectedTexts struct {
 	Next          string // provider
 	Button        string // provider
 	Again         string
+	Later         string
 	Back          string
 	Invalid       string
 	Unavailable   string
@@ -275,6 +302,7 @@ var connectedPageTexts = []*connectedTexts{
 		Next:          "Next you sign in at %s.",
 		Button:        "Continue to %s",
 		Again:         "That did not work right now. Please press the button again in a moment.",
+		Later:         "That did not work right now. Please load this page again in a moment.",
 		Back:          "Back to Fylvo",
 		Invalid:       "This link is no longer valid. Go back to the app and start again.",
 		Unavailable:   "Connecting a storage from the app is not available here.",
@@ -308,6 +336,7 @@ var connectedPageTexts = []*connectedTexts{
 		Next:          "Danach meldest du dich bei %s an.",
 		Button:        "Weiter zu %s",
 		Again:         "Das hat gerade nicht geklappt. Bitte drück den Knopf gleich noch einmal.",
+		Later:         "Das hat gerade nicht geklappt. Bitte lade diese Seite gleich noch einmal.",
 		Back:          "Zurück zu Fylvo",
 		Invalid:       "Dieser Link ist nicht mehr gültig. Geh zurück zur App und starte neu.",
 		Unavailable:   "Das Verbinden eines Speichers aus der App ist hier nicht verfügbar.",
@@ -341,7 +370,7 @@ type connectedPageData struct {
 	T      *connectedTexts
 	Server string
 	Host   string
-	// Kind picks the page: confirm, signedin, ended or plain.
+	// Kind picks the page: confirm, signedin, ended, later or plain.
 	Kind string
 	// confirm
 	Lead, Next, Button string
@@ -401,13 +430,15 @@ button, .button { background: #4b7bec; }
 {{else if eq .Kind "signedin"}}<h1>{{.T.SignedInHead}}</h1>
 <p>{{.Lead}}</p>
 {{if .Account}}<p class="account"><strong>{{.Account}}</strong></p>
-{{end}}<p>{{.T.ToAccount}}</p>
+{{end}}{{if .Email}}<p>{{.T.ToAccount}}</p>
 <p class="account"><strong>{{.Nick}}</strong><span>{{.Email}}</span></p>
-<p class="warn">{{.T.Private}}</p>
+{{end}}<p class="warn">{{.T.Private}}</p>
 <a class="button" href="fylvo://connected?attempt={{.Attempt}}&amp;finish={{.Finish}}">{{.T.Back}}</a>
 {{else if eq .Kind "ended"}}<h1>{{.T.EndedHead}}</h1>
 <p>{{.Message}}</p>
 <a class="button" href="fylvo://connected?attempt={{.Attempt}}&amp;error={{.Reason}}">{{.T.Back}}</a>
+{{else if eq .Kind "later"}}<h1>{{.T.Title}}</h1>
+<p class="note">{{.Message}}</p>
 {{else}}<h1>{{.T.Title}}</h1>
 <p>{{.Message}}</p>
 <a class="button" href="fylvo://connected">{{.T.Back}}</a>
@@ -472,19 +503,34 @@ func (p *connectedPage) ended(status int, attempt, reason string) {
 	p.write(status)
 }
 
-// account loads the Fylvo account a page names. false: it is gone or no longer active.
-func (p *connectedPage) account(userID int) bool {
+// later: the server could not read what the page needs right now. Nothing was used up;
+// loading the page again shows it.
+func (p *connectedPage) later() {
+	p.data.Kind, p.data.Message = "later", p.data.T.Later
+	p.write(http.StatusOK)
+}
+
+// account loads the Fylvo account a page names. found is false for one that is gone or
+// no longer active; an error is trouble of the database, which says nothing about it.
+func (p *connectedPage) account(userID int) (found bool, err error) {
 	u, err := p.dep.UserClient().GetLoginUserByID(p.c, userID)
-	if err != nil || u == nil {
-		return false
+	switch {
+	case ent.IsNotFound(err):
+		return false, nil
+	case err != nil:
+		return false, err
 	}
 	p.data.Nick, p.data.Email = u.Nick, u.Email
-	return true
+	return true, nil
 }
 
 // confirm: the page that names the account and asks before the provider is involved.
 func (p *connectedPage) confirm(view *connected.TicketView, cookie string, again bool) {
-	if !p.account(view.UserID) {
+	switch found, err := p.account(view.UserID); {
+	case err != nil:
+		p.later()
+		return
+	case !found:
 		p.invalid()
 		return
 	}
@@ -509,7 +555,10 @@ func (p *connectedPage) confirm(view *connected.TicketView, cookie string, again
 // signedIn: the provider answered. Both accounts are named once more, and the link
 // carries the code the app completes with.
 func (p *connectedPage) signedIn(out *connected.Outcome) {
-	if !p.account(out.UserID) {
+	// The state is used up: this page is the only way the code gets to the app. If the
+	// account cannot be read right now the page goes without its name; the app names
+	// it once more before anything is stored.
+	if found, err := p.account(out.UserID); err == nil && !found {
 		p.ended(http.StatusOK, out.Attempt, connected.ReasonExpired)
 		return
 	}

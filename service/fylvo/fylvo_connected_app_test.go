@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"html"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -393,10 +394,88 @@ func TestAppStartTakesOnlyItsOwnButton(t *testing.T) {
 	refused("origin null", b, url.Values{"confirm": {hidden}}, map[string]string{"Origin": "null"})
 	refused("says nothing about where it comes from", b, url.Values{"confirm": {hidden}}, nil)
 
-	// Nothing of that used the ticket up or made anything at the provider.
+	// The form of the page is one short field of an ordinary form. Anything else is not
+	// read: no upload, no long body.
+	upload := func(contentType, body string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		c, engine := gin.CreateTestContext(rec)
+		engine.ContextWithFallback = true
+		c.Request = httptest.NewRequest("POST", startPath+ticket, strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", contentType)
+		c.Request.Header.Set("Sec-Fetch-Site", "same-origin")
+		for _, cookie := range b.cookies {
+			c.Request.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
+		}
+		util.WithValue(c, dependency.DepCtx{}, e.dep)
+		c.Params = gin.Params{{Key: "ticket", Value: ticket}}
+		ConnectedStart(c)
+		c.Writer.WriteHeaderNow()
+		return rec
+	}
+	multipart := "--x\r\nContent-Disposition: form-data; name=\"confirm\"\r\n\r\n" + hidden + "\r\n--x--\r\n"
+	require.Equal(t, http.StatusGone, upload("multipart/form-data; boundary=x", multipart).Code)
+	require.Equal(t, http.StatusGone, upload("text/plain", "confirm="+hidden).Code)
+	require.Equal(t, http.StatusGone, upload("application/x-www-form-urlencoded", "pad="+strings.Repeat("a", 8192)+"&confirm="+hidden).Code)
+	require.Equal(t, http.StatusSeeOther, upload("application/x-www-form-urlencoded; charset=UTF-8", "confirm="+hidden).Code)
+	// A request without the cookie or from elsewhere is answered without a look at its body.
+	for _, site := range []string{"same-origin", "cross-site"} {
+		unread := httptest.NewRecorder()
+		c, engine := gin.CreateTestContext(unread)
+		engine.ContextWithFallback = true
+		c.Request = httptest.NewRequest("POST", startPath+ticket, readFails{t})
+		c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		c.Request.Header.Set("Sec-Fetch-Site", site)
+		if site == "cross-site" {
+			for _, cookie := range b.cookies {
+				c.Request.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
+			}
+		}
+		util.WithValue(c, dependency.DepCtx{}, e.dep)
+		c.Params = gin.Params{{Key: "ticket", Value: ticket}}
+		ConnectedStart(c)
+		require.Equal(t, http.StatusGone, unread.Code)
+	}
+
+	// Nothing of that used the ticket up or made anything new at the provider.
 	rec := b.request("POST", startPath+ticket, url.Values{"confirm": {hidden}}, map[string]string{"Origin": "https://cloud.example.com"})
 	require.Equal(t, http.StatusSeeOther, rec.Code, "a browser without Sec-Fetch-Site tells its origin")
 	require.Equal(t, http.StatusSeeOther, b.press(ticket, page).Code)
+}
+
+// readFails is a body nobody may read.
+type readFails struct{ t *testing.T }
+
+func (r readFails) Read([]byte) (int, error) {
+	r.t.Error("the body of a request that is not the button was read")
+	return 0, io.EOF
+}
+
+// A browser that does not send Sec-Fetch-Site tells its origin, without the port its
+// scheme implies, however the site address spells it.
+func TestAppStartOriginWithDefaultPort(t *testing.T) {
+	for site, origins := range map[string]map[string]bool{
+		"https://cloud.example.com:443": {"https://cloud.example.com": true, "https://cloud.example.com:443": true, "https://CLOUD.example.com": true,
+			"https://cloud.example.com:8443": false, "http://cloud.example.com": false, "https://cloud.example.com.evil.example": false},
+		"https://cloud.example.com:8443": {"https://cloud.example.com:8443": true, "https://cloud.example.com": false},
+		"https://cloud.example.com":      {"https://cloud.example.com:443": true, "cloud.example.com": false, "": false, "null": false, "https://": false},
+	} {
+		e := newAppEnv(t, site)
+		for origin, ok := range origins {
+			c, rec := e.as(e.alex, "POST", "/api/v4/fylvo/connected/authorize")
+			res, err := (&ConnectedAuthorizeService{Provider: "drive", Client: "app", Challenge: appChallenge}).Authorize(c)
+			require.NoError(t, err)
+			require.Empty(t, rec.Result().Cookies())
+			path := strings.TrimPrefix(res.URL, site)
+			b := e.browser()
+			hidden := hiddenValue.FindStringSubmatch(b.get(path).Body.String())[1]
+			got := b.request("POST", path, url.Values{"confirm": {hidden}}, map[string]string{"Origin": origin})
+			want := http.StatusGone
+			if ok {
+				want = http.StatusSeeOther
+			}
+			require.Equal(t, want, got.Code, site+" from "+origin)
+		}
+	}
 }
 
 // The ticket belongs to the first browser that really goes there.
@@ -555,6 +634,17 @@ func TestAppStartChecksTheAccountAgain(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rec.Code)
 	require.Equal(t, "fylvo://connected?attempt="+attempt+"&error=expired", link(t, rec.Body.String()))
 	require.NoError(t, e.client.User.UpdateOneID(e.alex.ID).SetStatus(user.StatusActive).Exec(e.ctx))
+
+	// The account has to set a new password first: until then nothing of it starts, as
+	// with its other requests.
+	ticket, attempt = e.authorize(e.alex, "")
+	b = e.browser()
+	page = b.get(startPath + ticket).Body.String()
+	require.NoError(t, e.client.User.UpdateOneID(e.alex.ID).SetSettings(&types.UserSetting{FylvoMustChangePassword: true}).Exec(e.ctx))
+	rec = b.press(ticket, page)
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, "fylvo://connected?attempt="+attempt+"&error=expired", link(t, rec.Body.String()))
+	require.NoError(t, e.client.User.UpdateOneID(e.alex.ID).SetSettings(&types.UserSetting{}).Exec(e.ctx))
 
 	// The operator takes the provider out.
 	ticket, attempt = e.authorize(e.alex, "")
@@ -847,4 +937,46 @@ func TestConnectedAppExamples(t *testing.T) {
 	_, err = (&ConnectedAuthorizeService{Provider: "drive", Client: "app", Challenge: appChallenge}).Authorize(c)
 	require.Equal(t, connected.ReasonAppSigninOff, connected.ReasonOf(err))
 	x.Add("app-error-signin-off", nil, err)
+}
+
+// Trouble of the database says nothing about the account: the ticket stays, and a code
+// the provider's answer already produced still gets to the app.
+func TestAppPagesWhenTheDatabaseFails(t *testing.T) {
+	e := newAppEnv(t, "https://cloud.example.com")
+	// One sign-in is at the provider, another one has its page open.
+	atProvider, attempt := e.authorize(e.alex, "")
+	first := e.browser()
+	redirect := first.press(atProvider, first.get(startPath+atProvider).Body.String())
+	consent, err := url.Parse(redirect.Header().Get("Location"))
+	require.NoError(t, err)
+	waiting, _ := e.authorize(e.alex, "")
+	second := e.browser()
+	form := second.get(startPath + waiting).Body.String()
+
+	require.NoError(t, e.client.Close())
+
+	// The page cannot name the account right now. It says so and uses nothing up.
+	rec := second.get(startPath + waiting)
+	require.Equal(t, http.StatusOK, rec.Code)
+	checkPageHeaders(t, rec)
+	require.Contains(t, rec.Body.String(), "Please load this page again in a moment.")
+	require.NotContains(t, rec.Body.String(), "fylvo://")
+	// The same for the button.
+	rec = second.press(waiting, form)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, rec.Header().Get("Location"))
+	require.Contains(t, rec.Body.String(), "Please load this page again in a moment.")
+	require.Len(t, second.cookies, 1, "the confirmation cookie stays")
+
+	// The provider answered for the first one. Its state is used up now, so the page
+	// carries the code, without the name of the account it cannot read.
+	rec = first.get(callbackPath + "?state=" + url.QueryEscape(consent.Query().Get("state")) + "&code=granted")
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	require.Contains(t, body, "<strong>anna@example.com</strong>")
+	require.NotContains(t, body, "alex")
+	target, err := url.Parse(link(t, body))
+	require.NoError(t, err)
+	require.Equal(t, attempt, target.Query().Get("attempt"))
+	require.Regexp(t, `^[A-Za-z0-9_-]{32}$`, target.Query().Get("finish"))
 }

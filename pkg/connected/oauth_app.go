@@ -110,9 +110,10 @@ func (t *flowTicket) view() *TicketView {
 }
 
 // ValidChallenge tells whether a text has the form of a challenge: the base64url form
-// of a SHA-256, without padding.
+// of a SHA-256, without padding, in the one spelling an encoder writes (a text with
+// stray bits in its last character decodes too, and no verifier gives it).
 func ValidChallenge(challenge string) bool {
-	raw, err := base64.RawURLEncoding.DecodeString(challenge)
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(challenge)
 	return err == nil && len(raw) == sha256.Size && len(challenge) == 43
 }
 

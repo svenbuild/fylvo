@@ -122,6 +122,8 @@ type Manager struct {
 	usage map[string]usage
 	// leaving counts, per account, the deletions of that account that are under way.
 	leaving map[int]int
+	// starting lets one ticket at a time become a sign-in (see StartTicket).
+	starting sync.Mutex
 	// writes holds one lock per account at a provider (Conn.AccountKey), see write.go.
 	writes sync.Map
 	// unsettled are the names a change with an open outcome was about (see write.go).
@@ -368,8 +370,9 @@ func validPublicID(id string) bool {
 // returns the client of the installation (without the redirect address) and the
 // connection to renew. The caller holds m.mu, so nothing starts for an account whose
 // removal has begun: its sign-ins were dropped, and one that started now would leave a
-// token behind when the provider answers.
-func (m *Manager) admit(ctx context.Context, userID int, provider, reconnect string) (client Client, renew *Reconnect, err error) {
+// token behind when the provider answers. loaded tells that the caller read the account
+// itself a moment ago; it is then not asked for a second time.
+func (m *Manager) admit(ctx context.Context, userID int, provider, reconnect string, loaded bool) (client Client, renew *Reconnect, err error) {
 	if m.specs[provider] == nil {
 		return client, nil, serializer.NewError(serializer.CodeParamErr, "Unknown provider", nil)
 	}
@@ -380,7 +383,7 @@ func (m *Manager) admit(ctx context.Context, userID int, provider, reconnect str
 	if !ok {
 		return client, nil, reasoned(serializer.CodeConnectedUnavailable, "The provider is not set up", ReasonNotConfigured)
 	}
-	if m.leaving[userID] > 0 || (m.exists != nil && !m.exists(ctx, userID)) {
+	if m.leaving[userID] > 0 || (!loaded && m.exists != nil && !m.exists(ctx, userID)) {
 		return client, nil, flowError(ErrFlowExpired)
 	}
 
@@ -421,7 +424,7 @@ func startError(err error) error {
 func (m *Manager) Authorize(ctx context.Context, userID int, provider, reconnect, redirect string) (address, cookie string, err error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	client, renew, err := m.admit(ctx, userID, provider, reconnect)
+	client, renew, err := m.admit(ctx, userID, provider, reconnect, false)
 	if err != nil {
 		return "", "", err
 	}
@@ -440,7 +443,7 @@ func (m *Manager) AuthorizeApp(ctx context.Context, userID int, provider, reconn
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	_, renew, err := m.admit(ctx, userID, provider, reconnect)
+	_, renew, err := m.admit(ctx, userID, provider, reconnect, false)
 	if err != nil {
 		return "", "", err
 	}
@@ -482,12 +485,16 @@ func refusal(err error) string {
 // storages (nil, ErrNotAllowed, ErrFlowExpired for an account that is gone or blocked,
 // or an error of the database). It returns the consent address and the value of the
 // sign-in cookie; the same again for the same browser while that sign-in is under way.
+// One ticket at a time goes through here: of two presses at once the second finds what
+// the first made, and never decides differently about the same ticket.
 //
 // The errors: ErrFlowExpired, without a view, when the ticket is not one of this
 // browser; ErrFlowWait when it can be tried again in a moment, the ticket stays; a
 // *TicketRefused when the checks failed, the ticket is used up.
 func (m *Manager) StartTicket(ctx context.Context, ticket, cookie, redirect string,
 	allowed func(ctx context.Context, userID int) error) (address, signIn string, view *TicketView, err error) {
+	m.starting.Lock()
+	defer m.starting.Unlock()
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	view, err = m.flow.Check(ticket, cookie)
@@ -507,7 +514,7 @@ func (m *Manager) StartTicket(ctx context.Context, ticket, cookie, redirect stri
 			err = flowError(ErrFlowExpired)
 		}
 		if err == nil {
-			client, renew, err = m.admit(ctx, view.UserID, view.Provider, reconnect)
+			client, renew, err = m.admit(ctx, view.UserID, view.Provider, reconnect, true)
 		}
 		if err == nil && renew != nil && renew.Generation != view.Reconnect.Generation {
 			// Connected again meanwhile, by another sign-in.
