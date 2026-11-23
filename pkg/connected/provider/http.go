@@ -223,7 +223,8 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 		tries    int
 	)
 	// sent: a try of this call may have been carried out by the provider. A try that
-	// the provider answered with a plain "no" (401, 429) leaves it as it was before.
+	// the provider answered with a plain "no" (401, 429, a 403 that says "slow down")
+	// leaves it as it was before.
 	sent := false
 	for {
 		token, err := c.Auth.Token(ctx, rejected)
@@ -233,6 +234,13 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 				return nil, notSent{err}
 			}
 			return nil, err
+		}
+		if ctx.Err() != nil {
+			// Out of time before this try went out: it is as it was after the last one.
+			if !sent {
+				return nil, notSent{ctx.Err()}
+			}
+			return nil, ctx.Err()
 		}
 		before := sent
 		sent = true

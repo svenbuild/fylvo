@@ -761,7 +761,7 @@ func (c *cutReader) cut() {
 // refusedOutright tells whether the provider said a plain "no" to a range, or was never
 // asked: whatever was read on the way, it took nothing of it.
 func refusedOutright(err error) bool {
-	return err != nil && (provider.KindOf(err) == provider.KindRetry || !provider.Sent(err))
+	return err != nil && (provider.KindOf(err) == provider.KindRetry || !provider.Sent(err) || refused(err))
 }
 
 // sendFailed handles a range the provider did not take. The caller holds u.work.

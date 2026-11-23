@@ -435,3 +435,13 @@ func TestConnectedIdsFoldLikeTheProvider(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "current", id)
 }
+
+// An address that is meant for a connected storage and is none (an empty name at its
+// end) is refused like any other bad address.
+func TestConnectedSaveToAnAddressThatIsNone(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "notes.txt", []byte("hello"))
+	_, err := (&FileUpdateService{Uri: e.root + "/notes.txt//"}).PutContent(e.withBody(e.alex, "PUT", []byte("other")), nil)
+	require.Error(t, err)
+	require.Equal(t, []byte("hello"), e.download(e.root+"/notes.txt"))
+}

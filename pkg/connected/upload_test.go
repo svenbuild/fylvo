@@ -1589,3 +1589,42 @@ func TestUploadStoredSaysTheProbeWithoutAReceipt(t *testing.T) {
 	_, err = e.start("a.bin", 1000, UploadRequest{})
 	require.ErrorIs(t, err, ErrBusy, "the name is closed")
 }
+
+// OneDrive refuses the address of an upload session (401): it took nothing of the range
+// and the session is gone. The upload fails, nothing is unknown, the name stays open.
+func TestUploadAddressRefusedAtOneDrive(t *testing.T) {
+	e := newUploadEnv(t, ProviderOneDrive)
+	data := payload(testChunk + 1000)
+	info, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err)
+	_, err = e.chunk(info.ID, 0, data)
+	require.NoError(t, err)
+	e.http.hook = func(r *http.Request) (*http.Response, error) {
+		if isLastRange(r, len(data)) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: http.NoBody}, nil
+		}
+		return nil, nil
+	}
+	_, err = e.chunk(info.ID, 1, data)
+	require.Error(t, err)
+	require.NotEqual(t, serializer.CodeConnectedOutcomeUnknown, codeOf(err))
+	e.http.hook = nil
+	require.Equal(t, UploadFailed, e.status(info.ID).State)
+	again, err := e.start("a.bin", len(data), UploadRequest{})
+	require.NoError(t, err, "the name is not closed")
+	row, err := e.send(again.ID, 0, data)
+	require.NoError(t, err)
+	require.NotNil(t, row)
+}
+
+// Time runs out before a try is started: that try does not count as one that may have
+// been carried out.
+func TestOutOfTimeBeforeATryIsNoTry(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	call := provider.Caller{HTTP: http.DefaultClient, Auth: fixedAuth("token"), AllowHTTP: true}
+	_, err := call.Do(ctx, http.MethodPost, "http://localhost:1/files", nil, []byte("{}"))
+	require.ErrorIs(t, err, context.Canceled)
+	require.False(t, provider.Sent(err))
+}

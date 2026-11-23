@@ -237,6 +237,10 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 	case http.StatusTooManyRequests:
 		// "Slow down": nothing of the range was taken, and it can be sent again.
 		return nil, &provider.Error{Kind: provider.KindRetry, Status: res.StatusCode}
+	case http.StatusUnauthorized:
+		// The address of the session is its own permission. Refused, it took nothing of
+		// the range and will take nothing more: the session is as good as gone.
+		return nil, &provider.Error{Kind: provider.KindNotFound, Status: res.StatusCode}
 	case http.StatusForbidden:
 		// A storage that is full can also answer like this. Any other "no" here says
 		// nothing certain about what was stored.

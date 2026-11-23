@@ -5,8 +5,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/cloudreve/Cloudreve/v4/application/constants"
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
@@ -109,6 +111,12 @@ func connectedCancelUpload(c *gin.Context, uri *fs.URI, s *DeleteUploadSessionSe
 	}
 	defer req.done()
 	return connected.Public(c, req.m.CancelUpload(req.ctx, req.conn, s.ID))
+}
+
+// meantForConnected tells whether an address names the connected storages, also when it
+// is no address one of them has (connectedURI refuses it).
+func meantForConnected(raw string) bool {
+	return strings.Contains(raw, "@"+string(constants.FileSystemConnected))
 }
 
 // connectedPutContent answers PUT /file/content: one request that runs a whole upload
