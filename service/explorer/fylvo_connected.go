@@ -163,7 +163,7 @@ func connectedCapability(row *connected.Row) *boolset.BooleanSet {
 			// one by one. Not through a link: links can lead back up.
 			flags[dbfs.NavigatorCapabilityDownloadFile] = row.Enterable() && row.Link == nil
 		} else {
-			flags[dbfs.NavigatorCapabilityDownloadFile] = true
+			flags[dbfs.NavigatorCapabilityDownloadFile] = row.Native == "" || len(connected.ExportFormats[row.Native]) > 0
 		}
 	}
 	boolset.Sets(flags, set)
@@ -198,9 +198,13 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 	case row.Unsupported != "":
 		res.Metadata[connectedMetaUnsupported] = row.Unsupported
 	case row.Native != "":
+		// It opens at the provider. Where it can be exported, a download gives that;
+		// a form or a notebook has no export, and nothing to download.
 		res.Metadata[connectedMetaExternalURL] = row.WebURL
-		res.Metadata[connectedMetaExport] = connected.ExportFormats[row.Native][0]
 		res.Metadata[connectedMetaSizeUnknown] = "1"
+		if formats := connected.ExportFormats[row.Native]; len(formats) > 0 {
+			res.Metadata[connectedMetaExport] = formats[0]
+		}
 	}
 	// A link itself, and what was reached through one further up: a client that walks
 	// folders by itself stops at links (they can lead back up) and goes on below them.
@@ -383,6 +387,10 @@ func connectedURL(c *gin.Context, uri *fs.URI, s *FileURLService, base *url.URL,
 	}
 	if row.IsDir || row.Unsupported != "" {
 		return "", fs.ErrEntityNotExist
+	}
+	if row.Native != "" && len(connected.ExportFormats[row.Native]) == 0 {
+		// A form, a notebook: it has no bytes and no export. It opens at the provider.
+		return "", connected.ErrUnsupported
 	}
 	// The state as it is now, not as a listing of some seconds ago told it.
 	if err := connected.Fresh(req.ctx, req.conn.P, row); err != nil {
