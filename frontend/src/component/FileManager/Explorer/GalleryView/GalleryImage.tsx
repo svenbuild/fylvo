@@ -62,6 +62,7 @@ const GalleryImage = memo((props: FileBlockProps) => {
     setRefFunc,
     disabled,
     fileDisabled,
+    isCut,
   } = useFileBlockState(props);
 
   const [hovered, setHovered] = useState(false);
@@ -119,7 +120,7 @@ const GalleryImage = memo((props: FileBlockProps) => {
     <StyledImageListItem
       onClick={file.type == FileType.folder ? onClick : onDoubleClicked}
       selected={!!isSelected}
-      transparent={isDragging || fileDisabled}
+      transparent={isDragging || fileDisabled || isCut}
       isDropOver={isDropOver && !isDragging}
       disabled={disabled}
       onContextMenu={onContextMenu}

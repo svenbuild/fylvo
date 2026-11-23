@@ -1,5 +1,6 @@
 import { useAppSelector } from "../../redux/hooks.ts";
 import PinToSidebar from "../FileManager/Dialogs/PinToSidebar.tsx";
+import ShortcutsDialog from "../FileManager/Dialogs/ShortcutsDialog.tsx";
 import BatchDownloadLog from "./BatchDownloadLog.tsx";
 import Confirmation from "./Confirmation.tsx";
 import SelectOption from "./SelectOption.tsx";
@@ -11,6 +12,7 @@ const GlobalDialogs = () => {
     <>
       <Confirmation />
       <PinToSidebar />
+      <ShortcutsDialog />
       {batchDownloadLogOpen != undefined && <BatchDownloadLog />}
       {selectOptionOpen != undefined && <SelectOption />}
     </>

@@ -1294,5 +1294,32 @@
     "searchLinks_other": "{{count}} Verknüpfungen wurden bei der Suche nicht verfolgt.",
     "downloadAs": "Herunterladen als",
     "usualFormat": "Das übliche Format"
+  },
+  "shortcuts": {
+    "title": "Tastenkürzel",
+    "where": "Sie wirken, solange die Dateiansicht den Fokus hat, nicht in Feldern, Dialogen, Editoren oder Betrachtern. Markierter Text wird als Text kopiert.",
+    "keyCopy": "Auswahl kopieren",
+    "keyCut": "Auswahl ausschneiden (blasser angezeigt)",
+    "keyPaste": "In den offenen Ordner einfügen",
+    "keyUndo": "Letztes Umbenennen, Verschieben oder Löschen in den Papierkorb rückgängig machen",
+    "keySelectAll": "Alle auswählen",
+    "keyDelete": "In den Papierkorb",
+    "delKey": "Entf",
+    "keyRename": "Umbenennen",
+    "keyOpen": "Öffnen",
+    "keyUp": "Einen Ordner hoch",
+    "keyEscape": "Auswahl aufheben und Ausschneiden abbrechen",
+    "keySearch": "Suchen",
+    "copied": "Kopiert. Mit {{key}}+V in einen Ordner einfügen.",
+    "cut": "Ausgeschnitten. Mit {{key}}+V in einen Ordner verschieben, Esc bricht ab.",
+    "cannotCopy": "Diese Dateien lassen sich nicht kopieren.",
+    "cannotCut": "Diese Dateien lassen sich nicht verschieben.",
+    "cannotPaste": "Hier lässt sich nichts einfügen.",
+    "sameFolder": "Die Dateien liegen schon in diesem Ordner. Eine Kopie im selben Ordner geht nicht.",
+    "cannotDelete": "Diese Dateien lassen sich nicht löschen.",
+    "cannotRename": "Umbenennen geht nur bei einer einzelnen Datei, die geändert werden darf.",
+    "nothingToUndo": "Nichts rückgängig zu machen.",
+    "cannotUndo": "Die letzte Aktion lässt sich nicht rückgängig machen. Kopieren und endgültiges Löschen gehen nicht.",
+    "notInTrash": "Die Dateien sind nicht mehr im Papierkorb. Nichts wurde wiederhergestellt."
   }
 }

@@ -48,6 +48,22 @@ export function useInlineRename({ file, isSelected, uploading, isTouch }: UseInl
     }
   }, [isEditing]);
 
+  // Fylvo: after the rename (also when the renamed row is drawn anew) the file view gets the
+  // focus back, so keys like Ctrl+Z work right away. Not when the user clicked somewhere else.
+  useEffect(() => {
+    const fileView = isEditing ? inputRef.current?.closest<HTMLElement>("[data-fm-index]") : undefined;
+    if (!fileView) {
+      return;
+    }
+    return () => {
+      setTimeout(() => {
+        if (!document.activeElement || document.activeElement == document.body) {
+          fileView.focus({ preventScroll: true });
+        }
+      });
+    };
+  }, [isEditing]);
+
   // Disable draggable on the ancestor while editing so react-dnd's
   // HTML5Backend doesn't hijack mousedown+mousemove for text selection.
   useEffect(() => {
@@ -85,7 +101,18 @@ export function useInlineRename({ file, isSelected, uploading, isTouch }: UseInl
   }, [file]);
 
   const canRename = isSoleSelected && !uploading && !isEditing;
-  useHotkeys("f2", enterEditMode, { enabled: canRename, preventDefault: true }, [enterEditMode, canRename]);
+  // Fylvo: only while this file manager has the focus, not in a dialog or viewer above it.
+  useHotkeys(
+    "f2",
+    (e) => {
+      if ((e.target as HTMLElement | null)?.closest?.(`[data-fm-index="${fmIndex}"]`)) {
+        e.preventDefault();
+        enterEditMode();
+      }
+    },
+    { enabled: canRename },
+    [enterEditMode, canRename, fmIndex],
+  );
 
   const onNameClick = useCallback(
     (e: React.MouseEvent<HTMLElement>) => {

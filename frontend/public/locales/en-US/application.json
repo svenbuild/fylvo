@@ -1216,5 +1216,32 @@
     "searchLinks_other": "{{count}} shortcuts were not followed during the search.",
     "downloadAs": "Download as",
     "usualFormat": "The usual format"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "where": "They work while the file view has the focus, not in fields, dialogs, editors or viewers. Marked text is copied as text.",
+    "keyCopy": "Copy the selection",
+    "keyCut": "Cut the selection (shown paler)",
+    "keyPaste": "Paste into the open folder",
+    "keyUndo": "Undo the last rename, move or delete to the trash",
+    "keySelectAll": "Select all",
+    "keyDelete": "Move to the trash",
+    "delKey": "Del",
+    "keyRename": "Rename",
+    "keyOpen": "Open",
+    "keyUp": "One folder up",
+    "keyEscape": "Clear the selection and cancel a cut",
+    "keySearch": "Search",
+    "copied": "Copied. Paste with {{key}}+V in a folder.",
+    "cut": "Cut. Move with {{key}}+V into a folder, Esc cancels.",
+    "cannotCopy": "These files cannot be copied.",
+    "cannotCut": "These files cannot be moved.",
+    "cannotPaste": "Nothing can be pasted here.",
+    "sameFolder": "The files are already in this folder. A copy in the same folder is not possible.",
+    "cannotDelete": "These files cannot be deleted.",
+    "cannotRename": "Only a single file that may be changed can be renamed.",
+    "nothingToUndo": "Nothing to undo.",
+    "cannotUndo": "The last action cannot be undone. Copies and final deletes cannot be undone.",
+    "notInTrash": "The files are no longer in the trash. Nothing was restored."
   }
 }

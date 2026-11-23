@@ -46,6 +46,7 @@ import { addRecentUsedColor, addUsedTags } from "../../session/utils.ts";
 import { fileExtension, getFileLinkedUri } from "../../util";
 import Boolset from "../../util/boolset.ts";
 import { canCopyMoveTo } from "../../util/permission.ts";
+import { rememberUndo } from "./undo.ts";
 import CrUri, { Filesystem } from "../../util/uri.ts";
 import {
   addSelected,
@@ -606,6 +607,7 @@ export function submitRenameFile(index: number, file: FileResponse, newName: str
     }
 
     if (newFile) {
+      rememberUndo({ kind: "rename", file: newFile, oldName: file.name });
       dispatch(
         fileUpdated({
           index,
@@ -728,6 +730,7 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
     dispatch(setFileDeleteModalLoading({ index, value: true }));
 
     let deleted = files;
+    const deleteStarted = Date.now();
     // Fylvo: a connected storage takes at most 100 entries per request, each with its row id.
     const connected = files.some((f) => inConnectedStorage(f.path));
     const groups = connected ? inGroups(files, connectedBatchSize) : [files];
@@ -765,6 +768,15 @@ export function deleteFile(index: number, files: FileResponse[]): AppThunk<Promi
     }
 
     dispatch(setFileDeleteModal({ index, value: [false, files, undefined, true] }));
+
+    // Fylvo: only own files that went to the trash can come back with Ctrl+Z.
+    const toTrash =
+      !opt.unlink &&
+      !opt.skip_soft_delete &&
+      deleted.every((f) => new CrUri(f.path).fs() == Filesystem.my && !f.metadata?.[Metadata.restore_uri]);
+    rememberUndo(
+      toTrash && deleted.length > 0 ? { kind: "trash", files: deleted, since: deleteStarted } : { kind: "none" },
+    );
 
     await dispatch(processFileListDiff(FileManagerIndex.main, deleted));
     await dispatch(processFileListDiff(FileManagerIndex.selector, deleted, false));
@@ -945,6 +957,25 @@ export function moveFiles(index: number, src: FileResponse[], dst: string, isCop
     } catch (e) {
       success = false;
     }
+
+    // Fylvo: a move of own or shared files can be undone with Ctrl+Z; a copy, a restore from the
+    // trash, a failed move or one in a connected storage cannot.
+    const undoable =
+      success &&
+      !isCopy &&
+      !connected &&
+      !src.some((f) => f.metadata?.[Metadata.restore_uri] || inConnectedStorage(f.path));
+    rememberUndo(
+      undoable
+        ? {
+            kind: "move",
+            files: src.map((f) => ({
+              file: { ...f, path: new CrUri(dst).join(f.name).toString() },
+              from: new CrUri(f.path).parent().toString(),
+            })),
+          }
+        : { kind: "none" },
+    );
 
     if (isCopy) {
       if (dst == getState().fileManager[index].path) dispatch(refreshFileList(index));

@@ -57,6 +57,7 @@ const Row = memo((props: FileBlockProps) => {
     setRefFunc,
     disabled,
     fileDisabled,
+    isCut,
     thumbWidth,
     thumbHeight,
   } = useFileBlockState(props);
@@ -86,7 +87,7 @@ const Row = memo((props: FileBlockProps) => {
 
   return (
     <RowContainer
-      transparent={isDragging || fileDisabled}
+      transparent={isDragging || fileDisabled || isCut}
       isDropOver={isDropOver && !isDragging}
       ref={setRefFunc}
       selected={!!isSelected}
