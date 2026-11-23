@@ -1,6 +1,7 @@
 package connected
 
 import (
+	"os"
 	"context"
 	"net/http"
 	"testing"
@@ -11,6 +12,9 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/stretchr/testify/require"
 )
+
+// The tests of this package run on an installation whose operator switched changes on.
+func init() { _ = os.Setenv(EnvWrite, "1") }
 
 // oneDriveConn connects account 7 to a simulated OneDrive and admits a request to it.
 func oneDriveConn(t *testing.T) (*managerFixture, *graphtest.Server, *Conn, context.Context) {
@@ -121,4 +125,35 @@ func TestMoveIntoItsOwnFolderInAnotherSpelling(t *testing.T) {
 	require.Equal(t, []error{nil}, results)
 	_, err = f.Tree().ResolveNow(ctx, c, "Docs/a.txt")
 	require.NoError(t, err)
+}
+
+// With the switch for changes off, nothing that changes a storage reaches a provider:
+// every way to one leads through writer.
+func TestNoChangesUnlessSwitchedOn(t *testing.T) {
+	f, s, c, ctx := oneDriveConn(t)
+	s.AddFile("", "notes.txt", []byte("hello"))
+	src := source(t, f, ctx, c, "notes.txt")
+	t.Setenv(EnvWrite, "")
+	require.False(t, Writes())
+
+	_, err := f.CreateEntry(ctx, c, "Docs", true, true)
+	require.ErrorIs(t, err, ErrUnsupported)
+	_, err = f.RenameEntry(ctx, c, src, "n.txt")
+	require.ErrorIs(t, err, ErrUnsupported)
+	_, err = f.MoveEntries(ctx, c, []Source{src}, Source{Path: ""})
+	require.ErrorIs(t, err, ErrUnsupported)
+	_, err = f.TrashEntries(ctx, c, []Source{src})
+	require.ErrorIs(t, err, ErrUnsupported)
+	_, err = f.StartUpload(ctx, c, UploadRequest{Path: "up.bin", Size: 10})
+	require.ErrorIs(t, err, ErrUnsupported)
+	_, err = f.StartUpload(ctx, c, UploadRequest{Path: "notes.txt", Size: 10, Replace: true})
+	require.ErrorIs(t, err, ErrUnsupported)
+
+	row, err := f.Tree().ResolveNow(ctx, c, "notes.txt")
+	require.NoError(t, err)
+	require.Equal(t, src.ID, FileID(c.ID, row), "the file is as it was")
+
+	// Any other value than "1" is off as well.
+	t.Setenv(EnvWrite, "true")
+	require.False(t, Writes())
 }

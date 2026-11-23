@@ -16,9 +16,51 @@ import (
 // last listed it. The server compares it with what the address leads to now and changes
 // nothing when they differ.
 
-// connectedIDs are the ids a client sends with the addresses of a change: the keys are
-// the exact strings it sent as addresses.
+// connectedIDs are the ids a client sends with the addresses of a change, by address.
 type connectedIDs map[string]string
+
+// addressKey names an address by what it leads to, so "Trial x" and "Trial%20x" are one.
+func addressKey(uri *fs.URI) (string, bool) {
+	path, err := connected.CheckPath(uri.U.Path)
+	if err != nil || len(uri.U.Query()) > 0 {
+		return "", false
+	}
+	return connectionOf(uri) + "\x00" + path, true
+}
+
+// byAddress sorts the ids by the address their keys name. A client may spell the key
+// of an address differently from the address it sends (escaped or not); two keys for
+// one address with different ids say nothing, and that address then has no id.
+func (ids connectedIDs) byAddress() map[string]string {
+	sorted, unclear := make(map[string]string, len(ids)), map[string]bool{}
+	for raw, id := range ids {
+		uri, ok := connectedURI(raw)
+		if !ok {
+			continue
+		}
+		key, ok := addressKey(uri)
+		if !ok {
+			continue
+		}
+		if before, twice := sorted[key]; twice && before != id {
+			unclear[key] = true
+		}
+		sorted[key] = id
+	}
+	for key := range unclear {
+		delete(sorted, key)
+	}
+	return sorted
+}
+
+// of returns the id sent for an address, "" when there is none.
+func (ids connectedIDs) of(sorted map[string]string, uri *fs.URI) string {
+	key, ok := addressKey(uri)
+	if !ok {
+		return ""
+	}
+	return sorted[key]
+}
 
 // errConnectedBatch is the answer to a request that names more entries than one request
 // moves or deletes.
@@ -34,14 +76,14 @@ func connectionOf(uri *fs.URI) string {
 
 // connectedSources turns the addresses of a change into sources. All of them have to be
 // in one connection, which the first address opens.
-func connectedSources(c *gin.Context, raws []string, uris []*fs.URI, ids connectedIDs) (*connectedRequest, []connected.Source, error) {
+func connectedSources(c *gin.Context, uris []*fs.URI, ids connectedIDs) (*connectedRequest, []connected.Source, error) {
 	req, err := openConnected(c, uris[0])
 	if err != nil {
 		return nil, nil, err
 	}
 	sources := make([]connected.Source, 0, len(uris))
-	seen := map[string]bool{}
-	for i, uri := range uris {
+	seen, sorted := map[string]bool{}, ids.byAddress()
+	for _, uri := range uris {
 		path, err := connected.CheckPath(uri.U.Path)
 		key := path
 		if req.conn.P.CaseInsensitive() {
@@ -63,7 +105,7 @@ func connectedSources(c *gin.Context, raws []string, uris []*fs.URI, ids connect
 			req.done()
 			return nil, nil, connected.Error(c, err)
 		}
-		sources = append(sources, connected.Source{Path: path, ID: ids[raws[i]]})
+		sources = append(sources, connected.Source{Path: path, ID: ids.of(sorted, uri)})
 	}
 	return req, sources, nil
 }
@@ -104,7 +146,7 @@ func connectedRename(c *gin.Context, uri *fs.URI, s *RenameFileService) (*FileRe
 	}
 	defer req.done()
 
-	row, err := req.m.RenameEntry(req.ctx, req.conn, connected.Source{Path: req.path, ID: s.Ids[s.Uri]}, s.NewName)
+	row, err := req.m.RenameEntry(req.ctx, req.conn, connected.Source{Path: req.path, ID: s.Ids.of(s.Ids.byAddress(), uri)}, s.NewName)
 	if err != nil {
 		return nil, connected.Error(c, err)
 	}
@@ -121,7 +163,7 @@ func connectedMove(c *gin.Context, uris []*fs.URI, dst *fs.URI, s *MoveFileServi
 	if len(uris) > connected.MaxBatch {
 		return errConnectedBatch
 	}
-	req, sources, err := connectedSources(c, append(append([]string{}, s.Uris...), s.Dst), append(append([]*fs.URI{}, uris...), dst), s.Ids)
+	req, sources, err := connectedSources(c, append(append([]*fs.URI{}, uris...), dst), s.Ids)
 	if err != nil {
 		return err
 	}
@@ -141,7 +183,7 @@ func connectedDelete(c *gin.Context, uris []*fs.URI, s *DeleteFileService) error
 	if len(uris) > connected.MaxBatch {
 		return errConnectedBatch
 	}
-	req, sources, err := connectedSources(c, s.Uris, uris, s.Ids)
+	req, sources, err := connectedSources(c, uris, s.Ids)
 	if err != nil {
 		return err
 	}

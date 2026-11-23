@@ -225,12 +225,15 @@ func TestConnectedListAndInfo(t *testing.T) {
 	require.True(t, can("notes.txt", dbfs.NavigatorCapabilityRenameFile))
 	require.True(t, can("notes.txt", dbfs.NavigatorCapabilityDeleteFile))
 	require.True(t, can("Docs", dbfs.NavigatorCapabilityCreateFile))
+	// On a file the upload bit says that its content can be saved over.
+	require.True(t, can("notes.txt", dbfs.NavigatorCapabilityUploadFile))
 	for _, readOnly := range []string{"Budget.gsheet", "twice.txt"} {
 		require.False(t, can(readOnly, dbfs.NavigatorCapabilityRenameFile), readOnly)
 		require.False(t, can(readOnly, dbfs.NavigatorCapabilityDeleteFile), readOnly)
+		require.False(t, can(readOnly, dbfs.NavigatorCapabilityUploadFile), readOnly)
 	}
 	for _, never := range []dbfs.NavigatorCapability{
-		dbfs.NavigatorCapabilityCreateFile, dbfs.NavigatorCapabilityUploadFile,
+		dbfs.NavigatorCapabilityCreateFile,
 		dbfs.NavigatorCapabilityShare, dbfs.NavigatorCapabilityVersionControl,
 		dbfs.NavigatorCapabilityUpdateMetadata, dbfs.NavigatorCapabilityRestore, dbfs.NavigatorCapabilitySoftDelete,
 	} {
