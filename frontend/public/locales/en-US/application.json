@@ -1206,6 +1206,7 @@
     "toProviderTrash": "Move to provider's trash",
     "emptySave": "An empty file cannot be saved into a connected storage. Add some content, or delete the file.",
     "noFolderUpload": "Folders cannot be uploaded into a connected storage. Create the folder first and upload the files into it.",
-    "nameTaken": "This name is already taken. Please choose another one."
+    "nameTaken": "This name is already taken. Please choose another one.",
+    "officeOneWindow": "When you edit in a connected storage, every editor window is a document of its own. Edit it in one window on one device only: whoever saves second is told that it changed in storage and has to reload it (download a copy in the editor first)."
   }
 }

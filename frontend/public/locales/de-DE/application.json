@@ -1284,6 +1284,7 @@
     "toProviderTrash": "In den Papierkorb des Anbieters",
     "emptySave": "Eine leere Datei lässt sich in einem verbundenen Speicher nicht speichern. Bitte Inhalt ergänzen oder die Datei löschen.",
     "noFolderUpload": "Ordner lassen sich nicht in einen verbundenen Speicher hochladen. Bitte erst den Ordner anlegen und die Dateien hineinladen.",
-    "nameTaken": "Dieser Name ist schon vergeben. Bitte einen anderen wählen."
+    "nameTaken": "Dieser Name ist schon vergeben. Bitte einen anderen wählen.",
+    "officeOneWindow": "Beim Bearbeiten in einem verbundenen Speicher ist jedes Editor-Fenster ein eigenes Dokument. Bitte nur in einem Fenster auf einem Gerät bearbeiten: Wer als Zweiter speichert, bekommt „im Speicher geändert“ und muss neu laden (vorher im Editor eine Kopie herunterladen)."
   }
 }

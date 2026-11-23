@@ -1,4 +1,4 @@
-import { Box, ListItemText, Menu, useTheme } from "@mui/material";
+import { Alert, Box, ListItemText, Menu, useTheme } from "@mui/material";
 import i18n from "i18next";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ import { SquareMenuItem } from "../FileManager/ContextMenu/ContextMenu.tsx";
 import useActionDisplayOpt, { canUpdate } from "../FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { FileManagerIndex } from "../FileManager/FileManager.tsx";
 import ViewerDialog, { ViewerLoading } from "./ViewerDialog.tsx";
+import { inConnectedStorage } from "../../api/connected.ts";
 
 const WopiForm = ({
   replacedSrc,
@@ -40,6 +41,20 @@ const Wopi = () => {
 
   const displayOpt = useActionDisplayOpt(viewerState?.file ? [viewerState?.file] : []);
   const canEdit = canUpdate(displayOpt);
+  // Fylvo: editing in a connected storage: each editor window is a document of its own. The
+  // server may open it for viewing only (the address of the Office server then says
+  // "permission=readonly"), for example for a type the Office server only shows.
+  const connectedEdit = useMemo(() => {
+    if (!viewerState?.file || !inConnectedStorage(viewerState.file.path) || !canEdit) {
+      return false;
+    }
+    try {
+      return new URL(viewerState.src, window.location.href).searchParams.get("permission") != "readonly";
+    } catch (_) {
+      return true;
+    }
+  }, [viewerState?.file, viewerState?.src, canEdit]);
+  const [noticeClosed, setNoticeClosed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -82,6 +97,11 @@ const Wopi = () => {
       return;
     }
 
+    // Fylvo: a connected storage has no shares and no versions of this server.
+    if (inConnectedStorage(viewerState.file.path)) {
+      return;
+    }
+
     if (msg.MessageId === "UI_Sharing" || msg.MessageId === "UI_Share") {
       dispatch(openShareDialog(FileManagerIndex.main, viewerState?.file));
     } else if (msg.MessageId == "UI_FileVersions") {
@@ -92,6 +112,7 @@ const Wopi = () => {
   useEffect(() => {
     if (!viewerState || !viewerState.open) {
       submitedRef.current = false;
+      setNoticeClosed(false);
       return;
     }
 
@@ -156,6 +177,11 @@ const Wopi = () => {
             viewerState={viewerState}
             replacedSrc={replacedSrc}
           />
+        )}
+        {connectedEdit && !noticeClosed && (
+          <Alert severity="warning" onClose={() => setNoticeClosed(true)} sx={{ borderRadius: 0 }}>
+            {t("application:connected.officeOneWindow")}
+          </Alert>
         )}
         {!loaded && <ViewerLoading />}
         <Box
