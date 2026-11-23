@@ -288,3 +288,10 @@ func checkIP(ip net.IP) error {
 	}
 	return nil
 }
+
+// CheckDialIP reports whether a server-side fetcher may connect to ip (Fylvo). It is the
+// check ValidateExternalURL applies to the result of a name lookup, for callers that
+// check the address they actually dial.
+func CheckDialIP(ip net.IP) error {
+	return checkIP(ip)
+}
