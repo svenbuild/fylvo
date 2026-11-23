@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected"
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/connectedtest"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -102,6 +103,21 @@ func TestConnectedWriteExamples(t *testing.T) {
 	_, err = ConnectedUploadState(e.as(e.alex), "cu-unknown")
 	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
 	x.Add("error-upload-session-not-found", nil, err)
+
+	// A document in the Office server: the answer that opens a session, for editing and
+	// (a kind of file the Office server only shows) for viewing, and what has no session.
+	e.withOffice(t, false)
+	e.sim.AddFile("", "letter.docx", []byte("a letter"))
+	e.sim.AddFile("", "template.dot", []byte("a template"))
+	office, err := (&CreateViewerSessionService{Uri: e.root + "/letter.docx", ViewerID: "office", PreferredAction: types.ViewerActionEdit}).Create(e.as(e.alex))
+	x.Add("office-session-edit", office, err)
+	require.NoError(t, err)
+	office, err = (&CreateViewerSessionService{Uri: e.root + "/template.dot", ViewerID: "office", PreferredAction: types.ViewerActionEdit}).Create(e.as(e.alex))
+	x.Add("office-session-view", office, err)
+	require.NoError(t, err)
+	_, err = (&CreateViewerSessionService{Uri: e.root + "/Budget.gsheet", ViewerID: "office", PreferredAction: types.ViewerActionEdit}).Create(e.as(e.alex))
+	require.Equal(t, serializer.CodeConnectedUnsupported, connectedCode(err))
+	x.Add("error-office-no-session", nil, err)
 
 	// These two are shown as they are answered; making a provider lose an answer is the
 	// business of the tests in pkg/connected.

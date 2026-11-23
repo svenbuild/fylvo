@@ -101,6 +101,10 @@ type UploadRequest struct {
 	Previous string
 	// PreviousRequired: an error instead of a new file when there is none to replace.
 	PreviousRequired bool
+	// Item, if set, is the id of the item the upload is to replace. Anything else at
+	// Path is ErrStale; the item itself under another spelling of its name (it was
+	// renamed) is ErrTargetGone. Decided under the lock for changes, like the rest.
+	Item string
 }
 
 // UploadInfo is a started upload.
@@ -148,6 +152,10 @@ type upload struct {
 	// replace and version are the item replaced and its version when the upload
 	// started; replace is empty for a new file.
 	replace, version string
+	// pinned: the upload was started for this very item at this very address
+	// (UploadRequest.Item). An address that leads elsewhere at the commit is then a
+	// conflict (ErrStale), not a missing place.
+	pinned bool
 	// up is the session at the provider, nil for an empty file.
 	up provider.Upload
 
@@ -433,8 +441,17 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 	defer m.writing(c)()
 
 	parent, err := m.folder(ctx, c, parentPath)
+	if r.Item != "" && (errors.Is(err, ErrAmbiguous) || errors.Is(err, ErrUnsupported)) {
+		// The way to the item no longer leads to one place a file can be put into.
+		return nil, ErrStale
+	}
 	if err != nil {
 		return nil, err
+	}
+	if r.Item != "" && parent.Path != parentPath {
+		// The folders on the way are spelled otherwise by now (one was renamed where
+		// case does not count): the address the caller holds is no longer the item's.
+		return nil, ErrTargetGone
 	}
 	u := &upload{
 		user: c.UserID, conn: c.ID, generation: c.Generation, live: c.live, account: c.AccountKey, provider: c.Provider,
@@ -462,12 +479,21 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 		if r.Size > 0 {
 			u.up, err = w.NewUpload(ctx, u.folderID, name, r.Size)
 		}
+	case errors.Is(err, ErrAmbiguous) && r.Item != "":
+		// Several entries where the one item was: not what the caller works on.
+		return nil, ErrStale
 	case errors.Is(err, ErrAmbiguous) && r.Replace:
 		return nil, ItemError(ReasonAmbiguous)
 	case errors.Is(err, ErrAmbiguous):
 		return nil, ErrNameTaken
 	case err != nil:
 		return nil, err
+	case r.Item != "" && existing.ID != r.Item:
+		// Something else sits where the item was: another file, a folder, a link.
+		return nil, ErrStale
+	case r.Item != "" && existing.Name != name:
+		// The item itself, under another spelling of its name: it was renamed.
+		return nil, ErrTargetGone
 	case existing.Name != name:
 		return nil, ErrCaseTaken
 	case !r.Replace || existing.IsDir:
@@ -490,7 +516,7 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 			// would show that it changed meanwhile.
 			return nil, ErrUnsupported
 		}
-		u.replace, u.version = item.ID, item.Version
+		u.replace, u.version, u.pinned = item.ID, item.Version, r.Item != ""
 		u.up, err = w.ReplaceUpload(ctx, item, r.Size)
 	}
 	if provider.KindOf(err) == provider.KindStale {
@@ -987,13 +1013,22 @@ func (m *Manager) unchanged(ctx context.Context, c *Conn, u *upload) error {
 	// replaced meanwhile, the file would end up somewhere else than its address says.
 	parentPath, _ := ParentOf(u.path)
 	parent, err := m.folder(ctx, c, parentPath)
+	// For an upload that was started for one item at one address, an address that no
+	// longer leads there is a change of what the caller works on.
+	moved := ErrNoStorage
+	if u.pinned {
+		moved = ErrStale
+	}
 	switch {
 	case errors.Is(err, ErrNotFound) || errors.Is(err, ErrAmbiguous) || errors.Is(err, ErrUnsupported):
-		return m.fail(ctx, u, ErrNoStorage)
+		return m.fail(ctx, u, moved)
 	case err != nil:
 		return err
 	case parent.ContentID() != u.folderID:
-		return m.fail(ctx, u, ErrNoStorage)
+		return m.fail(ctx, u, moved)
+	case u.pinned && parent.Path != parentPath:
+		// The same folder under another spelling of the way to it.
+		return m.fail(ctx, u, moved)
 	}
 
 	if u.replace == "" {
@@ -1021,6 +1056,9 @@ func (m *Manager) unchanged(ctx context.Context, c *Conn, u *upload) error {
 		return err
 	case row.ID != u.replace:
 		return m.fail(ctx, u, ErrStale)
+	case u.pinned && row.Name != u.name:
+		// The item itself, renamed to another spelling of its name meanwhile.
+		return m.fail(ctx, u, ErrStale)
 	}
 	item, err := c.P.Get(ctx, u.replace)
 	switch {
@@ -1029,6 +1067,9 @@ func (m *Manager) unchanged(ctx context.Context, c *Conn, u *upload) error {
 	case err != nil:
 		return err
 	case item.Version != u.version:
+		return m.fail(ctx, u, ErrStale)
+	case u.pinned && item.Name != u.name:
+		// Renamed in the moment between the two looks.
 		return m.fail(ctx, u, ErrStale)
 	}
 	return nil

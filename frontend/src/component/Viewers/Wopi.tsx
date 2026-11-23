@@ -1,4 +1,4 @@
-import { Box, ListItemText, Menu, useTheme } from "@mui/material";
+import { Alert, Box, ListItemText, Menu, useTheme } from "@mui/material";
 import i18n from "i18next";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ import { SquareMenuItem } from "../FileManager/ContextMenu/ContextMenu.tsx";
 import useActionDisplayOpt, { canUpdate } from "../FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { FileManagerIndex } from "../FileManager/FileManager.tsx";
 import ViewerDialog, { ViewerLoading } from "./ViewerDialog.tsx";
+import { inConnectedStorage } from "../../api/connected.ts";
 
 const WopiForm = ({
   replacedSrc,
@@ -40,6 +41,9 @@ const Wopi = () => {
 
   const displayOpt = useActionDisplayOpt(viewerState?.file ? [viewerState?.file] : []);
   const canEdit = canUpdate(displayOpt);
+  const [noticeClosed, setNoticeClosed] = useState(false);
+  // A new session (also one opened over a running one) shows the notice again.
+  useEffect(() => setNoticeClosed(false), [viewerState?.session?.id]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -69,6 +73,13 @@ const Wopi = () => {
     return url.toString();
   }, [viewerState?.src, theme]);
 
+  // Fylvo: editing in a connected storage: each editor window is a document of its own. The
+  // server may open it for viewing only; the view addresses of the bundled Office viewers say
+  // "permission=readonly" (another WOPI viewer may not, then this counts as editing).
+  const connected = !!viewerState?.file && inConnectedStorage(viewerState.file.path);
+  const connectedEdit =
+    connected && canEdit && !!replacedSrc && new URL(replacedSrc).searchParams.get("permission") != "readonly";
+
   const handlePostMessage = (e: MessageEvent) => {
     console.log("Received PostMessage from " + e.origin, e.data);
     let msg;
@@ -82,6 +93,11 @@ const Wopi = () => {
       return;
     }
 
+    // Fylvo: a connected storage has no shares and no versions of this server.
+    if (inConnectedStorage(viewerState.file.path)) {
+      return;
+    }
+
     if (msg.MessageId === "UI_Sharing" || msg.MessageId === "UI_Share") {
       dispatch(openShareDialog(FileManagerIndex.main, viewerState?.file));
     } else if (msg.MessageId == "UI_FileVersions") {
@@ -89,6 +105,7 @@ const Wopi = () => {
     }
   };
 
+  // Fylvo: bound again for a new session, so the editor's requests name its own file.
   useEffect(() => {
     if (!viewerState || !viewerState.open) {
       submitedRef.current = false;
@@ -99,7 +116,7 @@ const Wopi = () => {
     return () => {
       window.removeEventListener("message", handlePostMessage, false);
     };
-  }, [viewerState?.open]);
+  }, [viewerState?.open, viewerState?.session?.id]);
 
   const onClose = useCallback(() => {
     dispatch(closeWopiViewer());
@@ -123,7 +140,7 @@ const Wopi = () => {
       <ViewerDialog
         file={viewerState?.file}
         loading={loading}
-        readOnly={!canEdit}
+        readOnly={connected ? !connectedEdit : !canEdit}
         fullScreenToggle
         dialogProps={{
           open: !!(viewerState && viewerState.open),
@@ -156,6 +173,11 @@ const Wopi = () => {
             viewerState={viewerState}
             replacedSrc={replacedSrc}
           />
+        )}
+        {connectedEdit && !noticeClosed && (
+          <Alert severity="warning" onClose={() => setNoticeClosed(true)} sx={{ borderRadius: 0 }}>
+            {t("application:connected.officeOneWindow")}
+          </Alert>
         )}
         {!loaded && <ViewerLoading />}
         <Box
