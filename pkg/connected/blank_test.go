@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -74,10 +75,11 @@ func TestBlankDocuments(t *testing.T) {
 
 		// What a part names by an id is in its own list of references, as the kind
 		// of part it is meant to be.
-		refers := func(part, id, kind, target string) {
+		// element is the element of the part that carries the id, up to and with it.
+		refers := func(part, element, id, kind, target string) {
 			t.Helper()
 			list := filepath.ToSlash(filepath.Join(filepath.Dir(part), "_rels", filepath.Base(part)+".rels"))
-			require.Contains(t, parts[part], `r:id="`+id+`"`, name+": "+part)
+			require.Contains(t, parts[part], element+` r:id="`+id+`"/>`, name+": "+part)
 			require.Contains(t, parts[list], `<Relationship Id="`+id+`" Type="`+docRel+"/"+kind+`" Target="`+target+`"/>`, name+": "+list)
 		}
 		switch main {
@@ -85,14 +87,27 @@ func TestBlankDocuments(t *testing.T) {
 			require.Contains(t, parts[main], "<w:body><w:p></w:p><w:sectPr>")
 			require.True(t, strings.HasSuffix(parts[main], "</w:sectPr></w:body></w:document>"), "the page setup is the last thing in the body")
 		case "xl/workbook.xml":
-			require.Contains(t, parts[main], `<sheet name="Sheet1" sheetId="1" r:id="rId1"/>`)
-			refers(main, "rId1", "worksheet", "worksheets/sheet1.xml")
+			refers(main, `<sheet name="Sheet1" sheetId="1"`, "rId1", "worksheet", "worksheets/sheet1.xml")
 			require.Contains(t, parts["xl/worksheets/sheet1.xml"], "<sheetData/>")
+			// The styles: found through the workbook, and every list with as many
+			// entries as it says.
+			require.Contains(t, parts["xl/_rels/workbook.xml.rels"], `Type="`+docRel+`/styles" Target="styles.xml"`)
+			styles := parts["xl/styles.xml"]
+			for list, entry := range map[string]string{"fonts": "<font>", "fills": "<fill>", "borders": "<border>", "cellStyleXfs": "<xf ", "cellXfs": "<xf ", "cellStyles": "<cellStyle "} {
+				start, end := strings.Index(styles, "<"+list+" count="), strings.Index(styles, "</"+list+">")
+				require.True(t, start >= 0 && end > start, list)
+				want := 1
+				if list == "fills" {
+					want = 2
+				}
+				require.Contains(t, styles[start:end], list+` count="`+strconv.Itoa(want)+`"`, list)
+				require.Equal(t, want, strings.Count(styles[start:end], entry), list)
+			}
 		case "ppt/presentation.xml":
-			refers(main, "rId1", "slideMaster", "slideMasters/slideMaster1.xml")
-			refers(main, "rId2", "slide", "slides/slide1.xml")
+			refers(main, `<p:sldMasterId id="2147483648"`, "rId1", "slideMaster", "slideMasters/slideMaster1.xml")
+			refers(main, `<p:sldId id="256"`, "rId2", "slide", "slides/slide1.xml")
 			require.Contains(t, parts["ppt/_rels/presentation.xml.rels"], `Type="`+docRel+`/theme" Target="theme/theme1.xml"`)
-			refers("ppt/slideMasters/slideMaster1.xml", "rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")
+			refers("ppt/slideMasters/slideMaster1.xml", `<p:sldLayoutId id="2147483649"`, "rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")
 			require.Contains(t, parts["ppt/slideMasters/_rels/slideMaster1.xml.rels"], `Type="`+docRel+`/theme" Target="../theme/theme1.xml"`)
 			require.Contains(t, parts["ppt/slideLayouts/_rels/slideLayout1.xml.rels"], `Type="`+docRel+`/slideMaster" Target="../slideMasters/slideMaster1.xml"`)
 			require.Contains(t, parts["ppt/slides/_rels/slide1.xml.rels"], `Type="`+docRel+`/slideLayout" Target="../slideLayouts/slideLayout1.xml"`)
@@ -106,16 +121,19 @@ func TestBlankDocuments(t *testing.T) {
 			}
 			theme := parts["ppt/theme/theme1.xml"]
 			for list, entry := range map[string]string{
-				"a:fillStyleLst": "<a:solidFill>", "a:lnStyleLst": "<a:ln ", "a:effectStyleLst": "<a:effectStyle>", "a:bgFillStyleLst": "<a:solidFill>",
+				"a:fillStyleLst": "<a:solidFill>", "a:lnStyleLst": "<a:solidFill>", "a:effectStyleLst": "<a:effectStyle>", "a:bgFillStyleLst": "<a:solidFill>",
 			} {
 				start, end := strings.Index(theme, "<"+list+">"), strings.Index(theme, "</"+list+">")
 				require.True(t, start >= 0 && end > start, list)
 				count := strings.Count(theme[start:end], entry)
 				if list == "a:lnStyleLst" {
-					// Each line has a fill of its own.
+					// Each line has a fill of its own, which is no entry of the list.
 					count = strings.Count(theme[start:end], "<a:ln ")
 				}
 				require.Equal(t, 3, count, list)
+			}
+			for _, font := range []string{"majorFont", "minorFont"} {
+				require.Contains(t, theme, "<a:"+font+`><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:`+font+">")
 			}
 			for _, colour := range []string{"dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"} {
 				require.Contains(t, theme, "<a:"+colour+">", colour)

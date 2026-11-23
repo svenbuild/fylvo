@@ -449,7 +449,8 @@ func TestConnectedSaveToAnAddressThatIsNone(t *testing.T) {
 }
 
 // A new Office document is a real, empty one from its first moment, not a file without
-// bytes: the provider's own Office opens it, also when nobody ever saved to it.
+// bytes. Checked here: what is stored is a package with the main part of its kind, and
+// creating follows the rules of creating an empty file.
 func TestConnectedCreateOfficeDocument(t *testing.T) {
 	e := newConnectedEnv(t)
 	e.withOffice(t, false)
@@ -495,11 +496,11 @@ func TestConnectedCreateOfficeDocument(t *testing.T) {
 	folder, err := (&CreateFileService{Uri: e.root + "/Folder.docx", Type: "folder"}).Create(e.as(e.alex))
 	require.NoError(t, err)
 	require.Equal(t, int(types.FileTypeFolder), folder.Type)
+	uploads := e.sim.Calls(drivetest.CallStart)
 	_, err = create("/Folder.docx", false)
 	require.Equal(t, serializer.CodeObjectExist, connectedCode(err))
 	e.sim.AddShortcut("", "Link.docx", e.sim.AddFile("", "target.txt", []byte("x")))
 	e.m.Tree().Forget(e.id)
-	uploads := e.sim.Calls(drivetest.CallStart)
 	for _, errOnConflict := range []bool{false, true} {
 		_, err = create("/Link.docx", errOnConflict)
 		require.Equal(t, serializer.CodeObjectExist, connectedCode(err))

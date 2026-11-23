@@ -84,19 +84,32 @@ func wordDocument(text string) []byte {
 		})
 }
 
-// workbook is an Excel workbook with one empty sheet.
+// workbook is an Excel workbook with one empty sheet. The desktop program opens one
+// without styles; they are there all the same, in their smallest form, because every
+// program writes them and not every one may do without.
 func workbook() []byte {
 	return pack(
 		[][2]string{
 			{"/xl/workbook.xml", "spreadsheetml.sheet.main+xml"},
 			{"/xl/worksheets/sheet1.xml", "spreadsheetml.worksheet+xml"},
+			{"/xl/styles.xml", "spreadsheetml.styles+xml"},
 		},
 		[]part{
 			{"_rels/.rels", rels([3]string{"rId1", "officeDocument", "xl/workbook.xml"})},
 			{"xl/workbook.xml", xmlHead + `<workbook xmlns="` + sheetNS + `" xmlns:r="` + docRel + `">` +
 				`<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>`},
-			{"xl/_rels/workbook.xml.rels", rels([3]string{"rId1", "worksheet", "worksheets/sheet1.xml"})},
+			{"xl/_rels/workbook.xml.rels", rels(
+				[3]string{"rId1", "worksheet", "worksheets/sheet1.xml"},
+				[3]string{"rId2", "styles", "styles.xml"})},
 			{"xl/worksheets/sheet1.xml", xmlHead + `<worksheet xmlns="` + sheetNS + `"><sheetData/></worksheet>`},
+			{"xl/styles.xml", xmlHead + `<styleSheet xmlns="` + sheetNS + `">` +
+				`<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>` +
+				`<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
+				`<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
+				`<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+				`<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>` +
+				`<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>` +
+				`</styleSheet>`},
 		})
 }
 
