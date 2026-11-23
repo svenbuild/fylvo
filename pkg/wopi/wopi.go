@@ -64,7 +64,15 @@ func GenerateWopiSrc(ctx context.Context, action types.ViewerAction, viewer *typ
 	base := dep.SettingProvider().SiteURL(setting.UseFirstSiteUrl(ctx))
 	hasher := dep.HashIDEncoder()
 
-	availableActions, ok := viewer.WopiActions[viewerSession.File.Ext()]
+	return ActionURL(action, viewer, viewerSession.File.Ext(),
+		routes.MasterWopiSrc(base, hashid.EncodeFileID(hasher, viewerSession.File.ID())).String())
+}
+
+// ActionURL returns the address of the Office server for a file with the extension ext
+// whose calls go to fileSrc. Fylvo: split off GenerateWopiSrc, for files that are not in
+// Fylvo's own storage.
+func ActionURL(action types.ViewerAction, viewer *types.Viewer, ext, fileSrc string) (*url.URL, error) {
+	availableActions, ok := viewer.WopiActions[ext]
 	if !ok {
 		return nil, ErrActionNotSupported
 	}
@@ -83,13 +91,7 @@ func GenerateWopiSrc(ctx context.Context, action types.ViewerAction, viewer *typ
 		return nil, ErrActionNotSupported
 	}
 
-	actionUrl, err := generateActionUrl(src,
-		routes.MasterWopiSrc(base, hashid.EncodeFileID(hasher, viewerSession.File.ID())).String())
-	if err != nil {
-		return nil, err
-	}
-
-	return actionUrl, nil
+	return generateActionUrl(src, fileSrc)
 }
 
 // Replace query parameters in action URL template. Some placeholders need to be replaced

@@ -148,31 +148,17 @@ func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService) (*Fi
 	}
 	defer req.done()
 
-	info, err := req.m.StartUpload(req.ctx, req.conn, connected.UploadRequest{
+	row, err := req.m.Save(req.ctx, req.conn, connected.UploadRequest{
 		Path:             req.path,
 		Size:             size,
 		Replace:          true,
 		Previous:         s.Previous,
 		PreviousRequired: s.PreviousRequired,
-	})
+	}, moving)
 	if err != nil {
-		return nil, connected.Error(c, err)
+		return nil, connected.Public(c, err)
 	}
-	for index := 0; ; index++ {
-		length := min(info.ChunkSize, size-int64(index)*info.ChunkSize)
-		row, err := req.m.UploadChunk(req.ctx, req.conn, info.ID, index, io.LimitReader(moving, length), length)
-		if err != nil {
-			// The body cannot be read a second time. Unless the outcome is open, the
-			// upload ends here, and nothing was stored.
-			if !errors.Is(err, connected.ErrOutcomeUnknown) {
-				_ = req.m.CancelUpload(req.ctx, req.conn, info.ID)
-			}
-			return nil, connected.Public(c, err)
-		}
-		if row != nil {
-			return connectedFile(req, row, false), nil
-		}
-	}
+	return connectedFile(req, row, false), nil
 }
 
 // movingBody is the body of a request with a limit on how long the client may stand
