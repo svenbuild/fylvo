@@ -215,7 +215,7 @@ func TestConnectedListAndInfo(t *testing.T) {
 	require.Empty(t, folder.PrimaryEntity)
 	require.True(t, can("Docs", dbfs.NavigatorCapabilityEnterFolder))
 	require.True(t, can("Docs", dbfs.NavigatorCapabilityListChildren))
-	require.False(t, can("Docs", dbfs.NavigatorCapabilityDownloadFile))
+	require.True(t, can("Docs", dbfs.NavigatorCapabilityDownloadFile), "a client downloads a folder by walking it")
 
 	file := byName["notes.txt"]
 	require.Equal(t, int64(5), file.Size)
@@ -737,7 +737,53 @@ func TestConnectedTransferThatStandsStillEnds(t *testing.T) {
 
 	c, rec := gin.CreateTestContext(httptest.NewRecorder())
 	src := &stalled{stop: make(chan struct{})}
-	err := copyMoving(c.Writer, src, func() { close(src.stop) })
+	watch := time.AfterFunc(time.Hour, func() { close(src.stop) })
+	defer watch.Stop()
+	err := copyMoving(c.Writer, src, watch)
 	require.Error(t, err)
 	_ = rec
+}
+
+// A link itself and what is reached through one are told apart.
+func TestConnectedLinkMarks(t *testing.T) {
+	e := newConnectedEnv(t)
+	docs := e.sim.AddFolder("", "Docs")
+	e.sim.AddFolder(docs, "Sub")
+	e.sim.AddShortcut(docs, "Back to Docs", docs)
+	e.sim.AddShortcut("", "Link to Docs", docs)
+
+	root, err := e.list(e.alex, e.root, 0, "")
+	require.NoError(t, err)
+	marks := func(res *ListResponse, name string) (link, via bool) {
+		for _, f := range res.Files {
+			if f.Name == name {
+				_, link = f.Metadata[connectedMetaLink]
+				_, via = f.Metadata[connectedMetaViaLink]
+			}
+		}
+		return
+	}
+	link, via := marks(root, "Link to Docs")
+	require.True(t, link)
+	require.False(t, via)
+	link, via = marks(root, "Docs")
+	require.False(t, link || via)
+	for _, f := range root.Files {
+		// A folder is downloaded by walking it, which stops at links.
+		require.Equal(t, f.Name == "Docs", f.Capability.Enabled(int(dbfs.NavigatorCapabilityDownloadFile)), f.Name)
+	}
+
+	below, err := e.list(e.alex, e.root+"/Link to Docs", 0, "")
+	require.NoError(t, err)
+	require.True(t, below.Connected.ReadOnly)
+	link, via = marks(below, "Sub")
+	require.False(t, link, "an ordinary folder below a link can be walked into")
+	require.True(t, via)
+	link, via = marks(below, "Back to Docs")
+	require.True(t, link, "a link below a link is a link: it can lead back up")
+	require.False(t, via)
+
+	// An address with a second slash at its end is none of a connected storage.
+	_, err = e.info(e.alex, e.root+"/Docs//")
+	require.Equal(t, serializer.CodeParamErr, connectedCode(err))
 }

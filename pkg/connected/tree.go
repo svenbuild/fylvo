@@ -317,9 +317,10 @@ func (t *Tree) sweep() {
 // listings, oldest first, which only save a question to the provider, then the paged
 // listings, the ones used longest ago first. The caller holds t.mu.
 func (t *Tree) makeRoom(rows int) {
-	total := rows
+	// Every listing counts one more than its rows: also an empty one takes room.
+	total := rows + 1
 	for _, l := range t.listings {
-		total += len(l.entries)
+		total += len(l.entries) + 1
 	}
 	for _, s := range t.snapshots {
 		total += len(s.rows)
@@ -334,7 +335,7 @@ func (t *Tree) makeRoom(rows int) {
 				oldest, found = k, true
 			}
 		}
-		total -= len(t.listings[oldest].entries)
+		total -= len(t.listings[oldest].entries) + 1
 		delete(t.listings, oldest)
 	}
 	for total > maxRows && len(t.snapshots) > 0 {

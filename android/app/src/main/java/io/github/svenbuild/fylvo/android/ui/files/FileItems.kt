@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalContext
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import io.github.svenbuild.fylvo.android.api.FileObject
+import io.github.svenbuild.fylvo.android.util.Connected
 import io.github.svenbuild.fylvo.android.data.THUMB_TTL_MS
 import io.github.svenbuild.fylvo.android.data.offline.EditEntry
 import io.github.svenbuild.fylvo.android.data.offline.EditState
@@ -180,8 +181,11 @@ private fun KindIcon(file: FileObject, size: Dp, uploading: Boolean = false) {
 
 /** Fylvo: second line of a file: date and size, or "Uploading…" while its upload is not finished. */
 @Composable
-fun fileSubtitle(file: FileObject): String =
-    if (file.isUploading) stringResource(R.string.uploading_file) else subtitleFor(file.size, file.updatedAt, file.isFolder)
+fun fileSubtitle(file: FileObject): String = when {
+    file.isUploading -> stringResource(R.string.uploading_file)
+    Connected.isConnected(file.path) -> connectedSubtitle(file)
+    else -> subtitleFor(file.size, file.updatedAt, file.isFolder)
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

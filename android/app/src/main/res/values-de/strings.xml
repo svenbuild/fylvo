@@ -454,4 +454,42 @@
     <string name="edit_waiting">Wartet auf das Hochladen</string>
     <string name="edit_dismiss_notice">Hinweis ausblenden</string>
     <string name="edit_retry_now">Jetzt erneut versuchen</string>
+
+    <!-- Fylvo: verbundene Speicher (Google Drive, OneDrive über den Server) -->
+    <string name="connected_storages">Verbundene Speicher</string>
+    <string name="connected_storage">Verbundener Speicher</string>
+    <string name="connected_connect_title">Google Drive oder OneDrive verbinden</string>
+    <string name="connected_connect_hint">Einmal in der Fylvo-Web-App, unter Einstellungen</string>
+    <string name="connected_status_reconnect">Muss neu verbunden werden</string>
+    <string name="connected_status_unavailable">Gerade nicht verfügbar</string>
+    <string name="connected_usage">%1$s von %2$s belegt</string>
+    <string name="connected_usage_only">%1$s belegt</string>
+    <string name="connected_reconnect_title">%1$s neu verbinden</string>
+    <string name="connected_reconnect_text">Der Anbieter nimmt den Zugang von Fylvo zu diesem Speicher nicht mehr an. Verbinde ihn in der Fylvo-Web-App neu, unter Einstellungen, Verbundene Speicher. Deine Dateien bleiben, wo sie sind.</string>
+    <string name="connected_unavailable_text">Dieser Speicher lässt sich gerade nicht benutzen. Versuch es später nochmal oder schau ihn in der Fylvo-Web-App an, unter Einstellungen, Verbundene Speicher.</string>
+    <string name="connected_open_web_app">Web-App öffnen</string>
+    <string name="connected_open_at_provider">Beim Anbieter öffnen</string>
+    <string name="connected_open_office">Als .%1$s-Datei öffnen</string>
+    <string name="connected_duplicate_subtitle">Name mehrmals vorhanden, nicht benutzbar</string>
+    <string name="connected_duplicate_note">Diesen Namen gibt es in diesem Ordner mehrmals. Benenne einen davon beim Anbieter um, dann lässt er sich in Fylvo benutzen.</string>
+    <string name="connected_link">Verknüpfung</string>
+    <string name="connected_link_note">Verknüpfung, nur lesen</string>
+    <string name="connected_not_downloadable">Dieser Eintrag lässt sich in Fylvo nicht öffnen.</string>
+    <plurals name="connected_omitted">
+        <item quantity="one">%d Eintrag mit einem Namen, den Fylvo nicht zeigen kann, ist ausgeblendet</item>
+        <item quantity="other">%d Einträge mit Namen, die Fylvo nicht zeigen kann, sind ausgeblendet</item>
+    </plurals>
+    <string name="error_connected_unsupported">Das geht in einem verbundenen Speicher nicht.</string>
+    <string name="error_connected_reconnect">Dieser Speicher muss neu verbunden werden. Das geht in der Fylvo-Web-App, unter Einstellungen, Verbundene Speicher.</string>
+    <string name="error_connected_unavailable">Verbundene Speicher sind auf diesem Server für dein Konto nicht verfügbar.</string>
+    <string name="error_connected_busy">Der Anbieter ist gerade ausgelastet. Bitte gleich nochmal versuchen.</string>
+    <string name="error_connected_listing_expired">Die Liste ist abgelaufen. Bitte neu laden.</string>
+    <string name="error_connected_item">Dieser Eintrag lässt sich nicht benutzen.</string>
+    <string name="error_connected_ambiguous">Diesen Namen gibt es im Ordner mehrmals. Benenne einen davon beim Anbieter um.</string>
+    <string name="error_connected_changed">Die Datei hat sich geändert. Bitte nochmal versuchen.</string>
+    <string name="error_connected_forbidden">Der Anbieter erlaubt den Zugriff auf diese Datei nicht.</string>
+    <string name="error_connected_flagged">Der Anbieter hat diese Datei gesperrt.</string>
+    <string name="error_connected_export_too_large">Dieses Dokument ist zu gross, um es beim Anbieter umzuwandeln.</string>
+    <string name="error_connected_daily_limit">Das Tageslimit des Anbieters für diese Datei ist erreicht. Bitte morgen nochmal versuchen.</string>
+    <string name="error_connected_too_large">Dieser Ordner hat zu viele Einträge, um ihn in Fylvo zu zeigen.</string>
 </resources>

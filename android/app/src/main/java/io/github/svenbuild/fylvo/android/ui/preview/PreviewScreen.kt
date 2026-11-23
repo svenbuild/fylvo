@@ -134,7 +134,7 @@ fun PreviewScreen(
                         Text(current.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             buildString {
-                                append(subtitleFor(current.size, current.updatedAt, false))
+                                append(io.github.svenbuild.fylvo.android.ui.files.fileSubtitle(current))
                                 if (files.size > 1) append("  •  " + stringResource(R.string.position_of, pager.currentPage + 1, files.size))
                             },
                             style = MaterialTheme.typography.labelMedium,

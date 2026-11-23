@@ -56,6 +56,7 @@ with that variable. An ordinary build contains none of it. The log says so at th
 - "Google Drive" is then set up and leads to a storage with sample data (folders, files,
   pictures, Google documents, two entries with one name, shortcuts, a folder with 250 files).
   The data lives in memory and is the same after every start. OneDrive stays "not set up".
+- `FYLVO_DEV_STORAGE_FILES=50000` adds a folder with that many files, to try very large folders.
 - Connecting works as with a real provider, but the sign-in page is one of the server:
   "Allow" as one of two sample accounts, or "Deny".
 - `http://<your server>/api/v4/fylvo/dev/expire` ends all access, so every sample storage
@@ -65,7 +66,9 @@ with that variable. An ordinary build contains none of it. The log says so at th
   the emulator sees it for a phone app.
 
 Never use such a build for a server with real data: the sign-in page lets anyone who can
-reach it choose the account.
+reach it choose the account. The simulated provider itself stores nothing, but the storages
+you connect to it are ordinary rows of the database: disconnect them, or use a data folder of
+its own, before an ordinary build runs on the same data.
 
 ## Pull requests
 

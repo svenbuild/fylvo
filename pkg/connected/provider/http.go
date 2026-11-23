@@ -257,8 +257,17 @@ func (c *Caller) do(ctx context.Context, method, address string, header http.Hea
 
 		if res.StatusCode == http.StatusUnauthorized {
 			res.Body.Close()
-			if renewed && c.ItemOnly {
+			if c.ItemOnly {
+				// About that item only: no new token is asked for on its account.
 				return nil, &Error{Kind: KindForbidden, Status: res.StatusCode}
+			}
+			if !renewed && !patient {
+				// A new token for the next try, which the client makes: this one
+				// would read the bytes long after the caller looked at the file.
+				if _, err := c.Auth.Token(ctx, token); err != nil {
+					return nil, err
+				}
+				return nil, &Error{Kind: KindBusy, Status: res.StatusCode}
 			}
 			if renewed {
 				// Refused with a token that is brand new: the account has to sign in again.

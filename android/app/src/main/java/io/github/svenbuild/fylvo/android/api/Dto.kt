@@ -11,6 +11,8 @@ data class ApiResponse<T>(
     val data: T? = null,
     /** Fylvo: codes of the single failures of a batch answer (40081), see ApiEnvelope. */
     @Transient val innerCodes: List<Int> = emptyList(),
+    /** Fylvo: `data.reason` of an error (40925), also from inside a batch answer. */
+    @Transient val reason: String? = null,
 )
 
 @Serializable
@@ -138,6 +140,8 @@ data class ListFileResponse(
     val parent: FileObject? = null,
     /** Fylvo: a subtree search stopped early (too many folders); the result is incomplete. */
     @SerialName("recursion_limit_reached") val recursionLimitReached: Boolean = false,
+    /** Fylvo: set inside a connected storage (util/Connected). */
+    val connected: ConnectedListing? = null,
 )
 
 @Serializable

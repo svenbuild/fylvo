@@ -5,6 +5,7 @@ package connected
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -202,6 +203,7 @@ func devOptions(o *ManagerOptions) {
 	if d == nil {
 		return
 	}
+	o.Settings = devSettings{SettingStore: o.Settings, sealer: o.Sealer}
 	o.Specs = Specs()
 	spec := o.Specs[ProviderDrive]
 	// Served by this server, under the address its browser side has.
@@ -247,18 +249,53 @@ func (t devTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.other.RoundTrip(req)
 }
 
-// devReady enters the client of the simulated provider, so it shows as set up.
-func devReady(dep dependency.Dep, m *Manager) {
+// devReady says in the log that the simulated provider is on.
+func devReady(dep dependency.Dep, _ *Manager) {
 	if dev() == nil {
 		return
 	}
 	dep.Logger().Warning("Connected storages: %s=1, \"Google Drive\" is a simulated provider with sample data. "+
 		"Not for a server with real data.", DevEnv)
-	ctx := context.Background()
-	if setup, err := m.Setup(ctx); err == nil && setup[ProviderDrive].ClientID == "" {
-		secret := "simulated"
-		_ = m.SetProvider(ctx, ProviderDrive, "simulated", &secret)
+}
+
+// devSettings makes the simulated provider show as set up without storing anything: a
+// server that is started without it afterwards, on the same data, knows nothing of it.
+type devSettings struct {
+	SettingStore
+	sealer *Sealer
+}
+
+func (s devSettings) Gets(ctx context.Context, names []string) (map[string]string, error) {
+	values, err := s.SettingStore.Gets(ctx, names)
+	if err != nil {
+		return nil, err
 	}
+	for _, name := range names {
+		switch name {
+		case clientIDSetting(ProviderDrive):
+			values[name] = "simulated"
+		case clientSecretSetting(ProviderDrive):
+			sealed, err := s.sealer.Seal(ctx, PurposeClientSecret, Context(ProviderDrive), []byte("simulated"))
+			if err != nil {
+				return nil, err
+			}
+			values[name] = base64.StdEncoding.EncodeToString(sealed)
+		}
+	}
+	return values, nil
+}
+
+func (s devSettings) Set(ctx context.Context, settings map[string]string) error {
+	kept := map[string]string{}
+	for name, value := range settings {
+		if name != clientIDSetting(ProviderDrive) && name != clientSecretSetting(ProviderDrive) {
+			kept[name] = value
+		}
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return s.SettingStore.Set(ctx, kept)
 }
 
 // devSampleData fills the simulated storage with one of everything a client has to handle.
@@ -288,6 +325,15 @@ func devSampleData(s *drivetest.Server) {
 	many := s.AddFolder("", "Many files")
 	for i := 1; i <= 250; i++ {
 		s.AddFile(many, fmt.Sprintf("File %03d.txt", i), []byte(fmt.Sprintf("File number %d\n", i)))
+	}
+
+	// One more folder with as many files as asked for, to see how the server and the
+	// apps hold up with a very large one.
+	if n, err := strconv.Atoi(os.Getenv(DevEnv + "_FILES")); err == nil && n > 0 {
+		huge := s.AddFolder("", "Huge folder")
+		for i := 1; i <= n; i++ {
+			s.AddFile(huge, fmt.Sprintf("File %06d.txt", i), nil)
+		}
 	}
 
 	s.AddFolder("", "Empty folder")

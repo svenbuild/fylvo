@@ -1,0 +1,14 @@
+{
+  "code": 40081,
+  "msg": "This item cannot be used",
+  "correlation_id": "00000000-0000-0000-0000-000000000000",
+  "aggregated_error": {
+    "cloudreve://nvgt4tqg126n0ast@connected/twice.txt": {
+      "code": 40925,
+      "data": {
+        "reason": "ambiguous"
+      },
+      "msg": "This item cannot be used"
+    }
+  }
+}

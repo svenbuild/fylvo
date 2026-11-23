@@ -111,6 +111,13 @@ interface ApiService {
     @PUT("api/v4/share")
     suspend fun createShare(@Body request: ShareCreateRequest): Response<ApiResponse<String>>
 
+    /** Fylvo: the account's connected storages; a server without the feature answers HTTP 404. */
+    @GET("api/v4/fylvo/connected")
+    suspend fun connectedStorages(): Response<ApiResponse<ConnectedOverview>>
+
+    @GET("api/v4/fylvo/connected/{id}/capacity")
+    suspend fun connectedCapacity(@Path("id") id: String): Response<ApiResponse<CapacityResponse>>
+
     /** Fylvo: the newest Android release on the server; envelope code 404 when none is published. */
     @GET("api/v4/fylvo/android/latest")
     suspend fun androidLatest(): Response<ApiResponse<AndroidRelease>>

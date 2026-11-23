@@ -5,6 +5,10 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"errors"
+	iofs "io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/application/constants"
@@ -99,5 +103,56 @@ func TestConnectedUriUnmarshal(t *testing.T) {
 	}
 	if len(back.Uris) != 1 || back.Uris[0].String() != connected.String() {
 		t.Fatalf("binary form: %+v", back)
+	}
+}
+
+// Every route that takes an address from a client reads it with NewUriFromString or by
+// JSON, and both refuse the addresses of connected storages. Only NewAnyUriFromString lets
+// them through, so the places that call it are the whole list of code that can ever see
+// such an address. A new caller has to be added here, with a look at what it does with it.
+func TestOnlyKnownCodeReadsConnectedAddresses(t *testing.T) {
+	allowed := map[string]bool{
+		"pkg/filemanager/fs/uri.go":           true, // the parser itself
+		"service/explorer/fylvo_connected.go": true, // hands them to the engine of connected storages
+		"service/fylvo/fylvo_prefs.go":        true, // sidebar links, checked by CheckConnectedLink
+	}
+	root := filepath.Join("..", "..", "..")
+	found := map[string]bool{}
+	err := filepath.WalkDir(root, func(path string, d iofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel := filepath.ToSlash(strings.TrimPrefix(path, root+string(filepath.Separator)))
+		if d.IsDir() {
+			switch rel {
+			case "frontend", "android", "desktop", "ent", "docs", "design", ".git":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(content), "NewAnyUriFromString(") {
+			found[rel] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rel := range found {
+		if !allowed[rel] {
+			t.Errorf("%s reads addresses of connected storages and is not on the list", rel)
+		}
+	}
+	for rel := range allowed {
+		if !found[rel] {
+			t.Errorf("%s is on the list but no longer reads such addresses", rel)
+		}
 	}
 }

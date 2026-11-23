@@ -186,7 +186,13 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 		if err := strictUnmarshal(raw, &sidebar); err != nil || sidebar.Items == nil {
 			return nil, paramError("sidebar needs a list of items")
 		}
-		for _, item := range *sidebar.Items {
+		connected := ConnectedStorages(ctx, dep, u)
+		allowed := connectedSet(connected)
+		// A link into a storage the account has disconnected since falls away, here and
+		// from what is stored: a client sends the whole list, and one dead link in it
+		// must not keep the rest from being saved.
+		sent := liveLinks(*sidebar.Items, allowed)
+		for _, item := range sent {
 			if item.Type != SidebarLink {
 				continue
 			}
@@ -196,11 +202,10 @@ func prefsChange(ctx context.Context, dep dependency.Dep, u *ent.User, key strin
 				}
 			}
 		}
-		connected := ConnectedStorages(ctx, dep, u)
-		allowed := connectedSet(connected)
 		return func(s *types.UserSetting) error {
-			previous := len(effectiveSidebar(s.FylvoPrefs.Sidebar, s.Pined, connected))
-			items, err := checkSidebar(mergeLinks(*sidebar.Items, sidebar.Base, s.Pined), s.Pined, allowed,
+			pined := livePins(s.Pined, allowed)
+			previous := len(effectiveSidebar(s.FylvoPrefs.Sidebar, pined, connected))
+			items, err := checkSidebar(mergeLinks(sent, sidebar.Base, pined), pined, allowed,
 				connected, previous)
 			if err != nil {
 				return err
@@ -445,6 +450,79 @@ func linksOf(items []types.FylvoSidebarItem) []types.PinedFile {
 	return links
 }
 
+// sidebarOf is the sidebar an account sees. Links into a connected storage it no longer
+// has are left out, like the entry of that storage itself.
+func sidebarOf(ctx context.Context, dep dependency.Dep, u *ent.User, saved []types.FylvoSidebarItem, pined []types.PinedFile) []types.FylvoSidebarItem {
+	connected := ConnectedStorages(ctx, dep, u)
+	return effectiveSidebar(saved, livePins(pined, connectedSet(connected)), connected)
+}
+
+// connectedLink tells whether a sidebar link leads into a connected storage, and into
+// which one.
+func connectedLink(raw string) (id string, ok bool) {
+	uri, err := parseLink(raw)
+	if err != nil || string(uri.FileSystem()) != connectedFileSystem {
+		return "", false
+	}
+	if uri.U.User != nil {
+		id = uri.U.User.Username()
+	}
+	return id, true
+}
+
+// livePins leaves out the links into connected storages that are not among connected.
+func livePins(pined []types.PinedFile, connected map[string]bool) []types.PinedFile {
+	live := make([]types.PinedFile, 0, len(pined))
+	for _, p := range pined {
+		if id, ok := connectedLink(p.Uri); ok && !connected[id] {
+			continue
+		}
+		live = append(live, p)
+	}
+	return live
+}
+
+// liveLinks does the same for the items of a sidebar.
+func liveLinks(items []types.FylvoSidebarItem, connected map[string]bool) []types.FylvoSidebarItem {
+	live := make([]types.FylvoSidebarItem, 0, len(items))
+	for _, item := range items {
+		if id, ok := connectedLink(item.Uri); item.Type == SidebarLink && ok && !connected[id] {
+			continue
+		}
+		live = append(live, item)
+	}
+	return live
+}
+
+// DropConnectedLinks removes the sidebar links of an account that lead into the
+// connected storage with the given id, after the account disconnected it.
+func DropConnectedLinks(ctx context.Context, dep dependency.Dep, u *ent.User, storage string) error {
+	gone := func(raw string) bool {
+		id, ok := connectedLink(raw)
+		return ok && id == storage
+	}
+	_, err := dep.UserClient().UpdateSettings(ctx, u.ID, func(s *types.UserSetting) error {
+		pined := make([]types.PinedFile, 0, len(s.Pined))
+		for _, p := range s.Pined {
+			if !gone(p.Uri) {
+				pined = append(pined, p)
+			}
+		}
+		s.Pined = pined
+		if s.FylvoPrefs != nil && s.FylvoPrefs.Sidebar != nil {
+			items := make([]types.FylvoSidebarItem, 0, len(s.FylvoPrefs.Sidebar))
+			for _, item := range s.FylvoPrefs.Sidebar {
+				if item.Type != SidebarLink || !gone(item.Uri) {
+					items = append(items, item)
+				}
+			}
+			s.FylvoPrefs.Sidebar = items
+		}
+		return nil
+	})
+	return err
+}
+
 func connectedSet(ids []string) map[string]bool {
 	set := make(map[string]bool, len(ids))
 	for _, id := range ids {
@@ -575,7 +653,7 @@ func buildPrefs(ctx context.Context, dep dependency.Dep, u *ent.User, s *types.U
 	}
 
 	res := &PrefsResponse{
-		Sidebar:    SidebarPrefs{Items: effectiveSidebar(prefs.Sidebar, s.Pined, ConnectedStorages(ctx, dep, u))},
+		Sidebar:    SidebarPrefs{Items: sidebarOf(ctx, dep, u, prefs.Sidebar, s.Pined)},
 		Home:       HomePrefs{Widgets: effectiveHome(prefs.Home)},
 		View:       ViewPrefs{Density: "compact"},
 		Appearance: AppearancePrefs{Mode: "system"},

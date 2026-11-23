@@ -43,6 +43,7 @@ const (
 	connectedMetaSizeUnknown = "fylvo:size_unknown"
 	connectedMetaUnsupported = "fylvo:unsupported"
 	connectedMetaLink        = "fylvo:link"
+	connectedMetaViaLink     = "fylvo:via_link"
 )
 
 // ConnectedListInfo tells a client what the connected storage it is listing can do, so
@@ -64,6 +65,11 @@ type ConnectedListInfo struct {
 func connectedURI(raw string) (*fs.URI, bool) {
 	uri, err := fs.NewAnyUriFromString(raw)
 	if err != nil || uri.FileSystem() != constants.FileSystemConnected {
+		return nil, false
+	}
+	// The parser drops one slash at the end by itself. A second one is an empty name,
+	// which no path has: such an address is none of a connected storage.
+	if address, _, _ := strings.Cut(raw, "?"); strings.HasSuffix(address, "//") {
 		return nil, false
 	}
 	return uri, true
@@ -155,6 +161,9 @@ func connectedCapability(row *connected.Row) *boolset.BooleanSet {
 			flags[dbfs.NavigatorCapabilityEnterFolder] = row.Enterable()
 			// Something new can be put into a folder of the storage itself.
 			flags[dbfs.NavigatorCapabilityCreateFile] = row.Enterable() && !row.ViaLink
+			// A folder is downloaded by the client, which lists it and fetches its files
+			// one by one. Not through a link: links can lead back up.
+			flags[dbfs.NavigatorCapabilityDownloadFile] = row.Enterable() && row.Link == nil
 		} else {
 			flags[dbfs.NavigatorCapabilityDownloadFile] = true
 		}
@@ -201,7 +210,12 @@ func connectedFile(req *connectedRequest, row *connected.Row, extended bool) *Fi
 		res.Metadata[connectedMetaExport] = connected.ExportFormats[row.Native][0]
 		res.Metadata[connectedMetaSizeUnknown] = "1"
 	}
-	if row.ViaLink {
+	// A link itself, and what was reached through one further up: a client that walks
+	// folders by itself stops at links (they can lead back up) and goes on below them.
+	if row.ViaLink && row.Link == nil {
+		res.Metadata[connectedMetaViaLink] = "1"
+	}
+	if row.Link != nil {
 		res.Metadata[connectedMetaLink] = "1"
 		if row.Link != nil && !row.Enterable() && row.IsDir {
 			// A folder in another drive: it opens at the provider.
@@ -236,7 +250,11 @@ func connectedList(c *gin.Context, uri *fs.URI, s *ListFileService) (*ListRespon
 
 	// What the request leaves out comes from the view stored for the storage, as for
 	// folders of Fylvo. Later pages are asked for the same way, so they agree.
-	view, _ := req.m.View(c, req.user.ID, req.conn.ID)
+	view, err := req.m.View(c, req.user.ID, req.conn.ID)
+	if err != nil {
+		// Not answered in another order than the pages before: that would end the listing.
+		return nil, connected.Error(c, err)
+	}
 	by, direction, size := s.OrderBy, s.OrderDirection, s.PageSize
 	if view != nil {
 		if by == "" {
@@ -420,7 +438,7 @@ func connectedPatchView(c *gin.Context, uri *fs.URI, view *types.ExplorerView) e
 		return err
 	}
 	defer req.done()
-	return req.m.SetView(c, req.user.ID, req.conn.ID, view)
+	return req.m.SetView(c, req.user.ID, req.conn.ID, req.conn.Generation, view)
 }
 
 // ConnectedCapacityResponse is the fill level of a connected storage. Total is 0 when the
@@ -540,9 +558,12 @@ func ServeConnectedContent(c *gin.Context) {
 	}
 
 	// The transfer ends when either side stands still for too long, so a place is
-	// never held by a download that no longer moves.
+	// never held by a download that no longer moves. The watch runs from here on: it
+	// also covers a provider that stalls before the first byte.
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
+	watch := time.AfterFunc(connectedIdle, stop)
+	defer watch.Stop()
 	var content *provider.Content
 	if item.Native != "" {
 		content, err = conn.P.Export(ctx, item, grant.Export)
@@ -565,7 +586,7 @@ func ServeConnectedContent(c *gin.Context) {
 	}
 	c.Status(status)
 	c.Writer.WriteHeaderNow()
-	if err := copyMoving(c.Writer, content.Body, stop); err != nil {
+	if err := copyMoving(c.Writer, content.Body, watch); err != nil {
 		// The provider's stream broke off or stood still, or the client went away. An
 		// answer without a length would otherwise end like a complete one, and the
 		// client would keep a cut-off file for the whole.
@@ -576,18 +597,17 @@ func ServeConnectedContent(c *gin.Context) {
 // connectedIdle is how long a transfer may stand still, on either side, before it ends.
 var connectedIdle = 2 * time.Minute
 
-// copyMoving copies src to the client as long as both sides keep moving. stop ends the
-// read from the provider; it is called when no bytes came for connectedIdle. A client
-// that takes no bytes for that long ends the copy through the deadline of each write.
-func copyMoving(w gin.ResponseWriter, src io.Reader, stop func()) error {
+// copyMoving copies src to the client as long as both sides keep moving. watch ends the
+// read from the provider when it runs out; it is wound up before each read and stopped
+// after it, so it measures the provider alone. A client that takes no bytes for
+// connectedIdle ends the copy through the deadline of each write.
+func copyMoving(w gin.ResponseWriter, src io.Reader, watch *time.Timer) error {
 	out := http.NewResponseController(w)
-	watch := time.AfterFunc(connectedIdle, stop)
-	defer watch.Stop()
-
 	buf := make([]byte, 64*1024)
 	for {
-		n, err := src.Read(buf)
 		watch.Reset(connectedIdle)
+		n, err := src.Read(buf)
+		watch.Stop()
 		if n > 0 {
 			// Not every writer can take a deadline (a recorder in a test cannot).
 			_ = out.SetWriteDeadline(time.Now().Add(connectedIdle))
@@ -619,6 +639,10 @@ func connectedContentError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, context.Canceled):
 		c.AbortWithStatus(499)
+	case errors.Is(err, context.DeadlineExceeded):
+		// The provider took too long to answer: come back later, as for "busy".
+		c.Header("Retry-After", "5")
+		c.AbortWithStatus(http.StatusServiceUnavailable)
 	case errors.As(err, &failure) && failure.Status == http.StatusRequestedRangeNotSatisfiable:
 		// A range past the end of the file, as a player may ask for.
 		c.AbortWithStatus(http.StatusRequestedRangeNotSatisfiable)

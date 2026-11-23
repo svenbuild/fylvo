@@ -48,11 +48,23 @@ fun <T> decodeApiResponse(json: Json, dataSerializer: KSerializer<T>, text: Stri
         code == 0 -> json.decodeFromJsonElement(dataSerializer, dataElement)
         else -> runCatching { json.decodeFromJsonElement(dataSerializer, dataElement) }.getOrNull()
     }
-    return ApiResponse(code = code, msg = msg, data = data, innerCodes = innerCodes(obj))
+    return ApiResponse(code = code, msg = msg, data = data, innerCodes = innerCodes(obj), reason = reasonOf(obj))
 }
 
 /** Codes of the single failures inside `aggregated_error` (batch answer 40081). */
 private fun innerCodes(obj: JsonObject): List<Int> {
     val aggregated = obj["aggregated_error"] as? JsonObject ?: return emptyList()
     return aggregated.values.mapNotNull { ((it as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull }
+}
+
+/**
+ * Fylvo: `data.reason` of an error (connected storages, 40925), or of the first single failure
+ * inside `aggregated_error` that has one (a one-file `POST /file/url` answers 40081 too).
+ */
+private fun reasonOf(obj: JsonObject): String? {
+    fun of(o: JsonObject?): String? =
+        ((o?.get("data") as? JsonObject)?.get("reason") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
+    of(obj)?.let { return it }
+    val aggregated = obj["aggregated_error"] as? JsonObject ?: return null
+    return aggregated.values.firstNotNullOfOrNull { of(it as? JsonObject) }
 }

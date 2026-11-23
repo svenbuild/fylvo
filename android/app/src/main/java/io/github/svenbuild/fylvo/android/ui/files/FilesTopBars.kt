@@ -39,6 +39,7 @@ import io.github.svenbuild.fylvo.android.data.SortBy
 import io.github.svenbuild.fylvo.android.data.ViewMode
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import io.github.svenbuild.fylvo.android.util.Connected
 
 // ---- top bars -------------------------------------------------------------
 
@@ -57,6 +58,10 @@ internal fun FolderTopBar(
     onSort: (SortBy) -> Unit,
     onRefresh: () -> Unit,
     onTrash: () -> Unit,
+    /** Fylvo: off inside a connected storage (no search, no trash, sorting by name, size, date). */
+    showSearch: Boolean = true,
+    showTrash: Boolean = true,
+    sortOptions: List<SortBy> = SortBy.entries,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var sortOpen by remember { mutableStateOf(false) }
@@ -83,7 +88,7 @@ internal fun FolderTopBar(
             }
         },
         actions = {
-            IconButton(onClick = onSearch) {
+            if (showSearch) IconButton(onClick = onSearch) {
                 Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search))
             }
             Box {
@@ -108,16 +113,19 @@ internal fun FolderTopBar(
                         leadingIcon = { Icon(Icons.Default.Refresh, null) },
                         onClick = { menuOpen = false; onRefresh() },
                     )
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.trash)) },
-                        leadingIcon = { Icon(Icons.Default.Delete, null) },
-                        onClick = { menuOpen = false; onTrash() },
-                    )
+                    if (showTrash) {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.trash)) },
+                            leadingIcon = { Icon(Icons.Default.Delete, null) },
+                            onClick = { menuOpen = false; onTrash() },
+                        )
+                    }
                 }
                 DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
-                    SortBy.entries.forEach { by ->
-                        val active = sort.by == by
+                    sortOptions.forEach { by ->
+                        // Fylvo: a saved sort that is not offered here shows as the one used instead.
+                        val active = (if (sort.by in sortOptions) sort.by else Connected.sortFor(sort.by)) == by
                         DropdownMenuItem(
                             text = {
                                 Text(
@@ -184,7 +192,10 @@ internal fun SelectionTopBar(count: Int, detail: String?) {
 internal fun selectionDetail(selected: List<FileObject>, folderLabel: String): String? {
     val one = selected.singleOrNull()
     return when {
+        one != null && !one.isFolder && Connected.sizeUnknown(one) -> one.name
         one != null -> "${one.name} · ${if (one.isFolder) folderLabel else formatSize(one.size)}"
+        // Fylvo: no total when a size is not known (connected storages).
+        selected.any(Connected::sizeUnknown) -> null
         else -> selected.filter { !it.isFolder }.sumOf { it.size }.takeIf { it > 0 }?.let(::formatSize)
     }
 }

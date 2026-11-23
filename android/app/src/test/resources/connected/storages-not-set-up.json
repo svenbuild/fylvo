@@ -1,0 +1,22 @@
+{
+  "code": 0,
+  "data": {
+    "available": true,
+    "allowed": true,
+    "max": 10,
+    "providers": [
+      {
+        "type": "drive",
+        "name": "Google Drive",
+        "configured": false
+      },
+      {
+        "type": "onedrive",
+        "name": "OneDrive",
+        "configured": false
+      }
+    ],
+    "storages": []
+  },
+  "msg": ""
+}

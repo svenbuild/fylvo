@@ -12,8 +12,8 @@ import (
 func TestVersion(t *testing.T) {
 	cases := map[string]string{
 		`{"id":"a","name":"a","size":3,"file":{"hashes":{"quickXorHash":"abc"}},"cTag":"c1","eTag":"e1"}`: "c:c1",
-		`{"id":"a","name":"a","size":3,"file":{"hashes":{"quickXorHash":"abc"}},"eTag":"e1"}`:             "h:abc:3",
-		`{"id":"a","name":"a","size":3,"file":{},"eTag":"e1"}`:                                            "e:e1",
+		`{"id":"a","name":"a","size":3,"file":{"hashes":{"quickXorHash":"abc"}},"eTag":"e1"}`:             "e:e1",
+		`{"id":"a","name":"a","size":3,"file":{"hashes":{"quickXorHash":"abc"}}}`:                         "h:abc:3",
 		`{"id":"a","name":"a","size":3,"file":{},"lastModifiedDateTime":"2026-01-01T09:00:00Z"}`:          "",
 		`{"id":"a","name":"a","size":3,"file":{}}`:                                                        "",
 	}

@@ -363,9 +363,34 @@ func TestItemOnlyRefusal(t *testing.T) {
 	auth := &testAuth{}
 	c := &Caller{HTTP: plainClient(), Auth: auth, AllowHTTP: true, ItemOnly: true}
 	_, err := c.Do(context.Background(), http.MethodGet, api.URL+"/x", nil, nil)
-	if KindOf(err) != KindForbidden || len(auth.refused) != 0 {
-		t.Fatalf("err %v, refused %v", err, auth.refused)
+	if KindOf(err) != KindForbidden || len(auth.refused) != 0 || auth.renewals != 0 {
+		t.Fatalf("err %v, refused %v, %d renewals", err, auth.refused, auth.renewals)
 	}
+}
+
+// A download that meets an old token gets a new one for the next try and does not go
+// on by itself.
+func TestDownloadDoesNotRetryAfterRenewal(t *testing.T) {
+	calls := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Header.Get("Authorization") == "Bearer token-1" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte("content"))
+	}))
+	defer api.Close()
+	auth := &testAuth{}
+	c := &Caller{HTTP: plainClient(), Auth: auth, AllowHTTP: true}
+	if _, err := c.Download(context.Background(), api.URL+"/file", ""); KindOf(err) != KindBusy || calls != 1 || auth.renewals != 1 {
+		t.Fatalf("err %v after %d calls and %d renewals", err, calls, auth.renewals)
+	}
+	content, err := c.Download(context.Background(), api.URL+"/file", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content.Body.Close()
 }
 
 // A download is not held back to wait for the provider: what was checked before it

@@ -160,8 +160,8 @@ func (m *Manager) View(ctx context.Context, userID int, publicID string) (*types
 	return row.Props.View, nil
 }
 
-// SetView stores the view setting of a connection; nil removes it.
-func (m *Manager) SetView(ctx context.Context, userID int, publicID string, view *types.ExplorerView) error {
+// SetView stores the view setting of a connection in the given generation; nil removes it.
+func (m *Manager) SetView(ctx context.Context, userID int, publicID string, generation int, view *types.ExplorerView) error {
 	// Not while the connection is connected again: that step carries the view over to
 	// the new generation, and must not carry over one that is just being replaced.
 	m.mu.RLock()
@@ -170,6 +170,10 @@ func (m *Manager) SetView(ctx context.Context, userID int, publicID string, view
 	row, err := m.row(ctx, userID, publicID)
 	if err != nil {
 		return err
+	}
+	if row.Generation != generation {
+		// Connected again since the request was let in: it is not for this one.
+		return ErrBusy
 	}
 	props := types.ConnectedStorageProps{}
 	if row.Props != nil {
