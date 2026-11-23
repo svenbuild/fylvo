@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withPermit
 import io.github.svenbuild.fylvo.android.R
+import io.github.svenbuild.fylvo.android.api.ConnectedListing
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.data.ApiException
 import io.github.svenbuild.fylvo.android.data.FileRepository
@@ -163,7 +164,7 @@ data class FilesUiState(
     /** Fylvo: the folder on screen as the server describes it, with its capability set. */
     val parent: FileObject? = null,
     /** Fylvo: the `connected` block of the listing on screen (inside a connected storage). */
-    val connected: io.github.svenbuild.fylvo.android.api.ConnectedListing? = null,
+    val connected: ConnectedListing? = null,
     /** Fylvo: every working copy of this account (also finished ones), see OfflineEdits. */
     val editEntries: List<EditEntry> = emptyList(),
     val editPrompt: EditPrompt? = null,
@@ -275,7 +276,7 @@ class FilesViewModel(
         val nextToken: String?,
         val sortKey: SortOrder,
         val parent: FileObject?,
-        val connected: io.github.svenbuild.fylvo.android.api.ConnectedListing? = null,
+        val connected: ConnectedListing? = null,
     )
 
     /** Fylvo: counts refreshes; only the newest one may change the listing. */
@@ -326,12 +327,7 @@ class FilesViewModel(
                 // Fylvo: a connected storage that is gone or must be connected again shows its error,
                 // never rows of it from before; the Home section learns the new state.
                 if (Connected.isConnected(uri) && Connected.isStorageTrouble(e)) {
-                    forgetConnectedListings(uri)
-                    connected.load()
-                    _state.value = _state.value.copy(
-                        loading = false, revalidating = false, files = emptyList(), nextToken = null, parent = null,
-                        connected = null, selected = emptySet(), error = userError(e), errorCode = Connected.codeOf(e),
-                    )
+                    showStorageTrouble(uri, e)
                     return@launch
                 }
                 // Fylvo: no connection inside an offline folder: show the copies on this phone.
@@ -407,7 +403,7 @@ class FilesViewModel(
                             return@launch
                         }
                         Connected.isStorageTrouble(e) -> {
-                            refresh()
+                            showStorageTrouble(uri, e)
                             return@launch
                         }
                         // A cursor that failed is not sent again; pull to refresh starts anew.
@@ -619,7 +615,10 @@ class FilesViewModel(
                 // Fylvo: no connection: an older copy kept offline is better than nothing.
                 val local = anyOfflineCopy(file)
                 if (local != null) onReady(local)
-                else _state.value = _state.value.copy(snackbar = downloadFailure(file, e))
+                else {
+                    val message = downloadFailure(file, e)
+                    _state.update { it.copy(snackbar = message) }
+                }
             } finally {
                 releaseSingle(file.path, file.path, coroutineContext[Job])
             }
@@ -663,18 +662,31 @@ class FilesViewModel(
      * refreshes the listing, and trouble with the storage reloads the overview first, so a
      * storage that must be connected again says so.
      */
-    private suspend fun downloadFailure(file: FileObject, e: Exception): UiMessage {
-        if (!Connected.isConnected(file.path)) return failure(e, fallback = R.string.download_failed)
+    private suspend fun downloadFailure(file: FileObject, e: Exception): UiMessage =
+        failure(connectedError(file, e), fallback = R.string.download_failed)
+
+    /**
+     * Fylvo: [e] of a request for [file] as the app shows it. Outside connected storages it stays
+     * as it is. Inside, content answers get their meaning (busy, changed); a changed file refreshes
+     * the listing on screen, so opening it again asks for the new version; trouble with the storage
+     * reloads the overview first, so a storage that must be connected again says so.
+     */
+    private suspend fun connectedError(file: FileObject, e: Throwable): Throwable {
+        if (!Connected.isConnected(file.path)) return e
         val normalized = Connected.normalize(e)
         if (Connected.isChanged(normalized)) {
-            if (!_state.value.home && CrUri.root(_state.value.currentUri) == CrUri.root(file.path)) refresh()
+            refreshIfShowing(file)
         } else if (Connected.isStorageTrouble(e)) {
             connected.reload()
-            if (connected.storageOf(file.path)?.needsReconnect == true) {
-                return UiMessage(UiText.Res(R.string.error_connected_reconnect), long = true)
-            }
+            if (connected.storageOf(file.path)?.needsReconnect == true) return ApiException(Connected.CODE_RECONNECT, e.message.orEmpty())
         }
-        return failure(normalized, fallback = R.string.download_failed)
+        return normalized
+    }
+
+    /** Fylvo: refreshes the listing when the folder of [file] is on screen. */
+    private fun refreshIfShowing(file: FileObject) {
+        val s = _state.value
+        if (!s.home && s.searchQuery == null && CrUri.canonical(s.currentUri) == CrUri.canonical(CrUri.parent(file.path))) refresh()
     }
 
     /** Fylvo: the version to ask for when saving: pinned inside connected storages (the listed file). */
@@ -700,7 +712,8 @@ class FilesViewModel(
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
             } catch (e: Exception) {
-                _state.value = _state.value.copy(snackbar = downloadFailure(file, e))
+                val message = downloadFailure(file, e)
+                _state.update { it.copy(snackbar = message) }
             } finally {
                 releaseSingle(key, file.path, coroutineContext[Job])
             }
@@ -739,6 +752,7 @@ class FilesViewModel(
             var saved = 0
             var lastError: Exception? = null
             var lastFailed: FileObject? = null
+            var changed = false
             try {
                 for (file in mine) {
                     try {
@@ -749,15 +763,20 @@ class FilesViewModel(
                     } catch (e: Exception) {
                         lastError = e
                         lastFailed = file
+                        if (Connected.isConnected(file.path) && Connected.isChanged(Connected.normalize(e))) changed = true
                     } finally {
                         batchPaths -= file.path
                         clearDownloading(file.path)
                     }
                 }
                 val failed = lastError
+                // Fylvo: a file of a connected storage changed meanwhile: the listing is refreshed once
+                // and the message says to try again.
+                if (changed) mine.firstOrNull()?.let(::refreshIfShowing)
                 val message = when {
                     saved == mine.size -> UiMessage(UiText.Plural(R.plurals.saved_files, saved, saved))
                     saved == 0 && failed != null -> lastFailed?.let { downloadFailure(it, failed) } ?: failure(failed, fallback = R.string.download_failed)
+                    changed -> UiMessage(UiText.Res(R.string.error_connected_changed), long = true)
                     else -> UiMessage(UiText.Res(R.string.saved_some_files, saved, mine.size))
                 }
                 _state.update { it.copy(snackbar = message) }
@@ -867,7 +886,7 @@ class FilesViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            anyOfflineCopy(file)?.let { android.net.Uri.fromFile(it).toString() } ?: throw Connected.normalize(e)
+            anyOfflineCopy(file)?.let { android.net.Uri.fromFile(it).toString() } ?: throw connectedError(file, e)
         }
     }
 
@@ -916,7 +935,7 @@ class FilesViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            anyOfflineCopy(file) ?: throw Connected.normalize(e)
+            anyOfflineCopy(file) ?: throw connectedError(file, e)
         }
     }
 
@@ -1485,15 +1504,26 @@ class FilesViewModel(
     }
 
     /**
+     * Fylvo: a connected storage that is gone or must be connected again: its cached listings and
+     * the rows on screen go, the error screen shows (with the way to the web app for 40921), and
+     * the Home section learns the new state.
+     */
+    private fun showStorageTrouble(uri: String, e: Exception) {
+        val root = CrUri.root(uri)
+        listingCache.keys.removeAll { CrUri.root(it) == root }
+        connected.load()
+        _state.update {
+            it.copy(
+                loading = false, revalidating = false, loadingMore = false, files = emptyList(), nextToken = null,
+                parent = null, connected = null, selected = emptySet(), error = userError(e), errorCode = Connected.codeOf(e),
+            )
+        }
+    }
+
+    /**
      * Fylvo: a human sentence for a failed request on [paths]. When one of them is a file whose
      * upload has not finished, a lock answer also says that such uploads go away by themselves.
      */
-    /** Fylvo: cached listings of the connected storage of [uri] (gone or not usable any more). */
-    private fun forgetConnectedListings(uri: String) {
-        val root = CrUri.root(uri)
-        listingCache.keys.removeAll { CrUri.root(it) == root }
-    }
-
     private fun failure(e: Throwable, paths: List<String> = emptyList(), @StringRes fallback: Int? = null): UiMessage {
         val involvesUpload = paths.isNotEmpty() && paths.any { it in uploadingPaths() }
         return UiMessage(userError(e, involvesUpload, fallback))

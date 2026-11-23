@@ -1,6 +1,5 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
-import io.github.svenbuild.fylvo.android.util.Connected
 import androidx.compose.ui.res.stringResource
 import io.github.svenbuild.fylvo.android.R
 
@@ -27,6 +26,7 @@ import io.github.svenbuild.fylvo.android.util.CrUri
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import io.github.svenbuild.fylvo.android.util.Connected
 
 /** Read-only facts about a file, laid out as label/value rows like the Files app's Info. */
 @OptIn(ExperimentalMaterial3Api::class)

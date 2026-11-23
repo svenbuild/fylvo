@@ -31,6 +31,7 @@ import coil.request.ImageRequest
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.ui.files.FilesViewModel
 import io.github.svenbuild.fylvo.android.ui.files.rememberThumbUrl
+import io.github.svenbuild.fylvo.android.util.asString
 
 /**
  * Full-resolution image with pinch zoom, drag when zoomed, double-tap to
@@ -42,8 +43,14 @@ import io.github.svenbuild.fylvo.android.ui.files.rememberThumbUrl
 fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit, onDismiss: () -> Unit = {}) {
     val thumb = rememberThumbUrl(viewModel, file)
     var fullFailed by remember(file.id) { mutableStateOf(false) }
+    // Fylvo: inside a connected storage the reason is shown (provider busy, file changed).
+    var fullError by remember(file.id) { mutableStateOf<io.github.svenbuild.fylvo.android.util.UiText?>(null) }
     val fullUrl by produceState<String?>(initialValue = null, file.id) {
-        value = runCatching { viewModel.previewUrl(file) }.getOrNull()
+        value = runCatching { viewModel.previewUrl(file) }.onFailure { e ->
+            if (io.github.svenbuild.fylvo.android.util.Connected.isConnected(file.path)) {
+                fullError = io.github.svenbuild.fylvo.android.util.userError(e)
+            }
+        }.getOrNull()
         fullFailed = value == null
     }
 
@@ -111,7 +118,7 @@ fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit,
                 error = { FullWidthError(stringResource(R.string.image_load_failed)) },
             )
         } else if (fullFailed) {
-            FullWidthError(stringResource(R.string.image_load_failed))
+            FullWidthError(fullError?.asString() ?: stringResource(R.string.image_load_failed))
         } else {
             LoadingOverlay(null)
         }

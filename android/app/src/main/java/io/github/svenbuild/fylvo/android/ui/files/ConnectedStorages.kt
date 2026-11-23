@@ -96,13 +96,15 @@ class ConnectedStorages(
     private val capacityAt = HashMap<String, Long>()
 
     /** Loads the overview again (Home, pull to refresh, back in the foreground); one at a time. */
-    fun load() {
-        if (loading?.isActive == true) return
-        loading = scope.launch { reload() }
+    fun load(): Job {
+        loading?.takeIf { it.isActive }?.let { return it }
+        return scope.launch { fetch() }.also { loading = it }
     }
 
-    /** Like [load], but waits for the answer. */
-    suspend fun reload() {
+    /** Like [load], but waits for the answer (sharing a request already under way). */
+    suspend fun reload() = load().join()
+
+    private suspend fun fetch() {
         val result = try {
             repo.overview()
         } catch (e: CancellationException) {
@@ -237,7 +239,7 @@ fun ConnectedHomeSection(viewModel: FilesViewModel) {
         state = state,
         onOpen = { viewModel.navigateTo(FileObject(type = 1, name = it.name, path = it.uri)) },
         onOpenWeb = { id -> scope.launch { openInBrowser(context, viewModel.connected.webSettingsUrl(id)) } },
-        onResume = viewModel.connected::load,
+        onResume = { viewModel.connected.load() },
     )
 }
 

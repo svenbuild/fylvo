@@ -1,6 +1,5 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
-import io.github.svenbuild.fylvo.android.util.Connected
 import androidx.compose.ui.res.stringResource
 import io.github.svenbuild.fylvo.android.R
 
@@ -40,6 +39,7 @@ import io.github.svenbuild.fylvo.android.data.SortBy
 import io.github.svenbuild.fylvo.android.data.ViewMode
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import io.github.svenbuild.fylvo.android.util.Connected
 
 // ---- top bars -------------------------------------------------------------
 

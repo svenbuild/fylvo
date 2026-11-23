@@ -525,7 +525,15 @@ fun FilesScreen(
                 state.loading && state.files.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-                state.error != null -> EmptyState(
+                state.error != null -> {
+                    // Fylvo: back from the web app after connecting again: the folder is asked again.
+                    if (state.inConnected && state.errorCode == Connected.CODE_RECONNECT) {
+                        androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+                            viewModel.refresh()
+                            onPauseOrDispose { }
+                        }
+                    }
+                    EmptyState(
                     icon = Icons.Outlined.FolderOpen,
                     title = stringResource(R.string.load_folder_failed),
                     detail = state.error?.asString(),
@@ -539,12 +547,17 @@ fun FilesScreen(
                         stringResource(R.string.retry) to { viewModel.refresh() }
                     },
                 )
+                }
                 state.files.isEmpty() && state.uploadsHere.isEmpty() -> when (state.category) {
-                    null -> EmptyState(
-                        icon = Icons.Outlined.FolderOpen,
-                        title = stringResource(R.string.folder_empty),
-                        detail = if (state.canAddHere) stringResource(R.string.folder_empty_hint) else null,
-                    )
+                    null -> Column(Modifier.fillMaxSize()) {
+                        // Fylvo: a connected folder whose entries were all left out says so.
+                        if (state.inConnected) ConnectedBanner(state.connected?.omitted ?: 0)
+                        EmptyState(
+                            icon = Icons.Outlined.FolderOpen,
+                            title = stringResource(R.string.folder_empty),
+                            detail = if (state.canAddHere) stringResource(R.string.folder_empty_hint) else null,
+                        )
+                    }
                     Category.TRASH -> EmptyState(icon = Icons.Outlined.Delete, title = stringResource(R.string.trash_empty), detail = stringResource(R.string.trash_empty_hint))
                     Category.RECENT -> EmptyState(icon = Icons.Outlined.History, title = stringResource(R.string.nothing_recent), detail = stringResource(R.string.recent_hint))
                     Category.IMAGES -> EmptyState(icon = Icons.Outlined.Image, title = stringResource(R.string.no_images))
