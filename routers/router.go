@@ -228,6 +228,16 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 		wopi.POST(":id", controllers.ModifyFile)
 	}
 
+	// Fylvo: the calls of the Office server for a file of a connected storage. The token
+	// in the query is the permission (see explorer.openConnectedOffice).
+	connectedWopi := noAuth.Group("fylvo/connected/wopi")
+	{
+		connectedWopi.GET(":session", controllers.FylvoConnectedOfficeInfo)
+		connectedWopi.GET(":session/contents", controllers.FylvoConnectedOfficeGet)
+		connectedWopi.POST(":session/contents", controllers.FylvoConnectedOfficePut)
+		connectedWopi.POST(":session", controllers.FylvoConnectedOfficeOther)
+	}
+
 	v4 := r.Group(constants.APIPrefix)
 
 	/*
