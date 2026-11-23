@@ -1,6 +1,7 @@
 package explorer
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -439,9 +440,12 @@ func ConnectedOfficePut(c *gin.Context) {
 	var body io.Reader = movingBody(c, c.Request.Body)
 	// The last save of a window that is closing: after it nobody is there to be asked.
 	// It is taken in whole first, so that it can still be kept if it meets a conflict.
-	var last *os.File
+	var (
+		last *os.File
+		sum  [sha256.Size]byte
+	)
 	if officeExitSave(c) {
-		kept, err := spoolOffice(body, size)
+		kept, digest, err := spoolOffice(body, size)
 		if err != nil {
 			connectedOfficeError(c, err)
 			return
@@ -450,7 +454,7 @@ func ConnectedOfficePut(c *gin.Context) {
 			_ = kept.Close()
 			_ = os.Remove(kept.Name())
 		}()
-		last, body = kept, kept
+		last, sum, body = kept, digest, kept
 	}
 
 	row, err := o.req.m.OfficeSave(o.req.ctx, o.req.conn, o.session, body, size)
@@ -459,7 +463,7 @@ func ConnectedOfficePut(c *gin.Context) {
 		if last != nil {
 			// What the user wrote is not thrown away with the window: it is stored as a
 			// new file beside the one that changed, and the editor is told it is saved.
-			if beside, err := o.req.m.OfficeKeepBeside(o.req.ctx, o.req.conn, o.session, last, size, officeConflictWord(o.req.user)); err == nil {
+			if beside, err := o.req.m.OfficeKeepBeside(o.req.ctx, o.req.conn, o.session, last, size, sum, officeConflictWord(o.req.user)); err == nil {
 				logging.FromContext(c).Info("Connected storage: the last save of an editor met a changed file and was kept as a copy beside it.")
 				c.JSON(http.StatusOK, gin.H{"LastModifiedTime": officeTime(beside.ModTime)})
 				return
@@ -483,24 +487,28 @@ func ConnectedOfficePut(c *gin.Context) {
 }
 
 // officeExitSave tells whether the Office server marks a save as the last one of a
-// document whose last window was closed.
+// document whose last window was closed, with changes of its user in it. (Set up to
+// save on every close, it also sends one for a window nobody typed in: there is
+// nothing of the user's to keep then.)
 func officeExitSave(c *gin.Context) bool {
-	for _, name := range []string{"X-COOL-WOPI-IsExitSave", "X-LOOL-WOPI-IsExitSave"} {
-		if strings.EqualFold(c.GetHeader(name), "true") {
-			return true
+	header := func(name string) string {
+		if v := c.GetHeader("X-COOL-WOPI-" + name); v != "" {
+			return v
 		}
+		return c.GetHeader("X-LOOL-WOPI-" + name)
 	}
-	return false
+	return strings.EqualFold(header("IsExitSave"), "true") && !strings.EqualFold(header("IsModifiedByUser"), "false")
 }
 
-// spoolOffice takes a body of the given size into a file of its own, to be read again.
-// The caller closes and removes it.
-func spoolOffice(body io.Reader, size int64) (*os.File, error) {
-	kept, err := os.CreateTemp("", "fylvo-office-*")
+// spoolOffice takes a body of the given size into a file of its own, to be read again,
+// and returns it with the SHA-256 of its content. The caller closes and removes it.
+func spoolOffice(body io.Reader, size int64) (kept *os.File, sum [sha256.Size]byte, err error) {
+	kept, err = os.CreateTemp("", "fylvo-office-*")
 	if err != nil {
-		return nil, serializer.NewError(serializer.CodeIOFailed, "Failed to take in the document", err)
+		return nil, sum, serializer.NewError(serializer.CodeIOFailed, "Failed to take in the document", err)
 	}
-	n, err := io.Copy(kept, io.LimitReader(body, size))
+	digest := sha256.New()
+	n, err := io.Copy(io.MultiWriter(kept, digest), io.LimitReader(body, size))
 	if err == nil && n != size {
 		err = io.ErrUnexpectedEOF
 	}
@@ -510,9 +518,10 @@ func spoolOffice(body io.Reader, size int64) (*os.File, error) {
 	if err != nil {
 		_ = kept.Close()
 		_ = os.Remove(kept.Name())
-		return nil, serializer.NewError(serializer.CodeIOFailed, "Failed to take in the document", err)
+		return nil, sum, serializer.NewError(serializer.CodeIOFailed, "Failed to take in the document", err)
 	}
-	return kept, nil
+	copy(sum[:], digest.Sum(nil))
+	return kept, sum, nil
 }
 
 // officeConflictWord is the word in the name of a copy kept after a conflict, in the

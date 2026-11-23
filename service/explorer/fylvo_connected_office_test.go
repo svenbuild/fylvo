@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cloudreve/Cloudreve/v4/ent/group"
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
@@ -67,6 +68,12 @@ func (e *connectedEnv) officeExit(session, token string, body []byte) *httptest.
 	defer func() { e.officeHeaders = nil }()
 	rec, _ := e.office(ConnectedOfficePut, http.MethodPost, session, token, body)
 	return rec
+}
+
+// officeTemps counts what the server has on its own disk of documents in transit.
+func officeTemps() int {
+	found, _ := filepath.Glob(filepath.Join(os.TempDir(), "fylvo-office-*"))
+	return len(found)
 }
 
 // office makes a call of the Office server: no sign-in, only the token.
@@ -425,11 +432,7 @@ func TestConnectedOfficeLastSaveIsKeptBesideAConflict(t *testing.T) {
 		require.NoError(t, err)
 		return fileNames(res.Files)
 	}
-	temps := func() int {
-		found, _ := filepath.Glob(filepath.Join(os.TempDir(), "fylvo-office-*"))
-		return len(found)
-	}
-	before := temps()
+	before := officeTemps()
 
 	// A last save without a conflict is an ordinary save.
 	session, token := open("/letter.docx")
@@ -497,7 +500,128 @@ func TestConnectedOfficeLastSaveIsKeptBesideAConflict(t *testing.T) {
 	require.Equal(t, []byte("mein Brief"), e.download(e.root+"/brief (Konflikt).docx"))
 
 	// Nothing of a document is left on the server's own disk.
-	require.Equal(t, before, temps())
+	require.Equal(t, before, officeTemps())
+}
+
+// The last save again, because its answer did not arrive: the copy that was made is the
+// answer, and no second one is made. Other content is another copy.
+func TestConnectedOfficeLastSaveSentTwice(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	id := e.sim.AddFile("", "letter.docx", []byte("version one"))
+	res, err := e.officeSession(t, "/letter.docx", types.ViewerActionEdit)
+	require.NoError(t, err)
+	session, token := res.Session.ID, res.Session.AccessToken
+	rec, _ := e.office(ConnectedOfficeGet, http.MethodGet, session, token, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	e.sim.SetContent(id, []byte("changed at the provider"))
+
+	first := e.officeExit(session, token, []byte("what the user wrote"))
+	require.Equal(t, http.StatusOK, first.Code)
+	second := e.officeExit(session, token, []byte("what the user wrote"))
+	require.Equal(t, http.StatusOK, second.Code)
+	require.JSONEq(t, first.Body.String(), second.Body.String())
+	e.m.Tree().Forget(e.id)
+	list, err := e.list(e.alex, e.root, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "letter (conflict).docx|letter.docx", fileNames(list.Files))
+
+	third := e.officeExit(session, token, []byte("what the user wrote, and more"))
+	require.Equal(t, http.StatusOK, third.Code)
+	e.m.Tree().Forget(e.id)
+	list, err = e.list(e.alex, e.root, 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "letter (conflict 2).docx|letter (conflict).docx|letter.docx", fileNames(list.Files))
+}
+
+// The file changes at the provider in the very moment of the last save, after the server
+// looked and while it stores: the content is already read by then, and is kept all the same.
+func TestConnectedOfficeLastSaveMeetsAChangeMidway(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	id := e.sim.AddFile("", "letter.docx", []byte("version one"))
+	res, err := e.officeSession(t, "/letter.docx", types.ViewerActionEdit)
+	require.NoError(t, err)
+	session, token := res.Session.ID, res.Session.AccessToken
+	rec, _ := e.office(ConnectedOfficeGet, http.MethodGet, session, token, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	e.sim.ChangeOnNextUpload(id, []byte("changed in that moment"))
+	rec = e.officeExit(session, token, []byte("what the user wrote"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []byte("changed in that moment"), e.download(e.root+"/letter.docx"))
+	require.Equal(t, []byte("what the user wrote"), e.download(e.root+"/letter (conflict).docx"))
+}
+
+// The folder of the file is renamed and another folder takes its path. The copy is for
+// the folder the file was in: nothing is put into a folder that only has its name now.
+// With no folder at the path the save is a conflict too, not "not found".
+func TestConnectedOfficeLastSaveKeepsToItsFolder(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	private := e.sim.AddFolder("", "Private")
+	e.sim.AddFile(private, "letter.docx", []byte("version one"))
+	res, err := e.officeSession(t, "/Private/letter.docx", types.ViewerActionEdit)
+	require.NoError(t, err)
+	session, token := res.Session.ID, res.Session.AccessToken
+	rec, _ := e.office(ConnectedOfficeGet, http.MethodGet, session, token, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	// The folder gets another name: nothing is at the path of the window any more.
+	e.sim.Rename(private, "Archive")
+	e.m.Tree().Forget(e.id)
+	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("an edit"))
+	require.Equal(t, http.StatusConflict, rec.Code)
+	rec = e.officeExit(session, token, []byte("an edit"))
+	require.Equal(t, http.StatusConflict, rec.Code)
+
+	// Another folder takes the name, one that others can see into.
+	shared := e.sim.AddFolder("", "Private")
+	e.m.Tree().Forget(e.id)
+	rec = e.officeExit(session, token, []byte("an edit"))
+	require.Equal(t, http.StatusConflict, rec.Code)
+	list, err := e.list(e.alex, e.root+"/Private", 100, "")
+	require.NoError(t, err)
+	require.Empty(t, list.Files, "nothing was put into the folder that took the name")
+	_ = shared
+	list, err = e.list(e.alex, e.root+"/Archive", 100, "")
+	require.NoError(t, err)
+	require.Equal(t, "letter.docx", fileNames(list.Files))
+	require.Equal(t, []byte("version one"), e.download(e.root+"/Archive/letter.docx"))
+}
+
+// A name as long as a name can be: the copy gives up the end of the name, never the
+// mark that says what it is, and never the extension.
+func TestConnectedOfficeLastSaveOfALongName(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.withOffice(t, false)
+	long := strings.Repeat("ä", 124) + "x.docx" // 248 + 1 + 5 = 254 bytes
+	require.Len(t, long, 254)
+	id := e.sim.AddFile("", long, []byte("version one"))
+	res, err := e.officeSession(t, "/"+long, types.ViewerActionEdit)
+	require.NoError(t, err)
+	session, token := res.Session.ID, res.Session.AccessToken
+	rec, _ := e.office(ConnectedOfficeGet, http.MethodGet, session, token, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	e.sim.SetContent(id, []byte("changed at the provider"))
+
+	rec = e.officeExit(session, token, []byte("what the user wrote"))
+	require.Equal(t, http.StatusOK, rec.Code)
+	e.m.Tree().Forget(e.id)
+	list, err := e.list(e.alex, e.root, 100, "")
+	require.NoError(t, err)
+	require.Len(t, list.Files, 2)
+	var beside string
+	for _, f := range list.Files {
+		if f.Name != long {
+			beside = f.Name
+		}
+	}
+	require.LessOrEqual(t, len(beside), 255)
+	require.True(t, strings.HasSuffix(beside, " (conflict).docx"), beside)
+	require.True(t, strings.HasPrefix(beside, strings.Repeat("ä", 100)), beside)
+	require.True(t, utf8.ValidString(beside))
+	require.Equal(t, []byte("what the user wrote"), e.download(e.root+"/"+beside))
 }
 
 // Where the last save cannot be kept either, the answer is the conflict, as for any
@@ -530,6 +654,25 @@ func TestConnectedOfficeLastSaveThatCannotBeKept(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "letter.docx", fileNames(list.Files))
 	require.Equal(t, []byte("changed at the provider"), e.download(e.root+"/letter.docx"))
+
+	// A last save of a window nobody typed in (an Office server set up to save on every
+	// close sends one): there is nothing of the user's to keep, so it is the conflict.
+	e.officeHeaders = map[string]string{"X-COOL-WOPI-IsExitSave": "true", "X-COOL-WOPI-IsModifiedByUser": "false"}
+	rec, _ = e.office(ConnectedOfficePut, http.MethodPost, session, token, []byte("as it was read"))
+	e.officeHeaders = nil
+	require.Equal(t, http.StatusConflict, rec.Code)
+
+	// A body that breaks off before its announced end: nothing is kept of it, on the
+	// storage or on the server's own disk.
+	before := officeTemps()
+	short, shortRec := e.request(nil, http.MethodPost, "/api/v4/fylvo/connected/wopi/"+session+"?access_token="+url.QueryEscape(token))
+	short.Params = gin.Params{{Key: "session", Value: session}}
+	short.Request.Header.Set("X-COOL-WOPI-IsExitSave", "true")
+	short.Request.Body = io.NopCloser(bytes.NewReader([]byte("only a part")))
+	short.Request.ContentLength = 500
+	ConnectedOfficePut(short)
+	require.GreaterOrEqual(t, shortRec.Code, 400)
+	require.Equal(t, before, officeTemps())
 
 	// A wrong token gets nothing in, exit save or not.
 	rec = e.officeExit(session, token+"x", []byte("not stored"))

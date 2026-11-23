@@ -149,6 +149,9 @@ type Server struct {
 	calls          map[Call]int
 	usage, limit   int64
 
+	// changeOnStart runs once, under the lock, when the next upload session is opened.
+	changeOnStart func()
+
 	sessions    map[string]*session
 	full        bool
 	checkRanges bool
@@ -442,6 +445,14 @@ func (s *Server) Calls(kind Call) int {
 	return s.calls[kind]
 }
 
+// ChangeOnNextUpload gives a file new content the moment the next upload session is
+// opened: a change by somebody else after the server looked and before it stores.
+func (s *Server) ChangeOnNextUpload(id string, content []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.changeOnStart = func() { s.setContent(s.must(id), content) }
+}
+
 // SetQuota sets what About answers. limit 0 means a storage without a limit.
 func (s *Server) SetQuota(usage, limit int64) {
 	s.mu.Lock()
@@ -594,6 +605,11 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 	case CallCreate:
 		s.create(w, r)
 	case CallStart:
+		if s.changeOnStart != nil {
+			change := s.changeOnStart
+			s.changeOnStart = nil
+			change()
+		}
 		s.start(w, r, id)
 	case CallRange, CallStatus:
 		s.put(w, r, id, kind == CallStatus)
