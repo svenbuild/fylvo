@@ -120,6 +120,8 @@ type Manager struct {
 	usage map[string]usage
 	// leaving counts, per account, the deletions of that account that are under way.
 	leaving map[int]int
+	// writes holds one lock per account at a provider (Conn.AccountKey), see write.go.
+	writes sync.Map
 }
 
 func NewManager(o ManagerOptions) *Manager {

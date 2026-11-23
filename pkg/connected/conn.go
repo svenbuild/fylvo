@@ -56,9 +56,6 @@ type liveConn struct {
 	// mu guards the token and makes sure one refresh runs at a time.
 	mu    sync.Mutex
 	token *Token
-
-	// writes lets one change of the storage run at a time (see write.go).
-	writes sync.Mutex
 }
 
 // Use admits a request to a connection of the account. It returns the connection and a

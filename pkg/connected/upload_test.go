@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -754,8 +755,10 @@ func TestUploadSessionsExpire(t *testing.T) {
 	now = now.Add(uploadIdle)
 	_, err = e.f.UploadStatus(7, idle.ID)
 	require.Equal(t, serializer.CodeParentNotExist, codeOf(err))
-	require.Equal(t, 1, e.d.Calls(drivetest.CallCancel), "cancelled at the provider")
 	require.Empty(t, e.f.uploads.byID)
+	// The provider is told in the background, not while a request waits.
+	require.Eventually(t, func() bool { return e.d.Calls(drivetest.CallCancel) == 1 }, 5*time.Second, 10*time.Millisecond,
+		"cancelled at the provider")
 }
 
 func TestUploadReceiptMustMatch(t *testing.T) {
@@ -790,5 +793,60 @@ func TestUploadReceiptMustMatch(t *testing.T) {
 				require.Nil(t, row)
 			}
 		})
+	}
+}
+
+// A provider that refuses to open the session for a replace: the client is told why, and
+// there is no session to send into.
+func TestUploadReplaceRefusedAtTheStart(t *testing.T) {
+	forBoth(t, func(t *testing.T, e *uploadEnv) {
+		e.sim.AddFile("", "notes.txt", []byte("version one"))
+		status := http.StatusPreconditionFailed
+		e.http.hook = func(r *http.Request) (*http.Response, error) {
+			if strings.Contains(r.URL.Path, "createUploadSession") || r.URL.Query().Get("uploadType") == "resumable" {
+				return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("{}")), Request: r}, nil
+			}
+			return nil, nil
+		}
+		info, err := e.start("notes.txt", testChunk, UploadRequest{Replace: true})
+		require.Equal(t, serializer.CodeStaleVersion, codeOf(err))
+		require.Nil(t, info)
+
+		status = http.StatusForbidden
+		info, err = e.start("notes.txt", testChunk, UploadRequest{Replace: true})
+		require.Error(t, err)
+		require.Nil(t, info)
+
+		// And the same for a new file.
+		info, err = e.start("new.bin", testChunk, UploadRequest{})
+		require.Error(t, err)
+		require.Nil(t, info)
+		require.Empty(t, e.f.uploads.byID, "no session was kept")
+	})
+}
+
+// Two accounts of Fylvo that connected the same account at a provider share one lock for
+// changes, so they cannot both find a name free. Another provider account has its own.
+func TestChangesOfOneProviderAccountShareALock(t *testing.T) {
+	f := newManagerFixture(t)
+	first := &Conn{ID: "a", AccountKey: "drive|account-1"}
+	second := &Conn{ID: "b", AccountKey: "drive|account-1"}
+	other := &Conn{ID: "c", AccountKey: "drive|account-2"}
+
+	done := f.writing(first)
+	lock, ok := f.writes.Load(second.AccountKey)
+	require.True(t, ok)
+	require.False(t, lock.(*sync.Mutex).TryLock(), "the second connection has to wait")
+	f.writing(other)()
+	done()
+	f.writing(second)()
+}
+
+func TestNewNames(t *testing.T) {
+	for _, name := range []string{"a", "report 2026.pdf", "ä ö ü", strings.Repeat("a", 255)} {
+		require.NoError(t, checkNewName(name), name)
+	}
+	for _, name := range []string{"", ".", "..", "a/b", "a:b", "what?", " report", "report ", "report.", strings.Repeat("a", 256)} {
+		require.ErrorIs(t, checkNewName(name), ErrIllegalName, "%q", name)
 	}
 }

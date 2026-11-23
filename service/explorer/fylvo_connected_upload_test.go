@@ -223,3 +223,33 @@ func TestOrdinaryUploadsKeepTheirPath(t *testing.T) {
 	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
 	require.NoError(t, (&DeleteUploadSessionService{ID: session.SessionID, Uri: "cloudreve://my/plain.txt"}).Delete(e.as(e.alex)))
 }
+
+// The state of an upload is told as long as the storage is connected as it was.
+func TestConnectedUploadStateEndsWithTheConnection(t *testing.T) {
+	e := newConnectedEnv(t)
+	data := uploadPayload(1000)
+	session, err := (&CreateUploadSessionService{Uri: e.root + "/a.bin", Size: int64(len(data))}).Create(e.as(e.alex))
+	require.NoError(t, err)
+	_, err = e.sendChunks(e.alex, session.SessionID, data)
+	require.NoError(t, err)
+	state, err := ConnectedUploadState(e.as(e.alex), session.SessionID)
+	require.NoError(t, err)
+	require.Equal(t, connected.UploadDone, state.State)
+
+	require.NoError(t, e.m.Disconnect(e.ctx, e.alex.ID, e.id))
+	_, err = ConnectedUploadState(e.as(e.alex), session.SessionID)
+	require.Equal(t, serializer.CodeParentNotExist, connectedCode(err))
+}
+
+// A save whose length is not known is refused before anything is opened: it would be
+// taken for an empty file.
+func TestConnectedPutContentNeedsALength(t *testing.T) {
+	e := newConnectedEnv(t)
+	c := e.withBody(e.alex, http.MethodPut, []byte("some text"))
+	c.Request.ContentLength = -1
+	c.Request.Header.Del("Content-Length")
+	_, err := (&FileUpdateService{Uri: e.root + "/note.txt"}).PutContent(c, nil)
+	require.Error(t, err)
+	require.Empty(t, e.names(t, e.root), "nothing was created")
+	require.Zero(t, e.sim.Calls(drivetest.CallCreate))
+}

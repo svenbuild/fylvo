@@ -912,7 +912,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					controllers.FylvoConnectedCapacity,
 				)
 				fylvoConnected.GET("upload/:session",
-					middleware.RequiredScopes(types.ScopeFilesWrite),
+					middleware.RequiredScopes(types.ScopeFilesRead),
 					controllers.FylvoConnectedUploadState,
 				)
 				manage := fylvoConnected.Group("", middleware.RequiredScopes(types.ScopeUserSecurityInfoWrite))

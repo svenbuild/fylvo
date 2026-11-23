@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 )
@@ -18,6 +19,9 @@ const (
 	conflictBehavior  = "@microsoft.graph.conflictBehavior"
 	uploadGranularity = 320 * 1024
 	maxWriteJSON      = 1024 * 1024
+	// writeTimeout bounds a call that changes something, from its start to the end of
+	// the answer.
+	writeTimeout = 2 * time.Minute
 )
 
 var _ provider.Writer = (*client)(nil)
@@ -60,6 +64,9 @@ func (c *client) writeItem(ctx context.Context, method, address string, in any) 
 
 // A failed write can leave the outcome open, so use Stream instead of the retrying Caller.Do.
 func (c *client) write(ctx context.Context, method, address string, header http.Header, in, out any) error {
+	// To the end of the answer: a provider that stalls must not hold a change for good.
+	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
 	if header == nil {
 		header = make(http.Header)
 	}
@@ -123,7 +130,8 @@ func (c *client) NewUpload(ctx context.Context, parentID, name string, size int6
 }
 
 func (c *client) ReplaceUpload(ctx context.Context, item *provider.Item, size int64) (provider.Upload, error) {
-	if item == nil || item.Link != nil {
+	if item == nil || item.Link != nil || item.ETag == "" {
+		// Without the tag of the item the replace could not be tied to its state.
 		return nil, &provider.Error{Kind: provider.KindForbidden}
 	}
 	address := c.itemURL(c.driveID, item.ID) + "/createUploadSession"
@@ -179,9 +187,15 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 	defer res.Body.Close()
 	switch res.StatusCode {
 	case http.StatusAccepted:
-		if end < u.size {
-			_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, maxWriteJSON))
-			return nil, nil
+		// "Go on", and from where. Only when that is the end of this range was all of
+		// it taken; anything else is for State to sort out.
+		var state struct {
+			Ranges []string `json:"nextExpectedRanges"`
+		}
+		if end < u.size && decodeWrite(res, &state) == nil && len(state.Ranges) > 0 {
+			if start, _, _ := strings.Cut(state.Ranges[0], "-"); start == strconv.FormatInt(end, 10) {
+				return nil, nil
+			}
 		}
 	case http.StatusOK, http.StatusCreated:
 		if end == u.size {
@@ -200,6 +214,12 @@ func (u *upload) Send(ctx context.Context, offset int64, body io.Reader, length 
 		}
 	case http.StatusNotFound, http.StatusPreconditionFailed, http.StatusInsufficientStorage:
 		return nil, provider.ByStatus(res.StatusCode, res.Header, nil)
+	case http.StatusForbidden:
+		// A storage that is full can also answer like this. Any other "no" here says
+		// nothing certain about what was stored.
+		if failure := u.caller.Failure(res).(*provider.Error); failure.Kind == provider.KindFull {
+			return nil, failure
+		}
 	}
 	// Even 416 cannot say whether a previous request committed the content.
 	return nil, &provider.Error{Kind: provider.KindOther, Status: res.StatusCode}

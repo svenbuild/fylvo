@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"time"
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/inventory"
@@ -87,7 +89,7 @@ func (service *UploadService) ConnectedUploadChunk(c *gin.Context) (*FileRespons
 	if err != nil {
 		return nil, connected.ErrChunkLength
 	}
-	row, err := req.m.UploadChunk(req.ctx, req.conn, service.ID, service.Index, body, length)
+	row, err := req.m.UploadChunk(req.ctx, req.conn, service.ID, service.Index, movingBody(c, body), length)
 	if err != nil || row == nil {
 		return nil, connected.Public(c, err)
 	}
@@ -114,6 +116,12 @@ func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body
 	if len(uri.U.Query()) > 0 {
 		return nil, connected.Error(c, connected.ErrBadPath)
 	}
+	// The length has to be known before anything is opened: a body of unknown length
+	// would be taken for an empty file.
+	if size < 0 || (size == 0 && c.Request.ContentLength != 0) {
+		return nil, connected.ErrChunkLength
+	}
+	body = movingBody(c, body)
 	req, err := openConnected(c, uri)
 	if err != nil {
 		return nil, err
@@ -147,6 +155,24 @@ func connectedPutContent(c *gin.Context, uri *fs.URI, s *FileUpdateService, body
 	}
 }
 
+// movingBody is the body of a request with a limit on how long the client may stand
+// still in the middle of it: a client that stops sending must not hold one of the few
+// places for uploads.
+func movingBody(c *gin.Context, body io.Reader) io.Reader {
+	return &stallingReader{r: body, control: http.NewResponseController(c.Writer)}
+}
+
+type stallingReader struct {
+	r       io.Reader
+	control *http.ResponseController
+}
+
+func (s *stallingReader) Read(p []byte) (int, error) {
+	// Not every connection can take a deadline (a recorder in a test cannot).
+	_ = s.control.SetReadDeadline(time.Now().Add(connectedIdle))
+	return s.r.Read(p)
+}
+
 // ConnectedUploadStateResponse tells where an upload into a connected storage stands.
 type ConnectedUploadStateResponse struct {
 	State    string `json:"state"`
@@ -163,9 +189,20 @@ func ConnectedUploadState(c *gin.Context, id string) (*ConnectedUploadStateRespo
 	if !mayUseConnected(user) {
 		return nil, connected.ErrNotAllowed
 	}
-	status, err := connected.For(dependency.FromContext(c)).UploadStatus(user.ID, id)
+	m := connected.For(dependency.FromContext(c))
+	status, err := m.UploadStatus(user.ID, id)
 	if err != nil {
 		return nil, err
+	}
+	// Only as long as the storage is connected as it was: after a disconnect or a new
+	// sign-in the session is none of this account's any more.
+	conn, _, done, err := m.Use(c, user.ID, status.Conn)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	if conn.Generation != status.Generation {
+		return nil, connected.ErrNoStorage
 	}
 	res := &ConnectedUploadStateResponse{State: status.State, Received: status.Received}
 	if status.Row != nil {

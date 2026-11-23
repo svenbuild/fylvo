@@ -406,6 +406,16 @@ func (t *Tree) named(ctx context.Context, c *Conn, folderID, name string) (*Row,
 // it has reached by that folder's id. A name that stands for several entries makes the
 // path ambiguous: refused, for the provider would let any of them answer.
 func (t *Tree) Resolve(ctx context.Context, c *Conn, path string) (*Row, error) {
+	return t.resolve(ctx, c, path, true)
+}
+
+// ResolveNow is Resolve without the listings in memory: every name on the path is looked
+// up at the provider. For changes, which must act on what is there now.
+func (t *Tree) ResolveNow(ctx context.Context, c *Conn, path string) (*Row, error) {
+	return t.resolve(ctx, c, path, false)
+}
+
+func (t *Tree) resolve(ctx context.Context, c *Conn, path string, cached bool) (*Row, error) {
 	rootID, err := c.P.Root(ctx)
 	if err != nil {
 		return nil, err
@@ -426,7 +436,11 @@ func (t *Tree) Resolve(ctx context.Context, c *Conn, path string) (*Row, error) 
 		folderID := row.ContentID()
 
 		var found *Row
-		if l := t.fresh(listKey{conn: c.ID, gen: c.Generation, folder: folderID}); l != nil {
+		var l *listing
+		if cached {
+			l = t.fresh(listKey{conn: c.ID, gen: c.Generation, folder: folderID})
+		}
+		if l != nil {
 			found = l.find(name)
 			switch {
 			case found == nil:

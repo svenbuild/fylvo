@@ -105,7 +105,7 @@ func TestConnectedRename(t *testing.T) {
 	ids = e.idsOf(t, e.root)
 	e.sim.Trash(id)
 	e.sim.AddFile("", "journal.txt", []byte("another file"))
-	e.m.Tree().Forget(e.id)
+	// The server listed the folder a moment ago. A change does not go by that listing.
 	_, err = (&RenameFileService{Uri: e.root + "/journal.txt", NewName: "mine.txt", Ids: ids}).Rename(e.as(e.alex))
 	require.Equal(t, connected.ReasonChanged, connected.ReasonOf(err))
 	require.Equal(t, "Budget.gsheet|journal.txt|taken.txt", e.names(t, e.root))
@@ -188,4 +188,18 @@ func TestConnectedDelete(t *testing.T) {
 	require.Equal(t, serializer.CodeBatchOperationNotFullyCompleted, connectedCode(err))
 	failed := serializer.Err(e.ctx, err).AggregatedError.(map[string]serializer.Response)
 	require.Equal(t, serializer.CodeParentNotExist, failed[a].Code)
+}
+
+// An entry is named once in a request: with two results for it nobody could tell which
+// of the two addresses was acted on.
+func TestConnectedBatchNamesAnEntryOnce(t *testing.T) {
+	e := newConnectedEnv(t)
+	e.sim.AddFile("", "a.txt", []byte("a"))
+	ids := e.idsOf(t, e.root)
+	a := e.root + "/a.txt"
+	ids[a+"/"] = ids[a]
+
+	err := (&DeleteFileService{Uris: []string{a, a + "/"}, Ids: ids}).Delete(e.as(e.alex))
+	require.Equal(t, serializer.CodeParamErr, connectedCode(err))
+	require.Equal(t, "a.txt", e.names(t, e.root), "nothing was deleted")
 }

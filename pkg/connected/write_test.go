@@ -70,11 +70,11 @@ func TestWritesWhereCaseDoesNotCount(t *testing.T) {
 	require.NoError(t, err)
 	failed, err := f.MoveEntries(ctx, c, []Source{source(t, f, ctx, c, "other.txt")}, Source{Path: "Docs"})
 	require.NoError(t, err)
-	require.Equal(t, serializer.CodeNameCaseTaken, codeOf(Error(ctx, failed["other.txt"])))
+	require.Equal(t, serializer.CodeNameCaseTaken, codeOf(Error(ctx, failed[0])))
 	// And one that is free there.
 	failed, err = f.MoveEntries(ctx, c, []Source{source(t, f, ctx, c, "Notes.txt")}, Source{Path: "Docs"})
 	require.NoError(t, err)
-	require.Empty(t, failed)
+	require.Equal(t, []error{nil}, failed)
 	moved, err := f.Tree().Resolve(ctx, c, "Docs/Notes.txt")
 	require.NoError(t, err)
 	require.Equal(t, renamed.ID, moved.ID, "the entry is the same one after the move")
@@ -82,8 +82,8 @@ func TestWritesWhereCaseDoesNotCount(t *testing.T) {
 	// Into the trash of the provider.
 	failed, err = f.TrashEntries(ctx, c, []Source{{Path: "Docs/Notes.txt", ID: FileID(c.ID, moved)}, {Path: "nothing.txt", ID: "x"}})
 	require.NoError(t, err)
-	require.Len(t, failed, 1)
-	require.ErrorIs(t, failed["nothing.txt"], ErrNotFound)
+	require.NoError(t, failed[0])
+	require.ErrorIs(t, failed[1], ErrNotFound)
 	_, err = f.Tree().Resolve(ctx, c, "Docs/Notes.txt")
 	require.ErrorIs(t, err, ErrNotFound)
 }

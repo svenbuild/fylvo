@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/connected/provider"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
@@ -41,7 +42,12 @@ type Source struct {
 // checkNewName applies the rules for names of Fylvo's own files to a name an entry is
 // to get. Entries that exist at the provider under other names stay usable.
 func checkNewName(name string) error {
-	if len(name) >= maxNameLength || !plainName(name) || strings.ContainsAny(name, `:*?"<>|`) {
+	if len(name) > maxNameLength || !plainName(name) || strings.ContainsAny(name, `:*?"<>|`) {
+		return ErrIllegalName
+	}
+	// OneDrive refuses these, and so do the file systems files end up on: a name that
+	// starts with a space or ends with a space or a period.
+	if strings.HasPrefix(name, " ") || strings.HasSuffix(name, " ") || strings.HasSuffix(name, ".") {
 		return ErrIllegalName
 	}
 	return nil
@@ -56,15 +62,17 @@ func writer(c *Conn) (provider.Writer, error) {
 	return w, nil
 }
 
-// writing lets one change of a connection run at a time.
+// writing lets one change of an account at a provider run at a time: also when two
+// accounts of Fylvo connected the same one, they must not both find a name free.
 func (m *Manager) writing(c *Conn) (done func()) {
-	c.live.writes.Lock()
-	return c.live.writes.Unlock
+	lock, _ := m.writes.LoadOrStore(c.AccountKey, &sync.Mutex{})
+	lock.(*sync.Mutex).Lock()
+	return lock.(*sync.Mutex).Unlock
 }
 
 // folder resolves the folder something is to be put into.
 func (m *Manager) folder(ctx context.Context, c *Conn, path string) (*Row, error) {
-	row, err := m.tree.Resolve(ctx, c, path)
+	row, err := m.tree.ResolveNow(ctx, c, path)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +93,9 @@ func (m *Manager) entry(ctx context.Context, c *Conn, src Source) (*Row, error) 
 		// The root of a storage is not an entry of anything.
 		return nil, ErrUnsupported
 	}
-	row, err := m.tree.Resolve(ctx, c, src.Path)
+	// From the provider, not from a listing in memory: the entry at the path now is
+	// the one that is compared, also when another one was there seconds ago.
+	row, err := m.tree.ResolveNow(ctx, c, src.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -212,10 +222,10 @@ func (m *Manager) RenameEntry(ctx context.Context, c *Conn, src Source, newName 
 	return rowOf(item, joinPath(parentPath, newName)), nil
 }
 
-// MoveEntries moves entries into another folder of the same storage. It returns the
-// errors of the entries that were not moved, by their paths; the others are moved.
-// dst.ID may be empty; given, it has to be the folder the path leads to.
-func (m *Manager) MoveEntries(ctx context.Context, c *Conn, sources []Source, dst Source) (map[string]error, error) {
+// MoveEntries moves entries into another folder of the same storage. It returns one
+// result per source, in their order: nil for an entry that was moved, the error for one
+// that was not. dst.ID may be empty; given, it has to be the folder the path leads to.
+func (m *Manager) MoveEntries(ctx context.Context, c *Conn, sources []Source, dst Source) ([]error, error) {
 	w, err := writer(c)
 	if err != nil {
 		return nil, err
@@ -230,14 +240,12 @@ func (m *Manager) MoveEntries(ctx context.Context, c *Conn, sources []Source, ds
 		return nil, ItemError(ReasonChanged)
 	}
 
-	failed := map[string]error{}
-	for _, src := range sources {
-		if err := m.move(ctx, c, w, src, dst.Path, target); err != nil {
-			failed[src.Path] = err
-		}
+	results := make([]error, len(sources))
+	for i, src := range sources {
+		results[i] = m.move(ctx, c, w, src, dst.Path, target)
 	}
 	m.tree.Changed(c, target.ContentID())
-	return failed, nil
+	return results, nil
 }
 
 func (m *Manager) move(ctx context.Context, c *Conn, w provider.Writer, src Source, dstPath string, target *Row) error {
@@ -266,17 +274,17 @@ func (m *Manager) move(ctx context.Context, c *Conn, w provider.Writer, src Sour
 	return err
 }
 
-// TrashEntries moves entries into the trash of the provider. It returns the errors of
-// the entries that were not trashed, by their paths.
-func (m *Manager) TrashEntries(ctx context.Context, c *Conn, sources []Source) (map[string]error, error) {
+// TrashEntries moves entries into the trash of the provider. It returns one result per
+// source, in their order: nil for an entry that was trashed, the error for one that was not.
+func (m *Manager) TrashEntries(ctx context.Context, c *Conn, sources []Source) ([]error, error) {
 	w, err := writer(c)
 	if err != nil {
 		return nil, err
 	}
 	defer m.writing(c)()
 
-	failed := map[string]error{}
-	for _, src := range sources {
+	results := make([]error, len(sources))
+	for i, src := range sources {
 		row, err := m.entry(ctx, c, src)
 		if err == nil {
 			err = w.Trash(ctx, row.ID)
@@ -285,9 +293,7 @@ func (m *Manager) TrashEntries(ctx context.Context, c *Conn, sources []Source) (
 				m.tree.Changed(c, parent.ContentID())
 			}
 		}
-		if err != nil {
-			failed[src.Path] = err
-		}
+		results[i] = err
 	}
-	return failed, nil
+	return results, nil
 }

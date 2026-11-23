@@ -34,8 +34,14 @@ func connectedSources(c *gin.Context, raws []string, uris []*fs.URI, ids connect
 		return nil, nil, err
 	}
 	sources := make([]connected.Source, 0, len(uris))
+	seen := map[string]bool{}
 	for i, uri := range uris {
 		path, err := connected.CheckPath(uri.U.Path)
+		if err == nil && seen[path] {
+			// One entry named twice: which of the two results would be whose?
+			err = connected.ErrBadPath
+		}
+		seen[path] = true
 		if err == nil && connectionOf(uri) != req.conn.ID {
 			// Nothing works across two storages.
 			err = connected.ErrUnsupported
@@ -54,10 +60,10 @@ func connectedSources(c *gin.Context, raws []string, uris []*fs.URI, ids connect
 
 // connectedFailures turns the entries a change could not be made for into the answer
 // for a batch: one error per address.
-func connectedFailures(c *gin.Context, raws []string, sources []connected.Source, failed map[string]error) error {
+func connectedFailures(c *gin.Context, raws []string, results []error) error {
 	ae := serializer.NewAggregateError()
-	for i, src := range sources {
-		if err, ok := failed[src.Path]; ok {
+	for i, err := range results {
+		if err != nil {
 			ae.Add(raws[i], connected.Public(c, err))
 		}
 	}
@@ -114,7 +120,7 @@ func connectedMove(c *gin.Context, uris []*fs.URI, dst *fs.URI, s *MoveFileServi
 	if err != nil {
 		return connected.Error(c, err)
 	}
-	return connectedFailures(c, s.Uris, sources, failed)
+	return connectedFailures(c, s.Uris, failed)
 }
 
 // connectedDelete answers DELETE /file: the entries go into the trash of the provider.
@@ -129,5 +135,5 @@ func connectedDelete(c *gin.Context, uris []*fs.URI, s *DeleteFileService) error
 	if err != nil {
 		return connected.Error(c, err)
 	}
-	return connectedFailures(c, s.Uris, sources, failed)
+	return connectedFailures(c, s.Uris, failed)
 }

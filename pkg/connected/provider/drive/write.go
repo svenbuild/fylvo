@@ -77,8 +77,8 @@ func (c *client) Trash(ctx context.Context, id string) error {
 func (c *client) changed(f *file) (*provider.Item, error) {
 	item, ok := c.mapped(f)
 	if !ok {
-		// Trashed, or a Google type that has nothing to show.
-		return nil, &provider.Error{Kind: provider.KindNotFound}
+		// Drive said yes and sent nothing to go by: what it did is open.
+		return nil, &provider.Error{Kind: provider.KindOther}
 	}
 	return &item, nil
 }
@@ -144,10 +144,9 @@ func (c *client) startUpload(ctx context.Context, method, address string, meta [
 		// An empty file is made with CreateEmpty.
 		return nil, &provider.Error{Kind: provider.KindOther}
 	}
-	header := http.Header{
-		"X-Upload-Content-Type":   {"application/octet-stream"},
-		"X-Upload-Content-Length": {strconv.FormatInt(size, 10)},
-	}
+	// No type is named for the content: Drive then finds it out itself, and the file
+	// shows and previews there as what it is.
+	header := http.Header{"X-Upload-Content-Length": {strconv.FormatInt(size, 10)}}
 	if meta != nil {
 		header.Set("Content-Type", "application/json; charset=UTF-8")
 	}

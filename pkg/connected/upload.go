@@ -110,8 +110,9 @@ type UploadStatus struct {
 	State string
 	// Received is the number of bytes taken from the client.
 	Received int64
-	// Conn is the connection the upload goes into.
-	Conn string
+	// Conn is the connection the upload goes into, Generation the one it was started in.
+	Conn       string
+	Generation int
 	// Row is the stored file, once the upload is done.
 	Row *Row
 	// Err says why an upload failed or what is unknown about it.
@@ -174,6 +175,24 @@ type uploads struct {
 
 	mu   sync.Mutex
 	byID map[string]*upload
+	// tidy is the timer of the next clean-up, nil while there is no session.
+	tidy *time.Timer
+}
+
+// tidyEvery is how often the sessions are looked through for ones to end.
+const tidyEvery = 10 * time.Minute
+
+// tidyUp ends what ran out, also on a server nobody asks anything, and goes on as long
+// as there are sessions.
+func (s *uploads) tidyUp() {
+	go cancelAll(s.sweep())
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.byID) == 0 {
+		s.tidy = nil
+		return
+	}
+	s.tidy = time.AfterFunc(tidyEvery, s.tidyUp)
 }
 
 func newUploads() *uploads {
@@ -183,8 +202,8 @@ func newUploads() *uploads {
 // find returns the session with the given id if it belongs to the account. One of
 // another account is not found, like one that does not exist.
 func (s *uploads) find(userID int, id string) (*upload, error) {
-	expired := s.sweep()
-	defer cancelAll(expired)
+	// The provider is told in the background: no request waits for another one's leftovers.
+	go cancelAll(s.sweep())
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -198,8 +217,7 @@ func (s *uploads) find(userID int, id string) (*upload, error) {
 // add keeps a new session. It refuses one of a connection that ended meanwhile: what
 // ended it has called close already, or calls it after this.
 func (s *uploads) add(u *upload, c *Conn) bool {
-	expired := s.sweep()
-	defer cancelAll(expired)
+	go cancelAll(s.sweep())
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -207,6 +225,9 @@ func (s *uploads) add(u *upload, c *Conn) bool {
 		return false
 	}
 	s.byID[u.id] = u
+	if s.tidy == nil {
+		s.tidy = time.AfterFunc(tidyEvery, s.tidyUp)
+	}
 	return true
 }
 
@@ -296,6 +317,13 @@ func (u *upload) end(state string, row *Row, err error, now time.Time) {
 	u.state, u.row, u.err, u.ended = state, row, err, now
 	if state == UploadDone {
 		u.received = u.size
+	}
+}
+
+// release lets go of the bytes an ended upload still holds. The caller holds u.work.
+func (u *upload) release() {
+	if state, _, _ := u.outcome(); state != UploadReceiving {
+		u.held = nil
 	}
 }
 
@@ -406,15 +434,17 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 		return nil, ErrUnsupported
 	default:
 		// The state of the file right now, which the commit compares with again.
-		item, err := c.P.Get(ctx, existing.ID)
-		if err != nil {
-			return nil, Error(ctx, err)
+		item, getErr := c.P.Get(ctx, existing.ID)
+		if getErr != nil {
+			return nil, Error(ctx, getErr)
 		}
 		if r.Previous != "" && VersionID(c.ID, rowOf(item, r.Path)) != r.Previous {
 			return nil, ErrStale
 		}
-		if r.Size == 0 {
-			// The providers' interface has no way to empty a file.
+		if r.Size == 0 || item.Version == "" {
+			// The providers' interface has no way to empty a file. And a file whose
+			// state the provider does not tell cannot be replaced safely: nothing
+			// would show that it changed meanwhile.
 			return nil, ErrUnsupported
 		}
 		u.replace, u.version = item.ID, item.Version
@@ -425,6 +455,10 @@ func (m *Manager) StartUpload(ctx context.Context, c *Conn, r UploadRequest) (*U
 	}
 	if err != nil {
 		return nil, Error(ctx, err)
+	}
+	if u.up == nil && r.Size > 0 {
+		// A provider that opened nothing and said nothing: no session to send into.
+		return nil, Error(ctx, &provider.Error{Kind: provider.KindOther})
 	}
 	if u.up != nil {
 		if g := u.up.Granularity(); g <= 0 || g > maxTail || chunkSize%g != 0 {
@@ -486,6 +520,7 @@ func (m *Manager) UploadChunk(ctx context.Context, c *Conn, id string, index int
 		if u.closed.Load() {
 			u.end(UploadFailed, nil, ErrUploadGone, m.uploads.now())
 		}
+		u.release()
 		m.uploads.touch(u)
 		u.work.Unlock()
 	}()
@@ -708,8 +743,14 @@ func (m *Manager) commit(ctx context.Context, c *Conn, u *upload) (*Row, error) 
 		switch {
 		case err == nil:
 			return m.finish(u, item, false)
+		case provider.KindOf(err) == provider.KindNotFound:
+			// The folder is gone. Nothing was created.
+			return nil, m.fail(ctx, u, ErrNoStorage)
 		case refused(err):
 			return nil, m.fail(ctx, u, uploadError(ctx, err))
+		case provider.KindOf(err) == provider.KindReconnect || provider.KindOf(err) == provider.KindSetup:
+			// Refused before anything was asked of the storage: it can be tried again.
+			return nil, Error(ctx, err)
 		}
 		u.end(UploadUnknown, nil, ErrOutcomeUnknown, m.uploads.now())
 		return nil, ErrOutcomeUnknown
@@ -803,7 +844,7 @@ func (m *Manager) UploadStatus(userID int, id string) (*UploadStatus, error) {
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	return &UploadStatus{State: u.state, Received: u.received, Conn: u.conn, Row: u.row, Err: u.err}, nil
+	return &UploadStatus{State: u.state, Received: u.received, Conn: u.conn, Generation: u.generation, Row: u.row, Err: u.err}, nil
 }
 
 // CancelUpload ends an upload. It waits for a chunk or a commit under way. Before the
