@@ -94,6 +94,7 @@ export interface DisplayOption {
   showRefresh?: boolean;
   showNewFileFromTemplate?: boolean;
   showUpload?: boolean;
+  showUploadFolder?: boolean;
   showRemoteDownload?: boolean;
 }
 
@@ -125,18 +126,22 @@ export const getActionOpt = (
     const parentCap = new Boolset(parent.capability);
     display.showCreateFolder = parentCap.enabled(NavigatorCapability.create_file) && canAddTo(parent);
     display.showUpload = display.showCreateFolder && fmIndex == FileManagerIndex.main;
+    display.showUploadFolder = display.showUpload;
     // Fylvo: a new empty file or template is only useful if it can be edited afterwards,
     // so visitors of an upload link get folders and uploads only. The same holds for remote downloads.
     display.showCreateFile = display.showUpload && canModifyFile(parent);
     display.showRemoteDownload = display.showRemoteDownload && canModifyFile(parent);
+    // Fylvo: in a connected storage the folder's create bit is enough for a new empty file,
+    // and remote downloads cannot go there; an upload there does not create folders.
+    if (inConnectedStorage(parent.path)) {
+      display.showCreateFile = display.showUpload;
+      display.showUploadFolder = false;
+      display.showRemoteDownload = false;
+    }
     if (display.showCreateFile) {
-      const allViewers = Object.entries(ViewersByID);
-      for (let i = 0; i < allViewers.length; i++) {
-        if (allViewers[i][1] && allViewers[i][1].templates) {
-          display.showNewFileFromTemplate = true;
-          break;
-        }
-      }
+      display.showNewFileFromTemplate = usableViewers(parent, Object.values(ViewersByID)).some(
+        (viewer) => viewer && viewer.templates,
+      );
     }
 
     return display;
@@ -324,6 +329,8 @@ export const getActionOpt = (
     display.showDirectLinkManagement = false;
     display.showCreateArchive = false;
     display.showResetThumb = false;
+    // Moves stay inside the storage; copies are not possible there.
+    display.showCopy = false;
     // Pinned as a link of the sidebar (see pinToSidebar); only folders that can be entered.
     display.showPin = display.showPin && folderEnterable(targets[0]);
     display.showOrganize = display.showPin || display.showMove || display.showChangeIcon;

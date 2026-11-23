@@ -14,6 +14,7 @@ import CrUri, { Filesystem } from "../../../util/uri.ts";
 import { SmallFormControlLabel } from "../../Common/StyledComponents.tsx";
 import DialogAccordion from "../../Dialogs/DialogAccordion.tsx";
 import DraggableDialog, { StyledDialogContentText } from "../../Dialogs/DraggableDialog.tsx";
+import { inConnectedStorage } from "../../../api/connected.ts";
 
 dayjs.extend(duration);
 
@@ -43,6 +44,8 @@ const DeleteConfirmation = () => {
 
   // Fylvo: members of a share may only move files to the owner's trash, never delete them permanently.
   const inShare = !!targets?.length && new CrUri(targets[0].path).fs() == Filesystem.share;
+  // Fylvo: in a connected storage a delete goes to the provider's trash; nothing else applies.
+  const inConnected = !!targets?.length && inConnectedStorage(targets[0].path);
 
   const onClose = useCallback(() => {
     dispatch(
@@ -71,8 +74,9 @@ const DeleteConfirmation = () => {
   }, [promiseId, unlink, skipSoftDelete, singleFilePermanently, multipleFilesPermanently]);
 
   const permission = SessionManager.currentUserGroupPermission();
-  const showSkipSoftDeleteOption = !hasTrashFiles && !inShare;
-  const showUnlinkOption = (skipSoftDelete || hasTrashFiles) && permission.enabled(GroupPermission.advance_delete);
+  const showSkipSoftDeleteOption = !hasTrashFiles && !inShare && !inConnected;
+  const showUnlinkOption =
+    !inConnected && (skipSoftDelete || hasTrashFiles) && permission.enabled(GroupPermission.advance_delete);
   const showAdvanceOptions = showUnlinkOption || showSkipSoftDeleteOption;
 
   const group = useMemo(() => SessionManager.currentUserGroup(), [open]);
@@ -94,7 +98,16 @@ const DeleteConfirmation = () => {
       <DialogContent>
         <Stack spacing={2}>
           <StyledDialogContentText>
-            {(singleFileToTrash || singleFilePermanently) && (
+            {inConnected && targets.length == 1 && (
+              <Trans
+                i18nKey="connected.deleteOne"
+                ns={"application"}
+                values={{ name: targets[0].name }}
+                components={[<strong key={0} />]}
+              />
+            )}
+            {inConnected && targets.length > 1 && t("application:connected.deleteMultiple", { num: targets.length })}
+            {!inConnected && (singleFileToTrash || singleFilePermanently) && (
               <Trans
                 i18nKey={singleFileToTrash ? "modals.deleteOneDescription" : "modals.deleteOneDescriptionHard"}
                 ns={"application"}
@@ -104,7 +117,8 @@ const DeleteConfirmation = () => {
                 components={[<strong key={0} />]}
               />
             )}
-            {(multipleFilesToTrash || multipleFilesPermanently) &&
+            {!inConnected &&
+              (multipleFilesToTrash || multipleFilesPermanently) &&
               t(
                 multipleFilesToTrash
                   ? "application:modals.deleteMultipleDescription"
@@ -113,7 +127,7 @@ const DeleteConfirmation = () => {
                   num: targets.length,
                 },
               )}
-            <Collapse in={singleFileToTrash || multipleFilesToTrash}>
+            <Collapse in={!inConnected && (singleFileToTrash || multipleFilesToTrash)}>
               <Alert sx={{ mt: 1 }} severity="info">
                 <Trans
                   i18nKey="application:modals.trashRetention"

@@ -11,6 +11,7 @@ import * as utils from "../utils";
 import { CancelToken } from "../utils/request";
 import { validate } from "../utils/validator";
 import { EncryptedBlob } from "./encrypt/blob.ts";
+import { inConnectedStorage } from "../../../../api/connected.ts";
 
 export enum Status {
   added,
@@ -73,6 +74,25 @@ export const uploadPromisePool: {
   };
 } = {};
 
+// Fylvo: uploads into connected storages go at most two at a time; the server talks to the
+// provider with at most two requests per account.
+const connectedSlots = { free: 2, waiting: [] as (() => void)[] };
+const takeConnectedSlot = async () => {
+  if (connectedSlots.free > 0) {
+    connectedSlots.free--;
+    return;
+  }
+  await new Promise<void>((resolve) => connectedSlots.waiting.push(resolve));
+};
+const giveConnectedSlot = () => {
+  const next = connectedSlots.waiting.shift();
+  if (next) {
+    next();
+  } else {
+    connectedSlots.free++;
+  }
+};
+
 export default abstract class Base {
   public child?: Base[];
   public status: Status = Status.added;
@@ -86,6 +106,8 @@ export default abstract class Base {
   protected subscriber: UploadHandlers;
   // 用于取消请求
   protected cancelToken: CancelTokenSource = CancelToken.source();
+  // Fylvo: set by the user's cancel, apart from the token the chunk pool also cancels on errors.
+  protected canceledByUser = false;
 
   public lastTime = Date.now();
   public startTime = Date.now();
@@ -133,6 +155,23 @@ export default abstract class Base {
   };
 
   public run = async () => {
+    if (!inConnectedStorage(this.task.dst)) {
+      return this.runTask();
+    }
+    // Fylvo: the place is taken before the session is opened, and kept until the end.
+    await takeConnectedSlot();
+    try {
+      // Cancelled while it waited for its place: nothing is opened.
+      if (this.canceledByUser) {
+        return;
+      }
+      await this.runTask();
+    } finally {
+      giveConnectedSlot();
+    }
+  };
+
+  private runTask = async () => {
     this.logger.info("Start upload task, create upload session...");
     this.transit(Status.preparing);
     const cachedInfo = utils.getResumeCtx(this.task, this.logger);
@@ -192,6 +231,7 @@ export default abstract class Base {
       return;
     }
 
+    this.canceledByUser = true;
     this.cancelToken.cancel();
     await this.cancelUploadSession();
     this.transit(Status.canceled);
@@ -208,6 +248,7 @@ export default abstract class Base {
   };
 
   protected reset = () => {
+    this.canceledByUser = false;
     this.cancelToken = axios.CancelToken.source();
     this.progress = {
       total: {

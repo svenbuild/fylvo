@@ -98,6 +98,8 @@ const Photopea = () => {
       }
     }
 
+    // Each save starts with an empty buffer, also after a refused one.
+    buffer.current = new ArrayBuffer(0);
     pp.current.contentWindow?.postMessage(`app.activeDocument.saveToOE("${ext}")`, "*");
     saveStarted.current = newFile ? saveOpt.saveAs : saveOpt.started;
   };
@@ -117,14 +119,12 @@ const Photopea = () => {
         );
         setLoaded(true);
       } else if (saveStarted.current > 0 && currentState.current) {
-        dispatch(
-          savePhotopea(
-            buffer.current,
-            currentState.current.file,
-            currentState.current.version,
-            saveStarted.current == saveOpt.saveAs,
-          ),
-        );
+        // The bytes of this save are taken out, so a next save starts empty.
+        const data = buffer.current;
+        const saveAs = saveStarted.current == saveOpt.saveAs;
+        buffer.current = new ArrayBuffer(0);
+        saveStarted.current = 0;
+        dispatch(savePhotopea(data, currentState.current.file, currentState.current.version, saveAs));
         setLoading(false);
       }
       doneCount.current++;

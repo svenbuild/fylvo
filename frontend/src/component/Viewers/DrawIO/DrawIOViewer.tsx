@@ -6,7 +6,7 @@ import { closeDrawIOViewer } from "../../../redux/globalStateSlice.ts";
 import { Box, ListItemText, Menu, useTheme } from "@mui/material";
 import useActionDisplayOpt, { canUpdate } from "../../FileManager/ContextMenu/useActionDisplayOpt.ts";
 import { SquareMenuItem } from "../../FileManager/ContextMenu/ContextMenu.tsx";
-import { generateIframeSrc, handleRemoteInvoke } from "./drawio.ts";
+import { drawIOOrigin, generateIframeSrc, handleRemoteInvoke } from "./drawio.ts";
 import { getEntityContent } from "../../../redux/thunks/file.ts";
 import { saveDrawIO } from "../../../redux/thunks/viewer.ts";
 import dayjs from "dayjs";
@@ -25,6 +25,8 @@ const DrawIOViewer = () => {
   const [src, setSrc] = useState("");
   const [loaded, setLoaded] = useState(false);
   const pp = useRef<HTMLIFrameElement | undefined>();
+  // Fylvo: the editor's frame, to take messages only from it.
+  const frame = useRef<HTMLIFrameElement>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   useEffect(() => {
@@ -54,6 +56,9 @@ const DrawIOViewer = () => {
   }, [viewerState?.open]);
 
   const handlePostMessage = async (e: MessageEvent) => {
+    if (!frame.current || e.source !== frame.current.contentWindow || e.origin != drawIOOrigin(viewerState?.host)) {
+      return;
+    }
     console.log("Received PostMessage from " + e.origin, e.data);
     let msg;
     try {
@@ -82,8 +87,17 @@ const DrawIOViewer = () => {
           handleRemoteInvoke(pp.current?.contentWindow, msg, dispatch, viewerState, supportUpdate.current, instanceID);
         break;
       case "save":
+        if (!supportUpdate.current) {
+          break;
+        }
         try {
-          dispatch(saveDrawIO(msg.xml, viewerState.file, false));
+          // Only a save that went through is shown as saved, and only in the editor that sent it.
+          if (!(await dispatch(saveDrawIO(msg.xml, viewerState.file, false)))) {
+            break;
+          }
+          if (frame.current?.contentWindow !== e.source) {
+            break;
+          }
           pp.current?.contentWindow?.postMessage(
             JSON.stringify({
               action: "status",
@@ -181,6 +195,7 @@ const DrawIOViewer = () => {
       {src && (
         <Box
           onLoad={handleIframeOnload}
+          ref={frame}
           src={src}
           component={"iframe"}
           allow="clipboard-read; clipboard-write"

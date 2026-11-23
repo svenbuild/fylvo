@@ -24,6 +24,8 @@ import {
   listResumeCtx,
 } from "./utils";
 import { Pool } from "./utils/pool";
+import i18next from "i18next";
+import { inConnectedStorage } from "../../../api/connected.ts";
 
 export interface Option {
   logLevel: LogLevel;
@@ -248,6 +250,22 @@ export default class UploadManager {
       files = ev as File[];
     }
 
+    // Fylvo: an upload into a connected storage does not create folders, so files of a
+    // dropped folder are left out there.
+    if (inConnectedStorage(dst)) {
+      const inFolder = (file: File & { fsPath?: string }) =>
+        (file.webkitRelativePath || file.fsPath || "").replace(/^\//, "").includes("/");
+      const plain = files.filter((file) => !inFolder(file));
+      if (plain.length < files.length) {
+        this.o.onToast("warning", i18next.t("application:connected.noFolderUpload"));
+      }
+      files = plain;
+      if (files.length == 0) {
+        resolve([]);
+        return;
+      }
+    }
+
     if (files.length > 0) {
       let uploaders: Base[] = [];
       try {
@@ -258,7 +276,8 @@ export default class UploadManager {
             dst: getDirectoryUploadDst(dst, file),
             file: file,
             size: file.size,
-            overwrite: this.overwrite,
+            // Fylvo: in a connected storage an upload never replaces a file by itself.
+            overwrite: this.overwrite && !inConnectedStorage(dst),
             name: getName ? getName(file) : file.name,
             chunkProgress: [],
             resumed: false,
@@ -285,6 +304,10 @@ export default class UploadManager {
       const uploaders = await new Promise<Base[]>((resolve, reject) =>
         this.addFiles(items, this.currentPath as string, resolve, reject),
       );
+      // Fylvo: nothing left to upload (only folders into a connected storage).
+      if (uploaders.length == 0) {
+        return;
+      }
       this.o.onProactiveFileAdded && this.o.onProactiveFileAdded(uploaders);
     }
   };

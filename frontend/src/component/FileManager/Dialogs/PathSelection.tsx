@@ -1,7 +1,10 @@
 import { DialogContent, Typography, useMediaQuery, useTheme } from "@mui/material";
 import { useCallback, useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { FileResponse, FileType } from "../../../api/explorer.ts";
+import { FileResponse, FileType, NavigatorCapability } from "../../../api/explorer.ts";
+import { inConnectedStorage } from "../../../api/connected.ts";
+import Boolset from "../../../util/boolset.ts";
+import { FileManagerIndex } from "../FileManager.tsx";
 import { closePathSelectionDialog } from "../../../redux/globalStateSlice.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { pathSelectionDialogPromisePool } from "../../../redux/thunks/dialog.ts";
@@ -139,6 +142,16 @@ const PathSelection = () => {
   );
 
   const [selectedFile, selectedPath] = useFolderSelector();
+  // Fylvo: the folder whose files are moved or copied (the dialog is opened from the main list).
+  const sourcePath = useAppSelector((state) => state.fileManager[FileManagerIndex.main].path);
+  // The folder open in the picker, the destination when no row is selected.
+  const openFolder = useAppSelector((state) => state.fileManager[FileManagerIndex.selector].list?.parent);
+  // Its rights count only once its listing is there (not those of the folder before).
+  const destinationRow =
+    selectedFile ??
+    (openFolder && selectedPath && new CrUri(openFolder.path).toString() == new CrUri(selectedPath).toString()
+      ? openFolder
+      : undefined);
 
   const onClose = useCallback(() => {
     dispatch(closePathSelectionDialog());
@@ -169,10 +182,25 @@ const PathSelection = () => {
       if (variantProps.disableTrash && crUri.fs() == Filesystem.trash) {
         return true;
       }
+      // Fylvo: files of a connected storage move only into a folder of the same storage that
+      // takes new entries, and nothing goes from elsewhere into a connected storage.
+      if (variant == PathSelectionVariantOptions.move || variant == PathSelectionVariantOptions.copy) {
+        if (inConnectedStorage(sourcePath)) {
+          if (
+            !inConnectedStorage(dst) ||
+            crUri.id() != new CrUri(sourcePath!).id() ||
+            !new Boolset(destinationRow?.capability).enabled(NavigatorCapability.create_file)
+          ) {
+            return true;
+          }
+        } else if (inConnectedStorage(dst)) {
+          return true;
+        }
+      }
     }
 
     return !selectedPath;
-  }, [selectedPath, variantProps]);
+  }, [selectedPath, destinationRow, sourcePath, variant, variantProps]);
 
   return (
     <DraggableDialog

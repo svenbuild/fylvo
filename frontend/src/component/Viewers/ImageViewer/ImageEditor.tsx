@@ -97,8 +97,10 @@ const ImageEditor = () => {
         return;
       }
 
-      await dispatch(saveImage(name, data, editorState.file, editorState.version));
-      dispatch(switchToImageViewer());
+      // Only a save that went through closes the editor; a refused one keeps the work.
+      if (await dispatch(saveImage(name, data, editorState.file, editorState.version))) {
+        dispatch(switchToImageViewer());
+      }
     },
     [dispatch, editorState],
   );

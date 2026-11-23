@@ -6,9 +6,9 @@ import { AppError } from "../../../api/request.ts";
 // Retry-After says, else 2 seconds doubling up to 60; after 5 such answers in a row the
 // whole download stops. A storage that needs a reconnect (40921) stops it at once.
 
-const firstWait = 2000;
-const longestWait = 60000;
-const maxBusyInARow = 5;
+export const firstWait = 2000;
+export const longestWait = 60000;
+export const maxBusyInARow = 5;
 
 // An answer of a content address that says "later" (HTTP 429 or 503).
 class ContentBusy extends Error {

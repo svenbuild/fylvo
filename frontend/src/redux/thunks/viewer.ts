@@ -1,7 +1,16 @@
 import i18next from "i18next";
 import { enqueueSnackbar } from "notistack";
-import { getFileEntityUrl, getFileInfo, sendCreateViewerSession, sendUpdateFile } from "../../api/api.ts";
-import { FileResponse, Metadata, Viewer, ViewerAction, ViewerType } from "../../api/explorer.ts";
+import {
+  getFileEntityUrl,
+  getFileInfo,
+  sendCreateUploadSession,
+  sendCreateViewerSession,
+  sendDeleteUploadSession,
+  sendUpdateFile,
+  sendUploadChunk,
+} from "../../api/api.ts";
+import { newBusyState, ProviderGaveUp, retryBusy } from "../../component/FileManager/Connected/providerRetry.ts";
+import { FileResponse, Metadata, UploadCredential, Viewer, ViewerAction, ViewerType } from "../../api/explorer.ts";
 import { AppError, Code } from "../../api/request.ts";
 import { DefaultCloseAction } from "../../component/Common/Snackbar/snackbar.tsx";
 import { canUpdate, getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
@@ -9,6 +18,7 @@ import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
 import SessionManager, { UserSettings } from "../../session";
 import { isTrueVal } from "../../session/utils.ts";
 import { usableViewers } from "../../component/FileManager/Connected/usableViewers.ts";
+import { ConnectedCode, getConnectedUploadState, inConnectedStorage } from "../../api/connected.ts";
 import { dataUrlToBytes, fileExtension, fileNameNoExt, getFileLinkedUri, sizeToString } from "../../util";
 import { base64Encode } from "../../util/base64.ts";
 import CrUri, { CrUriPrefix } from "../../util/uri.ts";
@@ -37,7 +47,7 @@ import { Viewers, ViewersByID } from "../siteConfigSlice.ts";
 import { AppThunk } from "../store.ts";
 import { askSaveAs, askStaleVersionAction } from "./dialog.ts";
 import { longRunningTaskWithSnackbar, refreshSingleFileSymbolicLinks } from "./file.ts";
-import { uploadRawFile } from "./filemanager.ts";
+import { refreshFileList, uploadRawFile } from "./filemanager.ts";
 
 export interface ExpandedViewerSetting {
   [key: string]: Viewer[];
@@ -449,7 +459,12 @@ export function switchToImageViewer(): AppThunk {
   };
 }
 
-export function saveImage(name: string, data: string, file: FileResponse, version?: string): AppThunk {
+export function saveImage(
+  name: string,
+  data: string,
+  file: FileResponse,
+  version?: string,
+): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState) => {
     if (!version) {
       version = file.primary_entity;
@@ -466,7 +481,11 @@ export function saveImage(name: string, data: string, file: FileResponse, versio
       originFileUri = originFileUri.parent().join(name);
     }
 
-    const savedImageFile = await dispatch(saveFile(originFileUri.toString(), await dataUrlToBytes(data), version));
+    // Fylvo: a copy under a new name in a connected storage replaces nothing.
+    const uri = originFileUri.toString();
+    const savedImageFile = await dispatch(
+      saveFile(uri, await dataUrlToBytes(data), version, false, false, name != file.name),
+    );
     if (savedImageFile) {
       const {
         globalState: { imageViewer },
@@ -480,8 +499,84 @@ export function saveImage(name: string, data: string, file: FileResponse, versio
         );
       }
     }
+    return savedImageFile;
   };
 }
+
+// Fylvo: a new file in a connected storage from an editor, through an upload session: it only
+// creates, so a taken name is refused (40004, at OneDrive also 40905 for another case), never
+// replaced, also when the name is taken while the parts go. Parts go one after another, busy
+// answers wait (as for downloads); an unknown outcome reloads the list and keeps the editor's
+// content. Errors are told here; undefined when nothing was saved.
+function connectedSaveNew(uri: string, data: any): AppThunk<Promise<FileResponse | undefined>> {
+  return async (dispatch) => {
+    const blob = data instanceof Blob ? data : new Blob([data]);
+    let session: UploadCredential | undefined;
+    try {
+      session = await dispatch(sendCreateUploadSession({ uri, size: blob.size, policy_id: "" }));
+      const id = session.session_id;
+      const partSize = session.chunk_size > 0 ? session.chunk_size : Math.max(blob.size, 1);
+      const parts = Math.max(1, Math.ceil(blob.size / partSize));
+      const busy = newBusyState();
+      let file: unknown;
+      for (let i = 0; i < parts; i++) {
+        const part = blob.slice(i * partSize, (i + 1) * partSize);
+        file = await retryBusy(busy, () => dispatch(sendUploadChunk(id, part, i)));
+      }
+      if (!file) {
+        // The last part was answered without the file: where it stands is not known.
+        throw new AppError({ code: ConnectedCode.OutcomeUnknown, msg: "", data: undefined });
+      }
+      return file as FileResponse;
+    } catch (e) {
+      let code = e instanceof AppError ? e.code : undefined;
+      let message = e instanceof Error ? e.message : String(e);
+      if (e instanceof ProviderGaveUp) {
+        // Busy too often, or the storage needs a reconnect.
+        message = i18next.t(e.message == new ProviderGaveUp().message ? "common:errors.40923" : e.message);
+      } else if (session && code === undefined) {
+        // An answer lost on the way: the server says where the upload stands.
+        try {
+          const state = await dispatch(getConnectedUploadState(session.session_id));
+          if (state.state == "done" && state.file) {
+            return state.file;
+          }
+          if (state.state == "failed" && state.code) {
+            code = state.code;
+          } else if (!(state.state == "receiving" && state.received < blob.size)) {
+            code = ConnectedCode.OutcomeUnknown;
+          }
+        } catch (_) {
+          code = ConnectedCode.OutcomeUnknown;
+        }
+        if (code !== undefined) {
+          message = i18next.t(`common:errors.${code}`);
+        }
+      }
+      if (code == ConnectedCode.OutcomeUnknown) {
+        // It may be there: the list shows it; the editor keeps its content, nothing is sent again.
+        dispatch(refreshFileList(FileManagerIndex.main));
+      } else if (session) {
+        // Nothing stays open at the server (also when it is busy at first).
+        const id = session.session_id;
+        retryBusy(newBusyState(), () => dispatch(sendDeleteUploadSession({ id, uri }))).catch(() => undefined);
+      }
+      if (!message && code !== undefined) {
+        message = i18next.t(`common:errors.${code}`);
+      }
+      const taken = code == ConnectedCode.ObjectExists || code == connectedCaseTaken;
+      enqueueSnackbar({
+        message: taken ? i18next.t("application:connected.nameTaken") : message,
+        variant: "warning",
+        action: DefaultCloseAction,
+      });
+      return undefined;
+    }
+  };
+}
+
+// A name that differs only in case from one that is there (OneDrive).
+const connectedCaseTaken = 40905;
 
 export function saveFile(
   uri: string,
@@ -489,6 +584,9 @@ export function saveFile(
   version?: string,
   saveAsNew?: boolean,
   ignoreSnackbar?: boolean,
+  // Fylvo: saved under a name the user chose (as saveAsNew, without asking for it here); in a
+  // connected storage that name must be free.
+  asNew?: boolean,
 ): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, _getState): Promise<FileResponse | undefined> => {
     let savedFile: FileResponse | undefined;
@@ -504,29 +602,53 @@ export function saveFile(
         return;
       }
     }
-    try {
-      savedFile = await dispatch(
-        sendUpdateFile(
-          {
-            uri: uri,
-            previous: version,
-          },
-          data,
-        ),
-      );
-    } catch (e) {
-      if (e instanceof AppError && e.code == Code.StaleVersion) {
-        // Handle version conflict
-        try {
-          const opt = await dispatch(askStaleVersionAction(uri));
-          if (opt.overwrite) {
-            return await dispatch(saveFile(uri, data));
-          } else if (opt.saveAs) {
-            return await dispatch(saveFile(opt.saveAs, data, version));
+    // Fylvo: under a chosen name in a connected storage the file goes through an upload
+    // session, which only creates: a taken name is refused there, never replaced.
+    if (inConnectedStorage(uri) && (saveAsNew || asNew)) {
+      savedFile = await dispatch(connectedSaveNew(uri, data));
+    } else {
+      // Fylvo: a connected storage keeps no empty replacement of a file; say so instead of
+      // sending it (the server would refuse it).
+      const size = data instanceof Blob ? data.size : typeof data == "string" ? data.length : data?.byteLength;
+      if (inConnectedStorage(uri) && size === 0) {
+        enqueueSnackbar({
+          message: i18next.t("application:connected.emptySave"),
+          variant: "warning",
+          action: DefaultCloseAction,
+        });
+        return;
+      }
+      try {
+        savedFile = await dispatch(
+          sendUpdateFile(
+            {
+              uri: uri,
+              previous: version,
+              // Fylvo: saving a file of a connected storage never brings back a deleted one
+              // (also when "overwrite" sends no version).
+              previous_required: inConnectedStorage(uri) ? true : undefined,
+            },
+            data,
+          ),
+        );
+      } catch (e) {
+        if (e instanceof AppError && e.code == Code.StaleVersion) {
+          // Handle version conflict
+          try {
+            const opt = await dispatch(askStaleVersionAction(uri));
+            if (opt.overwrite) {
+              return await dispatch(saveFile(uri, data));
+            } else if (opt.saveAs) {
+              return await dispatch(saveFile(opt.saveAs, data, version, false, false, true));
+            }
+          } catch (e) {
+            // Cancel save action
+            throw e;
           }
-        } catch (e) {
-          // Cancel save action
-          throw e;
+        }
+        // Fylvo: the save may have happened at the provider; the list shows what is there.
+        if (e instanceof AppError && e.code == ConnectedCode.OutcomeUnknown && inConnectedStorage(uri)) {
+          dispatch(refreshFileList(FileManagerIndex.main));
         }
       }
     }
@@ -570,7 +692,9 @@ export function savePhotopea(data: ArrayBuffer, file: FileResponse, version?: st
       const {
         globalState: { photopeaViewer },
       } = getState();
-      if (photopeaViewer) {
+      // Fylvo: only while the same opening of the editor still holds the file this save
+      // started from (a late answer does not change a file opened since).
+      if (photopeaViewer && photopeaViewer.file === file) {
         dispatch(
           setPhotopeaViewer({
             ...photopeaViewer,
@@ -588,7 +712,7 @@ export function saveCode(
   file: FileResponse,
   version?: string,
   saveAsNew?: boolean,
-): AppThunk<Promise<void>> {
+): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState) => {
     const isLinkedFile = file.metadata?.[Metadata.share_redirect] ?? false;
     if (!version && !isLinkedFile) {
@@ -600,7 +724,8 @@ export function saveCode(
       const {
         globalState: { codeViewer },
       } = getState();
-      if (codeViewer) {
+      // Fylvo: only while the editor still holds the file this save started from.
+      if (codeViewer && codeViewer.file === file) {
         dispatch(
           setCodeViewer({
             ...codeViewer,
@@ -610,6 +735,7 @@ export function saveCode(
         );
       }
     }
+    return savedFile;
   };
 }
 
@@ -619,13 +745,19 @@ export function saveDrawIO(
   saveAsNew?: boolean,
 ): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState): Promise<FileResponse | undefined> => {
-    const savedFile = await dispatch(saveFile(getFileLinkedUri(file), data, undefined, saveAsNew, true));
+    // Fylvo: the file the editor holds now: its messages may still name the file as it was
+    // opened, before saves and saves under a new name. In a connected storage only over the
+    // version saved last.
+    const target = getState().globalState.drawIOViewer?.file ?? file;
+    const version = inConnectedStorage(target.path) ? target.primary_entity : undefined;
+    const savedFile = await dispatch(saveFile(getFileLinkedUri(target), data, version, saveAsNew, true));
 
     if (savedFile) {
       const {
         globalState: { drawIOViewer },
       } = getState();
-      if (drawIOViewer) {
+      // Fylvo: only while the editor still holds the file this save started from.
+      if (drawIOViewer && drawIOViewer.file.path == target.path) {
         dispatch(
           setDrawIOViewer({
             ...drawIOViewer,
@@ -644,7 +776,7 @@ export function saveExcalidraw(
   file: FileResponse,
   version?: string,
   saveAsNew?: boolean,
-): AppThunk<Promise<void>> {
+): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState) => {
     const isLinkedFile = file.metadata?.[Metadata.share_redirect] ?? false;
     if (!version && !isLinkedFile) {
@@ -656,7 +788,8 @@ export function saveExcalidraw(
       const {
         globalState: { excalidrawViewer },
       } = getState();
-      if (excalidrawViewer) {
+      // Fylvo: only while the editor still holds the file this save started from.
+      if (excalidrawViewer && excalidrawViewer.file === file) {
         dispatch(
           setExcalidrawViewer({
             ...excalidrawViewer,
@@ -666,6 +799,7 @@ export function saveExcalidraw(
         );
       }
     }
+    return savedFile;
   };
 }
 
@@ -674,7 +808,7 @@ export function saveMarkdown(
   file: FileResponse,
   version?: string,
   saveAsNew?: boolean,
-): AppThunk<Promise<void>> {
+): AppThunk<Promise<FileResponse | undefined>> {
   return async (dispatch, getState) => {
     const isLinkedFile = file.metadata?.[Metadata.share_redirect] ?? false;
     if (!version && !isLinkedFile) {
@@ -686,7 +820,8 @@ export function saveMarkdown(
       const {
         globalState: { markdownViewer },
       } = getState();
-      if (markdownViewer) {
+      // Fylvo: only while the editor still holds the file this save started from.
+      if (markdownViewer && markdownViewer.file === file) {
         dispatch(
           setMarkdownViewer({
             ...markdownViewer,
@@ -696,6 +831,7 @@ export function saveMarkdown(
         );
       }
     }
+    return savedFile;
   };
 }
 

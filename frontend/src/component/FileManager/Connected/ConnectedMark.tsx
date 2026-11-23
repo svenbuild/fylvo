@@ -2,6 +2,7 @@ import { Alert, Box, SxProps, Theme, Tooltip } from "@mui/material";
 import { useContext } from "react";
 import { useTranslation } from "react-i18next";
 import { FileResponse, Metadata } from "../../../api/explorer.ts";
+import { inConnectedStorage } from "../../../api/connected.ts";
 import LinkOutlined from "../../Icons/LinkOutlined.tsx";
 import WarningOutlined from "../../Icons/WarningOutlined.tsx";
 import { useAppSelector } from "../../../redux/hooks.ts";
@@ -59,3 +60,9 @@ export const ConnectedOmitted = ({ sx }: { sx?: SxProps<Theme> }) => {
     </Box>
   );
 };
+
+// The name of "delete": in a connected storage it moves to the provider's trash.
+export const deleteLabel = (targets: FileResponse[]) =>
+  targets.some((f) => inConnectedStorage(f.path))
+    ? "application:connected.toProviderTrash"
+    : "application:fileManager.delete";
