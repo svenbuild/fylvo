@@ -35,6 +35,8 @@ enum class SelectionAction(
     PIN_HOME(server = false),
     /** Fylvo 1.6: the shares of one file. */
     MANAGE_SHARES,
+    /** Fylvo 1.6: older versions of an own file. */
+    VERSIONS,
 }
 
 /** Where the selection is made; decides together with the selected files which actions exist. */

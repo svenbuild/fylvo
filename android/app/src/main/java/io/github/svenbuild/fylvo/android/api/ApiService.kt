@@ -154,6 +154,22 @@ interface ApiService {
         @Body body: RequestBody,
     ): Response<ApiResponse<FileObject>>
 
+    // ---- Fylvo 1.6: versions, history, trash (design/android-parity-plan.md, 6 to 8).
+
+    @POST("api/v4/file/version/current")
+    suspend fun setCurrentVersion(@Body request: VersionRequest): Response<ApiResponse<Unit>>
+
+    @HTTP(method = "DELETE", path = "api/v4/file/version", hasBody = true)
+    suspend fun deleteVersion(@Body request: VersionRequest): Response<ApiResponse<Unit>>
+
+    /** The history of an own file (or of a folder and the files directly in it); [next] pages on. */
+    @GET("api/v4/file/activity")
+    suspend fun fileActivity(@Query("uri") uri: String, @Query("next") next: Int? = null): Response<ApiResponse<ActivityList>>
+
+    /** Empties the trash for good; runs on the server until it is done (can take a while). */
+    @HTTP(method = "DELETE", path = "api/v4/file/trash")
+    suspend fun emptyTrash(): Response<ApiResponse<Unit>>
+
     /** A file with `extended_info` (shares, versions, storage used). */
     @GET("api/v4/file/info")
     suspend fun fileInfoExtended(@Query("uri") uri: String, @Query("extended") extended: Boolean = true): Response<ApiResponse<FileObject>>

@@ -161,6 +161,9 @@ fun FilesScreen(
     val groupShare = accountState.group(Permissions.GROUP_SHARE)
     /** Fylvo: the file whose shares are listed ("Manage shares"). */
     var sharesOfTarget by remember { mutableStateOf<FileObject?>(null) }
+    /** Fylvo 1.6: the file whose versions are listed, and "Empty trash" waiting for its yes. */
+    var versionsTarget by remember { mutableStateOf<FileObject?>(null) }
+    var emptyTrashAsk by remember { mutableStateOf(false) }
     // Fylvo 1.6: the text editor; its view model keeps the text when the phone is turned.
     val editor = androidx.lifecycle.viewmodel.compose.viewModel(key = "text-editor") {
         io.github.svenbuild.fylvo.android.ui.editor.TextEditorViewModel(app.texts, app.sessionManager) { f -> viewModel.state.value.editOf(f) != null }
@@ -181,12 +184,15 @@ fun FilesScreen(
         if (state.offlineMode || file.isUploading || state.inTrash) return emptyList()
         return listOfNotNull(
             SelectionAction.MANAGE_SHARES.takeIf { file.shared == true && Permissions.canShare(file, groupShare) },
+            // Not while an offline working copy is open (its base would go stale unnoticed).
+            SelectionAction.VERSIONS.takeIf { Permissions.canManageVersions(file) && state.editOf(file) == null },
         )
     }
 
     fun runMore(action: SelectionAction, file: FileObject) {
         when (action) {
             SelectionAction.MANAGE_SHARES -> sharesOfTarget = file
+            SelectionAction.VERSIONS -> versionsTarget = file
             else -> Unit
         }
     }
@@ -574,7 +580,7 @@ fun FilesScreen(
             SelectionAction.UNFAVORITE -> setFavorite(targets, false)
             SelectionAction.COLOR -> colorTarget = targets
             SelectionAction.TAGS -> tagsTarget = targets
-            SelectionAction.MANAGE_SHARES -> one?.let { runMore(action, it) }
+            SelectionAction.MANAGE_SHARES, SelectionAction.VERSIONS -> one?.let { runMore(action, it) }
             SelectionAction.PIN_HOME -> one?.let { folder ->
                 scope.launch { io.github.svenbuild.fylvo.android.widget.FolderShortcuts.pin(context, folder, prefsRepo.accountHash()) }
             }
@@ -766,6 +772,8 @@ fun FilesScreen(
                     onSort = { viewModel.sortBy(it) },
                     onRefresh = { viewModel.refresh() },
                     onTrash = { viewModel.openCategory(Category.TRASH) },
+                    // Fylvo 1.6: "Empty trash" in the trash itself, when there is something in it.
+                    onEmptyTrash = if (state.inTrash && state.files.isNotEmpty() && !state.offlineMode) ({ emptyTrashAsk = true }) else null,
                     showSearch = !state.inConnected,
                     showTrash = !state.inConnected,
                     sortOptions = if (state.inConnected) listOf(SortBy.NAME, SortBy.SIZE, SortBy.UPDATED) else SortBy.entries,
@@ -1059,7 +1067,13 @@ fun FilesScreen(
     }
 
     detailsTarget?.let { file ->
-        DetailsSheet(file = file, thumbUrl = rememberThumbUrl(viewModel, file), onDismiss = { detailsTarget = null })
+        DetailsSheet(
+            file = file,
+            thumbUrl = rememberThumbUrl(viewModel, file),
+            onDismiss = { detailsTarget = null },
+            mapEnabled = accountState.mapEnabled,
+            onShares = if (Permissions.canShare(file, groupShare)) ({ detailsTarget = null; sharesOfTarget = file }) else null,
+        )
     }
 
     shareTarget?.let { file ->
@@ -1095,6 +1109,40 @@ fun FilesScreen(
             busy = linkBusy,
             onOpen = { pw -> openShareLink(ask.id, pw) },
             onDismiss = { linkPassword = null },
+        )
+    }
+    versionsTarget?.let { file ->
+        VersionsSheet(
+            file = file,
+            onDownload = { f, entity -> viewModel.saveToDevice(context, f, entity) },
+            onChanged = { viewModel.refresh() },
+            onMessage = { msg -> scope.launch { snackbar.showSnackbar(msg) } },
+            onDismiss = { versionsTarget = null },
+        )
+    }
+    if (emptyTrashAsk) {
+        var emptying by remember { mutableStateOf(false) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!emptying) emptyTrashAsk = false },
+            title = { Text(stringResource(R.string.empty_trash_title)) },
+            text = { Text(stringResource(R.string.empty_trash_text)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(enabled = !emptying, onClick = {
+                    emptying = true
+                    scope.launch {
+                        runCatching { app.history.emptyTrash() }
+                            .onSuccess { snackbar.showSnackbar(context.getString(R.string.trash_emptied)) }
+                            .onFailure { snackbar.showSnackbar(io.github.svenbuild.fylvo.android.util.userError(it).resolve(context)) }
+                        emptying = false
+                        emptyTrashAsk = false
+                        viewModel.refresh()
+                    }
+                }) {
+                    if (emptying) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text(stringResource(R.string.empty_trash), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(enabled = !emptying, onClick = { emptyTrashAsk = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
     sharesOfTarget?.let { file ->

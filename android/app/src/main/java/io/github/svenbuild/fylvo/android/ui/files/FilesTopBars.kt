@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -62,6 +63,8 @@ internal fun FolderTopBar(
     showSearch: Boolean = true,
     showTrash: Boolean = true,
     sortOptions: List<SortBy> = SortBy.entries,
+    /** Fylvo 1.6: in the trash: empty it for good (asks first). */
+    onEmptyTrash: (() -> Unit)? = null,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var sortOpen by remember { mutableStateOf(false) }
@@ -113,7 +116,15 @@ internal fun FolderTopBar(
                         leadingIcon = { Icon(Icons.Default.Refresh, null) },
                         onClick = { menuOpen = false; onRefresh() },
                     )
-                    if (showTrash) {
+                    if (onEmptyTrash != null) {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.empty_trash), color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = { Icon(Icons.Default.DeleteForever, null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = { menuOpen = false; onEmptyTrash() },
+                        )
+                    }
+                    if (showTrash && onEmptyTrash == null) {
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.trash)) },

@@ -804,7 +804,8 @@ class FilesViewModel(
      * Folders come down as a server-built zip named "<folder>.zip". Progress
      * shows in [FilesUiState.downloading]; the snackbar reports the saved name.
      */
-    fun saveToDevice(context: Context, file: FileObject) {
+    /** Fylvo 1.6: [entity] saves that older version instead of the current one. */
+    fun saveToDevice(context: Context, file: FileObject, entity: String? = null) {
         val key = "save:${file.path}"
         downloadJobs.remove(key)?.cancel()
         // Fylvo: already being saved by a download of several files.
@@ -812,7 +813,7 @@ class FilesViewModel(
         setDownloading(file.path, null)
         val job = viewModelScope.launch {
             try {
-                val savedName = withContext(Dispatchers.IO) { saveToDeviceIo(context, file) }
+                val savedName = withContext(Dispatchers.IO) { saveToDeviceIo(context, file, entity) }
                 _state.value = _state.value.copy(snackbar = UiMessage(UiText.Res(R.string.saved_file, savedName)))
             } catch (_: CancellationException) {
                 // user cancelled; nothing to say
@@ -903,9 +904,9 @@ class FilesViewModel(
         downloadJobs[BATCH_SAVE_KEY] = job
     }
 
-    private suspend fun saveToDeviceIo(context: Context, file: FileObject): String {
+    private suspend fun saveToDeviceIo(context: Context, file: FileObject, entity: String? = null): String {
         val archive = file.isFolder
-        val url = repo.downloadUrl(file.path, archive = archive, entity = saveEntity(file))
+        val url = repo.downloadUrl(file.path, archive = archive, entity = entity ?: saveEntity(file))
         val displayName = if (archive) "${file.name}.zip" else Connected.downloadName(file)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val resolver = context.contentResolver

@@ -341,3 +341,43 @@ data class EntityDto(
     val type: Int = 0,
     @SerialName("created_at") val createdAt: String = "",
 )
+
+/** Fylvo 1.6: one version (entity) of a file. */
+@Serializable
+data class VersionRequest(val uri: String, val version: String)
+
+/** Fylvo 1.6: a page of a file's or the account's history; [next] 0 = no more. */
+@Serializable
+data class ActivityList(
+    val entries: List<ActivityEntry> = emptyList(),
+    val next: Int = 0,
+)
+
+@Serializable
+data class ActivityEntry(
+    val id: Int = 0,
+    val type: Int = 0,
+    @SerialName("created_at") val createdAt: String = "",
+    val actor: ActivityUser? = null,
+    val guest: Boolean = false,
+    val system: Boolean = false,
+    /** "webdav", "office", "link", "system" or empty. */
+    val via: String = "",
+    val ip: String = "",
+    @SerialName("user_agent") val userAgent: String = "",
+    val content: ActivityContent? = null,
+)
+
+@Serializable
+data class ActivityUser(val id: String = "", val nickname: String = "")
+
+@Serializable
+data class ActivityContent(
+    val name: String = "",
+    @SerialName("old_name") val oldName: String = "",
+    @SerialName("is_folder") val isFolder: Boolean = false,
+    @SerialName("from_folder") val fromFolder: String = "",
+    @SerialName("to_folder") val toFolder: String = "",
+    val method: String = "",
+    val target: String = "",
+)

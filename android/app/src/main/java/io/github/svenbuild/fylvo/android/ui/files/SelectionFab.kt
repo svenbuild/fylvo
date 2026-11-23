@@ -44,6 +44,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.AddToHomeScreen
@@ -457,6 +458,7 @@ internal val SelectionAction.icon: ImageVector
         SelectionAction.TAGS -> Icons.AutoMirrored.Outlined.Label
         SelectionAction.PIN_HOME -> Icons.Outlined.AddToHomeScreen
         SelectionAction.MANAGE_SHARES -> Icons.Outlined.Link
+        SelectionAction.VERSIONS -> Icons.Outlined.History
     }
 
 /** [quick]: the short label of a quick button ("Move" instead of "Move to"). */
@@ -484,5 +486,6 @@ internal fun SelectionAction.label(quick: Boolean): String = stringResource(
         SelectionAction.TAGS -> R.string.tags
         SelectionAction.PIN_HOME -> R.string.pin_to_home_screen
         SelectionAction.MANAGE_SHARES -> R.string.manage_shares
+        SelectionAction.VERSIONS -> R.string.versions
     },
 )
