@@ -55,6 +55,7 @@ import {
 } from "../../Sidebar/MediaInfo.tsx";
 import { MediaMetaElements } from "../../Sidebar/MediaMetaCard.tsx";
 import FileTagSummary from "../FileTagSummary.tsx";
+import FavoriteMark from "../FavoriteMark.tsx";
 import { ThumbLoadingPlaceholder, ThumbPopoverImg } from "../GridView/GridFile.tsx";
 import UploadingTag from "../UploadingTag.tsx";
 import { useInlineRename } from "../useInlineRename.ts";
@@ -268,13 +269,16 @@ const FileNameCell = memo((props: CellProps) => {
           >
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0 }}>
               <Box sx={{ minWidth: 0, overflow: "hidden" }}>{nameNode}</Box>
+              {!isEditing && <FavoriteMark file={file} />}
               {!isEditing && !uploading && fileTag && fileTag.length > 0 && (
                 <FileTagSummary sx={{ maxWidth: "50%" }} tags={fileTag} />
               )}
               {!isEditing && uploading && <UploadingTag sx={{ maxWidth: "50%" }} />}
             </Box>
             {(showSize || showModified) && (
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1, color: "text.secondary", typography: "caption" }}>
+              <Box
+                sx={{ display: "flex", alignItems: "center", gap: 1, color: "text.secondary", typography: "caption" }}
+              >
                 {showSize && <Box component="span">{sizeToString(file.size)}</Box>}
                 {showSize && showModified && <Box component="span">·</Box>}
                 {showModified && <TimeBadge variant="inherit" datetime={file.updated_at} />}
@@ -314,6 +318,7 @@ const FileNameCell = memo((props: CellProps) => {
         </Box>
 
         {nameNode}
+        {!isEditing && <FavoriteMark file={file} />}
         {!isEditing && !uploading && fileTag && fileTag.length > 0 && (
           <FileTagSummary sx={{ maxWidth: "50%" }} tags={fileTag} />
         )}

@@ -66,8 +66,8 @@ type (
 		GetLoginUserByID(ctx context.Context, uid int) (*ent.User, error)
 		// GetLoginUserByEmail returns the login user by its WebDAV credentials.
 		GetActiveByDavAccount(ctx context.Context, email, pwd string) (*ent.User, error)
-		// SaveSettings saves user settings.
-		SaveSettings(ctx context.Context, u *ent.User) error
+		// UpdateSettings Fylvo: changes the stored settings of an account, see fylvo_settings.go.
+		UpdateSettings(ctx context.Context, uid int, change func(*types.UserSetting) error) (*types.UserSetting, error)
 		// SearchActive search active users by Email or nickname.
 		SearchActive(ctx context.Context, limit int, keyword string) ([]*ent.User, error)
 		// ApplyStorageDiff apply storage diff to user.
@@ -481,10 +481,6 @@ func (c *userClient) SearchActive(ctx context.Context, limit int, keyword string
 	).All(ctx)
 }
 
-func (c *userClient) SaveSettings(ctx context.Context, u *ent.User) error {
-	return c.client.User.UpdateOne(u).SetSettings(u.Settings).Exec(ctx)
-}
-
 // UserFromContext get user from context
 func UserFromContext(ctx context.Context) *ent.User {
 	u, _ := ctx.Value(UserCtx{}).(*ent.User)
@@ -601,7 +597,16 @@ func (c *userClient) Upsert(ctx context.Context, u *ent.User, password, twoFa st
 	}
 
 	if settings != nil {
-		q.SetSettings(settings)
+		// Fylvo: the admin only sets the password-change flag. Everything else is taken from the
+		// stored value under the settings lock, so a preference saved meanwhile is kept.
+		settingsMu.Lock()
+		defer settingsMu.Unlock()
+		fresh, err := c.freshSettings(ctx, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		fresh.FylvoMustChangePassword = settings.FylvoMustChangePassword
+		q.SetSettings(fresh)
 	}
 
 	return q.Save(ctx)

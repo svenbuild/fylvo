@@ -6,9 +6,9 @@ import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import Sunny from "../../Icons/Sunny.tsx";
 import Moon from "../../Icons/Moon.tsx";
 import SunWithTime from "../../Icons/SunWithTime.tsx";
-import { setDarkMode } from "../../../redux/globalStateSlice.ts";
 import { hoverSurface, selectedSurface } from "../../../fylvoTheme.ts";
-import SessionManager, { UserSettings } from "../../../session";
+import { AppearanceMode } from "../../../api/fylvo.ts";
+import { saveAppearanceMode } from "../../../redux/thunks/fylvo.ts";
 
 interface SwitchPopoverProps {
   open?: boolean;
@@ -27,15 +27,12 @@ export const SwitchPopover = ({ open, anchorEl, onClose }: SwitchPopoverProps) =
     }
     return darkMode ? "dark" : "light";
   }, [darkMode]);
-  const handleChange = (_event: React.MouseEvent<HTMLElement>, newMode: string) => {
-    let newSetting: boolean | undefined;
-    if (newMode === "light") {
-      newSetting = false;
-    } else if (newMode === "dark") {
-      newSetting = true;
+  const handleChange = (_event: React.MouseEvent<HTMLElement>, newMode: AppearanceMode | null) => {
+    if (!newMode) {
+      return;
     }
-    dispatch(setDarkMode(newSetting));
-    SessionManager.set(UserSettings.PreferredDarkMode, newSetting);
+    // Fylvo: the choice is stored with the account, so every device follows.
+    dispatch(saveAppearanceMode(newMode));
     onClose && onClose();
   };
 

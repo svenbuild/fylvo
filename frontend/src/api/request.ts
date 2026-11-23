@@ -1,4 +1,5 @@
 import axios, { AxiosRequestConfig } from "axios";
+import { setPrefs, setTags } from "../redux/fylvoSlice.ts";
 import { enqueueSnackbar, SnackbarAction } from "notistack";
 import { DefaultCloseAction, ErrorListDetailAction } from "../component/Common/Snackbar/snackbar.tsx";
 import i18n from "../i18n.ts";
@@ -220,6 +221,10 @@ export function send<T = any>(
           case Code.CodeLoginRequired:
             if (!signOutLock) {
               SessionManager.signOutCurrent();
+              // Fylvo: forget the account's preferences and tags in this tab (as clearAccountData,
+              // which cannot be imported here without an import loop).
+              dispatch(setPrefs(undefined));
+              dispatch(setTags(undefined));
               router.navigate(
                 "/session?redirect=" + encodeURIComponent(window.location.pathname + window.location.search),
               );

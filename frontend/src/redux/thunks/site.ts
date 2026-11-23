@@ -2,6 +2,7 @@ import { getSiteConfig } from "../../api/api.ts";
 import SessionManager from "../../session";
 import { applySetting } from "../siteConfigSlice.ts";
 import { AppThunk } from "../store.ts";
+import { loadPrefs } from "./fylvo.ts";
 
 export function loadSiteConfig(section: string): AppThunk {
   return async (dispatch, _getState) => {
@@ -25,5 +26,7 @@ export function updateSiteConfig(): AppThunk {
     if (basic.config.user) {
       SessionManager.updateUserIfExist(basic.config.user);
     }
+    // Fylvo: the account preferences come with the site config.
+    dispatch(loadPrefs());
   };
 }

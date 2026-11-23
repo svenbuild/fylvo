@@ -78,6 +78,13 @@ export const PathSelectionVariants: Record<string, PathSelectionVariant> = {
     indicator: "application:navbar.searchInBase",
     title: "application:navbar.searchBase",
   },
+  // Fylvo: a folder for a link in the sidebar.
+  sidebarLink: {
+    indicator: "application:setting.rootFolderIn",
+    title: "application:customize.addFolder",
+    pickInsideSharedWithMe: true,
+    disableTrash: true,
+  },
   davAccountRoot: {
     indicator: "application:setting.rootFolderIn",
     title: "application:setting.rootFolder",

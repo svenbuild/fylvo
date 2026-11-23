@@ -55,6 +55,9 @@ func InitializeDBClient(l logging.Logger,
 	if err := raiseWalkLimit(l, client, ctx); err != nil {
 		return nil, err
 	}
+	if err := upgradeThemes(l, client, ctx); err != nil {
+		return nil, err
+	}
 
 	//createMockData(client, ctx)
 	return client, nil

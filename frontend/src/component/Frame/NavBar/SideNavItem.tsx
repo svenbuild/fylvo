@@ -11,7 +11,7 @@ const StyledButtonBase = styled(ButtonBase)<{
   justifyContent: "flex-start",
   alignItems: "center",
   width: "100%",
-  height: 28,
+  height: "var(--fylvo-nav-height, 28px)",
   color: active ? theme.palette.text.primary : theme.palette.text.secondary,
   backgroundColor: active ? `${selectedSurface(theme)}!important` : "initial",
   "&:hover": {
@@ -25,8 +25,8 @@ const StyledButtonBase = styled(ButtonBase)<{
     outline: `1px solid ${theme.palette.primary.main}`,
     outlineOffset: -1,
   },
-  [theme.breakpoints.down("sm")]: { height: 40 },
-  "@media (pointer: coarse)": { height: 40 },
+  [theme.breakpoints.down("sm")]: { height: "max(40px, var(--fylvo-nav-height, 28px))" },
+  "@media (pointer: coarse)": { height: "max(40px, var(--fylvo-nav-height, 28px))" },
 }));
 
 export interface SideNavItemBaseProps {

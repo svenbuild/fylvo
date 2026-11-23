@@ -16,9 +16,14 @@ export const usePinned = () => {
   const fmIndex = useContext(FmIndexContext);
   const generation = useAppSelector((state) => state.globalState.pinedGeneration);
   const path_root = useAppSelector((state) => state.fileManager[fmIndex].path_root);
+  // Fylvo: once the account's sidebar is loaded, its links are the pins.
+  const links = useAppSelector((state) => state.fylvo.prefs?.sidebar.items);
   const pined = useMemo(() => {
     try {
-      return SessionManager.currentLogin().user.pined?.map((p): PinnedItem => {
+      const list = links
+        ? links.filter((i) => i.type == "link" && i.uri).map((i) => ({ uri: i.uri as string, name: i.name }))
+        : SessionManager.currentLogin().user.pined;
+      return list?.map((p): PinnedItem => {
         return {
           uri: p.uri,
           name: p.name,
@@ -27,7 +32,7 @@ export const usePinned = () => {
         };
       });
     } catch (e) {}
-  }, [generation, path_root]);
+  }, [generation, path_root, links]);
 
   return pined;
 };

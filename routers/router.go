@@ -885,6 +885,24 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				fylvoAndroid.GET("latest", controllers.FylvoAndroidLatest)
 				fylvoAndroid.GET("apk/:sha256", controllers.FylvoAndroidApk)
 			}
+			// Fylvo: account preferences, favorites and tags (design/customize-plan.md). Every
+			// answer holds file IDs or addresses, so all need Files.Read.
+			fylvoPrefs := auth.Group("fylvo", middleware.RequiredScopes(types.ScopeFilesRead))
+			{
+				fylvoPrefs.GET("prefs", middleware.RequiredScopes(types.ScopeUserInfoRead), controllers.FylvoGetPrefs)
+				fylvoPrefs.PATCH("prefs", middleware.RequiredScopes(types.ScopeUserInfoWrite, types.ScopeFilesWrite),
+					controllers.FylvoPatchPrefs)
+				fylvoPrefs.DELETE("prefs", middleware.RequiredScopes(types.ScopeUserInfoWrite, types.ScopeFilesWrite),
+					controllers.FylvoResetPrefs)
+				fylvoPrefs.GET("favorites", controllers.FylvoListFavorites)
+				fylvoPrefs.PUT("favorites", middleware.RequiredScopes(types.ScopeFilesWrite),
+					controllers.FromJSON[fylvosvc.FavoritesAddService](fylvosvc.FavoritesAddParamCtx{}),
+					controllers.FylvoAddFavorites)
+				fylvoPrefs.DELETE("favorites", middleware.RequiredScopes(types.ScopeFilesWrite),
+					controllers.FromJSON[fylvosvc.FavoritesRemoveService](fylvosvc.FavoritesRemoveParamCtx{}),
+					controllers.FylvoRemoveFavorites)
+				fylvoPrefs.GET("tags", controllers.FylvoListTags)
+			}
 			// Fylvo: in-app updates of Fylvo Desktop, per platform, for signed-in users only.
 			fylvoDesktop := auth.Group("fylvo/desktop/:platform")
 			{
