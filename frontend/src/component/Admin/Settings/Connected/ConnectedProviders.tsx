@@ -228,6 +228,10 @@ const ConnectedProviders = () => {
       {providers.map((p) => (
         <ProviderForm key={p} provider={p} setup={setup.providers[p]} onSaved={onSaved} />
       ))}
+      {/* Fylvo: the notice the logo of Google Drive asks for, where it is in nobody's way. */}
+      <Typography variant="caption" color="text.disabled" sx={{ fontSize: "0.65rem" }}>
+        {t("connected.trademarks")}
+      </Typography>
     </Stack>
   );
 };
