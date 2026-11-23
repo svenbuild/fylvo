@@ -31,8 +31,11 @@ const ConnectedMark = ({ file }: { file: FileResponse }) => {
 
 export default ConnectedMark;
 
-// Whether the size of a row is known; rows of a connected storage may not have one.
-export const sizeKnown = (file: FileResponse) => file.metadata?.[Metadata.connected_size_unknown] === undefined;
+// Whether the size of a row is known; rows of a connected storage may not have one, and a
+// row that cannot be used has none.
+export const sizeKnown = (file: FileResponse) =>
+  file.metadata?.[Metadata.connected_size_unknown] === undefined &&
+  file.metadata?.[Metadata.connected_unsupported] === undefined;
 
 // A row that is listed but cannot be used; shown dimmed.
 export const rowUnsupported = (file: FileResponse) => file.metadata?.[Metadata.connected_unsupported] !== undefined;
