@@ -108,7 +108,7 @@ func (m *manager) Thumbnail(ctx context.Context, uri *fs.URI) (entitysource.Enti
 		// thumbnail is the same as on the next request.
 		thumbSource.Apply(entitysource.WithDisplayName(file.DisplayName() + ".jpg"))
 		return thumbSource, nil
-	} else {
+	} else if !isThumbPregen(ctx) {
 		// 4. If proxy generator not support, mark thumb as not available.
 		_ = disableThumb(ctx, m, uri)
 	}
@@ -123,7 +123,9 @@ func (m *manager) SubmitAndAwaitThumbnailTask(ctx context.Context, uri *fs.URI, 
 	}
 
 	// Fylvo: the task closes the source when it is done with it, also when the caller stops
-	// waiting earlier (a closed browser tab, shutdown), so it is never closed under the worker.
+	// waiting earlier (a closed browser tab, a time limit, shutdown), so it is never closed under
+	// the worker. For the same reason this file manager is not put back for reuse (Recycle).
+	m.keepForWorker = true
 	t := newGenerateThumbTask(ctx, m, uri, ext, es)
 	if err := m.dep.ThumbQueue(ctx).QueueTask(ctx, t); err != nil {
 		es.Close()
@@ -208,8 +210,10 @@ func (m *manager) generateThumb(ctx context.Context, uri *fs.URI, ext string, es
 		// at once for the same file) can never clean up the file of the one that succeeded.
 		savePath, ok := util.UniqueThumbPath(path.Clean(util.ReplaceMagicVar(m.settings.ThumbEntitySuffix(ctx), fs.Separator, true, true, time.Now(), m.user.ID, uri.Name(), uri.Path(), es.Entity().Source())))
 		if !ok {
-			if err := disableThumb(ctx, m, uri); err != nil {
-				m.l.Warning("Failed to disable thumb: %v", err)
+			if !isThumbPregen(ctx) {
+				if err := disableThumb(ctx, m, uri); err != nil {
+					m.l.Warning("Failed to disable thumb: %v", err)
+				}
 			}
 			return nil, fmt.Errorf("thumbnail file name too long")
 		}
@@ -315,7 +319,8 @@ func (m *GenerateThumbTask) Do(ctx context.Context) (task.Status, error) {
 			return task.StatusCompleted, nil
 		}
 
-		return task.StatusError, err
+		// Fylvo: not tried again by the queue, the source is closed (the caller asks again).
+		return task.StatusError, fmt.Errorf("%w: %w", queue.CriticalErr, err)
 	}
 
 	m.sig <- &generateRes{res, nil}

@@ -80,14 +80,23 @@ func (p *thumbPregen) run(ctx context.Context) {
 	nextFull := time.Now().Add(thumbPregenFirstDelay)
 	for {
 		full := !time.Now().Before(nextFull)
+		if full {
+			nextFull = time.Now().Add(thumbPregenFullEvery)
+		}
 		if p.dep.SettingProvider().ThumbPregenEnabled(ctx) && (full || p.top >= 0) {
 			after := p.top
 			if full {
 				after = 0
-				nextFull = time.Now().Add(thumbPregenFullEvery)
 			}
 			p.made, p.failed, p.lastLogged = 0, 0, 0
-			if p.walk(ctx, after) && (p.made > 0 || p.failed > 0) {
+			completed := p.walk(ctx, after)
+			if completed && full && p.top < 0 {
+				// Nothing to do: from now on a wake-up looks at files newer than all there are.
+				if top, err := p.dep.FileClient().MaxFileID(ctx); err == nil {
+					p.top = top
+				}
+			}
+			if completed && (p.made > 0 || p.failed > 0) {
 				p.l.Info("Done: %d thumbnails made, %d failed.", p.made, p.failed)
 			}
 		}
@@ -176,10 +185,9 @@ func (p *thumbPregen) one(ctx context.Context, f *ent.File) bool {
 	start := time.Now()
 	itemCtx, cancel := context.WithTimeout(withThumbPregen(userCtx), thumbPregenItemTimeout)
 	src, err := fm.Thumbnail(itemCtx, uri)
-	// Stopped waiting (timeout or shutdown): the queue's worker may still be using the file
-	// manager, so it is not recycled then.
-	stoppedWaiting := itemCtx.Err() != nil
 	cancel()
+	// Not put back for reuse if a queued task may still use it (see manager.Recycle).
+	fm.Recycle()
 	if err != nil {
 		if ctx.Err() != nil {
 			return false
@@ -190,9 +198,6 @@ func (p *thumbPregen) one(ctx context.Context, f *ent.File) bool {
 	} else {
 		src.Close()
 		p.made++
-	}
-	if !stoppedWaiting {
-		fm.Recycle()
 	}
 
 	if done := p.made + p.failed; done-p.lastLogged >= thumbPregenLogEvery {

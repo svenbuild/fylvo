@@ -27,22 +27,23 @@ const thumbTempFolder = "thumb"
 // process. 64 MP covers any realistic camera output.
 const maxDecodePixels = 64 * 1000 * 1000
 
-// maxDecodeBytes caps the memory of the decoded pixels (Fylvo): 64 MP with 8 bytes per pixel
-// (16-bit RGBA) would need about 490 MiB, more than a small container has. Such images are left
-// to vips. A 24 MP photo needs 36 MiB.
+// maxDecodeBytes caps the memory the decoder needs (Fylvo): 64 MP with 8 bytes per pixel (16-bit
+// RGBA) would need about 490 MiB, more than a small container has. Such images are left to vips.
+// The estimate errs on the high side; a 40 MP baseline JPEG still goes through.
 const maxDecodeBytes = 160 << 20
 
-// bytesPerPixel is what the standard decoders allocate per pixel for a color model.
-func bytesPerPixel(m color.Model) int64 {
+// bytesPerPixel is at most what the standard decoders allocate per pixel for a color model; head
+// is the start of the file. Grey PNGs with a transparent colour become RGBA; progressive JPEGs
+// (marker SOF2) keep 4-byte coefficients per sample besides the pixels.
+func bytesPerPixel(m color.Model, head []byte) int64 {
 	switch m {
-	case color.RGBA64Model, color.NRGBA64Model:
+	case color.RGBA64Model, color.NRGBA64Model, color.Gray16Model:
 		return 8
-	case color.Gray16Model:
-		return 2
-	case color.GrayModel, color.AlphaModel:
-		return 1
 	case color.YCbCrModel:
-		return 2
+		if bytes.Contains(head, []byte{0xFF, 0xC2}) {
+			return 8
+		}
+		return 3
 	}
 	if _, ok := m.(color.Palette); ok {
 		return 1
@@ -75,7 +76,7 @@ func NewThumbFromFile(file io.Reader, ext string) (*Thumb, error) {
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 ||
 		int64(cfg.Width)*int64(cfg.Height) > maxDecodePixels ||
-		int64(cfg.Width)*int64(cfg.Height)*bytesPerPixel(cfg.ColorModel) > maxDecodeBytes {
+		int64(cfg.Width)*int64(cfg.Height)*bytesPerPixel(cfg.ColorModel, hdr.Bytes()) > maxDecodeBytes {
 		return nil, fmt.Errorf("image dimensions too large (%dx%d): %w",
 			cfg.Width, cfg.Height, ErrPassThrough)
 	}

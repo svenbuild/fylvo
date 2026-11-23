@@ -5,8 +5,10 @@
 // reloads. Once per page load, so a real failure does not reload over and over; a tab that ran
 // fine for a while may do it again after a later update.
 const reloadedKey = "fylvo_chunk_reload";
+let reloading = false;
 
 async function activateNewVersion() {
+  reloading = true;
   const registration = await navigator.serviceWorker?.getRegistration();
   if (registration) {
     await registration.update().catch(() => undefined);
@@ -40,6 +42,9 @@ function installed(worker: ServiceWorker | null): Promise<ServiceWorker | null> 
 export function reloadOnMissingChunk() {
   window.addEventListener("load", () => {
     setTimeout(() => {
+      if (reloading) {
+        return;
+      }
       try {
         sessionStorage.removeItem(reloadedKey);
       } catch {

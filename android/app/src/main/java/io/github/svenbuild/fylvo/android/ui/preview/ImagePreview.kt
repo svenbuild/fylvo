@@ -104,11 +104,11 @@ fun ImagePreview(file: FileObject, viewModel: FilesViewModel, onTap: () -> Unit,
                     .data(model)
                     // Fylvo: the preview is kept under its own key (thumbCacheKey), also while it
                     // stands in for the full image.
-                    .placeholderMemoryCacheKey(thumbCacheKey(file))
+                    .placeholderMemoryCacheKey(thumbCacheKey(thumb) ?: thumb)
                     .apply {
                         if (model == thumb) {
-                            memoryCacheKey(thumbCacheKey(file))
-                            diskCacheKey(thumbCacheKey(file))
+                            memoryCacheKey(thumbCacheKey(thumb))
+                            diskCacheKey(thumbCacheKey(thumb))
                         }
                     }
                     .crossfade(true)

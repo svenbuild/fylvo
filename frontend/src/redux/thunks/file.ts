@@ -121,6 +121,9 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
     const cache = fileManager[index].tree[file.path]?.thumb;
     // Fylvo: a thumbnail belongs to one version of the file (its address stays the same for a day).
     if (cache && cache.entity == file.primary_entity) {
+      if (cache.failed) {
+        return null;
+      }
       if (!cache.expires || dayjs(cache.expires).isAfter(dayjs())) {
         return cache.src;
       }
@@ -131,23 +134,9 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
       dispatch(setThumbCache({ index, value: [file.path, thumb, file.primary_entity] }));
       return thumb.url;
     } catch (e) {
-      // Fylvo: marks the file as it is now, and only if it still has the version that failed (an
-      // answer that comes late must not bring back an older version of the file).
-      const current = getState().fileManager[index].tree[file.path]?.file ?? file;
-      if (current.primary_entity == file.primary_entity) {
-        dispatch(
-          fileUpdated({
-            index,
-            value: [
-              {
-                file: { ...current, metadata: { ...current.metadata, [Metadata.thumbDisabled]: "" } },
-                oldPath: file.path,
-                includeMetadata: true,
-              },
-            ],
-          }),
-        );
-      }
+      // Fylvo: remembered for this version of the file only, in the thumbnail cache; the file
+      // entry itself is not touched (an answer that comes late must not bring back an older one).
+      dispatch(setThumbCache({ index, value: [file.path, undefined, file.primary_entity] }));
       console.warn("Failed to load thumb", e);
       return null;
     }

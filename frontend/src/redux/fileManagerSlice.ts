@@ -92,6 +92,8 @@ export interface ThumbCache {
   expires?: string;
   // Fylvo: the version (primary entity) the thumbnail was made for.
   entity?: string;
+  // Fylvo: the thumbnail of this version could not be loaded.
+  failed?: boolean;
 }
 
 export interface FileManagerArgsBase<T> {
@@ -282,7 +284,7 @@ export const fileManagerSlice = createSlice({
         state[index].list.pagination.next_token = undefined;
       }
     },
-    setThumbCache: (state, action: PayloadAction<FileManagerArgsBase<[string, FileThumbResponse, string?]>>) => {
+    setThumbCache: (state, action: PayloadAction<FileManagerArgsBase<[string, FileThumbResponse | undefined, string?]>>) => {
       const index = action.payload.index;
       const path = action.payload.value[0];
       const thumb = action.payload.value[1];
@@ -291,9 +293,10 @@ export const fileManagerSlice = createSlice({
         state[index].tree[path] = {};
       }
       state[index].tree[path].thumb = {
-        src: thumb?.url,
+        src: thumb?.url ?? "",
         expires: thumb?.expires,
         entity,
+        failed: !thumb,
       };
     },
     clearSessionCache: (state, action: PayloadAction<FileManagerArgsBase<any>>) => {

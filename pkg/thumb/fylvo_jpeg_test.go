@@ -59,3 +59,15 @@ func TestToJPEGIfOpaque(t *testing.T) {
 	require.NoError(t, toJPEGIfOpaque(big, jpg, 400, 300))
 	require.Equal(t, "png", formatOf(t, big))
 }
+
+func TestBytesPerPixel(t *testing.T) {
+	require.Equal(t, int64(3), bytesPerPixel(color.YCbCrModel, []byte{0xFF, 0xD8, 0xFF, 0xC0}))
+	// Progressive JPEG (SOF2): coefficients on top of the pixels.
+	require.Equal(t, int64(8), bytesPerPixel(color.YCbCrModel, []byte{0xFF, 0xD8, 0xFF, 0xC2}))
+	// Grey PNG may become RGBA (transparent colour), 16-bit grey RGBA64.
+	require.Equal(t, int64(4), bytesPerPixel(color.GrayModel, nil))
+	require.Equal(t, int64(8), bytesPerPixel(color.Gray16Model, nil))
+	// 40 MP baseline JPEG passes, 24 MP progressive does not.
+	require.LessOrEqual(t, int64(40e6)*bytesPerPixel(color.YCbCrModel, nil), int64(maxDecodeBytes))
+	require.Greater(t, int64(24e6)*bytesPerPixel(color.YCbCrModel, []byte{0xFF, 0xC2}), int64(maxDecodeBytes))
+}

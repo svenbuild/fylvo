@@ -103,7 +103,7 @@ fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
     val bucket = System.currentTimeMillis() / THUMB_TTL_MS
     // Fylvo: keyed by the version too, so a new version fetches its own preview. The address is
     // kept with the version it was asked for, so while the next one is asked the old version's
-    // address is never shown (and stored by Coil) under the new version's key (thumbCacheKey).
+    // address is never shown for it.
     val resolved by produceState<Pair<String, String?>?>(initialValue = null, file.id, file.primaryEntity, bucket) {
         // Fylvo: a failed request (network, busy server) is tried again a few times.
         for (wait in THUMB_RETRY_DELAYS_MS) {
@@ -117,12 +117,16 @@ fun rememberThumbUrl(viewModel: FilesViewModel, file: FileObject): String? {
 }
 
 /**
- * Fylvo: the key Coil keeps a preview under (memory and disk), by file and version. The signed
- * address changes from day to day and between app starts; the preview of one version does not.
- * The address is still asked from the server first, which checks the access. The caches are
- * cleared when the session ends (FylvoApp.endSession).
+ * Fylvo: the key Coil keeps a preview under (memory and disk): the id of the stored thumbnail in
+ * its address (.../file/content/<id>/...). The signed address changes from day to day; a stored
+ * thumbnail never changes (a new one gets a new id). The address is still asked from the server
+ * first, which checks the access. Null for other addresses (Coil then keys by the address). The
+ * caches are cleared when the session ends (FylvoApp.endSession).
  */
-fun thumbCacheKey(file: FileObject): String = "thumb:${file.id}:${file.primaryEntity}"
+fun thumbCacheKey(thumbUrl: String?): String? =
+    thumbUrl?.let { THUMB_ID.find(it)?.groupValues?.get(1) }?.let { "thumb:$it" }
+
+private val THUMB_ID = Regex("/file/content/([^/?]+)/")
 
 /**
  * Thumbnail when the server has one, otherwise the file-kind icon on a soft
@@ -155,8 +159,8 @@ fun FileThumb(
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
                     .data(thumbUrl)
-                    .memoryCacheKey(thumbCacheKey(file))
-                    .diskCacheKey(thumbCacheKey(file))
+                    .memoryCacheKey(thumbCacheKey(thumbUrl))
+                    .diskCacheKey(thumbCacheKey(thumbUrl))
                     .crossfade(180)
                     .build(),
                 contentDescription = null,

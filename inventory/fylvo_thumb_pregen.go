@@ -27,3 +27,15 @@ func (f *fileClient) ThumbCandidates(ctx context.Context, after, before, limit i
 		Limit(limit).
 		All(ctx)
 }
+
+// MaxFileID returns the highest id of a file or folder, 0 if there is none (Fylvo).
+func (f *fileClient) MaxFileID(ctx context.Context) (int, error) {
+	last, err := f.client.File.Query().Order(ent.Desc(file.FieldID)).First(ctx)
+	if ent.IsNotFound(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return last.ID, nil
+}
