@@ -202,12 +202,13 @@ class FylvoApp : Application(), ImageLoaderFactory {
             step { io.github.svenbuild.fylvo.android.util.CrUri.forgetShareNames() }
             step { io.github.svenbuild.fylvo.android.util.Connected.forgetNames() }
             step { fileRepository.forgetThumbs() }
-            step { io.github.svenbuild.fylvo.android.data.ConnectedThumbs.clear(this@FylvoApp) }
+            step { io.github.svenbuild.fylvo.android.data.ConnectedThumbs.close(this@FylvoApp) }
             // Fylvo: previews and images the account loaded (Coil keeps previews by their stored id, thumbCacheKey).
             step {
                 imageLoader.memoryCache?.clear()
                 withContext(Dispatchers.IO) { imageLoader.diskCache?.clear() }
             }
+            io.github.svenbuild.fylvo.android.data.ConnectedThumbs.reopen()
             step { appUpdater.reset() }
             step { favoritesStore.clear() }
             // Synced copies are read-only, the server has them. After an expired session they stay

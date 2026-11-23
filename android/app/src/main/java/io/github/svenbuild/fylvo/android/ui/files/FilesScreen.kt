@@ -1700,6 +1700,13 @@ fun FilesScreen(
         connectMessage?.let { snackbar.showSnackbar(it.resolve(context)); app.connect.messageShown() }
     }
     LaunchedEffect(Unit) { app.reloadConnected = { viewModel.connected.reload() } }
+    // Fylvo 1.6: pictures of storages no longer connected leave the caches (a disconnect the app
+    // did not live to finish, or one made in the web app).
+    LaunchedEffect(connectedState.overview) {
+        connectedState.overview?.let { o ->
+            io.github.svenbuild.fylvo.android.data.ConnectedThumbs.sweep(context, o.storages.mapNotNull { Connected.storageId(it.uri) }.toSet())
+        }
+    }
     // A sign-in whose answer was lost (no network, or the app was stopped): sent again whenever
     // the app comes back to the front; an attempt older than 20 minutes is dropped here too.
     LifecycleResumeEffect(Unit) {

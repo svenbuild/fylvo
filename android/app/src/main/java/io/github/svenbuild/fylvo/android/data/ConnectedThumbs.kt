@@ -8,6 +8,7 @@ import coil.network.HttpException
 import coil.request.ErrorResult
 import coil.request.ImageResult
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -37,6 +38,8 @@ object ConnectedThumbs {
     private val gone = mutableSetOf<String>()
     /** Loads under way, per storage. */
     private val active = mutableMapOf<String, Int>()
+    /** Sign-out under way: no picture of any connected storage loads. */
+    private var closed = false
 
     fun key(storage: String, fileId: String, version: String): String = "cthumb:$storage:$fileId:$version"
 
@@ -49,12 +52,14 @@ object ConnectedThumbs {
 
     /** A load of [key] starts: noted first (on disk); false when its storage was disconnected. */
     private fun begin(context: Context, storage: String, key: String): Boolean = synchronized(this) {
-        if (storage in gone) return false
+        if (closed || storage in gone) return false
         val keys = notes(context, storage)
         if (keys.add(key)) runCatching { fileOf(context, storage).apply { parentFile?.mkdirs() }.appendText(key + "\n") }
         active[storage] = (active[storage] ?: 0) + 1
         true
     }
+
+    private fun stopped(storage: String) = synchronized(this) { closed || storage in gone }
 
     private fun end(storage: String) = synchronized(this) {
         val n = (active[storage] ?: 1) - 1
@@ -62,45 +67,69 @@ object ConnectedThumbs {
     }
 
     /**
-     * The storage [storage] was disconnected: no new load starts for it; once its loads under way
-     * are done (at most [DRAIN_MS]), all its pictures leave the memory and disk cache.
+     * The storage [storage] was disconnected: no new load starts for it; its pictures leave the
+     * memory and disk cache at once and again once its loads under way are done (at most
+     * [DRAIN_MS]). The notes go only with the last pass; one the app did not live to make is done
+     * by [sweep] when the storages are listed next.
      */
     fun forget(context: Context, storage: String) {
         val app = context.applicationContext
         synchronized(this) { gone += storage }
         io.launch {
-            var waited = 0L
-            while (synchronized(this@ConnectedThumbs) { (active[storage] ?: 0) > 0 } && waited < DRAIN_MS) {
-                delay(200)
-                waited += 200
-            }
-            evict(app, storage)
+            evict(app, storage, final = false)
+            drain { (active[storage] ?: 0) > 0 }
+            evict(app, storage, final = true)
         }
     }
 
-    private fun evict(context: Context, storage: String) {
-        val keys = synchronized(this) {
-            notes(context, storage).toSet().also {
-                noted.remove(storage)
-                fileOf(context, storage).delete()
-            }
+    /** Pictures of storages no longer connected ([existing]: the ids listed now) leave the caches. */
+    fun sweep(context: Context, existing: Set<String>) {
+        val app = context.applicationContext
+        io.launch {
+            val stale = File(app.filesDir, DIR).listFiles().orEmpty().map { it.name }.filter { it !in existing }
+            stale.forEach { forget(app, it) }
         }
+    }
+
+    private suspend fun drain(busy: () -> Boolean) {
+        var waited = 0L
+        while (synchronized(this) { busy() } && waited < DRAIN_MS) {
+            delay(200)
+            waited += 200
+        }
+    }
+
+    private fun evict(context: Context, storage: String, final: Boolean) {
+        val keys = synchronized(this) { notes(context, storage).toSet() }
         val loader = context.imageLoader
         loader.memoryCache?.let { cache -> cache.keys.filter { storageOf(it.key) == storage }.forEach { cache.remove(it) } }
         keys.forEach { k ->
             loader.memoryCache?.remove(MemoryCache.Key(k))
             runCatching { loader.diskCache?.remove(k) }
         }
+        if (final) synchronized(this) {
+            noted.remove(storage)
+            fileOf(context, storage).delete()
+        }
     }
 
-    /** Sign-out: the caches are emptied as a whole; the notes go too. */
-    fun clear(context: Context) {
+    /**
+     * Sign-out, before the caches are emptied: no picture of a connected storage loads any more,
+     * and the loads under way are waited for (at most [DRAIN_MS]), so none is stored afterwards.
+     * The notes go. [reopen] after the caches are empty.
+     */
+    suspend fun close(context: Context) {
+        synchronized(this) { closed = true }
+        drain { active.isNotEmpty() }
         synchronized(this) {
             noted.clear()
             gone.clear()
             File(context.filesDir, DIR).deleteRecursively()
         }
     }
+
+    /** The caches are empty: the next account may load pictures again. */
+    fun reopen() = synchronized(this) { closed = false }
 
     private fun notes(context: Context, storage: String): MutableSet<String> =
         noted.getOrPut(storage) {
@@ -132,18 +161,19 @@ object ConnectedThumbs {
             val storage = key?.let(::storageOf)
             if (!isPicture(url) || storage == null) return chain.proceed(request)
             val context = request.context.applicationContext
-            if (!withContext(Dispatchers.IO) { begin(context, storage, key) }) {
-                return ErrorResult(null, request, IllegalStateException("Storage disconnected"))
-            }
+            val refused = ErrorResult(null, request, IllegalStateException("Storage disconnected"))
+            // Not cancellable: a counted load always reaches the finally below.
+            if (!withContext(Dispatchers.IO + NonCancellable) { begin(context, storage, key) }) return refused
             try {
-                // Already here (memory or disk): no slot needed.
-                val loader = context.imageLoader
-                val cached = loader.memoryCache?.get(MemoryCache.Key(key)) != null ||
-                    withContext(Dispatchers.IO) { runCatching { loader.diskCache?.openSnapshot(key)?.use { true } }.getOrNull() == true }
-                if (cached) return chain.proceed(request)
+                // Already in memory: no slot needed (one on disk may be stale and reach the network).
+                if (context.imageLoader.memoryCache?.get(MemoryCache.Key(key)) != null) return chain.proceed(request)
                 var attempt = 0
                 while (true) {
-                    val result = slots.withPermit { chain.proceed(request) }
+                    val result = slots.withPermit {
+                        // Disconnected or signed out while waiting: nothing more is fetched or stored.
+                        if (stopped(storage)) return refused
+                        chain.proceed(request)
+                    }
                     val busy = ((result as? ErrorResult)?.throwable as? HttpException)?.response?.takeIf { it.code == 503 }
                     if (busy == null || attempt >= 3) return result
                     attempt++
