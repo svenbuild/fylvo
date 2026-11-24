@@ -523,7 +523,7 @@ export function navigateToPath(
   file: FileResponse | undefined = undefined,
   newTab: boolean = false,
 ): AppThunk {
-  return async (dispatch, _getState) => {
+  return async (dispatch, getState) => {
     if (file) {
       path = getFileLinkedUri(file);
     }
@@ -548,7 +548,15 @@ export function navigateToPath(
       window.open(uri, "_blank");
       return;
     }
-    router.navigate(uri);
+    // Fylvo: a search remembers the place it was started from, so removing it leads back there.
+    let searchFrom: string | undefined;
+    try {
+      if (new CrUri(path).is_search()) {
+        const current = getState().fileManager[index]?.path;
+        searchFrom = current && !new CrUri(current).is_search() ? current : router.state.location.state?.searchFrom;
+      }
+    } catch (e) {}
+    router.navigate(uri, searchFrom ? { state: { searchFrom } } : undefined);
   };
 }
 
@@ -575,12 +583,13 @@ export function searchMetadata(
   return async (dispatch, getState) => {
     const { fileManager } = getState();
     const fm = fileManager[index];
-    const root = fm.path_root;
-    if (!root) {
+    // Fylvo: a filter applies to the folder that is shown (with its subfolders), like the search.
+    const base = fm.pure_path ?? fm.path_root;
+    if (!base) {
       return;
     }
 
-    const rootUri = new CrUri(root);
+    const rootUri = new CrUri(base);
     rootUri.addQuery(
       (strongMatch ? UriQuery.metadata_strong_match : UriQuery.metadata_prefix) + metaKey,
       metaValue ?? "",
@@ -730,7 +739,8 @@ export function openAdvancedSearch(index: number, initialKeywords?: string): App
 
 export function clearSearch(index: number): AppThunk {
   return async (dispatch, getState) => {
-    dispatch(navigateToPath(index, getState().fileManager[index]?.pure_path ?? defaultPath));
+    const searchFrom = index == FileManagerIndex.main ? router.state.location.state?.searchFrom : undefined;
+    dispatch(navigateToPath(index, searchFrom ?? getState().fileManager[index]?.pure_path ?? defaultPath));
   };
 }
 
