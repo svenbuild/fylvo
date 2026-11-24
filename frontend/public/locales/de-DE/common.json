@@ -111,6 +111,8 @@
     "40903": "Die Zeit zum Setzen des neuen Passworts ist abgelaufen. Bitte nochmals anmelden.",
     "40904": "Die zu ersetzende Datei ist nicht mehr vorhanden.",
     "40905": "Hier gibt es schon eine Datei oder einen Ordner mit gleichem Namen in anderer Gross- und Kleinschreibung.",
+    "40906": "Dieses Archiv ist verschlüsselt.",
+    "40907": "Das Passwort ist falsch.",
     "40920": "Das ist in einem verbundenen Speicher nicht möglich.",
     "40921": "Der Speicher muss neu verbunden werden (Einstellungen, Verbundene Speicher).",
     "40922": "Verbundene Speicher sind nicht verfügbar.",

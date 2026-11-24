@@ -2,7 +2,9 @@ package manager
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs/dbfs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager/entitysource"
+	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
@@ -84,7 +87,7 @@ var ZipEncodings = map[string]encoding.Encoding{
 	"utf16le":           unicode.UTF16(unicode.LittleEndian, unicode.IgnoreBOM),
 }
 
-func (m *manager) ListArchiveFiles(ctx context.Context, uri *fs.URI, entity, zipEncoding string) ([]ArchivedFile, error) {
+func (m *manager) ListArchiveFiles(ctx context.Context, uri *fs.URI, entity, zipEncoding, password string) ([]ArchivedFile, error) {
 	file, err := m.fs.Get(ctx, uri, dbfs.WithFileEntities(), dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityDownloadFile))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file: %w", err)
@@ -115,11 +118,13 @@ func (m *manager) ListArchiveFiles(ctx context.Context, uri *fs.URI, entity, zip
 		}
 	}
 
+	// Fylvo: a list read with a password is not cached, the password is used only for this call.
 	cacheKey := getArchiveListCacheKey(targetEntity.ID(), zipEncoding)
 	kv := m.kv
-	res, found := kv.Get(cacheKey)
-	if found {
-		return res.([]ArchivedFile), nil
+	if password == "" {
+		if res, found := kv.Get(cacheKey); found {
+			return res.([]ArchivedFile), nil
+		}
 	}
 
 	es, err := m.GetEntitySource(ctx, 0, fs.WithEntity(targetEntity))
@@ -130,7 +135,7 @@ func (m *manager) ListArchiveFiles(ctx context.Context, uri *fs.URI, entity, zip
 	es.Apply(entitysource.WithContext(ctx))
 	defer es.Close()
 
-	var readerFunc func(ctx context.Context, file io.ReaderAt, size int64, textEncoding encoding.Encoding) ([]ArchivedFile, error)
+	var readerFunc func(ctx context.Context, file io.ReaderAt, size int64, textEncoding encoding.Encoding, password string) ([]ArchivedFile, error)
 	switch file.Ext() {
 	case "zip":
 		readerFunc = getZipFileList
@@ -141,12 +146,14 @@ func (m *manager) ListArchiveFiles(ctx context.Context, uri *fs.URI, entity, zip
 	}
 
 	sr := io.NewSectionReader(es, 0, targetEntity.Size())
-	fileList, err := readerFunc(ctx, sr, targetEntity.Size(), enc)
+	fileList, err := readerFunc(ctx, sr, targetEntity.Size(), enc, password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file list: %w", err)
 	}
 
-	kv.Set(cacheKey, fileList, ArchiveListCacheTTL)
+	if password == "" {
+		kv.Set(cacheKey, fileList, ArchiveListCacheTTL)
+	}
 	return fileList, nil
 }
 
@@ -277,7 +284,7 @@ func (m *manager) compressFileToArchive(ctx context.Context, parent string, file
 
 }
 
-func getZipFileList(ctx context.Context, file io.ReaderAt, size int64, textEncoding encoding.Encoding) ([]ArchivedFile, error) {
+func getZipFileList(ctx context.Context, file io.ReaderAt, size int64, textEncoding encoding.Encoding, _ string) ([]ArchivedFile, error) {
 	zr, err := zip.NewReader(file, size)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create zip reader: %w", err)
@@ -312,9 +319,23 @@ func getZipFileList(ctx context.Context, file io.ReaderAt, size int64, textEncod
 	return fileList, nil
 }
 
-func get7zFileList(ctx context.Context, file io.ReaderAt, size int64, extEncoding encoding.Encoding) ([]ArchivedFile, error) {
-	zr, err := sevenzip.NewReader(file, size)
+// Fylvo: a 7z archive packed with encrypted file names cannot be listed without its password.
+var (
+	ErrArchiveEncrypted     = serializer.NewError(serializer.CodeArchiveEncrypted, "The archive is encrypted", nil)
+	ErrArchiveWrongPassword = serializer.NewError(serializer.CodeArchiveWrongPassword, "The archive password is wrong", nil)
+)
+
+func get7zFileList(ctx context.Context, file io.ReaderAt, size int64, extEncoding encoding.Encoding, password string) ([]ArchivedFile, error) {
+	zr, err := sevenzip.NewReaderWithPassword(file, size, password)
 	if err != nil {
+		// Without the right password the reader only fails with a decoding error, the same as
+		// for a damaged file. Only the header tells the two apart.
+		if sevenZipHeaderEncrypted(file, size) {
+			if password == "" {
+				return nil, ErrArchiveEncrypted.WithError(err)
+			}
+			return nil, ErrArchiveWrongPassword.WithError(err)
+		}
 		return nil, fmt.Errorf("failed to create 7z reader: %w", err)
 	}
 
@@ -330,6 +351,31 @@ func get7zFileList(ctx context.Context, file io.ReaderAt, size int64, extEncodin
 		})
 	}
 	return fileList, nil
+}
+
+// sevenZipHeaderEncrypted tells whether the file list of a 7z archive is packed encrypted
+// (7z a -mhe=on): the header at the end is an encoded header whose coder is AES.
+func sevenZipHeaderEncrypted(file io.ReaderAt, size int64) bool {
+	const (
+		startHeaderSize = 32
+		maxHeaderSize   = 1 << 16
+		encodedHeaderID = 0x17
+	)
+	var start [startHeaderSize]byte
+	if _, err := file.ReadAt(start[:], 0); err != nil || !bytes.HasPrefix(start[:], []byte{'7', 'z', 0xBC, 0xAF, 0x27, 0x1C}) {
+		return false
+	}
+	offset := int64(binary.LittleEndian.Uint64(start[12:20]))
+	length := int64(binary.LittleEndian.Uint64(start[20:28]))
+	if offset < 0 || length <= 0 || length > maxHeaderSize || startHeaderSize+offset+length > size {
+		return false
+	}
+	header := make([]byte, length)
+	if _, err := file.ReadAt(header, startHeaderSize+offset); err != nil {
+		return false
+	}
+	// 06 F1 07 01 is the ID of the AES coder.
+	return header[0] == encodedHeaderID && bytes.Contains(header, []byte{0x06, 0xF1, 0x07, 0x01})
 }
 
 func getArchiveListCacheKey(entity int, encoding string) string {

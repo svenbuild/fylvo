@@ -155,6 +155,9 @@ export const Code = {
   PasswordChangeRequired: 40901,
   SamePassword: 40902,
   PasswordChangeExpired: 40903,
+  // Fylvo: the file list of an archive is encrypted / the password given for it is wrong
+  ArchiveEncrypted: 40906,
+  ArchiveWrongPassword: 40907,
 };
 
 export const CrHeaderPrefix = "X-Cr-";

@@ -598,6 +598,8 @@ export interface ArchiveListFilesService {
   uri: string;
   entity?: string;
   text_encoding?: string;
+  // Fylvo: password of an archive with encrypted file names, used for this request only
+  password?: string;
 }
 
 export interface FullTextSearchResults {

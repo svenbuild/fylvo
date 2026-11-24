@@ -2088,14 +2088,11 @@ export function sendCleanupTask(args: CleanupTaskService): ThunkResponse<void> {
 
 export function getArchiveListFiles(args: ArchiveListFilesService): ThunkResponse<ArchiveListFilesResponse> {
   return async (dispatch, _getState) => {
+    // Fylvo: errors are shown in the dialog of the archive preview, not as a snackbar. A
+    // password goes in the body of a POST, never in the address.
+    const opts = { ...defaultOpts, bypassSnackbar: () => true };
     return await dispatch(
-      send(
-        `/file/archive`,
-        { method: "GET", params: args },
-        {
-          ...defaultOpts,
-        },
-      ),
+      send(`/file/archive`, args.password ? { method: "POST", data: args } : { method: "GET", params: args }, opts),
     );
   };
 }
