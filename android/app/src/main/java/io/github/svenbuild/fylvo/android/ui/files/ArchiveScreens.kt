@@ -15,15 +15,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.svenbuild.fylvo.android.FylvoApp
@@ -40,9 +46,12 @@ import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.ArchiveEntry
 import io.github.svenbuild.fylvo.android.api.FileObject
 import io.github.svenbuild.fylvo.android.api.TaskItem
+import io.github.svenbuild.fylvo.android.data.ApiException
 import io.github.svenbuild.fylvo.android.data.ArchiveRepository
+import io.github.svenbuild.fylvo.android.util.ErrorText
 import io.github.svenbuild.fylvo.android.util.CrUri
 import io.github.svenbuild.fylvo.android.util.userError
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
@@ -59,10 +68,37 @@ fun ArchivePage(file: FileObject, canExtract: Boolean, onExtract: () -> Unit, on
     var entries by remember { mutableStateOf<List<ArchiveEntry>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var dir by remember { mutableStateOf("") }
-    LaunchedEffect(file.path) {
-        runCatching { app.archives.entries(file.path) }
-            .onSuccess { entries = it }
-            .onFailure { error = userError(it).resolve(context) }
+    // Fylvo 1.6.5: an archive with encrypted names asks for its password. [ask]: null = no
+    // question, false = needed, true = the last one did not fit. The typed password is used for
+    // the one request that follows and then dropped; it is never saved or logged.
+    var ask by remember { mutableStateOf<Boolean?>(null) }
+    var typed by remember { mutableStateOf<String?>(null) }
+    var attempt by remember { mutableIntStateOf(0) }
+    LaunchedEffect(file.path, attempt) {
+        entries = null
+        error = null
+        val password = typed
+        typed = null
+        try {
+            entries = app.archives.entries(file.path, password)
+            ask = null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            when ((e as? ApiException)?.code) {
+                ErrorText.CODE_ARCHIVE_ENCRYPTED -> ask = false
+                ErrorText.CODE_ARCHIVE_WRONG_PASSWORD -> ask = true
+                else -> error = userError(e).resolve(context)
+            }
+        }
+    }
+    ask?.let { wrong ->
+        ArchivePasswordDialog(
+            name = file.name,
+            wrong = wrong,
+            onOpen = { pw -> typed = pw; ask = null; attempt++ },
+            onDismiss = onClose,
+        )
     }
     BackHandler { if (dir.isNotEmpty()) dir = dir.substringBeforeLast('/', "") else onClose() }
     val title = if (dir.isEmpty()) file.name else dir.substringAfterLast('/')
@@ -75,6 +111,7 @@ fun ArchivePage(file: FileObject, canExtract: Boolean, onExtract: () -> Unit, on
             val list = entries
             when {
                 error != null -> Text(error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.align(Alignment.Center).padding(24.dp))
+                list == null && ask != null -> Text(stringResource(R.string.archive_encrypted), modifier = Modifier.align(Alignment.Center).padding(24.dp))
                 list == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 else -> {
                     val shown = ArchiveRepository.childrenOf(list, dir)
@@ -100,6 +137,33 @@ fun ArchivePage(file: FileObject, canExtract: Boolean, onExtract: () -> Unit, on
             }
         }
     }
+}
+
+/** Fylvo 1.6.5: asks for the password of an encrypted archive; the text lives only in this dialog. */
+@Composable
+private fun ArchivePasswordDialog(name: String, wrong: Boolean, onOpen: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = {
+            Column {
+                Text(stringResource(if (wrong) R.string.archive_password_wrong else R.string.archive_encrypted))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text(stringResource(R.string.password)) },
+                    singleLine = true,
+                    isError = wrong,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    textStyle = MaterialTheme.typography.bodyLarge,
+                )
+            }
+        },
+        confirmButton = { TextButton(enabled = text.isNotEmpty(), onClick = { onOpen(text) }) { Text(stringResource(R.string.open)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
 }
 
 /**

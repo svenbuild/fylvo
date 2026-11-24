@@ -380,6 +380,13 @@ fun FilesScreen(
             sheetTarget = file
             return
         }
+        // Fylvo 1.6.5: a zip or 7z opens its contents (asks for a password when encrypted).
+        if (!file.isFolder && io.github.svenbuild.fylvo.android.data.ArchiveRepository.viewable(file.name) &&
+            Permissions.canArchiveFrom(listOf(file), groupArchive)
+        ) {
+            archiveView = file
+            return
+        }
         // Fylvo: a size the server does not know cannot be held to the preview limits.
         if (previewKindOf(file) == null || Connected.sizeUnknown(file)) {
             openWithSystemApp(file)

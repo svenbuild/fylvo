@@ -2,18 +2,23 @@ package io.github.svenbuild.fylvo.android.data
 
 import io.github.svenbuild.fylvo.android.api.ApiClient
 import io.github.svenbuild.fylvo.android.api.ArchiveEntry
+import io.github.svenbuild.fylvo.android.api.ArchiveListRequest
 import io.github.svenbuild.fylvo.android.api.TaskItem
 import io.github.svenbuild.fylvo.android.api.WorkflowRequest
 import io.github.svenbuild.fylvo.android.util.CrUri
 
 /**
  * Fylvo 1.6: archives (look inside, extract, pack as ZIP) and the account's tasks
- * (design/android-parity-plan.md, 11). No archive password: the server keeps it in the task's
- * state in plain text; no address with a share password either (util/Permissions).
+ * (design/android-parity-plan.md, 11). The list of an archive with encrypted names takes a
+ * password for that one request (1.6.5); extracting takes none, and no address with a share
+ * password either (util/Permissions).
  */
 class ArchiveRepository(private val api: ApiClient, private val session: SessionManager) {
 
-    suspend fun entries(uri: String): List<ArchiveEntry> = api.service().archiveEntries(uri).unwrap().files
+    /** The entries of [uri]. [password]: for an archive with encrypted names, used for this call only. */
+    suspend fun entries(uri: String, password: String? = null): List<ArchiveEntry> =
+        if (password.isNullOrEmpty()) api.service().archiveEntries(uri).unwrap().files
+        else api.service().archiveEntriesWithPassword(ArchiveListRequest(uri, password)).unwrap().files
 
     /** Extracts all of [archiveUri] into the folder [dst]; the task runs on the server. */
     suspend fun extract(archiveUri: String, dst: String): TaskItem =

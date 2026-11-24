@@ -120,6 +120,10 @@ interface ApiService {
     @GET("api/v4/file/archive")
     suspend fun archiveEntries(@Query("uri") uri: String): Response<ApiResponse<ArchiveListing>>
 
+    /** Fylvo 1.6.5: the same with a password in the body, for archives with encrypted file names. */
+    @POST("api/v4/file/archive")
+    suspend fun archiveEntriesWithPassword(@Body request: ArchiveListRequest): Response<ApiResponse<ArchiveListing>>
+
     @POST("api/v4/workflow/extract")
     suspend fun extractArchive(@Body request: WorkflowRequest, @Tag session: SessionTag): Response<ApiResponse<TaskItem>>
 
