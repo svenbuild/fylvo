@@ -21,7 +21,6 @@ import {
 } from "../utils/siteValidation";
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { platform } from "@tauri-apps/plugin-os";
 import { CALLBACK_PATH, CLIENT_ID, SCOPES } from "../utils/constants";
 
 type PageState = "url_input" | "waiting" | "final_setup" | "setting_up" | "success";
