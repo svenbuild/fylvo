@@ -564,8 +564,8 @@ moveBetweenDrivesMessage:
   pl: "Nie można przenosić plików między folderami synchronizacji. Skopiuj je, a potem usuń oryginał."
   it: "Non è possibile spostare file tra cartelle sincronizzate. Copiali e poi elimina l'originale."
 linuxFileSystemNotSupported:
-  en-US: "The folder %{folder} is on a drive that cannot be synced (for example a USB stick with FAT or exFAT, or a network share). Choose a folder in your home folder or on a drive with ext4, btrfs or xfs."
-  de: "Der Ordner %{folder} liegt auf einem Laufwerk, das sich nicht abgleichen lässt (zum Beispiel ein USB-Stick mit FAT oder exFAT oder eine Netzwerkfreigabe). Wählen Sie einen Ordner in Ihrem Benutzerordner oder auf einem Laufwerk mit ext4, btrfs oder xfs."
+  en-US: "The folder %{folder} is on a drive that cannot be synced (for example a USB stick with FAT or exFAT, or a network share). Choose a folder in your home folder or on a drive with ext4, btrfs, xfs or f2fs."
+  de: "Der Ordner %{folder} liegt auf einem Laufwerk, das sich nicht abgleichen lässt (zum Beispiel ein USB-Stick mit FAT oder exFAT oder eine Netzwerkfreigabe). Wählen Sie einen Ordner in Ihrem Benutzerordner oder auf einem Laufwerk mit ext4, btrfs, xfs oder f2fs."
 watchLimitTitle:
   en-US: "Not all changes are noticed"
   de: "Nicht alle Änderungen werden bemerkt"
@@ -675,5 +675,5 @@ updateFailedMessage:
   en-US: "Version %{version} was not installed: %{reason}. The current version keeps running."
   de: "Version %{version} wurde nicht installiert: %{reason}. Die bisherige Version läuft weiter."
 updateNotInstalled:
-  en-US: "Windows did not install the update"
-  de: "Windows hat das Update nicht installiert"
+  en-US: "the system did not install the update"
+  de: "das System hat das Update nicht installiert"
