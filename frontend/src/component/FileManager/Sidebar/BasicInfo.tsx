@@ -99,7 +99,8 @@ export const EncryptionStatusText = ({
         )}
         {!simplified && (
           <>
-            <Typography variant={"body2"} color={"text.secondary"}>
+            {/* Fylvo: the text gives the row its baseline (not the icon), so the label lines up. */}
+            <Typography variant={"body2"} color={"text.secondary"} sx={{ alignSelf: "baseline" }}>
               {title}
             </Typography>
           </>

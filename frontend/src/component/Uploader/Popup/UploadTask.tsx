@@ -357,7 +357,7 @@ export default function UploadTask({
             <ListItemButton
               sx={{
                 borderRadius: 0,
-                minHeight: { xs: 43, md: 32 },
+                minHeight: { xs: 43, md: 36 },
                 px: "10px",
                 py: 0,
                 gap: "8px",

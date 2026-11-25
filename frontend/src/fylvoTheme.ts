@@ -56,6 +56,10 @@ const fylvoOptions: ThemeOptions = {
         body: { fontFeatureSettings: '"cv11", "ss01"' },
       },
     },
+    // A button group hands its own ripple setting to its buttons, so it needs the same default.
+    MuiButtonGroup: {
+      defaultProps: { disableRipple: true },
+    },
     MuiButtonBase: {
       defaultProps: { disableRipple: true },
       styleOverrides: {
