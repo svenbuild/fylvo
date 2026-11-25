@@ -42,6 +42,7 @@ func TestInstalledCraftApps(t *testing.T) {
 	word := group.Viewers[0]
 	assert.Equal(t, "craft-word", word.ID)
 	assert.True(t, IsCraftViewer(&word))
+	assert.Equal(t, "pc", word.Platform, "not on phones")
 	assert.Equal(t, types.ViewerType(types.ViewerTypeWopi), word.Type)
 	assert.Equal(t, []string{"docx"}, word.Exts)
 	assert.Equal(t, "/craft/wordcraft/", word.WopiActions["docx"][types.ViewerActionEdit])

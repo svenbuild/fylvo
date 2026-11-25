@@ -109,6 +109,8 @@ jobs:
             docker rm "$id" > /dev/null
             readelf -h "fylvo-$arch" | grep -q "Machine:.*${machine[$arch]}" || { echo "linux/$arch holds a binary of another architecture" >&2; exit 1; }
             docker run --rm --platform "linux/$arch" --entrypoint /fylvo/fylvo "$IMAGE:$VERSION" --help > /dev/null
+            # The Craft editors (office in the browser) are in the image.
+            docker run --rm --platform "linux/$arch" --entrypoint sh "$IMAGE:$VERSION" -c               'for a in wordcraft gridcraft deckcraft pdfcraft; do test -f "/fylvo/craft/$a/index.html" || exit 1; done'
             rm "fylvo-$arch"
             docker image rm -f "$IMAGE:$VERSION" > /dev/null
             docker image prune -af > /dev/null

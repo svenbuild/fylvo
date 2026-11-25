@@ -26,6 +26,9 @@ const (
 	// CraftProp names the Craft app of a viewer in its props.
 	CraftProp = "craft"
 
+	// craftPlatform offers the editors on computers only (frontend ViewerPlatform).
+	craftPlatform = "pc"
+
 	engineCraft     = "craft"
 	engineCollabora = "collabora"
 )
@@ -140,6 +143,8 @@ func craftViewers(icons map[string]string) *types.ViewerGroup {
 				a.ext: {types.ViewerActionEdit: src, types.ViewerActionView: src},
 			},
 			Props: map[string]string{CraftProp: a.app},
+			// The editors show their desktop interface also on a phone, where it cannot be used.
+			Platform: craftPlatform,
 		}
 		if a.template != "" {
 			viewer.Templates = []types.NewFileTemplate{{Ext: a.ext, DisplayName: a.template}}

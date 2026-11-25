@@ -55,3 +55,19 @@ jobs:
           path: release/fylvo-linux-amd64
           if-no-files-found: error
           retention-days: 30
+
+  # The Craft editors of the image (Dockerfile stage "craft"): fetched and checked against
+  # scripts/craft/craft.lock, so a wrong sum or signature fails here and not at a release.
+  craft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Craft editors
+        run: |
+          set -euo pipefail
+          docker build --target craft -t fylvo-craft .
+          docker run --rm fylvo-craft sh -c 'for a in wordcraft gridcraft deckcraft pdfcraft; do test -f "/craft/$a/index.html" || { echo "$a is missing" >&2; exit 1; }; done'
