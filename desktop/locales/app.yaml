@@ -565,19 +565,19 @@ moveBetweenDrivesMessage:
   it: "Non è possibile spostare file tra cartelle sincronizzate. Copiali e poi elimina l'originale."
 linuxFileSystemNotSupported:
   en-US: "The folder %{folder} is on a drive that cannot be synced (for example a USB stick with FAT or exFAT, or a network share). Choose a folder in your home folder or on a drive with ext4, btrfs or xfs."
-  de: "Der Ordner %{folder} liegt auf einem Laufwerk, das sich nicht abgleichen lässt (zum Beispiel ein USB-Stick mit FAT oder exFAT oder eine Netzwerkfreigabe). Wähle einen Ordner in deinem Benutzerordner oder auf einem Laufwerk mit ext4, btrfs oder xfs."
+  de: "Der Ordner %{folder} liegt auf einem Laufwerk, das sich nicht abgleichen lässt (zum Beispiel ein USB-Stick mit FAT oder exFAT oder eine Netzwerkfreigabe). Wählen Sie einen Ordner in Ihrem Benutzerordner oder auf einem Laufwerk mit ext4, btrfs oder xfs."
 watchLimitTitle:
   en-US: "Not all changes are noticed"
   de: "Nicht alle Änderungen werden bemerkt"
 watchLimitMessage:
   en-US: "The sync folders have more subfolders than Linux lets one program watch. Raise fs.inotify.max_user_watches (see the guide) and restart Fylvo Desktop."
-  de: "Die Sync-Ordner haben mehr Unterordner, als Linux einem Programm zu beobachten erlaubt. Erhöhe fs.inotify.max_user_watches (siehe Anleitung) und starte Fylvo Desktop neu."
+  de: "Die Sync-Ordner haben mehr Unterordner, als Linux einem Programm zu beobachten erlaubt. Erhöhen Sie fs.inotify.max_user_watches (siehe Anleitung) und starten Sie Fylvo Desktop neu."
 renameRefusedTitle:
   en-US: "Rename not possible"
   de: "Umbenennen nicht möglich"
 renameRefusedMessage:
   en-US: "The server refused the rename or move, so it was undone here. You may not have the rights for this folder."
-  de: "Der Server hat das Umbenennen oder Verschieben abgelehnt, deshalb wurde es hier rückgängig gemacht. Vermutlich fehlen dir in diesem Ordner die Rechte."
+  de: "Der Server hat das Umbenennen oder Verschieben abgelehnt, deshalb wurde es hier rückgängig gemacht. Vermutlich fehlen Ihnen in diesem Ordner die Rechte."
 heldDeletionBusy:
   en-US: "This deletion is being handled already."
   zh-CN: "此删除正在处理中。"

@@ -1,7 +1,7 @@
 {
   "addDrive": {
     "title": "Laufwerk hinzufügen",
-    "description": "Geben Sie die Adresse Ihres Fylvo-Servers ein, um eine Verbindung herzustellen",
+    "description": "Geben Sie die Adresse Ihres Fylvo-Servers ein, um eine Verbindung herzustellen.",
     "siteUrl": "Fylvo-Adresse",
     "siteUrlPlaceholder": "https://cloud.example.com",
     "connect": "Verbinden",
