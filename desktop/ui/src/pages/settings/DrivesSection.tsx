@@ -34,10 +34,13 @@ import type { DriveInfo, HeldDeletion } from "./types";
 import {  SecondaryButton, SecondaryErrorButton } from "../../common/StyledComponent";
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import DriveLetterRow from "./DriveLetterRow";
+import VirtualDriveRow from "./VirtualDriveRow";
 import { platform } from "@tauri-apps/plugin-os";
 
 // Fylvo: drive letters exist only on Windows.
 const hasDriveLetters = platform() === "windows";
+// Fylvo: virtual drives exist only on Linux.
+const isLinux = platform() === "linux";
 
 interface DriveInfoResponse {
   id: string;
@@ -59,6 +62,8 @@ interface DriveInfoResponse {
   held_deletions: HeldDeletion[];
   drive_letter: string | null;
   drive_letter_state: DriveInfo["drive_letter_state"];
+  mode: DriveInfo["mode"];
+  vfs: DriveInfo["vfs"];
 }
 
 export default function DrivesSection() {
@@ -445,6 +450,7 @@ export default function DrivesSection() {
                 </Box>
 
                 {hasDriveLetters && <DriveLetterRow drive={drive} onChanged={fetchDrives} />}
+                {drive.mode === "drive" && <VirtualDriveRow drive={drive} onChanged={fetchDrives} />}
 
                 {/* Fylvo: held mass deletions */}
                 {drive.held_deletions?.map((held) => (
@@ -494,13 +500,15 @@ export default function DrivesSection() {
                     </SecondaryButton>
                   )}
 
-                  <SecondaryButton
-                    size="small"
-                    startIcon={<FilterListRounded />}
-                    onClick={() => handleEditIgnorePatterns(drive.id)}
-                  >
-                    {t("settings.ignorePatterns")}
-                  </SecondaryButton>
+                  {drive.mode !== "drive" && (
+                    <SecondaryButton
+                      size="small"
+                      startIcon={<FilterListRounded />}
+                      onClick={() => handleEditIgnorePatterns(drive.id)}
+                    >
+                      {t("settings.ignorePatterns")}
+                    </SecondaryButton>
+                  )}
 
                   <SecondaryErrorButton
                     size="small"
@@ -518,13 +526,17 @@ export default function DrivesSection() {
         </Stack>
       )}
 
-      <SecondaryButton
-        startIcon={<AddIcon />}
-        onClick={handleAddDrive}
-        sx={{ mt: 2 }}
-      >
-        {t("popup.newDrive")}
-      </SecondaryButton>
+      <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+        <SecondaryButton startIcon={<AddIcon />} onClick={handleAddDrive}>
+          {t("popup.newDrive")}
+        </SecondaryButton>
+        {/* Fylvo (Linux): one click to also get the files as a drive (files loaded when opened). */}
+        {isLinux && drives.some((d) => d.mode !== "drive") && !drives.some((d) => d.mode === "drive") && (
+          <SecondaryButton onClick={handleAddDrive}>
+            {t("settings.vfs.mountAsDrive")}
+          </SecondaryButton>
+        )}
+      </Stack>
 
       <Dialog
         open={editingDriveId !== null}

@@ -104,6 +104,24 @@ pub struct DriveInfo {
     /// Fylvo: the drive letter the folder also shows as, and whether it works.
     pub drive_letter: Option<char>,
     pub drive_letter_state: crate::drive::drive_letter::LetterState,
+    /// Fylvo: sync folder or virtual drive, and the state of a virtual drive.
+    pub mode: crate::drive::mounts::DriveMode,
+    pub vfs: Option<VfsStatus>,
+}
+
+/// Fylvo (Linux): what the settings show for a virtual drive.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct VfsStatus {
+    pub online: bool,
+    /// Bytes of cached content counted against the limit (all drives share it).
+    pub cache_used: u64,
+    pub cache_limit: u64,
+    /// Bytes kept for "always offline" folders.
+    pub pinned_bytes: u64,
+    pub pins: Vec<String>,
+    /// Changes not uploaded yet, and of these the ones whose last upload failed.
+    pub changes_waiting: usize,
+    pub changes_failed: usize,
 }
 
 /// Drive status for the settings UI

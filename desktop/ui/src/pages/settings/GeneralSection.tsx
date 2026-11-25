@@ -14,6 +14,11 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { languages, toSupportedLanguage } from "../../i18n";
 import UpdateSettings from "./UpdateSettings";
+import { platform } from "@tauri-apps/plugin-os";
+
+// Fylvo: the cache limit of virtual drives (Linux only).
+const isLinux = platform() === "linux";
+const CACHE_OPTIONS = ["5", "10", "20", "50", "100", "200", "500"].map((gb) => ({ value: gb, label: `${gb} GB` }));
 
 interface SettingItemProps {
   title: string;
@@ -210,6 +215,7 @@ interface GeneralSettings {
   log_max_files: number;
   log_dir: string;
   language: string | null;
+  drive_cache_gb: number;
 }
 
 const LOG_LEVELS = [
@@ -236,6 +242,7 @@ export default function GeneralSection() {
   const [logToFile, setLogToFile] = useState(true);
   const [logLevel, setLogLevel] = useState("info");
   const [logMaxFiles, setLogMaxFiles] = useState(5);
+  const [driveCacheGb, setDriveCacheGb] = useState(20);
   const [logDir, setLogDir] = useState("");
   const [language, setLanguage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -254,6 +261,7 @@ export default function GeneralSection() {
         setLogToFile(settings.log_to_file);
         setLogLevel(settings.log_level);
         setLogMaxFiles(settings.log_max_files);
+        setDriveCacheGb(settings.drive_cache_gb);
         setLogDir(settings.log_dir);
         setLanguage(settings.language);
       } catch (error) {
@@ -346,6 +354,18 @@ export default function GeneralSection() {
     }
   };
 
+  const handleDriveCacheChange = async (value: string) => {
+    const gb = parseInt(value, 10);
+    const previousValue = driveCacheGb;
+    setDriveCacheGb(gb);
+    try {
+      await invoke("set_drive_cache_gb", { gb });
+    } catch (error) {
+      console.error("Failed to change the drive cache limit:", error);
+      setDriveCacheGb(previousValue);
+    }
+  };
+
   const handleOpenLogFolder = async () => {
     try {
       await invoke("open_log_folder");
@@ -433,6 +453,20 @@ export default function GeneralSection() {
           isLast={true}
         />
       </SettingsGroup>
+
+      {isLinux && (
+        <SettingsGroup title={t("settings.vfs.title")}>
+          <SettingSelectItem
+            title={t("settings.vfs.cacheLimit")}
+            description={t("settings.vfs.cacheLimitDescription")}
+            value={CACHE_OPTIONS.some((o) => o.value === String(driveCacheGb)) ? String(driveCacheGb) : "20"}
+            options={CACHE_OPTIONS}
+            onChange={handleDriveCacheChange}
+            disabled={loading}
+            isLast={true}
+          />
+        </SettingsGroup>
+      )}
 
       <SettingsGroup title={t("settings.logSettings")}>
         <SettingActionItem

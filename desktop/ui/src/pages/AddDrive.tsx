@@ -1,4 +1,6 @@
-import { Alert, Box, Button, CircularProgress, Container, InputAdornment, Snackbar, Typography } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, Container, FormControlLabel, InputAdornment, Radio, RadioGroup, Snackbar, Typography } from "@mui/material";
+import { homeDir, join } from "@tauri-apps/api/path";
+import { platform } from "@tauri-apps/plugin-os";
 import { openUrl, openPath } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from '@tauri-apps/api/core';
@@ -23,6 +25,25 @@ import { platform } from "@tauri-apps/plugin-os";
 import { CALLBACK_PATH, CLIENT_ID, SCOPES } from "../utils/constants";
 
 type PageState = "url_input" | "waiting" | "final_setup" | "setting_up" | "success";
+
+// Fylvo: on Linux a drive can be a virtual drive (files loaded when opened), the default there.
+const isLinux = platform() === "linux";
+type DriveMode = "drive" | "sync";
+
+/** The first free `~/Fylvo`, `~/Fylvo 2`, ... (not a drive yet, empty or not there yet). */
+async function suggestedDriveFolder(): Promise<string> {
+  const home = await homeDir();
+  const used = new Set(
+    (await invoke<{ sync_path: string }[]>("get_drives_info").catch(() => [])).map((d) => d.sync_path),
+  );
+  for (let i = 1; i <= 20; i++) {
+    const path = await join(home, i === 1 ? "Fylvo" : `Fylvo ${i}`);
+    if (!used.has(path) && (await invoke<boolean>("is_dir_empty", { path }))) {
+      return path;
+    }
+  }
+  return "";
+}
 
 interface OAuthCallbackData {
   code: string;
@@ -101,6 +122,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
   const [pageState, setPageState] = useState<PageState>(isReauthorize ? "url_input" : "url_input");
   const [localPath, setLocalPath] = useState("");
   const [folderNotEmpty, setFolderNotEmpty] = useState(false);
+  const [driveMode, setDriveMode] = useState<DriveMode>(isLinux ? "drive" : "sync");
   const [driveName, setDriveName] = useState(driveNameQuery ? decodeURIComponent(driveNameQuery) : "");
   const lastFetchedUrl = useRef<string>("");
   const currentIconUrl = useRef<string | undefined>(undefined);
@@ -132,6 +154,12 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
 
       // Transition to final setup page
       if (callbackData.name) setDriveName(callbackData.name);
+      // Fylvo (Linux): the folder is filled in, so one click finishes the setup.
+      if (isLinux) {
+        suggestedDriveFolder().then((path) => {
+          setLocalPath((current) => current || path);
+        }).catch(() => {});
+      }
       setPageState("final_setup");
     }).then((fn) => {
       unlisten = fn;
@@ -349,6 +377,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
           remote_path: pkceSessionRef.current!.callbackData!.path,
           user_id: pkceSessionRef.current!.callbackData!.user_id || "",
           drive_id: isReauthorize ? driveId : undefined,
+          mode: isLinux ? driveMode : undefined,
         }
       });
       // Success - switch to success state
@@ -506,6 +535,34 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
                   variant="filled"
                   required
                 />
+
+                {!isReauthorize && isLinux && (
+                  <RadioGroup
+                    value={driveMode}
+                    onChange={(e) => setDriveMode(e.target.value as DriveMode)}
+                  >
+                    <FormControlLabel
+                      value="drive"
+                      control={<Radio />}
+                      label={
+                        <Box>
+                          <Typography variant="body2">{t("addDrive.modeDrive")}</Typography>
+                          <Typography variant="caption" color="text.secondary">{t("addDrive.modeDriveHint")}</Typography>
+                        </Box>
+                      }
+                    />
+                    <FormControlLabel
+                      value="sync"
+                      control={<Radio />}
+                      label={
+                        <Box>
+                          <Typography variant="body2">{t("addDrive.modeSync")}</Typography>
+                          <Typography variant="caption" color="text.secondary">{t("addDrive.modeSyncHint")}</Typography>
+                        </Box>
+                      }
+                    />
+                  </RadioGroup>
+                )}
 
                 {!isReauthorize && (
                   <>

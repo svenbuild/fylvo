@@ -677,3 +677,27 @@ updateFailedMessage:
 updateNotInstalled:
   en-US: "the system did not install the update"
   de: "das System hat das Update nicht installiert"
+vfsConflictTitle:
+  en-US: "Saved as a conflict copy"
+  de: "Als Konfliktkopie gespeichert"
+vfsConflictMessage:
+  en-US: "The file was changed on another device too. Your version is saved as %{name}."
+  de: "Die Datei wurde auch auf einem anderen Gerät geändert. Ihre Version ist als %{name} gespeichert."
+vfsUnsentSavedTitle:
+  en-US: "Changes kept"
+  de: "Änderungen behalten"
+vfsUnsentSavedMessage:
+  en-US: "%{count} changed files had not reached the server yet. They are in %{folder}."
+  de: "%{count} geänderte Dateien waren noch nicht auf dem Server. Sie liegen in %{folder}."
+vfsPinEntry:
+  en-US: "Always keep on this device"
+  de: "Immer auf diesem Gerät behalten"
+vfsUnpinEntry:
+  en-US: "Free up space"
+  de: "Speicher freigeben"
+vfsNotInDrive:
+  en-US: "This works only in a Fylvo drive (\"Load files when opened\")."
+  de: "Das geht nur in einem Fylvo-Laufwerk (\"Dateien beim Öffnen laden\")."
+pathOverlapsDrive:
+  en-US: "This folder is inside another Fylvo folder or contains one. Please choose another folder."
+  de: "Dieser Ordner liegt in einem anderen Fylvo-Ordner oder enthält einen. Bitte wählen Sie einen anderen Ordner."

@@ -1,11 +1,11 @@
 pub(crate) mod download;
 mod queue;
 #[cfg(test)]
-mod server_e2e;
+pub(crate) mod server_e2e;
 #[cfg(all(test, target_os = "linux"))]
 mod server_e2e_linux;
 mod types;
-mod upload;
+pub(crate) mod upload;
 
 pub use queue::{TaskQueue, TaskQueueConfig};
 pub use types::{TaskKind, TaskPayload, TaskProgress};

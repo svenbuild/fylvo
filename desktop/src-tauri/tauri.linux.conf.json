@@ -25,13 +25,15 @@
     "linux": {
       "deb": {
         "depends": [
-          "libayatana-appindicator3-1"
+          "libayatana-appindicator3-1",
+          "fuse3"
         ],
         "desktopTemplate": "linux/fylvo-desktop.desktop"
       },
       "rpm": {
         "depends": [
-          "libayatana-appindicator-gtk3"
+          "libayatana-appindicator-gtk3",
+          "fuse3"
         ],
         "desktopTemplate": "linux/fylvo-desktop.desktop"
       },

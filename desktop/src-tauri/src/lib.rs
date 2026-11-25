@@ -139,7 +139,11 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
     // Fylvo: on Linux the file manager entries and the autostart entry are files in the home
     // folder, written with the path of the running program.
     #[cfg(target_os = "linux")]
-    linux::install_desktop_integration(&format!("Fylvo: {}", t!("viewOnline")));
+    linux::install_desktop_integration(&[
+        linux::Entry { label: format!("Fylvo: {}", t!("viewOnline")), arg: linux::VIEW_ONLINE_ARG },
+        linux::Entry { label: format!("Fylvo: {}", t!("vfsPinEntry")), arg: linux::PIN_ARG },
+        linux::Entry { label: format!("Fylvo: {}", t!("vfsUnpinEntry")), arg: linux::UNPIN_ARG },
+    ]);
 
     // Broadcast initial connection status
     event_broadcaster.connection_status_changed(true);
@@ -169,7 +173,7 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
     #[cfg(target_os = "linux")]
     {
         let argv: Vec<String> = std::env::args().collect();
-        handle_view_online(&argv);
+        handle_file_command(&argv);
     }
 
     tracing::info!(target: "main", "Tauri application setup complete");
@@ -177,22 +181,32 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Fylvo (Linux): "Open online" from a file manager entry (`--view-online <path>`).
-/// Returns whether the command line asked for it.
+/// Fylvo (Linux): a file manager entry ("View online", "Always keep on this device", "Free up
+/// space") with its path. Returns whether the command line asked for one.
 #[cfg(target_os = "linux")]
-fn handle_view_online(argv: &[String]) -> bool {
-    let Some(path) = linux::view_online_path(argv) else {
+fn handle_file_command(argv: &[String]) -> bool {
+    let Some((option, path)) = linux::file_command(argv) else {
         return false;
     };
-    match APP_STATE.get() {
-        Some(state) => {
-            let _ = state
-                .drive_manager
-                .get_command_sender()
-                .send(cloudreve_sync::drive::commands::ManagerCommand::ViewOnline { path });
-        }
-        None => tracing::warn!(target: "main", "View online asked before the app was ready"),
+    let Some(state) = APP_STATE.get() else {
+        tracing::warn!(target: "main", "A file manager entry was used before the app was ready");
+        return true;
+    };
+    if option == linux::VIEW_ONLINE_ARG {
+        let _ = state
+            .drive_manager
+            .get_command_sender()
+            .send(cloudreve_sync::drive::commands::ManagerCommand::ViewOnline { path });
+        return true;
     }
+    let manager = state.drive_manager.clone();
+    let pinned = option == linux::PIN_ARG;
+    spawn(async move {
+        if let Err(e) = manager.set_pinned(&path, pinned).await {
+            tracing::warn!(target: "main", error = %e, "Pin or unpin failed");
+            cloudreve_sync::utils::toast::send_general_text_toast("Fylvo", &t!("vfsNotInDrive"));
+        }
+    });
     true
 }
 
@@ -344,7 +358,7 @@ pub fn run() {
             tracing::info!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
             // Fylvo (Linux): the file manager entries start the program again with the path.
             #[cfg(target_os = "linux")]
-            if handle_view_online(&argv) {
+            if handle_file_command(&argv) {
                 return;
             }
             if argv.len() > 1 {
@@ -428,6 +442,9 @@ pub fn run() {
             commands::get_update_status,
             commands::check_for_update,
             commands::set_auto_update,
+            commands::set_drive_cache_gb,
+            commands::free_drive_space,
+            commands::unpin_drive_path,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

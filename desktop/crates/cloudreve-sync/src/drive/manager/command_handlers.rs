@@ -170,6 +170,16 @@ impl DriveManager {
             .inventory
             .query_by_path(path.to_str().unwrap_or(""))
             .context("Failed to query file metadata")?;
+        // Fylvo (Linux): a virtual drive knows its files itself (and the root is no file).
+        #[cfg(target_os = "linux")]
+        let virtual_folder = mount
+            .vfs
+            .as_ref()
+            .and_then(|vfs| vfs.relative(&path))
+            .filter(|rel| !rel.is_empty())
+            .map(|rel| mount.vfs.as_ref().and_then(|v| v.is_folder(&rel)).unwrap_or(true));
+        #[cfg(not(target_os = "linux"))]
+        let virtual_folder: Option<bool> = None;
 
         let config = mount.get_config().await;
         let (sync_path, remote_path) =
@@ -179,7 +189,14 @@ impl DriveManager {
             .to_string();
 
         // Determine which URL to open
-        let url = match file_meta {
+        let url = match (virtual_folder, file_meta) {
+            (Some(true), _) => view_online_url(&uri, None, &config)?,
+            (Some(false), _) => {
+                use cloudreve_api::models::uri::CrUri;
+                let parent_path = CrUri::new(&uri)?.parent()?.to_string();
+                view_online_url(&parent_path, Some(&uri), &config)?
+            }
+            (None, file_meta) => match file_meta {
             // If no metadata, assume it's the sync root, open folder
             None => view_online_url(&config.remote_path, None, &config)?,
             Some(ref meta) if meta.is_folder => view_online_url(&uri, None, &config)?,
@@ -188,6 +205,7 @@ impl DriveManager {
                 let parent_path = CrUri::new(&uri)?.parent()?.to_string();
                 view_online_url(&parent_path, Some(&uri), &config)?
             }
+            },
         };
 
         open::that(url)?;

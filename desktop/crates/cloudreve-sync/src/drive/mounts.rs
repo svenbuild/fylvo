@@ -43,6 +43,17 @@ use tokio::task::JoinHandle;
 use url::Url;
 #[cfg(windows)]
 use windows::Storage::Provider::StorageProviderSyncRootManager;
+/// Fylvo: how a drive is on this computer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DriveMode {
+    /// A sync folder with full copies (Windows: placeholders).
+    #[default]
+    Sync,
+    /// Linux: a virtual drive (FUSE), content loaded when opened (`vfs`).
+    Drive,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DriveConfig {
     pub id: String,
@@ -68,6 +79,10 @@ pub struct DriveConfig {
     /// Fylvo: the drive letter the sync folder also shows as (None = switched off).
     #[serde(default)]
     pub drive_letter: Option<char>,
+
+    /// Fylvo: sync folder or virtual drive (Linux).
+    #[serde(default)]
+    pub mode: DriveMode,
 
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
@@ -183,6 +198,11 @@ pub struct Mount {
     pub(crate) own_renames: crate::drive::case::OwnRenames,
     /// Fylvo: names whose case rename waits for a retry (one timer per name).
     pub(crate) case_retries: Arc<std::sync::Mutex<std::collections::HashSet<PathBuf>>>,
+    /// Fylvo (Linux): the mounted virtual drive of a drive-mode mount.
+    #[cfg(target_os = "linux")]
+    pub vfs: Option<Arc<crate::vfs::VirtualDrive>>,
+    /// Fylvo: the mode, fixed for the life of the mount.
+    pub mode: DriveMode,
 }
 
 impl Mount {
@@ -239,12 +259,13 @@ impl Mount {
 
         let cr_client_arc = Arc::new(cr_client);
         let id = config.id.clone();
+        let mode = config.mode;
         let queue_config = resolve_task_queue_config(&config);
         // Fylvo (Linux): leftovers of a crash are put right before the queue can start a
         // persisted download (which would open a new temp file of the same kind). A walk of the
         // whole folder: not on an async worker.
         #[cfg(target_os = "linux")]
-        if crate::drive::local_linux::check_file_system(&config.sync_path).is_ok() {
+        if mode == DriveMode::Sync && crate::drive::local_linux::check_file_system(&config.sync_path).is_ok() {
             let folder = config.sync_path.clone();
             let _ = tokio::task::spawn_blocking(move || {
                 crate::tasks::download::linux::clean_leftovers(&folder)
@@ -314,7 +335,15 @@ impl Mount {
             drive_letter_closed: AtomicBool::new(false),
             own_renames: Default::default(),
             case_retries: Default::default(),
+            #[cfg(target_os = "linux")]
+            vfs: None,
+            mode,
         }
+    }
+
+    /// Fylvo: whether this is a virtual drive (no sync engine runs for it).
+    pub fn is_virtual(&self) -> bool {
+        self.mode == DriveMode::Drive
     }
 
     pub async fn get_config(&self) -> DriveConfig {
@@ -432,6 +461,20 @@ impl Mount {
     /// system. The app's own list of sync folders replaces the Windows registry.
     #[cfg(target_os = "linux")]
     pub async fn start(&mut self) -> Result<()> {
+        if self.is_virtual() {
+            let config = self.config.read().await.clone();
+            let drive = crate::vfs::VirtualDrive::start(
+                &config.id,
+                &config.sync_path,
+                &config.remote_path,
+                &config.instance_url,
+                self.cr_client.clone(),
+                self.inventory.clone(),
+            )
+            .await?;
+            self.vfs = Some(drive);
+            return Ok(());
+        }
         let sync_path = self.config.read().await.sync_path.clone();
         crate::drive::local_linux::check_file_system(&sync_path)?;
         crate::drive::local_linux::register_sync_root(&sync_path);
@@ -581,6 +624,14 @@ impl Mount {
 
         while let Some(command) = command_rx.recv().await {
             tracing::trace!(target: "drive::mounts", id = %mount_id, command = ?command, "Processing command");
+
+            // Fylvo: no sync engine for a virtual drive; it must never walk the FUSE mount.
+            if s.is_virtual()
+                && !matches!(command, MountCommand::RefreshCredentials { .. } | MountCommand::CredentialInvalid)
+            {
+                tracing::debug!(target: "drive::mounts", id = %mount_id, "Sync command ignored for a virtual drive");
+                continue;
+            }
 
             match command {
                 MountCommand::Rename {
@@ -741,7 +792,11 @@ impl Mount {
             }
         }
         #[cfg(target_os = "linux")]
-        crate::drive::local_linux::unregister_sync_root(&self.config.read().await.sync_path);
+        if let Some(vfs) = &self.vfs {
+            vfs.delete_data();
+        } else {
+            crate::drive::local_linux::unregister_sync_root(&self.config.read().await.sync_path);
+        }
         if let Err(e) = self.inventory.nuke_drive(&self.id) {
             tracing::error!(target: "drive::mounts", id=%self.id, error=%e, "Failed to nuke drive");
         }
@@ -754,6 +809,10 @@ impl Mount {
 
         // Fylvo: the drive letter goes first, while the sync still runs.
         self.close_drive_letter().await;
+        #[cfg(target_os = "linux")]
+        if let Some(vfs) = &self.vfs {
+            vfs.stop();
+        }
 
         // Stop the remote event listener
         if let Some(handle) = self.remote_event_handle.lock().await.take() {
@@ -766,7 +825,9 @@ impl Mount {
             drop(fs_watcher);
         }
         #[cfg(target_os = "linux")]
-        crate::drive::watch_linux::unwatch(&self.config.read().await.sync_path);
+        if !self.is_virtual() {
+            crate::drive::watch_linux::unwatch(&self.config.read().await.sync_path);
+        }
 
         // Close the command channel to signal the processor task to stop
         drop(self.command_tx.clone());
@@ -835,6 +896,10 @@ impl Mount {
         match self.cr_client.get_user_capacity().await {
             Ok(capacity) => {
                 tracing::debug!(target: "drive::mounts", id=%self.id, used=%capacity.used, total=%capacity.total, "Fetched user capacity");
+                #[cfg(target_os = "linux")]
+                if let Some(vfs) = &self.vfs {
+                    vfs.set_quota(capacity.used.max(0) as u64, capacity.total.max(0) as u64);
+                }
                 update = update.with_capacity(capacity);
             }
             Err(e) => {

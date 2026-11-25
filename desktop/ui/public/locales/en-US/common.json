@@ -34,7 +34,11 @@
       "stateMismatch": "Authentication failed: state mismatch. Please try again.",
       "addDriveFailed": "Failed to add drive: {{message}}",
       "userIdMismatch": "The account used for reauthorization does not match the original drive owner. Please sign in with the same account."
-    }
+    },
+    "modeDrive": "Load files when opened (recommended)",
+    "modeDriveHint": "All files are shown, only the ones you open take space. Folders can be kept offline.",
+    "modeSync": "Keep a full copy on this computer",
+    "modeSyncHint": "Every file is downloaded and takes space here."
   },
   "popup": {
     "allDrives": "All",
@@ -116,6 +120,21 @@
       "active": "Active",
       "eventPushLost": "Real-time connection lost",
       "credentialExpired": "Credentials expired"
+    },
+    "vfs": {
+      "title": "Drives",
+      "cache": "Cache of this drive: {{used}} (limit for all drives: {{limit}})",
+      "pinnedSize": "kept offline: {{size}}",
+      "offline": "offline",
+      "changesWaiting": "{{count}} changed files are waiting to be uploaded.",
+      "changesFailed": "{{count}} changed files could not be uploaded yet. The app keeps trying.",
+      "pinned": "Always kept on this device:",
+      "unpin": "Do not keep offline",
+      "pinHint": "Right-click a folder in the file manager and choose \"Fylvo: Always keep on this device\" to have it offline.",
+      "freeSpace": "Free up space",
+      "mountAsDrive": "Also as drive (files loaded when opened)",
+      "cacheLimit": "Cache size",
+      "cacheLimitDescription": "Opened files are kept up to this size; the oldest go first. Folders kept offline do not count."
     }
   },
   "about": {
