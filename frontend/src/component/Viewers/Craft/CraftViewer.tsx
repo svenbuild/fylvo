@@ -29,6 +29,8 @@ const retryDelay = 30 * 1000;
 const lockRefreshDelay = 10 * 60 * 1000;
 // How long closing waits for the editor to hand over its last state.
 const closeWait = 15 * 1000;
+// An editor that is not ready after this long did not start.
+const startDeadline = 90 * 1000;
 
 type Status = "saved" | "unsaved" | "saving";
 
@@ -51,6 +53,8 @@ interface Session {
   saving?: Promise<void>;
   // Called with the next save the editor hands over.
   nextSave?: () => void;
+  snapshot?: Promise<void>;
+  ready: boolean;
   autosave?: ReturnType<typeof setTimeout>;
   timers: ReturnType<typeof setTimeout>[];
   closed: boolean;
@@ -167,16 +171,34 @@ const CraftViewer = () => {
   }, []);
 
   // The editor's current state, handed over as a save (to wait for before closing or copying).
-  const snapshot = useCallback(async () => {
+  // One at a time, never longer than closeWait.
+  const snapshot = useCallback((): Promise<void> => {
     const s = sessionRef.current;
     if (!s) {
-      return;
+      return Promise.resolve();
     }
-    const handed = new Promise<void>((resolve) => (s.nextSave = resolve));
-    await requestSave();
-    await Promise.race([handed, sleep(closeWait)]);
-    s.nextSave = undefined;
+    if (!s.snapshot) {
+      const handed = new Promise<void>((resolve) => (s.nextSave = resolve));
+      s.snapshot = Promise.race([handed, sleep(closeWait)]).then(() => {
+        s.nextSave = undefined;
+        s.snapshot = undefined;
+      });
+      requestSave();
+    }
+    return s.snapshot;
   }, [requestSave]);
+
+  // The editor did not start: the file is given back, nothing is saved from this window.
+  const failStart = useCallback((s: Session) => {
+    s.frozen = true;
+    if (s.lock) {
+      s.client.lock("UNLOCK", s.lock).catch(() => undefined);
+      s.lock = undefined;
+    }
+    setEdit(false);
+    setNotice({ key: "craft.editorFailed", severity: "error" });
+    setLoaded(true);
+  }, []);
 
   // A copy the user places (Save As, an export, a file that could not go into its place). Who
   // is not signed in gets it as a download.
@@ -243,6 +265,7 @@ const CraftViewer = () => {
       frozen: false,
       timers: [],
       closed: false,
+      ready: false,
     };
     sessionRef.current = s;
     setFrameSrc(undefined);
@@ -283,6 +306,7 @@ const CraftViewer = () => {
       }
       setEdit(s.edit);
       pendingOpen.current = { name: s.name, bytes };
+      s.timers.push(setTimeout(() => !s.ready && !s.closed && failStart(s), startDeadline));
       const query = new URLSearchParams({ host: "parent", author: info.UserFriendlyName ?? "" });
       // PdfCraft offers its command API (used for autosave) only when asked.
       setFrameSrc(`/craft/${app}/?${query.toString()}${app == "pdfcraft" ? "&control" : ""}`);
@@ -325,7 +349,7 @@ const CraftViewer = () => {
       }
     };
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (s.unsaved || (s.dirty && s.edit && !s.frozen)) {
+      if (s.unsaved || (s.dirty && s.edit)) {
         e.preventDefault();
       }
     };
@@ -362,6 +386,7 @@ const CraftViewer = () => {
         case "ready": {
           const pending = pendingOpen.current;
           pendingOpen.current = undefined;
+          s.ready = true;
           if (pending) {
             frameRef.current?.contentWindow?.postMessage(
               { type: `${app}:open`, name: pending.name, bytes: pending.bytes },
@@ -390,16 +415,15 @@ const CraftViewer = () => {
           }
           break;
         case "failed":
-          if (!loaded) {
-            setNotice({ key: "craft.editorFailed", severity: "error" });
-            setLoaded(true);
+          if (!s.ready) {
+            failStart(s);
           }
           break;
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [open, app, onSave, requestSave, showStatus, loaded]);
+  }, [open, app, onSave, requestSave, showStatus, failStart]);
 
   const finishClose = useCallback(() => {
     dispatch(closeCraftViewer());
@@ -427,22 +451,27 @@ const CraftViewer = () => {
   // Keeps what could not be stored as a copy the user places, then closes.
   const copyAndClose = useCallback(async () => {
     const s = sessionRef.current;
-    if (!s) {
+    if (!s || closing) {
       return;
     }
+    setClosing(true);
     if (s.dirty) {
       await snapshot();
     }
     const bytes = s.unsaved;
-    if (bytes && (await saveCopy(s.name, bytes))) {
-      if (s.unsaved === bytes) {
-        s.unsaved = undefined;
-      }
-      if (!s.unsaved && !s.dirty) {
-        finishClose();
-      }
+    const copied = !!bytes && (await saveCopy(s.name, bytes));
+    setClosing(false);
+    if (!copied) {
+      setNotice({ key: "craft.copyFailed", severity: "warning" });
+      return;
     }
-  }, [snapshot, saveCopy, finishClose]);
+    if (s.unsaved === bytes) {
+      s.unsaved = undefined;
+    }
+    if (!s.unsaved && !s.dirty) {
+      finishClose();
+    }
+  }, [closing, snapshot, saveCopy, finishClose]);
 
   const statusLabel = !edit ? undefined : t(`application:craft.status.${status}`);
 
@@ -467,6 +496,8 @@ const CraftViewer = () => {
           onClose={notice.severity == "error" ? undefined : () => setNotice(undefined)}
           action={
             notice.key == "craft.conflict" ||
+            notice.key == "craft.conflictConnected" ||
+            notice.key == "craft.copyFailed" ||
             notice.key == "craft.sessionEnded" ||
             notice.key == "craft.readOnlySave" ? (
               <Button color="inherit" size="small" onClick={copyAndClose} sx={{ whiteSpace: "nowrap" }}>

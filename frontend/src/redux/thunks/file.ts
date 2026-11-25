@@ -18,6 +18,7 @@ import {
   sendRestoreFile,
   sendUnlockFiles,
   setCurrentVersion,
+  sendUpdateFile,
 } from "../../api/api.ts";
 import {
   ConflictDetail,
@@ -1453,8 +1454,12 @@ export function createNew(index: number, type: string, viewer?: Viewer, template
           : undefined;
       if (blank) {
         try {
+          // Only into the file just made, never one that is gone meanwhile.
           const uri = getFileLinkedUri(newFile);
-          newFile = (await dispatch(saveFile(uri, blank, newFile.primary_entity, false, true))) ?? newFile;
+          const req = { uri, previous: newFile.primary_entity, previous_required: true };
+          const written = await dispatch(sendUpdateFile(req, blank));
+          dispatch(fileUpdated({ index: FileManagerIndex.main, value: [{ oldPath: uri, file: written }] }));
+          newFile = written;
         } catch (e) {
           // The editor opens the empty file with the same blank document.
         }

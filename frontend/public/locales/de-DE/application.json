@@ -1367,6 +1367,7 @@
     "openFailed": "Die Datei konnte nicht geöffnet werden.",
     "editorFailed": "Der Editor konnte nicht starten. Er braucht einen Browser mit WebGL2 oder WebGPU.",
     "unsavedOnClose": "Es gibt Änderungen, die nicht gespeichert sind.",
+    "copyFailed": "Die Kopie konnte nicht gespeichert werden. Versuchen Sie es erneut.",
     "saveCopy": "Als Kopie speichern",
     "retry": "Erneut versuchen",
     "discard": "Verwerfen"
