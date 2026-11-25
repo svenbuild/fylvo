@@ -273,7 +273,7 @@ impl DriveManager {
                 // Unmount (no write after this), let running uploads finish, then save the rest.
                 vfs.stop();
                 vfs.wait_idle().await;
-                if vfs.unsent_count() > 0 {
+                if vfs.unsent_count()? > 0 {
                     let folder: String = name
                         .chars()
                         .map(|c| if c == '/' || c.is_control() { '_' } else { c })

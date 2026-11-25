@@ -51,6 +51,8 @@ pub(crate) struct CellState {
     /// could later fill a written chunk with the server's bytes.
     pub map_changes: u64,
     pub saved_map: u64,
+    /// The change of this content has its row in the store (fast writes only then).
+    pub recorded: bool,
 }
 
 impl CellState {
@@ -174,6 +176,7 @@ impl Contents {
                         writes: 0,
                         map_changes: 0,
                         saved_map: 0,
+                        recorded: true,
                     };
                     cells.insert(row.key, Arc::new(Cell::new(file, state)));
                 }
@@ -234,6 +237,7 @@ impl Contents {
             writes: 0,
             map_changes: 0,
             saved_map: 0,
+            recorded: false,
         };
         let cell = Arc::new(Cell::new(file, state));
         map.insert(key, cell.clone());
@@ -258,6 +262,7 @@ impl Contents {
             writes: 0,
             map_changes: 0,
             saved_map: 0,
+            recorded: false,
         };
         let cell = Arc::new(Cell::new(file, state));
         self.map().insert(key, cell.clone());
@@ -278,6 +283,7 @@ impl Contents {
         map.remove(&old);
         state.key = new.clone();
         state.changed = true;
+        state.recorded = false;
         drop(state);
         map.insert(new, cell.clone());
         Ok(Some(old))

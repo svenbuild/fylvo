@@ -53,6 +53,8 @@ pub(crate) struct Change {
     /// Found "changed and open" after a crash: uploaded as a conflict copy, never over the
     /// server file.
     pub recovered: bool,
+    /// Saved as a conflict copy at this write count while a program had the file open.
+    pub copied: Option<u64>,
 }
 
 pub(crate) struct Listing {
@@ -232,7 +234,7 @@ pub(crate) struct Drive {
     quota_used: AtomicU64,
     quota_total: AtomicU64,
     /// Records of changes are written one at a time (an older picture never after a newer).
-    persist_lock: Mutex<()>,
+    pub(crate) persist_lock: Mutex<()>,
     /// Folders with a background refresh queued or running (one at a time per folder).
     refreshing: Mutex<std::collections::HashSet<u64>>,
     http: reqwest::Client,
@@ -581,6 +583,9 @@ impl Drive {
         };
         let uri = self.uri_of(&path)?;
         let _slot = self.meta_slots.acquire().await.map_err(|_| Errno::EIO)?;
+        // A listing counts from when it was asked for (a forced refresh never takes one that
+        // was asked before it).
+        let sent = Instant::now();
         let mut files = Vec::new();
         let mut previous = None;
         let mut capability = None;
@@ -611,7 +616,7 @@ impl Drive {
             }
         }
         let rows: Vec<EntryRow> = files.iter().map(Listed::to_row).collect();
-        if !self.apply_listing(ino, files, Some(Instant::now()), generation) {
+        if !self.apply_listing(ino, files, Some(sent), generation) {
             tracing::debug!(target: "vfs", path = %path, "A listing came after a local change, asked again later");
             return Ok(());
         }
@@ -960,10 +965,14 @@ impl Drive {
         }
         let keep_cache = {
             let mut tree = self.tree();
-            let node = tree.nodes.get_mut(&ino).ok_or(Errno::ENOENT)?;
-            let keep = node.change.is_none() && node.last_key.as_deref() == Some(key.as_str());
-            node.last_key = Some(key);
-            keep
+            match tree.nodes.get_mut(&ino) {
+                Some(node) => {
+                    let keep = node.change.is_none() && node.last_key.as_deref() == Some(key.as_str());
+                    node.last_key = Some(key);
+                    keep
+                }
+                None => false,
+            }
         };
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
         self.handles().insert(fh, Handle { ino, cell, write, last_end: AtomicU64::new(0) });
@@ -1080,6 +1089,9 @@ impl Drive {
                 self.urls.lock().unwrap_or_else(|e| e.into_inner()).remove(&key);
                 result = self.fetch_range(cell, &key, &uri, &version, from, to, remote_len).await;
             }
+            if result.is_err() {
+                self.save_cell(cell);
+            }
             result?;
         }
         self.save_cell(cell);
@@ -1177,6 +1189,7 @@ impl Drive {
             }
             (state.row(), state.map_changes)
         };
+        let _ = cell.file.sync_data();
         match self.store.save_content(&row) {
             Ok(()) => {
                 let mut state = cell.lock();
@@ -1211,16 +1224,22 @@ impl Drive {
             let (Some(change), Some(path)) = (node.change.as_ref(), tree.path(ino)) else { return Ok(()) };
             (Self::change_row(&path, node, change), change.cell.clone())
         };
-        let (content, count) = {
+        let (content, count, map_changed) = {
             let state = cell.lock();
-            (state.row(), state.map_changes)
+            (state.row(), state.map_changes, state.map_changes != state.saved_map)
         };
+        if map_changed {
+            let _ = cell.file.sync_data();
+        }
         self.store.save_change_and_content(&row, &content).map_err(|e| {
             tracing::error!(target: "vfs", error = %e, path = %row.path, "Failed to record a local change");
             Errno::EIO
         })?;
         let mut state = cell.lock();
         state.saved_map = state.saved_map.max(count);
+        if state.key == row.key {
+            state.recorded = true;
+        }
         Ok(())
     }
 
@@ -1259,6 +1278,7 @@ impl Drive {
                     failed: None,
                     attempts: 0,
                     recovered: false,
+                    copied: None,
                 });
             }
             old_key
@@ -1276,6 +1296,7 @@ impl Drive {
     pub(crate) fn write_needs_work(&self, cell: &Cell, offset: u64, len: u64) -> bool {
         let state = cell.lock();
         !state.changed
+            || !state.recorded
             || state.map_changes != state.saved_map
             || !state.missing_runs(offset, offset + len).is_empty()
     }
@@ -1509,6 +1530,7 @@ impl Drive {
                 failed: None,
                 attempts: 0,
                 recovered: false,
+                copied: None,
             });
             tree.add(parent, node)
         };
@@ -1767,9 +1789,21 @@ impl Drive {
             self.mark_stale(names::parent_of(&new_path));
             return Err(self.api_failed(&e));
         }
-        self.tree().move_to(ino, new_parent, new_name);
-        if let Err(e) = self.store.move_changes(&old_path, &new_path) {
-            tracing::error!(target: "vfs", error = %e, "Failed to record the new path of changes");
+        {
+            // Under the record lock: no change below is recorded with the old path afterwards.
+            let _one = self.persist_lock.lock().unwrap_or_else(|e| e.into_inner());
+            {
+                let mut tree = self.tree();
+                tree.move_to(ino, new_parent, new_name);
+                for below in tree.subtree(ino) {
+                    if let (Some(path), Some(change)) = (tree.path(below), tree.nodes.get(&below).and_then(|n| n.change.as_ref())) {
+                        change.cell.lock().path = path;
+                    }
+                }
+            }
+            if let Err(e) = self.store.move_changes(&old_path, &new_path) {
+                tracing::error!(target: "vfs", error = %e, "Failed to record the new path of changes");
+            }
         }
         let _ = self.store.forget_tree(&old_path);
         self.mark_stale(names::parent_of(&old_path));
@@ -1790,6 +1824,8 @@ impl Drive {
     ) -> Result<(), Errno> {
         let mut dropped = None;
         let is_dir;
+        // Under the record lock: the tree, the row picture and its transaction belong together.
+        let one = self.persist_lock.lock().unwrap_or_else(|e| e.into_inner());
         {
             let mut tree = self.tree();
             is_dir = tree.nodes.get(&ino).is_some_and(|n| n.is_dir);
@@ -1835,6 +1871,7 @@ impl Drive {
         } else {
             self.store.replace_change(&[old_path, new_path], row.as_ref().map(|(r, c)| (r, c)))
         };
+        drop(one);
         if let Err(e) = result {
             tracing::error!(target: "vfs", error = %e, "Failed to record a rename");
             return Err(Errno::EIO);

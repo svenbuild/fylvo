@@ -237,7 +237,7 @@ Deviations and additions, decided while building and testing:
   refused, nothing removed); then unmount, wait for running uploads, and copy unsent changes to
   a new folder `~/Fylvo not uploaded/<drive name> <date time>`. The drive stays registered
   until that worked.
-- **From the code reviews (rounds 1 and 2):**
+- **From the code reviews (rounds 1 to 3):**
   - Writes count in the content cell (`writes`, under its lock); an upload finishes (cached
     copy or conflict) only if nothing was written after its snapshot, checked under the tree,
     contents and cell locks in that order. Otherwise the change stays and uploads again.
@@ -251,7 +251,14 @@ Deviations and additions, decided while building and testing:
   - A writer counts as "open" before an `O_TRUNC` open or a reopened change is recorded, so a
     crash keeps such a file as a "recovered" conflict copy (`FUSE_ATOMIC_O_TRUNC` makes
     `O_TRUNC` work offline).
-  - Rename and delete mark their nodes busy: no upload starts below them meanwhile.
+  - Rename and delete mark their nodes busy: no upload starts at or below them meanwhile
+    (checked when an upload is claimed, under the tree lock).
+  - A fast write needs the change's row in the store (`recorded`) and a current chunk map;
+    the content file is synced before a changed chunk map is recorded (power loss).
+  - Folder renames change the tree and the records under the record lock, so no change below
+    is recorded with the old path afterwards; listings are dated by when they were asked for.
+  - A conflict copy made while a program has the file open again keeps the content attached;
+    after the close it is not copied a second time unless it was written.
   - `rmdir` lists the folder on the server first; deadlines are checked right before every
     server change; a too-late `create` takes the new file back.
   - Folders that hold changes survive listings that no longer have them.
@@ -267,5 +274,11 @@ file replaced on the server, a file open for writing when the app ends becomes a
 with the written chunk and the server's rest). By hand in WSL Ubuntu (kernel 6.6): `kill -9` of the app
 leaves no mount (the helper unmounts), a restart mounts again; with the server stopped
 (`SIGSTOP`) listed folders answer in 2 ms, a folder never listed fails after the 20 s deadline.
-Speed against a local server: mount 0.4 s, top folder 17 ms, prefetched subfolder 6 ms, 400 files
-96 ms the first time and 33 ms after, 200 MB not cached 177 MB/s.
+Speed against a local server (final code): mount 0.4 s (including the test's sign-in), top
+folder 3 ms, prefetched subfolder 3 ms, `ls -l` of 400 files 36 to 96 ms, 200 MB not cached
+about 300 MB/s, cached 7 GB/s.
+
+Open after the review rounds (accepted): the server has no conditional rename or delete
+(millisecond gap, as in the sync); a crash between a server rename and its local record gives
+a duplicate at the old path (no loss); two drives added at the same moment are not checked
+against each other.

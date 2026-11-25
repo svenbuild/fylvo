@@ -440,13 +440,10 @@ impl VirtualDrive {
         Ok(saved)
     }
 
-    /// Number of changes that were never uploaded (temp names left out).
-    pub fn unsent_count(&self) -> usize {
-        self.drive
-            .store
-            .load_changes()
-            .map(|rows| rows.iter().filter(|r| r.local_only == 0).count())
-            .unwrap_or(0)
+    /// Number of changes that were never uploaded (temp names left out). An error if the
+    /// store cannot say (then nothing may be deleted).
+    pub fn unsent_count(&self) -> Result<usize> {
+        Ok(self.drive.store.load_changes()?.iter().filter(|r| r.local_only == 0).count())
     }
 
     /// Delete the store of a removed drive (and its place in the file manager's side bar).

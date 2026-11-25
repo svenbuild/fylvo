@@ -283,7 +283,7 @@ async fn the_drive_reads_and_writes_like_a_folder() {
 
     drive.stop();
     assert!(!mounted(&mnt));
-    assert_eq!(drive.unsent_count(), 0);
+    assert_eq!(drive.unsent_count().unwrap(), 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

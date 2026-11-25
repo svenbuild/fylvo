@@ -42,8 +42,11 @@ pub(crate) async fn run(drive: Arc<Drive>) {
                 let Ok(permit) = running.clone().try_acquire_owned() else { break };
                 {
                     let mut tree = drive.tree();
+                    if busy(&tree, ino) {
+                        continue;
+                    }
                     match tree.nodes.get_mut(&ino) {
-                        Some(node) if !node.uploading && node.busy == 0 => node.uploading = true,
+                        Some(node) if !node.uploading && node.writers == 0 => node.uploading = true,
                         _ => continue,
                     }
                 }
@@ -66,17 +69,21 @@ pub(crate) async fn run(drive: Arc<Drive>) {
     }
 }
 
-fn due(drive: &Drive) -> Vec<u64> {
-    let now = Instant::now();
-    let tree = drive.tree();
-    // Not while a rename or deletion of it or a folder above it runs.
-    let busy = |mut ino: u64| loop {
+/// Whether a rename or deletion of `ino` or a folder above it runs.
+fn busy(tree: &super::drive::Tree, mut ino: u64) -> bool {
+    loop {
         match tree.nodes.get(&ino) {
             Some(node) if node.busy > 0 => return true,
             Some(node) if ino != ROOT && node.parent != 0 => ino = node.parent,
             _ => return false,
         }
-    };
+    }
+}
+
+fn due(drive: &Drive) -> Vec<u64> {
+    let now = Instant::now();
+    let tree = drive.tree();
+    let busy = |ino: u64| busy(&tree, ino);
     tree.nodes
         .iter()
         .filter(|(ino, node)| {
@@ -139,6 +146,7 @@ struct Job {
     path: String,
     remote: Option<Remote>,
     recovered: bool,
+    copied: Option<u64>,
     cell: Arc<super::content::Cell>,
     mtime: i64,
 }
@@ -151,6 +159,7 @@ fn job(drive: &Drive, ino: u64) -> Option<Job> {
         path: tree.path(ino)?,
         remote: node.remote.clone(),
         recovered: change.recovered,
+        copied: change.copied,
         cell: change.cell.clone(),
         mtime: unix(node.mtime),
     })
@@ -159,6 +168,13 @@ fn job(drive: &Drive, ino: u64) -> Option<Job> {
 /// Upload a snapshot of the change. Returns the outcome and the write count of the snapshot.
 async fn attempt(drive: &Arc<Drive>, ino: u64) -> Result<(Outcome, u64), String> {
     let job = job(drive, ino).ok_or("the file is gone")?;
+    // Saved as a conflict copy already and not written since: only show the server's version.
+    let writes = job.cell.lock().writes;
+    if job.copied == Some(writes) {
+        let uri = drive.uri_of(&job.path).map_err(|e| format!("{e:?}"))?;
+        let info = file_info(drive, &uri).await?;
+        return Ok((Outcome::ConflictCopy(info, String::new()), writes));
+    }
     // The parts never loaded come from the version the change started from.
     let remote_len = job.cell.lock().remote_len;
     if remote_len > 0 {
@@ -346,9 +362,12 @@ fn committed(drive: &Arc<Drive>, ino: u64, info: &FileResponse, writes: u64) -> 
             }
         }
     };
-    let row = cell.lock().row();
-    if let Err(e) = drive.store.commit_upload(&path, &old_key, &row) {
-        tracing::warn!(target: "vfs", error = %e, "Failed to record an upload");
+    {
+        let _one = drive.persist_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let row = cell.lock().row();
+        if let Err(e) = drive.store.commit_upload(&path, &old_key, &row) {
+            tracing::warn!(target: "vfs", error = %e, "Failed to record an upload");
+        }
     }
     drive.mark_stale(names::parent_of(&path));
     true
@@ -364,6 +383,16 @@ fn reverted(drive: &Arc<Drive>, ino: u64, info: &FileResponse, writes: u64) -> b
         let path = tree.path(ino).unwrap_or_default();
         let Some(node) = tree.nodes.get_mut(&ino) else { return true };
         let Some(cell) = node.change.as_ref().map(|c| c.cell.clone()) else { return true };
+        if node.writers > 0 {
+            // A program has the file open again: its handle keeps the content. Remember that
+            // this content is saved as a copy already; after the close it is not copied again
+            // unless it was written.
+            if let Some(change) = node.change.as_mut() {
+                change.recovered = false;
+                change.copied = Some(writes);
+            }
+            return false;
+        }
         if !drive.contents.remove_if_unchanged(&cell, writes) {
             if let Some(change) = node.change.as_mut() {
                 change.recovered = false;
@@ -438,6 +467,7 @@ pub(crate) fn restore(drive: &Arc<Drive>) {
                 failed: None,
                 attempts: 0,
                 recovered,
+                copied: None,
             });
         }
     }
