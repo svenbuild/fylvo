@@ -54,9 +54,11 @@ Good to know about the drive:
   to it as a conflict copy and a notification says so.
 - **Removing the drive** with changes that never reached the server keeps them in
   `~/Fylvo not uploaded`.
-- **Not supported:** symbolic links, hard links, "replace" when moving a file onto another file
-  in the drive, moving and renaming in one step (`mv` falls back to copy and delete). Vim saves a
-  new file instead of a new version unless `:set backupcopy=yes`.
+- **Moving onto an existing file** ("replace" in the file manager) puts the replaced file into
+  the server's trash.
+- **Not supported:** symbolic links, hard links, moving and renaming in one step (`mv` falls
+  back to copy and delete). Vim saves a new file instead of a new version unless
+  `:set backupcopy=yes`.
 - Needs the `fuse3` package (the rpm and deb install it; for the AppImage it is part of every
   common desktop distribution).
 

@@ -144,7 +144,10 @@ onedriver).
      server has no conditional rename). A move with a new name answers `EXDEV` (`mv` then
      copies and deletes). A timeout re-lists both parents to find out what happened.
   3. Server source onto an existing target: `EEXIST` (no trash-first; "move and replace" in a
-     file manager fails, documented).
+     file manager fails, documented). *Changed after the reviews, on request:* a file onto an
+     existing file moves the target to the server's trash first (after the same ID check),
+     then renames; if the rename fails, the target can be restored from the trash. Folders
+     onto folders stay `EEXIST`.
   4. A file whose upload is running (also a new file's first upload) is renamed or deleted only
      after the upload finished (within the deadline, else `EBUSY`), then as case 2.
 

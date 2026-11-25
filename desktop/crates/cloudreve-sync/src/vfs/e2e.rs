@@ -193,6 +193,26 @@ async fn the_drive_reads_and_writes_like_a_folder() {
     .await;
     assert!(!server_names(server, "").await.contains(&"newdir".to_string()));
 
+    // "Move and replace": a file moved onto another file takes its place (the old one goes to
+    // the server's trash).
+    server.upload("docs/old.txt", "old", None).await.unwrap();
+    server.folder("incoming").await.unwrap();
+    server.upload("incoming/old.txt", "new", None).await.unwrap();
+    let moved_id = server.info("incoming/old.txt").await.id;
+    let m = mnt.clone();
+    fs(move || {
+        // Seen by the drive first (as a file manager would have listed both folders).
+        std::fs::read_dir(m.join("docs")).unwrap().count();
+        std::fs::read_dir(m.join("incoming")).unwrap().count();
+        std::fs::rename(m.join("incoming/old.txt"), m.join("docs/old.txt")).unwrap();
+    })
+    .await;
+    assert_eq!(server_bytes(server, "docs/old.txt").await.unwrap(), b"new");
+    assert_eq!(server.info("docs/old.txt").await.id, moved_id);
+    assert!(!server_names(server, "incoming").await.contains(&"old.txt".to_string()));
+    let m = mnt.clone();
+    assert_eq!(fs(move || std::fs::read_to_string(m.join("docs/old.txt")).unwrap()).await, "new");
+
     // A folder someone filled meanwhile is not removed.
     let m = mnt.clone();
     fs(move || std::fs::create_dir(m.join("filled")).unwrap()).await;

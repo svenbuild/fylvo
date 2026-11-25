@@ -1719,6 +1719,28 @@ impl Drive {
         no_replace: bool,
         expired: impl Fn() -> bool,
     ) -> Result<(), Errno> {
+        match self.rename_once(parent, name, new_parent, new_name, no_replace, &expired, true).await {
+            // The server has a file of that name the drive did not know yet: the folder is
+            // listed again and the rename tried once more (now as a replace).
+            Err(e) if e == RETRY_RENAME => {
+                self.refresh_now(new_parent).await?;
+                self.rename_once(parent, name, new_parent, new_name, no_replace, &expired, false).await
+            }
+            result => result,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn rename_once(
+        self: &Arc<Self>,
+        parent: u64,
+        name: &str,
+        new_parent: u64,
+        new_name: &str,
+        no_replace: bool,
+        expired: &impl Fn() -> bool,
+        may_retry: bool,
+    ) -> Result<(), Errno> {
         self.check_writable()?;
         if new_parent == ROOT && names::is_trash_name(new_name) {
             return Err(Errno::EPERM);
@@ -1758,9 +1780,21 @@ impl Drive {
             // changes): a local rename. Over a server file it gives that file new content.
             return self.rename_local(ino, new_parent, new_name, &old_path, &new_path, target, no_replace);
         }
-        if target.is_some() {
-            return Err(Errno::EEXIST);
-        }
+        // Case 3: onto an existing file ("move and replace"): only file over file.
+        let replaced = match target {
+            Some(_) if no_replace => return Err(Errno::EEXIST),
+            Some(target) => {
+                let tree = self.tree();
+                let target_node = tree.nodes.get(&target).ok_or(Errno::ENOENT)?;
+                match (is_dir, target_node.is_dir) {
+                    (false, false) => Some((target, target_node.remote.clone())),
+                    (true, true) => return Err(Errno::EEXIST),
+                    (true, false) => return Err(Errno::ENOTDIR),
+                    (false, true) => return Err(Errno::EISDIR),
+                }
+            }
+            None => None,
+        };
         // Case 2: on the server first.
         self.check_online()?;
         let same_folder = parent == new_parent;
@@ -1769,6 +1803,22 @@ impl Drive {
         }
         let remote = remote.expect("checked");
         let uri = self.check_same(&old_path, &remote).await?;
+        // The file replaced goes to the server's trash first (the server cannot rename over a
+        // file). If the rename fails afterwards, it can be restored from there.
+        if let Some((_, Some(target_remote))) = &replaced {
+            let target_uri = self.check_same(&new_path, target_remote).await?;
+            if expired() {
+                return Err(Errno::EIO);
+            }
+            if let Err(e) = self
+                .client
+                .delete_files(&DeleteFileService { uris: vec![target_uri], unlink: None, skip_soft_delete: None })
+                .await
+            {
+                self.mark_stale(names::parent_of(&new_path));
+                return Err(self.api_failed(&e));
+            }
+        }
         if expired() {
             return Err(Errno::EIO);
         }
@@ -1787,11 +1837,29 @@ impl Drive {
             // Unknown outcome after a lost answer: both folders are listed again.
             self.mark_stale(names::parent_of(&old_path));
             self.mark_stale(names::parent_of(&new_path));
-            return Err(self.api_failed(&e));
+            let errno = self.api_failed(&e);
+            if errno == Errno::EEXIST && may_retry && replaced.is_none() && !no_replace {
+                return Err(RETRY_RENAME);
+            }
+            return Err(errno);
         }
         {
             // Under the record lock: no change below is recorded with the old path afterwards.
             let _one = self.persist_lock.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((target, _)) = &replaced {
+                // The replaced file and any local change of it go.
+                let change = {
+                    let mut tree = self.tree();
+                    tree.detach(*target);
+                    tree.nodes.get_mut(target).and_then(|n| n.change.take())
+                };
+                if let Some(change) = change {
+                    let key = change.cell.key();
+                    let _ = self.store.delete_change_of(&new_path, &key);
+                    self.contents.remove(&change.cell);
+                    let _ = self.store.delete_content(&key);
+                }
+            }
             {
                 let mut tree = self.tree();
                 tree.move_to(ino, new_parent, new_name);
@@ -1935,6 +2003,9 @@ impl Drop for Busy<'_> {
         }
     }
 }
+
+/// A rename met a name on the server the drive did not know (listed again, tried once more).
+const RETRY_RENAME: Errno = Errno::EAGAIN;
 
 /// A write found the file no local change (an upload made it the clean copy meanwhile).
 pub(crate) const NOT_CHANGED: Errno = Errno::EAGAIN;
