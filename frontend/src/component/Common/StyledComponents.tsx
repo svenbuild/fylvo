@@ -1,5 +1,6 @@
 import { LoadingButton } from "@mui/lab";
 import {
+  alpha,
   Autocomplete,
   Box,
   Button,
@@ -192,6 +193,8 @@ const secondaryButtonStyle = ({ theme }: { theme: Theme }) => ({
   color: theme.palette.text.secondary,
   backgroundColor: hoverSurface(theme),
   "&:hover": { backgroundColor: selectedSurface(theme) },
+  // Fylvo: grey, so the usual ring, not the light one of primary buttons.
+  "&&&&.Mui-focusVisible": { outline: `2px solid ${alpha(theme.palette.primary.main, 0.8)}`, outlineOffset: 1 },
   ".MuiPopover-paper &:not(.Mui-disabled), .MuiDialog-paper &:not(.Mui-disabled)": {
     backgroundColor: raisedHoverSurface(theme),
     "&:hover": { backgroundColor: raisedSelectedSurface(theme) },

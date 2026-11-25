@@ -27,7 +27,7 @@ const ResponsiveTabs = <T,>({ tabs, value, onChange }: ResponsiveTabsProps<T>) =
   const neededWidth = useRef(0);
   const allShown = useRef(true);
   allShown.current = !isMobile && !hideTabs;
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const moreOptionState = usePopupState({
     variant: "popover",
     popupId: "tabMore",
@@ -79,12 +79,16 @@ const ResponsiveTabs = <T,>({ tabs, value, onChange }: ResponsiveTabsProps<T>) =
     remeasure();
     // Tab widths change once the web font has replaced the fallback font.
     document.fonts?.ready.then(remeasure);
-    window.addEventListener("resize", fit);
+    // The room changes also without a window resize (the sidebar opens or is dragged).
+    const observer = new ResizeObserver(fit);
+    if (tabsRef.current) {
+      observer.observe(tabsRef.current);
+    }
     return () => {
       active = false;
-      window.removeEventListener("resize", fit);
+      observer.disconnect();
     };
-  }, [isMobile, tabs.length]);
+  }, [isMobile, tabs.length, i18n.language]);
 
   return (
     <Box

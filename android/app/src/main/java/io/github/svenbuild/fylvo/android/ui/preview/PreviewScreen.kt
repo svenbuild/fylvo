@@ -1,5 +1,6 @@
 package io.github.svenbuild.fylvo.android.ui.preview
 
+import android.app.Activity
 import androidx.compose.ui.res.stringResource
 import io.github.svenbuild.fylvo.android.R
 
@@ -38,11 +39,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import android.app.Activity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -121,10 +122,13 @@ fun PreviewScreen(
     // Light system bar icons over the black image and video viewer, also in the light theme.
     val view = LocalView.current
     val themeLight = MaterialTheme.colorScheme.surface.luminance() > 0.5f
-    DisposableEffect(dark, themeLight) {
-        val controller = (view.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, view) }
+    val controller = (view.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, view) }
+    // After every recomposition, so it wins over the theme setting the bars again.
+    SideEffect {
         controller?.isAppearanceLightStatusBars = themeLight && !dark
         controller?.isAppearanceLightNavigationBars = themeLight && !dark
+    }
+    DisposableEffect(themeLight) {
         onDispose {
             controller?.isAppearanceLightStatusBars = themeLight
             controller?.isAppearanceLightNavigationBars = themeLight
