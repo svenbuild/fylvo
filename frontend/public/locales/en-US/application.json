@@ -1280,18 +1280,19 @@
     },
     "lockedByOther": "The file is being edited elsewhere, so it is open read-only.",
     "lockFailed": "The file could not be locked for editing. It is open read-only.",
-    "lockLost": "The lock expired and the file is now being edited elsewhere. Saving only works as long as the file has not been changed meanwhile.",
+    "lockLost": "The lock expired and the file is now being edited elsewhere. Your changes are only saved as long as the file is not changed there.",
     "conflict": "The file was changed elsewhere in the meantime. Your changes were not saved over it. Save them as a copy.",
-    "conflictConnected": "The file was changed at the provider in the meantime. Your changes are in a copy next to the file (\"Name (conflict)\"). This window does not save any more.",
-    "sessionEnded": "The session ended or the file is gone. Save your changes as a copy.",
-    "saveFailed": "Saving did not work. It is tried again shortly.",
+    "conflictConnected": "The file was changed at the provider in the meantime. Your changes are in the copy “{{name}}” next to the file. Nothing more is saved from this window.",
+    "sessionEnded": "The session has expired or the file no longer exists. Save your changes as a copy.",
+    "saveFailed": "Saving failed. It will be tried again shortly.",
     "readOnlySave": "The file is open read-only. You can save your changes as a copy.",
     "openFailed": "The file could not be opened.",
     "editorFailed": "The editor could not start. It needs a browser with WebGL2 or WebGPU.",
-    "unsavedOnClose": "There are changes that are not saved.",
+    "unsavedOnClose": "Some changes are not saved.",
     "copyFailed": "The copy could not be saved. Try again.",
     "saveCopy": "Save as copy",
     "retry": "Try again",
-    "discard": "Discard"
+    "discard": "Discard",
+    "copySuffix": "copy"
   }
 }

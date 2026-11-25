@@ -75,7 +75,11 @@ const CraftViewer = () => {
   const [loaded, setLoaded] = useState(false);
   const [edit, setEdit] = useState(false);
   const [status, setStatus] = useState<Status>("saved");
-  const [notice, setNotice] = useState<{ key: string; severity: "info" | "warning" | "error" }>();
+  const [notice, setNotice] = useState<{
+    key: string;
+    severity: "info" | "warning" | "error";
+    params?: Record<string, string>;
+  }>();
   const [askClose, setAskClose] = useState(false);
   const [closing, setClosing] = useState(false);
   const pendingOpen = useRef<{ name: string; bytes: ArrayBuffer }>();
@@ -115,7 +119,7 @@ const CraftViewer = () => {
       return s?.saving ?? Promise.resolve();
     }
     s.saving = (async () => {
-      while (s.unsaved && !s.frozen) {
+      while (s.unsaved && s.edit && !s.frozen) {
         const bytes = s.unsaved;
         showStatus();
         let answer;
@@ -141,7 +145,11 @@ const CraftViewer = () => {
           if (state?.copy && s.unsaved === bytes) {
             s.unsaved = undefined;
           }
-          setNotice({ key: state?.copy ? "craft.conflictConnected" : "craft.conflict", severity: "error" });
+          setNotice(
+            state?.copy
+              ? { key: "craft.conflictConnected", severity: "error", params: { name: state.copy.name } }
+              : { key: "craft.conflict", severity: "error" },
+          );
         } else if (answer.status == 401 || answer.status == 403 || answer.status == 404) {
           s.frozen = true;
           setNotice({ key: "craft.sessionEnded", severity: "error" });
@@ -473,7 +481,10 @@ const CraftViewer = () => {
       finishClose();
       return;
     }
-    const copied = !!bytes && (await saveCopy(s.name, bytes));
+    // Under a name of its own: the copy never goes over the file.
+    const dot = s.name.lastIndexOf(".") > 0 ? s.name.lastIndexOf(".") : s.name.length;
+    const copyName = `${s.name.slice(0, dot)} (${t("application:craft.copySuffix")})${s.name.slice(dot)}`;
+    const copied = !!bytes && (await saveCopy(copyName, bytes));
     setClosing(false);
     if (!copied) {
       setNotice({ key: "craft.copyFailed", severity: "warning" });
@@ -485,22 +496,41 @@ const CraftViewer = () => {
     if (!s.unsaved && !s.dirty) {
       finishClose();
     }
-  }, [closing, snapshot, saveCopy, finishClose]);
+  }, [closing, snapshot, saveCopy, finishClose, t]);
 
-  const statusLabel = !edit ? undefined : t(`application:craft.status.${status}`);
+  // Read-only and the save state belong to an editor that is shown, not to one still starting.
+  const shown = loaded && !!frameSrc;
 
   return (
     <ViewerDialog
       file={file}
-      readOnly={!edit}
+      readOnly={shown && !edit}
       loading={closing}
-      status={statusLabel && <Chip size="small" variant="outlined" sx={{ ml: 1, height: 20 }} label={statusLabel} />}
+      status={
+        shown &&
+        edit && (
+          <Chip
+            size="small"
+            variant="outlined"
+            sx={{ ml: 1, height: 20 }}
+            label={t(`application:craft.status.${status}`)}
+          />
+        )
+      }
       fullScreenToggle
       dialogProps={{
         open,
         onClose,
         fullWidth: true,
         maxWidth: "lg",
+        // The editor fills a window of fixed height: a notice takes room from it instead of
+        // growing the window. A window with only an error stays small.
+        PaperProps: {
+          sx: {
+            ...((frameSrc || !loaded) && { "&:not(.MuiDialog-paperFullScreen)": { height: "calc(100% - 64px)" } }),
+            overflow: "hidden",
+          },
+        },
       }}
     >
       {notice && (
@@ -509,11 +539,11 @@ const CraftViewer = () => {
           sx={{ borderRadius: 0, alignItems: "center" }}
           onClose={notice.severity == "error" ? undefined : () => setNotice(undefined)}
           action={
-            notice.key == "craft.conflict" ||
-            notice.key == "craft.conflictConnected" ||
-            notice.key == "craft.copyFailed" ||
-            notice.key == "craft.sessionEnded" ||
-            notice.key == "craft.readOnlySave" ? (
+            askClose ? undefined : notice.key == "craft.conflict" ||
+              notice.key == "craft.conflictConnected" ||
+              notice.key == "craft.copyFailed" ||
+              notice.key == "craft.sessionEnded" ||
+              notice.key == "craft.readOnlySave" ? (
               <Button color="inherit" size="small" onClick={copyAndClose} sx={{ whiteSpace: "nowrap" }}>
                 {t("application:craft.saveCopy")}
               </Button>
@@ -524,7 +554,7 @@ const CraftViewer = () => {
             ) : undefined
           }
         >
-          {t(`application:${notice.key}`)}
+          {t(`application:${notice.key}`, notice.params)}
         </Alert>
       )}
       {askClose && (
@@ -548,7 +578,7 @@ const CraftViewer = () => {
           {t("application:craft.unsavedOnClose")}
         </Alert>
       )}
-      {!loaded && <ViewerLoading />}
+      {!loaded && <ViewerLoading minHeight="0" />}
       {frameSrc && (
         <Box
           component="iframe"
@@ -559,8 +589,9 @@ const CraftViewer = () => {
           allow="clipboard-read; clipboard-write; fullscreen"
           sx={{
             width: "100%",
-            height: loaded ? "100%" : 0,
-            minHeight: loaded ? "calc(100vh - 200px)" : 0,
+            height: loaded ? undefined : 0,
+            flex: loaded ? 1 : "none",
+            minHeight: 0,
             border: "none",
             display: "block",
           }}
