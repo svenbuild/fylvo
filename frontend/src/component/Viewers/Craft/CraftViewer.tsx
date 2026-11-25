@@ -507,8 +507,10 @@ const CraftViewer = () => {
       readOnly={shown && !edit}
       loading={closing}
       status={
+        // A window that can no longer save says so in its notice; a save state would contradict it.
         shown &&
-        edit && (
+        edit &&
+        notice?.severity != "error" && (
           <Chip
             size="small"
             variant="outlined"
@@ -545,7 +547,9 @@ const CraftViewer = () => {
               notice.key == "craft.sessionEnded" ||
               notice.key == "craft.readOnlySave" ? (
               <Button color="inherit" size="small" onClick={copyAndClose} sx={{ whiteSpace: "nowrap" }}>
-                {t("application:craft.saveCopy")}
+                {notice.key == "craft.conflictConnected" && status == "saved"
+                  ? t("common:close")
+                  : t("application:craft.saveCopy")}
               </Button>
             ) : notice.key == "craft.saveFailed" ? (
               <Button color="inherit" size="small" onClick={() => store()} sx={{ whiteSpace: "nowrap" }}>
