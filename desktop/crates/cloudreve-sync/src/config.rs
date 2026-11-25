@@ -64,7 +64,12 @@ pub struct AppConfig {
     pub language: Option<String>,
     /// Fylvo: look for updates and install them by itself (desktop/UPDATER.md)
     pub auto_update: bool,
+    /// Fylvo (Linux): cache limit of the virtual drives together, in GB
+    pub drive_cache_gb: u64,
 }
+
+/// Fylvo: default cache limit of the virtual drives.
+pub const DEFAULT_DRIVE_CACHE_GB: u64 = 20;
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -78,6 +83,7 @@ impl Default for AppConfig {
             log_max_files: 5,
             language: None,
             auto_update: true,
+            drive_cache_gb: DEFAULT_DRIVE_CACHE_GB,
         }
     }
 }
@@ -240,6 +246,21 @@ impl ConfigManager {
     pub fn set_auto_update(&self, enabled: bool) -> Result<()> {
         self.update(|config| {
             config.auto_update = enabled;
+        })
+    }
+
+    /// Fylvo: the cache limit of the virtual drives in GB (1 to 1000)
+    pub fn drive_cache_gb(&self) -> u64 {
+        self.config
+            .read()
+            .map(|c| c.drive_cache_gb.clamp(1, 1000))
+            .unwrap_or(DEFAULT_DRIVE_CACHE_GB)
+    }
+
+    /// Fylvo: set the cache limit of the virtual drives in GB
+    pub fn set_drive_cache_gb(&self, gb: u64) -> Result<()> {
+        self.update(|config| {
+            config.drive_cache_gb = gb.clamp(1, 1000);
         })
     }
 

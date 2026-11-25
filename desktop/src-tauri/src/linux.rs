@@ -6,8 +6,17 @@
 
 use std::path::{Path, PathBuf};
 
-/// The command line option the file manager entries pass with the selected path.
+/// The command line options the file manager entries pass with the selected path.
 pub const VIEW_ONLINE_ARG: &str = "--view-online";
+/// Fylvo: keep a folder of a virtual drive on this computer / free its space again.
+pub const PIN_ARG: &str = "--pin";
+pub const UNPIN_ARG: &str = "--unpin";
+
+/// One file manager entry: its label and the option it passes.
+pub struct Entry {
+    pub label: String,
+    pub arg: &'static str,
+}
 
 /// The program to start: the AppImage file itself when running from one (the path inside the
 /// mounted image changes at every start), else the installed binary.
@@ -97,53 +106,60 @@ fn write_file(path: &Path, content: &str, executable: bool) -> std::io::Result<(
 }
 
 /// GNOME Files (Nautilus) runs scripts from this folder for the selected files.
-fn nautilus_script(program: &Path) -> String {
+fn nautilus_script(program: &Path, arg: &str) -> String {
     format!(
-        "#!/bin/sh\n# Fylvo Desktop: open the selected files in the Fylvo web app.\nprintf '%s' \"$NAUTILUS_SCRIPT_SELECTED_FILE_PATHS\" | while IFS= read -r path || [ -n \"$path\" ]; do\n  [ -n \"$path\" ] && {} {} \"$path\"\ndone\n",
+        "#!/bin/sh\n# Fylvo Desktop: pass the selected files to the app ({arg}).\nprintf '%s' \"$NAUTILUS_SCRIPT_SELECTED_FILE_PATHS\" | while IFS= read -r path || [ -n \"$path\" ]; do\n  [ -n \"$path\" ] && {} {} \"$path\"\ndone\n",
         shell_quoted(program),
-        VIEW_ONLINE_ARG
+        arg
     )
 }
 
 /// Dolphin (KDE) reads service menus from this folder.
-fn dolphin_menu(program: &Path, label: &str) -> Option<String> {
-    Some(format!(
-        "[Desktop Entry]\nType=Service\nMimeType=all/all;inode/directory;\nActions=fylvoViewOnline;\nX-KDE-Priority=TopLevel\n\n[Desktop Action fylvoViewOnline]\nName={label}\nIcon=fylvo-desktop\nExec={} {} %f\n",
-        exec_quoted(program)?,
-        VIEW_ONLINE_ARG
-    ))
+fn dolphin_menu(program: &Path, entries: &[Entry]) -> Option<String> {
+    let program = exec_quoted(program)?;
+    let id = |arg: &str| format!("fylvo{}", arg.trim_start_matches('-').replace('-', ""));
+    let ids: Vec<String> = entries.iter().map(|e| id(e.arg)).collect();
+    let mut menu = format!(
+        "[Desktop Entry]\nType=Service\nMimeType=all/all;inode/directory;\nActions={};\nX-KDE-Priority=TopLevel\n",
+        ids.join(";")
+    );
+    for entry in entries {
+        let label = entry.label.replace(['\n', '\r'], " ");
+        menu.push_str(&format!(
+            "\n[Desktop Action {}]\nName={label}\nIcon=fylvo-desktop\nExec={program} {} %f\n",
+            id(entry.arg),
+            entry.arg
+        ));
+    }
+    Some(menu)
 }
 
 /// Write the file manager entries and refresh the autostart entry, with the path of the
 /// running program. Failures are logged; the app works without them.
-pub fn install_desktop_integration(label: &str) {
+pub fn install_desktop_integration(entries: &[Entry]) {
     let Some(home) = home() else {
         return;
     };
     let program = launcher();
-    let Some(dolphin) = dolphin_menu(&program, label) else {
+    let Some(dolphin) = dolphin_menu(&program, entries) else {
         tracing::warn!(target: "main", path = %program.display(), "Program path with a line break, no file manager entries");
         return;
     };
-    let files = [
-        (
-            home.join(".local/share/nautilus/scripts").join(label),
-            nautilus_script(&program),
-            true,
-        ),
-        (
-            home.join(".local/share/kio/servicemenus/fylvo-desktop.desktop"),
-            dolphin,
-            true,
-        ),
-    ];
+    let scripts = home.join(".local/share/nautilus/scripts");
+    let labels: Vec<String> = entries.iter().map(|e| e.label.replace('/', "-")).collect();
+    let mut files: Vec<(PathBuf, String, bool)> = entries
+        .iter()
+        .zip(&labels)
+        .map(|(e, label)| (scripts.join(label), nautilus_script(&program, e.arg), true))
+        .collect();
+    files.push((home.join(".local/share/kio/servicemenus/fylvo-desktop.desktop"), dolphin, true));
     for (path, content, executable) in files {
         if let Err(e) = write_file(&path, &content, executable) {
             tracing::warn!(target: "main", path = %path.display(), error = %e, "Failed to install file manager entry");
         }
     }
-    // A label of an older language stays behind otherwise.
-    remove_old_nautilus_scripts(&home.join(".local/share/nautilus/scripts"), label);
+    // Labels of an older language stay behind otherwise.
+    remove_old_nautilus_scripts(&scripts, &labels);
     if autostart_enabled() {
         if let Err(e) = set_autostart(true) {
             tracing::warn!(target: "main", error = %e, "Failed to refresh the autostart entry");
@@ -151,23 +167,26 @@ pub fn install_desktop_integration(label: &str) {
     }
 }
 
-fn remove_old_nautilus_scripts(folder: &Path, label: &str) {
+fn remove_old_nautilus_scripts(folder: &Path, labels: &[String]) {
     let Ok(entries) = std::fs::read_dir(folder) else {
         return;
     };
     for entry in entries.flatten() {
         let ours = std::fs::read_to_string(entry.path())
             .is_ok_and(|text| text.starts_with("#!/bin/sh\n# Fylvo Desktop:"));
-        if ours && entry.file_name() != label {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if ours && !labels.contains(&name) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
 }
 
-/// The path after `--view-online` in a command line, if any.
-pub fn view_online_path(argv: &[String]) -> Option<PathBuf> {
-    let at = argv.iter().position(|arg| arg == VIEW_ONLINE_ARG)?;
-    argv.get(at + 1).map(PathBuf::from)
+/// A file manager command in a command line: the option and the path after it.
+pub fn file_command(argv: &[String]) -> Option<(&'static str, PathBuf)> {
+    [VIEW_ONLINE_ARG, PIN_ARG, UNPIN_ARG].into_iter().find_map(|option| {
+        let at = argv.iter().position(|arg| arg == option)?;
+        argv.get(at + 1).map(|path| (option, PathBuf::from(path)))
+    })
 }
 
 #[cfg(test)]
@@ -185,10 +204,23 @@ mod tests {
     }
 
     #[test]
-    fn view_online_path_is_read_from_the_command_line() {
+    fn file_commands_are_read_from_the_command_line() {
         let argv = vec!["fylvo-desktop".to_string(), VIEW_ONLINE_ARG.to_string(), "/home/u/Fylvo/a b.txt".to_string()];
-        assert_eq!(view_online_path(&argv), Some(PathBuf::from("/home/u/Fylvo/a b.txt")));
-        assert_eq!(view_online_path(&["fylvo-desktop".to_string()]), None);
+        assert_eq!(file_command(&argv), Some((VIEW_ONLINE_ARG, PathBuf::from("/home/u/Fylvo/a b.txt"))));
+        let argv = vec!["fylvo-desktop".to_string(), PIN_ARG.to_string(), "/home/u/Fylvo/Fotos".to_string()];
+        assert_eq!(file_command(&argv), Some((PIN_ARG, PathBuf::from("/home/u/Fylvo/Fotos"))));
+        assert_eq!(file_command(&["fylvo-desktop".to_string()]), None);
+    }
+
+    #[test]
+    fn the_dolphin_menu_has_one_action_per_entry() {
+        let entries = [
+            Entry { label: "Fylvo: View online".into(), arg: VIEW_ONLINE_ARG },
+            Entry { label: "Fylvo: Free up space".into(), arg: UNPIN_ARG },
+        ];
+        let menu = dolphin_menu(Path::new("/opt/fylvo"), &entries).unwrap();
+        assert!(menu.contains("Actions=fylvoviewonline;fylvounpin;"), "{menu}");
+        assert!(menu.contains("Exec=\"/opt/fylvo\" --unpin %f"), "{menu}");
     }
 
     #[test]
@@ -203,7 +235,7 @@ mod tests {
         )
         .unwrap();
         let script = dir.path().join("script");
-        write_file(&script, &nautilus_script(&fake), true).unwrap();
+        write_file(&script, &nautilus_script(&fake, VIEW_ONLINE_ARG), true).unwrap();
         let status = std::process::Command::new(&script)
             .env("NAUTILUS_SCRIPT_SELECTED_FILE_PATHS", "/a/one.txt\n/a/two words.txt")
             .status()

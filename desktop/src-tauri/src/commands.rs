@@ -87,6 +87,9 @@ pub struct AddDriveArgs {
     pub local_path: String,
     pub user_id: String,
     pub drive_id: Option<String>,
+    /// Fylvo (Linux): "drive" for a virtual drive, else a sync folder.
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 /// Add a new drive configuration
@@ -104,6 +107,15 @@ pub async fn add_drive(
     // Validate local_path for new drives (not for reauthorization)
     if config.drive_id.is_none() && is_root_drive(&config.local_path) {
         return Err(t!("localPathCannotBeRootDrive").to_string());
+    }
+    // Fylvo: never a drive inside another drive's folder (or around it).
+    if config.drive_id.is_none()
+        && app_state
+            .drive_manager
+            .path_overlaps(std::path::Path::new(&config.local_path))
+            .await
+    {
+        return Err(t!("pathOverlapsDrive").to_string());
     }
 
     // Convert relative expiry times (seconds) to absolute RFC3339 timestamps
@@ -161,6 +173,11 @@ pub async fn add_drive(
         sync_root_id: None,
         ignore_patterns: Vec::new(),
         drive_letter: None,
+        mode: if cfg!(target_os = "linux") && config.mode.as_deref() == Some("drive") {
+            cloudreve_sync::DriveMode::Drive
+        } else {
+            cloudreve_sync::DriveMode::Sync
+        },
         extra: Default::default(),
     };
 
@@ -713,6 +730,7 @@ pub async fn get_general_settings() -> CommandResult<GeneralSettings> {
         log_dir: ConfigManager::get_log_dir().display().to_string(),
         language: config.language,
         auto_update: config.auto_update,
+        drive_cache_gb: ConfigManager::get().drive_cache_gb(),
     })
 }
 
@@ -727,6 +745,54 @@ pub struct GeneralSettings {
     pub log_dir: String,
     pub language: Option<String>,
     pub auto_update: bool,
+    /// Fylvo (Linux): cache limit of the virtual drives in GB
+    pub drive_cache_gb: u64,
+}
+
+/// Fylvo (Linux): set the cache limit of the virtual drives (GB, 1 to 1000).
+#[tauri::command]
+pub async fn set_drive_cache_gb(gb: u64) -> CommandResult<()> {
+    ConfigManager::get()
+        .set_drive_cache_gb(gb)
+        .map_err(|e| e.to_string())
+}
+
+/// Fylvo (Linux): drop the cached content of a virtual drive.
+#[tauri::command]
+pub async fn free_drive_space(state: State<'_, AppStateHandle>, drive_id: String) -> CommandResult<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let app_state = state.get().ok_or_else(|| "App not yet initialized".to_string())?;
+        app_state
+            .drive_manager
+            .free_drive_space(&drive_id)
+            .await
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (state, drive_id);
+        Err("not available".to_string())
+    }
+}
+
+/// Fylvo (Linux): stop keeping a pinned folder of a virtual drive on this computer.
+#[tauri::command]
+pub async fn unpin_drive_path(state: State<'_, AppStateHandle>, drive_id: String, path: String) -> CommandResult<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let app_state = state.get().ok_or_else(|| "App not yet initialized".to_string())?;
+        app_state
+            .drive_manager
+            .unpin_drive_path(&drive_id, &path)
+            .await
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (state, drive_id, path);
+        Err("not available".to_string())
+    }
 }
 
 /// Set log to file setting

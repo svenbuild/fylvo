@@ -11,7 +11,7 @@ use crate::inventory::InventoryDb;
 use crate::tasks::TaskProgress;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fs, thread};
@@ -193,9 +193,12 @@ impl DriveManager {
 
         let mount_arc = Arc::new(mount);
         mount_arc.spawn_command_processor(mount_arc.clone()).await;
-        mount_arc
-            .spawn_remote_event_processor(mount_arc.clone())
-            .await;
+        // Fylvo: a virtual drive follows server events itself (`vfs`).
+        if !mount_arc.is_virtual() {
+            mount_arc
+                .spawn_remote_event_processor(mount_arc.clone())
+                .await;
+        }
         mount_arc.spawn_props_refresh_task().await;
         mount_arc.spawn_drive_letter_task().await;
         let id = mount_arc.id.clone();
@@ -207,6 +210,17 @@ impl DriveManager {
     // Child path can be up to the sync root path.
     pub async fn search_drive_by_child_path(&self, path: &str) -> Option<Arc<Mount>> {
         let read_guard = self.drives.read().await;
+
+        // Fylvo (Linux): a virtual drive is matched by its path only; `canonicalize` would
+        // enter the mount and wait for the server.
+        #[cfg(target_os = "linux")]
+        for mount in read_guard.values() {
+            if let Some(vfs) = &mount.vfs {
+                if vfs.relative(Path::new(path)).is_some() {
+                    return Some(mount.clone());
+                }
+            }
+        }
 
         // Convert the input path to an absolute PathBuf for comparison
         let target_path = PathBuf::from(path);
@@ -261,6 +275,29 @@ impl DriveManager {
         // Drop the write guard before calling delete to avoid potential deadlocks
         drop(write_guard);
 
+        // Fylvo (Linux): unmount first (nothing can be written after that), then keep the
+        // changes that never reached the server.
+        #[cfg(target_os = "linux")]
+        if let Some(vfs) = &mount.vfs {
+            vfs.stop();
+            if vfs.unsent_count() > 0 {
+                let target = dirs::home_dir()
+                    .unwrap_or_default()
+                    .join("Fylvo not uploaded")
+                    .join(&config.name);
+                match vfs.export_unsent(&target) {
+                    Ok(saved) => crate::utils::toast::send_general_text_toast(
+                        &t!("vfsUnsentSavedTitle"),
+                        &t!("vfsUnsentSavedMessage", "count" => saved, "folder" => target.display()),
+                    ),
+                    Err(e) => {
+                        tracing::error!(target: "drive::manager", error = %e, "Failed to save changes not uploaded");
+                        anyhow::bail!("the changes not uploaded yet could not be saved: {e}");
+                    }
+                }
+            }
+        }
+
         // Delete the mount (unregister sync root, cleanup, etc.)
         mount.delete().await.context("Failed to delete mount")?;
 
@@ -272,6 +309,47 @@ impl DriveManager {
         tracing::info!(target: "drive::manager", drive_id = %id, "Drive removed successfully");
 
         Ok(Some(config))
+    }
+
+    /// Fylvo: whether `path` lies inside the folder of a drive or contains one (a new drive
+    /// there would sync or mount into another). Compared by path components only.
+    pub async fn path_overlaps(&self, path: &Path) -> bool {
+        let drives = self.drives.read().await;
+        for mount in drives.values() {
+            let other = mount.get_sync_path().await;
+            if paths_overlap(path, &other) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Fylvo (Linux): keep a folder or file of a virtual drive on this computer ("always
+    /// offline"), or stop that and free its space.
+    #[cfg(target_os = "linux")]
+    pub async fn set_pinned(&self, path: &Path, pinned: bool) -> Result<()> {
+        let drives = self.drives.read().await;
+        for mount in drives.values() {
+            let Some(vfs) = &mount.vfs else { continue };
+            let Some(relative) = vfs.relative(path) else { continue };
+            return if pinned { vfs.pin(&relative) } else { vfs.unpin(&relative) };
+        }
+        anyhow::bail!("{} is not in a Fylvo drive", path.display())
+    }
+
+    /// Fylvo (Linux): drop the cached content of a virtual drive.
+    #[cfg(target_os = "linux")]
+    pub async fn free_drive_space(&self, id: &str) -> Result<()> {
+        let mount = self.get_drive(id).await.context("no such drive")?;
+        mount.vfs.as_ref().context("not a virtual drive")?.free_space(None);
+        Ok(())
+    }
+
+    /// Fylvo (Linux): stop keeping a pinned folder (relative path) of a virtual drive.
+    #[cfg(target_os = "linux")]
+    pub async fn unpin_drive_path(&self, id: &str, relative: &str) -> Result<()> {
+        let mount = self.get_drive(id).await.context("no such drive")?;
+        mount.vfs.as_ref().context("not a virtual drive")?.unpin(relative)
     }
 
     /// Get a drive by ID
@@ -654,7 +732,8 @@ impl DriveManager {
             let status = if drive_state.is_credential_expired() {
                 DriveInfoStatus::CredentialExpired
             } else {
-                if !drive_state.is_event_push_subscribed(){
+                // Fylvo: a virtual drive follows server events itself.
+                if !drive_state.is_event_push_subscribed() && !mount.is_virtual() {
                     DriveInfoStatus::EventPushLost
                 } else {
                     DriveInfoStatus::Active
@@ -679,6 +758,11 @@ impl DriveManager {
                     .drive_letter
                     .filter(|l| crate::drive::drive_letter::is_usable(*l)),
                 drive_letter_state: mount.drive_letter_state(),
+                mode: config.mode,
+                #[cfg(target_os = "linux")]
+                vfs: mount.vfs.as_ref().map(|v| v.status()),
+                #[cfg(not(target_os = "linux"))]
+                vfs: None,
             });
         }
 
@@ -699,6 +783,8 @@ impl DriveManager {
         };
         drives.values().any(|mount| {
             let tasks = mount.task_queue.list_active_tasks().map(|t| !t.is_empty()).unwrap_or(true);
+            #[cfg(target_os = "linux")]
+            let tasks = tasks || mount.vfs.as_ref().is_some_and(|v| v.has_pending_work());
             tasks || !mount.held_deletions().is_empty()
         })
     }
@@ -721,6 +807,13 @@ impl DriveManager {
         }
         tracing::info!(target: "drive", "All drives shutdown");
     }
+}
+
+/// Fylvo: whether one of two folders is inside the other (or both are the same).
+pub fn paths_overlap(a: &Path, b: &Path) -> bool {
+    let clean = |p: &Path| -> PathBuf { p.components().collect() };
+    let (a, b) = (clean(a), clean(b));
+    a.starts_with(&b) || b.starts_with(&a)
 }
 
 impl DriveManager {

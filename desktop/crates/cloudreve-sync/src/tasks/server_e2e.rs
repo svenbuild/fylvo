@@ -25,19 +25,19 @@ impl ProgressCallback for NoProgress {
     fn on_progress(&self, _update: ProgressUpdate) {}
 }
 
-pub(super) struct Server {
-    pub(super) client: Arc<Client>,
+pub(crate) struct Server {
+    pub(crate) client: Arc<Client>,
     inventory: Arc<InventoryDb>,
     dir: tempfile::TempDir,
-    pub(super) root: String,
-    pub(super) url: String,
-    pub(super) access_token: String,
+    pub(crate) root: String,
+    pub(crate) url: String,
+    pub(crate) access_token: String,
     #[allow(dead_code)]
-    pub(super) refresh_token: String,
+    pub(crate) refresh_token: String,
 }
 
 impl Server {
-    pub(super) async fn connect() -> Self {
+    pub(crate) async fn connect() -> Self {
         let var = |name| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
         // A password sign-in as the web app does it (the app itself signs in through the
         // browser, `fylvo://`).
@@ -77,7 +77,7 @@ impl Server {
 
     /// Tokens as Fylvo Desktop gets them: the web app's consent for the desktop client (with
     /// PKCE), then the code exchange. Password tokens carry no scopes, the app refuses them.
-    pub(super) async fn desktop_tokens(&self) -> (String, String) {
+    pub(crate) async fn desktop_tokens(&self) -> (String, String) {
         use base64::Engine;
         use sha2::Digest;
         const CLIENT_ID: &str = "512cd652-c028-4332-992e-d88a4406e5b2";
@@ -134,11 +134,11 @@ impl Server {
         (access, refresh)
     }
 
-    pub(super) fn uri(&self, relative: &str) -> String {
+    pub(crate) fn uri(&self, relative: &str) -> String {
         format!("{}/{}", self.root, relative)
     }
 
-    pub(super) async fn folder(&self, relative: &str) -> Result<FileResponse> {
+    pub(crate) async fn folder(&self, relative: &str) -> Result<FileResponse> {
         Ok(self
             .client
             .create_file(&CreateFileService {
@@ -152,7 +152,7 @@ impl Server {
 
     /// Upload `content` as the sync does: a known file names the version it was changed from
     /// (`previous`) and makes a new version of it. Returns the version the upload created.
-    pub(super) async fn upload(
+    pub(crate) async fn upload(
         &self,
         relative: &str,
         content: &str,
@@ -179,7 +179,7 @@ impl Server {
         uploader.upload(params, NoProgress).await
     }
 
-    pub(super) async fn info(&self, relative: &str) -> FileResponse {
+    pub(crate) async fn info(&self, relative: &str) -> FileResponse {
         self.client
             .get_file_info(&GetFileInfoService {
                 uri: Some(self.uri(relative)),
@@ -191,7 +191,7 @@ impl Server {
             .expect("file info")
     }
 
-    pub(super) async fn rename(&self, relative: &str, new_name: &str) -> Result<()> {
+    pub(crate) async fn rename(&self, relative: &str, new_name: &str) -> Result<()> {
         self.client
             .rename_file(&RenameFileService {
                 uri: self.uri(relative),
