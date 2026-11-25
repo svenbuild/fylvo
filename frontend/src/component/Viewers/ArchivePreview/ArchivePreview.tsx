@@ -156,7 +156,8 @@ const ArchivePreview = () => {
                   allItems.push({
                     name: dirName,
                     size: 0,
-                    updated_at: "1970-01-01T00:00:00Z",
+                    // Fylvo: a folder only implied by its files has no date, the list shows "-".
+                    updated_at: "",
                     is_directory: true,
                   });
                 }
