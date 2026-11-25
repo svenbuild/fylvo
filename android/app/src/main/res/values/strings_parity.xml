@@ -245,6 +245,8 @@
     <string name="archive_compress_go">Pack</string>
     <string name="archive_default_name">Archive</string>
     <string name="archive_empty">This folder of the archive is empty</string>
+    <string name="archive_encrypted">This archive is encrypted.</string>
+    <string name="archive_password_wrong">The password does not fit. Try again.</string>
     <string name="tasks">Tasks</string>
     <string name="tasks_hint">Packing, extracting and other jobs on the server</string>
     <string name="tasks_none">No tasks yet</string>

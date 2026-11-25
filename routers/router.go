@@ -677,6 +677,11 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				controllers.FromQuery[explorer.ArchiveListFilesService](explorer.ArchiveListFilesParamCtx{}),
 				controllers.ListArchiveFiles,
 			)
+			// Fylvo: the same with a password in the body, for archives with encrypted names
+			file.POST("archive",
+				controllers.FromJSON[explorer.ArchiveListFilesService](explorer.ArchiveListFilesParamCtx{}),
+				controllers.ListArchiveFiles,
+			)
 			// Create file
 			file.POST("create",
 				middleware.RequiredScopes(types.ScopeFilesWrite),

@@ -411,6 +411,10 @@ data class ArchiveEntry(
 @Serializable
 data class ArchiveListing(val files: List<ArchiveEntry> = emptyList())
 
+/** Fylvo 1.6.5: the password only for this one request, never stored or logged. */
+@Serializable
+data class ArchiveListRequest(val uri: String, val password: String)
+
 /** Fylvo 1.6: sources and target of an archive task (never a password, see the plan). */
 @Serializable
 data class WorkflowRequest(val src: List<String>, val dst: String)

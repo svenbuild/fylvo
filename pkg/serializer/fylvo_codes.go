@@ -18,6 +18,10 @@ const (
 	// CodeNameCaseTaken the folder holds a file or folder whose name differs from the given
 	// one only in upper and lower case; Windows cannot hold both
 	CodeNameCaseTaken = 40905
+	// CodeArchiveEncrypted the file list of the archive is encrypted and needs a password
+	CodeArchiveEncrypted = 40906
+	// CodeArchiveWrongPassword the password given for the file list of an archive is wrong
+	CodeArchiveWrongPassword = 40907
 
 	// 40920 to 40929: connected storages (pkg/connected).
 

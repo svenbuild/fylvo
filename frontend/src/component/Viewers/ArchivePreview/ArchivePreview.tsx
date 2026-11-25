@@ -1,10 +1,22 @@
-import { Box, Breadcrumbs, Button, Link, Table, TableCell, TableContainer, Typography, useTheme } from "@mui/material";
+import {
+  Box,
+  Breadcrumbs,
+  Button,
+  Link,
+  Table,
+  TableCell,
+  TableContainer,
+  TextField,
+  Typography,
+  useTheme,
+} from "@mui/material";
 import { useSnackbar } from "notistack";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TableVirtuoso } from "react-virtuoso";
 import { getArchiveListFiles } from "../../../api/api.ts";
 import { ArchivedFile, FileType } from "../../../api/explorer.ts";
+import { AppError, Code } from "../../../api/request.ts";
 import { closeArchiveViewer, setExtractArchiveDialog } from "../../../redux/globalStateSlice.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { fileBase, fileExtension, getFileLinkedUri, sizeToString } from "../../../util";
@@ -32,6 +44,12 @@ const ArchivePreview = () => {
   const [filterText, setFilterText] = useState("");
   const [height, setHeight] = useState(33);
   const [encoding, setEncoding] = useState(defaultEncodingValue);
+  // Fylvo: an error of the list is shown in the dialog. The password of an encrypted archive
+  // lives only in memory, is sent with one request and is dropped when the request is done.
+  const [error, setError] = useState<{ code?: number; message: string }>();
+  const [passwordInput, setPasswordInput] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const passwordRef = useRef("");
 
   const isZip = useMemo(() => {
     return fileExtension(viewerState?.file?.name ?? "") === "zip";
@@ -104,10 +122,17 @@ const ArchivePreview = () => {
   useEffect(() => {
     if (!viewerState || !viewerState.open) {
       setEncoding(defaultEncodingValue);
-      return;
+      setError(undefined);
+      setPasswordInput("");
+      passwordRef.current = "";
+      return undefined;
     }
 
+    let cancelled = false;
+    const password = passwordRef.current;
+    passwordRef.current = "";
     setLoading(true);
+    setError(undefined);
     setFiles([]);
     setCurrentPath("");
     setSelectedFiles([]);
@@ -118,9 +143,12 @@ const ArchivePreview = () => {
         uri: getFileLinkedUri(viewerState.file),
         entity: viewerState.version,
         text_encoding: encoding !== defaultEncodingValue ? encoding : undefined,
+        password: password || undefined,
       }),
     )
       .then((res) => {
+        if (cancelled) return;
+        setPasswordInput("");
         if (res.files) {
           // Fill in missing directories
           const allItems: ArchivedFile[] = [];
@@ -175,13 +203,27 @@ const ArchivePreview = () => {
           setFiles(allItems);
         }
       })
-      .catch(() => {
-        onClose();
+      .catch((e) => {
+        if (cancelled) return;
+        const code = e instanceof AppError ? e.code : undefined;
+        setError({ code, message: e instanceof Error && e.message ? e.message : t("unknownError", { ns: "common" }) });
       })
       .finally(() => {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       });
-  }, [viewerState, encoding]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerState, encoding, attempt]);
+
+  const needsPassword = error?.code == Code.ArchiveEncrypted || error?.code == Code.ArchiveWrongPassword;
+
+  const submitPassword = useCallback(() => {
+    if (!passwordInput) return;
+    passwordRef.current = passwordInput;
+    setAttempt((a) => a + 1);
+  }, [passwordInput]);
 
   const onClose = useCallback(() => {
     dispatch(closeArchiveViewer());
@@ -269,7 +311,39 @@ const ArchivePreview = () => {
         <AutoHeight>
           <div>
             {loading && <ViewerLoading />}
-            {!loading && (
+            {!loading && error && (
+              <Box sx={{ p: 3, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                <Typography color="text.secondary" align="center">
+                  {error.code == Code.ArchiveWrongPassword ? t("fileManager.archiveEncrypted") : error.message}
+                </Typography>
+                {needsPassword && (
+                  <Box
+                    component="form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      submitPassword();
+                    }}
+                    sx={{ display: "flex", flexDirection: "column", gap: 2, width: "100%", maxWidth: 320 }}
+                  >
+                    <TextField
+                      type="password"
+                      size="small"
+                      autoFocus
+                      autoComplete="off"
+                      label={t("fileManager.archivePassword")}
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      error={error.code == Code.ArchiveWrongPassword}
+                      helperText={error.code == Code.ArchiveWrongPassword ? error.message : undefined}
+                    />
+                    <Button type="submit" variant="contained" disabled={!passwordInput}>
+                      {t("fileManager.archiveOpen")}
+                    </Button>
+                  </Box>
+                )}
+              </Box>
+            )}
+            {!loading && !error && (
               <Box sx={{ p: 2 }}>
                 <Box sx={{ mb: 2 }}>
                   <Breadcrumbs separator={<ChevronRight fontSize="small" />}>

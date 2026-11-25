@@ -848,9 +848,12 @@ func (s *PatchViewService) Patch(c *gin.Context) error {
 type (
 	ArchiveListFilesParamCtx struct{}
 	ArchiveListFilesService  struct {
-		Uri          string `form:"uri" binding:"required"`
-		Entity       string `form:"entity"`
-		TextEncoding string `form:"text_encoding"`
+		Uri          string `form:"uri" json:"uri" binding:"required"`
+		Entity       string `form:"entity" json:"entity"`
+		TextEncoding string `form:"text_encoding" json:"text_encoding"`
+		// Fylvo: password of an archive with encrypted file names. Only sent in the body of a
+		// POST (a query string lands in access logs), used for this call, never stored.
+		Password string `json:"password"`
 	}
 )
 
@@ -868,7 +871,7 @@ func (s *ArchiveListFilesService) List(c *gin.Context) (*ArchiveListFilesRespons
 		return nil, serializer.NewError(serializer.CodeParamErr, "unknown uri", err)
 	}
 
-	files, err := m.ListArchiveFiles(c, uri, s.Entity, s.TextEncoding)
+	files, err := m.ListArchiveFiles(c, uri, s.Entity, s.TextEncoding, s.Password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list archive files: %w", err)
 	}
