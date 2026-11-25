@@ -311,11 +311,12 @@ export default function DrivesSection() {
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        gap: 1,
+                        flexWrap: "wrap",
+                        columnGap: 1,
                         mb: 1,
                       }}
                     >
-                      <Typography variant="body1" fontWeight={600} noWrap>
+                      <Typography variant="body1" fontWeight={600} noWrap sx={{ minWidth: 0 }}>
                         {drive.name}
                       </Typography>
                       <Box
@@ -323,6 +324,7 @@ export default function DrivesSection() {
                           display: "flex",
                           alignItems: "center",
                           gap: 0.5,
+                          whiteSpace: "nowrap",
                         }}
                       >
                         <Box
@@ -477,7 +479,9 @@ export default function DrivesSection() {
                   sx={{
                     display: "flex",
                     alignItems: "center",
+                    flexWrap: "wrap",
                     gap: 1,
+                    "& .MuiButton-root": { whiteSpace: "nowrap" },
                   }}
                 >
                   {drive.status === "credential_expired" && (
@@ -498,11 +502,10 @@ export default function DrivesSection() {
                     {t("settings.ignorePatterns")}
                   </SecondaryButton>
 
-                  <Box sx={{ flex: 1 }} />
-
                   <SecondaryErrorButton
                     size="small"
                     color="error"
+                    sx={{ ml: "auto" }}
                     startIcon={<DeleteOutlineRounded />}
                     onClick={() => handleDelete(drive.id, drive.name)}
                   >

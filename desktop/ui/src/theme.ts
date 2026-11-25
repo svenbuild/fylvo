@@ -33,6 +33,8 @@ const palettes = {
   },
 };
 
+const focusRing = (theme: Theme) => ({ outline: `2px solid ${alpha(theme.palette.primary.main, 0.8)}`, outlineOffset: 1 });
+
 const floating = (theme: Theme) => ({
   backgroundColor: raisedSurface(theme),
   backgroundImage: "none",
@@ -92,7 +94,19 @@ const fylvoOptions: ThemeOptions = {
       styleOverrides: {
         // Ripples are off, so keyboard focus gets its own ring.
         root: ({ theme }) => ({
-          "&.Mui-focusVisible": { outline: `2px solid ${alpha(theme.palette.primary.main, 0.8)}`, outlineOffset: 1 },
+          "&.Mui-focusVisible": focusRing(theme),
+        }),
+      },
+    },
+    MuiLink: {
+      styleOverrides: { root: ({ theme }) => ({ borderRadius: 2, "&.Mui-focusVisible": focusRing(theme) }) },
+    },
+    MuiSwitch: {
+      styleOverrides: {
+        // The round switch base is clipped by the switch, so the ring goes around the thumb.
+        switchBase: ({ theme }) => ({
+          "&.Mui-focusVisible": { outline: "none" },
+          "&.Mui-focusVisible .MuiSwitch-thumb": { ...focusRing(theme), outlineOffset: 2 },
         }),
       },
     },
@@ -193,10 +207,10 @@ const fylvoOptions: ThemeOptions = {
       styleOverrides: {
         root: ({ theme }) => ({
           borderRadius: RADIUS,
-          // One step above the window, which may be the Windows backdrop rather than the page.
-          backgroundColor: isDark(theme) ? "#1e1e22" : theme.palette.grey[100],
-          "&:hover": { backgroundColor: isDark(theme) ? "#26262b" : theme.palette.grey[200] },
-          "&.Mui-focused": { backgroundColor: isDark(theme) ? "#1e1e22" : theme.palette.grey[100] },
+          // One step above the window, which may be the Windows backdrop (Mica) rather than the page.
+          backgroundColor: alpha(isDark(theme) ? "#ffffff" : "#000000", 0.06),
+          "&:hover": { backgroundColor: alpha(isDark(theme) ? "#ffffff" : "#000000", 0.09) },
+          "&.Mui-focused": { backgroundColor: alpha(isDark(theme) ? "#ffffff" : "#000000", 0.06) },
           "&::before, &::after": { borderBottom: "none" },
           "&:hover:not(.Mui-disabled, .Mui-error):before": { borderBottom: "none" },
         }),

@@ -110,8 +110,8 @@ export default function Settings() {
           }}
         />
         {/* Content */}
-        <Box sx={{ flex: 1, overflow: "auto", px: 3, pb: 3,pt:1 }}>
-          {renderContent()}
+        <Box sx={{ flex: 1, overflow: "auto", px: 3, pb: 3, pt: 1 }}>
+          <Box sx={{ maxWidth: 800 }}>{renderContent()}</Box>
         </Box>
       </Box>
     </Box>

@@ -139,7 +139,7 @@ export default function Popup() {
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <FylvoLogo height={28} />
           </Box>
-          <IconButton size="small" onClick={handleSettings}>
+          <IconButton size="small" onClick={handleSettings} aria-label={t("settings.title")}>
             <Settings fontSize="small" />
           </IconButton>
         </Box>

@@ -77,7 +77,7 @@ export default function TaskItem({ task, isActive = false }: TaskItemProps) {
       const processed = formatBytes(liveProgress.processed_bytes ?? 0);
       const total = formatBytes(liveProgress.total_bytes ?? 0);
       const speed = formatBytes(liveProgress.speed_bytes_per_sec);
-      return `${processed} / ${total} - ${speed}/s`;
+      return `${processed} / ${total} · ${speed}/s`;
     }
     if (isActive) {
       return task.status === "Pending"
@@ -129,14 +129,16 @@ export default function TaskItem({ task, isActive = false }: TaskItemProps) {
             {fileName}
           </Typography>
         }
+        slotProps={{ secondary: { component: "div" } }}
         secondary={
-          <Box>
+          <>
+          <Box sx={{ display: isFailed ? "block" : "flex", alignItems: "baseline" }}>
             {isFailed && task.error ? (
               <Typography variant="caption" color="error" component="span">
                 {task.error}
               </Typography>
             ) : (
-              <Typography variant="caption" color="text.secondary" component="span">
+              <Typography variant="caption" color="text.secondary" component="span" noWrap sx={{ flexShrink: 0 }}>
                 {secondaryText ?? (
                   <TimeAgo
                     date={task.updated_at * 1000}
@@ -147,7 +149,7 @@ export default function TaskItem({ task, isActive = false }: TaskItemProps) {
             )}
             {!isActive && (
               <>
-                <Typography variant="caption" color="text.secondary" component="span">
+                <Typography variant="caption" color="text.secondary" component="span" sx={{ flexShrink: 0, whiteSpace: "pre" }}>
                   {" · "}
                 </Typography>
                 <Link
@@ -156,13 +158,14 @@ export default function TaskItem({ task, isActive = false }: TaskItemProps) {
                   color="text.secondary"
                   onClick={handleShowInExplorer}
                   underline="always"
-                  sx={{
-                  }}
+                  title={parentFolderName}
+                  sx={{ flexShrink: 0, maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "bottom" }}
                 >
                   {parentFolderName}
                 </Link>
               </>
             )}
+          </Box>
             {isActive && (
               <LinearProgress
                 variant="determinate"
@@ -170,7 +173,7 @@ export default function TaskItem({ task, isActive = false }: TaskItemProps) {
                 sx={{ mt: 0.5, height: 4, borderRadius: 2 }}
               />
             )}
-          </Box>
+          </>
         }
       />
     </ListItem>
