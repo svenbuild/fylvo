@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/cloudreve/Cloudreve/v4/inventory/types"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
@@ -12,7 +13,7 @@ import (
 
 // Fylvo: office editing with the Craft apps (WordCraft, GridCraft, DeckCraft, PdfCraft). They
 // run in the browser (WebAssembly) and are served by Fylvo itself from FYLVO_CRAFT_DIR, where
-// scripts/fetch-craft.sh puts releases checked against craft.lock. The browser opens and saves
+// scripts/craft/fetch.sh puts releases checked against craft.lock. The browser opens and saves
 // the files through the same WOPI calls the Collabora server makes, so locks, versions, rights
 // and connected storages work the same for both.
 
@@ -47,13 +48,33 @@ var craftApps = []craftApp{
 	{id: "craft-pdf", app: "pdfcraft", name: "PdfCraft", ext: "pdf"},
 }
 
-// CraftDir is the folder the editors are served from.
-var CraftDir = craftDir(os.Getenv(EnvCraftDir))
+var (
+	craftOnce sync.Once
+	craftPath string
+	// craftIcons holds the icon of every installed app by its name, "" for an app without one.
+	craftIcons map[string]string
+	// officeEngines are the engines in use, the default first.
+	officeEngines []string
+)
 
-// craftIcons holds the icon of every installed app by its name, "" for an app without one.
-var craftIcons = installedCraftApps(CraftDir)
+// loadCraft looks for the editors once, after the command line was read (a relative folder
+// follows --use-working-dir).
+func loadCraft() {
+	craftOnce.Do(func() {
+		craftPath = craftDir(os.Getenv(EnvCraftDir))
+		craftIcons = installedCraftApps(craftPath)
+		officeEngines = parseOfficeEngines(os.Getenv(EnvOfficeEngine), officeURL != "", len(craftIcons) > 0)
+	})
+}
 
-var officeEngines = parseOfficeEngines(os.Getenv(EnvOfficeEngine), officeURL != "", len(craftIcons) > 0)
+// CraftDir is the folder the editors are served from, "" when Craft is not in use.
+func CraftDir() string {
+	loadCraft()
+	if !slices.Contains(officeEngines, engineCraft) {
+		return ""
+	}
+	return craftPath
+}
 
 func craftDir(dir string) string {
 	if dir == "" {
@@ -148,6 +169,7 @@ func engineViewers(engine string) *types.ViewerGroup {
 // withOfficeViewers appends the viewers of the office engines in use. Only the default engine
 // offers "New", so every kind of document is listed there once.
 func withOfficeViewers(groups []types.ViewerGroup) []types.ViewerGroup {
+	loadCraft()
 	for i, engine := range officeEngines {
 		group := engineViewers(engine)
 		if group == nil {
@@ -163,23 +185,31 @@ func withOfficeViewers(groups []types.ViewerGroup) []types.ViewerGroup {
 	return groups
 }
 
-// withOfficeDefaults makes the default engine the default viewer of its formats where the
-// admin chose none, so a file opens without asking when both engines take it. PDF stays with
-// the built-in viewer; PdfCraft is under "Open with".
+// withOfficeDefaults makes the default engine the default viewer of the formats both engines
+// take, where the admin chose none, so such a file opens without asking. Other formats keep
+// what they had.
 func withOfficeDefaults(mapping types.DefaultViewerMapping) types.DefaultViewerMapping {
-	if len(officeEngines) == 0 {
+	loadCraft()
+	if len(officeEngines) < 2 {
 		return mapping
+	}
+	others := map[string]bool{}
+	for _, engine := range officeEngines[1:] {
+		if group := engineViewers(engine); group != nil {
+			for _, viewer := range group.Viewers {
+				for _, ext := range viewer.Exts {
+					others[ext] = true
+				}
+			}
+		}
 	}
 	if mapping == nil {
 		mapping = types.DefaultViewerMapping{}
 	}
-	if _, ok := craftIcons["pdfcraft"]; ok && slices.Contains(officeEngines, engineCraft) && mapping["pdf"] == "" {
-		mapping["pdf"] = builtinPdfViewer
-	}
-	if group := engineViewers(officeEngines[0]); group != nil && len(officeEngines) > 1 {
+	if group := engineViewers(officeEngines[0]); group != nil {
 		for _, viewer := range group.Viewers {
 			for _, ext := range viewer.Exts {
-				if mapping[ext] == "" {
+				if others[ext] && mapping[ext] == "" {
 					mapping[ext] = viewer.ID
 				}
 			}
@@ -187,6 +217,3 @@ func withOfficeDefaults(mapping types.DefaultViewerMapping) types.DefaultViewerM
 	}
 	return mapping
 }
-
-// builtinPdfViewer is the id of the built-in PDF viewer (inventory/setting.go).
-const builtinPdfViewer = "pdf"

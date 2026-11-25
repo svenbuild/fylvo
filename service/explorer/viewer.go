@@ -309,8 +309,9 @@ func (service *WopiService) PutContent(c *gin.Context, isPutRelative bool) error
 	subService := FileUpdateService{
 		Uri: fileUri,
 	}
-	if !isPutRelative {
-		subService.Previous = c.GetHeader(wopi.ExpectedVersionHeader)
+	if expected := c.GetHeader(wopi.ExpectedVersionHeader); expected != "" && !isPutRelative {
+		// Fylvo: only over that version, and never a file that is gone meanwhile.
+		subService.Previous, subService.PreviousRequired = expected, true
 	}
 
 	res, err := subService.PutContent(c, lockSession)
@@ -324,7 +325,7 @@ func (service *WopiService) PutContent(c *gin.Context, isPutRelative bool) error
 			case serializer.CodeNotFound:
 				c.Status(http.StatusNotFound)
 				c.Header(wopi.ServerErrorHeader, err.Error())
-			case serializer.CodeStaleVersion:
+			case serializer.CodeStaleVersion, serializer.CodeUploadTargetGone:
 				c.Status(http.StatusConflict)
 				c.Header(wopi.ServerErrorHeader, "document changed in storage")
 			case 0:
@@ -536,7 +537,10 @@ func (s *CreateViewerSessionService) Create(c *gin.Context) (*ViewerSessionRespo
 	res := &ViewerSessionResponse{Session: viewerSession}
 	if setting.IsCraftViewer(targetViewer) {
 		// Fylvo: a Craft editor runs in the browser, which makes the WOPI calls itself, on
-		// this server's own address.
+		// this server's own address. It takes only the kinds of file it is set up for.
+		if _, err := wopi.ActionURL(s.PreferredAction, targetViewer, viewerSession.File.Ext(), ""); err != nil {
+			return nil, serializer.NewError(serializer.CodeParamErr, "viewer does not take this file", err)
+		}
 		res.WopiSrc = routes.MasterWopiSrc(&url.URL{}, hashid.EncodeFileID(dep.HashIDEncoder(), viewerSession.File.ID())).String()
 	} else if targetViewer.Type == types.ViewerTypeWopi {
 		// For WOPI viewer, generate WOPI src

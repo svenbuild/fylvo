@@ -100,10 +100,14 @@ func connectedViewerSession(c *gin.Context, uri *fs.URI, s *CreateViewerSessionS
 	}
 	base := settings.SiteURL(setting.UseFirstSiteUrl(c))
 	if setting.IsCraftViewer(viewer) {
-		// A Craft editor runs in the browser and makes the calls on this server's own address.
+		// A Craft editor runs in the browser and makes the calls on this server's own address:
+		// it gets that address itself.
 		base = &url.URL{}
 	}
 	src, err := wopi.ActionURL(action, viewer, util.Ext(session.Name), connectedWopiSrc(base, session.ID))
+	if err == nil && setting.IsCraftViewer(viewer) {
+		src, _ = url.Parse(connectedWopiSrc(base, session.ID))
+	}
 	if err != nil {
 		req.m.CloseOffice(session)
 		if errors.Is(err, wopi.ErrActionNotSupported) {
@@ -111,17 +115,13 @@ func connectedViewerSession(c *gin.Context, uri *fs.URI, s *CreateViewerSessionS
 		}
 		return nil, serializer.NewError(serializer.CodeInternalSetting, "failed to generate wopi src", err)
 	}
-	wopiSrc := src.String()
-	if setting.IsCraftViewer(viewer) {
-		wopiSrc = connectedWopiSrc(base, session.ID)
-	}
 	return &ViewerSessionResponse{
 		Session: &manager.ViewerSession{
 			ID:          session.ID,
 			AccessToken: session.Token,
 			Expires:     session.Expires.Add(-connectedSessionPadding).UnixMilli(),
 		},
-		WopiSrc: wopiSrc,
+		WopiSrc: src.String(),
 		Edit:    &session.Edit,
 	}, nil
 }

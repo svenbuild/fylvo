@@ -35,10 +35,12 @@ grep -v '^#' "$LOCK" | awk '$1 != "key" && NF == 3' | while read -r APP VERSION 
   gpg --batch --status-fd 1 --verify "$DIR/SHA256SUMS.txt.asc" "$DIR/SHA256SUMS.txt" 2>/dev/null \
     | grep -q "^\[GNUPG:\] VALIDSIG .* $KEY\$" || { echo "$APP: bad signature" >&2; exit 1; }
   ACTUAL="$(sha256sum "$DIR/$ZIP" | cut -d' ' -f1)"
-  if [ -n "${CRAFT_PRINT_SUMS:-}" ]; then
-    echo "$APP $VERSION $ACTUAL"
-  fi
   grep -q "^$ACTUAL  $ZIP\$" "$DIR/SHA256SUMS.txt" || { echo "$APP: zip not in the signed sums" >&2; exit 1; }
+  if [ -n "${CRAFT_PRINT_SUMS:-}" ]; then
+    # Updating craft.lock: the signed sum of the new version, nothing is installed.
+    echo "$APP $VERSION $ACTUAL"
+    continue
+  fi
   [ "$ACTUAL" = "$SUM" ] || { echo "$APP: zip sum $ACTUAL, craft.lock has $SUM" >&2; exit 1; }
 
   unzip -q "$DIR/$ZIP" -d "$DIR/unpacked"
@@ -54,5 +56,10 @@ grep -v '^#' "$LOCK" | awk '$1 != "key" && NF == 3' | while read -r APP VERSION 
   echo "$VERSION" > "$SRC/VERSION"
   rm -rf "${TARGET:?}/$APP"
   mv "$SRC" "$TARGET/$APP"
+done
+[ -n "${CRAFT_PRINT_SUMS:-}" ] && exit 0
+# Every app of the lock must be there.
+for APP in $(grep -v '^#' "$LOCK" | awk '$1 != "key" && NF == 3 {print $1}'); do
+  [ -f "$TARGET/$APP/index.html" ] || { echo "$APP is missing in $TARGET" >&2; exit 1; }
 done
 echo "Craft editors are in $TARGET"

@@ -90,8 +90,3 @@ export type SaveRoute = "put" | "copy";
 // name; Save As, an export to another format, or a new name become a copy the user places.
 export const saveRoute = (opened: string, saved: string, saveAs: boolean): SaveRoute =>
   !saveAs && saved.toLowerCase() == opened.toLowerCase() ? "put" : "copy";
-
-// A blank document for an empty file (one just made with "New"), as the editors cannot save a
-// document they made themselves in the right format.
-export const blankTemplate = (ext: string) =>
-  ["docx", "xlsx", "pptx"].includes(ext) ? `/static/craft-blank/blank.${ext}` : undefined;

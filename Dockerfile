@@ -3,7 +3,7 @@
 # Raise the Alpine version on purpose and test the image after it.
 
 # The Craft editors (office in the browser), fetched and checked against scripts/craft/craft.lock.
-FROM alpine:3.24 AS craft
+FROM --platform=$BUILDPLATFORM alpine:3.24 AS craft
 RUN apk add --no-cache curl gnupg unzip brotli gzip
 COPY scripts/craft /craft-scripts
 RUN sh /craft-scripts/fetch.sh /craft

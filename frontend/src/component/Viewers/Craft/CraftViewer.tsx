@@ -2,17 +2,18 @@ import { Alert, Box, Button, Chip } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getFileInfo } from "../../../api/api.ts";
-import { inConnectedStorage } from "../../../api/connected.ts";
+import { getConnectedOfficeState, inConnectedStorage } from "../../../api/connected.ts";
 import { closeCraftViewer } from "../../../redux/globalStateSlice.ts";
 import { fileUpdated } from "../../../redux/fileManagerSlice.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { saveFile } from "../../../redux/thunks/viewer.ts";
 import SessionManager from "../../../session";
-import { fileExtension, getFileLinkedUri } from "../../../util";
+import { getFileLinkedUri } from "../../../util";
 import CrUri from "../../../util/uri.ts";
 import { FileManagerIndex } from "../../FileManager/FileManager.tsx";
 import ViewerDialog, { ViewerLoading } from "../ViewerDialog.tsx";
-import { blankTemplate, newLockToken, saveRoute, WopiClient } from "./wopiClient.ts";
+import { loadBlankTemplate } from "../../../util/craft.ts";
+import { newLockToken, saveRoute, WopiClient } from "./wopiClient.ts";
 
 // Fylvo: a Craft editor (WordCraft, GridCraft, DeckCraft, PdfCraft). The editor runs in a frame of
 // this server and gets the file through its host messages (`<app>:open`), and hands every save back
@@ -32,6 +33,7 @@ const closeWait = 15 * 1000;
 type Status = "saved" | "unsaved" | "saving";
 
 interface Session {
+  id: string;
   client: WopiClient;
   app: string;
   // The name the editor knows the file by.
@@ -47,6 +49,9 @@ interface Session {
   // No more saves into the file: it changed elsewhere, or the session is over.
   frozen: boolean;
   saving?: Promise<void>;
+  // Called with the next save the editor hands over.
+  nextSave?: () => void;
+  autosave?: ReturnType<typeof setTimeout>;
   timers: ReturnType<typeof setTimeout>[];
   closed: boolean;
 }
@@ -122,13 +127,14 @@ const CraftViewer = () => {
           continue;
         }
         if (answer.status == 409) {
-          // Changed elsewhere (or the lock went to someone else). A connected storage has kept
-          // this state as a copy beside the file already.
+          // Changed elsewhere (or the lock went to someone else). A connected storage keeps this
+          // state as a copy beside the file; only a copy the server confirms counts.
           s.frozen = true;
-          if (s.connected) {
+          const state = s.connected ? await dispatch(getConnectedOfficeState(s.id)).catch(() => undefined) : undefined;
+          if (state?.copy && s.unsaved === bytes) {
             s.unsaved = undefined;
           }
-          setNotice({ key: s.connected ? "craft.conflictConnected" : "craft.conflict", severity: "error" });
+          setNotice({ key: state?.copy ? "craft.conflictConnected" : "craft.conflict", severity: "error" });
         } else if (answer.status == 401 || answer.status == 403 || answer.status == 404) {
           s.frozen = true;
           setNotice({ key: "craft.sessionEnded", severity: "error" });
@@ -144,7 +150,7 @@ const CraftViewer = () => {
     });
     showStatus();
     return s.saving;
-  }, [showStatus, refreshRow]);
+  }, [dispatch, showStatus, refreshRow]);
 
   // Asks the editor for its current state; it answers with a save message.
   const requestSave = useCallback(async () => {
@@ -159,6 +165,18 @@ const CraftViewer = () => {
       // Nothing to save, or the editor is busy: the next change tries again.
     }
   }, []);
+
+  // The editor's current state, handed over as a save (to wait for before closing or copying).
+  const snapshot = useCallback(async () => {
+    const s = sessionRef.current;
+    if (!s) {
+      return;
+    }
+    const handed = new Promise<void>((resolve) => (s.nextSave = resolve));
+    await requestSave();
+    await Promise.race([handed, sleep(closeWait)]);
+    s.nextSave = undefined;
+  }, [requestSave]);
 
   // A copy the user places (Save As, an export, a file that could not go into its place). Who
   // is not signed in gets it as a download.
@@ -196,6 +214,7 @@ const CraftViewer = () => {
         return;
       }
       s.unsaved = bytes;
+      s.nextSave?.();
       if (!s.edit || s.frozen) {
         showStatus();
         if (!s.edit) {
@@ -214,6 +233,7 @@ const CraftViewer = () => {
       return;
     }
     const s: Session = {
+      id: viewerState.session.id,
       client: new WopiClient(viewerState.src, viewerState.session.access_token),
       app,
       name: file.name,
@@ -239,6 +259,11 @@ const CraftViewer = () => {
       if (s.edit && info.SupportsLocks) {
         const lock = newLockToken();
         const answer = await s.client.lock("LOCK", lock);
+        if (answer == 200 && s.closed) {
+          // Closed meanwhile: the lock is given back at once.
+          s.client.lock("UNLOCK", lock).catch(() => undefined);
+          return;
+        }
         if (answer == 200) {
           s.lock = lock;
           // The version as it is under the lock: saves go over this one.
@@ -250,9 +275,8 @@ const CraftViewer = () => {
       }
       s.version = info.Version;
       let bytes = await s.client.contents();
-      const template = blankTemplate(fileExtension(s.name) ?? "");
-      if (bytes.byteLength == 0 && template) {
-        bytes = await (await fetch(template)).arrayBuffer();
+      if (bytes.byteLength == 0) {
+        bytes = (await loadBlankTemplate(s.name)) ?? bytes;
       }
       if (s.closed) {
         return;
@@ -263,6 +287,10 @@ const CraftViewer = () => {
       // PdfCraft offers its command API (used for autosave) only when asked.
       setFrameSrc(`/craft/${app}/?${query.toString()}${app == "pdfcraft" ? "&control" : ""}`);
     })().catch(() => {
+      if (s.lock) {
+        s.client.lock("UNLOCK", s.lock).catch(() => undefined);
+        s.lock = undefined;
+      }
       if (!s.closed) {
         s.frozen = true;
         setNotice({ key: "craft.openFailed", severity: "error" });
@@ -277,8 +305,15 @@ const CraftViewer = () => {
       if (!s.lock || s.closed) {
         return;
       }
-      const answer = await s.client.lock("REFRESH_LOCK", s.lock).catch(() => 0);
-      if (answer != 200 && answer != 0 && (await s.client.lock("LOCK", s.lock).catch(() => 0)) == 409) {
+      const lock = s.lock;
+      const answer = await s.client.lock("REFRESH_LOCK", lock).catch(() => 0);
+      if (answer == 200 || answer == 0) {
+        return;
+      }
+      const again = await s.client.lock("LOCK", lock).catch(() => 0);
+      if (s.closed && again == 200) {
+        s.client.lock("UNLOCK", lock).catch(() => undefined);
+      } else if (again == 409) {
         setNotice({ key: "craft.lockLost", severity: "warning" });
       }
     };
@@ -301,6 +336,7 @@ const CraftViewer = () => {
       s.closed = true;
       clearInterval(lockTimer);
       s.timers.forEach(clearTimeout);
+      clearTimeout(s.autosave);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("pagehide", onLeave);
       window.removeEventListener("beforeunload", onBeforeUnload);
@@ -338,8 +374,13 @@ const CraftViewer = () => {
         }
         case "dirty":
           s.dirty = !!data.dirty;
-          if (s.dirty && s.edit && !s.frozen) {
-            s.timers.push(setTimeout(() => sessionRef.current === s && s.dirty && requestSave(), autosaveDelay));
+          if (s.dirty && s.edit && !s.frozen && !s.autosave) {
+            s.autosave = setTimeout(() => {
+              s.autosave = undefined;
+              if (sessionRef.current === s && s.dirty) {
+                requestSave();
+              }
+            }, autosaveDelay);
           }
           showStatus();
           break;
@@ -372,11 +413,7 @@ const CraftViewer = () => {
     }
     setClosing(true);
     if (s.dirty && s.edit && !s.frozen) {
-      await requestSave();
-      const until = Date.now() + closeWait;
-      while (s.dirty && Date.now() < until) {
-        await sleep(200);
-      }
+      await snapshot();
     }
     await store();
     setClosing(false);
@@ -385,7 +422,7 @@ const CraftViewer = () => {
       return;
     }
     finishClose();
-  }, [closing, requestSave, store, finishClose]);
+  }, [closing, snapshot, store, finishClose]);
 
   // Keeps what could not be stored as a copy the user places, then closes.
   const copyAndClose = useCallback(async () => {
@@ -393,15 +430,19 @@ const CraftViewer = () => {
     if (!s) {
       return;
     }
-    if (!s.unsaved && s.dirty) {
-      await requestSave();
-      await sleep(500);
+    if (s.dirty) {
+      await snapshot();
     }
-    if (s.unsaved && (await saveCopy(s.name, s.unsaved))) {
-      s.unsaved = undefined;
-      finishClose();
+    const bytes = s.unsaved;
+    if (bytes && (await saveCopy(s.name, bytes))) {
+      if (s.unsaved === bytes) {
+        s.unsaved = undefined;
+      }
+      if (!s.unsaved && !s.dirty) {
+        finishClose();
+      }
     }
-  }, [requestSave, saveCopy, finishClose]);
+  }, [snapshot, saveCopy, finishClose]);
 
   const statusLabel = !edit ? undefined : t(`application:craft.status.${status}`);
 
@@ -425,7 +466,9 @@ const CraftViewer = () => {
           sx={{ borderRadius: 0, alignItems: "center" }}
           onClose={notice.severity == "error" ? undefined : () => setNotice(undefined)}
           action={
-            notice.key == "craft.conflict" || notice.key == "craft.sessionEnded" || notice.key == "craft.readOnlySave" ? (
+            notice.key == "craft.conflict" ||
+            notice.key == "craft.sessionEnded" ||
+            notice.key == "craft.readOnlySave" ? (
               <Button color="inherit" size="small" onClick={copyAndClose} sx={{ whiteSpace: "nowrap" }}>
                 {t("application:craft.saveCopy")}
               </Button>

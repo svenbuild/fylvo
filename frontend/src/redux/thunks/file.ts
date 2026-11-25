@@ -87,7 +87,7 @@ import { navigateReconcile, navigateToPath, refreshFileList, updateUserCapacity 
 import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers, openWopiViewer, saveFile } from "./viewer.ts";
-import { blankTemplate } from "../../component/Viewers/Craft/wopiClient.ts";
+import { loadBlankTemplate } from "../../util/craft.ts";
 import {
   connectedBatchSize,
   connectedIds,
@@ -1445,12 +1445,16 @@ export function createNew(index: number, type: string, viewer?: Viewer, template
 
     if (viewer) {
       // Fylvo: a Craft editor gets a real blank document at once, so the file is a valid
-      // document also when the editor is closed before the first save.
-      const blank = viewer.props?.craft && template ? blankTemplate(template.ext) : undefined;
+      // document also when the editor is closed before the first save. A connected storage
+      // creates one itself.
+      const blank =
+        viewer.props?.craft && newFile.size == 0 && !inConnectedStorage(newFile.path)
+          ? await loadBlankTemplate(newFile.name)
+          : undefined;
       if (blank) {
         try {
-          const bytes = await (await fetch(blank)).arrayBuffer();
-          newFile = (await dispatch(saveFile(getFileLinkedUri(newFile), bytes, undefined, false, true))) ?? newFile;
+          const uri = getFileLinkedUri(newFile);
+          newFile = (await dispatch(saveFile(uri, blank, newFile.primary_entity, false, true))) ?? newFile;
         } catch (e) {
           // The editor opens the empty file with the same blank document.
         }

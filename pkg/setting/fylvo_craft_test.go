@@ -52,6 +52,7 @@ func TestInstalledCraftApps(t *testing.T) {
 
 // withEngines sets what the environment would have set at start.
 func withEngines(t *testing.T, engines []string, icons map[string]string) {
+	loadCraft()
 	oldEngines, oldIcons, oldURL := officeEngines, craftIcons, officeURL
 	t.Cleanup(func() { officeEngines, craftIcons, officeURL = oldEngines, oldIcons, oldURL })
 	officeEngines, craftIcons, officeURL = engines, icons, "https://office.example.com"
@@ -91,16 +92,23 @@ func TestWithOfficeDefaults(t *testing.T) {
 	got := withOfficeDefaults(types.DefaultViewerMapping{"xlsx": "office-calc"})
 	assert.Equal(t, "craft-word", got["docx"])
 	assert.Equal(t, "craft-deck", got["pptx"])
-	// The admin's choice stays; PDF stays with the built-in viewer.
+	// The admin's choice stays; PDF has no second office engine and keeps what it had.
 	assert.Equal(t, "office-calc", got["xlsx"])
-	assert.Equal(t, "pdf", got["pdf"])
+	assert.Empty(t, got["pdf"])
 
+	// Only formats both engines take: the others open as before.
 	withEngines(t, []string{"collabora", "craft"}, all)
 	got = withOfficeDefaults(nil)
-	assert.Equal(t, "office-writer", got["docx"])
-	assert.Equal(t, "pdf", got["pdf"])
+	assert.Equal(t, types.DefaultViewerMapping{"docx": "office-writer", "xlsx": "office-calc", "pptx": "office-impress"}, got)
 
 	// One engine: nothing to choose between, the mapping stays as it was.
 	withEngines(t, []string{"collabora"}, all)
 	assert.Empty(t, withOfficeDefaults(types.DefaultViewerMapping{}))
+}
+
+func TestCraftDirOnlyInUse(t *testing.T) {
+	withEngines(t, []string{"collabora"}, map[string]string{"wordcraft": ""})
+	assert.Empty(t, CraftDir())
+	withEngines(t, []string{"craft"}, map[string]string{"wordcraft": ""})
+	assert.NotEmpty(t, CraftDir())
 }

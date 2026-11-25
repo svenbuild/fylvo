@@ -19,7 +19,7 @@ import (
 
 // Fylvo: the Craft editors (see pkg/setting/fylvo_craft.go) under setting.CraftRoute. Only
 // files below the folder are served, and a path that is not there is 404, not the web app.
-// scripts/fetch-craft.sh stores the big files compressed, as name.br and name.gz; a browser
+// scripts/craft/fetch.sh stores the big files compressed, as name.br and name.gz; a browser
 // gets the encoding it takes, one that takes neither gets the .gz unpacked.
 
 // craftHashed matches the names the build gave a content hash ("app-web-0123456789abcdef.js");
@@ -74,7 +74,11 @@ func CraftFiles(dir string) gin.HandlerFunc {
 		}
 		defer root.Close()
 		if info, err := root.Stat(name); err == nil && info.IsDir() {
-			c.Redirect(http.StatusMovedPermanently, c.Request.URL.Path+"/")
+			target := c.Request.URL.Path + "/"
+			if c.Request.URL.RawQuery != "" {
+				target += "?" + c.Request.URL.RawQuery
+			}
+			c.Redirect(http.StatusMovedPermanently, target)
 			return
 		}
 
@@ -182,10 +186,12 @@ func craftType(name string) string {
 // into it allowed to run. Without a page no such script runs.
 func craftPagePolicy(root *os.Root, name string) string {
 	hashes := ""
-	if root == nil {
-		return strings.Replace(craftPolicy, "%s", hashes, 1)
+	var file *os.File
+	var encoding string
+	if root != nil {
+		file, encoding = openCraftFile(root, name, "")
 	}
-	if file, encoding := openCraftFile(root, name, ""); file != nil {
+	if file != nil {
 		var page io.Reader = file
 		if encoding == "gunzip" {
 			if unpacked, err := gzip.NewReader(file); err == nil {
