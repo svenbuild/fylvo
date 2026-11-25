@@ -42,7 +42,15 @@ const RetryPassword = () => {
       <Box
         component={"form"}
         onSubmit={submit}
-        sx={{ mt: 1, display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 1 }}
+        // Fylvo: field and button share one height (the theme makes fields small).
+        sx={{
+          mt: 1,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "center",
+          gap: 1,
+          "& .MuiFilledInput-root": { height: 44 },
+        }}
       >
         <FilledTextField
           variant={"filled"}
@@ -59,7 +67,7 @@ const RetryPassword = () => {
           type={"submit"}
           disabled={password == ""}
           variant={"contained"}
-          sx={{ minWidth: 44, px: 1, height: 56 }}
+          sx={{ minWidth: 44, px: 1, height: 44 }}
         >
           <ArrowLeft
             sx={{

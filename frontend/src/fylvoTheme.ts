@@ -75,6 +75,10 @@ const fylvoOptions: ThemeOptions = {
         root: { borderRadius: RADIUS, minHeight: 30, padding: "3px 10px", lineHeight: 1.4, [TOUCH]: { minHeight: 40 } },
         sizeLarge: { minHeight: 34, padding: "5px 14px" },
         outlined: ({ theme }) => ({ borderColor: theme.palette.divider }),
+        // Fylvo: a primary colored ring vanishes on a primary button; this one wins over the page rings.
+        containedPrimary: ({ theme }) => ({
+          "&&&.Mui-focusVisible": { outline: `1px solid ${theme.palette.primary.contrastText}`, outlineOffset: -3 },
+        }),
         startIcon: { marginRight: 6, "& > *:nth-of-type(1)": { fontSize: 16 } },
         endIcon: { marginLeft: 6, "& > *:nth-of-type(1)": { fontSize: 16 } },
       },
