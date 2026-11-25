@@ -261,6 +261,40 @@ impl DriveManager {
     pub async fn remove_drive(&self, id: &str) -> Result<Option<DriveConfig>> {
         // Fylvo: counted for the updater until the drive is cleaned up (activity.rs).
         let _busy = crate::activity::enter().await;
+
+        // Fylvo (Linux): a virtual drive keeps the changes that never reached the server. It
+        // stays registered until they are saved; if that fails, removing can be tried again.
+        #[cfg(target_os = "linux")]
+        if let Some(mount) = self.get_drive(id).await {
+            if let Some(vfs) = &mount.vfs {
+                let name = mount.get_config().await.name;
+                // While still mounted: complete changed files (fails offline, nothing removed).
+                vfs.prepare_removal().await?;
+                // Unmount (no write after this), let running uploads finish, then save the rest.
+                vfs.stop();
+                vfs.wait_idle().await;
+                if vfs.unsent_count() > 0 {
+                    let folder: String = name
+                        .chars()
+                        .map(|c| if c == '/' || c.is_control() { '_' } else { c })
+                        .collect();
+                    let folder = match folder.trim() {
+                        "" | "." | ".." => "Fylvo".to_string(),
+                        other => other.to_string(),
+                    };
+                    let target = dirs::home_dir().unwrap_or_default().join("Fylvo not uploaded").join(folder);
+                    let saved = vfs.export_unsent(&target).map_err(|e| {
+                        tracing::error!(target: "drive::manager", error = %e, "Failed to save changes not uploaded");
+                        anyhow::anyhow!("the changes not uploaded yet could not be saved: {e}")
+                    })?;
+                    crate::utils::toast::send_general_text_toast(
+                        &t!("vfsUnsentSavedTitle"),
+                        &t!("vfsUnsentSavedMessage", "count" => saved, "folder" => target.display()),
+                    );
+                }
+            }
+        }
+
         let mut write_guard = self.drives.write().await;
 
         // Remove the mount from the map
@@ -274,29 +308,6 @@ impl DriveManager {
 
         // Drop the write guard before calling delete to avoid potential deadlocks
         drop(write_guard);
-
-        // Fylvo (Linux): unmount first (nothing can be written after that), then keep the
-        // changes that never reached the server.
-        #[cfg(target_os = "linux")]
-        if let Some(vfs) = &mount.vfs {
-            vfs.stop();
-            if vfs.unsent_count() > 0 {
-                let target = dirs::home_dir()
-                    .unwrap_or_default()
-                    .join("Fylvo not uploaded")
-                    .join(&config.name);
-                match vfs.export_unsent(&target) {
-                    Ok(saved) => crate::utils::toast::send_general_text_toast(
-                        &t!("vfsUnsentSavedTitle"),
-                        &t!("vfsUnsentSavedMessage", "count" => saved, "folder" => target.display()),
-                    ),
-                    Err(e) => {
-                        tracing::error!(target: "drive::manager", error = %e, "Failed to save changes not uploaded");
-                        anyhow::bail!("the changes not uploaded yet could not be saved: {e}");
-                    }
-                }
-            }
-        }
 
         // Delete the mount (unregister sync root, cleanup, etc.)
         mount.delete().await.context("Failed to delete mount")?;
@@ -314,10 +325,14 @@ impl DriveManager {
     /// Fylvo: whether `path` lies inside the folder of a drive or contains one (a new drive
     /// there would sync or mount into another). Compared by path components only.
     pub async fn path_overlaps(&self, path: &Path) -> bool {
+        // Also through a symlinked folder: the nearest existing folder is resolved.
+        let resolved = resolve_existing(path);
         let drives = self.drives.read().await;
         for mount in drives.values() {
             let other = mount.get_sync_path().await;
-            if paths_overlap(path, &other) {
+            // A sync folder is resolved too; a mounted drive never (that would enter it).
+            let other_resolved = if mount.is_virtual() { other.clone() } else { resolve_existing(&other) };
+            if [&other, &other_resolved].iter().any(|o| paths_overlap(path, o) || paths_overlap(&resolved, o)) {
                 return true;
             }
         }
@@ -806,6 +821,24 @@ impl DriveManager {
             mount.shutdown().await;
         }
         tracing::info!(target: "drive", "All drives shutdown");
+    }
+}
+
+/// Fylvo: `path` with its nearest existing folder resolved (symlinks), the rest appended.
+fn resolve_existing(path: &Path) -> PathBuf {
+    let mut existing = path;
+    let mut rest = Vec::new();
+    loop {
+        if let Ok(real) = existing.canonicalize() {
+            return rest.iter().rev().fold(real, |p, part: &&std::ffi::OsStr| p.join(part));
+        }
+        match (existing.parent(), existing.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name);
+                existing = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
     }
 }
 

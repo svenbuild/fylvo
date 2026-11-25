@@ -28,8 +28,6 @@ enum Outcome {
     ConflictCopy(FileResponse, String),
     /// Try again later.
     Retry(String),
-    /// Written again while it uploaded: upload again soon (no failure).
-    Again,
 }
 
 /// Upload changes that are due, a few at a time, until the drive stops.
@@ -87,31 +85,22 @@ fn due(drive: &Drive) -> Vec<u64> {
 async fn upload(drive: &Arc<Drive>, ino: u64) {
     let outcome = attempt(drive, ino).await;
     let path = drive.tree().path(ino).unwrap_or_default();
-    match outcome {
-        Ok(Outcome::Uploaded(info)) => {
+    let finished = match outcome {
+        Ok((Outcome::Uploaded(info), writes)) => {
             tracing::info!(target: "vfs", path = %path, "Uploaded");
-            committed(drive, ino, &info);
+            committed(drive, ino, &info, writes)
         }
-        Ok(Outcome::ConflictCopy(info, copy)) => {
+        Ok((Outcome::ConflictCopy(info, copy), writes)) => {
             tracing::info!(target: "vfs", path = %path, copy = %copy, "Saved as a conflict copy");
-            reverted(drive, ino, &info);
             if !copy.is_empty() {
                 crate::utils::toast::send_general_text_toast(
                     &t!("vfsConflictTitle"),
                     &t!("vfsConflictMessage", "name" => copy),
                 );
             }
+            reverted(drive, ino, &info, writes)
         }
-        Ok(Outcome::Again) => {
-            let mut tree = drive.tree();
-            if let Some(node) = tree.nodes.get_mut(&ino) {
-                let closed = node.writers == 0;
-                if let Some(change) = node.change.as_mut() {
-                    change.due = closed.then(|| Instant::now() + super::drive::UPLOAD_DELAY);
-                }
-            }
-        }
-        Ok(Outcome::Retry(reason)) | Err(reason) => {
+        Ok((Outcome::Retry(reason), _)) | Err(reason) => {
             tracing::warn!(target: "vfs", path = %path, reason = %reason, "Upload failed, trying again later");
             let mut tree = drive.tree();
             if let Some(change) = tree.nodes.get_mut(&ino).and_then(|n| n.change.as_mut()) {
@@ -119,6 +108,18 @@ async fn upload(drive: &Arc<Drive>, ino: u64) {
                 change.attempts += 1;
                 change.failed = Some(reason);
                 change.due = Some(Instant::now() + Duration::from_secs(wait));
+            }
+            return;
+        }
+    };
+    if !finished {
+        // Written again while it uploaded: upload again soon (no failure).
+        let mut tree = drive.tree();
+        if let Some(node) = tree.nodes.get_mut(&ino) {
+            let closed = node.writers == 0;
+            if let Some(change) = node.change.as_mut() {
+                change.due = closed.then(|| Instant::now() + super::drive::UPLOAD_DELAY);
+                change.failed = None;
             }
         }
     }
@@ -128,7 +129,6 @@ async fn upload(drive: &Arc<Drive>, ino: u64) {
 struct Job {
     path: String,
     remote: Option<Remote>,
-    change_counter: u64,
     recovered: bool,
     cell: Arc<super::content::Cell>,
     mtime: i64,
@@ -141,14 +141,14 @@ fn job(drive: &Drive, ino: u64) -> Option<Job> {
     Some(Job {
         path: tree.path(ino)?,
         remote: node.remote.clone(),
-        change_counter: change.counter,
         recovered: change.recovered,
         cell: change.cell.clone(),
         mtime: unix(node.mtime),
     })
 }
 
-async fn attempt(drive: &Arc<Drive>, ino: u64) -> Result<Outcome, String> {
+/// Upload a snapshot of the change. Returns the outcome and the write count of the snapshot.
+async fn attempt(drive: &Arc<Drive>, ino: u64) -> Result<(Outcome, u64), String> {
     let job = job(drive, ino).ok_or("the file is gone")?;
     // The parts never loaded come from the version the change started from.
     let remote_len = job.cell.lock().remote_len;
@@ -158,60 +158,28 @@ async fn attempt(drive: &Arc<Drive>, ino: u64) -> Result<Outcome, String> {
             .await
             .map_err(|e| format!("could not load the rest of the file ({e:?})"))?;
     }
-    // The snapshot: under the cell lock, so no write lands half in it.
     let staging = drive.info.data_dir.join("staging");
     std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
     let snapshot = staging.join(uuid::Uuid::new_v4().simple().to_string());
-    // The counter is read first: a write between the two is in the snapshot and only makes
-    // the file look changed again (one more upload), never the other way round.
-    let counter = drive
-        .tree()
-        .nodes
-        .get(&ino)
-        .and_then(|n| n.change.as_ref())
-        .map(|c| c.counter)
-        .unwrap_or(job.change_counter);
-    let size = {
-        let state = job.cell.lock();
-        let source = drive.contents.path_of(&state.key);
-        std::fs::copy(&source, &snapshot).map_err(|e| format!("snapshot: {e}"))?
-    };
+    let (size, writes) = take_snapshot(drive, &job.cell, &snapshot).await?;
     let result = send(drive, &job, &snapshot, size).await;
     let _ = std::fs::remove_file(&snapshot);
-    let outcome = result?;
-    // Written again while it uploaded: the newer writes must not be dropped. The file stays
-    // changed; after our own upload it continues from that version, after a conflict from the
-    // old one (so the next upload makes another conflict copy instead of overwriting).
-    let changed_again = drive
-        .tree()
-        .nodes
-        .get(&ino)
-        .and_then(|n| n.change.as_ref())
-        .is_some_and(|c| c.counter != counter);
-    if changed_again {
-        if let Outcome::Uploaded(info) = &outcome {
-            let cell = {
-                let mut tree = drive.tree();
-                let node = tree.nodes.get_mut(&ino);
-                node.and_then(|node| {
-                    node.remote = Some(Remote {
-                        id: info.id.clone(),
-                        version: info.primary_entity.clone().unwrap_or_default(),
-                    });
-                    node.change.as_ref().map(|c| c.cell.clone())
-                })
-            };
-            if let Some(cell) = cell {
-                cell.lock().remote_len = 0;
-            }
-            drive.persist_change(ino);
-        }
-        if let Some(change) = drive.tree().nodes.get_mut(&ino).and_then(|n| n.change.as_mut()) {
-            change.recovered = false;
-        }
-        return Ok(Outcome::Again);
-    }
-    Ok(outcome)
+    Ok((result?, writes))
+}
+
+/// Copy the content while no write can run (the gate), off the async workers.
+pub(crate) async fn take_snapshot(drive: &Drive, cell: &Arc<super::content::Cell>, target: &std::path::Path) -> Result<(u64, u64), String> {
+    let cell = cell.clone();
+    let source = drive.contents.path_of(&cell.key());
+    let target = target.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let _gate = cell.gate.write().unwrap_or_else(|e| e.into_inner());
+        let writes = cell.lock().writes;
+        let size = std::fs::copy(&source, &target).map_err(|e| format!("snapshot: {e}"))?;
+        Ok((size, writes))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 async fn send(drive: &Arc<Drive>, job: &Job, snapshot: &std::path::Path, size: u64) -> Result<Outcome, String> {
@@ -284,7 +252,7 @@ async fn file_info(drive: &Arc<Drive>, uri: &str) -> Result<FileResponse, String
 
 /// Whether the server's current file has exactly the bytes of `snapshot`.
 async fn same_content(drive: &Arc<Drive>, uri: &str, info: &FileResponse, snapshot: &std::path::Path, size: u64) -> bool {
-    if info.size.max(0) as u64 != size || size > 256 * 1024 * 1024 {
+    if info.size.max(0) as u64 != size || size > 64 * 1024 * 1024 {
         return false;
     }
     let mut request = cloudreve_api::models::explorer::FileURLService::default();
@@ -315,53 +283,82 @@ async fn conflict_copy(drive: &Arc<Drive>, job: &Job, snapshot: &std::path::Path
     }
 }
 
-/// The upload is the server's current version: the local copy becomes its cached copy.
-fn committed(drive: &Arc<Drive>, ino: u64, info: &FileResponse) {
+/// The upload is the server's current version: the local copy becomes its cached copy, unless
+/// it was written after the snapshot (then it stays a change, continuing from the uploaded
+/// version). Returns whether the change is done.
+fn committed(drive: &Arc<Drive>, ino: u64, info: &FileResponse, writes: u64) -> bool {
     let version = info.primary_entity.clone().unwrap_or_default();
-    let (path, cell) = {
+    let remote = Remote { id: info.id.clone(), version: version.clone() };
+    let (path, old_key, cell) = {
         let mut tree = drive.tree();
         let path = tree.path(ino).unwrap_or_default();
-        let Some(node) = tree.nodes.get_mut(&ino) else { return };
-        let Some(change) = node.change.take() else { return };
-        node.remote = Some(Remote { id: info.id.clone(), version: version.clone() });
-        node.last_key = None;
-        (path, change.cell)
+        let Some(node) = tree.nodes.get_mut(&ino) else { return true };
+        let Some(cell) = node.change.as_ref().map(|c| c.cell.clone()) else { return true };
+        // Under the tree lock: a write starting a new change waits for this.
+        match drive.contents.make_clean(&cell, &info.id, &version, writes) {
+            Ok(Some(old_key)) => {
+                node.change = None;
+                node.remote = Some(remote);
+                node.last_key = None;
+                (path, old_key, cell)
+            }
+            Ok(None) => {
+                node.remote = Some(remote);
+                if let Some(change) = node.change.as_mut() {
+                    change.recovered = false;
+                }
+                drop(tree);
+                cell.lock().remote_len = 0;
+                let _ = drive.persist_change(ino);
+                return false;
+            }
+            Err(e) => {
+                tracing::warn!(target: "vfs", error = %e, "Failed to keep the uploaded file in the cache");
+                node.remote = Some(remote);
+                drop(tree);
+                cell.lock().remote_len = 0;
+                let _ = drive.persist_change(ino);
+                return false;
+            }
+        }
     };
-    let _ = drive.store.delete_change(&path);
-    match drive.contents.make_clean(&cell, &info.id, &version) {
-        Ok(old) => {
-            let _ = drive.store.delete_content(&old);
-            let row = cell.lock().row();
-            let _ = drive.store.save_content(&row);
-        }
-        Err(e) => {
-            tracing::warn!(target: "vfs", error = %e, "Failed to keep the uploaded file in the cache");
-            drive.contents.remove(&cell);
-        }
+    let row = cell.lock().row();
+    if let Err(e) = drive.store.commit_upload(&path, &old_key, &row) {
+        tracing::warn!(target: "vfs", error = %e, "Failed to record an upload");
     }
     drive.mark_stale(names::parent_of(&path));
+    true
 }
 
 /// Our content went to a conflict copy (or is an older version): the file shows the server's
-/// current version again.
-fn reverted(drive: &Arc<Drive>, ino: u64, info: &FileResponse) {
+/// current version again, unless it was written after the snapshot (then it stays a change
+/// from the old version, so the next upload makes another conflict copy). Returns whether the
+/// change is done.
+fn reverted(drive: &Arc<Drive>, ino: u64, info: &FileResponse, writes: u64) -> bool {
     let (path, cell) = {
         let mut tree = drive.tree();
         let path = tree.path(ino).unwrap_or_default();
-        let Some(node) = tree.nodes.get_mut(&ino) else { return };
-        let Some(change) = node.change.take() else { return };
+        let Some(node) = tree.nodes.get_mut(&ino) else { return true };
+        let Some(cell) = node.change.as_ref().map(|c| c.cell.clone()) else { return true };
+        if !drive.contents.remove_if_unchanged(&cell, writes) {
+            if let Some(change) = node.change.as_mut() {
+                change.recovered = false;
+            }
+            return false;
+        }
+        node.change = None;
         node.remote = Some(Remote {
             id: info.id.clone(),
             version: info.primary_entity.clone().unwrap_or_default(),
         });
         node.size = info.size.max(0) as u64;
         node.last_key = None;
-        (path, change.cell)
+        (path, cell)
     };
-    let _ = drive.store.delete_change(&path);
-    drive.contents.remove(&cell);
+    let _ = drive.store.replace_change(&[path.as_str()], None);
     let _ = drive.store.delete_content(&cell.key());
     drive.mark_stale(names::parent_of(&path));
+    true
 }
 
 /// At start: put the recorded changes back into the tree. A change that was open when the app
@@ -406,12 +403,12 @@ pub(crate) fn restore(drive: &Arc<Drive>) {
         };
         if let Some(node) = tree.nodes.get_mut(&ino) {
             node.remote = remote;
-            node.size = row.size.max(0) as u64;
+            // The file's own length: writes after the last record count.
+            node.size = cell.len();
             node.mtime = std::time::UNIX_EPOCH + Duration::from_secs(row.mtime.max(0) as u64);
             node.change = Some(Change {
                 cell,
                 local_only: row.local_only != 0,
-                counter: 0,
                 due: Some(Instant::now() + super::drive::UPLOAD_DELAY),
                 failed: None,
                 attempts: 0,

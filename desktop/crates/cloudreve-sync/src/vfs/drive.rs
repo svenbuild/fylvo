@@ -46,8 +46,6 @@ pub(crate) struct Change {
     pub cell: Arc<Cell>,
     /// A temp name of an editor: kept here, never uploaded.
     pub local_only: bool,
-    /// Counts writes, so an upload knows whether the file changed while it ran.
-    pub counter: u64,
     /// When the upload may start (`None` while open for writing).
     pub due: Option<Instant>,
     pub failed: Option<String>,
@@ -162,6 +160,19 @@ impl Tree {
         }
     }
 
+    /// `ino` and every node below it that the tree knows.
+    pub(crate) fn subtree(&self, ino: u64) -> Vec<u64> {
+        let mut all = vec![ino];
+        let mut at = 0;
+        while at < all.len() {
+            if let Some(listing) = self.nodes.get(&all[at]).and_then(|n| n.listing.as_ref()) {
+                all.extend(listing.children.values().copied());
+            }
+            at += 1;
+        }
+        all
+    }
+
     fn move_to(&mut self, ino: u64, parent: u64, name: &str) {
         self.detach(ino);
         if let Some(node) = self.nodes.get_mut(&ino) {
@@ -179,6 +190,8 @@ pub(crate) struct Handle {
     pub ino: u64,
     pub cell: Arc<Cell>,
     pub write: bool,
+    /// Where the last read of this handle ended (read ahead only for sequential reads).
+    pub last_end: AtomicU64,
 }
 
 /// Static facts of a drive.
@@ -213,6 +226,10 @@ pub(crate) struct Drive {
     pub pins: Mutex<Vec<String>>,
     pub upload_wake: tokio::sync::Notify,
     pub pin_wake: tokio::sync::Notify,
+    quota_used: AtomicU64,
+    quota_total: AtomicU64,
+    /// Folders with a background refresh queued or running (one at a time per folder).
+    refreshing: Mutex<std::collections::HashSet<u64>>,
     http: reqwest::Client,
     uid: u32,
     gid: u32,
@@ -260,6 +277,9 @@ impl Drive {
         rt: tokio::runtime::Handle,
     ) -> Self {
         let pins = store.pins().unwrap_or_default();
+        let quota = store.meta("quota").ok().flatten().unwrap_or_default();
+        let mut quota = quota.split('/').map(|p| p.parse::<u64>().unwrap_or(0));
+        let (quota_used, quota_total) = (quota.next().unwrap_or(0), quota.next().unwrap_or(0));
         Self {
             info,
             client,
@@ -283,6 +303,9 @@ impl Drive {
             pins: Mutex::new(pins),
             upload_wake: tokio::sync::Notify::new(),
             pin_wake: tokio::sync::Notify::new(),
+            quota_used: AtomicU64::new(quota_used),
+            quota_total: AtomicU64::new(quota_total),
+            refreshing: Mutex::new(std::collections::HashSet::new()),
             http: reqwest::Client::builder()
                 .connect_timeout(Duration::from_secs(10))
                 .build()
@@ -472,13 +495,20 @@ impl Drive {
     }
 
     fn refresh_in_background(self: &Arc<Self>, ino: u64) {
-        if !self.is_online() {
+        if !self.is_online() || !self.refreshing.lock().unwrap_or_else(|e| e.into_inner()).insert(ino) {
             return;
         }
         let drive = self.clone();
         self.rt.spawn(async move {
             let _ = drive.refresh(ino).await;
+            drive.refreshing.lock().unwrap_or_else(|e| e.into_inner()).remove(&ino);
         });
+    }
+
+    /// List a folder on the server now (without the subfolders), unless that happened in the
+    /// last two seconds.
+    pub(crate) async fn refresh_now(self: &Arc<Self>, ino: u64) -> Result<(), Errno> {
+        self.refresh_one(ino, true).await
     }
 
     fn list_lock(&self, ino: u64) -> Arc<tokio::sync::Mutex<()>> {
@@ -493,7 +523,7 @@ impl Drive {
     /// List folder `ino` on the server (one request per folder at a time), then its subfolders
     /// in the background, so opening one of them is instant.
     pub(crate) async fn refresh(self: &Arc<Self>, ino: u64) -> Result<(), Errno> {
-        self.refresh_one(ino).await?;
+        self.refresh_one(ino, false).await?;
         self.prefetch_children(ino);
         Ok(())
     }
@@ -518,19 +548,19 @@ impl Drive {
                 let path = drive.tree().path(child);
                 let Some(path) = path else { return };
                 if !drive.load_stored_listing(child, &path) {
-                    let _ = drive.refresh_one(child).await;
+                    let _ = drive.refresh_one(child, false).await;
                 }
             });
         }
     }
 
-    async fn refresh_one(self: &Arc<Self>, ino: u64) -> Result<(), Errno> {
+    async fn refresh_one(self: &Arc<Self>, ino: u64, force: bool) -> Result<(), Errno> {
         let lock = self.list_lock(ino);
         let _one = lock.lock().await;
         let (path, generation) = {
             let tree = self.tree();
             let node = tree.nodes.get(&ino).ok_or(Errno::ENOENT)?;
-            if node.listing.as_ref().and_then(|l| l.fresh_at).is_some_and(|at| at.elapsed() < Duration::from_secs(2)) {
+            if !force && node.listing.as_ref().and_then(|l| l.fresh_at).is_some_and(|at| at.elapsed() < Duration::from_secs(2)) {
                 return Ok(());
             }
             (tree.path(ino).ok_or(Errno::ENOENT)?, node.listing.as_ref().map(|l| l.generation))
@@ -639,6 +669,20 @@ impl Drive {
             }
             None => return false,
         };
+        // Folders that hold a local change or an upload (also deeper down) stay, even if the
+        // server no longer has them: the upload makes them again.
+        let mut holding = std::collections::HashSet::new();
+        for (child_ino, node) in tree.nodes.iter() {
+            if node.change.is_some() || node.uploading {
+                let mut at = *child_ino;
+                while let Some(n) = tree.nodes.get(&at) {
+                    if !holding.insert(at) || at == ROOT || n.parent == 0 {
+                        break;
+                    }
+                    at = n.parent;
+                }
+            }
+        }
         let mut children = BTreeMap::new();
         for file in files {
             if names::is_trash_name(&file.name) && ino == ROOT {
@@ -682,8 +726,7 @@ impl Drive {
             if children.get(&name) == Some(&child) {
                 continue;
             }
-            let keep = !children.contains_key(&name)
-                && tree.nodes.get(&child).is_some_and(|n| n.change.is_some() || n.uploading);
+            let keep = !children.contains_key(&name) && holding.contains(&child);
             if keep {
                 children.insert(name, child);
             } else if let Some(node) = tree.nodes.get_mut(&child) {
@@ -715,6 +758,19 @@ impl Drive {
 
     pub(crate) async fn lookup(self: &Arc<Self>, parent: u64, name: &str, scanner: bool) -> Result<FileAttr, Errno> {
         self.ensure_listing(parent, scanner).await?;
+        // A name not in an old listing may be new on the server: asked before saying no.
+        let missing_from_old = {
+            let tree = self.tree();
+            tree.child(parent, name).is_none()
+                && tree
+                    .nodes
+                    .get(&parent)
+                    .and_then(|n| n.listing.as_ref())
+                    .is_some_and(|l| l.fresh_at.is_none_or(|at| at.elapsed() >= FRESH))
+        };
+        if missing_from_old && !scanner && self.is_online() {
+            let _ = self.refresh_now(parent).await;
+        }
         let tree = self.tree();
         let ino = tree.child(parent, name).ok_or(Errno::ENOENT)?;
         let node = tree.nodes.get(&ino).ok_or(Errno::ENOENT)?;
@@ -732,7 +788,19 @@ impl Drive {
         let tree = self.tree();
         let answer = match tree.child(parent, name).and_then(|ino| Some((ino, tree.nodes.get(&ino)?))) {
             Some((ino, node)) if self.visible(node) => Ok(self.attr_of(ino, node)),
-            _ => Err(Errno::ENOENT),
+            Some(_) => Err(Errno::ENOENT),
+            None => {
+                // Not in an old listing: the slow way asks the server first (online).
+                let old = tree
+                    .nodes
+                    .get(&parent)
+                    .and_then(|n| n.listing.as_ref())
+                    .is_some_and(|l| l.fresh_at.is_none_or(|at| at.elapsed() >= FRESH));
+                if old && self.is_online() {
+                    return None;
+                }
+                Err(Errno::ENOENT)
+            }
         };
         Some(answer)
     }
@@ -778,19 +846,9 @@ impl Drive {
     }
 
     fn entries(&self, ino: u64) -> Vec<(u64, FileType, String)> {
-        let tree = self.tree();
-        let Some(listing) = tree.nodes.get(&ino).and_then(|n| n.listing.as_ref()) else {
-            return Vec::new();
-        };
-        listing
-            .children
-            .iter()
-            .filter_map(|(name, child)| {
-                let node = tree.nodes.get(child)?;
-                self.visible(node).then(|| {
-                    (*child, if node.is_dir { FileType::Directory } else { FileType::RegularFile }, name.clone())
-                })
-            })
+        self.entries_plus(ino)
+            .into_iter()
+            .map(|(name, attr)| (attr.ino.0, attr.kind, name))
             .collect()
     }
 
@@ -836,7 +894,7 @@ impl Drive {
     }
 
     /// Open a file. Returns the handle and whether the kernel may keep its page cache.
-    pub(crate) fn open(&self, ino: u64, write: bool, scanner: bool) -> Result<(u64, bool), Errno> {
+    pub(crate) fn open(&self, ino: u64, write: bool, truncate: bool, scanner: bool) -> Result<(u64, bool), Errno> {
         if self.stopping.load(Ordering::SeqCst) {
             return Err(Errno::EIO);
         }
@@ -844,6 +902,13 @@ impl Drive {
             return Err(Errno::EROFS);
         }
         let (cell, _path) = self.cell_for(ino)?;
+        if write && truncate {
+            // Nothing of the old content is needed: also works offline and uncached.
+            if let Err(e) = self.truncate(ino, &cell, 0) {
+                self.release_cell(&cell);
+                return Err(e);
+            }
+        }
         let (complete, key) = {
             let state = cell.lock();
             (state.is_complete(), state.key.clone())
@@ -866,7 +931,7 @@ impl Drive {
             keep
         };
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        self.handles().insert(fh, Handle { ino, cell, write });
+        self.handles().insert(fh, Handle { ino, cell, write, last_end: AtomicU64::new(0) });
         Ok((fh, keep_cache))
     }
 
@@ -881,12 +946,23 @@ impl Drive {
         !cell.lock().missing_runs(offset, offset + size as u64).is_empty()
     }
 
-    pub(crate) async fn read(self: &Arc<Self>, ino: u64, cell: Arc<Cell>, offset: u64, size: u32) -> Result<Vec<u8>, Errno> {
+    pub(crate) async fn read(self: &Arc<Self>, ino: u64, cell: Arc<Cell>, offset: u64, size: u32, sequential: bool) -> Result<Vec<u8>, Errno> {
         let path = self.tree().path(ino).unwrap_or_else(|| cell.lock().path.clone());
         // Only what this read needs first; the rest follows while the program works.
         self.ensure_range(&cell, &path, offset, offset + size as u64).await?;
-        self.read_ahead(ino, &cell, offset + size as u64);
+        if sequential {
+            self.read_ahead(ino, &cell, offset + size as u64);
+        }
         cell.read_at(offset, size).map_err(Errno::from)
+    }
+
+    /// Note a read of handle `fh`; true if it continues where the last one ended (a program
+    /// reading the file through, not a type check reading a header).
+    pub(crate) fn note_read(&self, fh: u64, offset: u64, size: u32) -> bool {
+        let handles = self.handles();
+        let Some(handle) = handles.get(&fh) else { return false };
+        let last = handle.last_end.swap(offset + size as u64, Ordering::SeqCst);
+        offset > 0 && offset == last
     }
 
     /// Load the next part of a file in the background when a read comes near the end of what
@@ -1073,105 +1149,141 @@ impl Drive {
         }
     }
 
-    /// Record the change of node `ino` as it is now.
-    pub(crate) fn persist_change(&self, ino: u64) {
-        let row = {
+    /// Record the change of node `ino` as it is now (its row and its content's chunk map).
+    pub(crate) fn persist_change(&self, ino: u64) -> Result<(), Errno> {
+        let (row, cell) = {
             let tree = self.tree();
-            let Some(node) = tree.nodes.get(&ino) else { return };
-            let (Some(change), Some(path)) = (node.change.as_ref(), tree.path(ino)) else { return };
-            Self::change_row(&path, node, change)
+            let Some(node) = tree.nodes.get(&ino) else { return Ok(()) };
+            let (Some(change), Some(path)) = (node.change.as_ref(), tree.path(ino)) else { return Ok(()) };
+            (Self::change_row(&path, node, change), change.cell.clone())
         };
-        if let Err(e) = self.store.save_change(&row) {
+        let content = cell.lock().row();
+        self.store.save_change_and_content(&row, &content).map_err(|e| {
             tracing::error!(target: "vfs", error = %e, path = %row.path, "Failed to record a local change");
-        }
-        let state = row_state(&self.contents, &row.key);
-        if let Some(state) = state {
-            let _ = self.store.save_content(&state);
-        }
+            Errno::EIO
+        })
     }
 
     /// Make `cell` (open on `ino`) the local change of the file, recorded before the first
-    /// write is answered.
+    /// write is answered. The change starts from the version the cell holds (the one the
+    /// program opened), not from what a later listing says.
     fn begin_change(&self, ino: u64, cell: &Arc<Cell>) -> Result<(), Errno> {
-        {
-            let tree = self.tree();
-            let node = tree.nodes.get(&ino).ok_or(Errno::ENOENT)?;
-            if node.change.is_some() {
-                return Ok(());
-            }
-        }
-        let old = self.contents.make_changed(cell).map_err(|e| {
-            tracing::error!(target: "vfs", error = %e, "Failed to start a local change");
-            Errno::EIO
-        })?;
-        if let Some(old) = old {
-            let _ = self.store.delete_content(&old);
-        }
-        {
+        let old_key = {
             let mut tree = self.tree();
             let path = tree.path(ino).unwrap_or_default();
             let node = tree.nodes.get_mut(&ino).ok_or(Errno::ENOENT)?;
-            cell.lock().path = path;
-            node.change = Some(Change {
-                cell: cell.clone(),
-                local_only: names::is_local_only(&node.name),
-                counter: 0,
-                due: None,
-                failed: None,
-                attempts: 0,
-                recovered: false,
-            });
+            match &node.change {
+                Some(c) if Arc::ptr_eq(&c.cell, cell) && cell.lock().changed => return Ok(()),
+                // A handle with an old copy while another copy holds the change.
+                Some(c) if !Arc::ptr_eq(&c.cell, cell) => return Err(Errno::EIO),
+                _ => {}
+            }
+            // Under the tree lock, so an upload that finishes now cannot undo it.
+            let old_key = self.contents.make_changed(cell).map_err(|e| {
+                tracing::error!(target: "vfs", error = %e, "Failed to start a local change");
+                Errno::EIO
+            })?;
+            let (file_id, version) = {
+                let mut state = cell.lock();
+                state.path = path;
+                (state.file_id.clone(), state.version.clone())
+            };
+            if !file_id.is_empty() {
+                node.remote = Some(Remote { id: file_id, version });
+            }
+            if node.change.is_none() {
+                node.change = Some(Change {
+                    cell: cell.clone(),
+                    local_only: names::is_local_only(&node.name),
+                    due: None,
+                    failed: None,
+                    attempts: 0,
+                    recovered: false,
+                });
+            }
+            old_key
+        };
+        if let Some(old) = old_key {
+            let _ = self.store.delete_content(&old);
         }
-        self.persist_change(ino);
-        Ok(())
+        self.persist_change(ino)
     }
 
-    /// Whether a write needs the server or a first record first (else it is done at once).
-    pub(crate) fn write_needs_work(&self, ino: u64, cell: &Cell, offset: u64, len: u64) -> bool {
-        let changed = self.tree().nodes.get(&ino).is_some_and(|n| n.change.is_some());
-        let remote_len = cell.lock().remote_len;
-        !changed || !partly_written_missing(cell, offset, offset + len, remote_len).is_empty()
+    /// Whether a write must take the slow way: the file is no local change yet, or the write
+    /// touches chunks of the server version not loaded yet (partly: they are loaded first;
+    /// fully: the chunk map is recorded before the write is answered, so a crash cannot later
+    /// fill them with the server's bytes).
+    pub(crate) fn write_needs_work(&self, cell: &Cell, offset: u64, len: u64) -> bool {
+        let state = cell.lock();
+        !state.changed || !state.missing_runs(offset, offset + len).is_empty()
     }
 
-    /// Write to an open file (loads only the chunks the write covers partly).
-    pub(crate) async fn write(self: &Arc<Self>, ino: u64, cell: Arc<Cell>, offset: u64, data: Vec<u8>) -> Result<u32, Errno> {
-        let remote_len = cell.lock().remote_len;
+    /// Write to an open file (slow way). `expired`: the program got its answer already (a
+    /// late write must not land over a newer one).
+    pub(crate) async fn write(
+        self: &Arc<Self>,
+        ino: u64,
+        cell: Arc<Cell>,
+        offset: u64,
+        data: Vec<u8>,
+        expired: impl Fn() -> bool,
+    ) -> Result<u32, Errno> {
         let end = offset + data.len() as u64;
+        let remote_len = cell.lock().remote_len;
         for chunk in partly_written_missing(&cell, offset, end, remote_len) {
-            let path = self.tree().path(ino).unwrap_or_default();
+            let path = self.tree().path(ino).unwrap_or_else(|| cell.lock().path.clone());
             self.ensure_range(&cell, &path, chunk * CHUNK, (chunk + 1) * CHUNK).await?;
         }
-        self.begin_change(ino, &cell)?;
-        self.write_now(ino, &cell, offset, &data)
+        for _ in 0..3 {
+            if expired() {
+                return Err(Errno::EIO);
+            }
+            self.begin_change(ino, &cell)?;
+            loop {
+                match self.write_now(ino, &cell, offset, &data) {
+                    // An upload snapshot runs: wait a moment (the deadline still holds).
+                    Err(e) if e == GATE_BUSY && !expired() => tokio::time::sleep(Duration::from_millis(50)).await,
+                    Err(e) if e == NOT_CHANGED => break,
+                    Err(e) => return Err(e),
+                    Ok(written) => {
+                        // Chunks of the server version this write filled: recorded first.
+                        self.persist_change(ino)?;
+                        return Ok(written);
+                    }
+                }
+            }
+        }
+        Err(Errno::EIO)
     }
 
-    /// The write itself (the file is a local change and the chunks it covers partly are there).
+    /// The write itself. Fails with `NOT_CHANGED` if the file is no local change (anymore):
+    /// the caller starts one and tries again.
     pub(crate) fn write_now(&self, ino: u64, cell: &Arc<Cell>, offset: u64, data: &[u8]) -> Result<u32, Errno> {
         use std::os::unix::fs::FileExt;
-        if self.stopping.load(Ordering::SeqCst) {
-            return Err(Errno::EIO);
-        }
         if super::free_space(&self.info.data_dir) < DISK_RESERVE {
             return Err(Errno::ENOSPC);
         }
         let end = offset + data.len() as u64;
         {
+            // A FUSE thread never waits for an upload snapshot.
+            let Ok(_gate) = cell.gate.try_read() else { return Err(GATE_BUSY) };
             let mut state = cell.lock();
-            if state.dropped {
+            if self.stopping.load(Ordering::SeqCst) || state.dropped {
                 return Err(Errno::EIO);
+            }
+            if !state.changed {
+                return Err(NOT_CHANGED);
             }
             cell.file.write_all_at(data, offset).map_err(Errno::from)?;
             let remote_len = state.remote_len;
             let (first, last) = super::chunks::chunks_of(offset, end.min(remote_len));
             state.chunks.set_range(first, last);
+            state.writes += 1;
         }
         let mut tree = self.tree();
         if let Some(node) = tree.nodes.get_mut(&ino) {
             node.size = node.size.max(end);
             node.mtime = SystemTime::now();
-            if let Some(change) = node.change.as_mut() {
-                change.counter += 1;
-            }
         }
         Ok(data.len() as u32)
     }
@@ -1193,52 +1305,64 @@ impl Drive {
                 Some((_, cell, _)) => (cell, false),
                 None => (self.cell_for(ino)?.0, true),
             };
-            let result = self.truncate(ino, &cell, size);
+            let mut result = self.truncate(ino, &cell, size);
+            for _ in 0..200 {
+                if result != Err(GATE_BUSY) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                result = self.truncate(ino, &cell, size);
+            }
             if opened_here {
                 self.release_cell(&cell);
-                let no_writers = self.tree().nodes.get(&ino).is_some_and(|n| n.writers == 0);
-                if no_writers {
-                    self.schedule_upload(ino);
-                }
+                self.schedule_upload(ino);
             }
             result?;
         }
         if let Some(mtime) = mtime {
-            let mut tree = self.tree();
-            if let Some(node) = tree.nodes.get_mut(&ino) {
-                if node.change.is_some() {
-                    node.mtime = mtime;
+            let changed = {
+                let mut tree = self.tree();
+                match tree.nodes.get_mut(&ino) {
+                    Some(node) if node.change.is_some() => {
+                        node.mtime = mtime;
+                        true
+                    }
+                    _ => false,
                 }
+            };
+            if changed {
+                self.persist_change(ino)?;
             }
-        }
-        if mtime.is_some() {
-            self.persist_change(ino);
         }
         self.getattr(ino)
     }
 
-    fn truncate(&self, ino: u64, cell: &Arc<Cell>, size: u64) -> Result<(), Errno> {
-        if self.stopping.load(Ordering::SeqCst) {
-            return Err(Errno::EIO);
-        }
-        self.begin_change(ino, cell)?;
-        {
+    pub(crate) fn truncate(&self, ino: u64, cell: &Arc<Cell>, size: u64) -> Result<(), Errno> {
+        for _ in 0..3 {
+            self.begin_change(ino, cell)?;
+            let Ok(_gate) = cell.gate.try_read() else { return Err(GATE_BUSY) };
             let mut state = cell.lock();
+            if self.stopping.load(Ordering::SeqCst) || state.dropped {
+                return Err(Errno::EIO);
+            }
+            if !state.changed {
+                continue;
+            }
             cell.file.set_len(size).map_err(Errno::from)?;
             state.remote_len = state.remote_len.min(size);
-        }
-        {
-            let mut tree = self.tree();
-            if let Some(node) = tree.nodes.get_mut(&ino) {
-                node.size = size;
-                node.mtime = SystemTime::now();
-                if let Some(change) = node.change.as_mut() {
-                    change.counter += 1;
+            state.writes += 1;
+            drop(state);
+            drop(_gate);
+            {
+                let mut tree = self.tree();
+                if let Some(node) = tree.nodes.get_mut(&ino) {
+                    node.size = size;
+                    node.mtime = SystemTime::now();
                 }
             }
+            return self.persist_change(ino);
         }
-        self.persist_change(ino);
-        Ok(())
+        Err(Errno::EIO)
     }
 
     /// Plan the upload of a closed change.
@@ -1254,7 +1378,7 @@ impl Drive {
             change.attempts = 0;
             change.failed = None;
         }
-        self.persist_change(ino);
+        let _ = self.persist_change(ino);
         self.upload_wake.notify_one();
     }
 
@@ -1284,8 +1408,7 @@ impl Drive {
     pub(crate) fn fsync(&self, ino: u64, fh: u64) -> Result<(), Errno> {
         let (_, cell, _) = self.handle_cell(fh)?;
         cell.file.sync_all().map_err(Errno::from)?;
-        self.persist_change(ino);
-        Ok(())
+        self.persist_change(ino)
     }
 
     /// A new file (only local until it is closed and uploaded).
@@ -1316,7 +1439,6 @@ impl Drive {
             node.change = Some(Change {
                 cell: cell.clone(),
                 local_only: names::is_local_only(name),
-                counter: 0,
                 due: None,
                 failed: None,
                 attempts: 0,
@@ -1324,10 +1446,31 @@ impl Drive {
             });
             tree.add(parent, node)
         };
-        self.persist_change(ino);
+        if let Err(e) = self.persist_change(ino) {
+            self.discard_new(ino);
+            return Err(e);
+        }
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        self.handles().insert(fh, Handle { ino, cell, write: true });
+        self.handles().insert(fh, Handle { ino, cell, write: true, last_end: AtomicU64::new(0) });
         Ok((self.getattr(ino)?, fh))
+    }
+
+    /// Take back a new file the program never got (its `create` came too late).
+    pub(crate) fn discard_new(&self, ino: u64) {
+        let (path, change) = {
+            let mut tree = self.tree();
+            let path = tree.path(ino);
+            tree.detach(ino);
+            (path, tree.nodes.get_mut(&ino).and_then(|n| n.change.take()))
+        };
+        self.handles().retain(|_, h| h.ino != ino);
+        if let Some(change) = change {
+            self.contents.remove(&change.cell);
+            let _ = self.store.delete_content(&change.cell.key());
+        }
+        if let Some(path) = path {
+            let _ = self.store.delete_change(&path);
+        }
     }
 
     fn check_writable(&self) -> Result<(), Errno> {
@@ -1348,7 +1491,7 @@ impl Drive {
 
     /// The server's file at `path` must still be the one the tree knows (else someone replaced
     /// it meanwhile; the folder is listed again).
-    async fn check_same(self: &Arc<Self>, path: &str, remote: &Remote, parent: u64) -> Result<String, Errno> {
+    async fn check_same(self: &Arc<Self>, path: &str, remote: &Remote) -> Result<String, Errno> {
         let uri = self.uri_of(path)?;
         let info = self
             .client
@@ -1357,17 +1500,20 @@ impl Drive {
             .map_err(|e| self.api_failed(&e))?;
         if info.id != remote.id {
             tracing::info!(target: "vfs", path = %path, "The server has another file at this path now");
-            self.mark_stale(&self.tree().path(parent).unwrap_or_default());
+            self.mark_stale(names::parent_of(path));
             return Err(Errno::ENOENT);
         }
         Ok(uri)
     }
 
-    /// Wait (up to `limit`) until the upload of `ino` has finished.
+    /// Wait (up to `limit`) until no upload of `ino` or a node below it runs.
     async fn wait_for_upload(&self, ino: u64, limit: Duration) -> Result<(), Errno> {
         let until = Instant::now() + limit;
         loop {
-            let uploading = self.tree().nodes.get(&ino).is_some_and(|n| n.uploading);
+            let uploading = {
+                let tree = self.tree();
+                tree.subtree(ino).iter().any(|n| tree.nodes.get(n).is_some_and(|n| n.uploading))
+            };
             if !uploading {
                 return Ok(());
             }
@@ -1431,7 +1577,14 @@ impl Drive {
             return Err(if dir { Errno::ENOTDIR } else { Errno::EISDIR });
         }
         if is_dir {
-            self.ensure_listing(ino, false).await?;
+            // The server's current content counts, not an old listing (the server would trash
+            // a folder that someone filled meanwhile).
+            if remote.is_some() {
+                self.check_online()?;
+                self.refresh_now(ino).await?;
+            } else {
+                self.ensure_listing(ino, false).await?;
+            }
             let empty = self.tree().nodes.get(&ino).and_then(|n| n.listing.as_ref()).is_some_and(|l| l.children.is_empty());
             if !empty {
                 return Err(Errno::ENOTEMPTY);
@@ -1439,14 +1592,18 @@ impl Drive {
         }
         if let Some(remote) = &remote {
             self.check_online()?;
+            let uri = self.check_same(&path, remote).await?;
             if expired() {
                 return Err(Errno::EIO);
             }
-            let uri = self.check_same(&path, remote, parent).await?;
-            self.client
+            if let Err(e) = self
+                .client
                 .delete_files(&DeleteFileService { uris: vec![uri], unlink: None, skip_soft_delete: None })
                 .await
-                .map_err(|e| self.api_failed(&e))?;
+            {
+                self.mark_stale(names::parent_of(&path));
+                return Err(self.api_failed(&e));
+            }
         }
         let change = {
             let mut tree = self.tree();
@@ -1479,6 +1636,7 @@ impl Drive {
         self.ensure_listing(parent, false).await?;
         self.ensure_listing(new_parent, false).await?;
         let ino = self.tree().child(parent, name).ok_or(Errno::ENOENT)?;
+        // Also uploads below a folder: they still go to the old path.
         self.wait_for_upload(ino, Duration::from_secs(15)).await?;
         let (old_path, new_path, remote, is_dir, target) = {
             let tree = self.tree();
@@ -1503,8 +1661,8 @@ impl Drive {
             return Err(Errno::EINVAL);
         }
         if remote.is_none() {
-            // Case 1: only here so far (new file or temp name): a local rename. Over a server
-            // file it gives that file new content.
+            // Case 1: only here so far (new file, temp name, or a folder that only holds
+            // changes): a local rename. Over a server file it gives that file new content.
             return self.rename_local(ino, new_parent, new_name, &old_path, &new_path, target, no_replace);
         }
         if target.is_some() {
@@ -1516,11 +1674,11 @@ impl Drive {
         if !same_folder && name != new_name {
             return Err(Errno::EXDEV);
         }
+        let remote = remote.expect("checked");
+        let uri = self.check_same(&old_path, &remote).await?;
         if expired() {
             return Err(Errno::EIO);
         }
-        let remote = remote.expect("checked");
-        let uri = self.check_same(&old_path, &remote, parent).await?;
         let result = if same_folder {
             self.client
                 .rename_file(&RenameFileService { uri: uri.clone(), new_name: new_name.to_string() })
@@ -1539,11 +1697,12 @@ impl Drive {
             return Err(self.api_failed(&e));
         }
         self.tree().move_to(ino, new_parent, new_name);
-        let _ = self.store.move_changes(&old_path, &new_path);
+        if let Err(e) = self.store.move_changes(&old_path, &new_path) {
+            tracing::error!(target: "vfs", error = %e, "Failed to record the new path of changes");
+        }
         let _ = self.store.forget_tree(&old_path);
         self.mark_stale(names::parent_of(&old_path));
         self.mark_stale(names::parent_of(&new_path));
-        let _ = is_dir;
         Ok(())
     }
 
@@ -1559,15 +1718,17 @@ impl Drive {
         no_replace: bool,
     ) -> Result<(), Errno> {
         let mut dropped = None;
+        let is_dir;
         {
             let mut tree = self.tree();
+            is_dir = tree.nodes.get(&ino).is_some_and(|n| n.is_dir);
             if let Some(target) = target {
                 if no_replace {
                     return Err(Errno::EEXIST);
                 }
                 let target_node = tree.nodes.get(&target).ok_or(Errno::ENOENT)?;
-                if target_node.is_dir {
-                    return Err(Errno::EISDIR);
+                if target_node.is_dir || is_dir {
+                    return Err(if is_dir { Errno::EEXIST } else { Errno::EISDIR });
                 }
                 if target_node.uploading {
                     return Err(Errno::EBUSY);
@@ -1589,33 +1750,55 @@ impl Drive {
                 change.cell.lock().path = new_path.to_string();
             }
         }
-        let _ = self.store.delete_change(old_path);
-        let _ = self.store.delete_change(new_path);
+        // One transaction: a crash never leaves a change without its row.
+        let row = {
+            let tree = self.tree();
+            tree.nodes.get(&ino).and_then(|node| node.change.as_ref().map(|c| (Self::change_row(new_path, node, c), c.cell.lock().row())))
+        };
+        let result = if is_dir {
+            self.store.move_changes(old_path, new_path)
+        } else {
+            self.store.replace_change(&[old_path, new_path], row.as_ref().map(|(r, c)| (r, c)))
+        };
+        if let Err(e) = result {
+            tracing::error!(target: "vfs", error = %e, "Failed to record a rename");
+            return Err(Errno::EIO);
+        }
         if let Some(cell) = dropped {
             self.contents.remove(&cell);
             let _ = self.store.delete_content(&cell.key());
         }
-        self.persist_change(ino);
-        self.schedule_upload(ino);
+        if !is_dir {
+            self.schedule_upload(ino);
+        }
         Ok(())
     }
 
     // ---------------------------------------------------------------- status
 
+    /// Remember the quota (for `statfs`, answered without SQLite or the server).
+    pub(crate) fn set_quota(&self, used: u64, total: u64) {
+        self.quota_used.store(used, Ordering::SeqCst);
+        self.quota_total.store(total, Ordering::SeqCst);
+    }
+
     /// Size and free space for `df` and the file manager. Unknown (not asked yet, or no limit)
     /// is reported as plenty: a file manager refuses to copy into a drive that reports 0 free.
     pub(crate) fn statfs(&self) -> (u64, u64) {
         const PLENTY: u64 = 1 << 50;
-        let quota = self.store.meta("quota").ok().flatten().unwrap_or_default();
-        let mut parts = quota.split('/').map(|p| p.parse::<u64>().unwrap_or(0));
-        let used = parts.next().unwrap_or(0);
-        let total = parts.next().unwrap_or(0);
+        let used = self.quota_used.load(Ordering::SeqCst);
+        let total = self.quota_total.load(Ordering::SeqCst);
         if total == 0 {
             return (PLENTY, PLENTY);
         }
         (total, total.saturating_sub(used))
     }
 }
+
+/// A write found the file no local change (an upload made it the clean copy meanwhile).
+pub(crate) const NOT_CHANGED: Errno = Errno::EAGAIN;
+/// A write found an upload snapshot running (the caller waits outside the FUSE threads).
+pub(crate) const GATE_BUSY: Errno = Errno::EBUSY;
 
 /// The chunks a write covers partly that are not loaded yet.
 fn partly_written_missing(cell: &Cell, start: u64, end: u64, remote_len: u64) -> Vec<u64> {
@@ -1626,9 +1809,6 @@ fn partly_written_missing(cell: &Cell, start: u64, end: u64, remote_len: u64) ->
         .collect()
 }
 
-fn row_state(contents: &Contents, key: &str) -> Option<super::store::ContentRow> {
-    contents.get(key).map(|cell| cell.lock().row())
-}
 
 /// A file or folder as a listing names it.
 pub(crate) struct Listed {

@@ -87,16 +87,60 @@ pub(crate) fn free_space(path: &Path) -> u64 {
     stat.f_bavail as u64 * stat.f_frsize as u64
 }
 
-/// Cached bytes counted against the limit: loaded server content that is neither pinned nor
-/// a local change.
-fn counted(drive: &Drive) -> u64 {
+/// What eviction and the settings need to know of a cached file.
+struct CellInfo {
+    key: String,
+    path: String,
+    file_id: String,
+    version: String,
+    last_used: i64,
+    open: bool,
+    changed: bool,
+    loaded: u64,
+}
+
+fn cells(drive: &Drive) -> Vec<CellInfo> {
     drive
         .contents
         .all()
         .iter()
-        .map(|cell| cell.lock().clone())
-        .filter(|s| !s.changed && !drive.is_pinned(&s.path))
-        .map(|s| s.loaded_bytes())
+        .map(|cell| {
+            let s = cell.lock();
+            CellInfo {
+                key: s.key.clone(),
+                path: s.path.clone(),
+                file_id: s.file_id.clone(),
+                version: s.version.clone(),
+                last_used: s.last_used,
+                open: s.open > 0,
+                changed: s.changed,
+                loaded: s.loaded_bytes(),
+            }
+        })
+        .collect()
+}
+
+/// Kept for an "always offline" folder: below a pin and the version the file has now (older
+/// versions of a pinned file count like any cached file). Unknown files (not listed since the
+/// start) are kept.
+fn pinned(drive: &Drive, cell: &CellInfo) -> bool {
+    if !drive.is_pinned(&cell.path) {
+        return false;
+    }
+    let tree = drive.tree();
+    Drive::find(&tree, &cell.path)
+        .and_then(|ino| tree.nodes.get(&ino))
+        .and_then(|node| node.remote.as_ref())
+        .is_none_or(|remote| remote.id == cell.file_id && remote.version == cell.version)
+}
+
+/// Cached bytes of a drive counted against the limit: loaded server content that is neither
+/// pinned nor a local change.
+fn counted(drive: &Drive) -> u64 {
+    cells(drive)
+        .iter()
+        .filter(|c| !c.changed && !pinned(drive, c))
+        .map(|c| c.loaded)
         .sum()
 }
 
@@ -111,10 +155,9 @@ pub(crate) fn make_room(needed: u64) -> Result<(), Errno> {
     }
     let mut candidates = Vec::new();
     for drive in &all {
-        for cell in drive.contents.all() {
-            let state = cell.lock();
-            if state.open == 0 && !state.changed && !drive.is_pinned(&state.path) && state.loaded_bytes() > 0 {
-                candidates.push((state.last_used, drive.clone(), state.key.clone()));
+        for cell in cells(drive) {
+            if !cell.open && !cell.changed && cell.loaded > 0 && !pinned(drive, &cell) {
+                candidates.push((cell.last_used, drive.clone(), cell.key));
             }
         }
     }
@@ -243,9 +286,9 @@ impl VirtualDrive {
     /// Whether the drive has changes not uploaded yet or files open for writing.
     pub fn has_pending_work(&self) -> bool {
         let tree = self.drive.tree();
-        tree.nodes
-            .values()
-            .any(|n| n.parent != 0 && (n.writers > 0 || n.change.as_ref().is_some_and(|c| !c.local_only)))
+        tree.nodes.iter().any(|(ino, n)| {
+            (n.writers > 0 || n.change.as_ref().is_some_and(|c| !c.local_only)) && tree.path(*ino).is_some()
+        })
     }
 
     pub fn status(&self) -> VfsStatus {
@@ -254,24 +297,19 @@ impl VirtualDrive {
             let tree = drive.tree();
             let changes: Vec<_> = tree
                 .nodes
-                .values()
-                .filter(|n| n.parent != 0)
-                .filter_map(|n| n.change.as_ref())
+                .iter()
+                .filter(|(ino, _)| tree.path(**ino).is_some())
+                .filter_map(|(_, n)| n.change.as_ref())
                 .filter(|c| !c.local_only)
                 .collect();
             (changes.len(), changes.iter().filter(|c| c.failed.is_some()).count())
         };
-        let pinned_bytes = drive
-            .contents
-            .all()
-            .iter()
-            .map(|c| c.lock().clone())
-            .filter(|s| !s.changed && drive.is_pinned(&s.path))
-            .map(|s| s.loaded_bytes())
-            .sum();
+        let all = cells(drive);
+        let pinned_bytes = all.iter().filter(|c| !c.changed && pinned(drive, c)).map(|c| c.loaded).sum();
+        let cache_used = all.iter().filter(|c| !c.changed && !pinned(drive, c)).map(|c| c.loaded).sum();
         VfsStatus {
             online: drive.is_online(),
-            cache_used: drives().iter().map(|d| counted(d)).sum(),
+            cache_used,
             cache_limit: cache_limit(),
             pinned_bytes,
             pins: drive.pins.lock().unwrap_or_else(|e| e.into_inner()).clone(),
@@ -316,17 +354,47 @@ impl VirtualDrive {
     /// Drop the cached content (below `path`, or all) that is not open, changed or pinned.
     pub fn free_space(&self, path: Option<&str>) {
         let drive = &self.drive;
-        for cell in drive.contents.all() {
-            let (key, cell_path) = {
-                let state = cell.lock();
-                (state.key.clone(), state.path.clone())
-            };
-            if path.is_some_and(|p| !names::is_below(&cell_path, p)) || drive.is_pinned(&cell_path) {
+        for cell in cells(drive) {
+            if path.is_some_and(|p| !names::is_below(&cell.path, p)) || pinned(drive, &cell) {
                 continue;
             }
-            if drive.contents.evict(&key).is_some() {
-                let _ = drive.store.delete_content(&key);
+            if drive.contents.evict(&cell.key).is_some() {
+                let _ = drive.store.delete_content(&cell.key);
             }
+        }
+    }
+
+    /// Before a removal (still mounted): load the parts of changed files never loaded, so they
+    /// can be kept whole. Fails if one cannot be completed (offline): nothing is removed then.
+    pub async fn prepare_removal(&self) -> Result<()> {
+        let drive = &self.drive;
+        let changed: Vec<(u64, std::sync::Arc<content::Cell>)> = {
+            let tree = drive.tree();
+            tree.nodes
+                .iter()
+                .filter_map(|(ino, n)| n.change.as_ref().filter(|c| !c.local_only).map(|c| (*ino, c.cell.clone())))
+                .collect()
+        };
+        for (ino, cell) in changed {
+            let remote_len = cell.lock().remote_len;
+            if cell.lock().missing_runs(0, remote_len).is_empty() {
+                continue;
+            }
+            let path = drive.tree().path(ino).unwrap_or_else(|| cell.lock().path.clone());
+            if drive.ensure_range(&cell, &path, 0, remote_len).await.is_err() {
+                bail!("{path} is changed but not complete on this computer, and the server cannot be reached");
+            }
+        }
+        Ok(())
+    }
+
+    /// After `stop`: wait (up to a minute) until running uploads are done.
+    pub async fn wait_idle(&self) {
+        for _ in 0..300 {
+            if !self.drive.tree().nodes.values().any(|n| n.uploading) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
     }
 
@@ -347,15 +415,20 @@ impl VirtualDrive {
         let rows = self.drive.store.load_changes()?;
         let mut saved = 0;
         for row in rows.iter().filter(|r| r.local_only == 0) {
-            let source = self.drive.contents.path_of(&row.key);
-            if !source.exists() {
-                continue;
-            }
+            let Some(cell) = self.drive.contents.get(&row.key) else { continue };
             let destination = target.join(&row.path);
             if let Some(parent) = destination.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::copy(&source, &destination)
+            // Under the gate: no write can be half in the copy.
+            let _gate = cell.gate.write().unwrap_or_else(|e| e.into_inner());
+            {
+                let state = cell.lock();
+                if !state.missing_runs(0, state.remote_len).is_empty() {
+                    bail!("{} is not complete on this computer", row.path);
+                }
+            }
+            std::fs::copy(self.drive.contents.path_of(&row.key), &destination)
                 .with_context(|| format!("save {}", row.path))?;
             saved += 1;
         }
@@ -379,6 +452,7 @@ impl VirtualDrive {
 
     /// Remember the quota for `df` and the file manager (never asked while answering).
     pub fn set_quota(&self, used: u64, total: u64) {
+        self.drive.set_quota(used, total);
         let _ = self.drive.store.set_meta("quota", &format!("{used}/{total}"));
     }
 }
@@ -592,12 +666,7 @@ async fn load_pinned(drive: &Arc<Drive>, path: &str) -> Result<(), Errno> {
     let ino = drive.resolve(path).await?;
     let mut folders = vec![ino];
     while let Some(folder) = folders.pop() {
-        let (is_dir, children) = {
-            let tree = drive.tree();
-            let node = tree.nodes.get(&folder).ok_or(Errno::ENOENT)?;
-            (node.is_dir, ())
-        };
-        let _ = children;
+        let is_dir = drive.tree().nodes.get(&folder).ok_or(Errno::ENOENT)?.is_dir;
         if !is_dir {
             load_file(drive, folder).await?;
             continue;

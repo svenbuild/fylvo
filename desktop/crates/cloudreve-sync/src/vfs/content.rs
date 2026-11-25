@@ -43,6 +43,9 @@ pub(crate) struct CellState {
     pub path: String,
     /// Dropped from the store (evicted or replaced); handles that still have it keep reading.
     pub dropped: bool,
+    /// Counts writes and truncations (in memory), so an upload knows whether the file changed
+    /// after its snapshot.
+    pub writes: u64,
 }
 
 impl CellState {
@@ -79,16 +82,23 @@ impl CellState {
 }
 
 /// One content file. Reads use `pread` without a lock; writes and the filling of chunks hold
-/// `state` while they write, so a chunk loaded from the server never lands over a local write,
-/// and an upload snapshot never sees half a write.
+/// `state` while they write, so a chunk loaded from the server never lands over a local write.
+/// Writes also hold `gate` (shared); an upload snapshot holds it alone while it copies, so it
+/// never sees half a write and never holds `state` for long (other code takes `state` under the
+/// tree lock).
 pub(crate) struct Cell {
     pub file: File,
     pub state: Mutex<CellState>,
+    pub gate: std::sync::RwLock<()>,
     /// One loader per file at a time (two reads of the same part share it).
     pub fetch: tokio::sync::Mutex<()>,
 }
 
 impl Cell {
+    fn new(file: File, state: CellState) -> Self {
+        Self { file, state: Mutex::new(state), gate: Default::default(), fetch: Default::default() }
+    }
+
     pub(crate) fn lock(&self) -> MutexGuard<'_, CellState> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -156,8 +166,9 @@ impl Contents {
                         changed: row.changed != 0,
                         path: row.path,
                         dropped: false,
+                        writes: 0,
                     };
-                    cells.insert(row.key, Arc::new(Cell { file, state: Mutex::new(state), fetch: Default::default() }));
+                    cells.insert(row.key, Arc::new(Cell::new(file, state)));
                 }
                 Err(_) => lost.push(row.key),
             }
@@ -213,8 +224,9 @@ impl Contents {
             changed: false,
             path: path.to_string(),
             dropped: false,
+            writes: 0,
         };
-        let cell = Arc::new(Cell { file, state: Mutex::new(state), fetch: Default::default() });
+        let cell = Arc::new(Cell::new(file, state));
         map.insert(key, cell.clone());
         Ok(cell)
     }
@@ -234,8 +246,9 @@ impl Contents {
             changed: true,
             path: path.to_string(),
             dropped: false,
+            writes: 0,
         };
-        let cell = Arc::new(Cell { file, state: Mutex::new(state), fetch: Default::default() });
+        let cell = Arc::new(Cell::new(file, state));
         self.map().insert(key, cell.clone());
         Ok(cell)
     }
@@ -260,10 +273,14 @@ impl Contents {
     }
 
     /// After an upload: the changed copy is now the cached copy of the new server version
-    /// (complete). Returns the old key.
-    pub(crate) fn make_clean(&self, cell: &Arc<Cell>, file_id: &str, version: &str) -> Result<String> {
+    /// (complete). Only if nothing was written since the snapshot (`writes`); `None` if it was.
+    /// Returns the old key.
+    pub(crate) fn make_clean(&self, cell: &Arc<Cell>, file_id: &str, version: &str, writes: u64) -> Result<Option<String>> {
         let mut map = self.map();
         let mut state = cell.lock();
+        if state.writes != writes {
+            return Ok(None);
+        }
         let old = state.key.clone();
         let new = clean_key(file_id, version);
         if let Some(other) = map.remove(&new) {
@@ -281,7 +298,23 @@ impl Contents {
         state.changed = false;
         drop(state);
         map.insert(new, cell.clone());
-        Ok(old)
+        Ok(Some(old))
+    }
+
+    /// Remove a changed cell after its content went to a conflict copy, only if nothing was
+    /// written since the snapshot. Returns whether it was removed.
+    pub(crate) fn remove_if_unchanged(&self, cell: &Arc<Cell>, writes: u64) -> bool {
+        let mut map = self.map();
+        let mut state = cell.lock();
+        if state.writes != writes {
+            return false;
+        }
+        if map.get(&state.key).is_some_and(|c| Arc::ptr_eq(c, cell)) {
+            map.remove(&state.key);
+        }
+        state.dropped = true;
+        let _ = std::fs::remove_file(self.dir.join(&state.key));
+        true
     }
 
     /// Remove a cell and its file. Handles that have it keep their open file.
@@ -344,7 +377,11 @@ mod tests {
         assert!(contents.evict(&cell.key()).is_none());
 
         cell.file.set_len(10).unwrap();
-        contents.make_clean(&cell, "f1", "v2").unwrap();
+        // A write after the snapshot keeps the change.
+        cell.lock().writes = 1;
+        assert_eq!(contents.make_clean(&cell, "f1", "v2", 0).unwrap(), None);
+        assert!(cell.lock().changed);
+        contents.make_clean(&cell, "f1", "v2", 1).unwrap().unwrap();
         let state = cell.lock().clone();
         assert_eq!(state.key, clean_key("f1", "v2"));
         assert!(state.is_complete());

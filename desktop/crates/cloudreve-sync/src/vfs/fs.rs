@@ -32,7 +32,8 @@ impl Filesystem for DriveFs {
         let _ = config.add_capabilities(
             fuser::InitFlags::FUSE_DO_READDIRPLUS
                 | fuser::InitFlags::FUSE_READDIRPLUS_AUTO
-                | fuser::InitFlags::FUSE_PARALLEL_DIROPS,
+                | fuser::InitFlags::FUSE_PARALLEL_DIROPS
+                | fuser::InitFlags::FUSE_ATOMIC_O_TRUNC,
         );
         let _ = config.set_max_readahead(1 << 20);
         let _ = config.set_max_write(1 << 20);
@@ -183,7 +184,8 @@ impl Filesystem for DriveFs {
 
     fn open(&self, req: &Request, ino: INodeNo, flags: OpenFlags, _kill_suid_gid: bool, reply: ReplyOpen) {
         let write = !matches!(flags.acc_mode(), OpenAccMode::O_RDONLY);
-        match self.drive.open(ino.0, write, is_scanner(req.pid())) {
+        let truncate = flags.0 & libc::O_TRUNC != 0;
+        match self.drive.open(ino.0, write, truncate, is_scanner(req.pid())) {
             Ok((fh, keep_cache)) => {
                 let flags = if keep_cache { FopenFlags::FOPEN_KEEP_CACHE } else { FopenFlags::empty() };
                 reply.opened(FileHandle(fh), flags)
@@ -207,8 +209,12 @@ impl Filesystem for DriveFs {
             Ok(handle) => handle,
             Err(e) => return reply.error(e),
         };
+        // Read ahead only for a program reading the file through (not a type check).
+        let sequential = self.drive.note_read(fh.0, offset, size);
         if !self.drive.read_needs(&cell, offset, size) {
-            self.drive.read_ahead(ino.0, &cell, offset + size as u64);
+            if sequential {
+                self.drive.read_ahead(ino.0, &cell, offset + size as u64);
+            }
             return match cell.read_at(offset, size) {
                 Ok(data) => reply.data(&data),
                 Err(e) => reply.error(Errno::from(e)),
@@ -217,7 +223,7 @@ impl Filesystem for DriveFs {
         let drive = self.drive.clone();
         let slot = drive.watchdog.slot(reply, CONTENT);
         self.drive.rt.spawn(async move {
-            let result = drive.read(ino.0, cell, offset, size).await;
+            let result = drive.read(ino.0, cell, offset, size, sequential).await;
             if let Some(reply) = slot.take() {
                 match result {
                     Ok(data) => reply.data(&data),
@@ -246,17 +252,20 @@ impl Filesystem for DriveFs {
         if !write {
             return reply.error(Errno::EBADF);
         }
-        if !self.drive.write_needs_work(ino.0, &cell, offset, data.len() as u64) {
-            return match self.drive.write_now(ino.0, &cell, offset, data) {
-                Ok(n) => reply.written(n),
-                Err(e) => reply.error(e),
-            };
+        if !self.drive.write_needs_work(&cell, offset, data.len() as u64) {
+            match self.drive.write_now(ino.0, &cell, offset, data) {
+                Ok(n) => return reply.written(n),
+                // The slow way below starts a change again or waits for a snapshot.
+                Err(e) if e == super::drive::NOT_CHANGED || e == super::drive::GATE_BUSY => {}
+                Err(e) => return reply.error(e),
+            }
         }
         let data = data.to_vec();
         let drive = self.drive.clone();
         let slot = drive.watchdog.slot(reply, CONTENT);
+        let check = slot.clone();
         self.drive.rt.spawn(async move {
-            let result = drive.write(ino.0, cell, offset, data).await;
+            let result = drive.write(ino.0, cell, offset, data, || check.expired()).await;
             if let Some(reply) = slot.take() {
                 match result {
                     Ok(n) => reply.written(n),
@@ -380,8 +389,8 @@ impl Filesystem for DriveFs {
                     reply.created(&TTL, &attr, Generation(0), FileHandle(fh), FopenFlags::empty())
                 }
                 (Some(reply), Err(e)) => reply.error(e),
-                // Too late: the program got an error, the new file is closed again.
-                (None, Ok((_, fh))) => drive.release(fh),
+                // Too late: the program got an error, the new file goes again.
+                (None, Ok((attr, _))) => drive.discard_new(attr.ino.0),
                 (None, Err(_)) => {}
             }
         });

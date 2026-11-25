@@ -29,12 +29,15 @@ type PageState = "url_input" | "waiting" | "final_setup" | "setting_up" | "succe
 const isLinux = platform() === "linux";
 type DriveMode = "drive" | "sync";
 
-/** The first free `~/Fylvo`, `~/Fylvo 2`, ... (empty or not there yet). */
+/** The first free `~/Fylvo`, `~/Fylvo 2`, ... (not a drive yet, empty or not there yet). */
 async function suggestedDriveFolder(): Promise<string> {
   const home = await homeDir();
+  const used = new Set(
+    (await invoke<{ sync_path: string }[]>("get_drives_info").catch(() => [])).map((d) => d.sync_path),
+  );
   for (let i = 1; i <= 20; i++) {
     const path = await join(home, i === 1 ? "Fylvo" : `Fylvo ${i}`);
-    if (await invoke<boolean>("is_dir_empty", { path })) {
+    if (!used.has(path) && (await invoke<boolean>("is_dir_empty", { path }))) {
       return path;
     }
   }

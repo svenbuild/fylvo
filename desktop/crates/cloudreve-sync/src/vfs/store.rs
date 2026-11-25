@@ -10,6 +10,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 const SCHEMA: &str = "
+PRAGMA busy_timeout = 5000;
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 CREATE TABLE IF NOT EXISTS entries (
@@ -226,21 +227,7 @@ impl Store {
     // ---- content ----
 
     pub(crate) fn save_content(&self, row: &ContentRow) -> Result<()> {
-        self.with(|c| {
-            diesel::sql_query(
-                "INSERT OR REPLACE INTO content (key, file_id, version, remote_len, chunks, last_used, changed, path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            )
-            .bind::<Text, _>(&row.key)
-            .bind::<Text, _>(&row.file_id)
-            .bind::<Text, _>(&row.version)
-            .bind::<BigInt, _>(row.remote_len)
-            .bind::<Binary, _>(&row.chunks)
-            .bind::<BigInt, _>(row.last_used)
-            .bind::<Integer, _>(row.changed)
-            .bind::<Text, _>(&row.path)
-            .execute(c)
-            .map(|_| ())
-        })
+        self.with(|c| insert_content(c, row))
     }
 
     pub(crate) fn delete_content(&self, key: &str) -> Result<()> {
@@ -263,21 +250,52 @@ impl Store {
 
     // ---- local changes ----
 
+    #[cfg(test)]
     pub(crate) fn save_change(&self, row: &ChangeRow) -> Result<()> {
+        self.with(|c| insert_change(c, row))
+    }
+
+    /// A change and its content's chunk map in one transaction.
+    pub(crate) fn save_change_and_content(&self, change: &ChangeRow, content: &ContentRow) -> Result<()> {
         self.with(|c| {
-            diesel::sql_query(
-                "INSERT OR REPLACE INTO changes (path, key, file_id, base, local_only, open, size, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            )
-            .bind::<Text, _>(&row.path)
-            .bind::<Text, _>(&row.key)
-            .bind::<Nullable<Text>, _>(row.file_id.as_deref())
-            .bind::<Nullable<Text>, _>(row.base.as_deref())
-            .bind::<Integer, _>(row.local_only)
-            .bind::<Integer, _>(row.open)
-            .bind::<BigInt, _>(row.size)
-            .bind::<BigInt, _>(row.mtime)
-            .execute(c)
-            .map(|_| ())
+            c.transaction(|c| {
+                insert_change(c, change)?;
+                insert_content(c, content)
+            })
+        })
+    }
+
+    /// Remove the changes at `paths` and record `row` (with its content), in one transaction
+    /// (a rename never leaves a change without its row).
+    pub(crate) fn replace_change(&self, paths: &[&str], row: Option<(&ChangeRow, &ContentRow)>) -> Result<()> {
+        self.with(|c| {
+            c.transaction(|c| {
+                for path in paths {
+                    diesel::sql_query("DELETE FROM changes WHERE path = ?")
+                        .bind::<Text, _>(*path)
+                        .execute(c)?;
+                }
+                if let Some((change, content)) = row {
+                    insert_change(c, change)?;
+                    insert_content(c, content)?;
+                }
+                Ok(())
+            })
+        })
+    }
+
+    /// After an upload: the change is gone, its content is the cached copy now.
+    pub(crate) fn commit_upload(&self, path: &str, old_key: &str, content: &ContentRow) -> Result<()> {
+        self.with(|c| {
+            c.transaction(|c| {
+                diesel::sql_query("DELETE FROM changes WHERE path = ?")
+                    .bind::<Text, _>(path)
+                    .execute(c)?;
+                diesel::sql_query("DELETE FROM content WHERE key = ?")
+                    .bind::<Text, _>(old_key)
+                    .execute(c)?;
+                insert_content(c, content)
+            })
         })
     }
 
@@ -290,20 +308,24 @@ impl Store {
         })
     }
 
-    /// A folder or file moved from `old` to `new`: its changes move with it.
+    /// A folder or file moved from `old` to `new`: its changes move with it (one transaction).
     pub(crate) fn move_changes(&self, old: &str, new: &str) -> Result<()> {
-        let rows: Vec<ChangeRow> = self.load_changes()?;
-        for row in rows {
-            if super::names::is_below(&row.path, old) && !old.is_empty() {
-                let moved = ChangeRow {
-                    path: super::names::replace_prefix(&row.path, old, new),
-                    ..row.clone()
-                };
-                self.delete_change(&row.path)?;
-                self.save_change(&moved)?;
-            }
+        if old.is_empty() {
+            return Ok(());
         }
-        Ok(())
+        let rows: Vec<ChangeRow> = self.load_changes()?;
+        self.with(|c| {
+            c.transaction(|c| {
+                for row in rows.iter().filter(|r| super::names::is_below(&r.path, old)) {
+                    diesel::sql_query("DELETE FROM changes WHERE path = ?")
+                        .bind::<Text, _>(&row.path)
+                        .execute(c)?;
+                    let moved = ChangeRow { path: super::names::replace_prefix(&row.path, old, new), ..row.clone() };
+                    insert_change(c, &moved)?;
+                }
+                Ok(())
+            })
+        })
     }
 
     pub(crate) fn load_changes(&self) -> Result<Vec<ChangeRow>> {
@@ -360,6 +382,38 @@ impl Store {
             Ok(rows.into_iter().next().map(|r| r.value))
         })
     }
+}
+
+fn insert_change(c: &mut SqliteConnection, row: &ChangeRow) -> QueryResult<()> {
+    diesel::sql_query(
+        "INSERT OR REPLACE INTO changes (path, key, file_id, base, local_only, open, size, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind::<Text, _>(&row.path)
+    .bind::<Text, _>(&row.key)
+    .bind::<Nullable<Text>, _>(row.file_id.as_deref())
+    .bind::<Nullable<Text>, _>(row.base.as_deref())
+    .bind::<Integer, _>(row.local_only)
+    .bind::<Integer, _>(row.open)
+    .bind::<BigInt, _>(row.size)
+    .bind::<BigInt, _>(row.mtime)
+    .execute(c)
+    .map(|_| ())
+}
+
+fn insert_content(c: &mut SqliteConnection, row: &ContentRow) -> QueryResult<()> {
+    diesel::sql_query(
+        "INSERT OR REPLACE INTO content (key, file_id, version, remote_len, chunks, last_used, changed, path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind::<Text, _>(&row.key)
+    .bind::<Text, _>(&row.file_id)
+    .bind::<Text, _>(&row.version)
+    .bind::<BigInt, _>(row.remote_len)
+    .bind::<Binary, _>(&row.chunks)
+    .bind::<BigInt, _>(row.last_used)
+    .bind::<Integer, _>(row.changed)
+    .bind::<Text, _>(&row.path)
+    .execute(c)
+    .map(|_| ())
 }
 
 #[cfg(test)]

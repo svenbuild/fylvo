@@ -123,7 +123,7 @@
     },
     "vfs": {
       "title": "Drives",
-      "cache": "Cache: {{used}} of {{limit}}",
+      "cache": "Cache of this drive: {{used}} (limit for all drives: {{limit}})",
       "pinnedSize": "kept offline: {{size}}",
       "offline": "offline",
       "changesWaiting": "{{count}} changed files are waiting to be uploaded.",

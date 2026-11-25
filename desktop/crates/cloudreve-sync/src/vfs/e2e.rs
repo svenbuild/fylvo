@@ -193,6 +193,47 @@ async fn the_drive_reads_and_writes_like_a_folder() {
     .await;
     assert!(!server_names(server, "").await.contains(&"newdir".to_string()));
 
+    // A folder someone filled meanwhile is not removed.
+    let m = mnt.clone();
+    fs(move || std::fs::create_dir(m.join("filled")).unwrap()).await;
+    server.upload("filled/by-web.txt", "from the web", None).await.unwrap();
+    let m = mnt.clone();
+    let rmdir = fs(move || std::fs::remove_dir(m.join("filled"))).await;
+    assert_eq!(rmdir.unwrap_err().raw_os_error(), Some(libc::ENOTEMPTY));
+    assert!(server_names(server, "filled").await.contains(&"by-web.txt".to_string()));
+
+    // A file replaced on the server meanwhile is not renamed (and nothing hangs).
+    let m = mnt.clone();
+    fs(move || std::fs::write(m.join("replaced.txt"), "ours").unwrap()).await;
+    wait_for("replaced.txt on the server", || async { server_bytes(server, "replaced.txt").await.is_some() }).await;
+    let m = mnt.clone();
+    fs(move || std::fs::metadata(m.join("replaced.txt")).unwrap()).await;
+    server
+        .client
+        .delete_files(&cloudreve_api::models::explorer::DeleteFileService {
+            uris: vec![server.uri("replaced.txt")],
+            unlink: None,
+            skip_soft_delete: None,
+        })
+        .await
+        .unwrap();
+    server.upload("replaced.txt", "theirs", None).await.unwrap();
+    let m = mnt.clone();
+    let started = Instant::now();
+    let renamed = fs(move || std::fs::rename(m.join("replaced.txt"), m.join("moved.txt"))).await;
+    assert!(started.elapsed() < Duration::from_secs(10));
+    let m = mnt.clone();
+    fs(move || std::fs::read_dir(&m).unwrap().count()).await;
+    match renamed {
+        // The drive had not seen the new file yet: nothing is renamed on the server.
+        Err(e) => {
+            assert_eq!(e.raw_os_error(), Some(libc::ENOENT));
+            assert_eq!(server_bytes(server, "replaced.txt").await.unwrap(), b"theirs");
+        }
+        // It had seen it already: the file the user saw (theirs) is renamed.
+        Ok(()) => assert_eq!(server_bytes(server, "moved.txt").await.unwrap(), b"theirs"),
+    }
+
     // Someone else saves while we edit: our version becomes a conflict copy.
     let m = mnt.clone();
     let mut handle = fs(move || {
@@ -297,6 +338,42 @@ async fn offline_only_cached_files_are_there_and_changes_wait() {
     let kept = setup.home.path().join("kept");
     assert_eq!(drive.export_unsent(&kept).unwrap(), 1);
     assert_eq!(std::fs::read_to_string(kept.join("cached.txt")).unwrap(), "edited offline");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore]
+async fn a_file_open_for_writing_when_the_app_ends_is_kept_as_a_copy() {
+    let setup = setup().await;
+    let server = &setup.server;
+    let original = pattern(2 * MIB);
+    server.upload("doc.bin", &original, None).await.unwrap();
+    let (drive, mnt) = mount(&setup, server.client.clone(), &server.url).await;
+
+    // A whole chunk of a file never loaded is overwritten; the app ends with the file open.
+    let m = mnt.clone();
+    let handle = fs(move || {
+        let mut file = std::fs::OpenOptions::new().write(true).open(m.join("doc.bin")).unwrap();
+        file.write_all(&vec![b'X'; MIB]).unwrap();
+        file
+    })
+    .await;
+    drive.stop();
+    drop(handle);
+    drop(drive);
+
+    // At the next start the content goes to a conflict copy: our chunk, the server's rest.
+    let (drive, _mnt) = mount(&setup, server.client.clone(), &server.url).await;
+    wait_for("recovered copy on the server", || async {
+        server_names(server, "").await.iter().any(|n| n.contains("doc") && n != "doc.bin")
+    })
+    .await;
+    let copy = server_names(server, "").await.into_iter().find(|n| n.contains("doc") && n != "doc.bin").unwrap();
+    let saved = server_bytes(server, &copy).await.unwrap();
+    assert_eq!(saved.len(), 2 * MIB);
+    assert!(saved[..MIB].iter().all(|b| *b == b'X'), "the written chunk was replaced by the server's bytes");
+    assert_eq!(saved[MIB..], original.as_bytes()[MIB..]);
+    assert_eq!(server_bytes(server, "doc.bin").await.unwrap(), original.as_bytes());
+    drive.stop();
 }
 
 /// Not a test: mounts a drive for checks by hand (`kill -9`, file managers) until the file
