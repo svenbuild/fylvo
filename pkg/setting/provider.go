@@ -330,9 +330,9 @@ func (s *settingProvider) DefaultViewerMapping(ctx context.Context) types.Defaul
 	raw := s.getString(ctx, "viewer_default_apps", "{}")
 	var mapping types.DefaultViewerMapping
 	if err := json.Unmarshal([]byte(raw), &mapping); err != nil {
-		return types.DefaultViewerMapping{}
+		mapping = types.DefaultViewerMapping{}
 	}
-	return mapping
+	return withOfficeDefaults(mapping)
 }
 
 func (s *settingProvider) FileViewers(ctx context.Context) []types.ViewerGroup {

@@ -34,7 +34,7 @@
 | **Previews** | Photos (also RAW and HEIC), videos, music, PDF, text and code, e-books |
 | **Sharing** | Links with password, expiry and download limit; upload links that let others add files without an account |
 | **Shared folders** | Share a folder with people on your server, per person "read" or "edit" |
-| **Office** | Edit Word, Excel and PowerPoint files in the browser with Collabora Online (optional) |
+| **Office** | Edit Word, Excel and PowerPoint files in the browser with Collabora Online (optional), or with the built-in Craft editors, which also edit PDF |
 | **Sync** | Windows app with files on demand in the Explorer and an optional drive letter; Linux app; WebDAV for everything else |
 | **Phone** | Android app with offline files, offline editing and folder sync |
 | **Security** | Two-factor login and passkeys, admin panel for users, groups and storage |

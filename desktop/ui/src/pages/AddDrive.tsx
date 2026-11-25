@@ -19,6 +19,7 @@ import {
 } from "../utils/siteValidation";
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { platform } from "@tauri-apps/plugin-os";
 import { CALLBACK_PATH, CLIENT_ID, SCOPES } from "../utils/constants";
 
 type PageState = "url_input" | "waiting" | "final_setup" | "setting_up" | "success";
@@ -87,7 +88,9 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
   const { driveId, siteUrl: encodedSiteUrl, driveName: driveNameQuery } = useParams<{ driveId?: string; siteUrl?: string, driveName: string }>();
   const isReauthorize = mode === "reauthorize" && driveId && encodedSiteUrl;
   const decodedSiteUrl = encodedSiteUrl ? decodeURIComponent(encodedSiteUrl) : "";
-  const isWindows10 = useIsWindows10();
+  // Only Windows 11 draws its Mica backdrop behind the page.
+  const isWindows = platform() === "windows";
+  const solidPage = useIsWindows10() || !isWindows;
 
   const [siteUrl, setSiteUrl] = useState(isReauthorize ? decodedSiteUrl : "");
   const [loading, setLoading] = useState(false);
@@ -365,7 +368,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
   }
 
   return (
-    <Container maxWidth="sm" sx={{ backgroundColor: isWindows10 ? "background.default" : undefined, minHeight: "100vh" }}>
+    <Container maxWidth="sm" sx={{ backgroundColor: solidPage ? "background.default" : undefined, minHeight: "100vh" }}>
       <Box
         sx={{
           minHeight: "100vh",
@@ -510,7 +513,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
                       fullWidth
                       autoComplete="off"
                       label={t("addDrive.localPath")}
-                      placeholder={t("addDrive.localPathPlaceholder")}
+                      placeholder={isWindows ? t("addDrive.localPathPlaceholder") : "/home/user/Fylvo"}
                       value={localPath}
                       onChange={(e) => {
                         setLocalPath(e.target.value);

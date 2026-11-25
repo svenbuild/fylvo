@@ -8,6 +8,9 @@ import { openNewContextMenu } from "../../redux/thunks/filemanager.ts";
 import { emptyTrash } from "../../redux/thunks/file.ts";
 import { FileManagerIndex } from "./FileManager.tsx";
 import { Filesystem } from "../../util/uri.ts";
+import SessionManager from "../../session";
+import { ContextMenuTypes } from "../../redux/fileManagerSlice.ts";
+import { getActionOpt } from "./ContextMenu/useActionDisplayOpt.ts";
 
 const NewButton = () => {
   const { t } = useTranslation();
@@ -16,6 +19,7 @@ const NewButton = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const currentFs = useAppSelector((s) => s.fileManager[FileManagerIndex.main].current_fs);
   const isTrash = currentFs === Filesystem.trash;
+  const parent = useAppSelector((s) => s.fileManager[FileManagerIndex.main].list?.parent);
 
   if (isTrash) {
     if (isMobile) {
@@ -36,6 +40,15 @@ const NewButton = () => {
         {t("fileManager.emptyTrash")}
       </Button>
     );
+  }
+
+  // Fylvo: a visitor who is not signed in gets the button only where the menu has something to do
+  // (a share that takes uploads); elsewhere every entry would fail.
+  if (!SessionManager.currentLoginOrNull()) {
+    const opt = getActionOpt([], undefined, ContextMenuTypes.new, parent, FileManagerIndex.main);
+    if (!opt.showCreateFolder && !opt.showUpload) {
+      return null;
+    }
   }
 
   if (isMobile) {

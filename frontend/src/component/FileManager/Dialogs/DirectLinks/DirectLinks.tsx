@@ -122,7 +122,7 @@ const DirectLinks = () => {
         maxWidth: "sm",
       }}
     >
-      <DialogContent sx={{ pt: 0, pb: 0 }}>
+      <DialogContent sx={{ pt: 0, pb: 2 }}>
         {(targets?.length ?? 0) > 1 && (
           <ToggleButtonGroup value={viewMode} exclusive onChange={handleViewModeChange} sx={{ mb: 1 }} size="small">
             <ToggleButton value="list">

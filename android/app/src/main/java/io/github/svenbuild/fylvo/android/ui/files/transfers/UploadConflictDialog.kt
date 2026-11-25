@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,13 +81,13 @@ fun UploadConflictDialog(
             }
         },
         // Fylvo: no replacing in connected storages in this version (keep both or skip).
+        // Stacked, so three buttons with long (German) labels do not wrap into a ragged row.
         confirmButton = {
-            if (connected) TextButton(onClick = { onResolve(pending.keepBoth()) }) { Text(stringResource(R.string.keep_both)) }
-            else TextButton(onClick = { onResolve(pending.replace()) }) { Text(stringResource(R.string.replace)) }
-        },
-        dismissButton = {
-            if (!connected) TextButton(onClick = { onResolve(pending.keepBoth()) }) { Text(stringResource(R.string.keep_both)) }
-            TextButton(onClick = { onResolve(pending.skip()) }) { Text(stringResource(R.string.skip)) }
+            Column(horizontalAlignment = Alignment.End) {
+                if (!connected) TextButton(onClick = { onResolve(pending.replace()) }) { Text(stringResource(R.string.replace)) }
+                TextButton(onClick = { onResolve(pending.keepBoth()) }) { Text(stringResource(R.string.keep_both)) }
+                TextButton(onClick = { onResolve(pending.skip()) }) { Text(stringResource(R.string.skip)) }
+            }
         },
     )
 }

@@ -228,7 +228,7 @@ const CustomizeSetting = () => {
               onChange={(layout) => saveView({ view: layout })}
               disabled={!rootViewRead || savingView}
             />
-            <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", rowGap: 1 }}>
+            <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
               <Choice<string>
                 value={prefs.view.sort_by ?? "created_at"}
                 options={sortOptions.map((o) => [o, t(`customize.sort_${o}`)] as [string, string])}

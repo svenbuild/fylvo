@@ -86,10 +86,9 @@ const FileSelectedActions = forwardRef(({ targets }: FileSelectedActionsProps, r
             <Dismiss />
           </Badge>
         </IconButton>
+        {/* Fylvo: the count is shown once, on the button that clears the selection. */}
         <IconButton onClick={(e) => dispatch(openFileContextMenu(FileManagerIndex.main, targets[0], false, e))}>
-          <Badge badgeContent={targets.length} color={"primary"}>
-            <MoreHorizontal />
-          </Badge>
+          <MoreHorizontal />
         </IconButton>
       </Stack>
     );

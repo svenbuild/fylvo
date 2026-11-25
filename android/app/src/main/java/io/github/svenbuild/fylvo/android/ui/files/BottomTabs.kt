@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -81,13 +82,16 @@ fun BottomTabs(tabs: List<Place>, selected: Place, onSelect: (Place) -> Unit) {
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(start = 20.dp, end = 20.dp, bottom = 12.dp, top = 4.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Surface(
             shape = BarShape,
             color = colors.surfaceContainer,
             border = BorderStroke(1.dp, colors.outlineVariant),
             shadowElevation = 8.dp,
+            // A compact pill also in landscape and on tablets.
             modifier = Modifier
+                .widthIn(max = 560.dp)
                 .fillMaxWidth()
                 .height(64.dp),
         ) {

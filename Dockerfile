@@ -1,6 +1,13 @@
 # The Fylvo image. The server binary is built outside (scripts/build.sh), one per architecture:
 # release/fylvo-linux-amd64 and release/fylvo-linux-arm64.
 # Raise the Alpine version on purpose and test the image after it.
+
+# The Craft editors (office in the browser), fetched and checked against scripts/craft/craft.lock.
+FROM --platform=$BUILDPLATFORM alpine:3.24 AS craft
+RUN apk add --no-cache curl gnupg unzip brotli gzip
+COPY scripts/craft /craft-scripts
+RUN sh /craft-scripts/fetch.sh /craft
+
 FROM alpine:3.24
 
 WORKDIR /fylvo
@@ -22,6 +29,7 @@ ENV TZ=UTC \
 ARG TARGETARCH
 COPY .build/aria2.supervisor.conf .build/entrypoint.sh ./
 COPY release/fylvo-linux-${TARGETARCH} ./fylvo
+COPY --from=craft /craft ./craft
 
 # Installations from before the rename stored absolute paths /cloudreve/data/... in the database
 # (storage policy, files, thumbnails). The link keeps them working.

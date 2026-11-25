@@ -503,6 +503,10 @@ pub fn show_reauthorize_window_impl(
     show_drive_window_internal(app, &t!("reauthorizeWindowTitle"), &get_url_with_lang(&url_path));
 }
 
+/// Fylvo: the overlay title bar of tauri-plugin-frame and the Mica backdrop exist on Windows only;
+/// on Linux the add-drive and settings windows get the system title bar and no transparency.
+const SYSTEM_TITLE_BAR: bool = cfg!(target_os = "linux");
+
 /// Internal function to show or create the add-drive/reauthorize window
 fn show_drive_window_internal(app: &AppHandle, title: &str, url_path: &str) {
     // Check if window already exists
@@ -527,9 +531,9 @@ fn show_drive_window_internal(app: &AppHandle, title: &str, url_path: &str) {
         .inner_size(470.0, 630.0)
         .resizable(false)
         .visible(false)
-        .transparent(true)
+        .transparent(!SYSTEM_TITLE_BAR)
         .effects(effects)
-        .decorations(false)
+        .decorations(SYSTEM_TITLE_BAR)
         .minimizable(false);
 
     // Platform-specific: title_bar_style and hidden_title are macOS-only
@@ -578,7 +582,7 @@ pub fn show_settings_window_impl(app: &AppHandle) {
     .min_inner_size(600.0, 400.0)
     .visible(false)
     .resizable(true)
-    .decorations(false)
+    .decorations(SYSTEM_TITLE_BAR)
     .minimizable(true);
 
     // Platform-specific: title_bar_style and hidden_title are macOS-only

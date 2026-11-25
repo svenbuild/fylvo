@@ -27,6 +27,7 @@ import {
   closeImageEditor,
   setArchiveViewer,
   setCodeViewer,
+  setCraftViewer,
   setCustomViewer,
   setDrawIOViewer,
   setEpubViewer,
@@ -387,8 +388,9 @@ export function openWopiViewer(file: FileResponse, viewer: Viewer, preferredVers
     if (!viewerSession.wopi_src) {
       return;
     }
+    // Fylvo: a Craft editor runs in a page of this server, which makes the WOPI calls itself.
     dispatch(
-      setWopiViewer({
+      (viewer.props?.craft ? setCraftViewer : setWopiViewer)({
         open: true,
         src: viewerSession.wopi_src,
         session: viewerSession.session,

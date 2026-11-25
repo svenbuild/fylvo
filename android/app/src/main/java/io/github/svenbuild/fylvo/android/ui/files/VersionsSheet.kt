@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.AlertDialog
@@ -106,7 +106,7 @@ fun VersionsSheet(
             SheetAction(Icons.Default.Download, stringResource(R.string.download), { picked = null; onDownload(file, v.id) })
             if (!isCurrent) {
                 SheetAction(Icons.Outlined.History, stringResource(R.string.version_restore), { picked = null; confirm = v to true })
-                SheetAction(Icons.Default.Delete, stringResource(R.string.version_delete), { picked = null; confirm = v to false }, tint = MaterialTheme.colorScheme.error)
+                SheetAction(Icons.Outlined.Delete, stringResource(R.string.version_delete), { picked = null; confirm = v to false }, tint = MaterialTheme.colorScheme.error)
             }
             Spacer(Modifier.height(24.dp))
         }

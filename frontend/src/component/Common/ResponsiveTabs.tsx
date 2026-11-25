@@ -27,59 +27,68 @@ const ResponsiveTabs = <T,>({ tabs, value, onChange }: ResponsiveTabsProps<T>) =
   const neededWidth = useRef(0);
   const allShown = useRef(true);
   allShown.current = !isMobile && !hideTabs;
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const moreOptionState = usePopupState({
     variant: "popover",
     popupId: "tabMore",
   });
   const { onClose, ...menuProps } = bindMenu(moreOptionState);
+  const list = () => tabsRef.current?.children[0]?.children[0] as HTMLElement | undefined;
+  const fit = () => {
+    const el = list();
+    if (el) {
+      setHideTabs(neededWidth.current > el.clientWidth);
+    }
+  };
+  const measure = () => {
+    const last = list()?.lastElementChild as HTMLElement | null | undefined;
+    if (last) {
+      neededWidth.current = last.offsetLeft + last.offsetWidth;
+    }
+    fit();
+  };
+  // Fylvo: measure only once React has put all tabs back on screen (an animation frame could still see the folded ones).
+  const measurePending = useRef(false);
+  useLayoutEffect(() => {
+    if (measurePending.current && allShown.current) {
+      measurePending.current = false;
+      measure();
+    }
+  }, [hideTabs]);
+
   useLayoutEffect(() => {
     // On phones the tabs are always folded into the menu, nothing to measure.
     if (isMobile) {
       return;
     }
 
-    const list = () => tabsRef.current?.children[0]?.children[0] as HTMLElement | undefined;
-    const fit = () => {
-      const el = list();
-      if (el) {
-        setHideTabs(neededWidth.current > el.clientWidth);
-      }
-    };
-    const measure = () => {
-      const last = list()?.lastElementChild as HTMLElement | null | undefined;
-      if (last) {
-        neededWidth.current = last.offsetLeft + last.offsetWidth;
-      }
-      fit();
-    };
-
-    // Measuring needs all tabs on screen: show them, then measure on the next frame.
-    let frame = 0;
+    // Measuring needs all tabs on screen: show them, then measure.
     let active = true;
     const remeasure = () => {
       if (!active) {
         return;
       }
-      setHideTabs(false);
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(measure);
+      if (allShown.current) {
+        measure();
+      } else {
+        measurePending.current = true;
+        setHideTabs(false);
+      }
     };
 
-    if (allShown.current) {
-      measure();
-    } else {
-      remeasure();
-    }
+    remeasure();
     // Tab widths change once the web font has replaced the fallback font.
     document.fonts?.ready.then(remeasure);
-    window.addEventListener("resize", fit);
+    // The room changes also without a window resize (the sidebar opens or is dragged).
+    const observer = new ResizeObserver(fit);
+    if (tabsRef.current) {
+      observer.observe(tabsRef.current);
+    }
     return () => {
       active = false;
-      cancelAnimationFrame(frame);
-      window.removeEventListener("resize", fit);
+      observer.disconnect();
     };
-  }, [isMobile, tabs.length]);
+  }, [isMobile, tabs.length, i18n.language]);
 
   return (
     <Box

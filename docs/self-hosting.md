@@ -53,7 +53,29 @@ docker compose up -d && sudo systemctl reload caddy
 
 ## 2. Office in the browser
 
-Optional. [Collabora Online](https://www.collabora.com/) opens Word, Excel and PowerPoint files
+Fylvo has two office engines. Files open in the default one; the other is under "Open with".
+
+- **Craft** is built in: WordCraft, GridCraft, DeckCraft and PdfCraft edit `.docx`, `.xlsx`,
+  `.pptx` and `.pdf` in the browser itself (WebAssembly). The image carries fixed versions of
+  them, checked against their signature and the sums in `scripts/craft/craft.lock` when the image
+  is built. No extra container, no extra address, nothing to set up. The editors are young (alpha):
+  Fylvo keeps the earlier versions of every file you save. They are offered on computers only,
+  their interface does not fit a phone.
+- **Collabora Online** is optional and described below. It handles many more formats, works on
+  phones and lets several people edit a document at once, but runs as a second container with its
+  own address.
+
+The Craft editors run on Fylvo's own address under a strict Content-Security-Policy and contact no
+other server. While one person edits a file, others open it read-only, in both engines.
+
+`FYLVO_OFFICE_ENGINE` lists the engines in use, the default first: `craft,collabora`,
+`collabora,craft`, or only one of them. Without it, Collabora is the default when
+`FYLVO_OFFICE_URL` is set, otherwise Craft. Without Docker, run `scripts/craft/fetch.sh` once
+next to the Fylvo binary (or set `FYLVO_CRAFT_DIR` to the folder it filled).
+
+### Collabora Online
+
+[Collabora Online](https://www.collabora.com/) opens Word, Excel and PowerPoint files
 in the browser. It runs as a second container and needs its own address, which browsers reach
 directly. It uses about 500 MB of memory once a document was opened.
 

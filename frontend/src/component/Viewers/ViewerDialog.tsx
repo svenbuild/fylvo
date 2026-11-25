@@ -19,6 +19,8 @@ const ViewerFrame = styled(Dialog)({
 export interface ViewerDialogProps {
   file?: FileResponse;
   readOnly?: boolean;
+  // Fylvo: shown after the name, for example whether the changes are saved.
+  status?: React.ReactNode;
   fullScreen?: boolean;
   actions?: React.ReactNode;
   fullScreenToggle?: boolean;
@@ -85,6 +87,7 @@ const ViewerDialog = (props: ViewerDialogProps) => {
             <FileIcon variant={"default"} file={props.file} sx={{ p: 0, mr: 1, flexShrink: 0 }} fontSize={"small"} />
             <NoWrapTypography variant={"subtitle2"}>{props.file?.name}</NoWrapTypography>
             {props.readOnly && <Chip size="small" sx={{ ml: 1, height: 20 }} label={t("fileManager.readOnly")} />}
+            {props.status}
           </Box>
           <Box sx={{ display: "flex", flexShrink: 0 }}>
             {props.fullScreenToggle && (

@@ -122,7 +122,7 @@ const DavAccountList = ({ creatAccountDialog, setCreateAccountDialog }: DavAccou
               <NoWrapTableCell width={116}>{t("fileManager.permissions")}</NoWrapTableCell>
               <NoWrapTableCell width={116}>{t("setting.proxy")}</NoWrapTableCell>
               <NoWrapTableCell width={138}>{t("fileManager.createdAt")}</NoWrapTableCell>
-              <NoWrapTableCell width={66}>{t("fileManager.actions")}</NoWrapTableCell>
+              <NoWrapTableCell width={88}>{t("fileManager.actions")}</NoWrapTableCell>
             </TableRow>
           </TableHead>
           <TableBody>

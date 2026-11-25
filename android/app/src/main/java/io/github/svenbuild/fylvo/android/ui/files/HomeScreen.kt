@@ -1,6 +1,7 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
 import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.ui.files.transfers.uploadHeadline
 import io.github.svenbuild.fylvo.android.R
 
 import androidx.compose.foundation.background
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -130,7 +132,7 @@ private fun RecentSection(
                 contentAlignment = Alignment.Center,
             ) { CircularProgressIndicator(Modifier.size(28.dp)) }
             state.recent.isEmpty() -> Text(
-                stringResource(R.string.recent_hint),
+                stringResource(if (state.recentFailed) R.string.recent_load_failed else R.string.recent_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
@@ -282,7 +284,7 @@ private fun ActivityCard(state: FilesUiState, onOpenUploads: () -> Unit) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             state.uploads.forEach { u ->
                 ActivityRow(
-                    title = if (u.total > 1) stringResource(R.string.uploading_n_of, u.index + 1, u.total) else stringResource(R.string.uploading),
+                    title = uploadHeadline(u),
                     detail = stringResource(R.string.upload_target, u.name.ifEmpty { stringResource(R.string.waiting) }, CrUri.displayName(u.parentUri)),
                     fraction = u.fraction,
                 )
@@ -343,7 +345,9 @@ private fun SectionHeader(title: String, action: Pair<String, () -> Unit>? = nul
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 2.dp),
+            .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 2.dp)
+            // Same height with and without the action, so the list does not jump when it appears.
+            .heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

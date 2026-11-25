@@ -16,7 +16,6 @@ import React, { memo, useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { NavigatorCapability } from "../../../api/explorer.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
-import { isMacbook } from "../../../redux/thunks/file.ts";
 import { uploadClicked } from "../../../redux/thunks/filemanager.ts";
 import Boolset from "../../../util/boolset.ts";
 import { isUploadOnly } from "../../../util/permission.ts";
@@ -25,15 +24,11 @@ import Upload from "../../Icons/Upload.tsx";
 import { FileManagerIndex } from "../FileManager.tsx";
 import { Filesystem } from "../../../util/uri.ts";
 import Nothing from "../../Common/Nothing.tsx";
-import { KeyIndicator } from "../../Frame/NavBar/SearchBar.tsx";
 import ArrowSync from "../../Icons/ArrowSync.tsx";
-import Border from "../../Icons/Border.tsx";
-import BorderAll from "../../Icons/BorderAll.tsx";
-import BorderInside from "../../Icons/BorderInside.tsx";
 import FolderLink from "../../Icons/FolderLink.tsx";
 import MoreHorizontal from "../../Icons/MoreHorizontal.tsx";
 import PinOutlined from "../../Icons/PinOutlined.tsx";
-import { DenseDivider, SquareMenuItem } from "../ContextMenu/ContextMenu.tsx";
+import { SquareMenuItem } from "../ContextMenu/ContextMenu.tsx";
 import { FmIndexContext } from "../FmIndexContext.tsx";
 import { ActionButton, ActionButtonGroup } from "../TopBar/TopActions.tsx";
 import { ConnectedOmitted } from "../Connected/ConnectedMark.tsx";
@@ -65,7 +60,6 @@ export const SharedWithMeEmpty = () => {
     <Stack spacing={1.5} sx={{ width: 300, maxWidth: "100%" }}>
       <Box
         sx={{
-          height: 156,
           overflow: "hidden",
           bgcolor: hoverSurface,
           border: 1,
@@ -132,36 +126,6 @@ export const SharedWithMeEmpty = () => {
                   <ListItemText slotProps={{ primary: { variant: "body2" } }}>
                     {t("application:fileManager.saveShortcut")}
                   </ListItemText>
-                </SquareMenuItem>
-                <DenseDivider />
-                <SquareMenuItem>
-                  <ListItemIcon>
-                    <PinOutlined fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText slotProps={{ primary: { variant: "body2" } }}>
-                    {t("application:fileManager.pin")}
-                  </ListItemText>
-                </SquareMenuItem>
-                <SquareMenuItem>
-                  <ListItemIcon>
-                    <BorderAll fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>{t("application:fileManager.selectAll")}</ListItemText>
-                  <Typography variant="body2" color="text.secondary">
-                    <KeyIndicator>{isMacbook ? "⌘" : "Ctrl"}</KeyIndicator>+<KeyIndicator>A</KeyIndicator>
-                  </Typography>
-                </SquareMenuItem>
-                <SquareMenuItem>
-                  <ListItemIcon>
-                    <Border fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>{t("application:fileManager.selectNone")}</ListItemText>
-                </SquareMenuItem>
-                <SquareMenuItem>
-                  <ListItemIcon>
-                    <BorderInside fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>{t("application:fileManager.invertSelection")}</ListItemText>
                 </SquareMenuItem>
               </MenuList>
             </Paper>
@@ -238,7 +202,7 @@ const EmptyFileList = memo(
               sx={{
                 "& .MuiTypography-root": { color: "text.secondary" },
                 "& .MuiTypography-h5": { fontSize: 15, fontWeight: 600 },
-                "& .MuiSvgIcon-root": { color: "text.secondary", mb: "4px" },
+                "& .MuiSvgIcon-root": { color: "text.secondary", mb: "4px", fontSize: 18 },
               }}
             >
               <Nothing

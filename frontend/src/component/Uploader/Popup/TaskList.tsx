@@ -187,7 +187,8 @@ export default function TaskList({
     return (
       <Virtuoso
         style={{
-          height: (fullScreen || isTouch ? 44 : 33) * currentList.length,
+          // Fylvo: one row plus its divider (UploadTask), two text lines need 36 px.
+          height: (fullScreen || isTouch ? 44 : 37) * currentList.length,
           maxHeight: "min(400px, calc(100dvh - 68px))",
         }}
         increaseViewportBy={180}

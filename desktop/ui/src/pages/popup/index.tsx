@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { platform } from "@tauri-apps/plugin-os";
 import { useTranslation } from "react-i18next";
 import Settings from "../../common/icons/Settings";
 import FylvoLogo from "../../common/FylvoLogo";
@@ -114,6 +115,9 @@ export default function Popup() {
         flexDirection: "column",
         bgcolor: "background.paper",
         overflow: "hidden",
+        // Windows frames the borderless popup; Linux draws no edge around it.
+        border: platform() === "windows" ? 0 : 1,
+        borderColor: "divider",
       }}
     >
       {/* Header */}
@@ -139,7 +143,7 @@ export default function Popup() {
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <FylvoLogo height={28} />
           </Box>
-          <IconButton size="small" onClick={handleSettings}>
+          <IconButton size="small" onClick={handleSettings} aria-label={t("settings.title")}>
             <Settings fontSize="small" />
           </IconButton>
         </Box>

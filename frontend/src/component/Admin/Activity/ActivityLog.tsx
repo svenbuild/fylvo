@@ -104,15 +104,9 @@ const ActivityLog = () => {
               </SquareMenuItem>
             ))}
           </DenseSelect>
-          {account && (
-            <Chip
-              size="small"
-              label={accountName(account)}
-              onDelete={() => setAccount(undefined)}
-            />
-          )}
+          {account && <Chip size="small" label={accountName(account)} onDelete={() => setAccount(undefined)} />}
         </Stack>
-        <Stack direction="row" spacing={1} sx={{ mb: 2, alignItems: "center", flexWrap: "wrap" }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ mb: 2, alignItems: "center", flexWrap: "wrap" }}>
           <Typography variant="body2">{t("activity.retention")}</Typography>
           <DenseFilledTextField
             type="number"

@@ -469,7 +469,7 @@
     "thumbFormat": "Image format",
     "thumbFormatDes": "Preferred image format, if the generator does not support it, it will automatically downgrade to jpg format.",
     "thumbQuality": "Quality",
-    "thumbQualityDes": "Compression quality percentage, valid only for jpg and webp format.",
+    "thumbQualityDes": "Compression quality percentage, valid only for jpg and webp format. ",
     "thumbGC": "Run GC after thumb generated",
     "thumbPregen": "Make missing thumbnails in the background",
     "thumbPregenDes": "Slowly, one at a time, newest files first. Office documents are left to the first view.",

@@ -33,10 +33,10 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DriveFolderUpload
+import androidx.compose.material.icons.outlined.DriveFolderUpload
 import androidx.compose.material.icons.automirrored.outlined.Article
-import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
@@ -51,6 +51,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -79,6 +80,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalContext
@@ -369,8 +371,12 @@ fun FilesScreen(
         }
     }
 
+    fun openLocal(local: File) {
+        if (!openWithSystem(context, local)) scope.launch { snackbar.showSnackbar(context.getString(R.string.no_app_for_file)) }
+    }
+
     fun openWithSystemApp(file: FileObject) {
-        viewModel.fetchForOpen(context, file) { local -> openWithSystem(context, local) }
+        viewModel.fetchForOpen(context, file) { local -> openLocal(local) }
     }
 
     /** In-app viewer for media, PDFs and text; everything else goes to the system. */
@@ -844,7 +850,7 @@ fun FilesScreen(
                             CrUri.isRoot(state.currentUri) -> null
                             else -> CrUri.displayPath(CrUri.parent(state.currentUri))
                         },
-                    ).joinToString(" • ").ifEmpty { null },
+                    ).joinToString(" · ").ifEmpty { null },
                     // Fylvo: the top of a tab needs no back arrow, the bottom bar leads there.
                     showBack = !atTabRoot,
                     showSort = !state.virtual,
@@ -1116,8 +1122,11 @@ fun FilesScreen(
 
     if (addSheetOpen) {
         ModalBottomSheet(onDismissRequest = { addSheetOpen = false }) {
+            // The rows take the sheet's colour, not the darker page colour.
+            val itemColors = ListItemDefaults.colors(containerColor = Color.Transparent)
             // Fylvo: in a connected storage each entry follows the folder's own bit.
             if (!state.inConnected || Connected.canUploadTo(state.parent)) ListItem(
+                colors = itemColors,
                 modifier = Modifier.clickable {
                     addSheetOpen = false
                     if (!CrUri.hasSecret(state.currentUri)) {
@@ -1127,10 +1136,11 @@ fun FilesScreen(
                 },
                 headlineContent = { Text(stringResource(R.string.upload_files)) },
                 supportingContent = { Text(stringResource(R.string.into_folder, state.folderTitle())) },
-                leadingContent = { Icon(Icons.Default.UploadFile, contentDescription = null) },
+                leadingContent = { Icon(Icons.Outlined.UploadFile, contentDescription = null) },
             )
             // Fylvo 1.6: a whole folder of the phone (not into connected storages, like the web).
             if (!state.inConnected && !state.offlineMode && Permissions.canAddTo(state.parent)) ListItem(
+                colors = itemColors,
                 modifier = Modifier.clickable {
                     addSheetOpen = false
                     val target = state.currentUri
@@ -1154,24 +1164,27 @@ fun FilesScreen(
                 },
                 headlineContent = { Text(stringResource(R.string.folder_upload)) },
                 supportingContent = { Text(stringResource(R.string.into_folder, state.folderTitle())) },
-                leadingContent = { Icon(androidx.compose.material.icons.Icons.Default.DriveFolderUpload, contentDescription = null) },
+                leadingContent = { Icon(androidx.compose.material.icons.Icons.Outlined.DriveFolderUpload, contentDescription = null) },
             )
             if (!state.inConnected || Connected.canCreateIn(state.parent)) ListItem(
+                colors = itemColors,
                 modifier = Modifier.clickable {
                     addSheetOpen = false
                     mkdirOpen = true
                 },
                 headlineContent = { Text(stringResource(R.string.new_folder)) },
-                leadingContent = { Icon(Icons.Default.CreateNewFolder, contentDescription = null) },
+                leadingContent = { Icon(Icons.Outlined.CreateNewFolder, contentDescription = null) },
             )
             // Fylvo 1.6: new text files (the web's templates with content: text and Markdown).
             if (Permissions.canCreateTextIn(state.parent) && !state.offlineMode) {
                 ListItem(
+                    colors = itemColors,
                     modifier = Modifier.clickable { addSheetOpen = false; newTextExt = "txt" },
                     headlineContent = { Text(stringResource(R.string.new_text_file)) },
                     leadingContent = { Icon(Icons.Outlined.Description, contentDescription = null) },
                 )
                 ListItem(
+                    colors = itemColors,
                     modifier = Modifier.clickable { addSheetOpen = false; newTextExt = "md" },
                     headlineContent = { Text(stringResource(R.string.new_markdown_note)) },
                     leadingContent = { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Outlined.Article, contentDescription = null) },
@@ -1382,7 +1395,7 @@ fun FilesScreen(
                             when {
                                 finished -> context.getString(R.string.folder_upload_started)
                                 // Some batches go up: said so, a new try would upload them twice.
-                                queued > 0 -> context.getString(R.string.folder_upload_partly, queued, groups.size)
+                                queued > 0 -> context.resources.getQuantityString(R.plurals.folder_upload_partly, queued, queued, groups.size)
                                 else -> context.getString(R.string.folder_upload_failed)
                             },
                         )
@@ -1771,7 +1784,7 @@ fun FilesScreen(
                 } else {
                     scope.launch {
                         val local = viewModel.offlineFile(root.uri)
-                        if (local != null) openWithSystem(context, local)
+                        if (local != null) openLocal(local)
                         else snackbar.showSnackbar(context.getString(R.string.offline_not_here_yet))
                     }
                 }
@@ -1780,7 +1793,7 @@ fun FilesScreen(
             onRemove = { root -> viewModel.removeOffline(root.id, root.name) },
             bottomBar = { BottomTabs(tabs, currentTab, ::selectTab) },
             edits = state.editEntries.filter(::needsAttention),
-            onEditOpen = { entry -> scope.launch { viewModel.editedFile(entry)?.let { openWithSystem(context, it) } } },
+            onEditOpen = { entry -> scope.launch { viewModel.editedFile(entry)?.let { openLocal(it) } } },
             onEditFinish = viewModel::finishEditing,
             onEditDiscard = { discardTarget = it },
             onEditDismissNotice = viewModel::dismissEditNotice,
@@ -1976,17 +1989,18 @@ private fun rememberScrollingDown(useGrid: Boolean, listState: LazyListState, gr
     return down
 }
 
-private fun openWithSystem(context: Context, local: File) {
+/** False when no app on the phone opens this kind of file (the file stays in the cache). */
+private fun openWithSystem(context: Context, local: File): Boolean {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", local)
     val intent = Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(uri, context.contentResolver.getType(uri) ?: "*/*")
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
-    try {
+    return try {
         context.startActivity(intent)
+        true
     } catch (_: ActivityNotFoundException) {
-        // Fylvo 1.6: no app for this kind of file: say so (the file stays in the cache).
-        android.widget.Toast.makeText(context, context.getString(R.string.no_app_for_file), android.widget.Toast.LENGTH_LONG).show()
+        false
     }
 }
 

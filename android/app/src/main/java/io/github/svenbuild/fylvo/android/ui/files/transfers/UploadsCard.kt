@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -36,24 +36,27 @@ fun UploadsCard(uploads: List<UploadStatus>, onCancel: (UUID) -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
     ) {
         uploads.forEach { u -> UploadRow(u, onCancel) }
     }
 }
 
+/** What an upload is doing right now, also used by the activity card of the home page. */
+@Composable
+fun uploadHeadline(u: UploadStatus): String = when {
+    u.waitingForNetwork -> stringResource(R.string.waiting_for_connection)
+    u.total == 0 -> stringResource(R.string.waiting_to_upload)
+    u.total > 1 -> stringResource(R.string.uploading_n_of, u.index + 1, u.total)
+    else -> stringResource(R.string.uploading)
+}
+
 @Composable
 private fun UploadRow(u: UploadStatus, onCancel: (UUID) -> Unit) {
-    val queued = u.total == 0
-    val headline = when {
-        u.waitingForNetwork -> stringResource(R.string.upload_waits_for_network)
-        queued -> stringResource(R.string.waiting_to_upload)
-        u.total > 1 -> stringResource(R.string.uploading_n_of, u.index + 1, u.total)
-        else -> stringResource(R.string.uploading)
-    }
+    val headline = uploadHeadline(u)
     val detail = when {
-        queued -> ""
+        u.total == 0 -> ""
         u.size > 0 && u.permille == 0 -> stringResource(R.string.upload_progress, u.name, formatSize(u.sent), formatSize(u.size))
         else -> u.name
     }
@@ -64,7 +67,7 @@ private fun UploadRow(u: UploadStatus, onCancel: (UUID) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Icons.Default.CloudUpload,
+            Icons.Outlined.CloudUpload,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(28.dp),

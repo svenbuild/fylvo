@@ -66,8 +66,8 @@ const FileTypeBadge = styled(Box)(({ theme }) => ({
 
 const SelectOverlay = styled(Box)(({ theme }) => ({
   position: "absolute",
-  top: 2,
-  left: 2,
+  top: 3,
+  left: 3,
   width: 18,
   height: 18,
   borderRadius: 4,
@@ -171,7 +171,8 @@ const ListThumbnail = memo(({ file, isSelected, noThumb, showLock }: ListThumbna
           </Fade>
         )}
       </TransitionGroup>
-      {thumbSrc && (
+      {/* Fylvo: the check takes the middle, the type badge would overlap it. */}
+      {thumbSrc && !showSelectOverlay && (
         <FileTypeBadge>
           {/* Fylvo: the corner is too small for the type glyph plus its share mark, so a shared
               file shows only the share mark here. */}

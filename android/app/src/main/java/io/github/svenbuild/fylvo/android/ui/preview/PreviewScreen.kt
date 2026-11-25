@@ -1,5 +1,6 @@
 package io.github.svenbuild.fylvo.android.ui.preview
 
+import android.app.Activity
 import androidx.compose.ui.res.stringResource
 import io.github.svenbuild.fylvo.android.R
 
@@ -39,8 +40,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +51,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.svenbuild.fylvo.android.api.FileObject
@@ -113,6 +119,22 @@ fun PreviewScreen(
 
     BackHandler(onBack = onClose)
 
+    // Light system bar icons over the black image and video viewer, also in the light theme.
+    val view = LocalView.current
+    val themeLight = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    val controller = (view.context as? Activity)?.window?.let { WindowCompat.getInsetsController(it, view) }
+    // After every recomposition, so it wins over the theme setting the bars again.
+    SideEffect {
+        controller?.isAppearanceLightStatusBars = themeLight && !dark
+        controller?.isAppearanceLightNavigationBars = themeLight && !dark
+    }
+    DisposableEffect(themeLight) {
+        onDispose {
+            controller?.isAppearanceLightStatusBars = themeLight
+            controller?.isAppearanceLightNavigationBars = themeLight
+        }
+    }
+
     // Surface (not Box) so LocalContentColor matches the background; the
     // viewer sits outside the Scaffold and would otherwise inherit black text.
     Surface(
@@ -142,7 +164,7 @@ fun PreviewScreen(
                         Text(
                             buildString {
                                 append(io.github.svenbuild.fylvo.android.ui.files.fileSubtitle(current))
-                                if (files.size > 1) append("  •  " + stringResource(R.string.position_of, pager.currentPage + 1, files.size))
+                                if (files.size > 1) append(" · " + stringResource(R.string.position_of, pager.currentPage + 1, files.size))
                             },
                             style = MaterialTheme.typography.labelMedium,
                             color = if (dark) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,

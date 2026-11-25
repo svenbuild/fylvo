@@ -242,6 +242,8 @@ export interface GlobalStateSlice {
   imageEditor?: ImageEditorState;
   photopeaViewer?: GeneralViewerState;
   wopiViewer?: WopiViewerState;
+  // Fylvo: a Craft editor (a WOPI session the page itself serves).
+  craftViewer?: WopiViewerState;
   codeViewer?: GeneralViewerState;
   drawIOViewer?: DrawIOViewerState;
   markdownViewer?: GeneralViewerState;
@@ -435,6 +437,7 @@ export const globalStateSlice = createSlice({
       state.imageEditor = undefined;
       state.photopeaViewer = undefined;
       state.wopiViewer = undefined;
+      state.craftViewer = undefined;
       state.codeViewer = undefined;
       state.drawIOViewer = undefined;
       state.markdownViewer = undefined;
@@ -843,6 +846,12 @@ export const globalStateSlice = createSlice({
     closeWopiViewer: (state) => {
       state.wopiViewer && (state.wopiViewer.open = false);
     },
+    setCraftViewer: (state, action: PayloadAction<WopiViewerState>) => {
+      state.craftViewer = action.payload;
+    },
+    closeCraftViewer: (state) => {
+      state.craftViewer && (state.craftViewer.open = false);
+    },
     setCodeViewer: (state, action: PayloadAction<GeneralViewerState>) => {
       state.codeViewer = action.payload;
     },
@@ -907,6 +916,8 @@ export const {
   closeCodeViewer,
   setWopiViewer,
   closeWopiViewer,
+  setCraftViewer,
+  closeCraftViewer,
   setViewerSelector,
   closeViewerSelector,
   setPhotopeaViewer,

@@ -210,7 +210,7 @@
     "whiteboard": "Whiteboard",
     "selectApplications": "Select applications...",
     "newlyCreatedFolder": "New folder",
-    "expandAllApp": "Expand all applications",
+    "expandAllApp": "Show all applications",
     "epubViewer": "ePub Reader",
     "googledocs": "Google Docs Viewer",
     "m365viewer": "Microsoft Office Online Viewer",
@@ -1127,7 +1127,7 @@
     "star": "Add to favorites",
     "unstar": "Remove from favorites",
     "color": "Color",
-    "noFavorites": "No favorites yet. Right-click a file or folder and choose \"Add to favorites\".",
+    "noFavorites": "No favorites yet. Choose \"Add to favorites\" in the menu of a file or folder.",
     "favoritesUnavailable_one": "{{count}} favorite is not available right now (in the trash or no longer shared).",
     "favoritesUnavailable_other": "{{count}} favorites are not available right now (in the trash or no longer shared).",
     "widgetRecent": "Recently changed",
@@ -1271,5 +1271,28 @@
     "cannotUndo": "The last action cannot be undone. Uploads, copies, new files and final deletes cannot be undone.",
     "notInTrash": "The files are no longer in the trash. Nothing was restored.",
     "changedSince": "The files have changed since. Nothing was undone."
+  },
+  "craft": {
+    "status": {
+      "saved": "Saved",
+      "unsaved": "Not saved",
+      "saving": "Saving ..."
+    },
+    "lockedByOther": "The file is being edited elsewhere, so it is open read-only.",
+    "lockFailed": "The file could not be locked for editing. It is open read-only.",
+    "lockLost": "The lock expired and the file is now being edited elsewhere. Your changes are only saved as long as the file is not changed there.",
+    "conflict": "The file was changed elsewhere in the meantime. Your changes were not saved over it. Save them as a copy.",
+    "conflictConnected": "The file was changed at the provider in the meantime. Your changes are in the copy “{{name}}” next to the file. Nothing more is saved from this window.",
+    "sessionEnded": "The session has expired or the file no longer exists. Save your changes as a copy.",
+    "saveFailed": "Saving failed. It will be tried again shortly.",
+    "readOnlySave": "The file is open read-only. You can save your changes as a copy.",
+    "openFailed": "The file could not be opened.",
+    "editorFailed": "The editor could not start. It needs a browser with WebGL2 or WebGPU.",
+    "unsavedOnClose": "Some changes are not saved.",
+    "copyFailed": "The copy could not be saved. Try again.",
+    "saveCopy": "Save as copy",
+    "retry": "Try again",
+    "discard": "Discard",
+    "copySuffix": "copy"
   }
 }

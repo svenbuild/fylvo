@@ -37,9 +37,11 @@ export default defineConfig({
           "**/AdminBundle-*",
           "**/pdfjs/**",
           "pdfviewer.html",
+          "static/craft-blank/**",
         ],
         maximumFileSizeToCacheInBytes: 10000000,
-        navigateFallbackDenylist: [/^\/pdfviewer.html/, /^\/api\/(.+)/, /^\/f\/(.+)/, /^\/s\/(.+)/],
+        // Fylvo: the Craft editors are pages of the server, never the web app.
+        navigateFallbackDenylist: [/^\/pdfviewer.html/, /^\/api\/(.+)/, /^\/f\/(.+)/, /^\/s\/(.+)/, /^\/craft\//],
       },
       devOptions: {
         enabled: true,
@@ -133,6 +135,7 @@ export default defineConfig({
       "/s/": backendProxyOption,
       "/f/": backendProxyOption,
       "/manifest.json": backendProxyOption,
+      "/craft/": backendProxyOption,
     },
   },
 });

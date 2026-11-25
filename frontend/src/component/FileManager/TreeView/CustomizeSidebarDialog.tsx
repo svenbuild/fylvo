@@ -251,7 +251,7 @@ const CustomizeSidebarDialog = ({ open, onClose }: CustomizeSidebarDialogProps) 
             );
           })}
         </Stack>
-        <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: "wrap", rowGap: 1 }}>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2, flexWrap: "wrap" }}>
           <SecondaryButton variant="contained" size="small" onClick={addFolder} disabled={!fresh}>
             {t("customize.addFolder")}
           </SecondaryButton>

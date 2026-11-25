@@ -3,3 +3,4 @@
 !.build/aria2.supervisor.conf
 !.build/entrypoint.sh
 !release/fylvo-linux-*
+!scripts/craft

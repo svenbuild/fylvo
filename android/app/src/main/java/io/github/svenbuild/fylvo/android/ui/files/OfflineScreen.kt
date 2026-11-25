@@ -198,7 +198,7 @@ private fun OfflineRow(
                     if (root.folder) pluralStringResource(R.plurals.offline_root_files, info.files, info.files, formatSize(info.bytes))
                     else formatSize(info.bytes),
                     state,
-                ).joinToString(" • "),
+                ).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (problem) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

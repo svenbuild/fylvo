@@ -16,6 +16,11 @@
   --basePageBg: #0d1117;
 }
 
+/* Fylvo: code blocks always get the light CodeMirror theme, turn it dark (keeps the token hues). */
+.dark-editor .cm-editor {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 .markdown-body-dark {
   color-scheme: dark;
   -ms-text-size-adjust: 100%;

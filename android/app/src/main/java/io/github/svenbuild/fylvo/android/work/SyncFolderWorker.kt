@@ -73,7 +73,7 @@ class SyncFolderWorker(context: Context, params: WorkerParameters) :
                 val remoteParent = CrUri.join(cfg.remoteFolder, entry.relativeDir)
                 val tmp = stageToCache(entry)
                 try {
-                    app.fileRepository.uploadFile(tmp, remoteParent) { _, _ -> }
+                    app.fileRepository.uploadFile(tmp, remoteParent, remoteName = entry.name) { _, _ -> }
                     settings.markSynced(entry.signature)
                     uploaded++
                 } finally {
@@ -151,7 +151,7 @@ class SyncFolderWorker(context: Context, params: WorkerParameters) :
         val texts = applicationContext.localized()
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle(texts.getString(R.string.folder_sync_notification_title))
+            .setContentTitle(texts.getString(R.string.syncing_folder))
             .setContentText(if (done == 0) text else texts.getString(R.string.folder_sync_uploaded, text, done))
             .setOngoing(true)
             .build()

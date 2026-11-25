@@ -18,6 +18,7 @@ import {
   sendRestoreFile,
   sendUnlockFiles,
   setCurrentVersion,
+  sendUpdateFile,
 } from "../../api/api.ts";
 import {
   ConflictDetail,
@@ -87,6 +88,7 @@ import { navigateReconcile, navigateToPath, refreshFileList, updateUserCapacity 
 import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
 import { openViewer, openViewers, openWopiViewer } from "./viewer.ts";
+import { loadBlankTemplate } from "../../util/craft.ts";
 import {
   connectedBatchSize,
   connectedIds,
@@ -1443,6 +1445,25 @@ export function createNew(index: number, type: string, viewer?: Viewer, template
     }
 
     if (viewer) {
+      // Fylvo: a Craft editor gets a real blank document at once, so the file is a valid
+      // document also when the editor is closed before the first save. A connected storage
+      // creates one itself.
+      const blank =
+        viewer.props?.craft && newFile.size == 0 && !inConnectedStorage(newFile.path)
+          ? await loadBlankTemplate(newFile.name)
+          : undefined;
+      if (blank) {
+        try {
+          // Only into the file just made, never one that is gone meanwhile.
+          const uri = getFileLinkedUri(newFile);
+          const req = { uri, previous: newFile.primary_entity, previous_required: true };
+          const written = await dispatch(sendUpdateFile(req, blank));
+          dispatch(fileUpdated({ index: FileManagerIndex.main, value: [{ oldPath: uri, file: written }] }));
+          newFile = written;
+        } catch {
+          // The editor opens the empty file with the same blank document.
+        }
+      }
       dispatch(openViewer(newFile, viewer, newFile.size));
     }
   };

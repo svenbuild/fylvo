@@ -53,7 +53,12 @@ export default function DriveLetterRow({ drive, onChanged }: DriveLetterRowProps
         <Typography variant="body2">{t("settings.driveLetter.title")}</Typography>
         <Typography
           variant="caption"
-          color={drive.drive_letter_state === "conflict" ? "warning.main" : "text.secondary"}
+          sx={{
+            color: (theme) =>
+              drive.drive_letter_state !== "conflict"
+                ? theme.palette.text.secondary
+                : theme.palette.warning[theme.palette.mode === "dark" ? "main" : "dark"],
+          }}
         >
           {description}
         </Typography>

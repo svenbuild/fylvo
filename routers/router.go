@@ -22,6 +22,7 @@ import (
 	fylvosvc "github.com/cloudreve/Cloudreve/v4/service/fylvo"
 	"github.com/cloudreve/Cloudreve/v4/service/node"
 	"github.com/cloudreve/Cloudreve/v4/service/oauth"
+	fylvosetting "github.com/cloudreve/Cloudreve/v4/pkg/setting"
 	"github.com/cloudreve/Cloudreve/v4/service/setting"
 	sharesvc "github.com/cloudreve/Cloudreve/v4/service/share"
 	usersvc "github.com/cloudreve/Cloudreve/v4/service/user"
@@ -210,8 +211,12 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 	/*
 		static resources
 	*/
-	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/api/"})))
+	// Fylvo: the Craft editors come compressed already (middleware.CraftFiles).
+	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/api/", fylvosetting.CraftRoute})))
 	r.Use(middleware.SharePreview(dep))
+	if dir := fylvosetting.CraftDir(); dir != "" {
+		r.Use(middleware.CraftFiles(dir))
+	}
 	r.Use(middleware.FrontendFileHandler(dep))
 	r.GET("manifest.json", controllers.Manifest)
 

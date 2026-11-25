@@ -14,6 +14,7 @@ import SaveAs from "./SaveAs.tsx";
 import Photopea from "../../Viewers/Photopea/Photopea.tsx";
 import OpenWith from "./OpenWith.tsx";
 import Wopi from "../../Viewers/Wopi.tsx";
+import CraftViewer from "../../Viewers/Craft/CraftViewer.tsx";
 import ArchivePreview from "../../Viewers/ArchivePreview/ArchivePreview.tsx";
 import CodeViewer from "../../Viewers/CodeViewer/CodeViewer.tsx";
 import DrawIOViewer from "../../Viewers/DrawIO/DrawIOViewer.tsx";
@@ -64,6 +65,7 @@ const Dialogs = () => {
       <Photopea />
       <OpenWith />
       <Wopi />
+      <CraftViewer />
       <CodeViewer />
       <DrawIOViewer />
       <MarkdownViewer />

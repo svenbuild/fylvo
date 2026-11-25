@@ -22,7 +22,6 @@
     <string name="share_password_protected">Protected with a password</string>
     <string name="share_password_kept">The link keeps its password. To change it, delete the link and create a new one.</string>
     <string name="shared_by_me">Shared by me</string>
-    <string name="my_shares">My shares</string>
     <string name="my_shares_hint">Links and folders you share</string>
     <string name="shares_load_failed">The shares could not be loaded. Check the connection.</string>
     <string name="no_shares">Nothing shared yet</string>
@@ -293,7 +292,10 @@
     <string name="folder_upload_unreadable">The folder could not be read.</string>
     <string name="folder_upload_started">The folder is being uploaded</string>
     <string name="folder_upload_failed">The upload could not start (the target folder changed or there is no connection).</string>
-    <string name="folder_upload_partly">%1$d of %2$d folders are being uploaded; the others could not start. A new try uploads the started ones again too.</string>
+    <plurals name="folder_upload_partly">
+        <item quantity="one">%1$d of %2$d folders is being uploaded; the others could not start. A new try uploads the started one again too.</item>
+        <item quantity="other">%1$d of %2$d folders are being uploaded; the others could not start. A new try uploads the started ones again too.</item>
+    </plurals>
 
     <!-- Connected storages from the app -->
     <string name="connected_manage_hint">Connect, rename, disconnect</string>

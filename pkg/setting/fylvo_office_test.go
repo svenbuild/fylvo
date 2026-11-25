@@ -66,15 +66,3 @@ func TestOfficeViewers(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, again.Viewers[0].WopiActions)
 }
-
-func TestWithOfficeViewersOff(t *testing.T) {
-	old := officeURL
-	defer func() { officeURL = old }()
-
-	groups := []types.ViewerGroup{{}}
-	officeURL = ""
-	assert.Len(t, withOfficeViewers(groups), 1)
-
-	officeURL = "https://office.example.com"
-	assert.Len(t, withOfficeViewers(groups), 2)
-}

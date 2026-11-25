@@ -59,6 +59,7 @@
     <string name="trash_empty_hint">Deleted items stay here for 7 days</string>
     <string name="nothing_recent">Nothing recent</string>
     <string name="recent_hint">Files you upload or change show up here</string>
+    <string name="recent_load_failed">The recent files could not be loaded. Check the connection.</string>
     <string name="no_images">No images yet</string>
     <string name="no_videos">No videos yet</string>
     <string name="no_audio">No audio files yet</string>
@@ -165,7 +166,7 @@
     <string name="video">Video</string>
     <string name="state_selected">Selected</string>
     <string name="state_not_selected">Not selected</string>
-    <string name="trash_row_subtitle">Deleted %1$s • from %2$s</string>
+    <string name="trash_row_subtitle">Deleted %1$s · from %2$s</string>
     <string name="unknown">unknown</string>
     <string name="clear_selection_for">Clear selection for %s</string>
     <string name="select_all_from">Select all from %s</string>
@@ -210,11 +211,12 @@
     <string name="uploading">Uploading</string>
     <string name="uploading_n_of">Uploading %1$d of %2$d</string>
     <string name="waiting">Waiting…</string>
-    <string name="upload_target">%1$s • to %2$s</string>
+    <string name="upload_target">%1$s · to %2$s</string>
     <string name="syncing_folder">Syncing folder</string>
-    <string name="background_progress">%1$s • %2$d of %3$d</string>
+    <string name="background_progress">%1$s · %2$d of %3$d</string>
     <string name="waiting_to_upload">Waiting to upload…</string>
-    <string name="upload_progress">%1$s • %2$s of %3$s</string>
+    <string name="waiting_for_connection">Waiting for a connection…</string>
+    <string name="upload_progress">%1$s · %2$s of %3$s</string>
     <string name="cancel_upload">Cancel upload</string>
     <string name="already_exists_one">\"%s\" already exists</string>
     <string name="already_exist_many">%d files already exist</string>
@@ -227,11 +229,11 @@
     <string name="offline_files">Offline files</string>
     <string name="nothing_saved_yet">Nothing saved yet</string>
     <plurals name="offline_summary">
-        <item quantity="one">%1$d file • %2$s on this device</item>
-        <item quantity="other">%1$d files • %2$s on this device</item>
+        <item quantity="one">%1$d file · %2$s on this device</item>
+        <item quantity="other">%1$d files · %2$s on this device</item>
     </plurals>
     <string name="no_offline_files">No offline files</string>
-    <string name="no_offline_files_hint">Open the menu of a file or folder and switch on Available offline to have it here without a connection.</string>
+    <string name="no_offline_files_hint">Open the menu of a file and choose Keep offline, or switch on Available offline for a folder, to have it here without a connection.</string>
     <string name="remove_from_device">Remove from device</string>
     <string name="offline_covered">Part of an offline folder</string>
     <string name="offline_no_room">Less than 1 GB would stay free on this phone. Free up space or pick something smaller.</string>
@@ -345,7 +347,7 @@
     <string name="update_check_failed">Could not check for updates</string>
     <string name="update_to">Update to %s</string>
     <string name="update_install">Install</string>
-    <string name="update_downloading">Downloading… %d %%</string>
+    <string name="update_downloading">Downloading… %d%%</string>
     <string name="update_download_failed">Download failed</string>
     <string name="update_checksum_failed">Checksum does not match, please try again</string>
     <string name="update_changed">The update changed on the server, please try again</string>
@@ -395,9 +397,7 @@
     <string name="sign_in_timed_out">Sign-in timed out, please enter your password again</string>
 
     <!-- Notifications from background work -->
-    <string name="folder_sync_notification_title">Fylvo folder sync</string>
     <string name="folder_sync_uploaded">%1$s (%2$d uploaded)</string>
-    <string name="task_notification_title">Fylvo task</string>
     <string name="task_completed">%s completed</string>
     <string name="task_canceled">%s canceled</string>
     <string name="task_failed">%s failed</string>

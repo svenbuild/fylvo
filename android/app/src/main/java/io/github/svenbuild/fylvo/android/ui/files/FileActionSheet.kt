@@ -15,15 +15,15 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.automirrored.outlined.Label
-import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.FileCopy
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteForever
-import androidx.compose.material.icons.filled.RestoreFromTrash
+import androidx.compose.material.icons.outlined.FileCopy
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DeleteForever
+import androidx.compose.material.icons.outlined.RestoreFromTrash
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.outlined.Edit
@@ -132,8 +132,8 @@ fun FileActionSheet(
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
         if (inTrash) {
-            SheetAction(Icons.Default.RestoreFromTrash, stringResource(R.string.restore), onRestore)
-            SheetAction(Icons.Default.DeleteForever, stringResource(R.string.delete_forever), onDeleteForever, tint = MaterialTheme.colorScheme.error)
+            SheetAction(Icons.Outlined.RestoreFromTrash, stringResource(R.string.restore), onRestore)
+            SheetAction(Icons.Outlined.DeleteForever, stringResource(R.string.delete_forever), onDeleteForever, tint = MaterialTheme.colorScheme.error)
             Spacer(Modifier.height(24.dp))
             return@ModalBottomSheet
         }
@@ -146,14 +146,14 @@ fun FileActionSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
-            onShowInFolder?.let { SheetAction(Icons.Default.FolderOpen, stringResource(R.string.show_in_folder), it) }
+            onShowInFolder?.let { SheetAction(Icons.Outlined.FolderOpen, stringResource(R.string.show_in_folder), it) }
             SheetAction(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
             Spacer(Modifier.height(24.dp))
             return@ModalBottomSheet
         }
 
         SheetAction(Icons.AutoMirrored.Filled.OpenInNew, stringResource(if (file.isFolder) R.string.open_folder else R.string.open), onOpen)
-        onShowInFolder?.let { SheetAction(Icons.Default.FolderOpen, stringResource(R.string.show_in_folder), it) }
+        onShowInFolder?.let { SheetAction(Icons.Outlined.FolderOpen, stringResource(R.string.show_in_folder), it) }
         if (canEdit) SheetAction(Icons.Outlined.Edit, stringResource(R.string.edit), onEdit)
         if (edited) SheetAction(Icons.Outlined.TaskAlt, stringResource(R.string.edit_finish), onFinishEdit)
         when (star) {
@@ -177,9 +177,9 @@ fun FileActionSheet(
             )
         }
         if (canModify) {
-            SheetAction(Icons.AutoMirrored.Filled.DriveFileMove, stringResource(R.string.move_to), onMove)
-            SheetAction(Icons.Default.FileCopy, stringResource(R.string.copy_to), onCopy)
-            SheetAction(Icons.Default.DriveFileRenameOutline, stringResource(R.string.rename), onRename)
+            SheetAction(Icons.AutoMirrored.Outlined.DriveFileMove, stringResource(R.string.move_to), onMove)
+            SheetAction(Icons.Outlined.FileCopy, stringResource(R.string.copy_to), onCopy)
+            SheetAction(Icons.Outlined.DriveFileRenameOutline, stringResource(R.string.rename), onRename)
         }
         if (canEditMetadata) {
             if (file.isFolder) SheetAction(Icons.Outlined.Palette, stringResource(R.string.folder_color), onColor)
@@ -187,7 +187,7 @@ fun FileActionSheet(
         }
         SheetAction(Icons.Outlined.Info, stringResource(R.string.details), onDetails)
         if (edited) SheetAction(Icons.Outlined.EditOff, stringResource(R.string.edit_discard), onDiscardEdit, tint = MaterialTheme.colorScheme.error)
-        if (canModify) SheetAction(Icons.Default.Delete, stringResource(R.string.delete), onDelete, tint = MaterialTheme.colorScheme.error)
+        if (canModify) SheetAction(Icons.Outlined.Delete, stringResource(R.string.delete), onDelete, tint = MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(24.dp))
     }
 }

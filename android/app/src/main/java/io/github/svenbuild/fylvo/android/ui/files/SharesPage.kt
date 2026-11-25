@@ -15,9 +15,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Link
@@ -235,7 +235,7 @@ private fun ShareList(
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             val link = share.url.takeIf { !share.memberOnly && !share.expired && it.isNotEmpty() }
             if (link != null) {
-                SheetAction(Icons.Default.ContentCopy, stringResource(R.string.copy_link), {
+                SheetAction(Icons.Outlined.ContentCopy, stringResource(R.string.copy_link), {
                     copySensitive(context, context.getString(R.string.share_link), link)
                     actions.message(context.getString(R.string.link_copied))
                     target = null
@@ -255,7 +255,7 @@ private fun ShareList(
                 })
             }
             if (!share.expired && knownUri == null) {
-                SheetAction(Icons.Default.FolderOpen, stringResource(R.string.show_in_folder), {
+                SheetAction(Icons.Outlined.FolderOpen, stringResource(R.string.show_in_folder), {
                     target = null
                     withSource(share) { uri -> actions.openFolder(app.shares.folderOf(share, uri)) }
                 })
@@ -268,7 +268,7 @@ private fun ShareList(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 )
             }
-            SheetAction(Icons.Default.Delete, stringResource(R.string.delete_share), { target = null; deleting = share }, tint = MaterialTheme.colorScheme.error)
+            SheetAction(Icons.Outlined.Delete, stringResource(R.string.delete_share), { target = null; deleting = share }, tint = MaterialTheme.colorScheme.error)
             Spacer(Modifier.height(24.dp))
         }
     }
