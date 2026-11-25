@@ -37,7 +37,7 @@ fun formatDate(iso: String, now: Instant = Instant.now()): String {
     }
 }
 
-/** "12.6 kB • 7 Nov" for files, just the date for folders. */
+/** "7 Nov · 12.6 kB" for files, just the date for folders. */
 fun subtitleFor(size: Long, updatedAt: String, isFolder: Boolean, now: Instant = Instant.now()): String {
     val date = formatDate(updatedAt, now)
     return when {

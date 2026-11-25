@@ -22,7 +22,6 @@
     <string name="share_password_protected">Protected with a password</string>
     <string name="share_password_kept">The link keeps its password. To change it, delete the link and create a new one.</string>
     <string name="shared_by_me">Shared by me</string>
-    <string name="my_shares">My shares</string>
     <string name="my_shares_hint">Links and folders you share</string>
     <string name="shares_load_failed">The shares could not be loaded. Check the connection.</string>
     <string name="no_shares">Nothing shared yet</string>

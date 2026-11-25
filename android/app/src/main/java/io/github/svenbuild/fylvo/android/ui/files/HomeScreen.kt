@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -343,7 +344,9 @@ private fun SectionHeader(title: String, action: Pair<String, () -> Unit>? = nul
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 2.dp),
+            .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 2.dp)
+            // Same height with and without the action, so the list does not jump when it appears.
+            .heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

@@ -8,6 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.svenbuild.fylvo.android.R
 import io.github.svenbuild.fylvo.android.api.ActivityEntry
@@ -127,7 +128,7 @@ private fun appName(target: String): String = when {
 
 /** One quiet row of a history: the sentence, below it when (and how, when known). */
 @Composable
-fun ActivityRow(entry: ActivityEntry, withDevice: Boolean = false) {
+fun ActivityRow(entry: ActivityEntry, withDevice: Boolean = false, inset: Dp = 20.dp) {
     val device = if (withDevice) ActivityText.device(
         entry,
         windowsApp = stringResource(R.string.activity_windows_app),
@@ -135,7 +136,7 @@ fun ActivityRow(entry: ActivityEntry, withDevice: Boolean = false) {
         on = stringResource(R.string.activity_on),
     ) else ""
     val failed = ActivityText.failedSignIn(entry)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = inset, vertical = 8.dp)) {
         Text(
             activitySentence(entry),
             style = MaterialTheme.typography.bodyMedium,

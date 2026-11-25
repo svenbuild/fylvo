@@ -9,13 +9,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.OfflinePin
+import androidx.compose.material.icons.outlined.OfflinePin
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.outlined.Info
@@ -52,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import kotlinx.coroutines.launch
@@ -212,7 +214,7 @@ fun AccountScreen(
                         else stringResource(R.string.offline_count, offlineCount)
                     )
                 },
-                leadingContent = { Icon(Icons.Default.OfflinePin, contentDescription = null) },
+                leadingContent = { Icon(Icons.Outlined.OfflinePin, contentDescription = null) },
             )
             ListItem(
                 modifier = Modifier.clickable(onClick = onOpenSecurity),
@@ -235,7 +237,7 @@ fun AccountScreen(
             // Fylvo 1.6: the account's own shares ("Shared by me").
             ListItem(
                 modifier = Modifier.clickable(onClick = onOpenShares),
-                headlineContent = { Text(stringResource(R.string.my_shares)) },
+                headlineContent = { Text(stringResource(R.string.shared_by_me)) },
                 supportingContent = { Text(stringResource(R.string.my_shares_hint)) },
                 leadingContent = { Icon(Icons.Outlined.Link, contentDescription = null) },
             )
@@ -428,7 +430,10 @@ private fun UpdateRows(updater: AppUpdater) {
         leadingContent = { Icon(Icons.Outlined.Info, contentDescription = null) },
         trailingContent = {
             if (state == AppUpdater.State.Idle) {
-                TextButton(onClick = { updater.checkNow() }) { Text(stringResource(R.string.update_check)) }
+                // Narrow enough that a long label wraps instead of breaking the headline mid-word.
+                TextButton(onClick = { updater.checkNow() }, modifier = Modifier.widthIn(max = 160.dp)) {
+                    Text(stringResource(R.string.update_check), textAlign = TextAlign.End)
+                }
             }
         },
     )

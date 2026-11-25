@@ -164,7 +164,7 @@
     <string name="video">Video</string>
     <string name="state_selected">Ausgewählt</string>
     <string name="state_not_selected">Nicht ausgewählt</string>
-    <string name="trash_row_subtitle">Gelöscht %1$s • aus %2$s</string>
+    <string name="trash_row_subtitle">Gelöscht %1$s · aus %2$s</string>
     <string name="unknown">unbekannt</string>
     <string name="clear_selection_for">Auswahl für %s aufheben</string>
     <string name="select_all_from">Alle von %s auswählen</string>
@@ -209,11 +209,11 @@
     <string name="uploading">Wird hochgeladen</string>
     <string name="uploading_n_of">Wird hochgeladen: %1$d von %2$d</string>
     <string name="waiting">Wartet…</string>
-    <string name="upload_target">%1$s • nach %2$s</string>
+    <string name="upload_target">%1$s · nach %2$s</string>
     <string name="syncing_folder">Ordner wird synchronisiert</string>
-    <string name="background_progress">%1$s • %2$d von %3$d</string>
+    <string name="background_progress">%1$s · %2$d von %3$d</string>
     <string name="waiting_to_upload">Wartet auf Upload…</string>
-    <string name="upload_progress">%1$s • %2$s von %3$s</string>
+    <string name="upload_progress">%1$s · %2$s von %3$s</string>
     <string name="cancel_upload">Upload abbrechen</string>
     <string name="already_exists_one">„%s“ ist schon vorhanden</string>
     <string name="already_exist_many">%d Dateien sind schon vorhanden</string>
@@ -226,11 +226,11 @@
     <string name="offline_files">Offline-Dateien</string>
     <string name="nothing_saved_yet">Noch nichts gespeichert</string>
     <plurals name="offline_summary">
-        <item quantity="one">%1$d Datei • %2$s auf diesem Gerät</item>
-        <item quantity="other">%1$d Dateien • %2$s auf diesem Gerät</item>
+        <item quantity="one">%1$d Datei · %2$s auf diesem Gerät</item>
+        <item quantity="other">%1$d Dateien · %2$s auf diesem Gerät</item>
     </plurals>
     <string name="no_offline_files">Keine Offline-Dateien</string>
-    <string name="no_offline_files_hint">Öffne das Menü einer Datei oder eines Ordners und schalte „Offline verfügbar“ ein, um sie ohne Verbindung hier zu haben.</string>
+    <string name="no_offline_files_hint">Öffne das Menü einer Datei und wähle „Offline verfügbar machen“ oder schalte bei einem Ordner „Offline verfügbar“ ein, um sie ohne Verbindung hier zu haben.</string>
     <string name="remove_from_device">Vom Gerät entfernen</string>
     <string name="offline_covered">Teil eines Offline-Ordners</string>
     <string name="offline_no_room">Auf dem Handy blieben weniger als 1 GB frei. Gib Speicher frei oder wähle etwas Kleineres.</string>

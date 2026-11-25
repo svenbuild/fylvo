@@ -283,7 +283,8 @@ fun SecurityPage(onBack: () -> Unit, bottomBar: @Composable () -> Unit) {
                 }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 SectionTitle(stringResource(R.string.recent_sign_ins))
-                signIns.forEach { ActivityRow(it, withDevice = true) }
+                // Same inset as the section title and the rows above.
+                signIns.forEach { ActivityRow(it, withDevice = true, inset = 16.dp) }
                 if (next > 0) TextButton(onClick = {
                     scope.launch {
                         runCatching { app.security.signIns(next) }.onSuccess { signIns.addAll(it.entries); next = it.next }

@@ -22,7 +22,6 @@
     <string name="share_password_protected">Mit Passwort geschützt</string>
     <string name="share_password_kept">Der Link behält sein Passwort. Um es zu ändern, lösche den Link und erstelle einen neuen.</string>
     <string name="shared_by_me">Von mir geteilt</string>
-    <string name="my_shares">Meine Freigaben</string>
     <string name="my_shares_hint">Links und Ordner, die du teilst</string>
     <string name="shares_load_failed">Die Freigaben konnten nicht geladen werden. Prüfe die Verbindung.</string>
     <string name="no_shares">Noch nichts geteilt</string>

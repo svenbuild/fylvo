@@ -53,17 +53,17 @@ import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.AddToHomeScreen
 import androidx.compose.material.icons.automirrored.outlined.Label
-import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.DriveFileRenameOutline
-import androidx.compose.material.icons.filled.FileCopy
-import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
+import androidx.compose.material.icons.outlined.FileCopy
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.OfflinePin
-import androidx.compose.material.icons.filled.RestoreFromTrash
+import androidx.compose.material.icons.outlined.RestoreFromTrash
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.Delete
@@ -443,16 +443,16 @@ internal val SelectionAction.icon: ImageVector
     get() = when (this) {
         SelectionAction.SELECT_ALL -> Icons.Default.SelectAll
         SelectionAction.DETAILS -> Icons.Outlined.Info
-        SelectionAction.SHOW_IN_FOLDER -> Icons.Default.FolderOpen
+        SelectionAction.SHOW_IN_FOLDER -> Icons.Outlined.FolderOpen
         SelectionAction.SHARE -> Icons.Default.Share
         SelectionAction.DOWNLOAD -> Icons.Default.Download
         SelectionAction.DELETE -> Icons.Outlined.Delete
-        SelectionAction.MOVE -> Icons.AutoMirrored.Filled.DriveFileMove
-        SelectionAction.COPY -> Icons.Default.FileCopy
-        SelectionAction.RENAME -> Icons.Default.DriveFileRenameOutline
+        SelectionAction.MOVE -> Icons.AutoMirrored.Outlined.DriveFileMove
+        SelectionAction.COPY -> Icons.Outlined.FileCopy
+        SelectionAction.RENAME -> Icons.Outlined.DriveFileRenameOutline
         SelectionAction.OFFLINE -> Icons.Outlined.OfflinePin
-        SelectionAction.RESTORE -> Icons.Default.RestoreFromTrash
-        SelectionAction.DELETE_FOREVER -> Icons.Default.DeleteForever
+        SelectionAction.RESTORE -> Icons.Outlined.RestoreFromTrash
+        SelectionAction.DELETE_FOREVER -> Icons.Outlined.DeleteForever
         SelectionAction.EDIT -> Icons.Outlined.Edit
         SelectionAction.FINISH_EDIT -> Icons.Outlined.TaskAlt
         SelectionAction.DISCARD_EDIT -> Icons.Outlined.EditOff
