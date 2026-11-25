@@ -1127,7 +1127,7 @@
     "star": "Add to favorites",
     "unstar": "Remove from favorites",
     "color": "Color",
-    "noFavorites": "No favorites yet. Right-click a file or folder and choose \"Add to favorites\".",
+    "noFavorites": "No favorites yet. Choose \"Add to favorites\" in the menu of a file or folder.",
     "favoritesUnavailable_one": "{{count}} favorite is not available right now (in the trash or no longer shared).",
     "favoritesUnavailable_other": "{{count}} favorites are not available right now (in the trash or no longer shared).",
     "widgetRecent": "Recently changed",

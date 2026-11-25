@@ -70,7 +70,8 @@ const preProcessors: {
 
     Viewers = {};
     ViewersByID = {};
-    const isMobile = window.matchMedia("(max-width: 768px)").matches;
+    // Fylvo: a phone turned sideways is wider than 768px, a finger as the main pointer still means mobile.
+    const isMobile = window.matchMedia("(max-width: 768px), (pointer: coarse)").matches;
     config.file_viewers?.forEach((group) => {
       group.viewers.forEach((viewer) => {
         if (viewer.disabled) {

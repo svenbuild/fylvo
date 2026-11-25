@@ -1,4 +1,4 @@
-import { Avatar, Skeleton } from "@mui/material";
+import { Avatar, Skeleton, useTheme } from "@mui/material";
 import { grey } from "@mui/material/colors";
 import { bindHover, bindPopover } from "material-ui-popup-state";
 import { usePopupState } from "material-ui-popup-state/hooks";
@@ -69,6 +69,7 @@ const UserAvatar = memo(
       popupId: "user",
     });
     const { t } = useTranslation();
+    const theme = useTheme();
     const { ref, inView } = useInView({
       triggerOnce: true,
       rootMargin: "200px 0px",
@@ -108,6 +109,7 @@ const UserAvatar = memo(
       return undefined;
     }, [loadedUser, cacheKey]);
 
+    const avatarColor = loadedUser?.nickname ? stringToColor(loadedUser.nickname) : grey[500];
     return (
       <>
         {loadedUser && (
@@ -125,7 +127,9 @@ const UserAvatar = memo(
               {...bindHover(popupState)}
               sx={[
                 {
-                  bgcolor: loadedUser.nickname ? stringToColor(loadedUser.nickname) : grey[500],
+                  bgcolor: avatarColor,
+                  // Fylvo: the letter follows the circle, the page background made it unreadable in dark mode.
+                  color: theme.palette.getContrastText(avatarColor),
                   ...sx,
                 },
                 overwriteTextSize && {

@@ -1205,7 +1205,7 @@
     "star": "Zu Favoriten",
     "unstar": "Aus Favoriten entfernen",
     "color": "Farbe",
-    "noFavorites": "Noch keine Favoriten. Rechtsklick auf eine Datei oder einen Ordner und \"Zu Favoriten\" wählen.",
+    "noFavorites": "Noch keine Favoriten. Im Menü einer Datei oder eines Ordners \"Zu Favoriten\" wählen.",
     "favoritesUnavailable_one": "{{count}} Favorit ist gerade nicht verfügbar (im Papierkorb oder nicht mehr geteilt).",
     "favoritesUnavailable_other": "{{count}} Favoriten sind gerade nicht verfügbar (im Papierkorb oder nicht mehr geteilt).",
     "widgetRecent": "Zuletzt geändert",

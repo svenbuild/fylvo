@@ -81,7 +81,10 @@ const TopAppBar = () => {
             width: 30,
             height: 30,
             color: theme.palette.text.secondary,
-            "&:hover": { backgroundColor: hoverSurface(theme), color: theme.palette.text.primary },
+            // Fylvo: only real pointers hover, a finger left the last tapped button highlighted.
+            "@media (hover: hover)": {
+              "&:hover": { backgroundColor: hoverSurface(theme), color: theme.palette.text.primary },
+            },
             [theme.breakpoints.down("sm")]: { width: 40, height: 40 },
             "@media (pointer: coarse)": { width: 40, height: 40 },
           },
