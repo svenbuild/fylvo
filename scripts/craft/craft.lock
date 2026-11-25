@@ -1,0 +1,9 @@
+# The Craft editors Fylvo serves (see scripts/craft/fetch.sh). One line per app:
+# app  version  sha256 of <app>-web-<version>.zip
+# To update: change the version, run fetch.sh with CRAFT_PRINT_SUMS=1, check the release notes,
+# put the printed sum here and test the editors.
+key 2B76741B414AAD6CD33E631213A005C0B9D7C3ED
+wordcraft 0.18.1 3daa7c2d1f209a7eeb2527fcefa3fe31e875848fb1970d68f54edae55fe0bc9f
+gridcraft 0.19.1 48c5d1b101befebb3c5ba3b7a14914f01c3207934813ed07dc4251b7ae116a78
+deckcraft 0.18.1 3196e537fcfab538aaa2e88584bc74e29bb584459b916ab584ac22fbafe32db5
+pdfcraft 0.22.0 5da6db0d6d0d5ae517e9bb62c39eb57285f8befd81ef6555e9a807ccf5da5954

@@ -1349,5 +1349,26 @@
     "cannotUndo": "Die letzte Aktion lässt sich nicht rückgängig machen. Hochladen, Kopieren, Neuanlegen und endgültiges Löschen gehen nicht.",
     "notInTrash": "Die Dateien sind nicht mehr im Papierkorb. Nichts wurde wiederhergestellt.",
     "changedSince": "Die Dateien haben sich seither geändert. Nichts wurde rückgängig gemacht."
+  },
+  "craft": {
+    "status": {
+      "saved": "Gespeichert",
+      "unsaved": "Nicht gespeichert",
+      "saving": "Speichert ..."
+    },
+    "lockedByOther": "Die Datei wird gerade woanders bearbeitet. Sie ist deshalb nur zum Lesen geöffnet.",
+    "lockFailed": "Die Datei konnte nicht zum Bearbeiten gesperrt werden. Sie ist nur zum Lesen geöffnet.",
+    "lockLost": "Die Sperre ist abgelaufen und die Datei wird jetzt woanders bearbeitet. Gespeichert wird nur, solange die Datei nicht inzwischen geändert wurde.",
+    "conflict": "Die Datei wurde inzwischen woanders geändert. Ihre Änderungen wurden nicht darüber gespeichert. Speichern Sie sie als Kopie.",
+    "conflictConnected": "Die Datei wurde inzwischen beim Anbieter geändert. Ihre Änderungen liegen als Kopie neben der Datei („Name (Konflikt)“). Aus diesem Fenster wird nichts mehr gespeichert.",
+    "sessionEnded": "Die Sitzung ist abgelaufen oder die Datei ist nicht mehr da. Speichern Sie Ihre Änderungen als Kopie.",
+    "saveFailed": "Speichern hat nicht geklappt. Es wird gleich noch einmal versucht.",
+    "readOnlySave": "Die Datei ist nur zum Lesen geöffnet. Änderungen können Sie als Kopie speichern.",
+    "openFailed": "Die Datei konnte nicht geöffnet werden.",
+    "editorFailed": "Der Editor konnte nicht starten. Er braucht einen Browser mit WebGL2 oder WebGPU.",
+    "unsavedOnClose": "Es gibt Änderungen, die nicht gespeichert sind.",
+    "saveCopy": "Als Kopie speichern",
+    "retry": "Erneut versuchen",
+    "discard": "Verwerfen"
   }
 }

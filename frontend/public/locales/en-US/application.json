@@ -1271,5 +1271,26 @@
     "cannotUndo": "The last action cannot be undone. Uploads, copies, new files and final deletes cannot be undone.",
     "notInTrash": "The files are no longer in the trash. Nothing was restored.",
     "changedSince": "The files have changed since. Nothing was undone."
+  },
+  "craft": {
+    "status": {
+      "saved": "Saved",
+      "unsaved": "Not saved",
+      "saving": "Saving ..."
+    },
+    "lockedByOther": "The file is being edited elsewhere, so it is open read-only.",
+    "lockFailed": "The file could not be locked for editing. It is open read-only.",
+    "lockLost": "The lock expired and the file is now being edited elsewhere. Saving only works as long as the file has not been changed meanwhile.",
+    "conflict": "The file was changed elsewhere in the meantime. Your changes were not saved over it. Save them as a copy.",
+    "conflictConnected": "The file was changed at the provider in the meantime. Your changes are in a copy next to the file (\"Name (conflict)\"). This window does not save any more.",
+    "sessionEnded": "The session ended or the file is gone. Save your changes as a copy.",
+    "saveFailed": "Saving did not work. It is tried again shortly.",
+    "readOnlySave": "The file is open read-only. You can save your changes as a copy.",
+    "openFailed": "The file could not be opened.",
+    "editorFailed": "The editor could not start. It needs a browser with WebGL2 or WebGPU.",
+    "unsavedOnClose": "There are changes that are not saved.",
+    "saveCopy": "Save as copy",
+    "retry": "Try again",
+    "discard": "Discard"
   }
 }

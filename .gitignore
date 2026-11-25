@@ -42,3 +42,6 @@ tmp/
 # Screenshots taken while working on the UI
 .shots/
 __pycache__/
+
+# Craft editors fetched by scripts/craft/fetch.sh
+/craft/
