@@ -73,7 +73,7 @@ class SyncFolderWorker(context: Context, params: WorkerParameters) :
                 val remoteParent = CrUri.join(cfg.remoteFolder, entry.relativeDir)
                 val tmp = stageToCache(entry)
                 try {
-                    app.fileRepository.uploadFile(tmp, remoteParent) { _, _ -> }
+                    app.fileRepository.uploadFile(tmp, remoteParent, remoteName = entry.name) { _, _ -> }
                     settings.markSynced(entry.signature)
                     uploaded++
                 } finally {
