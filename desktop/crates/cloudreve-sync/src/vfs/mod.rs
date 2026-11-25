@@ -161,8 +161,9 @@ impl VirtualDrive {
         let drive = Arc::new(Drive::new(info, client, inventory, store, contents, tokio::runtime::Handle::current()));
         DRIVES.lock().unwrap_or_else(|e| e.into_inner()).push(Arc::downgrade(&drive));
 
-        // Changes recorded before (also those of a crash) come back first.
-        upload::restore(&drive).await;
+        // Changes recorded before (also those of a crash) come back first (from the store, no
+        // server request: the mount does not wait for the network).
+        upload::restore(&drive);
 
         let mut config = fuser::Config::default();
         config.mount_options = vec![
@@ -196,12 +197,19 @@ impl VirtualDrive {
             guard: Mutex::new(guard),
             tasks: Mutex::new(Vec::new()),
         });
+        // The top folder (and its subfolders) are listed right away.
+        let first = drive.clone();
+        tokio::spawn(async move {
+            let _ = first.ensure_listing(drive::ROOT, false).await;
+            let _ = first.refresh(drive::ROOT).await;
+        });
         let tasks = vec![
             tokio::spawn(upload::run(drive.clone())),
             tokio::spawn(events(drive.clone())),
             tokio::spawn(pin_loop(drive.clone())),
         ];
         *this.tasks.lock().unwrap_or_else(|e| e.into_inner()) = tasks;
+        set_bookmark(mount_point, true);
         tracing::info!(target: "vfs", drive = %id, mount_point = %mount_point.display(), "Drive mounted");
         Ok(this)
     }
@@ -363,8 +371,9 @@ impl VirtualDrive {
             .unwrap_or(0)
     }
 
-    /// Delete the store of a removed drive.
+    /// Delete the store of a removed drive (and its place in the file manager's side bar).
     pub fn delete_data(&self) {
+        set_bookmark(&self.drive.info.mount_point, false);
         let _ = std::fs::remove_dir_all(&self.drive.info.data_dir);
     }
 
@@ -399,6 +408,35 @@ fn prepare_mount_point(path: &Path) -> Result<()> {
         Err(e) => return Err(e).context("open the drive folder"),
     }
     Ok(())
+}
+
+/// The drive in the side bar of GNOME Files and other GTK file managers
+/// (`~/.config/gtk-3.0/bookmarks`, one `file://` URI per line).
+fn set_bookmark(mount_point: &Path, present: bool) {
+    let Some(config) = dirs::config_dir() else { return };
+    let Ok(uri) = url::Url::from_file_path(mount_point) else { return };
+    let file = config.join("gtk-3.0").join("bookmarks");
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    let updated = bookmarks_with(&text, uri.as_str(), present);
+    if updated != text {
+        let _ = std::fs::create_dir_all(config.join("gtk-3.0"));
+        if let Err(e) = std::fs::write(&file, updated) {
+            tracing::debug!(target: "vfs", error = %e, "Failed to update the file manager bookmarks");
+        }
+    }
+}
+
+fn bookmarks_with(text: &str, uri: &str, present: bool) -> String {
+    let is_ours = |line: &str| line == uri || line.starts_with(&format!("{uri} "));
+    let mut lines: Vec<&str> = text.lines().filter(|line| !is_ours(line)).collect();
+    if present {
+        lines.push(uri);
+    }
+    let mut out = lines.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out
 }
 
 fn is_mounted(path: &Path) -> bool {
@@ -604,6 +642,16 @@ async fn load_file(drive: &Arc<Drive>, ino: u64) -> Result<(), Errno> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_drive_is_added_to_and_removed_from_the_bookmarks() {
+        let start = "file:///home/u/Documents\nfile:///home/u/Music Music\n";
+        let added = bookmarks_with(start, "file:///home/u/Fylvo", true);
+        assert_eq!(added, "file:///home/u/Documents\nfile:///home/u/Music Music\nfile:///home/u/Fylvo\n");
+        assert_eq!(bookmarks_with(&added, "file:///home/u/Fylvo", true), added);
+        assert_eq!(bookmarks_with(&added, "file:///home/u/Fylvo", false), start);
+        assert_eq!(bookmarks_with("", "file:///home/u/Fylvo", false), "");
+    }
 
     #[test]
     fn mountinfo_paths_are_unescaped() {

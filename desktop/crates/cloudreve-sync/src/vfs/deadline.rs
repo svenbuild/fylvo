@@ -37,7 +37,8 @@ fail_reply!(
     fuser::ReplyOpen,
     fuser::ReplyWrite,
     fuser::ReplyCreate,
-    fuser::ReplyDirectory
+    fuser::ReplyDirectory,
+    fuser::ReplyDirectoryPlus
 );
 
 type Expiry = Box<dyn FnOnce() + Send>;

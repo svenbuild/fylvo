@@ -1,6 +1,7 @@
 # Fylvo Desktop for Linux: virtual drive (files on demand)
 
-Status: plan, revision 3 (after rat rounds 1 and 2), 2026-11-25. Branch `fylvo/linux-virtual-drive`.
+Status: revision 3 (after rat rounds 1 and 2), built 2026-11-25 (see "As built" at the end).
+Branch `fylvo/linux-virtual-drive`. User guide: `desktop/LINUX.md`.
 
 ## Goal
 
@@ -214,3 +215,31 @@ onedriver).
   kill becomes a recovered copy; drive removal with waiting changes keeps them.
 - Windows: `cargo test` and `cargo check` unchanged (only the `mode` field and the overlap
   check are shared).
+
+## As built (2026-11-25)
+
+Deviations and additions, decided while building and testing:
+
+- **Setup in one click:** on Linux the add dialog has the drive mode selected and the folder
+  `~/Fylvo` (or `~/Fylvo 2`, ...) filled in; after sign-in only "Finish" is left. The first start
+  without drives opens the dialog by itself (as before). Settings show "Also as drive" while only
+  sync folders exist. The mount point is added to the GTK bookmarks (side bar of GNOME Files).
+- **Speed:** the mount never waits for the server (recorded changes come back from the store);
+  the top folder and up to 16 subfolders of every listed folder are listed ahead; listings are
+  answered from memory with `readdirplus` (attributes in the same answer); reads answer as soon
+  as their own chunks are there and read ahead 8 MiB in the background (also while reading from
+  the cache, so streaming does not stop); kernel read-ahead and writes 1 MiB.
+- **Listings vs. local changes:** each folder listing has a generation counter; a server listing
+  asked for before a local change of that folder is dropped (it would undo the change).
+- **Rename over a file that is still uploading** waits for that upload (gedit saving twice).
+- **Vim:** no identity transfer (`*~` is not a local-only name); documented.
+- **Removal** copies unsent changes to `~/Fylvo not uploaded/<drive name>` after unmounting.
+
+Tests: 18 unit tests (`vfs::`), 2 end-to-end tests against a local server with a real FUSE mount
+(`vfs/e2e.rs`: reading, partial reads, new files, edits, gedit save, mkdir/rename/move/delete,
+`EXDEV` for move plus rename, conflict copy, cache limit, pinned folder, offline listing and
+reading, offline edit kept on removal). By hand in WSL Ubuntu (kernel 6.6): `kill -9` of the app
+leaves no mount (the helper unmounts), a restart mounts again; with the server stopped
+(`SIGSTOP`) listed folders answer in 2 ms, a folder never listed fails after the 20 s deadline.
+Speed against a local server: mount 0.4 s, top folder 17 ms, prefetched subfolder 6 ms, 400 files
+96 ms the first time and 33 ms after, 200 MB not cached 177 MB/s.

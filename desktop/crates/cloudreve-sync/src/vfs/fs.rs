@@ -26,6 +26,19 @@ fn name_of(name: &OsStr) -> Result<String, Errno> {
 }
 
 impl Filesystem for DriveFs {
+    fn init(&mut self, _req: &Request, config: &mut fuser::KernelConfig) -> std::io::Result<()> {
+        // Listings with attributes in one answer (a file manager stats every entry), larger
+        // reads and writes, parallel folder operations.
+        let _ = config.add_capabilities(
+            fuser::InitFlags::FUSE_DO_READDIRPLUS
+                | fuser::InitFlags::FUSE_READDIRPLUS_AUTO
+                | fuser::InitFlags::FUSE_PARALLEL_DIROPS,
+        );
+        let _ = config.set_max_readahead(1 << 20);
+        let _ = config.set_max_write(1 << 20);
+        Ok(())
+    }
+
     fn lookup(&self, req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEntry) {
         let name = match name_of(name) {
             Ok(name) => name,
@@ -195,6 +208,7 @@ impl Filesystem for DriveFs {
             Err(e) => return reply.error(e),
         };
         if !self.drive.read_needs(&cell, offset, size) {
+            self.drive.read_ahead(ino.0, &cell, offset + size as u64);
             return match cell.read_at(offset, size) {
                 Ok(data) => reply.data(&data),
                 Err(e) => reply.error(Errno::from(e)),
@@ -313,6 +327,28 @@ impl Filesystem for DriveFs {
         });
     }
 
+    fn readdirplus(&self, req: &Request, ino: INodeNo, _fh: FileHandle, offset: u64, mut reply: fuser::ReplyDirectoryPlus) {
+        let drive = self.drive.clone();
+        if drive.listed_now(ino.0) {
+            fill_plus(&drive, &mut reply, ino.0, offset);
+            return reply.ok();
+        }
+        let pid = req.pid();
+        let slot = drive.watchdog.slot(reply, METADATA);
+        self.drive.rt.spawn(async move {
+            let result = drive.ensure_listing(ino.0, is_scanner(pid)).await;
+            if let Some(mut reply) = slot.take() {
+                match result {
+                    Ok(()) => {
+                        fill_plus(&drive, &mut reply, ino.0, offset);
+                        reply.ok();
+                    }
+                    Err(e) => reply.error(e),
+                }
+            }
+        });
+    }
+
     fn statfs(&self, _req: &Request, _ino: INodeNo, reply: ReplyStatfs) {
         let (total, free) = self.drive.statfs();
         const BLOCK: u64 = 4096;
@@ -390,6 +426,18 @@ impl DriveFs {
                 }
             }
         });
+    }
+}
+
+/// Add entries with attributes from `offset` on ("." and ".." first).
+fn fill_plus(drive: &Drive, reply: &mut fuser::ReplyDirectoryPlus, ino: u64, offset: u64) {
+    let Ok(own) = drive.getattr(ino) else { return };
+    let mut all = vec![(".".to_string(), own), ("..".to_string(), own)];
+    all.extend(drive.entries_plus(ino));
+    for (i, (name, attr)) in all.into_iter().enumerate().skip(offset as usize) {
+        if reply.add(attr.ino, (i + 1) as u64, name, &TTL, &attr, Generation(0)) {
+            break;
+        }
     }
 }
 

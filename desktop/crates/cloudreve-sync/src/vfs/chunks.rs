@@ -2,8 +2,8 @@
 
 /// Size of one chunk.
 pub(crate) const CHUNK: u64 = 1 << 20;
-/// Read-ahead after the end of a read that has to load from the server.
-pub(crate) const READ_AHEAD: u64 = 4 * CHUNK;
+/// How far ahead of a read the file is loaded in the background.
+pub(crate) const READ_AHEAD: u64 = 8 * CHUNK;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ChunkMap {

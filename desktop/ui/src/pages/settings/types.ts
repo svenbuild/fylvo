@@ -17,6 +17,19 @@ export interface DriveInfo {
   // Fylvo: the drive letter the folder also shows as (null = off), and whether it works.
   drive_letter: string | null;
   drive_letter_state: "off" | "active" | "conflict";
+  // Fylvo (Linux): sync folder or virtual drive, and the state of a virtual drive.
+  mode: "sync" | "drive";
+  vfs: VfsStatus | null;
+}
+
+export interface VfsStatus {
+  online: boolean;
+  cache_used: number;
+  cache_limit: number;
+  pinned_bytes: number;
+  pins: string[];
+  changes_waiting: number;
+  changes_failed: number;
 }
 
 // Fylvo: "server" = deleted on this PC, would be deleted on the server;

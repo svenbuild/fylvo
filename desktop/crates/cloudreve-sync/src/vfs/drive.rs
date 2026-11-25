@@ -64,6 +64,9 @@ pub(crate) struct Listing {
     /// Counts local changes of the children: a server listing asked for before one of them
     /// is not applied (it would undo it).
     pub generation: u64,
+    /// False for a folder made up at start to hold a recorded change (never listed): it is
+    /// listed before it is answered when the server can be reached.
+    pub complete: bool,
 }
 
 
@@ -429,20 +432,21 @@ impl Drive {
             if !node.is_dir {
                 return Err(Errno::ENOTDIR);
             }
-            let state = node.listing.as_ref().map(|l| l.fresh_at.is_some_and(|at| at.elapsed() < FRESH));
+            let state = node.listing.as_ref().map(|l| (l.complete, l.fresh_at.is_some_and(|at| at.elapsed() < FRESH)));
             (state, tree.path(ino).ok_or(Errno::ENOENT)?)
         };
         match state {
-            Some(true) => return Ok(()),
-            Some(false) => {
+            Some((true, true)) => return Ok(()),
+            Some((true, false)) => {
                 self.refresh_in_background(ino);
                 return Ok(());
             }
+            // Made up at start: what is known is all there is offline (or for a scanner).
+            Some((false, _)) if scanner || !self.is_online() => return Ok(()),
+            Some((false, _)) => return self.refresh(ino).await,
             None => {}
         }
-        if let Ok(Some(rows)) = self.store.load_listing(&path) {
-            let files: Vec<Listed> = rows.into_iter().map(Listed::from_row).collect();
-            self.apply_listing(ino, files, None, None);
+        if self.load_stored_listing(ino, &path) {
             self.refresh_in_background(ino);
             return Ok(());
         }
@@ -453,6 +457,18 @@ impl Drive {
             return Err(Errno::ENETUNREACH);
         }
         self.refresh(ino).await
+    }
+
+    /// Take the stored listing of a folder that has none in memory (no server request).
+    pub(crate) fn load_stored_listing(&self, ino: u64, path: &str) -> bool {
+        match self.store.load_listing(path) {
+            Ok(Some(rows)) => {
+                let files: Vec<Listed> = rows.into_iter().map(Listed::from_row).collect();
+                self.apply_listing(ino, files, None, None);
+                true
+            }
+            _ => false,
+        }
     }
 
     fn refresh_in_background(self: &Arc<Self>, ino: u64) {
@@ -474,8 +490,41 @@ impl Drive {
             .clone()
     }
 
-    /// List folder `ino` on the server (one request per folder at a time).
+    /// List folder `ino` on the server (one request per folder at a time), then its subfolders
+    /// in the background, so opening one of them is instant.
     pub(crate) async fn refresh(self: &Arc<Self>, ino: u64) -> Result<(), Errno> {
+        self.refresh_one(ino).await?;
+        self.prefetch_children(ino);
+        Ok(())
+    }
+
+    /// List up to 16 subfolders of `ino` that were never listed (bounded by the request slots).
+    fn prefetch_children(self: &Arc<Self>, ino: u64) {
+        const PREFETCH: usize = 16;
+        let children: Vec<u64> = {
+            let tree = self.tree();
+            let Some(listing) = tree.nodes.get(&ino).and_then(|n| n.listing.as_ref()) else { return };
+            listing
+                .children
+                .values()
+                .filter(|child| tree.nodes.get(child).is_some_and(|n| n.is_dir && n.listing.is_none()))
+                .take(PREFETCH)
+                .copied()
+                .collect()
+        };
+        for child in children {
+            let drive = self.clone();
+            self.rt.spawn(async move {
+                let path = drive.tree().path(child);
+                let Some(path) = path else { return };
+                if !drive.load_stored_listing(child, &path) {
+                    let _ = drive.refresh_one(child).await;
+                }
+            });
+        }
+    }
+
+    async fn refresh_one(self: &Arc<Self>, ino: u64) -> Result<(), Errno> {
         let lock = self.list_lock(ino);
         let _one = lock.lock().await;
         let (path, generation) = {
@@ -627,12 +676,14 @@ impl Drive {
                 }
             }
         }
-        // Gone from the server: kept only while it holds a local change or uploads.
+        // Gone from the server: kept only while it holds a local change or uploads (and the name
+        // is still free; a file replaced by a folder on the server gives way).
         for (name, child) in old {
-            if children.contains_key(&name) {
+            if children.get(&name) == Some(&child) {
                 continue;
             }
-            let keep = tree.nodes.get(&child).is_some_and(|n| n.change.is_some() || n.uploading);
+            let keep = !children.contains_key(&name)
+                && tree.nodes.get(&child).is_some_and(|n| n.change.is_some() || n.uploading);
             if keep {
                 children.insert(name, child);
             } else if let Some(node) = tree.nodes.get_mut(&child) {
@@ -640,7 +691,7 @@ impl Drive {
             }
         }
         if let Some(node) = tree.nodes.get_mut(&ino) {
-            node.listing = Some(Listing { fresh_at, children, generation: next_generation });
+            node.listing = Some(Listing { fresh_at, children, generation: next_generation, complete: true });
         }
         drop(tree);
         for child in changed_versions {
@@ -675,13 +726,8 @@ impl Drive {
 
     /// A lookup answered from a listing in memory, `None` if the folder must be listed first.
     pub(crate) fn lookup_now(self: &Arc<Self>, parent: u64, name: &str) -> Option<Result<FileAttr, Errno>> {
-        let stale = {
-            let tree = self.tree();
-            let listing = tree.nodes.get(&parent)?.listing.as_ref()?;
-            listing.fresh_at.is_none_or(|at| at.elapsed() >= FRESH)
-        };
-        if stale {
-            self.refresh_in_background(parent);
+        if !self.listed_now(parent) {
+            return None;
         }
         let tree = self.tree();
         let answer = match tree.child(parent, name).and_then(|ino| Some((ino, tree.nodes.get(&ino)?))) {
@@ -693,15 +739,42 @@ impl Drive {
 
     /// The entries of a folder listed in memory, `None` if it must be listed first.
     pub(crate) fn readdir_now(self: &Arc<Self>, ino: u64) -> Option<Vec<(u64, FileType, String)>> {
+        if !self.listed_now(ino) {
+            return None;
+        }
+        Some(self.entries(ino))
+    }
+
+    /// The entries of a folder with their attributes (`readdirplus`).
+    pub(crate) fn entries_plus(&self, ino: u64) -> Vec<(String, FileAttr)> {
+        let tree = self.tree();
+        let Some(listing) = tree.nodes.get(&ino).and_then(|n| n.listing.as_ref()) else {
+            return Vec::new();
+        };
+        listing
+            .children
+            .iter()
+            .filter_map(|(name, child)| {
+                let node = tree.nodes.get(child)?;
+                self.visible(node).then(|| (name.clone(), self.attr_of(*child, node)))
+            })
+            .collect()
+    }
+
+    /// Whether folder `ino` has a listing in memory (old ones are refreshed in the background).
+    pub(crate) fn listed_now(self: &Arc<Self>, ino: u64) -> bool {
         let stale = {
             let tree = self.tree();
-            let listing = tree.nodes.get(&ino)?.listing.as_ref()?;
+            let Some(listing) = tree.nodes.get(&ino).and_then(|n| n.listing.as_ref()) else { return false };
+            if !listing.complete {
+                return false;
+            }
             listing.fresh_at.is_none_or(|at| at.elapsed() >= FRESH)
         };
         if stale {
             self.refresh_in_background(ino);
         }
-        Some(self.entries(ino))
+        true
     }
 
     fn entries(&self, ino: u64) -> Vec<(u64, FileType, String)> {
@@ -810,8 +883,28 @@ impl Drive {
 
     pub(crate) async fn read(self: &Arc<Self>, ino: u64, cell: Arc<Cell>, offset: u64, size: u32) -> Result<Vec<u8>, Errno> {
         let path = self.tree().path(ino).unwrap_or_else(|| cell.lock().path.clone());
-        self.ensure_range(&cell, &path, offset, offset + size as u64 + READ_AHEAD).await?;
-        cell.read_at(offset, size).map_err(|e| Errno::from(e))
+        // Only what this read needs first; the rest follows while the program works.
+        self.ensure_range(&cell, &path, offset, offset + size as u64).await?;
+        self.read_ahead(ino, &cell, offset + size as u64);
+        cell.read_at(offset, size).map_err(Errno::from)
+    }
+
+    /// Load the next part of a file in the background when a read comes near the end of what
+    /// is loaded (keeps a video or a copy streaming without waits).
+    pub(crate) fn read_ahead(self: &Arc<Self>, ino: u64, cell: &Arc<Cell>, from: u64) {
+        if !self.is_online() || cell.lock().missing_runs(from, from + READ_AHEAD).is_empty() {
+            return;
+        }
+        // One loader per file: if one runs, it is already ahead.
+        if cell.fetch.try_lock().is_err() {
+            return;
+        }
+        let drive = self.clone();
+        let cell = cell.clone();
+        self.rt.spawn(async move {
+            let path = drive.tree().path(ino).unwrap_or_else(|| cell.lock().path.clone());
+            let _ = drive.ensure_range(&cell, &path, from, from + READ_AHEAD).await;
+        });
     }
 
     fn download_url_cached(&self, key: &str) -> Option<String> {
@@ -1313,7 +1406,12 @@ impl Drive {
             let mut node = Node::new(parent, name, true);
             node.remote = Some(Remote { id: file.id.clone(), version: String::new() });
             node.mtime = parse_time(&file.updated_at);
-            node.listing = Some(Listing { fresh_at: Some(Instant::now()), children: BTreeMap::new(), generation: 0 });
+            node.listing = Some(Listing {
+                fresh_at: Some(Instant::now()),
+                children: BTreeMap::new(),
+                generation: 0,
+                complete: true,
+            });
             tree.add(parent, node)
         };
         self.getattr(ino)
@@ -1396,6 +1494,10 @@ impl Drive {
         };
         if old_path == new_path {
             return Ok(());
+        }
+        // A save right after the last one: the file it replaces may still be uploading.
+        if let Some(target) = target {
+            self.wait_for_upload(target, Duration::from_secs(15)).await?;
         }
         if is_dir && names::is_below(&new_path, &old_path) {
             return Err(Errno::EINVAL);
@@ -1500,11 +1602,17 @@ impl Drive {
 
     // ---------------------------------------------------------------- status
 
+    /// Size and free space for `df` and the file manager. Unknown (not asked yet, or no limit)
+    /// is reported as plenty: a file manager refuses to copy into a drive that reports 0 free.
     pub(crate) fn statfs(&self) -> (u64, u64) {
+        const PLENTY: u64 = 1 << 50;
         let quota = self.store.meta("quota").ok().flatten().unwrap_or_default();
         let mut parts = quota.split('/').map(|p| p.parse::<u64>().unwrap_or(0));
         let used = parts.next().unwrap_or(0);
         let total = parts.next().unwrap_or(0);
+        if total == 0 {
+            return (PLENTY, PLENTY);
+        }
         (total, total.saturating_sub(used))
     }
 }

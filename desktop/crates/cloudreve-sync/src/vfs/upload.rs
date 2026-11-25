@@ -28,6 +28,8 @@ enum Outcome {
     ConflictCopy(FileResponse, String),
     /// Try again later.
     Retry(String),
+    /// Written again while it uploaded: upload again soon (no failure).
+    Again,
 }
 
 /// Upload changes that are due, a few at a time, until the drive stops.
@@ -100,6 +102,15 @@ async fn upload(drive: &Arc<Drive>, ino: u64) {
                 );
             }
         }
+        Ok(Outcome::Again) => {
+            let mut tree = drive.tree();
+            if let Some(node) = tree.nodes.get_mut(&ino) {
+                let closed = node.writers == 0;
+                if let Some(change) = node.change.as_mut() {
+                    change.due = closed.then(|| Instant::now() + super::drive::UPLOAD_DELAY);
+                }
+            }
+        }
         Ok(Outcome::Retry(reason)) | Err(reason) => {
             tracing::warn!(target: "vfs", path = %path, reason = %reason, "Upload failed, trying again later");
             let mut tree = drive.tree();
@@ -168,24 +179,37 @@ async fn attempt(drive: &Arc<Drive>, ino: u64) -> Result<Outcome, String> {
     let result = send(drive, &job, &snapshot, size).await;
     let _ = std::fs::remove_file(&snapshot);
     let outcome = result?;
-    if let Outcome::Uploaded(info) = &outcome {
-        // Written again while it uploaded: still changed, from the new version.
-        let mut tree = drive.tree();
-        if let Some(node) = tree.nodes.get_mut(&ino) {
-            if node.change.as_ref().is_some_and(|c| c.counter != counter) {
-                node.remote = Some(Remote {
-                    id: info.id.clone(),
-                    version: info.primary_entity.clone().unwrap_or_default(),
-                });
-                let cell = node.change.as_ref().map(|c| c.cell.clone());
-                drop(tree);
-                if let Some(cell) = cell {
-                    cell.lock().remote_len = 0;
-                }
-                drive.persist_change(ino);
-                return Ok(Outcome::Retry("changed again during the upload".into()));
+    // Written again while it uploaded: the newer writes must not be dropped. The file stays
+    // changed; after our own upload it continues from that version, after a conflict from the
+    // old one (so the next upload makes another conflict copy instead of overwriting).
+    let changed_again = drive
+        .tree()
+        .nodes
+        .get(&ino)
+        .and_then(|n| n.change.as_ref())
+        .is_some_and(|c| c.counter != counter);
+    if changed_again {
+        if let Outcome::Uploaded(info) = &outcome {
+            let cell = {
+                let mut tree = drive.tree();
+                let node = tree.nodes.get_mut(&ino);
+                node.and_then(|node| {
+                    node.remote = Some(Remote {
+                        id: info.id.clone(),
+                        version: info.primary_entity.clone().unwrap_or_default(),
+                    });
+                    node.change.as_ref().map(|c| c.cell.clone())
+                })
+            };
+            if let Some(cell) = cell {
+                cell.lock().remote_len = 0;
             }
+            drive.persist_change(ino);
         }
+        if let Some(change) = drive.tree().nodes.get_mut(&ino).and_then(|n| n.change.as_mut()) {
+            change.recovered = false;
+        }
+        return Ok(Outcome::Again);
     }
     Ok(outcome)
 }
@@ -342,7 +366,7 @@ fn reverted(drive: &Arc<Drive>, ino: u64, info: &FileResponse) {
 
 /// At start: put the recorded changes back into the tree. A change that was open when the app
 /// ended is marked "recovered" (uploaded as a conflict copy). Leftover snapshots are removed.
-pub(crate) async fn restore(drive: &Arc<Drive>) {
+pub(crate) fn restore(drive: &Arc<Drive>) {
     let staging = drive.info.data_dir.join("staging");
     if let Ok(entries) = std::fs::read_dir(&staging) {
         for entry in entries.flatten() {
@@ -360,7 +384,7 @@ pub(crate) async fn restore(drive: &Arc<Drive>) {
         };
         let parent_path = names::parent_of(&row.path).to_string();
         let name = row.path.rsplit('/').next().unwrap_or(&row.path).to_string();
-        let parent = match ensure_folder(drive, &parent_path).await {
+        let parent = match ensure_folder(drive, &parent_path) {
             Some(parent) => parent,
             None => {
                 tracing::warn!(target: "vfs", path = %row.path, "The folder of a change is unknown, kept for later");
@@ -398,24 +422,31 @@ pub(crate) async fn restore(drive: &Arc<Drive>) {
     drive.upload_wake.notify_one();
 }
 
-/// Make the folder at `path` part of the tree (from the store, or as an empty placeholder
-/// listed later).
-async fn ensure_folder(drive: &Arc<Drive>, path: &str) -> Option<u64> {
+/// Make the folder at `path` part of the tree, from the store only (the mount must not wait
+/// for the server). A folder the store does not know gets a made-up listing, listed from the
+/// server before it is first answered.
+fn ensure_folder(drive: &Arc<Drive>, path: &str) -> Option<u64> {
     let mut ino = ROOT;
-    if path.is_empty() {
-        return Some(ino);
-    }
-    for part in path.split('/') {
-        let _ = drive.ensure_listing(ino, false).await;
-        let mut tree = drive.tree();
-        ino = match tree.child(ino, part) {
-            Some(child) => child,
-            None => {
-                // Not known (offline and never listed): a folder node, filled when listed.
-                tree.nodes.get(&ino)?.listing.as_ref()?;
-                tree.add(ino, Node::new(ino, part, true))
-            }
-        };
+    let mut walked = String::new();
+    for part in std::iter::once("").chain(path.split('/').filter(|p| !p.is_empty())) {
+        if !part.is_empty() {
+            walked = names::join(&walked, part);
+            let mut tree = drive.tree();
+            ino = match tree.child(ino, part) {
+                Some(child) => child,
+                None => tree.add(ino, Node::new(ino, part, true)),
+            };
+        }
+        let has_listing = drive.tree().nodes.get(&ino)?.listing.is_some();
+        if !has_listing && !drive.load_stored_listing(ino, &walked) {
+            let mut tree = drive.tree();
+            tree.nodes.get_mut(&ino)?.listing = Some(super::drive::Listing {
+                fresh_at: None,
+                children: Default::default(),
+                generation: 0,
+                complete: false,
+            });
+        }
     }
     Some(ino)
 }

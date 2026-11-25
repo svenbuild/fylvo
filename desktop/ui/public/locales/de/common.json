@@ -34,7 +34,11 @@
       "stateMismatch": "Authentifizierung fehlgeschlagen: Statuskonflikt. Bitte versuchen Sie es erneut.",
       "addDriveFailed": "Hinzufügen fehlgeschlagen: {{message}}",
       "userIdMismatch": "Das für die erneute Autorisierung verwendete Konto stimmt nicht mit dem ursprünglichen Laufwerksbesitzer überein. Bitte melden Sie sich mit demselben Konto an."
-    }
+    },
+    "modeDrive": "Dateien beim Öffnen laden (empfohlen)",
+    "modeDriveHint": "Alle Dateien sind sichtbar, nur geöffnete belegen Platz. Ordner lassen sich offline behalten.",
+    "modeSync": "Alles auf diesem Computer behalten",
+    "modeSyncHint": "Jede Datei wird heruntergeladen und belegt hier Platz."
   },
   "popup": {
     "allDrives": "Alle",
@@ -116,6 +120,21 @@
       "active": "Aktiv",
       "eventPushLost": "Echtzeit-Verbindung unterbrochen",
       "credentialExpired": "Anmeldedaten abgelaufen"
+    },
+    "vfs": {
+      "title": "Laufwerke",
+      "cache": "Zwischenspeicher: {{used}} von {{limit}}",
+      "pinnedSize": "offline behalten: {{size}}",
+      "offline": "offline",
+      "changesWaiting": "{{count}} geänderte Dateien warten auf das Hochladen.",
+      "changesFailed": "{{count}} geänderte Dateien konnten noch nicht hochgeladen werden. Die App versucht es weiter.",
+      "pinned": "Immer auf diesem Gerät:",
+      "unpin": "Nicht mehr offline behalten",
+      "pinHint": "Rechtsklick auf einen Ordner im Dateimanager, dann \"Fylvo: Immer auf diesem Gerät behalten\", um ihn offline zu haben.",
+      "freeSpace": "Speicher freigeben",
+      "mountAsDrive": "Auch als Laufwerk (Dateien beim Öffnen laden)",
+      "cacheLimit": "Grösse des Zwischenspeichers",
+      "cacheLimitDescription": "Geöffnete Dateien bleiben bis zu dieser Grösse gespeichert, die ältesten fliegen zuerst raus. Offline-Ordner zählen nicht mit."
     }
   },
   "about": {

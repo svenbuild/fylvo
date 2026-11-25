@@ -1,8 +1,9 @@
 # Fylvo Desktop on Linux (preview)
 
-Fylvo Desktop keeps folders on your Linux computer in sync with your Fylvo server. Unlike on
-Windows, all files are fully on the computer (a normal folder), so every program can open them,
-also offline. Technical design: [docs/linux-plan.md](docs/linux-plan.md).
+Fylvo Desktop shows your Fylvo storage as a drive that loads files when they are opened, or keeps
+folders on your Linux computer in sync as full copies (see "Drive or full copy"). Technical
+design: [docs/linux-drive-plan.md](docs/linux-drive-plan.md) (drive) and
+[docs/linux-plan.md](docs/linux-plan.md) (sync folders).
 
 ## Which package?
 
@@ -28,8 +29,36 @@ sudo apt install "./Fylvo Desktop_0.3.0_amd64.deb"
 updates fail), make it executable (`chmod +x`, or in the file manager's properties) and start it.
 Ubuntu needs `sudo apt install libfuse2` once for AppImages.
 
-Then start Fylvo Desktop, "Add drive", sign in to Fylvo in the browser, choose an **empty** local
-folder (for example `~/Fylvo`) and the cloud folder that goes there.
+Then start Fylvo Desktop. The first time it opens "Add drive" by itself: enter the Fylvo address
+and sign in in the browser. Everything else is filled in: click **Finish**.
+
+## Drive or full copy
+
+When you add a drive you choose how the files are on this computer:
+
+- **Load files when opened (drive, recommended):** the Fylvo storage appears as the folder
+  `~/Fylvo` (also in the side bar of the file manager). All files and folders are shown at once,
+  a file is only downloaded when a program opens it. Opened files are kept in a cache of 20 GB
+  (settings, "Drives"); when it is full, the files opened longest ago are removed first. Changes
+  are uploaded a few seconds after the file is closed.
+- **Keep a full copy (sync folder):** every file is downloaded and kept here, as before.
+
+Good to know about the drive:
+
+- **Offline:** right-click a folder, "Fylvo: Always keep on this device". It is downloaded and
+  kept current. "Fylvo: Free up space" undoes it. Without a connection only files that were
+  opened before or are kept offline are shown; edits are uploaded when the connection is back.
+- **Thumbnails and search:** the file manager shows no thumbnails for files that were never
+  opened, and desktop search does not index the drive (both would download everything).
+- **Conflicts:** if someone else changed a file while you edited it, your version is saved next
+  to it as a conflict copy and a notification says so.
+- **Removing the drive** with changes that never reached the server keeps them in
+  `~/Fylvo not uploaded`.
+- **Not supported:** symbolic links, hard links, "replace" when moving a file onto another file
+  in the drive, moving and renaming in one step (`mv` falls back to copy and delete). Vim saves a
+  new file instead of a new version unless `:set backupcopy=yes`.
+- Needs the `fuse3` package (the rpm and deb install it; for the AppImage it is part of every
+  common desktop distribution).
 
 ## Good to know
 
