@@ -43,7 +43,7 @@ pub(crate) async fn run(drive: Arc<Drive>) {
                 {
                     let mut tree = drive.tree();
                     match tree.nodes.get_mut(&ino) {
-                        Some(node) if !node.uploading => node.uploading = true,
+                        Some(node) if !node.uploading && node.busy == 0 => node.uploading = true,
                         _ => continue,
                     }
                 }
@@ -69,6 +69,14 @@ pub(crate) async fn run(drive: Arc<Drive>) {
 fn due(drive: &Drive) -> Vec<u64> {
     let now = Instant::now();
     let tree = drive.tree();
+    // Not while a rename or deletion of it or a folder above it runs.
+    let busy = |mut ino: u64| loop {
+        match tree.nodes.get(&ino) {
+            Some(node) if node.busy > 0 => return true,
+            Some(node) if ino != ROOT && node.parent != 0 => ino = node.parent,
+            _ => return false,
+        }
+    };
     tree.nodes
         .iter()
         .filter(|(ino, node)| {
@@ -77,6 +85,7 @@ fn due(drive: &Drive) -> Vec<u64> {
                 && node.writers == 0
                 && node.change.as_ref().is_some_and(|c| !c.local_only && c.due.is_some_and(|due| due <= now))
                 && tree.path(**ino).is_some()
+                && !busy(**ino)
         })
         .map(|(ino, _)| *ino)
         .collect()
@@ -162,6 +171,7 @@ async fn attempt(drive: &Arc<Drive>, ino: u64) -> Result<(Outcome, u64), String>
     std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
     let snapshot = staging.join(uuid::Uuid::new_v4().simple().to_string());
     let (size, writes) = take_snapshot(drive, &job.cell, &snapshot).await?;
+    tracing::debug!(target: "vfs", path = %job.path, size, writes, key = %job.cell.key(), file_len = job.cell.len(), "Snapshot taken");
     let result = send(drive, &job, &snapshot, size).await;
     let _ = std::fs::remove_file(&snapshot);
     Ok((result?, writes))
@@ -175,11 +185,25 @@ pub(crate) async fn take_snapshot(drive: &Drive, cell: &Arc<super::content::Cell
     tokio::task::spawn_blocking(move || {
         let _gate = cell.gate.write().unwrap_or_else(|e| e.into_inner());
         let writes = cell.lock().writes;
-        let size = std::fs::copy(&source, &target).map_err(|e| format!("snapshot: {e}"))?;
+        let size = copy_file(&source, &target).map_err(|e| format!("snapshot: {e}"))?;
         Ok((size, writes))
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// A reflink where the file system has them (btrfs, XFS: instant, no extra space), else a copy.
+fn copy_file(source: &std::path::Path, target: &std::path::Path) -> std::io::Result<u64> {
+    use std::os::fd::AsRawFd;
+    const FICLONE: libc::c_ulong = 0x4004_9409;
+    let from = std::fs::File::open(source)?;
+    let to = std::fs::OpenOptions::new().write(true).create_new(true).open(target)?;
+    if unsafe { libc::ioctl(to.as_raw_fd(), FICLONE as _, from.as_raw_fd()) } == 0 {
+        return Ok(from.metadata()?.len());
+    }
+    drop(to);
+    let _ = std::fs::remove_file(target);
+    std::fs::copy(source, target)
 }
 
 async fn send(drive: &Arc<Drive>, job: &Job, snapshot: &std::path::Path, size: u64) -> Result<Outcome, String> {
@@ -355,8 +379,9 @@ fn reverted(drive: &Arc<Drive>, ino: u64, info: &FileResponse, writes: u64) -> b
         node.last_key = None;
         (path, cell)
     };
-    let _ = drive.store.replace_change(&[path.as_str()], None);
-    let _ = drive.store.delete_content(&cell.key());
+    let key = cell.key();
+    let _ = drive.store.delete_change_of(&path, &key);
+    let _ = drive.store.delete_content(&key);
     drive.mark_stale(names::parent_of(&path));
     true
 }

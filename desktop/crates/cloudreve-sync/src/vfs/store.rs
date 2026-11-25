@@ -284,18 +284,31 @@ impl Store {
         })
     }
 
-    /// After an upload: the change is gone, its content is the cached copy now.
+    /// After an upload: the change (the row of that content, not a newer one at the same path)
+    /// is gone, its content is the cached copy now.
     pub(crate) fn commit_upload(&self, path: &str, old_key: &str, content: &ContentRow) -> Result<()> {
         self.with(|c| {
             c.transaction(|c| {
-                diesel::sql_query("DELETE FROM changes WHERE path = ?")
+                diesel::sql_query("DELETE FROM changes WHERE path = ? AND key = ?")
                     .bind::<Text, _>(path)
+                    .bind::<Text, _>(old_key)
                     .execute(c)?;
                 diesel::sql_query("DELETE FROM content WHERE key = ?")
                     .bind::<Text, _>(old_key)
                     .execute(c)?;
                 insert_content(c, content)
             })
+        })
+    }
+
+    /// Remove the change at `path` only if it is still the one of content `key`.
+    pub(crate) fn delete_change_of(&self, path: &str, key: &str) -> Result<()> {
+        self.with(|c| {
+            diesel::sql_query("DELETE FROM changes WHERE path = ? AND key = ?")
+                .bind::<Text, _>(path)
+                .bind::<Text, _>(key)
+                .execute(c)
+                .map(|_| ())
         })
     }
 
@@ -308,14 +321,18 @@ impl Store {
         })
     }
 
-    /// A folder or file moved from `old` to `new`: its changes move with it (one transaction).
+    /// A folder or file moved from `old` to `new`: its changes move with it (read and written
+    /// in one transaction).
     pub(crate) fn move_changes(&self, old: &str, new: &str) -> Result<()> {
         if old.is_empty() {
             return Ok(());
         }
-        let rows: Vec<ChangeRow> = self.load_changes()?;
         self.with(|c| {
             c.transaction(|c| {
+                let rows: Vec<ChangeRow> = diesel::sql_query(
+                    "SELECT path, key, file_id, base, local_only, open, size, mtime FROM changes",
+                )
+                .load(c)?;
                 for row in rows.iter().filter(|r| super::names::is_below(&r.path, old)) {
                     diesel::sql_query("DELETE FROM changes WHERE path = ?")
                         .bind::<Text, _>(&row.path)

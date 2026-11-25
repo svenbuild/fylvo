@@ -250,11 +250,13 @@ async fn the_drive_reads_and_writes_like_a_folder() {
     })
     .await;
     wait_for("conflict copy on the server", || async {
-        server_names(server, "docs").await.iter().any(|n| n.contains("hello") && n != "hello.txt")
+        let copy = server_names(server, "docs").await.into_iter().find(|n| n.contains("hello") && n != "hello.txt");
+        match copy {
+            Some(copy) => server_bytes(server, &format!("docs/{copy}")).await.as_deref() == Some(b"local edit".as_slice()),
+            None => false,
+        }
     })
     .await;
-    let copy = server_names(server, "docs").await.into_iter().find(|n| n.contains("hello") && n != "hello.txt").unwrap();
-    assert_eq!(server_bytes(server, &format!("docs/{copy}")).await.unwrap(), b"local edit");
     assert_eq!(server_bytes(server, "docs/hello.txt").await.unwrap(), b"server edit");
     let m = mnt.clone();
     wait_for("the file shows the server version", || {
@@ -363,12 +365,15 @@ async fn a_file_open_for_writing_when_the_app_ends_is_kept_as_a_copy() {
 
     // At the next start the content goes to a conflict copy: our chunk, the server's rest.
     let (drive, _mnt) = mount(&setup, server.client.clone(), &server.url).await;
+    let find_copy = || async { server_names(server, "").await.into_iter().find(|n| n.contains("doc") && n != "doc.bin") };
     wait_for("recovered copy on the server", || async {
-        server_names(server, "").await.iter().any(|n| n.contains("doc") && n != "doc.bin")
+        match find_copy().await {
+            Some(copy) => server_bytes(server, &copy).await.is_some_and(|b| b.len() == 2 * MIB),
+            None => false,
+        }
     })
     .await;
-    let copy = server_names(server, "").await.into_iter().find(|n| n.contains("doc") && n != "doc.bin").unwrap();
-    let saved = server_bytes(server, &copy).await.unwrap();
+    let saved = server_bytes(server, &find_copy().await.unwrap()).await.unwrap();
     assert_eq!(saved.len(), 2 * MIB);
     assert!(saved[..MIB].iter().all(|b| *b == b'X'), "the written chunk was replaced by the server's bytes");
     assert_eq!(saved[MIB..], original.as_bytes()[MIB..]);

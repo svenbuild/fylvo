@@ -415,20 +415,25 @@ impl VirtualDrive {
         let rows = self.drive.store.load_changes()?;
         let mut saved = 0;
         for row in rows.iter().filter(|r| r.local_only == 0) {
+            // Gone or no change anymore: an upload finished it.
             let Some(cell) = self.drive.contents.get(&row.key) else { continue };
+            // Under the gate: no write can be half in the copy.
+            let _gate = cell.gate.write().unwrap_or_else(|e| e.into_inner());
+            let key = {
+                let state = cell.lock();
+                if !state.changed {
+                    continue;
+                }
+                if !state.missing_runs(0, state.remote_len).is_empty() {
+                    bail!("{} is not complete on this computer", row.path);
+                }
+                state.key.clone()
+            };
             let destination = target.join(&row.path);
             if let Some(parent) = destination.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            // Under the gate: no write can be half in the copy.
-            let _gate = cell.gate.write().unwrap_or_else(|e| e.into_inner());
-            {
-                let state = cell.lock();
-                if !state.missing_runs(0, state.remote_len).is_empty() {
-                    bail!("{} is not complete on this computer", row.path);
-                }
-            }
-            std::fs::copy(self.drive.contents.path_of(&row.key), &destination)
+            std::fs::copy(self.drive.contents.path_of(&key), &destination)
                 .with_context(|| format!("save {}", row.path))?;
             saved += 1;
         }
@@ -466,9 +471,14 @@ impl Drop for VirtualDrive {
 /// The mount point must be an empty folder (created if missing). A dead mount left by a crash
 /// is removed first.
 fn prepare_mount_point(path: &Path) -> Result<()> {
-    if is_mounted(path) || matches!(std::fs::metadata(path), Err(e) if e.raw_os_error() == Some(libc::ENOTCONN)) {
-        tracing::info!(target: "vfs", path = %path.display(), "Removing an old mount");
-        lazy_unmount(path);
+    // Only our own dead mount is removed; a mount of something else stays and is refused.
+    match mount_type(path) {
+        Some(kind) if kind == "fuse.fylvo" => {
+            tracing::info!(target: "vfs", path = %path.display(), "Removing an old mount");
+            lazy_unmount(path);
+        }
+        Some(kind) => bail!("{} is in use by another mount ({kind})", path.display()),
+        None => {}
     }
     match std::fs::read_dir(path) {
         Ok(mut entries) => {
@@ -513,17 +523,18 @@ fn bookmarks_with(text: &str, uri: &str, present: bool) -> String {
     out
 }
 
-fn is_mounted(path: &Path) -> bool {
-    let Ok(text) = std::fs::read_to_string("/proc/self/mountinfo") else {
-        return false;
-    };
+/// The file system type of a mount at exactly `path` (`/proc/self/mountinfo`), if any.
+fn mount_type(path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string("/proc/self/mountinfo").ok()?;
     let wanted = path.to_string_lossy();
-    // Field 5 is the mount point, with spaces and the like escaped as \040.
-    text.lines().any(|line| {
-        line.split(' ')
-            .nth(4)
-            .is_some_and(|point| unescape_mountinfo(point) == wanted)
-    })
+    // Field 5 is the mount point (spaces and the like escaped as \040); after " - " comes the
+    // file system type. The last matching line is the mount on top.
+    text.lines()
+        .filter(|line| line.split(' ').nth(4).is_some_and(|point| unescape_mountinfo(point) == wanted))
+        .last()
+        .and_then(|line| line.split(" - ").nth(1))
+        .and_then(|rest| rest.split(' ').next())
+        .map(str::to_string)
 }
 
 fn unescape_mountinfo(text: &str) -> String {

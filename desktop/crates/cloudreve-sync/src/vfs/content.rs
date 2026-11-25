@@ -46,6 +46,11 @@ pub(crate) struct CellState {
     /// Counts writes and truncations (in memory), so an upload knows whether the file changed
     /// after its snapshot.
     pub writes: u64,
+    /// Counts changes of the chunk map; `saved_map` is the count the store has. A write may
+    /// only take the fast way (not recording anything) while both are equal: otherwise a crash
+    /// could later fill a written chunk with the server's bytes.
+    pub map_changes: u64,
+    pub saved_map: u64,
 }
 
 impl CellState {
@@ -167,6 +172,8 @@ impl Contents {
                         path: row.path,
                         dropped: false,
                         writes: 0,
+                        map_changes: 0,
+                        saved_map: 0,
                     };
                     cells.insert(row.key, Arc::new(Cell::new(file, state)));
                 }
@@ -225,6 +232,8 @@ impl Contents {
             path: path.to_string(),
             dropped: false,
             writes: 0,
+            map_changes: 0,
+            saved_map: 0,
         };
         let cell = Arc::new(Cell::new(file, state));
         map.insert(key, cell.clone());
@@ -247,6 +256,8 @@ impl Contents {
             path: path.to_string(),
             dropped: false,
             writes: 0,
+            map_changes: 0,
+            saved_map: 0,
         };
         let cell = Arc::new(Cell::new(file, state));
         self.map().insert(key, cell.clone());

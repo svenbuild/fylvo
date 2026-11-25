@@ -282,10 +282,20 @@ impl DriveManager {
                         "" | "." | ".." => "Fylvo".to_string(),
                         other => other.to_string(),
                     };
-                    let target = dirs::home_dir().unwrap_or_default().join("Fylvo not uploaded").join(folder);
+                    // A new folder each time: an earlier export is never overwritten.
+                    let stamp = chrono::Local::now().format("%Y-%m-%d %H-%M-%S");
+                    let parent = dirs::home_dir().unwrap_or_default().join("Fylvo not uploaded");
+                    let mut target = parent.join(format!("{folder} {stamp}"));
+                    let mut n = 2;
+                    while target.exists() {
+                        target = parent.join(format!("{folder} {stamp} ({n})"));
+                        n += 1;
+                    }
                     let saved = vfs.export_unsent(&target).map_err(|e| {
                         tracing::error!(target: "drive::manager", error = %e, "Failed to save changes not uploaded");
-                        anyhow::anyhow!("the changes not uploaded yet could not be saved: {e}")
+                        anyhow::anyhow!(
+                            "the changes not uploaded yet could not be saved ({e}); the drive is unmounted until the app starts again"
+                        )
                     })?;
                     crate::utils::toast::send_general_text_toast(
                         &t!("vfsUnsentSavedTitle"),

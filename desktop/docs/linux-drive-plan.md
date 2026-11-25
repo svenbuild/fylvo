@@ -233,12 +233,38 @@ Deviations and additions, decided while building and testing:
   asked for before a local change of that folder is dropped (it would undo the change).
 - **Rename over a file that is still uploading** waits for that upload (gedit saving twice).
 - **Vim:** no identity transfer (`*~` is not a local-only name); documented.
-- **Removal** copies unsent changes to `~/Fylvo not uploaded/<drive name>` after unmounting.
+- **Removal:** while still mounted, changed files are completed from the server (offline:
+  refused, nothing removed); then unmount, wait for running uploads, and copy unsent changes to
+  a new folder `~/Fylvo not uploaded/<drive name> <date time>`. The drive stays registered
+  until that worked.
+- **From the code reviews (rounds 1 and 2):**
+  - Writes count in the content cell (`writes`, under its lock); an upload finishes (cached
+    copy or conflict) only if nothing was written after its snapshot, checked under the tree,
+    contents and cell locks in that order. Otherwise the change stays and uploads again.
+  - The snapshot takes a per-file gate alone (reflink where possible, else a copy, off the
+    async workers); writes take it shared and never wait on a FUSE thread.
+  - A change starts from the version of the copy the program opened, not from a newer listing.
+  - A write may skip recording only while the chunk map on disk is current (`map_changes`):
+    after a crash no written chunk is filled with the server's bytes. Records of a drive are
+    written one at a time; renames, uploads and their records are single transactions, and an
+    upload removes only its own change row.
+  - A writer counts as "open" before an `O_TRUNC` open or a reopened change is recorded, so a
+    crash keeps such a file as a "recovered" conflict copy (`FUSE_ATOMIC_O_TRUNC` makes
+    `O_TRUNC` work offline).
+  - Rename and delete mark their nodes busy: no upload starts below them meanwhile.
+  - `rmdir` lists the folder on the server first; deadlines are checked right before every
+    server change; a too-late `create` takes the new file back.
+  - Folders that hold changes survive listings that no longer have them.
+  - Read-ahead only for sequential reads; a folder is refreshed once at a time; pinned
+    protection only for the current version; `statfs` from memory; at start only a dead
+    `fuse.fylvo` mount is removed, another mount at the folder is refused.
 
-Tests: 18 unit tests (`vfs::`), 2 end-to-end tests against a local server with a real FUSE mount
+Tests: 18 unit tests (`vfs::`), 3 end-to-end tests against a local server with a real FUSE mount
 (`vfs/e2e.rs`: reading, partial reads, new files, edits, gedit save, mkdir/rename/move/delete,
 `EXDEV` for move plus rename, conflict copy, cache limit, pinned folder, offline listing and
-reading, offline edit kept on removal). By hand in WSL Ubuntu (kernel 6.6): `kill -9` of the app
+reading, offline edit kept on removal, `rmdir` of a folder filled on the server, rename of a
+file replaced on the server, a file open for writing when the app ends becomes a recovered copy
+with the written chunk and the server's rest). By hand in WSL Ubuntu (kernel 6.6): `kill -9` of the app
 leaves no mount (the helper unmounts), a restart mounts again; with the server stopped
 (`SIGSTOP`) listed folders answer in 2 ms, a folder never listed fails after the 20 s deadline.
 Speed against a local server: mount 0.4 s, top folder 17 ms, prefetched subfolder 6 ms, 400 files

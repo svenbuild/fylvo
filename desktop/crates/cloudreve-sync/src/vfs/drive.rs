@@ -80,6 +80,8 @@ pub(crate) struct Node {
     pub listing: Option<Listing>,
     pub writers: u32,
     pub uploading: bool,
+    /// A rename or deletion of this node (or a folder above it) runs: no upload starts.
+    pub busy: u32,
     /// The content key of the last open (the kernel may keep its page cache if unchanged).
     pub last_key: Option<String>,
 }
@@ -97,6 +99,7 @@ impl Node {
             listing: None,
             writers: 0,
             uploading: false,
+            busy: 0,
             last_key: None,
         }
     }
@@ -228,6 +231,8 @@ pub(crate) struct Drive {
     pub pin_wake: tokio::sync::Notify,
     quota_used: AtomicU64,
     quota_total: AtomicU64,
+    /// Records of changes are written one at a time (an older picture never after a newer).
+    persist_lock: Mutex<()>,
     /// Folders with a background refresh queued or running (one at a time per folder).
     refreshing: Mutex<std::collections::HashSet<u64>>,
     http: reqwest::Client,
@@ -305,6 +310,7 @@ impl Drive {
             pin_wake: tokio::sync::Notify::new(),
             quota_used: AtomicU64::new(quota_used),
             quota_total: AtomicU64::new(quota_total),
+            persist_lock: Mutex::new(()),
             refreshing: Mutex::new(std::collections::HashSet::new()),
             http: reqwest::Client::builder()
                 .connect_timeout(Duration::from_secs(10))
@@ -555,12 +561,20 @@ impl Drive {
     }
 
     async fn refresh_one(self: &Arc<Self>, ino: u64, force: bool) -> Result<(), Errno> {
+        let asked = Instant::now();
         let lock = self.list_lock(ino);
         let _one = lock.lock().await;
         let (path, generation) = {
             let tree = self.tree();
             let node = tree.nodes.get(&ino).ok_or(Errno::ENOENT)?;
-            if !force && node.listing.as_ref().and_then(|l| l.fresh_at).is_some_and(|at| at.elapsed() < Duration::from_secs(2)) {
+            let fresh_at = node.listing.as_ref().and_then(|l| l.fresh_at);
+            // Forced: only a listing asked after this call counts; else one younger than 2 s.
+            let recent = match fresh_at {
+                Some(at) if force => at > asked,
+                Some(at) => at.elapsed() < Duration::from_secs(2),
+                None => false,
+            };
+            if recent {
                 return Ok(());
             }
             (tree.path(ino).ok_or(Errno::ENOENT)?, node.listing.as_ref().map(|l| l.generation))
@@ -902,19 +916,46 @@ impl Drive {
             return Err(Errno::EROFS);
         }
         let (cell, _path) = self.cell_for(ino)?;
-        if write && truncate {
-            // Nothing of the old content is needed: also works offline and uncached.
-            if let Err(e) = self.truncate(ino, &cell, 0) {
-                self.release_cell(&cell);
-                return Err(e);
+        // The writer counts from here: every record of the change says "open" (after a crash
+        // it is kept as a copy, never uploaded over the server file).
+        let reopened_change = if write {
+            let mut tree = self.tree();
+            let node = tree.nodes.get_mut(&ino).ok_or(Errno::ENOENT)?;
+            node.writers += 1;
+            if let Some(change) = node.change.as_mut() {
+                change.due = None;
             }
+            node.change.is_some()
+        } else {
+            false
+        };
+        let undo = |drive: &Self| {
+            drive.release_cell(&cell);
+            if write {
+                if let Some(node) = drive.tree().nodes.get_mut(&ino) {
+                    node.writers = node.writers.saturating_sub(1);
+                }
+                drive.schedule_upload(ino);
+            }
+        };
+        let prepared = if write && truncate {
+            // Nothing of the old content is needed: also works offline and uncached.
+            self.truncate(ino, &cell, 0)
+        } else if reopened_change {
+            self.persist_change(ino)
+        } else {
+            Ok(())
+        };
+        if let Err(e) = prepared {
+            undo(self);
+            return Err(e);
         }
         let (complete, key) = {
             let state = cell.lock();
             (state.is_complete(), state.key.clone())
         };
         if !complete && (scanner || !self.is_online()) {
-            self.release_cell(&cell);
+            undo(self);
             return Err(if scanner { Errno::EACCES } else { Errno::ENETUNREACH });
         }
         let keep_cache = {
@@ -922,12 +963,6 @@ impl Drive {
             let node = tree.nodes.get_mut(&ino).ok_or(Errno::ENOENT)?;
             let keep = node.change.is_none() && node.last_key.as_deref() == Some(key.as_str());
             node.last_key = Some(key);
-            if write {
-                node.writers += 1;
-                if let Some(change) = node.change.as_mut() {
-                    change.due = None;
-                }
-            }
             keep
         };
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
@@ -962,7 +997,8 @@ impl Drive {
         let handles = self.handles();
         let Some(handle) = handles.get(&fh) else { return false };
         let last = handle.last_end.swap(offset + size as u64, Ordering::SeqCst);
-        offset > 0 && offset == last
+        // Parallel reads of the kernel may come slightly out of order.
+        offset > 0 && offset + CHUNK >= last && offset <= last + CHUNK
     }
 
     /// Load the next part of a file in the background when a read comes near the end of what
@@ -1046,12 +1082,7 @@ impl Drive {
             }
             result?;
         }
-        let state = cell.lock();
-        if !state.dropped {
-            if let Err(e) = self.store.save_content(&state.row()) {
-                tracing::warn!(target: "vfs", error = %e, "Failed to record cached chunks");
-            }
-        }
+        self.save_cell(cell);
         Ok(())
     }
 
@@ -1131,7 +1162,28 @@ impl Drive {
         let len = (data.len() as u64).min(state.remote_len - offset) as usize;
         cell.file.write_all_at(&data[..len], offset).map_err(Errno::from)?;
         state.chunks.set(chunk);
+        state.map_changes += 1;
         Ok(())
+    }
+
+    /// Save a cell's chunk map (also when a load stopped half way), serialized with the other
+    /// records of the drive.
+    pub(crate) fn save_cell(&self, cell: &Cell) {
+        let _one = self.persist_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let (row, count) = {
+            let state = cell.lock();
+            if state.dropped || state.map_changes == state.saved_map {
+                return;
+            }
+            (state.row(), state.map_changes)
+        };
+        match self.store.save_content(&row) {
+            Ok(()) => {
+                let mut state = cell.lock();
+                state.saved_map = state.saved_map.max(count);
+            }
+            Err(e) => tracing::warn!(target: "vfs", error = %e, "Failed to record cached chunks"),
+        }
     }
 
     // ---------------------------------------------------------------- local changes
@@ -1150,18 +1202,26 @@ impl Drive {
     }
 
     /// Record the change of node `ino` as it is now (its row and its content's chunk map).
+    /// Serialized, so an older picture never lands after a newer one.
     pub(crate) fn persist_change(&self, ino: u64) -> Result<(), Errno> {
+        let _one = self.persist_lock.lock().unwrap_or_else(|e| e.into_inner());
         let (row, cell) = {
             let tree = self.tree();
             let Some(node) = tree.nodes.get(&ino) else { return Ok(()) };
             let (Some(change), Some(path)) = (node.change.as_ref(), tree.path(ino)) else { return Ok(()) };
             (Self::change_row(&path, node, change), change.cell.clone())
         };
-        let content = cell.lock().row();
+        let (content, count) = {
+            let state = cell.lock();
+            (state.row(), state.map_changes)
+        };
         self.store.save_change_and_content(&row, &content).map_err(|e| {
             tracing::error!(target: "vfs", error = %e, path = %row.path, "Failed to record a local change");
             Errno::EIO
-        })
+        })?;
+        let mut state = cell.lock();
+        state.saved_map = state.saved_map.max(count);
+        Ok(())
     }
 
     /// Make `cell` (open on `ino`) the local change of the file, recorded before the first
@@ -1215,7 +1275,9 @@ impl Drive {
     /// fill them with the server's bytes).
     pub(crate) fn write_needs_work(&self, cell: &Cell, offset: u64, len: u64) -> bool {
         let state = cell.lock();
-        !state.changed || !state.missing_runs(offset, offset + len).is_empty()
+        !state.changed
+            || state.map_changes != state.saved_map
+            || !state.missing_runs(offset, offset + len).is_empty()
     }
 
     /// Write to an open file (slow way). `expired`: the program got its answer already (a
@@ -1277,7 +1339,10 @@ impl Drive {
             cell.file.write_all_at(data, offset).map_err(Errno::from)?;
             let remote_len = state.remote_len;
             let (first, last) = super::chunks::chunks_of(offset, end.min(remote_len));
-            state.chunks.set_range(first, last);
+            if (first..last).any(|c| !state.chunks.get(c)) {
+                state.chunks.set_range(first, last);
+                state.map_changes += 1;
+            }
             state.writes += 1;
         }
         let mut tree = self.tree();
@@ -1351,6 +1416,7 @@ impl Drive {
             cell.file.set_len(size).map_err(Errno::from)?;
             state.remote_len = state.remote_len.min(size);
             state.writes += 1;
+            state.map_changes += 1;
             drop(state);
             drop(_gate);
             {
@@ -1567,6 +1633,8 @@ impl Drive {
         self.check_writable()?;
         self.ensure_listing(parent, false).await?;
         let ino = self.tree().child(parent, name).ok_or(Errno::ENOENT)?;
+        // No new upload of it from here; a running one is waited for.
+        let _busy = Busy::new(self, &[ino]);
         self.wait_for_upload(ino, Duration::from_secs(15)).await?;
         let (path, remote, is_dir) = {
             let tree = self.tree();
@@ -1636,7 +1704,10 @@ impl Drive {
         self.ensure_listing(parent, false).await?;
         self.ensure_listing(new_parent, false).await?;
         let ino = self.tree().child(parent, name).ok_or(Errno::ENOENT)?;
-        // Also uploads below a folder: they still go to the old path.
+        let target = self.tree().child(new_parent, new_name).filter(|t| *t != ino);
+        // No new upload of the source, the target or anything below them from here; running
+        // ones are waited for (also below a folder: they still go to the old path).
+        let _busy = Busy::new(self, &[Some(ino), target].into_iter().flatten().collect::<Vec<_>>());
         self.wait_for_upload(ino, Duration::from_secs(15)).await?;
         let (old_path, new_path, remote, is_dir, target) = {
             let tree = self.tree();
@@ -1747,7 +1818,11 @@ impl Drive {
             tree.move_to(ino, new_parent, new_name);
             if let Some(change) = tree.nodes.get_mut(&ino).and_then(|n| n.change.as_mut()) {
                 change.local_only = names::is_local_only(new_name);
-                change.cell.lock().path = new_path.to_string();
+            }
+            for below in tree.subtree(ino) {
+                if let (Some(path), Some(change)) = (tree.path(below), tree.nodes.get(&below).and_then(|n| n.change.as_ref())) {
+                    change.cell.lock().path = path;
+                }
             }
         }
         // One transaction: a crash never leaves a change without its row.
@@ -1792,6 +1867,35 @@ impl Drive {
             return (PLENTY, PLENTY);
         }
         (total, total.saturating_sub(used))
+    }
+}
+
+/// Marks nodes busy (no upload starts for them or below them) until dropped.
+pub(crate) struct Busy<'a> {
+    drive: &'a Drive,
+    inos: Vec<u64>,
+}
+
+impl<'a> Busy<'a> {
+    pub(crate) fn new(drive: &'a Drive, inos: &[u64]) -> Self {
+        let mut tree = drive.tree();
+        for ino in inos {
+            if let Some(node) = tree.nodes.get_mut(ino) {
+                node.busy += 1;
+            }
+        }
+        Self { drive, inos: inos.to_vec() }
+    }
+}
+
+impl Drop for Busy<'_> {
+    fn drop(&mut self) {
+        let mut tree = self.drive.tree();
+        for ino in &self.inos {
+            if let Some(node) = tree.nodes.get_mut(ino) {
+                node.busy = node.busy.saturating_sub(1);
+            }
+        }
     }
 }
 

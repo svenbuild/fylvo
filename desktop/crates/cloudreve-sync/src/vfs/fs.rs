@@ -185,10 +185,37 @@ impl Filesystem for DriveFs {
     fn open(&self, req: &Request, ino: INodeNo, flags: OpenFlags, _kill_suid_gid: bool, reply: ReplyOpen) {
         let write = !matches!(flags.acc_mode(), OpenAccMode::O_RDONLY);
         let truncate = flags.0 & libc::O_TRUNC != 0;
-        match self.drive.open(ino.0, write, truncate, is_scanner(req.pid())) {
-            Ok((fh, keep_cache)) => {
-                let flags = if keep_cache { FopenFlags::FOPEN_KEEP_CACHE } else { FopenFlags::empty() };
-                reply.opened(FileHandle(fh), flags)
+        let scanner = is_scanner(req.pid());
+        let opened = |reply: ReplyOpen, (fh, keep_cache): (u64, bool)| {
+            let flags = if keep_cache { FopenFlags::FOPEN_KEEP_CACHE } else { FopenFlags::empty() };
+            reply.opened(FileHandle(fh), flags)
+        };
+        match self.drive.open(ino.0, write, truncate, scanner) {
+            Ok(handle) => opened(reply, handle),
+            // An upload snapshot of the file runs: the truncation waits outside the FUSE threads.
+            Err(e) if e == super::drive::GATE_BUSY => {
+                let drive = self.drive.clone();
+                let slot = drive.watchdog.slot(reply, CONTENT);
+                self.drive.rt.spawn(async move {
+                    loop {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        if slot.expired() {
+                            return;
+                        }
+                        match drive.open(ino.0, write, truncate, scanner) {
+                            Err(e) if e == super::drive::GATE_BUSY => continue,
+                            result => {
+                                match (slot.take(), result) {
+                                    (Some(reply), Ok(handle)) => opened(reply, handle),
+                                    (Some(reply), Err(e)) => reply.error(e),
+                                    (None, Ok((fh, _))) => drive.release(fh),
+                                    (None, Err(_)) => {}
+                                }
+                                return;
+                            }
+                        }
+                    }
+                });
             }
             Err(e) => reply.error(e),
         }
