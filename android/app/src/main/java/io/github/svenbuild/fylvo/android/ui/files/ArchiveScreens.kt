@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.annotation.StringRes
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -164,22 +165,23 @@ fun TasksPage(onBack: () -> Unit, bottomBar: @Composable () -> Unit, onOpenFolde
     }
 }
 
+@StringRes
+fun taskTypeLabel(type: String): Int = when (type) {
+    "create_archive" -> R.string.task_create_archive
+    "extract_archive" -> R.string.task_extract_archive
+    "relocate" -> R.string.task_relocate
+    "import" -> R.string.task_import
+    "remote_download" -> R.string.task_remote_download
+    else -> R.string.task_other
+}
+
 @Composable
 private fun TaskRow(task: TaskItem, onOpenFolder: (String) -> Unit) {
     val props = task.summary?.props
     fun prop(key: String) = (props?.get(key) as? JsonPrimitive)?.content
     val sources = (props?.get("src_multiple") as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content } ?: listOfNotNull(prop("src"))
     val dst = prop("dst")
-    val what = stringResource(
-        when (task.type) {
-            "create_archive" -> R.string.task_create_archive
-            "extract_archive" -> R.string.task_extract_archive
-            "relocate" -> R.string.task_relocate
-            "import" -> R.string.task_import
-            "remote_download" -> R.string.task_remote_download
-            else -> R.string.task_other
-        },
-    )
+    val what = stringResource(taskTypeLabel(task.type))
     val status = stringResource(
         when (task.status) {
             "queued" -> R.string.task_queued

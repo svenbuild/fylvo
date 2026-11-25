@@ -292,7 +292,10 @@
     <string name="folder_upload_unreadable">Der Ordner konnte nicht gelesen werden.</string>
     <string name="folder_upload_started">Der Ordner wird hochgeladen</string>
     <string name="folder_upload_failed">Das Hochladen konnte nicht starten (der Zielordner hat sich geändert oder es gibt keine Verbindung).</string>
-    <string name="folder_upload_partly">%1$d von %2$d Ordnern werden hochgeladen; die anderen konnten nicht starten. Ein neuer Versuch lädt auch die schon gestarteten nochmals hoch.</string>
+    <plurals name="folder_upload_partly">
+        <item quantity="one">%1$d von %2$d Ordnern wird hochgeladen; die anderen konnten nicht starten. Ein neuer Versuch lädt auch den schon gestarteten nochmals hoch.</item>
+        <item quantity="other">%1$d von %2$d Ordnern werden hochgeladen; die anderen konnten nicht starten. Ein neuer Versuch lädt auch die schon gestarteten nochmals hoch.</item>
+    </plurals>
 
     <!-- Verbundene Speicher aus der App -->
     <string name="connected_manage_hint">Verbinden, umbenennen, trennen</string>

@@ -1,6 +1,7 @@
 package io.github.svenbuild.fylvo.android.ui.files
 
 import androidx.compose.ui.res.stringResource
+import io.github.svenbuild.fylvo.android.ui.files.transfers.uploadHeadline
 import io.github.svenbuild.fylvo.android.R
 
 import androidx.compose.foundation.background
@@ -131,7 +132,7 @@ private fun RecentSection(
                 contentAlignment = Alignment.Center,
             ) { CircularProgressIndicator(Modifier.size(28.dp)) }
             state.recent.isEmpty() -> Text(
-                stringResource(R.string.recent_hint),
+                stringResource(if (state.recentFailed) R.string.recent_load_failed else R.string.recent_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 24.dp),
@@ -283,7 +284,7 @@ private fun ActivityCard(state: FilesUiState, onOpenUploads: () -> Unit) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             state.uploads.forEach { u ->
                 ActivityRow(
-                    title = if (u.total > 1) stringResource(R.string.uploading_n_of, u.index + 1, u.total) else stringResource(R.string.uploading),
+                    title = uploadHeadline(u),
                     detail = stringResource(R.string.upload_target, u.name.ifEmpty { stringResource(R.string.waiting) }, CrUri.displayName(u.parentUri)),
                     fraction = u.fraction,
                 )

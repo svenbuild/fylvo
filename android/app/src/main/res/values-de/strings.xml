@@ -58,6 +58,7 @@
     <string name="trash_empty_hint">Gelöschte Elemente bleiben 7 Tage hier</string>
     <string name="nothing_recent">Keine aktuellen Dateien</string>
     <string name="recent_hint">Hier erscheinen Dateien, die du hochlädst oder änderst</string>
+    <string name="recent_load_failed">Die zuletzt verwendeten Dateien konnten nicht geladen werden. Prüfe die Verbindung.</string>
     <string name="no_images">Noch keine Bilder</string>
     <string name="no_videos">Noch keine Videos</string>
     <string name="no_audio">Noch keine Audiodateien</string>
@@ -213,6 +214,7 @@
     <string name="syncing_folder">Ordner wird synchronisiert</string>
     <string name="background_progress">%1$s · %2$d von %3$d</string>
     <string name="waiting_to_upload">Wartet auf Upload…</string>
+    <string name="waiting_for_connection">Wartet auf Verbindung…</string>
     <string name="upload_progress">%1$s · %2$s von %3$s</string>
     <string name="cancel_upload">Upload abbrechen</string>
     <string name="already_exists_one">„%s“ ist schon vorhanden</string>
@@ -392,9 +394,7 @@
     <string name="sign_in_timed_out">Anmeldung abgelaufen, bitte gib dein Passwort erneut ein</string>
 
     <!-- Notifications from background work -->
-    <string name="folder_sync_notification_title">Fylvo Ordner-Sync</string>
     <string name="folder_sync_uploaded">%1$s (%2$d hochgeladen)</string>
-    <string name="task_notification_title">Fylvo-Aufgabe</string>
     <string name="task_completed">%s abgeschlossen</string>
     <string name="task_canceled">%s abgebrochen</string>
     <string name="task_failed">%s fehlgeschlagen</string>

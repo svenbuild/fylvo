@@ -30,13 +30,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Pin
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -170,7 +170,7 @@ private fun PasswordStep(state: LoginUiState, viewModel: LoginViewModel) {
                 trailing = {
                     IconButton(onClick = { showPassword = !showPassword }) {
                         Icon(
-                            if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                             contentDescription = stringResource(if (showPassword) R.string.hide_password else R.string.show_password),
                         )
                     }
@@ -260,7 +260,7 @@ private fun NewPasswordStep(state: LoginUiState, viewModel: LoginViewModel) {
                 trailing = {
                     IconButton(onClick = { showPassword = !showPassword }) {
                         Icon(
-                            if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                             contentDescription = stringResource(if (showPassword) R.string.hide_password else R.string.show_password),
                         )
                     }

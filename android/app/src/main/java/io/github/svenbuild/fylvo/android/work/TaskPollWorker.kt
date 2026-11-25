@@ -1,6 +1,7 @@
 package io.github.svenbuild.fylvo.android.work
 
 import io.github.svenbuild.fylvo.android.R
+import io.github.svenbuild.fylvo.android.ui.files.taskTypeLabel
 import io.github.svenbuild.fylvo.android.util.localized
 
 import android.app.NotificationChannel
@@ -60,9 +61,8 @@ class TaskPollWorker(context: Context, params: WorkerParameters) :
 
     private fun notify(id: String, type: String, status: String, error: String?) {
         if (!NotificationManagerCompat.from(applicationContext).areNotificationsEnabled()) return
-        // The task type comes from the server ("remote_download") and stays as it is.
-        val label = type.substringAfterLast('.').replace('_', ' ')
         val texts = applicationContext.localized()
+        val label = texts.getString(taskTypeLabel(type))
         val text = when (status) {
             "completed" -> texts.getString(R.string.task_completed, label)
             "canceled" -> texts.getString(R.string.task_canceled, label)
@@ -71,7 +71,7 @@ class TaskPollWorker(context: Context, params: WorkerParameters) :
         }
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle(texts.getString(R.string.task_notification_title))
+            .setContentTitle(texts.getString(R.string.task_other))
             .setContentText(text)
             .setAutoCancel(true)
             .build()

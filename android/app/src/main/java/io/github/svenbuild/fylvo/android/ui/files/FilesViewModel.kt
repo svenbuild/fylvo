@@ -141,6 +141,7 @@ data class FilesUiState(
     val home: Boolean = true,
     val recent: List<FileObject> = emptyList(),
     val recentLoading: Boolean = false,
+    val recentFailed: Boolean = false,
     val currentUri: String = CrUri.MY_PREFIX,
     val files: List<FileObject> = emptyList(),
     /** No usable listing yet: show a spinner instead of files. */
@@ -611,9 +612,9 @@ class FilesViewModel(
             runCatching {
                 repo.list(Category.RECENT.uri, orderBy = "updated_at", orderDirection = "desc", pageSize = RECENT_COUNT)
             }.onSuccess { res ->
-                _state.value = _state.value.copy(recent = res.files.filter { !it.isFolder }, recentLoading = false)
+                _state.value = _state.value.copy(recent = res.files.filter { !it.isFolder }, recentLoading = false, recentFailed = false)
             }.onFailure { e ->
-                _state.value = _state.value.copy(recentLoading = false)
+                _state.value = _state.value.copy(recentLoading = false, recentFailed = true)
                 if (!handleSessionExpiry(e as? Exception ?: Exception(e))) {
                     // Fylvo: a waiting message (an upload's result) is not replaced.
                     _state.update { it.copy(snackbar = it.snackbar ?: failure(e)) }
