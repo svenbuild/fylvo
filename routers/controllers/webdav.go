@@ -23,7 +23,7 @@ func ListDavAccounts(c *gin.Context) {
 	}
 }
 
-// CreateDAVAccounts 创建WebDAV账户
+// CreateDAVAccounts creates a WebDAV account
 func CreateDAVAccounts(c *gin.Context) {
 	service := ParametersFromContext[*setting.CreateDavAccountService](c, setting.CreateDavAccountParamCtx{})
 	resp, err := service.Create(c)
@@ -66,7 +66,7 @@ func DeleteDAVAccounts(c *gin.Context) {
 }
 
 //
-//// DeleteWebDAVAccounts 删除WebDAV账户
+//// DeleteWebDAVAccounts deletes a WebDAV account
 //func DeleteWebDAVAccounts(c *gin.Context) {
 //	var service setting.WebDAVAccountService
 //	if err := c.ShouldBindUri(&service); err == nil {
@@ -77,7 +77,7 @@ func DeleteDAVAccounts(c *gin.Context) {
 //	}
 //}
 //
-//// DeleteWebDAVMounts 删除WebDAV挂载
+//// DeleteWebDAVMounts deletes a WebDAV mount
 //func DeleteWebDAVMounts(c *gin.Context) {
 //	var service setting.WebDAVListService
 //	if err := c.ShouldBindUri(&service); err == nil {
@@ -89,7 +89,7 @@ func DeleteDAVAccounts(c *gin.Context) {
 //}
 //
 //
-//// CreateWebDAVMounts 创建WebDAV目录挂载
+//// CreateWebDAVMounts creates a WebDAV folder mount
 //func CreateWebDAVMounts(c *gin.Context) {
 //	var service setting.WebDAVMountCreateService
 //	if err := c.ShouldBindJSON(&service); err == nil {

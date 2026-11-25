@@ -43,7 +43,7 @@ var (
 	features = &boolset.BooleanSet{}
 )
 
-// Driver 本地策略适配器
+// Driver is the storage policy adapter
 type Driver struct {
 	policy *ent.StoragePolicy
 
@@ -88,7 +88,7 @@ func New(ctx context.Context, policy *ent.StoragePolicy, settings setting.Provid
 	return driver, nil
 }
 
-// List 列出给定路径下的文件
+// List lists the files under the given path
 func (handler *Driver) List(ctx context.Context, base string, onProgress driver.ListProgressFunc, recursive bool) ([]fs.PhysicalObject, error) {
 	base = strings.TrimPrefix(base, "/")
 	if base != "" {
@@ -120,10 +120,10 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 		marker = nextMarker
 	}
 
-	// 处理列取结果
+	// handle the listing result
 	res := make([]fs.PhysicalObject, 0, len(objects)+len(commons))
 
-	// 处理目录
+	// handle directories
 	for _, object := range commons {
 		rel, err := filepath.Rel(base, object)
 		if err != nil {
@@ -139,7 +139,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 	}
 	onProgress(len(commons))
 
-	// 处理文件
+	// handle files
 	for _, object := range objects {
 		if strings.HasSuffix(object.Key, "/") && object.Fsize == 0 {
 			continue
@@ -162,23 +162,23 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 	return res, nil
 }
 
-// Put 将文件流保存到指定目录
+// Put saves the file stream to the given location
 func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	defer file.Close()
 
-	// 凭证有效期
+	// credential validity period
 	credentialTTL := handler.settings.UploadSessionTTL(ctx)
 
-	// 是否允许覆盖
+	// whether overwriting is allowed
 	overwrite := file.Mode&fs.ModeOverwrite == fs.ModeOverwrite
 
-	// 生成上传策略
+	// generate the upload policy
 	scope := handler.policy.BucketName
 	if overwrite {
 		scope = fmt.Sprintf("%s:%s", handler.policy.BucketName, file.Props.SavePath)
 	}
 	putPolicy := storage.PutPolicy{
-		// 指定为覆盖策略
+		// use the overwrite policy
 		Scope:        scope,
 		SaveKey:      file.Props.SavePath,
 		ForceSaveKey: true,
@@ -187,7 +187,7 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	}
 	upToken := putPolicy.UploadToken(handler.mac)
 
-	// 初始化分片上传
+	// initialize the multipart upload
 	resumeUploader := storage.NewResumeUploaderV2(handler.cfg)
 	upHost, err := resumeUploader.UpHost(handler.policy.AccessKey, handler.policy.BucketName)
 	if err != nil {
@@ -246,8 +246,8 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	return nil
 }
 
-// Delete 删除一个或多个文件，
-// 返回未删除的文件
+// Delete removes one or more files,
+// returns the files that were not deleted
 func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, error) {
 	groups := lo.Chunk(files, maxDeleteBatch)
 	failed := make([]string, 0)
@@ -255,12 +255,12 @@ func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, e
 
 	for index, group := range groups {
 		handler.l.Debug("Process delete group #%d: %v", index, group)
-		// 删除文件
+		// delete file
 		rets, err := handler.bucket.BatchWithContext(ctx, handler.policy.BucketName, lo.Map(group, func(key string, index int) string {
 			return storage.URIDelete(handler.policy.BucketName, key)
 		}))
 
-		// 处理删除结果
+		// handle the delete result
 		if err != nil {
 			for k, ret := range rets {
 				if ret.Code != 200 && ret.Code != 612 {
@@ -278,7 +278,7 @@ func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, e
 	return failed, lastError
 }
 
-// Thumb 获取文件缩略图
+// Thumb gets the file thumbnail
 func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string, e fs.Entity) (string, error) {
 	w, h := handler.settings.ThumbSize(ctx)
 	thumbParam := fmt.Sprintf("imageView2/1/w/%d/h/%d", w, h)
@@ -300,22 +300,22 @@ func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string,
 	), nil
 }
 
-// Source 获取外链URL
+// Source gets the external link URL
 func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.GetSourceArgs) (string, error) {
 	path := e.Source()
 
 	query := url.Values{}
 
-	// 加入下载相关设置
+	// add download related settings
 	if args.IsDownload {
 		query.Add("attname", args.DisplayName)
 	}
 
 	if args.Speed > 0 {
-		// Byte 转换为 bit
+		// convert bytes to bits
 		args.Speed *= 8
 
-		// Qiniu 对速度值有范围限制
+		// Qiniu limits the speed value to a range
 		if args.Speed < 819200 {
 			args.Speed = 819200
 		}
@@ -325,7 +325,7 @@ func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.Get
 		query.Add(trafficLimitParam, fmt.Sprintf("%d", args.Speed))
 	}
 
-	// 取得原始文件地址
+	// get the original file URL
 	return handler.signSourceURL(path, query, args.Expire), nil
 }
 
@@ -359,13 +359,13 @@ func (handler *Driver) signSourceURL(path string, query url.Values, expire *time
 	return sourceURL
 }
 
-// Token 获取上传策略和认证Token
+// Token gets the upload policy and auth token
 func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, file *fs.UploadRequest) (*fs.UploadCredential, error) {
-	// 生成回调地址
+	// generate the callback URL
 	siteURL := handler.settings.SiteURL(setting.UseFirstSiteUrl(ctx))
 	apiUrl := routes.MasterSlaveCallbackUrl(siteURL, types.PolicyTypeQiniu, uploadSession.Props.UploadSessionID, uploadSession.CallbackSecret).String()
 
-	// 创建上传策略
+	// create the upload policy
 	putPolicy := storage.PutPolicy{
 		Scope:            fmt.Sprintf("%s:%s", handler.policy.BucketName, file.Props.SavePath),
 		CallbackURL:      apiUrl,
@@ -377,7 +377,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 		Expires:          uint64(file.Props.ExpireAt.Unix()),
 	}
 
-	// 初始化分片上传
+	// initialize the multipart upload
 	upToken := putPolicy.UploadToken(handler.mac)
 	resumeUploader := storage.NewResumeUploaderV2(handler.cfg)
 	upHost, err := resumeUploader.UpHost(handler.policy.AccessKey, handler.policy.BucketName)
@@ -411,7 +411,7 @@ func (handler *Driver) Open(ctx context.Context, path string) (*os.File, error) 
 	return nil, errors.New("not implemented")
 }
 
-// 取消上传凭证
+// cancel the upload credential
 func (handler *Driver) CancelToken(ctx context.Context, uploadSession *fs.UploadSession) error {
 	resumeUploader := storage.NewResumeUploaderV2(handler.cfg)
 	return resumeUploader.Client.CallWith(ctx, nil, "DELETE", uploadSession.UploadURL, http.Header{"Authorization": {"UpToken " + uploadSession.Credential}}, nil, 0)

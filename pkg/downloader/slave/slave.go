@@ -57,7 +57,7 @@ func (s *slaveDownloader) CreateTask(ctx context.Context, url string, options ma
 		return nil, err
 	}
 
-	// 处理列取结果
+	// Handle the listing result
 	if resp.Code != 0 {
 		return nil, serializer.NewErrorFromResponse(resp)
 	}
@@ -91,7 +91,7 @@ func (s *slaveDownloader) Info(ctx context.Context, handle *downloader.TaskHandl
 		return nil, err
 	}
 
-	// 处理列取结果
+	// Handle the listing result
 	if resp.Code != 0 {
 		err = serializer.NewErrorFromResponse(resp)
 		if resp.Code == serializer.CodeNotFound {
@@ -129,7 +129,7 @@ func (s *slaveDownloader) Cancel(ctx context.Context, handle *downloader.TaskHan
 		return err
 	}
 
-	// 处理列取结果
+	// Handle the listing result
 	if resp.Code != 0 {
 		return serializer.NewErrorFromResponse(resp)
 	}
@@ -159,7 +159,7 @@ func (s *slaveDownloader) SetFilesToDownload(ctx context.Context, handle *downlo
 		return err
 	}
 
-	// 处理列取结果
+	// Handle the listing result
 	if resp.Code != 0 {
 		return serializer.NewErrorFromResponse(resp)
 	}

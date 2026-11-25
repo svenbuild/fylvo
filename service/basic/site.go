@@ -14,7 +14,7 @@ import (
 	"github.com/mojocn/base64Captcha"
 )
 
-// SiteConfig 站点全局设置序列
+// SiteConfig global site settings list
 type SiteConfig struct {
 	// Basic Section
 	InstanceID     string                  `json:"instance_id,omitempty"`
@@ -231,7 +231,7 @@ func GetCaptchaImage(c *gin.Context) *CaptchaResponse {
 		CaptchaLen:         captchaSettings.Length,
 	}
 
-	// 生成验证码
+	// generate captcha
 	idKeyD, capD := base64Captcha.GenerateCaptcha("", configD)
 
 	base64stringD := base64Captcha.CaptchaWriteToBase64Encoding(capD)

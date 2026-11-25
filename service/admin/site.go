@@ -28,22 +28,22 @@ func init() {
 	gob.Register(map[string]string{})
 }
 
-// NoParamService 无需参数的服务
+// NoParamService service without parameters
 type NoParamService struct {
 }
 
-// BatchSettingChangeService 设定批量更改服务
+// BatchSettingChangeService service for changing settings in batch
 type BatchSettingChangeService struct {
 	Options []SettingChangeService `json:"options"`
 }
 
-// SettingChangeService  设定更改服务
+// SettingChangeService  service for changing settings
 type SettingChangeService struct {
 	Key   string `json:"key" binding:"required"`
 	Value string `json:"value"`
 }
 
-// Change 批量更改站点设定
+// Change changes site settings in batch
 func (service *BatchSettingChangeService) Change() serializer.Response {
 	//cacheClean := make([]string, 0, len(service.Options))
 	//tx := model.DB.Begin()
@@ -81,7 +81,7 @@ type (
 	SummaryParamCtx struct{}
 )
 
-// Summary 获取站点统计概况
+// Summary gets site statistics overview
 func (s *SummaryService) Summary(c *gin.Context) (*HomepageSummary, error) {
 	dep := dependency.FromContext(c)
 	kv := dep.KV()
@@ -165,7 +165,7 @@ func (s *SummaryService) Summary(c *gin.Context) (*HomepageSummary, error) {
 	return res, nil
 }
 
-// ThumbGeneratorTestService 缩略图生成测试服务
+// ThumbGeneratorTestService thumbnail generator test service
 type (
 	ThumbGeneratorTestService struct {
 		Name       string `json:"name" binding:"required"`
@@ -174,7 +174,7 @@ type (
 	ThumbGeneratorTestParamCtx struct{}
 )
 
-// Test 通过获取生成器版本来测试
+// Test tests by fetching the generator version
 func (s *ThumbGeneratorTestService) Test(c *gin.Context) (string, error) {
 	version, err := thumb.TestGenerator(c, s.Name, s.Executable)
 	if err != nil {

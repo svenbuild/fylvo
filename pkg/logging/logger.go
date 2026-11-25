@@ -32,13 +32,13 @@ type CorrelationIDCtx struct{}
 type LogLevel string
 
 const (
-	// LevelError 错误
+	// LevelError is for errors
 	LevelError LogLevel = "error"
-	// LevelWarning 警告
+	// LevelWarning is for warnings
 	LevelWarning LogLevel = "warning"
-	// LevelInformational 提示
+	// LevelInformational is for informational messages
 	LevelInformational LogLevel = "info"
-	// LevelDebug 除错
+	// LevelDebug is for debugging
 	LevelDebug LogLevel = "debug"
 )
 
@@ -127,7 +127,7 @@ func (ll *consoleLogger) Debug(format string, v ...any) {
 	ll.debug(ll, format, v...)
 }
 
-// println 打印
+// println prints
 func (ll *consoleLogger) println(level string, msg string) {
 	c := color.New()
 	_, filename, line, _ := runtime.Caller(3)

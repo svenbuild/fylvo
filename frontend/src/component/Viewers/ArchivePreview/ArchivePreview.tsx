@@ -44,11 +44,11 @@ const ArchivePreview = () => {
       return files.filter((file) => !file.name.includes("/"));
     }
 
-    // 如果在子目录，显示该目录下的文件和文件夹
+    // If in a subdirectory, show the files and folders under it
     const pathPrefix = currentPath.endsWith("/") ? currentPath : currentPath + "/";
     const pathFiles = files.filter((file) => file.name.startsWith(pathPrefix) && file.name !== currentPath);
 
-    // 去重并转换为相对路径
+    // Deduplicate and convert to relative paths
     const relativePaths = new Set<string>();
     const result: ArchivedFile[] = [];
 
@@ -81,19 +81,19 @@ const ArchivePreview = () => {
     return result;
   }, [files, currentPath]);
 
-  // 过滤文件
+  // Filter files
   const filteredFiles = useMemo(() => {
     if (!filterText) return currentFiles;
     return currentFiles.filter((file) => file.name.toLowerCase().includes(filterText.toLowerCase()));
   }, [currentFiles, filterText]);
 
-  // 面包屑路径
+  // Breadcrumb path
   const breadcrumbPaths = useMemo(() => {
     if (!currentPath) return [];
     return currentPath.split("/").filter(Boolean);
   }, [currentPath]);
 
-  // 规范化路径，去除开头可能存在的 `/`
+  // Normalize the path, remove a possible leading `/`
   const normalizeName = (name: string) => {
     if (name && typeof name === "string" && name.startsWith("/")) {
       return name.slice(1);
@@ -122,11 +122,11 @@ const ArchivePreview = () => {
     )
       .then((res) => {
         if (res.files) {
-          // 补齐目录
+          // Fill in missing directories
           const allItems: ArchivedFile[] = [];
           const allDirs = new Set<string>();
 
-          // 目录项
+          // Directory entry
           res.files
             .filter((item) => item.is_directory)
             .forEach((item) => {
@@ -138,7 +138,7 @@ const ArchivePreview = () => {
               allDirs.add(normalizedName);
             });
 
-          // 文件项，并补齐缺失目录
+          // File entry, and fill in missing directories
           res.files
             .filter((item) => !item.is_directory)
             .forEach((item) => {
@@ -163,8 +163,8 @@ const ArchivePreview = () => {
               }
             });
 
-          // 排序文件
-          // 先目录，后文件，分别按名称排序
+          // Sort files
+          // Directories first, then files, each sorted by name
           allItems.sort((a, b) => {
             if (a.is_directory && !b.is_directory) return -1;
             if (!a.is_directory && b.is_directory) return 1;
@@ -237,7 +237,7 @@ const ArchivePreview = () => {
     }
   }, [filteredFiles, selectedFiles, currentPath]);
 
-  // 解压选中的文件
+  // Extract the selected files
   const extractSelectedFiles = useCallback(() => {
     if (selectedFiles.length === 0) {
       return;

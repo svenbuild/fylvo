@@ -1,6 +1,6 @@
 package serializer
 
-// GeneralUploadCallbackFailed 存储策略上传回调失败响应
+// GeneralUploadCallbackFailed is the response for a failed storage policy upload callback
 type GeneralUploadCallbackFailed struct {
 	Error string `json:"error"`
 }

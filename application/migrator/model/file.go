@@ -4,9 +4,9 @@ import (
 	"github.com/jinzhu/gorm"
 )
 
-// File 文件
+// File file
 type File struct {
-	// 表字段
+	// table fields
 	gorm.Model
 	Name            string `gorm:"unique_index:idx_only_one"`
 	SourceName      string `gorm:"type:text"`
@@ -18,10 +18,10 @@ type File struct {
 	UploadSessionID *string `gorm:"index:session_id;unique_index:session_only_one"`
 	Metadata        string  `gorm:"type:text"`
 
-	// 关联模型
+	// related models
 	Policy Policy `gorm:"PRELOAD:false,association_autoupdate:false"`
 
-	// 数据库忽略字段
+	// fields ignored by the database
 	Position           string            `gorm:"-"`
 	MetadataSerialized map[string]string `gorm:"-"`
 }

@@ -5,18 +5,18 @@ import (
 	"net/url"
 )
 
-// RespError 接口返回错误
+// RespError error returned by the API
 type RespError struct {
 	APIError APIError `json:"error"`
 }
 
-// APIError 接口返回的错误内容
+// APIError error content returned by the API
 type APIError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 
-// UploadSessionResponse 分片上传会话
+// UploadSessionResponse multipart upload session
 type UploadSessionResponse struct {
 	DataContext        string   `json:"@odata.context"`
 	ExpirationDateTime string   `json:"expirationDateTime"`
@@ -24,7 +24,7 @@ type UploadSessionResponse struct {
 	UploadURL          string   `json:"uploadUrl"`
 }
 
-// FileInfo 文件元信息
+// FileInfo file metadata
 type FileInfo struct {
 	Name            string          `json:"name"`
 	Size            int64           `json:"size"`
@@ -54,19 +54,19 @@ type parentReference struct {
 	ID   string `json:"id"`
 }
 
-// UploadResult 上传结果
+// UploadResult upload result
 type UploadResult struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Size uint64 `json:"size"`
 }
 
-// BatchRequests 批量操作请求
+// BatchRequests batch request
 type BatchRequests struct {
 	Requests []BatchRequest `json:"requests"`
 }
 
-// BatchRequest 批量操作单个请求
+// BatchRequest single request in a batch
 type BatchRequest struct {
 	ID      string            `json:"id"`
 	Method  string            `json:"method"`
@@ -75,44 +75,44 @@ type BatchRequest struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-// BatchResponses 批量操作响应
+// BatchResponses batch response
 type BatchResponses struct {
 	Responses []BatchResponse `json:"responses"`
 }
 
-// BatchResponse 批量操作单个响应
+// BatchResponse single response in a batch
 type BatchResponse struct {
 	ID     string `json:"id"`
 	Status int    `json:"status"`
 }
 
-// ThumbResponse 获取缩略图的响应
+// ThumbResponse thumbnail response
 type ThumbResponse struct {
 	Value []map[string]interface{} `json:"value"`
 	URL   string                   `json:"url"`
 }
 
-// ListResponse 列取子项目响应
+// ListResponse child item listing response
 type ListResponse struct {
 	Value    []FileInfo `json:"value"`
 	Context  string     `json:"@odata.context"`
 	NextLink string     `json:"@odata.nextLink,omitempty"`
 }
 
-// oauthEndpoint OAuth接口地址
+// oauthEndpoint OAuth endpoint address
 type oauthEndpoint struct {
 	token     url.URL
 	authorize url.URL
 }
 
-// OAuthError OAuth相关接口的错误响应
+// OAuthError OAuth endpoint error response
 type OAuthError struct {
 	ErrorType        string `json:"error"`
 	ErrorDescription string `json:"error_description"`
 	CorrelationID    string `json:"correlation_id"`
 }
 
-// Site SharePoint 站点信息
+// Site SharePoint site info
 type Site struct {
 	Description string `json:"description"`
 	ID          string `json:"id"`
@@ -125,7 +125,7 @@ func init() {
 	gob.Register(Credential{})
 }
 
-// Error 实现error接口
+// Error implements the error interface
 func (err RespError) Error() string {
 	return err.APIError.Message
 }

@@ -5,7 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// OauthService OAuth 存储策略授权回调服务
+// OauthService OAuth storage policy authorization callback service
 type OauthService struct {
 	Code     string `form:"code"`
 	Error    string `form:"error"`
@@ -14,7 +14,7 @@ type OauthService struct {
 }
 
 //
-//// GDriveAuth Google Drive 更新认证信息
+//// GDriveAuth Google Drive updates the auth info
 //func (service *OauthService) GDriveAuth(c *gin.Context) serializer.Response {
 //	if service.Error != "" {
 //		return serializer.ParamErrDeprecated(service.Error, nil)
@@ -49,7 +49,7 @@ type OauthService struct {
 //		return serializer.ErrDeprecated(serializer.CodeInternalSetting, "Failed to fetch AccessToken", err)
 //	}
 //
-//	// 更新存储策略的 RefreshToken
+//	// update the RefreshToken of the storage policy
 //	client.Policy.AccessKey = credential.RefreshToken
 //	if err := client.Policy.SaveAndClearCache(); err != nil {
 //		return serializer.DBErrDeprecated("Failed to update RefreshToken", err)
@@ -59,7 +59,7 @@ type OauthService struct {
 //	return serializer.Response{}
 //}
 
-// OdAuth OneDrive 更新认证信息
+// OdAuth OneDrive updates the auth info
 func (service *OauthService) OdAuth(c *gin.Context) serializer.Response {
 	//if service.Error != "" {
 	//	return serializer.ParamErrDeprecated(service.ErrorMsg, nil)
@@ -87,7 +87,7 @@ func (service *OauthService) OdAuth(c *gin.Context) serializer.Response {
 	//	return serializer.ErrDeprecated(serializer.CodeInternalSetting, "Failed to fetch AccessToken", err)
 	//}
 	//
-	//// 更新存储策略的 RefreshToken
+	//// update the RefreshToken of the storage policy
 	//client.Policy.AccessKey = credential.RefreshToken
 	//if err := client.Policy.SaveAndClearCache(); err != nil {
 	//	return serializer.DBErrDeprecated("Failed to update RefreshToken", err)

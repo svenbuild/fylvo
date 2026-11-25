@@ -30,7 +30,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// InitRouter 初始化路由
+// InitRouter initializes the router
 func InitRouter(dep dependency.Dep) *gin.Engine {
 	l := dep.Logger()
 	if dep.ConfigProvider().System().Mode == conf.MasterMode {
@@ -60,17 +60,17 @@ func initSlaveFileRouter(v4 *gin.RouterGroup) {
 	// Upload related, no signature required under this router group
 	upload := v4.Group("upload")
 	{
-		// 上传分片
+		// upload part
 		upload.POST(":sessionId",
 			controllers.FromUri[explorer.UploadService](explorer.UploadParameterCtx{}),
 			controllers.SlaveUpload,
 		)
-		// 创建上传会话上传
+		// create upload session
 		upload.PUT("",
 			controllers.FromJSON[explorer.SlaveCreateUploadSessionService](explorer.SlaveCreateUploadSessionParamCtx{}),
 			controllers.SlaveGetUploadSession,
 		)
-		// 删除上传会话
+		// delete upload session
 		upload.DELETE(":sessionId",
 			controllers.FromUri[explorer.SlaveDeleteUploadSessionService](explorer.SlaveDeleteUploadSessionParamCtx{}),
 			controllers.SlaveDeleteUploadSession)
@@ -97,11 +97,11 @@ func initSlaveFileRouter(v4 *gin.RouterGroup) {
 			controllers.FromUri[explorer.SlaveThumbService](explorer.SlaveThumbParamCtx{}),
 			controllers.SlaveThumb,
 		)
-		// 删除文件
+		// delete file
 		file.DELETE("",
 			controllers.FromJSON[explorer.SlaveDeleteFileService](explorer.SlaveDeleteFileParamCtx{}),
 			controllers.SlaveDelete)
-		// 列出文件
+		// list files
 		file.GET("list",
 			controllers.FromQuery[explorer.SlaveListService](explorer.SlaveListParamCtx{}),
 			controllers.SlaveList,
@@ -109,19 +109,19 @@ func initSlaveFileRouter(v4 *gin.RouterGroup) {
 	}
 }
 
-// initSlaveRouter 初始化从机模式路由
+// initSlaveRouter initializes routes for slave mode
 func initSlaveRouter(dep dependency.Dep) *gin.Engine {
 	r := newGinEngine(dep)
-	// 跨域相关
+	// CORS related
 	initCORS(dep.Logger(), dep.ConfigProvider(), r)
 	v4 := r.Group(constants.APIPrefix + "/slave")
-	// 鉴权中间件
+	// auth middleware
 	v4.Use(middleware.SignRequired(dep.GeneralAuth()))
-	// 禁止缓存
+	// disable caching
 	v4.Use(middleware.CacheControl())
 
 	/*
-		路由
+		routes
 	*/
 	{
 		// Ping
@@ -129,34 +129,34 @@ func initSlaveRouter(dep dependency.Dep) *gin.Engine {
 			controllers.FromJSON[adminsvc.SlavePingService](adminsvc.SlavePingParameterCtx{}),
 			controllers.SlavePing,
 		)
-		// // 测试 Aria2 RPC 连接
+		// // test the Aria2 RPC connection
 		// v4.POST("ping/aria2", controllers.AdminTestAria2)
 		initSlaveFileRouter(v4)
 
-		// 离线下载
+		// offline download
 		download := v4.Group("download")
 		{
-			// 创建离线下载任务
+			// create offline download task
 			download.POST("task",
 				controllers.FromJSON[slave.CreateSlaveDownload](node.CreateSlaveDownloadTaskParamCtx{}),
 				middleware.PrepareSlaveDownloader(dep, node.CreateSlaveDownloadTaskParamCtx{}),
 				controllers.SlaveDownloadTaskCreate)
-			// 获取任务状态
+			// get task status
 			download.POST("status",
 				controllers.FromJSON[slave.GetSlaveDownload](node.GetSlaveDownloadTaskParamCtx{}),
 				middleware.PrepareSlaveDownloader(dep, node.GetSlaveDownloadTaskParamCtx{}),
 				controllers.SlaveDownloadTaskStatus)
-			// 取消离线下载任务
+			// cancel offline download task
 			download.POST("cancel",
 				controllers.FromJSON[slave.CancelSlaveDownload](node.CancelSlaveDownloadTaskParamCtx{}),
 				middleware.PrepareSlaveDownloader(dep, node.CancelSlaveDownloadTaskParamCtx{}),
 				controllers.SlaveCancelDownloadTask)
-			// 选取任务文件
+			// select task files
 			download.POST("select",
 				controllers.FromJSON[slave.SetSlaveFilesToDownload](node.SelectSlaveDownloadFilesParamCtx{}),
 				middleware.PrepareSlaveDownloader(dep, node.SelectSlaveDownloadFilesParamCtx{}),
 				controllers.SlaveSelectFilesToDownload)
-			// 测试下载器连接
+			// test downloader connection
 			download.POST("test",
 				controllers.FromJSON[slave.TestSlaveDownload](node.TestSlaveDownloadParamCtx{}),
 				middleware.PrepareSlaveDownloader(dep, node.TestSlaveDownloadParamCtx{}),
@@ -164,7 +164,7 @@ func initSlaveRouter(dep dependency.Dep) *gin.Engine {
 			)
 		}
 
-		// 异步任务
+		// async tasks
 		task := v4.Group("task")
 		{
 			task.PUT("",
@@ -181,7 +181,7 @@ func initSlaveRouter(dep dependency.Dep) *gin.Engine {
 	return r
 }
 
-// initCORS 初始化跨域配置
+// initCORS initializes the CORS config
 func initCORS(l logging.Logger, config conf.ConfigProvider, router *gin.Engine) {
 	c := config.Cors()
 	if c.AllowOrigins[0] != "UNSET" {
@@ -195,20 +195,20 @@ func initCORS(l logging.Logger, config conf.ConfigProvider, router *gin.Engine) 
 		return
 	}
 
-	// slave模式下未启动跨域的警告
+	// warning when CORS is not enabled in slave mode
 	if config.System().Mode == conf.SlaveMode {
 		l.Warning("You are running Fylvo as slave node, if you are using slave storage policy, please enable CORS feature in config file, otherwise file cannot be uploaded from Master basic.")
 	}
 }
 
-// initMasterRouter 初始化主机模式路由
+// initMasterRouter initializes routes for master mode
 func initMasterRouter(dep dependency.Dep) *gin.Engine {
 	r := newGinEngine(dep)
-	// 跨域相关
+	// CORS related
 	initCORS(dep.Logger(), dep.ConfigProvider(), r) // Done
 
 	/*
-		静态资源
+		static resources
 	*/
 	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/api/"})))
 	r.Use(middleware.SharePreview(dep))
@@ -218,13 +218,13 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 	noAuth := r.Group(constants.APIPrefix)
 	wopi := noAuth.Group("file/wopi", middleware.HashID(hashid.FileID), middleware.ViewerSessionValidation())
 	{
-		// 获取文件信息
+		// get file info
 		wopi.GET(":id", controllers.CheckFileInfo)
-		// 获取文件内容
+		// get file content
 		wopi.GET(":id/contents", controllers.GetFile)
-		// 更新文件内容
+		// update file content
 		wopi.POST(":id/contents", controllers.PutFile)
-		// 通用文件操作
+		// general file operations
 		wopi.POST(":id", controllers.ModifyFile)
 	}
 
@@ -260,18 +260,18 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 	v4 := r.Group(constants.APIPrefix)
 
 	/*
-		中间件
+		middleware
 	*/
 	v4.Use(middleware.Session(dep)) // Done
 
-	// 用户会话
+	// user session
 	v4.Use(middleware.CurrentUser())
 
-	// 禁止缓存
+	// disable caching
 	v4.Use(middleware.CacheControl()) // Done
 
 	/*
-		路由
+		routes
 	*/
 	{
 		// Redirect file source link
@@ -299,14 +299,14 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			)
 		}
 
-		// 全局设置相关
+		// global settings
 		site := v4.Group("site")
 		{
-			// 测试用路由
+			// test routes
 			site.GET("ping", controllers.Ping)
-			// 验证码
+			// captcha
 			site.GET("captcha", controllers.Captcha)
-			// 站点全局配置
+			// site global config
 			site.GET("config/:section",
 				controllers.FromUri[basic.GetSettingService](basic.GetSettingParamCtx{}),
 				controllers.SiteConfig,
@@ -319,7 +319,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			token := session.Group("token")
 			// Token based authentication
 			{
-				// 用户登录
+				// user login
 				token.POST("",
 					middleware.CaptchaRequired(func(c *gin.Context) bool {
 						return dep.SettingProvider().LoginCaptchaEnabled(c)
@@ -411,10 +411,10 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			}
 		}
 
-		// 用户相关路由
+		// user related routes
 		user := v4.Group("user")
 		{
-			// 用户注册 Done
+			// user registration, done
 			user.POST("",
 				middleware.IsFunctionEnabled(func(c *gin.Context) bool { return usersvc.RegistrationOpen(c) }),
 				middleware.CaptchaRequired(func(c *gin.Context) bool {
@@ -423,13 +423,13 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				controllers.FromJSON[usersvc.UserRegisterService](usersvc.RegisterParameterCtx{}),
 				controllers.UserRegister,
 			)
-			// 通过邮件里的链接重设密码
+			// reset password via the link in the email
 			user.PATCH("reset/:id",
 				middleware.HashID(hashid.UserID),
 				controllers.FromJSON[usersvc.UserResetService](usersvc.UserResetParameterCtx{}),
 				controllers.UserReset,
 			)
-			// 发送密码重设邮件
+			// send the password reset email
 			user.POST("reset",
 				middleware.CaptchaRequired(func(c *gin.Context) bool {
 					return dep.SettingProvider().ForgotPasswordCaptchaEnabled(c)
@@ -437,13 +437,13 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				controllers.FromJSON[usersvc.UserResetEmailService](usersvc.UserResetEmailParameterCtx{}),
 				controllers.UserSendReset,
 			)
-			// 邮件激活 Done
+			// email activation, done
 			user.GET("activate/:id",
 				middleware.SignRequired(dep.GeneralAuth()),
 				middleware.HashID(hashid.UserID),
 				controllers.UserActivate,
 			)
-			// 获取用户头像
+			// get user avatar
 			user.GET("avatar/:id",
 				middleware.HashID(hashid.UserID),
 				controllers.FromQuery[usersvc.GetAvatarService](usersvc.GetAvatarServiceParamsCtx{}),
@@ -459,7 +459,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			)
 		}
 
-		// 需要携带签名验证的
+		// requires signature verification
 		sign := v4.Group("")
 		sign.Use(middleware.SignRequired(dep.GeneralAuth()))
 		{
@@ -520,10 +520,10 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			connectedContent.HEAD(":grant/:name", controllers.FylvoConnectedContent)
 		}
 
-		// 回调接口
+		// callback endpoints
 		callback := v4.Group("callback")
 		{
-			// 远程策略上传回调
+			// remote policy upload callback
 			callback.POST(
 				"remote/:sessionID/:key",
 				middleware.UseUploadSession(types.PolicyTypeRemote),
@@ -538,7 +538,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				controllers.OSSCallbackValidate,
 				controllers.ProcessCallback(http.StatusBadRequest, false),
 			)
-			// 又拍云策略上传回调
+			// Upyun policy upload callback
 			callback.POST(
 				"upyun/:sessionID/:key",
 				middleware.UseUploadSession(types.PolicyTypeUpyun),
@@ -547,7 +547,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			)
 			onedrive := callback.Group("onedrive")
 			{
-				// 文件上传完成
+				// file upload finished
 				onedrive.POST(
 					":sessionID/:key",
 					middleware.UseUploadSession(types.PolicyTypeOd),
@@ -557,25 +557,25 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			// Google Drive related
 			gdrive := callback.Group("googledrive")
 			{
-				// OAuth 完成
+				// OAuth finished
 				gdrive.GET(
 					"auth",
 					controllers.GoogleDriveOAuth,
 				)
 			}
-			// 腾讯云COS策略上传回调
+			// Tencent Cloud COS policy upload callback
 			callback.GET(
 				"cos/:sessionID/:key",
 				middleware.UseUploadSession(types.PolicyTypeCos),
 				controllers.ProcessCallback(http.StatusBadRequest, false),
 			)
-			// AWS S3策略上传回调
+			// AWS S3 policy upload callback
 			callback.GET(
 				"s3/:sessionID/:key",
 				middleware.UseUploadSession(types.PolicyTypeS3),
 				controllers.ProcessCallback(http.StatusBadRequest, false),
 			)
-			// 金山 ks3策略上传回调
+			// Kingsoft ks3 policy upload callback
 			callback.GET(
 				"ks3/:sessionID/:key",
 				middleware.UseUploadSession(types.PolicyTypeKs3),
@@ -659,7 +659,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			)
 		}
 
-		// 文件
+		// files
 		file := v4.Group("file")
 		file.Use(middleware.RequiredScopes(types.ScopeFilesRead))
 		{
@@ -836,7 +836,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				controllers.RebuildFTSIndex,
 			)
 
-			// 取得文件外链
+			// get file external link
 			source := file.Group("source")
 			{
 				source.PUT("",
@@ -877,7 +877,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			)
 		}
 
-		// 分享相关
+		// sharing related
 		share := v4.Group("share")
 		share.Use(middleware.RequiredScopes(types.ScopeSharesRead))
 		{
@@ -908,7 +908,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				controllers.FromQuery[sharesvc.ListShareService](sharesvc.ListShareParamCtx{}),
 				controllers.ListShare,
 			)
-			// 删除分享
+			// delete share
 			share.DELETE(":id",
 				middleware.LoginRequired(),
 				middleware.RequiredScopes(types.ScopeSharesWrite),
@@ -921,19 +921,19 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				controllers.FromJSON[sharesvc.BatchDeleteShareService](sharesvc.BatchDeleteParamCtx{}),
 				controllers.BatchDeleteShare,
 			)
-			//// 获取README文本文件内容
+			//// get README text file content
 			//share.GET("readme/:id",
 			//	middleware.CheckShareUnlocked(),
 			//	controllers.PreviewShareReadme,
 			//)
-			//// 举报分享
+			//// report share
 			//share.POST("report/:id",
 			//	middleware.CheckShareUnlocked(),
 			//	controllers.ReportShare,
 			//)
 		}
 
-		// 需要登录保护的
+		// requires login
 		auth := v4.Group("")
 		auth.Use(middleware.LoginRequired())
 		{
@@ -1004,7 +1004,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				fylvoDesktop.GET("package/:sha256", controllers.FylvoDesktopPackage)
 			}
 
-			// 管理
+			// admin
 			admin := auth.Group("admin", middleware.IsAdmin())
 			admin.Use(middleware.RequiredScopes(types.ScopeAdminRead))
 			{
@@ -1040,32 +1040,32 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					)
 				}
 
-				// 用户组管理
+				// group management
 				group := admin.Group("group")
 				{
-					// 列出用户组
+					// list groups
 					group.POST("",
 						controllers.FromJSON[adminsvc.AdminListService](adminsvc.AdminListServiceParamsCtx{}),
 						controllers.AdminListGroups,
 					)
-					// 获取用户组
+					// get group
 					group.GET(":id",
 						controllers.FromUri[adminsvc.SingleGroupService](adminsvc.SingleGroupParamCtx{}),
 						controllers.AdminGetGroup,
 					)
-					// 创建用户组
+					// create group
 					group.PUT("",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromJSON[adminsvc.UpsertGroupService](adminsvc.UpsertGroupParamCtx{}),
 						controllers.AdminCreateGroup,
 					)
-					// 更新用户组
+					// update group
 					group.PUT(":id",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromJSON[adminsvc.UpsertGroupService](adminsvc.UpsertGroupParamCtx{}),
 						controllers.AdminUpdateGroup,
 					)
-					// 删除用户组
+					// delete group
 					group.DELETE(":id",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromUri[adminsvc.SingleGroupService](adminsvc.SingleGroupParamCtx{}),
@@ -1120,53 +1120,53 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 						controllers.FromJSON[adminsvc.CleanupTaskService](adminsvc.CleanupTaskParameterCtx{}),
 						controllers.AdminCleanupTask,
 					)
-					// // 列出任务
+					// // list tasks
 					// queue.POST("list", controllers.AdminListTask)
-					// // 新建文件导入任务
+					// // new file import task
 					// queue.POST("import", controllers.AdminCreateImportTask)
 				}
 
-				// 存储策略管理
+				// storage policy management
 				policy := admin.Group("policy")
 				{
-					// 列出存储策略
+					// list storage policies
 					policy.POST("",
 						controllers.FromJSON[adminsvc.AdminListService](adminsvc.AdminListServiceParamsCtx{}),
 						controllers.AdminListPolicies,
 					)
-					// 获取存储策略详情
+					// get storage policy details
 					policy.GET(":id",
 						controllers.FromUri[adminsvc.SingleStoragePolicyService](adminsvc.GetStoragePolicyParamCtx{}),
 						controllers.AdminGetPolicy,
 					)
-					// 创建存储策略
+					// create storage policy
 					policy.PUT("",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromJSON[adminsvc.CreateStoragePolicyService](adminsvc.CreateStoragePolicyParamCtx{}),
 						controllers.AdminCreatePolicy,
 					)
-					// 更新存储策略
+					// update storage policy
 					policy.PUT(":id",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromJSON[adminsvc.UpdateStoragePolicyService](adminsvc.UpdateStoragePolicyParamCtx{}),
 						controllers.AdminUpdatePolicy,
 					)
-					// 创建跨域策略
+					// create CORS policy
 					policy.POST("cors",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromJSON[adminsvc.CreateStoragePolicyCorsService](adminsvc.CreateStoragePolicyCorsParamCtx{}),
 						controllers.AdminCreateStoragePolicyCors,
 					)
-					// // 获取 OneDrive OAuth URL
+					// // get OneDrive OAuth URL
 					oauth := policy.Group("oauth")
 					{
-						// 获取 OneDrive OAuth URL
+						// get OneDrive OAuth URL
 						oauth.POST("signin",
 							middleware.RequiredScopes(types.ScopeAdminWrite),
 							controllers.FromJSON[adminsvc.GetOauthRedirectService](adminsvc.GetOauthRedirectParamCtx{}),
 							controllers.AdminOdOAuthURL,
 						)
-						// 获取 OAuth 回调 URL
+						// get OAuth callback URL
 						oauth.GET("redirect", controllers.AdminGetPolicyOAuthCallbackURL)
 						oauth.GET("status/:id",
 							controllers.FromUri[adminsvc.SingleStoragePolicyService](adminsvc.GetStoragePolicyParamCtx{}),
@@ -1183,9 +1183,9 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 						)
 					}
 
-					// // 获取 存储策略
+					// // get storage policy
 					// policy.GET(":id", controllers.AdminGetPolicy)
-					// 删除 存储策略
+					// delete storage policy
 					policy.DELETE(":id",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromUri[adminsvc.SingleStoragePolicyService](adminsvc.GetStoragePolicyParamCtx{}),
@@ -1270,23 +1270,23 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 
 				user := admin.Group("user")
 				{
-					// 列出用户
+					// list users
 					user.POST("",
 						controllers.FromJSON[adminsvc.AdminListService](adminsvc.AdminListServiceParamsCtx{}),
 						controllers.AdminListUsers,
 					)
-					// 获取用户
+					// get user
 					user.GET(":id",
 						controllers.FromUri[adminsvc.SingleUserService](adminsvc.SingleUserParamCtx{}),
 						controllers.AdminGetUser,
 					)
-					// 更新用户
+					// update user
 					user.PUT(":id",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromJSON[adminsvc.UpsertUserService](adminsvc.UpsertUserParamCtx{}),
 						controllers.AdminUpdateUser,
 					)
-					// 创建用户
+					// create user
 					user.PUT("",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromJSON[adminsvc.UpsertUserService](adminsvc.UpsertUserParamCtx{}),
@@ -1294,7 +1294,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					)
 					batch := user.Group("batch")
 					{
-						// 批量删除用户
+						// delete users in batch
 						batch.POST("delete",
 							middleware.RequiredScopes(types.ScopeAdminWrite),
 							controllers.FromJSON[adminsvc.BatchUserService](adminsvc.BatchUserParamCtx{}),
@@ -1310,28 +1310,28 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 
 				file := admin.Group("file")
 				{
-					// 列出文件
+					// list files
 					file.POST("",
 						controllers.FromJSON[adminsvc.AdminListService](adminsvc.AdminListServiceParamsCtx{}),
 						controllers.AdminListFiles,
 					)
-					// 获取文件
+					// get file
 					file.GET(":id",
 						controllers.FromUri[adminsvc.SingleFileService](adminsvc.SingleFileParamCtx{}),
 						controllers.AdminGetFile,
 					)
-					// 更新文件
+					// update file
 					file.PUT(":id",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromJSON[adminsvc.UpsertFileService](adminsvc.UpsertFileParamCtx{}),
 						controllers.AdminUpdateFile,
 					)
-					// 获取文件 URL
+					// get file URL
 					file.GET("url/:id",
 						controllers.FromUri[adminsvc.SingleFileService](adminsvc.SingleFileParamCtx{}),
 						controllers.AdminGetFileUrl,
 					)
-					// 批量删除文件
+					// delete files in batch
 					file.POST("batch/delete",
 						middleware.RequiredScopes(types.ScopeAdminWrite),
 						controllers.FromJSON[adminsvc.BatchFileService](adminsvc.BatchFileParamCtx{}),
@@ -1385,12 +1385,12 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 				}
 			}
 
-			// 用户
+			// user
 			user := auth.Group("user")
 			{
-				// 当前登录用户信息
+				// current logged-in user info
 				user.GET("me", middleware.RequiredScopes(types.ScopeUserInfoRead), controllers.UserMe)
-				// 存储信息
+				// storage info
 				user.GET("capacity", middleware.RequiredScopes(types.ScopeUserInfoRead), controllers.UserStorage)
 				// Search user by keywords
 				user.GET("search",
@@ -1399,7 +1399,7 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					controllers.UserSearch,
 				)
 
-				// WebAuthn 注册相关
+				// WebAuthn registration related
 				authn := user.Group("authn",
 					middleware.RequiredScopes(types.ScopeUserSecurityInfoWrite),
 					middleware.IsFunctionEnabled(func(c *gin.Context) bool {
@@ -1417,21 +1417,21 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 					)
 				}
 
-				// 用户设置
+				// user settings
 				setting := user.Group("setting")
 				setting.Use(middleware.RequiredScopes(types.ScopeUserInfoRead))
 				{
-					// 获取当前用户设定
+					// get current user settings
 					setting.GET("", controllers.UserSetting)
-					// 从文件上传头像
+					// upload avatar from file
 					setting.PUT("avatar", middleware.RequiredScopes(types.ScopeUserInfoWrite), controllers.UploadAvatar)
-					// 更改用户设定
+					// change user settings
 					setting.PATCH("",
 						middleware.RequiredScopes(types.ScopeUserInfoWrite),
 						controllers.FromJSON[usersvc.PatchUserSetting](usersvc.PatchUserSettingParamsCtx{}),
 						controllers.UpdateOption,
 					)
-					// 获得二步验证初始化信息
+					// get two-factor authentication setup info
 					setting.GET("2fa", controllers.UserInit2FA)
 					// Fylvo: recent sign-ins of the own account
 					setting.GET("activity",
@@ -1473,16 +1473,16 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 						controllers.DeleteDAVAccounts,
 					)
 				}
-				//// 获取账号信息
+				//// get account info
 				//devices.GET("dav", controllers.GetWebDAVAccounts)
-				//// 删除目录挂载
+				//// delete directory mount
 				//devices.DELETE("mount/:id",
 				//	middleware.HashID(hashid.FolderID),
 				//	controllers.DeleteWebDAVMounts,
 				//)
-				//// 创建目录挂载
+				//// create directory mount
 				//devices.POST("mount", controllers.CreateWebDAVMounts)
-				//// 更新账号可读性
+				//// update account readability
 				//devices.PATCH("accounts", controllers.UpdateWebDAVAccountsReadonly)
 			}
 
@@ -1490,12 +1490,12 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 
 	}
 
-	// 初始化WebDAV相关路由
+	// initialize WebDAV related routes
 	initWebDAV(r.Group("dav"))
 	return r
 }
 
-// initWebDAV 初始化WebDAV相关路由
+// initWebDAV initializes WebDAV related routes
 func initWebDAV(group *gin.RouterGroup) {
 	{
 		group.Use(middleware.CacheControl(), middleware.WebDAVAuth())

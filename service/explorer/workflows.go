@@ -23,26 +23,26 @@ import (
 	"golang.org/x/tools/container/intsets"
 )
 
-// ItemMoveService 处理多文件/目录移动
+// ItemMoveService handles moving multiple files/directories
 type ItemMoveService struct {
 	SrcDir string        `json:"src_dir" binding:"required,min=1,max=65535"`
 	Src    ItemIDService `json:"src"`
 	Dst    string        `json:"dst" binding:"required,min=1,max=65535"`
 }
 
-// ItemRenameService 处理多文件/目录重命名
+// ItemRenameService handles renaming multiple files/directories
 type ItemRenameService struct {
 	Src     ItemIDService `json:"src"`
 	NewName string        `json:"new_name" binding:"required,min=1,max=255"`
 }
 
-// ItemService 处理多文件/目录相关服务
+// ItemService handles services for multiple files/directories
 type ItemService struct {
 	Items []uint `json:"items"`
 	Dirs  []uint `json:"dirs"`
 }
 
-// ItemIDService 处理多文件/目录相关服务，字段值为HashID，可通过Raw()方法获取原始ID
+// ItemIDService handles services for multiple files/directories, field values are HashIDs, use Raw() to get the original ID
 type ItemIDService struct {
 	Items      []string `json:"items"`
 	Dirs       []string `json:"dirs"`
@@ -51,14 +51,14 @@ type ItemIDService struct {
 	UnlinkOnly bool `json:"unlink"`
 }
 
-// ItemDecompressService 文件解压缩任务服务
+// ItemDecompressService file extraction task service
 type ItemDecompressService struct {
 	Src      string `json:"src"`
 	Dst      string `json:"dst" binding:"required,min=1,max=65535"`
 	Encoding string `json:"encoding"`
 }
 
-// ItemPropertyService 获取对象属性服务
+// ItemPropertyService service to get object properties
 type ItemPropertyService struct {
 	ID        string `binding:"required"`
 	TraceRoot bool   `form:"trace_root"`
@@ -116,7 +116,7 @@ func (service *DownloadWorkflowService) CreateDownloadTask(c *gin.Context) ([]*T
 		return nil, serializer.NewError(serializer.CodeParamErr, "Invalid destination", err)
 	}
 
-	// 检查批量任务数量
+	// check the number of batch tasks
 	limit := user.Edges.Group.Settings.Aria2BatchSize
 	if limit > 0 && len(service.Src) > limit {
 		return nil, serializer.NewError(serializer.CodeBatchAria2Size, "", nil)

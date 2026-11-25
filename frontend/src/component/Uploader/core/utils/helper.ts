@@ -5,9 +5,9 @@ import { Task } from "../types";
 import { ChunkProgress } from "../uploader/chunk";
 import { inConnectedStorage } from "../../../../api/connected.ts";
 
-// 文件分块
+// split a file into chunks
 export function getChunks(file: Blob, chunkByteSize: number | undefined): Blob[] {
-  // 如果 chunkByteSize 比文件大或为0，则直接取文件的大小
+  // if chunkByteSize is larger than the file or 0, use the file size
   if (!chunkByteSize || chunkByteSize > file.size || chunkByteSize == 0) {
     chunkByteSize = file.size;
   }
@@ -101,7 +101,7 @@ export function getResumeCtx(task: Task | string, logger: Logger): Task | null {
   try {
     localInfo = JSON.parse(localInfoString);
   } catch {
-    // 本地信息已被破坏，直接删除
+    // local info is corrupted, delete it
     removeResumeCtx(task, logger);
     logger.warn(new UploaderError(UploaderErrorName.InvalidCtxData, `getResumeCtx failed to parse. key: ${ctxKey}`));
   }

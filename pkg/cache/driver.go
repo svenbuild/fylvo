@@ -8,18 +8,18 @@ func init() {
 	gob.Register(map[string]itemWithTTL{})
 }
 
-// Driver 键值缓存存储容器
+// Driver key-value cache storage
 type Driver interface {
-	// 设置值，ttl为过期时间，单位为秒
+	// Set a value, ttl is the expiry time in seconds
 	Set(key string, value any, ttl int) error
 
-	// 取值，并返回是否成功
+	// Get a value and return whether it succeeded
 	Get(key string) (any, bool)
 
-	// 批量取值，返回成功取值的map即不存在的值
+	// Get values in batch, returns a map of the found values plus the missing ones
 	Gets(keys []string, prefix string) (map[string]any, []string)
 
-	// 批量设置值，所有的key都会加上prefix前缀
+	// Set values in batch, all keys get the prefix
 	Sets(values map[string]any, prefix string) error
 
 	// Delete values by [Prefix + key]. If no ket is presented, all keys with given prefix will be deleted.

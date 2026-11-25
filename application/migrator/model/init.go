@@ -13,10 +13,10 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 )
 
-// DB 数据库链接单例
+// DB database connection singleton
 var DB *gorm.DB
 
-// Init 初始化 MySQL 链接
+// Init initializes the MySQL connection
 func Init() error {
 	var (
 		db         *gorm.DB
@@ -24,19 +24,19 @@ func Init() error {
 		confDBType string = conf.DatabaseConfig.Type
 	)
 
-	// 兼容已有配置中的 "sqlite3" 配置项
+	// stay compatible with the "sqlite3" setting in existing configs
 	if confDBType == "sqlite3" {
 		confDBType = "sqlite"
 	}
 	
-	// 兼容 "mariadb" 数据库
+	// stay compatible with the "mariadb" database
 	if confDBType == "mariadb" {
 		confDBType = "mysql"
 	}
 
 	switch confDBType {
 	case "UNSET", "sqlite":
-		// 未指定数据库或者明确指定为 sqlite 时，使用 SQLite 数据库
+		// use SQLite when no database is set or sqlite is set explicitly
 		db, err = gorm.Open("sqlite3", util.RelativePath(conf.DatabaseConfig.DBFile))
 	case "postgres":
 		db, err = gorm.Open(confDBType, fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable",
@@ -71,15 +71,15 @@ func Init() error {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// 处理表前缀
+	// handle table prefix
 	gorm.DefaultTableNameHandler = func(db *gorm.DB, defaultTableName string) string {
 		return conf.DatabaseConfig.TablePrefix + defaultTableName
 	}
 
-	// Debug模式下，输出所有 SQL 日志
+	// Debug mode, log all SQL
 	db.LogMode(true)
 
-	//设置连接池
+	//set up the connection pool
 	db.DB().SetMaxIdleConns(50)
 	if confDBType == "sqlite" || confDBType == "UNSET" {
 		db.DB().SetMaxOpenConns(1)
@@ -87,7 +87,7 @@ func Init() error {
 		db.DB().SetMaxOpenConns(100)
 	}
 
-	//超时
+	//timeout
 	db.DB().SetConnMaxLifetime(time.Second * 30)
 
 	DB = db

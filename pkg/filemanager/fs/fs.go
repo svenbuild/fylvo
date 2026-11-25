@@ -246,15 +246,15 @@ type (
 	// UploadCredential for uploading files in client side.
 	UploadCredential struct {
 		SessionID       string   `json:"session_id"`
-		ChunkSize       int64    `json:"chunk_size"` // 分块大小，0 为部分快
-		Expires         int64    `json:"expires"`    // 上传凭证过期时间， Unix 时间戳
+		ChunkSize       int64    `json:"chunk_size"` // part size, 0 means partial parts
+		Expires         int64    `json:"expires"`    // upload credential expiry, Unix timestamp
 		UploadURLs      []string `json:"upload_urls,omitempty"`
 		Credential      string   `json:"credential,omitempty"`
 		UploadID        string   `json:"uploadID,omitempty"`
 		Callback        string   `json:"callback,omitempty"`
-		Uri             string   `json:"uri,omitempty"` // 存储路径
+		Uri             string   `json:"uri,omitempty"` // storage path
 		AccessKey       string   `json:"ak,omitempty"`
-		KeyTime         string   `json:"keyTime,omitempty"` // COS用有效期
+		KeyTime         string   `json:"keyTime,omitempty"` // validity period for COS
 		CompleteURL     string   `json:"completeURL,omitempty"`
 		StoragePolicy   *ent.StoragePolicy
 		CallbackSecret  string                 `json:"callback_secret,omitempty"`
@@ -268,11 +268,11 @@ type (
 
 	// UploadSession stores the information of an upload session, used in server side.
 	UploadSession struct {
-		UID             int // 发起者
+		UID             int // initiator
 		Policy          *ent.StoragePolicy
 		FileID          int    // ID of the placeholder file
 		EntityID        int    // ID of the new entity
-		Callback        string // 回调 URL 地址
+		Callback        string // callback URL
 		CallbackSecret  string // Callback secret
 		UploadID        string // Multi-part upload ID
 		UploadURL       string
@@ -350,7 +350,7 @@ type (
 		CopyName string
 	}
 
-	// Option 发送请求的额外设置
+	// Option extra options for sending requests
 	Option interface {
 		Apply(any)
 	}

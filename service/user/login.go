@@ -26,14 +26,14 @@ import (
 // LoginParameterCtx define key fore UserLoginService
 type LoginParameterCtx struct{}
 
-// UserLoginService 管理用户登录的服务
+// UserLoginService service for managing user login
 type UserLoginService struct {
 	UserName string `form:"email" json:"email" binding:"required,email"`
 	Password string `form:"password" json:"password" binding:"required,min=4,max=128"`
 }
 
 type (
-	// UserResetService 密码重设服务
+	// UserResetService password reset service
 	UserResetService struct {
 		Password string `form:"password" json:"password" binding:"required,min=6,max=128"`
 		Secret   string `json:"secret" binding:"required"`
@@ -41,7 +41,7 @@ type (
 	UserResetParameterCtx struct{}
 )
 
-// Reset 重设密码
+// Reset resets the password
 func (service *UserResetService) Reset(c *gin.Context) (*User, error) {
 	dep := dependency.FromContext(c)
 	userClient := dep.UserClient()
@@ -86,7 +86,7 @@ func (service *UserResetService) Reset(c *gin.Context) (*User, error) {
 }
 
 type (
-	// UserResetEmailService 发送密码重设邮件服务
+	// UserResetEmailService service for sending the password reset email
 	UserResetEmailService struct {
 		UserName string `form:"email" json:"email" binding:"required,email"`
 		Language string `form:"language" json:"language"`
@@ -96,7 +96,7 @@ type (
 
 const userResetPrefix = "user_reset_"
 
-// Reset 发送密码重设邮件
+// Reset sends the password reset email
 // Fylvo: the mail is prepared and sent in the background, and the answer is the same whether
 // the account exists, is blocked or the mail fails, so that neither the answer nor its timing
 // tells whether an account exists. Failures are only logged.
@@ -161,7 +161,7 @@ func (service *UserResetEmailService) sendReset(c context.Context) error {
 	return nil
 }
 
-// Login 用户登录函数
+// Login user login function
 func (service *UserLoginService) Login(c *gin.Context) (*ent.User, string, error) {
 	dep := dependency.FromContext(c)
 	userClient := dep.UserClient()
@@ -179,7 +179,7 @@ func (service *UserLoginService) Login(c *gin.Context) (*ent.User, string, error
 		return inventory.CheckPassword(expectedUser, service.Password) == nil
 	})
 
-	// 一系列校验
+	// A series of checks
 	if limitErr != nil {
 		// Fylvo: the account is looked up only when the entry is wanted, see FailureWanted.
 		if activity.FailureWanted(c, activity.LoginLocked, activity.MethodPassword, service.UserName) {
@@ -287,7 +287,7 @@ type (
 	}
 )
 
-// Login 用户登录函数
+// Login user login function
 func (service *OtpValidationService) Verify2FA(c *gin.Context) (*ent.User, error) {
 	dep := dependency.FromContext(c)
 	kv := dep.KV()

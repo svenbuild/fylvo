@@ -80,7 +80,7 @@ func isSocialMediaBot(ua string) bool {
 	return false
 }
 
-// SharePreview 为社交媒体爬虫渲染OG预览页面
+// SharePreview renders the OG preview page for social media crawlers
 func SharePreview(dep dependency.Dep) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !isSocialMediaBot(c.GetHeader("User-Agent")) {

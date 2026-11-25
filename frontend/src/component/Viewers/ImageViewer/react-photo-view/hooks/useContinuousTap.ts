@@ -4,13 +4,13 @@ import useDebounceCallback from "./useDebounceCallback";
 export type TapFuncType<T> = (...args: T[]) => void;
 
 /**
- * 单击和双击事件处理
- * @param singleTap - 单击事件
- * @param doubleTap - 双击事件
+ * handles single and double click events
+ * @param singleTap - single click event
+ * @param doubleTap - double click event
  * @return invokeTap
  */
 export default function useContinuousTap<T>(singleTap: TapFuncType<T>, doubleTap: TapFuncType<T>): TapFuncType<T> {
-  // 当前连续点击次数
+  // current number of consecutive taps
   const continuousClick = useRef(0);
 
   const debounceTap = useDebounceCallback(
@@ -26,7 +26,7 @@ export default function useContinuousTap<T>(singleTap: TapFuncType<T>, doubleTap
   return function invokeTap(...args) {
     continuousClick.current += 1;
     debounceTap(...args);
-    // 双击
+    // double tap
     if (continuousClick.current >= 2) {
       debounceTap.cancel();
       continuousClick.current = 0;

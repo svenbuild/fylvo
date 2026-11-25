@@ -14,30 +14,30 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// WebDAVAccountService WebDAV 账号管理服务
+// WebDAVAccountService WebDAV account management service
 type WebDAVAccountService struct {
 	ID uint `uri:"id" binding:"required,min=1"`
 }
 
-// WebDAVAccountCreateService WebDAV 账号创建服务
+// WebDAVAccountCreateService WebDAV account creation service
 type WebDAVAccountCreateService struct {
 	Path string `json:"path" binding:"required,min=1,max=65535"`
 	Name string `json:"name" binding:"required,min=1,max=255"`
 }
 
-// WebDAVAccountUpdateReadonlyService WebDAV 修改只读性服务
+// WebDAVAccountUpdateReadonlyService WebDAV read-only update service
 type WebDAVAccountUpdateReadonlyService struct {
 	ID       uint `json:"id" binding:"required,min=1"`
 	Readonly bool `json:"readonly"`
 }
 
-// WebDAVMountCreateService WebDAV 挂载创建服务
+// WebDAVMountCreateService WebDAV mount creation service
 type WebDAVMountCreateService struct {
 	Path   string `json:"path" binding:"required,min=1,max=65535"`
 	Policy string `json:"policy" binding:"required,min=1"`
 }
 
-//// Unmount 取消目录挂载
+//// Unmount unmounts a folder
 //func (service *WebDAVListService) Unmount(c *gin.Context, user *model.User) serializer.Response {
 //	folderID, _ := c.Get("object_id")
 //	folder, err := model.GetFoldersByIDs([]uint{folderID.(uint)}, user.ID)
@@ -60,7 +60,7 @@ type (
 	ListDavAccountParamCtx struct{}
 )
 
-// Accounts 列出WebDAV账号
+// Accounts lists WebDAV accounts
 func (service *ListDavAccountsService) List(c *gin.Context) (*ListDavAccountResponse, error) {
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
@@ -95,7 +95,7 @@ type (
 	CreateDavAccountParamCtx struct{}
 )
 
-// Create 创建WebDAV账号
+// Create creates a WebDAV account
 func (service *CreateDavAccountService) Create(c *gin.Context) (*DavAccount, error) {
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)

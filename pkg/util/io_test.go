@@ -17,7 +17,7 @@ func TestCreatNestedFile(t *testing.T) {
 	asserts := assert.New(t)
 	dir := filepath.Join(t.TempDir(), "test")
 
-	// 父目录不存在
+	// parent folder does not exist
 	{
 		file, err := CreatNestedFile(filepath.Join(dir, "nest.txt"))
 		asserts.NoError(err)
@@ -25,7 +25,7 @@ func TestCreatNestedFile(t *testing.T) {
 		asserts.FileExists(filepath.Join(dir, "nest.txt"))
 	}
 
-	// 父目录存在
+	// parent folder exists
 	{
 		file, err := CreatNestedFile(filepath.Join(dir, "direct.txt"))
 		asserts.NoError(err)

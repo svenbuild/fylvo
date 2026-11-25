@@ -28,7 +28,7 @@ export function useUpload(uploader: Base) {
     });
   }, []);
 
-  // 获取上传速度
+  // Get the upload speed
   const [speed, speedAvg] = React.useMemo(() => {
     if (progress == undefined || progress.total == null || progress.total.loaded == null) return [0, 0];
     const duration = (Date.now() - (uploader.lastTime || 0)) / 1000;

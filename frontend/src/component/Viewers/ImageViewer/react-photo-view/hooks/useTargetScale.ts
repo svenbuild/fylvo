@@ -4,7 +4,7 @@ import useIsomorphicLayoutEffect from "./useIsomorphicLayoutEffect";
 import useDebounceCallback from "./useDebounceCallback";
 
 /**
- * 目标缩放延迟处理
+ * delayed handling of the target scale
  */
 export default function useTargetScale(
   realWidth: number,
@@ -36,11 +36,11 @@ export default function useTargetScale(
     moveScale(realScale);
   }, [realScale]);
 
-  // 运动开始
+  // motion start
   if (lead) {
     return [realWidth * scale, realHeight * scale, realScale / scale] as const;
   }
 
-  // 运动结束
+  // motion end
   return [realWidth * realScale, realHeight * realScale, 1] as const;
 }

@@ -2,35 +2,35 @@ import type React from "react";
 import { FileResponse } from "../../../../api/explorer.ts";
 
 /**
- * 资源数据类型
+ * Resource data type
  */
 export interface DataType {
   /**
-   * 唯一标识
+   * Unique key
    */
   key: number | string;
   /**
-   * 资源地址
+   * Resource URL
    */
   src?: string;
   /**
-   * 自定义渲染，优先级比 src 低
+   * Custom render, lower priority than src
    */
   render?: (props: PhotoRenderParams) => React.ReactNode;
   /**
-   * 自定义覆盖节点
+   * Custom overlay node
    */
   overlay?: React.ReactNode;
   /**
-   * 指定渲染节点宽度
+   * Width of the rendered node
    */
   width?: number;
   /**
-   * 指定渲染节点高度
+   * Height of the rendered node
    */
   height?: number;
   /**
-   * 触发 ref
+   * Trigger ref
    */
   originRef?: React.MutableRefObject<HTMLElement | null>;
 
@@ -43,51 +43,51 @@ export interface DataType {
 
 export interface PhotoProviderBase {
   /**
-   * 是否循环预览，达到该数量则启用
+   * Whether to loop the preview, enabled once this count is reached
    * @defaultValue 3
    */
   loop?: boolean | number;
   /**
-   * 动画速度
+   * Animation speed
    * @defaultValue 400
    */
   speed?: (type: ActiveAnimationType) => number;
   /**
-   * 动画函数
+   * Animation easing function
    * @defaultValue 'cubic-bezier(0.25, 0.8, 0.25, 1)'
    */
   easing?: (type: ActiveAnimationType) => string;
   /**
-   * 图片点击是否可关闭
+   * Whether clicking the image closes the viewer
    */
   photoClosable?: boolean;
   /**
-   * 背景点击是否可关闭
+   * Whether clicking the background closes the viewer
    * @defaultValue true
    */
   maskClosable?: boolean;
   /**
-   * 默认背景透明度
-   * 设置 null 背景不响应下拉变化
+   * Default background opacity
+   * Set to null so the background ignores pull-down changes
    * @defaultValue 1
    */
   maskOpacity?: number | null;
   /**
-   * 下拉是否可关闭
+   * Whether pulling down closes the viewer
    * @defaultValue true
    */
   pullClosable?: boolean;
   /**
-   * 导航条 visible
+   * Navigation bar visible
    * @defaultValue true
    */
   bannerVisible?: boolean;
   /**
-   * 自定义渲染覆盖物
+   * Custom overlay render
    */
   overlayRender?: (overlayProps: OverlayRenderProps) => React.ReactNode;
   /**
-   * 自定义渲染工具栏
+   * Custom toolbar render
    */
   toolbarRender?: (overlayProps: OverlayRenderProps) => React.ReactNode;
   className?: string;
@@ -95,11 +95,11 @@ export interface PhotoProviderBase {
   photoWrapClassName?: string;
   photoClassName?: string;
   /**
-   * 自定义 loading
+   * Custom loading
    */
   loadingElement?: JSX.Element;
   /**
-   * 自定义加载失败渲染
+   * Custom render for load failure
    */
   brokenElement?: JSX.Element | ((photoProps: BrokenElementParams) => JSX.Element);
   /**
@@ -110,7 +110,7 @@ export interface PhotoProviderBase {
 
 export type PhotoRenderParams = {
   /**
-   * 自定义渲染 DOM 属性
+   * Custom render DOM attributes
    */
   attrs: Partial<React.HTMLAttributes<HTMLElement>>;
   scale: number;
@@ -118,7 +118,7 @@ export type PhotoRenderParams = {
 };
 
 /**
- * brokenElement 函数参数
+ * brokenElement function parameters
  */
 export interface BrokenElementParams {
   src: string;
@@ -126,59 +126,59 @@ export interface BrokenElementParams {
 
 export interface OverlayRenderProps {
   /**
-   * 图片列表
+   * Image list
    */
   images: DataType[];
   /**
-   * 当前索引
+   * Current index
    */
   index: number;
   /**
-   * 索引改变回调
+   * Index change callback
    */
   onIndexChange: (index: number) => void;
   /**
-   * 是否可见
+   * Whether visible
    */
   visible: boolean;
   /**
-   * 关闭事件回调
+   * Close callback
    */
   onClose: (evt?: React.MouseEvent | React.TouchEvent) => void;
   /**
-   * 覆盖物是否可见
+   * Whether the overlay is visible
    */
   overlayVisible: boolean;
   /**
-   * 自定义覆盖节点
+   * Custom overlay node
    */
   overlay?: React.ReactNode;
   /**
-   * 当前旋转角度
+   * Current rotation angle
    */
   rotate: number;
   /**
-   * 旋转事件回调
+   * Rotation callback
    */
   onRotate: (rotate: number) => void;
   /**
-   * 当前缩放
+   * Current scale
    */
   scale: number;
   /**
-   * 缩放事件回调
+   * Scale callback
    */
   onScale: (scale: number) => void;
 }
 
 export interface ExposedProperties {
-  // 缩放
+  // Scale
   scale?: number;
-  // 旋转
+  // Rotation
   rotate?: number;
-  // 缩放回调
+  // Scale callback
   onScale?: (scale: number) => void;
-  // 旋转回调
+  // Rotation callback
   onRotate?: (rotate: number) => void;
 }
 
@@ -189,30 +189,30 @@ export type ReachFunction = (clientX: number, clientY: number) => void;
 export type PhotoTapFunction = (clientX: number, clientY: number) => void;
 
 /**
- * 边缘超出状态
+ * Edge overflow state
  */
 export type CloseEdgeType =
-  | 1 // 小于屏幕宽度
-  | 2 // 抵触左边/上边
-  | 3 // 抵触右边/下边
-  | undefined; // 正常滑动
+  | 1 // Smaller than the screen width
+  | 2 // Touching the left/top edge
+  | 3 // Touching the right/bottom edge
+  | undefined; // Normal sliding
 
 /**
- * 边缘触发状态
+ * Edge trigger state
  */
 export type ReachType =
-  | "x" // x 轴
-  | "y" // y 轴
-  | undefined; // 未触发
+  | "x" // x axis
+  | "y" // y axis
+  | undefined; // Not triggered
 
 /**
- * 初始响应状态
+ * Initial response state
  */
 export type TouchStartType =
-  | 0 // 未触发
-  | 1 // X 轴优先
-  | 2 // Y 轴往上 push
-  | 3; // Y 轴往下 pull
+  | 0 // Not triggered
+  | 1 // X axis first
+  | 2 // Y axis up, push
+  | 3; // Y axis down, pull
 
 export type OriginRectType = {
   // top
@@ -228,31 +228,31 @@ export type OriginRectType = {
 };
 
 /**
- * 动画状态
+ * Animation state
  */
 export type EasingMode =
-  // 未初始化
+  // Not initialized
   | 0
-  // 进入：开始
+  // Enter: start
   | 1
-  // 进入：动画开始
+  // Enter: animation start
   | 2
-  // 进入：动画第二帧
+  // Enter: second animation frame
   | 3
-  // 正常
+  // Normal
   | 4
-  // 关闭
+  // Closed
   | 5;
 
 /**
- * 进行中的动画
+ * Running animation
  */
 export type ActiveAnimationType =
-  // 未初始化
+  // Not initialized
   | 0
-  // 进入
+  // Enter
   | 1
-  // 离开
+  // Leave
   | 2
-  // 切换
+  // Switch
   | 3;

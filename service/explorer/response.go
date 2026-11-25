@@ -150,12 +150,12 @@ func BuildTaskResponse(task queue.Task, node *ent.Node, hasher hashid.Encoder) *
 type UploadSessionResponse struct {
 	SessionID       string                 `json:"session_id"`
 	UploadID        string                 `json:"upload_id"`
-	ChunkSize       int64                  `json:"chunk_size"` // 分块大小，0 为部分快
-	Expires         int64                  `json:"expires"`    // 上传凭证过期时间， Unix 时间戳
+	ChunkSize       int64                  `json:"chunk_size"` // chunk size, 0 means no chunking
+	Expires         int64                  `json:"expires"`    // upload credential expiry time, Unix timestamp
 	UploadURLs      []string               `json:"upload_urls,omitempty"`
 	Credential      string                 `json:"credential,omitempty"`
 	AccessKey       string                 `json:"ak,omitempty"`
-	KeyTime         string                 `json:"keyTime,omitempty"` // COS用有效期
+	KeyTime         string                 `json:"keyTime,omitempty"` // validity period used by COS
 	CompleteURL     string                 `json:"completeURL,omitempty"`
 	StoragePolicy   *StoragePolicy         `json:"storage_policy,omitempty"`
 	Uri             string                 `json:"uri"`

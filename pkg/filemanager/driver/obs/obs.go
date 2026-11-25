@@ -43,7 +43,7 @@ const (
 	mediaInfoTTL       = time.Duration(10) * time.Minute
 	imageInfoProcessor = "image/info"
 
-	// MultiPartUploadThreshold 服务端使用分片上传的阈值
+	// MultiPartUploadThreshold is the threshold above which the server uses multipart upload
 	MultiPartUploadThreshold int64 = 5 << 30 // 5GB
 )
 
@@ -139,18 +139,18 @@ func (d *Driver) List(ctx context.Context, base string, onProgress driver.ListPr
 		}
 		objects = append(objects, res.Contents...)
 		commons = append(commons, res.CommonPrefixes...)
-		// 如果本次未列取完，则继续使用marker获取结果
+		// if listing is not finished, keep using the marker to get more results
 		marker = res.NextMarker
-		// marker 为空时结果列取完毕，跳出
+		// an empty marker means listing is finished, break out
 		if marker == "" {
 			break
 		}
 	}
 
-	// 处理列取结果
+	// handle the listing result
 	res := make([]fs.PhysicalObject, 0, len(objects)+len(commons))
 
-	// 处理目录
+	// handle directories
 	for _, object := range commons {
 		rel, err := filepath.Rel(opt.Prefix, object)
 		if err != nil {
@@ -167,7 +167,7 @@ func (d *Driver) List(ctx context.Context, base string, onProgress driver.ListPr
 	}
 	onProgress(len(commons))
 
-	// 处理文件
+	// handle files
 	for _, object := range objects {
 		if strings.HasSuffix(object.Key, "/") && object.Size == 0 {
 			continue
@@ -194,7 +194,7 @@ func (d *Driver) List(ctx context.Context, base string, onProgress driver.ListPr
 func (d *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	defer file.Close()
 
-	// 是否允许覆盖
+	// whether overwriting is allowed
 	overwrite := file.Mode&fs.ModeOverwrite == fs.ModeOverwrite
 	if !overwrite {
 		// Check for duplicated file
@@ -211,7 +211,7 @@ func (d *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 		d.mime.TypeByName(file.Props.Uri.Name())
 	}
 
-	// 小文件直接上传
+	// upload small files directly
 	if file.Props.Size < MultiPartUploadThreshold {
 		_, err := d.obs.PutObject(&obs.PutObjectInput{
 			PutObjectBasicInput: obs.PutObjectBasicInput{
@@ -229,7 +229,7 @@ func (d *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 		return err
 	}
 
-	// 超过阈值时使用分片上传
+	// use multipart upload above the threshold
 	imur, err := d.obs.InitiateMultipartUpload(&obs.InitiateMultipartUploadInput{
 		ObjectOperationInput: obs.ObjectOperationInput{
 			Bucket: d.policy.BucketName,
@@ -297,7 +297,7 @@ func (d *Driver) Delete(ctx context.Context, files ...string) ([]string, error) 
 	var lastError error
 	for index, group := range groups {
 		d.l.Debug("Process delete group #%d: %v", index, group)
-		// 删除文件
+		// delete file
 		delRes, err := d.obs.DeleteObjects(&obs.DeleteObjectsInput{
 			Bucket: d.policy.BucketName,
 			Quiet:  true,
@@ -377,10 +377,10 @@ func (d *Driver) Source(ctx context.Context, e fs.Entity, args *driver.GetSource
 	}
 
 	if args.Speed > 0 {
-		// Byte 转换为 bit
+		// convert bytes to bits
 		args.Speed *= 8
 
-		// OSS对速度值有范围限制
+		// OSS limits the speed value to a range
 		if args.Speed < 819200 {
 			args.Speed = 819200
 		}
@@ -411,12 +411,12 @@ func (d *Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, fil
 		return nil, fs.ErrFileExisted
 	}
 
-	// 生成回调地址
+	// generate the callback URL
 	siteURL := d.settings.SiteURL(setting.UseFirstSiteUrl(ctx))
-	// 在从机端创建上传会话
+	// create the upload session on the slave node
 	uploadSession.ChunkSize = d.chunkSize
 	uploadSession.Callback = routes.MasterSlaveCallbackUrl(siteURL, types.PolicyTypeObs, uploadSession.Props.UploadSessionID, uploadSession.CallbackSecret).String()
-	// 回调策略
+	// callback policy
 	callbackPolicy := CallbackPolicy{
 		CallbackURL:      uploadSession.Callback,
 		CallbackBody:     `{"name":${key},"source_name":${fname},"size":${size}}`,
@@ -448,7 +448,7 @@ func (d *Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, fil
 	}
 	uploadSession.UploadID = imur.UploadId
 
-	// 为每个分片签名上传 URL
+	// sign an upload URL for each part
 	chunks := chunk.NewChunkGroup(file, d.chunkSize, &backoff.ConstantBackoff{}, false, d.l, "")
 	urls := make([]string, chunks.Num())
 	ttl := int64(time.Until(uploadSession.Props.ExpireAt).Seconds())
@@ -480,7 +480,7 @@ func (d *Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, fil
 		}
 	}
 
-	// 签名完成分片上传的URL
+	// sign the URL that completes the multipart upload
 	completeURL, err := d.obs.CreateSignedUrl(&obs.CreateSignedUrlInput{
 		Method: obs.HttpMethodPost,
 		Bucket: d.policy.BucketName,
@@ -540,7 +540,7 @@ func (d *Driver) Capabilities() *driver.Capabilities {
 	}
 }
 
-// CORS 创建跨域策略
+// CORS creates the cross-origin policy
 func (d *Driver) CORS() error {
 	_, err := d.obs.SetBucketCors(&obs.SetBucketCorsInput{
 		Bucket: d.policy.BucketName,
@@ -586,7 +586,7 @@ func (handler *Driver) signSourceURL(input *obs.CreateSignedUrlInput) (string, e
 		return "", err
 	}
 
-	// 公有空间替换掉Key及不支持的头
+	// for public buckets, replace the key and unsupported headers
 	if !handler.policy.IsPrivate {
 		query := finalURL.Query()
 		query.Del("AccessKeyId")

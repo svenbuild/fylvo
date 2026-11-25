@@ -12,12 +12,12 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
 )
 
-// MemoStore 内存存储驱动
+// MemoStore is the in-memory storage driver
 type MemoStore struct {
 	Store *sync.Map
 }
 
-// item 存储的对象
+// item is the stored object
 type itemWithTTL struct {
 	Expires int64
 	Value   interface{}
@@ -36,7 +36,7 @@ func newItem(value interface{}, expires int) itemWithTTL {
 	}
 }
 
-// getValue 从itemWithTTL中取值
+// getValue reads the value from itemWithTTL
 func getValue(item any, ok bool) (any, bool) {
 	if !ok {
 		return nil, ok
@@ -55,7 +55,7 @@ func getValue(item any, ok bool) (any, bool) {
 
 }
 
-// GarbageCollect 回收已过期的缓存
+// GarbageCollect removes expired cache entries
 func (store *MemoStore) GarbageCollect(l logging.Logger) {
 	store.Store.Range(func(key, value any) bool {
 		if item, ok := value.(itemWithTTL); ok {
@@ -68,7 +68,7 @@ func (store *MemoStore) GarbageCollect(l logging.Logger) {
 	})
 }
 
-// NewMemoStore 新建内存存储
+// NewMemoStore creates a new in-memory store
 func NewMemoStore(persistFile string, l logging.Logger) *MemoStore {
 	store := &MemoStore{
 		Store: &sync.Map{},
@@ -83,18 +83,18 @@ func NewMemoStore(persistFile string, l logging.Logger) *MemoStore {
 	return store
 }
 
-// Set 存储值
+// Set stores a value
 func (store *MemoStore) Set(key string, value any, ttl int) error {
 	store.Store.Store(key, newItem(value, ttl))
 	return nil
 }
 
-// Get 取值
+// Get reads a value
 func (store *MemoStore) Get(key string) (any, bool) {
 	return getValue(store.Store.Load(key))
 }
 
-// Gets 批量取值
+// Gets reads multiple values
 func (store *MemoStore) Gets(keys []string, prefix string) (map[string]any, []string) {
 	var res = make(map[string]interface{})
 	var notFound = make([]string, 0, len(keys))
@@ -110,7 +110,7 @@ func (store *MemoStore) Gets(keys []string, prefix string) (map[string]any, []st
 	return res, notFound
 }
 
-// Sets 批量设置值
+// Sets stores multiple values
 func (store *MemoStore) Sets(values map[string]any, prefix string) error {
 	for key, value := range values {
 		store.Store.Store(prefix+key, newItem(value, 0))
@@ -118,7 +118,7 @@ func (store *MemoStore) Sets(values map[string]any, prefix string) error {
 	return nil
 }
 
-// Delete 批量删除值
+// Delete removes multiple values
 func (store *MemoStore) Delete(prefix string, keys ...string) error {
 	for _, key := range keys {
 		store.Store.Delete(prefix + key)

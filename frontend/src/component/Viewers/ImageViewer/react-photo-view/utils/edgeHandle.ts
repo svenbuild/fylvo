@@ -1,7 +1,7 @@
 import type { CloseEdgeType, ReachType, TouchStartType } from "../types";
 
 /**
- * 获取接触边缘类型
+ * get the type of touched edge
  */
 export const getReachType = (
   initialTouchState: TouchStartType,
@@ -19,7 +19,7 @@ export const getReachType = (
 };
 
 /**
- * 计算接触边缘位置
+ * calculate the touched edge position
  * @param position - x/y
  * @param scale
  * @param size - width/height
@@ -28,7 +28,7 @@ export const getReachType = (
  */
 export const computePositionEdge = (position: number, scale: number, size: number, innerSize: number) => {
   const currentWidth = size * scale;
-  // 图片超出的宽度
+  // width by which the image overflows
   const outOffset = (currentWidth - innerSize) / 2;
   let closedEdge: CloseEdgeType;
 

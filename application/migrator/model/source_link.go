@@ -9,8 +9,8 @@ type SourceLink struct {
 	gorm.Model
 	FileID    uint   // corresponding file ID
 	Name      string // name of the file while creating the source link, for annotation
-	Downloads int    // 下载数
+	Downloads int    // Download count
 
-	// 关联模型
+	// Related models
 	File File `gorm:"save_associations:false:false"`
 }

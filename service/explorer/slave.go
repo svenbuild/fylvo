@@ -19,20 +19,20 @@ import (
 	"github.com/samber/lo"
 )
 
-// SlaveDownloadService 从机文件下載服务
+// SlaveDownloadService slave file download service
 type SlaveDownloadService struct {
 	PathEncoded string `uri:"path" binding:"required"`
 	Name        string `uri:"name" binding:"required"`
 	Speed       int    `uri:"speed" binding:"min=0"`
 }
 
-// SlaveFileService 从机单文件文件相关服务
+// SlaveFileService slave single file service
 type SlaveFileService struct {
 	PathEncoded string `uri:"path" binding:"required"`
 	Ext         string `uri:"ext"`
 }
 
-// SlaveFilesService 从机多文件相关服务
+// SlaveFilesService slave multi-file service
 type SlaveFilesService struct {
 	Files []string `json:"files" binding:"required,gt=0"`
 }
@@ -77,14 +77,14 @@ func (s *EntityDownloadService) SlaveServe(c *gin.Context) error {
 
 type (
 	SlaveCreateUploadSessionParamCtx struct{}
-	// SlaveCreateUploadSessionService 从机上传会话服务
+	// SlaveCreateUploadSessionService slave upload session service
 	SlaveCreateUploadSessionService struct {
 		Session   fs.UploadSession `json:"session" binding:"required"`
 		Overwrite bool             `json:"overwrite"`
 	}
 )
 
-// Create 从机创建上传会话
+// Create creates an upload session on the slave
 func (service *SlaveCreateUploadSessionService) Create(c *gin.Context) error {
 	mode := fs.ModeNone
 	if service.Overwrite {

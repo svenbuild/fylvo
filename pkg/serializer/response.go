@@ -7,7 +7,7 @@ import (
 	"encoding/gob"
 )
 
-// Response 基础序列化器
+// Response base serializer
 type Response struct {
 	Code            int         `json:"code"`
 	Data            interface{} `json:"data,omitempty"`
@@ -17,7 +17,7 @@ type Response struct {
 	CorrelationID   string      `json:"correlation_id,omitempty"`
 }
 
-// NewResponseWithGobData 返回Data字段使用gob编码的Response
+// NewResponseWithGobData returns, with the Data field gob encoded, a Response
 func NewResponseWithGobData(c context.Context, data interface{}) Response {
 	var w bytes.Buffer
 	encoder := gob.NewEncoder(&w)
@@ -28,7 +28,7 @@ func NewResponseWithGobData(c context.Context, data interface{}) Response {
 	return Response{Data: w.Bytes()}
 }
 
-// GobDecode 将 Response 正文解码至目标指针
+// GobDecode decodes the Response body into the target pointer
 func (r *Response) GobDecode(target interface{}) {
 	src := r.Data.(string)
 	raw := make([]byte, len(src)*len(src)/base64.StdEncoding.DecodedLen(len(src)))

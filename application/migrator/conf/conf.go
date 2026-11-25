@@ -6,7 +6,7 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// database 数据库
+// database is the database config
 type database struct {
 	Type        string
 	User        string
@@ -20,7 +20,7 @@ type database struct {
 	UnixSocket  bool
 }
 
-// system 系统通用配置
+// system is the general system config
 type system struct {
 	Mode          string `validate:"eq=master|eq=slave"`
 	Listen        string `validate:"required"`
@@ -42,14 +42,14 @@ type unix struct {
 	Perm   uint32
 }
 
-// slave 作为slave存储端配置
+// slave is the config for running as a slave storage node
 type slave struct {
 	Secret          string `validate:"omitempty,gte=64"`
 	CallbackTimeout int    `validate:"omitempty,gte=1"`
 	SignatureTTL    int    `validate:"omitempty,gte=1"`
 }
 
-// redis 配置
+// redis is the redis config
 type redis struct {
 	Network  string
 	Server   string
@@ -58,7 +58,7 @@ type redis struct {
 	DB       string
 }
 
-// 跨域配置
+// CORS config
 type cors struct {
 	AllowOrigins     []string
 	AllowMethods     []string
@@ -71,7 +71,7 @@ type cors struct {
 
 var cfg *ini.File
 
-// Init 初始化配置文件
+// Init initializes the config file
 func Init(l logging.Logger, path string) error {
 	var err error
 
@@ -98,7 +98,7 @@ func Init(l logging.Logger, path string) error {
 		}
 	}
 
-	// 映射数据库配置覆盖
+	// map the database config override
 	for _, key := range cfg.Section("OptionOverwrite").Keys() {
 		OptionOverwrite[key.Name()] = key.Value()
 	}
@@ -106,14 +106,14 @@ func Init(l logging.Logger, path string) error {
 	return nil
 }
 
-// mapSection 将配置文件的 Section 映射到结构体上
+// mapSection maps a config file section onto a struct
 func mapSection(section string, confStruct interface{}) error {
 	err := cfg.Section(section).MapTo(confStruct)
 	if err != nil {
 		return err
 	}
 
-	// 验证合法性
+	// validate
 	validate := validator.New()
 	err = validate.Struct(confStruct)
 	if err != nil {

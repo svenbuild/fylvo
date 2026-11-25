@@ -1,5 +1,5 @@
 /**
- * UserLoginService 管理用户登录的服务
+ * UserLoginService is the service that manages user login
  */
 export interface UserLoginService {
   email: string;
@@ -8,7 +8,7 @@ export interface UserLoginService {
 }
 
 /**
- * User 用户序列化器
+ * User is the user serializer
  */
 export interface User {
   id: string;

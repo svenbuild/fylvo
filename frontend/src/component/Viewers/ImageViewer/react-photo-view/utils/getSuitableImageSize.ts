@@ -2,7 +2,7 @@ import { longModeRatio } from "../variables";
 import getRotateSize from "./getRotateSize";
 
 /**
- * 获取图片合适的大小
+ * Get a suitable size for the image
  */
 export default function getSuitableImageSize(
   naturalWidth: number,
@@ -16,7 +16,7 @@ export default function getSuitableImageSize(
   let width = currentWidth;
   let height = currentHeight;
 
-  // 自适应宽高
+  // Fit width and height
   const autoWidth = (naturalWidth / naturalHeight) * currentHeight;
   const autoHeight = (naturalHeight / naturalWidth) * currentWidth;
 
@@ -30,7 +30,7 @@ export default function getSuitableImageSize(
   } else if (naturalWidth / naturalHeight > currentWidth / currentHeight) {
     height = autoHeight;
   }
-  // 长图模式
+  // Long image mode
   else if (naturalHeight / naturalWidth >= longModeRatio && !isVertical) {
     height = autoHeight;
     y = (height - currentHeight) / 2;

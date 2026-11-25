@@ -27,7 +27,7 @@ const (
 	CallbackFailedStatusCode = http.StatusUnauthorized
 )
 
-// SignRequired 验证请求签名
+// SignRequired verifies the request signature
 func SignRequired(authInstance auth.Auth) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var err error
@@ -52,7 +52,7 @@ func SignRequired(authInstance auth.Auth) gin.HandlerFunc {
 	}
 }
 
-// CurrentUser 获取登录用户
+// CurrentUser gets the logged in user
 func CurrentUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		dep := dependency.FromContext(c)
@@ -103,7 +103,7 @@ func SetUserCtxByUser(c *gin.Context, user *ent.User) {
 	util.WithValue(c, inventory.UserCtx{}, user)
 }
 
-// LoginRequired 需要登录
+// LoginRequired login required
 func LoginRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if u := inventory.UserFromContext(c); u != nil && !inventory.IsAnonymousUser(u) {
@@ -116,12 +116,12 @@ func LoginRequired() gin.HandlerFunc {
 	}
 }
 
-// WebDAVAuth 验证WebDAV登录及权限
+// WebDAVAuth verifies WebDAV login and permissions
 func WebDAVAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		username, password, ok := c.Request.BasicAuth()
 		if !ok {
-			// OPTIONS 请求不需要鉴权
+			// OPTIONS requests need no authentication
 			if c.Request.Method == http.MethodOptions {
 				c.Next()
 				return
@@ -178,7 +178,7 @@ func WebDAVAuth() gin.HandlerFunc {
 			return
 		}
 
-		// 用户组已启用WebDAV？
+		// Is WebDAV enabled for the user group?
 		group, err := expectedUser.Edges.GroupOrErr()
 		if err != nil {
 			l.Debug("WebDAVAuth: user group not found: %s", err)
@@ -194,7 +194,7 @@ func WebDAVAuth() gin.HandlerFunc {
 			return
 		}
 
-		// 检查是否只读
+		// Check whether it is read-only
 		if expectedUser.Edges.DavAccounts[0].Options.Enabled(int(types.DavAccountReadOnly)) {
 			switch c.Request.Method {
 			case http.MethodDelete, http.MethodPut, "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK":
@@ -233,10 +233,10 @@ func setActivityVia(c *gin.Context, via string) {
 	c.Request = c.Request.WithContext(activity.WithVia(c.Request.Context(), via))
 }
 
-// 对上传会话进行验证
+// Verify the upload session
 func UseUploadSession(policyType types.PolicyType) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 验证key并查找用户
+		// Verify the key and look up the user
 		err := uploadCallbackCheck(c, policyType)
 		if err != nil {
 			c.JSON(CallbackFailedStatusCode, serializer.Err(c, err))
@@ -248,9 +248,9 @@ func UseUploadSession(policyType types.PolicyType) gin.HandlerFunc {
 	}
 }
 
-// uploadCallbackCheck 对上传回调请求的 callback key 进行验证，如果成功则返回上传用户
+// uploadCallbackCheck verifies the callback key of an upload callback request and returns the uploading user on success
 func uploadCallbackCheck(c *gin.Context, policyType types.PolicyType) error {
-	// 验证 Callback Key
+	// Verify Callback Key
 	sessionID := c.Param("sessionID")
 	if sessionID == "" {
 		return serializer.NewError(serializer.CodeParamErr, "Session ID cannot be empty", nil)
@@ -282,10 +282,10 @@ func uploadCallbackCheck(c *gin.Context, policyType types.PolicyType) error {
 	return nil
 }
 
-// RemoteCallbackAuth 远程回调签名验证
+// RemoteCallbackAuth remote callback signature verification
 func RemoteCallbackAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 验证签名
+		// Verify the signature
 		session := c.MustGet(manager.UploadSessionCtx).(*fs.UploadSession)
 		if session.Policy.Edges.Node == nil {
 			c.JSON(CallbackFailedStatusCode, serializer.ErrWithDetails(c, serializer.CodeCredentialInvalid, "Node not found", nil))
@@ -305,7 +305,7 @@ func RemoteCallbackAuth() gin.HandlerFunc {
 	}
 }
 
-// OSSCallbackAuth 阿里云OSS回调签名验证
+// OSSCallbackAuth Aliyun OSS callback signature verification
 func OSSCallbackAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		dep := dependency.FromContext(c)
@@ -324,7 +324,7 @@ func OSSCallbackAuth() gin.HandlerFunc {
 	}
 }
 
-// IsAdmin 必须为管理员用户组
+// IsAdmin must be in the admin user group
 func IsAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := inventory.UserFromContext(c)

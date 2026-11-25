@@ -34,7 +34,7 @@ export interface CustomNavItemsProps {
 
 const DND_TYPE = "custom-nav-item-row";
 
-// 拖拽item类型
+// Drag item type
 type DragItem = { index: number };
 
 interface DraggableNavItemRowProps {
@@ -100,7 +100,7 @@ const DraggableNavItemRow = React.memo(
           isDragging: monitor.isDragging(),
         }),
       });
-      // 兼容ref为function和对象
+      // Support refs that are a function or an object
       const setRowRef = (node: HTMLTableRowElement | null) => {
         if (typeof ref === "function") {
           ref(node);
@@ -257,7 +257,7 @@ const CustomNavItems = ({ value, onChange }: CustomNavItemsProps) => {
     [inputCache, handleFieldChange],
   );
 
-  // 拖拽排序逻辑
+  // Drag sort logic
   const moveRow = useCallback(
     (from: number, to: number) => {
       if (from === to) return;

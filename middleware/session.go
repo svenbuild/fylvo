@@ -13,12 +13,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Store session存储
+// Store is the session store
 var Store sessions.Store
 
 const SessionName = "cloudreve-session"
 
-// Session 初始化session
+// Session initializes the session
 func Session(dep dependency.Dep) gin.HandlerFunc {
 	Store = sessionstore.NewStore(dep.KV(), []byte(dep.ConfigProvider().System().SessionSecret))
 	sameSiteMode := http.SameSiteDefaultMode
@@ -45,7 +45,7 @@ func Session(dep dependency.Dep) gin.HandlerFunc {
 	return sessions.Sessions(SessionName, Store)
 }
 
-// CSRFInit 初始化CSRF标记
+// CSRFInit initializes the CSRF token
 func CSRFInit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		util.SetSession(c, map[string]interface{}{"CSRF": true})
@@ -53,7 +53,7 @@ func CSRFInit() gin.HandlerFunc {
 	}
 }
 
-// CSRFCheck 检查CSRF标记
+// CSRFCheck checks the CSRF token
 func CSRFCheck() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if check, ok := util.GetSession(c, "CSRF").(bool); ok && check {

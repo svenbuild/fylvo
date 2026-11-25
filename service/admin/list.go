@@ -4,7 +4,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 )
 
-// AdminListService 仪表盘列条目服务
+// AdminListService dashboard list entries service
 type (
 	AdminListService struct {
 		Page           int               `json:"page" binding:"min=1"`
@@ -17,7 +17,7 @@ type (
 	AdminListServiceParamsCtx struct{}
 )
 
-// GroupList 获取用户组列表
+// GroupList gets the group list
 func (service *NoParamService) GroupList() serializer.Response {
 	//var res []model.Group
 	//model.DB.Model(&model.Group{}).Find(&res)

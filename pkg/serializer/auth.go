@@ -2,14 +2,14 @@ package serializer
 
 import "encoding/json"
 
-// RequestRawSign 待签名的HTTP请求
+// RequestRawSign is the HTTP request to be signed
 type RequestRawSign struct {
 	Path   string
 	Header string
 	Body   string
 }
 
-// NewRequestSignString 返回JSON格式的待签名字符串
+// NewRequestSignString returns the JSON string to be signed
 func NewRequestSignString(path, header, body string) string {
 	req := RequestRawSign{
 		Path:   path,

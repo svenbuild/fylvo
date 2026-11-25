@@ -23,7 +23,7 @@ type (
 	}
 )
 
-// Get 获取主机Oauth策略的AccessToken
+// Get gets the AccessToken of the master OAuth policy
 func (s *OauthCredentialService) Get(c *gin.Context) (*credmanager.CredentialResponse, error) {
 	dep := dependency.FromContext(c)
 	credManager := dep.CredManager()

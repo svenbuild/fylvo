@@ -25,12 +25,12 @@ const (
 	AccessTokenExpiryMargin = 600 // 10 minutes
 )
 
-// Error 实现error接口
+// Error implements the error interface
 func (err OAuthError) Error() string {
 	return err.ErrorDescription
 }
 
-// OAuthURL 获取OAuth认证页面URL
+// OAuthURL gets the OAuth authorization page URL
 func (client *client) OAuthURL(ctx context.Context, scope []string) string {
 	query := url.Values{
 		"client_id":     {client.policy.BucketName},
@@ -71,7 +71,7 @@ func getOAuthEndpoint(apiEndpoint string) *oauthEndpoint {
 	}
 }
 
-// Credential 获取token时返回的凭证
+// Credential credential returned when obtaining a token
 type Credential struct {
 	ExpiresIn       int64  `json:"expires_in"`
 	AccessToken     string `json:"access_token"`
@@ -146,7 +146,7 @@ func (c Credential) RefreshedAt() *time.Time {
 	return &refreshedAt
 }
 
-// ObtainToken 通过code或refresh_token兑换token
+// ObtainToken exchanges a code or refresh_token for a token
 func (client *client) ObtainToken(ctx context.Context, opts ...Option) (*Credential, error) {
 	options := newDefaultOption()
 	for _, o := range opts {
@@ -239,7 +239,7 @@ func obtainToken(ctx context.Context, args *obtainTokenArgs) (*Credential, error
 	return &credential, nil
 }
 
-// UpdateCredential 更新凭证，并检查有效期
+// UpdateCredential updates the credential and checks its validity
 func (client *client) UpdateCredential(ctx context.Context) error {
 	newCred, err := client.cred.Obtain(ctx, CredentialKey(client.policy.ID))
 	if err != nil {

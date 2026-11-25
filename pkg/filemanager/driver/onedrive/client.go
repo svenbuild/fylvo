@@ -15,13 +15,13 @@ import (
 )
 
 var (
-	// ErrAuthEndpoint 无法解析授权端点地址
+	// ErrAuthEndpoint cannot parse the auth endpoint URL
 	ErrAuthEndpoint = errors.New("failed to parse endpoint url")
-	// ErrInvalidRefreshToken 上传策略无有效的RefreshToken
+	// ErrInvalidRefreshToken the upload policy has no valid RefreshToken
 	ErrInvalidRefreshToken = errors.New("no valid refresh token in this policy")
-	// ErrDeleteFile 无法删除文件
+	// ErrDeleteFile cannot delete file
 	ErrDeleteFile = errors.New("cannot delete file")
-	// ErrClientCanceled 客户端取消操作
+	// ErrClientCanceled client canceled the operation
 	ErrClientCanceled = errors.New("client canceled")
 	// Desired thumb size not available
 	ErrThumbSizeNotFound = errors.New("thumb size not found")
@@ -42,7 +42,7 @@ type Client interface {
 	ObtainToken(ctx context.Context, opts ...Option) (*Credential, error)
 }
 
-// client OneDrive客户端
+// client OneDrive client
 type client struct {
 	endpoints  *endpoints
 	policy     *ent.StoragePolicy
@@ -56,14 +56,14 @@ type client struct {
 	chunkSize int64
 }
 
-// endpoints OneDrive客户端相关设置
+// endpoints OneDrive client related settings
 type endpoints struct {
 	oAuthEndpoints *oauthEndpoint
-	endpointURL    string // 接口请求的基URL
-	driverResource string // 要使用的驱动器
+	endpointURL    string // base URL for API requests
+	driverResource string // drive to use
 }
 
-// NewClient 根据存储策略获取新的client
+// NewClient gets a new client from the storage policy
 func NewClient(policy *ent.StoragePolicy, httpClient request.Client, cred credmanager.CredManager,
 	l logging.Logger, settings setting.Provider, chunkSize int64) Client {
 	client := &client{

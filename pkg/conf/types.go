@@ -13,7 +13,7 @@ var (
 	MariaDB    DBType = "mariadb"
 )
 
-// Database 数据库
+// Database is the database config
 type Database struct {
 	Type        DBType
 	User        string
@@ -25,9 +25,9 @@ type Database struct {
 	Port        int
 	Charset     string
 	UnixSocket  bool
-	// 允许直接使用DATABASE_URL来配置数据库连接
+	// allow configuring the database connection directly via DATABASE_URL
 	DatabaseURL string
-	// SSLMode 允许使用SSL连接数据库, 用户可以在sslmode string中添加证书等配置
+	// SSLMode allows connecting to the database with SSL, users can add certificates etc. in the sslmode string
 	SSLMode string
 }
 
@@ -38,7 +38,7 @@ var (
 	SlaveMode  SysMode = "slave"
 )
 
-// System 系统通用配置
+// System is the general system config
 type System struct {
 	Mode          SysMode `validate:"eq=master|eq=slave"`
 	Listen        string  `validate:"required"`
@@ -62,14 +62,14 @@ type Unix struct {
 	Perm   uint32
 }
 
-// Slave 作为slave存储端配置
+// Slave settings for running as a slave storage node
 type Slave struct {
 	Secret          string `validate:"omitempty,gte=64"`
 	CallbackTimeout int    `validate:"omitempty,gte=1"`
 	SignatureTTL    int    `validate:"omitempty,gte=1"`
 }
 
-// Redis 配置
+// Redis config
 type Redis struct {
 	Network       string
 	Server        string
@@ -80,7 +80,7 @@ type Redis struct {
 	TLSSkipVerify bool
 }
 
-// 跨域配置
+// CORS settings
 type Cors struct {
 	AllowOrigins     []string
 	AllowMethods     []string
@@ -91,7 +91,7 @@ type Cors struct {
 	Secure           bool
 }
 
-// RedisConfig Redis服务器配置
+// RedisConfig Redis server settings
 var RedisConfig = &Redis{
 	Network:       "tcp",
 	Server:        "",
@@ -101,7 +101,7 @@ var RedisConfig = &Redis{
 	TLSSkipVerify: true,
 }
 
-// DatabaseConfig 数据库配置
+// DatabaseConfig database settings
 var DatabaseConfig = &Database{
 	Charset:     "utf8mb4",
 	DBFile:      defaultDBFile(),
@@ -110,7 +110,7 @@ var DatabaseConfig = &Database{
 	DatabaseURL: "",
 }
 
-// SystemConfig 系统公用配置
+// SystemConfig general system settings
 var SystemConfig = &System{
 	Debug:       false,
 	Mode:        MasterMode,
@@ -119,7 +119,7 @@ var SystemConfig = &System{
 	LogLevel:    "info",
 }
 
-// CORSConfig 跨域配置
+// CORSConfig CORS settings
 var CORSConfig = &Cors{
 	AllowOrigins:     []string{"UNSET"},
 	AllowMethods:     []string{"PUT", "POST", "GET", "OPTIONS"},
@@ -130,7 +130,7 @@ var CORSConfig = &Cors{
 	Secure:           false,
 }
 
-// SlaveConfig 从机配置
+// SlaveConfig slave settings
 var SlaveConfig = &Slave{
 	CallbackTimeout: 20,
 	SignatureTTL:    600,

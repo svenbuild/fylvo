@@ -44,7 +44,7 @@ type (
 	}
 )
 
-// CaptchaRequired 验证请求签名
+// CaptchaRequired verifies the request signature
 func CaptchaRequired(enabled func(c *gin.Context) bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if enabled(c) {

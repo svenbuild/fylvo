@@ -4,7 +4,7 @@ import (
 	"github.com/jinzhu/gorm"
 )
 
-// Setting 系统设置模型
+// Setting system settings model
 type Setting struct {
 	gorm.Model
 	Type  string `gorm:"not null"`

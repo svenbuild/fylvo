@@ -73,7 +73,7 @@ func (s *server) PrintBanner() {
 }
 
 func (s *server) Start() error {
-	// Debug 关闭时，切换为生产模式
+	// Debug is off, switch to production mode
 	if !s.config.System().Debug {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -167,7 +167,7 @@ func (s *server) Start() error {
 		}()
 	}
 
-	// 如果启用了SSL
+	// If using SSL
 	if s.config.SSL().CertPath != "" {
 		s.logger.Info("Listening to %q", s.config.SSL().Listen)
 		s.server.Addr = s.config.SSL().Listen
@@ -178,7 +178,7 @@ func (s *server) Start() error {
 		return nil
 	}
 
-	// 如果启用了Unix
+	// If using Unix
 	if s.config.Unix().Listen != "" {
 		// delete socket file before listening
 		if _, err := os.Stat(s.config.Unix().Listen); err == nil {

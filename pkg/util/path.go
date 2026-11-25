@@ -14,7 +14,7 @@ const (
 
 var UseWorkingDir = false
 
-// FillSlash 给路径补全`/`
+// FillSlash adds a trailing `/` to the path
 func FillSlash(path string) string {
 	if path == "/" {
 		return path
@@ -22,7 +22,7 @@ func FillSlash(path string) string {
 	return path + "/"
 }
 
-// RemoveSlash 移除路径最后的`/`
+// RemoveSlash removes the trailing `/` from the path
 func RemoveSlash(path string) string {
 	if len(path) > 1 {
 		return strings.TrimSuffix(path, "/")
@@ -30,12 +30,12 @@ func RemoveSlash(path string) string {
 	return path
 }
 
-// FormSlash 将path中的反斜杠'\'替换为'/'
+// FormSlash replaces backslashes '\' in path with '/'
 func FormSlash(old string) string {
 	return path.Clean(strings.ReplaceAll(old, "\\", "/"))
 }
 
-// RelativePath 获取相对可执行文件的路径
+// RelativePath gets a path relative to the executable
 func RelativePath(name string) string {
 	if UseWorkingDir {
 		return name

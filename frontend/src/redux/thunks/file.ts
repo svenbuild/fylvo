@@ -410,14 +410,14 @@ export function selectFile(index: number, file: FileResponse, e?: React.MouseEve
     lastSelectedIndex = fileIndex;
 
     if (isCtrlSelection && index != FileManagerIndex.selector) {
-      // Ctrl/Command 单击添加/删除
+      // Ctrl/Command click to add/remove
       const currentSelected = selected[file.path];
       if (currentSelected) {
         return dispatch(removeSelected({ index, value: file.path }));
       }
       return dispatch(addSelected({ index, value: [file] }));
     }
-    // 单选
+    // single select
     return dispatch(setSelected({ index, value: [file] }));
   };
 }
@@ -1727,7 +1727,7 @@ export function resetThumbnails(files: FileResponse[]): AppThunk {
       // refresh file list
       dispatch(refreshFileList(FileManagerIndex.main));
 
-      // 成功信息
+      // success message
       enqueueSnackbar({
         message: i18next.t("application:fileManager.resetThumbnailRequested"),
         variant: "success",

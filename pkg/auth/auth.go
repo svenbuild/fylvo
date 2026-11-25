@@ -27,54 +27,54 @@ const (
 	TokenHeaderPrefixCr = "Bearer Cr "
 )
 
-// General 通用的认证接口
+// General generic authentication interface
 // Deprecated
 var General Auth
 
 type (
-	// Auth 鉴权认证
+	// Auth authentication
 	Auth interface {
-		// 对给定Body进行签名,expires为0表示永不过期
+		// signs the given body, expires 0 means it never expires
 		Sign(body string, expires int64) string
-		// 对给定Body和Sign进行检查
+		// checks the given body and signature
 		Check(body string, sign string) error
 	}
 )
 
-// SignRequest 对PUT\POST等复杂HTTP请求签名，只会对URI部分、
-// 请求正文、`X-Cr-`开头的header进行签名
+// SignRequest signs complex HTTP requests such as PUT\POST, only the URI part,
+// the request body and headers starting with `X-Cr-` are signed
 func SignRequest(ctx context.Context, instance Auth, r *http.Request, expires *time.Time) *http.Request {
-	// 处理有效期
+	// handle expiry
 	expireTime := int64(0)
 	if expires != nil {
 		expireTime = expires.Unix()
 	}
 
-	// 生成签名
+	// generate signature
 	sign := instance.Sign(getSignContent(ctx, r), expireTime)
 
-	// 将签名加到请求Header中
+	// add the signature to the request header
 	r.Header["Authorization"] = []string{TokenHeaderPrefixCr + sign}
 	return r
 }
 
-// SignRequestDeprecated 对PUT\POST等复杂HTTP请求签名，只会对URI部分、
-// 请求正文、`X-Cr-`开头的header进行签名
+// SignRequestDeprecated signs complex HTTP requests such as PUT\POST, only the URI part,
+// the request body and headers starting with `X-Cr-` are signed
 func SignRequestDeprecated(instance Auth, r *http.Request, expires int64) *http.Request {
-	// 处理有效期
+	// handle expiry
 	if expires > 0 {
 		expires += time.Now().Unix()
 	}
 
-	// 生成签名
+	// generate signature
 	sign := instance.Sign(getSignContent(context.Background(), r), expires)
 
-	// 将签名加到请求Header中
+	// add the signature to the request header
 	r.Header["Authorization"] = []string{TokenHeaderPrefixCr + sign}
 	return r
 }
 
-// CheckRequest 对复杂请求进行签名验证
+// CheckRequest verifies the signature of complex requests
 func CheckRequest(ctx context.Context, instance Auth, r *http.Request) error {
 	var (
 		sign []string
@@ -93,10 +93,10 @@ func isUploadDataRequest(r *http.Request) bool {
 
 }
 
-// getSignContent 签名请求 path、正文、以`X-`开头的 Header. 如果请求 path 为从机上传 API，
-// 则不对正文签名。返回待签名/验证的字符串
+// getSignContent signs the request path, body and headers starting with `X-`. If the request path is the slave upload API,
+// the body is not signed. Returns the string to sign/verify
 func getSignContent(ctx context.Context, r *http.Request) (rawSignString string) {
-	// 读取所有body正文
+	// read the whole body
 	var body = []byte{}
 	if !isUploadDataRequest(r) {
 		if r.Body != nil {
@@ -106,7 +106,7 @@ func getSignContent(ctx context.Context, r *http.Request) (rawSignString string)
 		}
 	}
 
-	// 决定要签名的header
+	// decide which headers to sign
 	var signedHeader []string
 	for k, _ := range r.Header {
 		if strings.HasPrefix(k, constants.CrHeaderPrefix) && k != constants.CrHeaderPrefix+"Filename" {
@@ -115,15 +115,15 @@ func getSignContent(ctx context.Context, r *http.Request) (rawSignString string)
 	}
 	sort.Strings(signedHeader)
 
-	// 读取所有待签名Header
+	// read all headers to sign
 	rawSignString = serializer.NewRequestSignString(getUrlSignContent(ctx, r.URL), strings.Join(signedHeader, "&"), string(body))
 
 	return rawSignString
 }
 
-// SignURI 对URI进行签名
+// SignURI signs the URI
 func SignURI(ctx context.Context, instance Auth, uri string, expires *time.Time) (*url.URL, error) {
-	// 处理有效期
+	// handle expiry
 	expireTime := int64(0)
 	if expires != nil {
 		expireTime = expires.Unix()
@@ -134,10 +134,10 @@ func SignURI(ctx context.Context, instance Auth, uri string, expires *time.Time)
 		return nil, err
 	}
 
-	// 生成签名
+	// generate signature
 	sign := instance.Sign(getUrlSignContent(ctx, base), expireTime)
 
-	// 将签名加到URI中
+	// add the signature to the URI
 	queries := base.Query()
 	queries.Set("sign", sign)
 	base.RawQuery = queries.Encode()
@@ -145,10 +145,10 @@ func SignURI(ctx context.Context, instance Auth, uri string, expires *time.Time)
 	return base, nil
 }
 
-// SignURIDeprecated 对URI进行签名,签名只针对Path部分，query部分不做验证
+// SignURIDeprecated signs the URI, only the path is signed, the query is not verified
 // Deprecated
 func SignURIDeprecated(instance Auth, uri string, expires int64) (*url.URL, error) {
-	// 处理有效期
+	// handle expiry
 	if expires != 0 {
 		expires += time.Now().Unix()
 	}
@@ -158,10 +158,10 @@ func SignURIDeprecated(instance Auth, uri string, expires int64) (*url.URL, erro
 		return nil, err
 	}
 
-	// 生成签名
+	// generate signature
 	sign := instance.Sign(base.Path, expires)
 
-	// 将签名加到URI中
+	// add the signature to the URI
 	queries := base.Query()
 	queries.Set("sign", sign)
 	base.RawQuery = queries.Encode()
@@ -169,9 +169,9 @@ func SignURIDeprecated(instance Auth, uri string, expires int64) (*url.URL, erro
 	return base, nil
 }
 
-// CheckURI 对URI进行鉴权
+// CheckURI authenticates the URI
 func CheckURI(ctx context.Context, instance Auth, url *url.URL) error {
-	//获取待验证的签名正文
+	//get the signed content to verify
 	queries := url.Query()
 	sign := queries.Get("sign")
 	queries.Del("sign")

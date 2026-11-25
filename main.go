@@ -28,10 +28,10 @@ func init() {
 func main() {
 	cmd.Execute()
 	return
-	// 关闭数据库连接
+	// Close the database connection
 
 	//if scriptName != "" {
-	//	// 开始运行助手数据库脚本
+	//	// start running the helper database scripts
 	//	bootstrap.RunScript(scriptName)
 	//	return
 	//}

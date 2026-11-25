@@ -36,12 +36,12 @@ type version struct {
 	Version string `json:"version"`
 }
 
-// Open 打开文件
+// Open opens a file
 func (b *GinFS) Open(name string) (http.File, error) {
 	return b.FS.Open(name)
 }
 
-// Exists 文件是否存在
+// Exists reports whether the file exists
 func (b *GinFS) Exists(prefix string, filepath string) bool {
 	if _, err := b.FS.Open(filepath); err != nil {
 		return false
@@ -49,14 +49,14 @@ func (b *GinFS) Exists(prefix string, filepath string) bool {
 	return true
 }
 
-// NewServerStaticFS 初始化静态资源文件
+// NewServerStaticFS initializes the static resource files
 func NewServerStaticFS(l logging.Logger, statics fs.FS, isPro bool) (static.ServeFileSystem, error) {
 	var staticFS static.ServeFileSystem
 	if util.Exists(util.DataPath(StaticFolder)) {
 		l.Info("Folder with %q already exists, it will be used to serve static files.", util.DataPath(StaticFolder))
 		staticFS = static.LocalFile(util.DataPath(StaticFolder), false)
 	} else {
-		// 初始化静态资源
+		// Initialize static resources
 		embedFS, err := fs.Sub(statics, "assets/build")
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize static resources: %w", err)
@@ -66,7 +66,7 @@ func NewServerStaticFS(l logging.Logger, statics fs.FS, isPro bool) (static.Serv
 			FS: http.FS(embedFS),
 		}
 	}
-	// 检查静态资源的版本
+	// Check the static resource version
 	f, err := staticFS.Open("version.json")
 	if err != nil {
 		l.Warning("Missing version identifier file in static resources, please delete \"statics\" folder and rebuild it.")
@@ -95,7 +95,7 @@ func NewServerStaticFS(l logging.Logger, statics fs.FS, isPro bool) (static.Serv
 	}
 
 	if v.Version != constants.BackendVersion {
-		l.Error("Static resource version mismatch [Current %s, Desired: %s]，please delete \"statics\" folder and rebuild it.", v.Version, constants.BackendVersion)
+		l.Error("Static resource version mismatch [Current %s, Desired: %s], please delete \"statics\" folder and rebuild it.", v.Version, constants.BackendVersion)
 	}
 
 	return staticFS, nil
@@ -165,9 +165,9 @@ func NewStaticFS(l logging.Logger) fs.FS {
 	return embedFS
 }
 
-// Eject 抽离内置静态资源
+// Eject extracts the built-in static resources
 func Eject(l logging.Logger, statics fs.FS) error {
-	// 初始化静态资源
+	// Initialize static resources
 	embedFS, err := fs.Sub(statics, "assets/build")
 	if err != nil {
 		l.Panic("Failed to initialize static resources: %s", err)
@@ -180,7 +180,7 @@ func Eject(l logging.Logger, statics fs.FS) error {
 		}
 
 		if !d.IsDir() {
-			// 写入文件
+			// Write the file
 			dst := util.DataPath(filepath.Join(StaticFolder, relPath))
 			out, err := util.CreatNestedFile(dst)
 			defer out.Close()
@@ -198,7 +198,7 @@ func Eject(l logging.Logger, statics fs.FS) error {
 		return nil
 	}
 
-	// util.Log().Info("开始导出内置静态资源...")
+	// util.Log().Info("start exporting built-in static resources...")
 	err = fs.WalkDir(embedFS, ".", walk)
 	if err != nil {
 		return fmt.Errorf("failed to eject static resources: %w", err)

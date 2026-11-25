@@ -41,7 +41,7 @@ func (s *ShortLinkRedirectService) RedirectTo(c *gin.Context) string {
 		shareLongUrlQuery.Set("path", masterPath)
 	}
 
-	shortLinkQuery.Del("path") // 防止用户指定的 Path 就是空字符串
+	shortLinkQuery.Del("path") // prevent the user-specified Path from being an empty string
 	for k, vals := range shortLinkQuery {
 		shareLongUrlQuery[k] = append(shareLongUrlQuery[k], vals...)
 	}

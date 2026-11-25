@@ -6,21 +6,21 @@ import (
 	"github.com/jinzhu/gorm"
 )
 
-// Share 分享模型
+// Share share model
 type Share struct {
 	gorm.Model
-	Password        string     // 分享密码，空值为非加密分享
-	IsDir           bool       // 原始资源是否为目录
-	UserID          uint       // 创建用户ID
-	SourceID        uint       // 原始资源ID
-	Views           int        // 浏览数
-	Downloads       int        // 下载数
-	RemainDownloads int        // 剩余下载配额，负值标识无限制
-	Expires         *time.Time // 过期时间，空值表示无过期时间
-	PreviewEnabled  bool       // 是否允许直接预览
-	SourceName      string     `gorm:"index:source"` // 用于搜索的字段
+	Password        string     // Share password, empty means not encrypted
+	IsDir           bool       // Whether the original resource is a directory
+	UserID          uint       // Creator user ID
+	SourceID        uint       // Original resource ID
+	Views           int        // View count
+	Downloads       int        // Download count
+	RemainDownloads int        // Remaining download quota, negative means unlimited
+	Expires         *time.Time // Expiry time, empty means no expiry
+	PreviewEnabled  bool       // Whether direct preview is allowed
+	SourceName      string     `gorm:"index:source"` // Field used for search
 
-	// 数据库忽略字段
+	// Fields ignored by the database
 	User   User   `gorm:"PRELOAD:false,association_autoupdate:false"`
 	File   File   `gorm:"PRELOAD:false,association_autoupdate:false"`
 	Folder Folder `gorm:"PRELOAD:false,association_autoupdate:false"`

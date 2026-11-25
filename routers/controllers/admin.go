@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AdminSummary 获取管理站点概况
+// AdminSummary gets the site overview
 func AdminSummary(c *gin.Context) {
 	service := ParametersFromContext[*admin.SummaryService](c, admin.SummaryParamCtx{})
 	res, err := service.Summary(c)
@@ -18,7 +18,7 @@ func AdminSummary(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: res})
 }
 
-// AdminGetSettings 获取站点设定项
+// AdminGetSettings gets the site settings
 func AdminGetSettings(c *gin.Context) {
 	service := ParametersFromContext[*admin.GetSettingService](c, admin.GetSettingParamCtx{})
 	res, err := service.GetSetting(c)
@@ -41,7 +41,7 @@ func AdminSetSettings(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: res})
 }
 
-// AdminListGroups 获取用户组列表
+// AdminListGroups lists the user groups
 func AdminListGroups(c *gin.Context) {
 	service := ParametersFromContext[*admin.AdminListService](c, admin.AdminListServiceParamsCtx{})
 	res, err := service.List(c)
@@ -105,7 +105,7 @@ func AdminGetPolicy(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: res})
 }
 
-// AdminSendTestMail 发送测试邮件
+// AdminSendTestMail sends a test email
 func AdminSendTestMail(c *gin.Context) {
 	service := ParametersFromContext[*admin.TestSMTPService](c, admin.TestSMTPParamCtx{})
 	err := service.Test(c)
@@ -364,7 +364,7 @@ func AdminDeleteGroup(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// AdminTestSlave 测试从机可用性
+// AdminTestSlave tests slave availability
 func AdminTestSlave(c *gin.Context) {
 	service := ParametersFromContext[*admin.TestNodeService](c, admin.TestNodeParamCtx{})
 	err := service.Test(c)
@@ -375,7 +375,7 @@ func AdminTestSlave(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// AdminTestDownloader 测试下载器连接
+// AdminTestDownloader tests the downloader connection
 func AdminTestDownloader(c *gin.Context) {
 	service := ParametersFromContext[*admin.TestNodeDownloaderService](c, admin.TestNodeDownloaderParamCtx{})
 	res, err := service.Test(c)
@@ -416,7 +416,7 @@ func AdminDeleteNode(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// AdminDeleteUser 批量删除用户
+// AdminDeleteUser deletes users in batch
 func AdminDeleteUser(c *gin.Context) {
 	service := ParametersFromContext[*admin.BatchUserService](c, admin.BatchUserParamCtx{})
 	err := service.Delete(c)

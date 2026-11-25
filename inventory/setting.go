@@ -356,15 +356,15 @@ var (
 
 type MailTemplateContent struct {
 	Language        string
-	EmailIsAutoSend string // Translation of `此邮件由系统自动发送。`
+	EmailIsAutoSend string // Translation of ` This email was sent automatically by the system.`
 
-	ActiveTitle  string // Translation of `激活你的账号`
-	ActiveDes    string // Translation of `请点击下方按钮确认你的电子邮箱并完成账号注册，此链接有效期为 24 小时。`
-	ActiveButton string // Translation of `确认激活`
+	ActiveTitle  string // Translation of ` Activate your account`
+	ActiveDes    string // Translation of ` Click the button below to confirm your email address and finish registration. This link is valid for 24 hours.`
+	ActiveButton string // Translation of ` Confirm activation`
 
-	ResetTitle  string // Translation of `重设密码`
-	ResetDes    string // Translation of `请点击下方按钮重设你的密码，此链接有效期为 1 小时。`
-	ResetButton string // Translation of `重设密码`
+	ResetTitle  string // Translation of ` Reset password`
+	ResetDes    string // Translation of ` Click the button below to reset your password. This link is valid for 1 hour.`
+	ResetButton string // Translation of ` Reset password`
 }
 
 var mailTemplateContents = []MailTemplateContent{

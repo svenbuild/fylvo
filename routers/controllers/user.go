@@ -16,7 +16,7 @@ import (
 	"github.com/samber/lo"
 )
 
-// StartLoginAuthn 开始注册WebAuthn登录
+// StartLoginAuthn starts WebAuthn login
 func StartLoginAuthn(c *gin.Context) {
 	res, err := user.PreparePasskeyLogin(c)
 	if err != nil {
@@ -27,7 +27,7 @@ func StartLoginAuthn(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: res})
 }
 
-// FinishLoginAuthn 完成注册WebAuthn登录
+// FinishLoginAuthn finishes WebAuthn login
 func FinishLoginAuthn(c *gin.Context) {
 	service := ParametersFromContext[*user.FinishPasskeyLoginService](c, user.FinishPasskeyLoginParameterCtx{})
 	u, err := service.FinishPasskeyLogin(c)
@@ -40,7 +40,7 @@ func FinishLoginAuthn(c *gin.Context) {
 	util.WithValue(c, inventory.UserCtx{}, u)
 }
 
-// StartRegAuthn 开始注册WebAuthn信息
+// StartRegAuthn starts WebAuthn registration
 func StartRegAuthn(c *gin.Context) {
 	res, err := user.PreparePasskeyRegister(c)
 	if err != nil {
@@ -51,7 +51,7 @@ func StartRegAuthn(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: res})
 }
 
-// FinishRegAuthn 完成注册WebAuthn信息
+// FinishRegAuthn finishes WebAuthn registration
 func FinishRegAuthn(c *gin.Context) {
 	service := ParametersFromContext[*user.FinishPasskeyRegisterService](c, user.FinishPasskeyRegisterParameterCtx{})
 	res, err := service.FinishPasskeyRegister(c)
@@ -166,13 +166,13 @@ func UserRefreshToken(c *gin.Context) {
 	})
 }
 
-// UserRegister 用户注册
+// UserRegister registers a user
 func UserRegister(c *gin.Context) {
 	service := ParametersFromContext[*user.UserRegisterService](c, user.RegisterParameterCtx{})
 	c.JSON(200, service.Register(c))
 }
 
-// UserSendReset 发送密码重设邮件
+// UserSendReset sends the password reset email
 func UserSendReset(c *gin.Context) {
 	service := ParametersFromContext[*user.UserResetEmailService](c, user.UserResetEmailParameterCtx{})
 	if err := service.Reset(c); err != nil {
@@ -183,7 +183,7 @@ func UserSendReset(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// UserReset 重设密码
+// UserReset resets the password
 func UserReset(c *gin.Context) {
 	service := ParametersFromContext[*user.UserResetService](c, user.UserResetParameterCtx{})
 	res, err := service.Reset(c)
@@ -195,12 +195,12 @@ func UserReset(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: res})
 }
 
-// UserActivate 用户激活
+// UserActivate activates a user
 func UserActivate(c *gin.Context) {
 	c.JSON(200, user.ActivateUser(c))
 }
 
-// UserSignOut 用户退出登录
+// UserSignOut logs the user out
 func UserSignOut(c *gin.Context) {
 	service := ParametersFromContext[*user.RefreshTokenService](c, user.RefreshTokenParameterCtx{})
 	res, err := service.Delete(c)
@@ -215,7 +215,7 @@ func UserSignOut(c *gin.Context) {
 	})
 }
 
-// UserMe 获取当前登录的用户
+// UserMe gets the currently logged in user
 func UserMe(c *gin.Context) {
 	dep := dependency.FromContext(c)
 	c.JSON(200, serializer.Response{
@@ -223,7 +223,7 @@ func UserMe(c *gin.Context) {
 	})
 }
 
-// UserGet 获取用户信息
+// UserGet gets user info
 func UserGet(c *gin.Context) {
 	u, err := user.GetUser(c)
 	if err != nil {
@@ -242,7 +242,7 @@ func UserGet(c *gin.Context) {
 	})
 }
 
-// UserStorage 获取用户的存储信息
+// UserStorage gets the user's storage info
 func UserStorage(c *gin.Context) {
 	res, err := user.GetUserCapacity(c)
 	if err != nil {
@@ -256,7 +256,7 @@ func UserStorage(c *gin.Context) {
 	})
 }
 
-// UserSetting 获取用户设定
+// UserSetting gets user settings
 func UserSetting(c *gin.Context) {
 	res, err := user.GetUserSettings(c)
 	if err != nil {
@@ -270,7 +270,7 @@ func UserSetting(c *gin.Context) {
 	})
 }
 
-// UploadAvatar 从文件上传头像
+// UploadAvatar uploads an avatar from a file
 func UploadAvatar(c *gin.Context) {
 	if err := user.UpdateUserAvatar(c); err != nil {
 		c.JSON(200, serializer.Err(c, err))
@@ -280,7 +280,7 @@ func UploadAvatar(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// GetUserAvatar 获取用户头像
+// GetUserAvatar gets the user avatar
 func GetUserAvatar(c *gin.Context) {
 	service := ParametersFromContext[*user.GetAvatarService](c, user.GetAvatarServiceParamsCtx{})
 	err := service.Get(c)
@@ -291,7 +291,7 @@ func GetUserAvatar(c *gin.Context) {
 	}
 }
 
-// UpdateOption 更改用户设定
+// UpdateOption changes user settings
 func UpdateOption(c *gin.Context) {
 	service := ParametersFromContext[*user.PatchUserSetting](c, user.PatchUserSettingParamsCtx{})
 	err := service.Patch(c)
@@ -347,7 +347,7 @@ func UpdateOption(c *gin.Context) {
 	//}
 }
 
-// UserInit2FA 初始化二步验证
+// UserInit2FA initializes two-factor authentication
 func UserInit2FA(c *gin.Context) {
 	secret, err := user.Init2FA(c)
 	if err != nil {

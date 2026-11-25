@@ -4,7 +4,7 @@ import getRotateSize from "../utils/getRotateSize";
 import { defaultSpeed, maxTouchTime } from "../variables";
 import useMethods from "./useMethods";
 
-// 触边运动反馈
+// edge bounce feedback
 const rebound = (start: number, bound: number, callback: (spatial: number) => boolean) =>
   easeOutMove(
     start,
@@ -16,7 +16,7 @@ const rebound = (start: number, bound: number, callback: (spatial: number) => bo
   );
 
 /**
- * 物理滚动到具体位置
+ * physically scroll to a specific position
  */
 export default function useScrollPosition<C extends (spatial: number) => boolean>(
   callbackX: C,
@@ -44,14 +44,14 @@ export default function useScrollPosition<C extends (spatial: number) => boolean
     touchedTime: number,
   ) => {
     const [currentWidth, currentHeight] = getRotateSize(rotate, width, height);
-    // 开始状态下边缘触发状态
+    // edge trigger state at the start
     const [beginEdgeX, beginX] = computePositionEdge(x, safeScale, currentWidth, dynamicInnerWidth);
     const [beginEdgeY, beginY] = computePositionEdge(y, safeScale, currentHeight, innerHeight);
     const moveTime = Date.now() - touchedTime;
 
-    // 时间过长、超出安全范围的情况下不执行滚动逻辑，恢复安全范围
+    // if it takes too long or goes out of the safe range, skip the scroll logic and restore the safe range
     if (moveTime >= maxTouchTime || safeScale !== scale || Math.abs(lastScale - scale) > 1) {
-      // 计算中心缩放点
+      // calculate the zoom center point
       const { x: nextX, y: nextY } = getPositionOnMoveOrScale(x, y, width, height, scale, safeScale);
       const targetX = beginEdgeX ? beginX : nextX !== x ? nextX : null;
       const targetY = beginEdgeY ? beginY : nextY !== y ? nextY : null;
@@ -68,11 +68,11 @@ export default function useScrollPosition<C extends (spatial: number) => boolean
       return;
     }
 
-    // 初始速度
+    // initial velocity
     const speedX = (x - lastX) / moveTime;
     const speedY = (y - lastY) / moveTime;
     const speedT = Math.sqrt(speedX ** 2 + speedY ** 2);
-    // 是否接触到边缘
+    // whether an edge is touched
     let edgeX = false;
     let edgeY = false;
 
@@ -100,7 +100,7 @@ export default function useScrollPosition<C extends (spatial: number) => boolean
           rebound(currentY, nextY + (nextY - currentY), callback.Y);
         }
       }
-      // 同时接触边缘的情况下停止滚动
+      // stop scrolling when touching edges at the same time
       if (edgeX && edgeY) {
         return false;
       }
@@ -112,13 +112,13 @@ export default function useScrollPosition<C extends (spatial: number) => boolean
   };
 }
 
-// 加速度
+// acceleration
 const acceleration = -0.001;
-// 阻力
+// resistance
 const resistance = 0.0002;
 
 /**
- * 通过速度滚动到停止
+ * scroll with velocity until it stops
  */
 function scrollMove(initialSpeed: number, callback: (spatial: number) => boolean) {
   let v = initialSpeed;
@@ -163,12 +163,12 @@ function scrollMove(initialSpeed: number, callback: (spatial: number) => boolean
 }
 
 /**
- * 缓动函数
+ * easing function
  */
 const easeOutQuart = (x: number) => 1 - (1 - x) ** 4;
 
 /**
- * 缓动回调
+ * easing callback
  */
 function easeOutMove(
   start: number,

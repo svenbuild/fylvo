@@ -40,7 +40,7 @@ func init() {
 	}, capabilities.StaticFeatures)
 }
 
-// Driver 本地策略适配器
+// Driver is the storage policy adapter
 type Driver struct {
 	Policy     *ent.StoragePolicy
 	httpClient request.Client
@@ -115,9 +115,9 @@ func (handler *Driver) List(ctx context.Context, path string, onProgress driver.
 	return res, err
 }
 
-// Get 获取文件内容
+// Get gets the file content
 func (handler *Driver) Open(ctx context.Context, path string) (*os.File, error) {
-	// 打开文件
+	// open the file
 	file, err := os.Open(handler.LocalPath(ctx, path))
 	if err != nil {
 		handler.l.Debug("Failed to open file: %s", err)
@@ -131,12 +131,12 @@ func (handler *Driver) LocalPath(ctx context.Context, path string) string {
 	return util.RelativePath(filepath.FromSlash(path))
 }
 
-// Put 将文件流保存到指定目录
+// Put saves the file stream to the given location
 func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	defer file.Close()
 	dst := util.RelativePath(filepath.FromSlash(file.Props.SavePath))
 
-	// 如果非 Overwrite，则检查是否有重名冲突
+	// if not Overwrite, check for name conflicts
 	if file.Mode&fs.ModeOverwrite != fs.ModeOverwrite {
 		if util.Exists(dst) {
 			handler.l.Warning("File with the same name existed or unavailable: %s", dst)
@@ -174,13 +174,13 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 		return fmt.Errorf("failed to seek to desired offset %d: %s", file.Offset, err)
 	}
 
-	// 写入文件内容
+	// write the file content
 	_, err = io.Copy(out, file)
 	return err
 }
 
-// Delete 删除一个或多个文件，
-// 返回未删除的文件，及遇到的最后一个错误
+// Delete removes one or more files,
+// returns the files that were not deleted and the last error encountered
 func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, error) {
 	deleteFailed := make([]string, 0, len(files))
 	var retErr error
@@ -196,24 +196,24 @@ func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, e
 			}
 		}
 
-		//// 尝试删除文件的缩略图（如果有）
+		//// try to delete the file's thumbnail (if any)
 		//_ = os.Remove(util.RelativePath(value + model.GetSettingByNameWithDefault("thumb_file_suffix", "._thumb")))
 	}
 
 	return deleteFailed, retErr
 }
 
-// Thumb 获取文件缩略图
+// Thumb gets the file thumbnail
 func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string, e fs.Entity) (string, error) {
 	return "", errors.New("not implemented")
 }
 
-// Source 获取外链URL
+// Source gets the external link URL
 func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.GetSourceArgs) (string, error) {
 	return "", errors.New("not implemented")
 }
 
-// Token 获取上传策略和认证Token，本地策略直接返回空值
+// Token gets the upload policy and auth token; the local policy returns empty values
 func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, file *fs.UploadRequest) (*fs.UploadCredential, error) {
 	if file.Mode&fs.ModeOverwrite != fs.ModeOverwrite && util.Exists(uploadSession.Props.SavePath) {
 		return nil, errors.New("placeholder file already exist")
@@ -262,7 +262,7 @@ func (h *Driver) prepareFileDirectory(dst string) error {
 	return nil
 }
 
-// 取消上传凭证
+// cancel the upload credential
 func (handler *Driver) CancelToken(ctx context.Context, uploadSession *fs.UploadSession) error {
 	return nil
 }
@@ -295,7 +295,7 @@ func (handler *Driver) CompleteUpload(ctx context.Context, session *fs.UploadSes
 		return serializer.NewError(serializer.CodeCallbackError, "Slave cannot send callback request", resp.Err)
 	}
 
-	// 解析回调服务端响应
+	// parse the callback server response
 	res, err := resp.DecodeResponse()
 	if err != nil {
 		msg := fmt.Sprintf("Slave cannot parse callback response from master (StatusCode=%d).", resp.Response.StatusCode)

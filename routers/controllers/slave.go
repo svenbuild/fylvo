@@ -16,7 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SlaveUpload 从机文件上传
+// SlaveUpload uploads a file on the slave node
 func SlaveUpload(c *gin.Context) {
 	service := ParametersFromContext[*explorer.UploadService](c, explorer.UploadParameterCtx{})
 	err := service.SlaveUpload(c)
@@ -30,7 +30,7 @@ func SlaveUpload(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// SlaveGetUploadSession 从机创建上传会话
+// SlaveGetUploadSession creates an upload session on the slave node
 func SlaveGetUploadSession(c *gin.Context) {
 	service := ParametersFromContext[*explorer.SlaveCreateUploadSessionService](c, explorer.SlaveCreateUploadSessionParamCtx{})
 	if err := service.Create(c); err != nil {
@@ -42,7 +42,7 @@ func SlaveGetUploadSession(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// SlaveDeleteUploadSession 从机删除上传会话
+// SlaveDeleteUploadSession deletes an upload session on the slave node
 func SlaveDeleteUploadSession(c *gin.Context) {
 	service := ParametersFromContext[*explorer.SlaveDeleteUploadSessionService](c, explorer.SlaveDeleteUploadSessionParamCtx{})
 	if err := service.Delete(c); err != nil {
@@ -78,7 +78,7 @@ func SlaveMeta(c *gin.Context) {
 	c.JSON(200, serializer.NewResponseWithGobData(c, res))
 }
 
-// SlaveThumb 从机文件缩略图
+// SlaveThumb gets a file thumbnail on the slave node
 func SlaveThumb(c *gin.Context) {
 	service := ParametersFromContext[*explorer.SlaveThumbService](c, explorer.SlaveThumbParamCtx{})
 	err := service.Thumb(c)
@@ -89,7 +89,7 @@ func SlaveThumb(c *gin.Context) {
 	}
 }
 
-// SlaveDelete 从机删除
+// SlaveDelete deletes files on the slave node
 func SlaveDelete(c *gin.Context) {
 	service := ParametersFromContext[*explorer.SlaveDeleteFileService](c, explorer.SlaveDeleteFileParamCtx{})
 	if failed, err := service.Delete(c); err != nil {
@@ -104,7 +104,7 @@ func SlaveDelete(c *gin.Context) {
 	}
 }
 
-// SlavePing 从机测试
+// SlavePing tests the slave node
 func SlavePing(c *gin.Context) {
 	service := ParametersFromContext[*admin.SlavePingService](c, admin.SlavePingParameterCtx{})
 	if err := service.Test(c); err != nil {
@@ -116,7 +116,7 @@ func SlavePing(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// SlaveList 从机列出文件
+// SlaveList lists files on the slave node
 func SlaveList(c *gin.Context) {
 	service := ParametersFromContext[*explorer.SlaveListService](c, explorer.SlaveListParamCtx{})
 	objects, err := service.List(c)
@@ -143,7 +143,7 @@ func SlaveDownloadTaskCreate(c *gin.Context) {
 	c.JSON(200, serializer.NewResponseWithGobData(c, handle))
 }
 
-// SlaveDownloadTaskStatus 查询从机 Aria2 任务状态
+// SlaveDownloadTaskStatus queries the Aria2 task status on the slave node
 func SlaveDownloadTaskStatus(c *gin.Context) {
 	service := ParametersFromContext[*slave.GetSlaveDownload](c, node.GetSlaveDownloadTaskParamCtx{})
 	d := c.MustGet(downloader.DownloaderCtxKey).(downloader.Downloader)
@@ -163,7 +163,7 @@ func SlaveDownloadTaskStatus(c *gin.Context) {
 	c.JSON(200, serializer.NewResponseWithGobData(c, info))
 }
 
-// SlaveCancelDownloadTask 取消从机离线下载任务
+// SlaveCancelDownloadTask cancels an offline download task on the slave node
 func SlaveCancelDownloadTask(c *gin.Context) {
 	service := ParametersFromContext[*slave.CancelSlaveDownload](c, node.CancelSlaveDownloadTaskParamCtx{})
 	d := c.MustGet(downloader.DownloaderCtxKey).(downloader.Downloader)
@@ -177,7 +177,7 @@ func SlaveCancelDownloadTask(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// SlaveSelectFilesToDownload 从机选取离线下载文件
+// SlaveSelectFilesToDownload selects offline download files on the slave node
 func SlaveSelectFilesToDownload(c *gin.Context) {
 	service := ParametersFromContext[*slave.SetSlaveFilesToDownload](c, node.SelectSlaveDownloadFilesParamCtx{})
 	d := c.MustGet(downloader.DownloaderCtxKey).(downloader.Downloader)
@@ -191,7 +191,7 @@ func SlaveSelectFilesToDownload(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// SlaveTestDownloader 从机测试下载器连接
+// SlaveTestDownloader tests the downloader connection on the slave node
 func SlaveTestDownloader(c *gin.Context) {
 	d := c.MustGet(downloader.DownloaderCtxKey).(downloader.Downloader)
 	res, err := d.Test(c)
@@ -204,7 +204,7 @@ func SlaveTestDownloader(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: res})
 }
 
-// SlaveGetOauthCredential 从机获取主机的OneDrive存储策略凭证
+// SlaveGetOauthCredential gets the OneDrive storage policy credential from the master
 func SlaveGetCredential(c *gin.Context) {
 	service := ParametersFromContext[*node.OauthCredentialService](c, node.OauthCredentialParamCtx{})
 	cred, err := service.Get(c)

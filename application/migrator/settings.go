@@ -16,7 +16,7 @@ type (
 		name  string
 		value string
 	}
-	// PackProduct 容量包商品
+	// PackProduct is the storage pack product
 	PackProduct struct {
 		ID    int64  `json:"id"`
 		Name  string `json:"name"`

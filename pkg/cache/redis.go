@@ -12,7 +12,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
-// RedisStore redis存储驱动
+// RedisStore redis store driver
 type RedisStore struct {
 	pool *redis.Pool
 }
@@ -45,7 +45,7 @@ func deserializer(value []byte) (any, error) {
 	return res.Value, nil
 }
 
-// NewRedisStore 创建新的redis存储
+// NewRedisStore creates a new redis store
 func NewRedisStore(l logging.Logger, size int, redisConfig *conf.Redis) *RedisStore {
 	return &RedisStore{
 		pool: &redis.Pool{
@@ -79,7 +79,7 @@ func NewRedisStore(l logging.Logger, size int, redisConfig *conf.Redis) *RedisSt
 	}
 }
 
-// Set 存储值
+// Set stores a value
 func (store *RedisStore) Set(key string, value any, ttl int) error {
 	rc := store.pool.Get()
 	defer rc.Close()
@@ -106,7 +106,7 @@ func (store *RedisStore) Set(key string, value any, ttl int) error {
 
 }
 
-// Get 取值
+// Get gets a value
 func (store *RedisStore) Get(key string) (any, bool) {
 	rc := store.pool.Get()
 	defer rc.Close()
@@ -128,7 +128,7 @@ func (store *RedisStore) Get(key string) (any, bool) {
 
 }
 
-// Gets 批量取值
+// Gets gets multiple values
 func (store *RedisStore) Gets(keys []string, prefix string) (map[string]any, []string) {
 	rc := store.pool.Get()
 	defer rc.Close()
@@ -157,11 +157,11 @@ func (store *RedisStore) Gets(keys []string, prefix string) (map[string]any, []s
 			res[keys[key]] = decoded
 		}
 	}
-	// 解码所得值
+	// decode the retrieved values
 	return res, missed
 }
 
-// Sets 批量设置值
+// Sets sets multiple values
 func (store *RedisStore) Sets(values map[string]any, prefix string) error {
 	rc := store.pool.Get()
 	defer rc.Close()
@@ -170,7 +170,7 @@ func (store *RedisStore) Sets(values map[string]any, prefix string) error {
 	}
 	var setValues = make(map[string]any)
 
-	// 编码待设置值
+	// encode the values to set
 	for key, value := range values {
 		serialized, err := serializer(value)
 		if err != nil {
@@ -187,7 +187,7 @@ func (store *RedisStore) Sets(values map[string]any, prefix string) error {
 
 }
 
-// Delete 批量删除给定的键
+// Delete deletes the given keys in bulk
 func (store *RedisStore) Delete(prefix string, keys ...string) error {
 	rc := store.pool.Get()
 	defer rc.Close()
@@ -195,7 +195,7 @@ func (store *RedisStore) Delete(prefix string, keys ...string) error {
 		return rc.Err()
 	}
 
-	// 处理前缀
+	// handle the prefix
 	for i := 0; i < len(keys); i++ {
 		keys[i] = prefix + keys[i]
 	}
@@ -221,7 +221,7 @@ func (store *RedisStore) Delete(prefix string, keys ...string) error {
 	return nil
 }
 
-// DeleteAll 批量所有键
+// DeleteAll deletes all keys in bulk
 func (store *RedisStore) DeleteAll() error {
 	rc := store.pool.Get()
 	defer rc.Close()

@@ -16,7 +16,7 @@ import (
 	"github.com/gin-contrib/static"
 )
 
-// Option 发送请求的额外设置
+// Option extra options for sending requests
 type Option interface {
 	apply(*dependency)
 }

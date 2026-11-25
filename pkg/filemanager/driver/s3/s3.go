@@ -49,13 +49,13 @@ type Driver struct {
 	svc  *s3.S3
 }
 
-// UploadPolicy S3上传策略
+// UploadPolicy S3 upload policy
 type UploadPolicy struct {
 	Expiration string        `json:"expiration"`
 	Conditions []interface{} `json:"conditions"`
 }
 
-// MetaData 文件信息
+// MetaData file info
 type MetaData struct {
 	Size int64
 	Etag string
@@ -103,9 +103,9 @@ func New(ctx context.Context, policy *ent.StoragePolicy, settings setting.Provid
 	return driver, nil
 }
 
-// List 列出给定路径下的文件
+// List lists files under the given path
 func (handler *Driver) List(ctx context.Context, base string, onProgress driver.ListProgressFunc, recursive bool) ([]fs.PhysicalObject, error) {
-	// 初始化列目录参数
+	// initialize the list parameters
 	base = strings.TrimPrefix(base, "/")
 	if base != "" {
 		base += "/"
@@ -117,7 +117,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 		MaxKeys: aws.Int64(1000),
 	}
 
-	// 是否为递归列出
+	// whether to list recursively
 	if !recursive {
 		opt.Delimiter = aws.String("/")
 	}
@@ -135,7 +135,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 		objects = append(objects, res.Contents...)
 		commons = append(commons, res.CommonPrefixes...)
 
-		// 如果本次未列取完，则继续使用marker获取结果
+		// if the listing is not complete, continue with the marker
 		if *res.IsTruncated {
 			opt.Marker = res.NextMarker
 		} else {
@@ -143,10 +143,10 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 		}
 	}
 
-	// 处理列取结果
+	// process the listing result
 	res := make([]fs.PhysicalObject, 0, len(objects)+len(commons))
 
-	// 处理目录
+	// process directories
 	for _, object := range commons {
 		rel, err := filepath.Rel(*opt.Prefix, *object.Prefix)
 		if err != nil {
@@ -162,7 +162,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 	}
 	onProgress(len(commons))
 
-	// 处理文件
+	// process files
 	for _, object := range objects {
 		if strings.HasSuffix(*object.Key, "/") && *object.Size == 0 {
 			continue
@@ -185,16 +185,16 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 	return res, nil
 }
 
-// Open 打开文件
+// Open opens a file
 func (handler *Driver) Open(ctx context.Context, path string) (*os.File, error) {
 	return nil, errors.New("not implemented")
 }
 
-// Put 将文件流保存到指定目录
+// Put saves the file stream to the given path
 func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	defer file.Close()
 
-	// 是否允许覆盖
+	// whether overwriting is allowed
 	overwrite := file.Mode&fs.ModeOverwrite == fs.ModeOverwrite
 	if !overwrite {
 		// Check for duplicated file
@@ -226,8 +226,8 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	return nil
 }
 
-// Delete 删除一个或多个文件，
-// 返回未删除的文件，及遇到的最后一个错误
+// Delete deletes one or more files,
+// returns the files that were not deleted and the last error encountered
 func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, error) {
 	failed := make([]string, 0, len(files))
 	batchSize := handler.policy.Settings.S3DeleteBatchSize
@@ -287,12 +287,12 @@ func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, e
 
 }
 
-// Thumb 获取文件缩略图
+// Thumb gets the file thumbnail
 func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string, e fs.Entity) (string, error) {
 	return "", errors.New("not implemented")
 }
 
-// Source 获取外链URL
+// Source gets the external link URL
 func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.GetSourceArgs) (string, error) {
 	var contentDescription *string
 	if args.IsDownload {
@@ -317,13 +317,13 @@ func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.Get
 		return "", err
 	}
 
-	// 将最终生成的签名URL域名换成用户自定义的加速域名（如果有）
+	// replace the domain of the signed URL with the user's custom accelerated domain (if any)
 	finalURL, err := url.Parse(signedURL)
 	if err != nil {
 		return "", err
 	}
 
-	// 公有空间替换掉Key及不支持的头
+	// for public buckets, strip the key and unsupported headers
 	if !handler.policy.IsPrivate {
 		finalURL.RawQuery = ""
 	}
@@ -331,16 +331,16 @@ func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.Get
 	return finalURL.String(), nil
 }
 
-// Token 获取上传策略和认证Token
+// Token gets the upload policy and auth token
 func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, file *fs.UploadRequest) (*fs.UploadCredential, error) {
 	// Check for duplicated file
 	if _, err := handler.Meta(ctx, file.Props.SavePath); err == nil {
 		return nil, fs.ErrFileExisted
 	}
 
-	// 生成回调地址
+	// generate the callback URL
 	siteURL := handler.settings.SiteURL(setting.UseFirstSiteUrl(ctx))
-	// 在从机端创建上传会话
+	// create the upload session on the slave node
 	uploadSession.ChunkSize = handler.chunkSize
 	uploadSession.Callback = routes.MasterSlaveCallbackUrl(siteURL, types.PolicyTypeS3, uploadSession.Props.UploadSessionID, uploadSession.CallbackSecret).String()
 
@@ -349,7 +349,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 		mimeType = handler.mime.TypeByName(file.Props.Uri.Name())
 	}
 
-	// 创建分片上传
+	// create the multipart upload
 	res, err := handler.svc.CreateMultipartUploadWithContext(ctx, &s3.CreateMultipartUploadInput{
 		Bucket:      &handler.policy.BucketName,
 		Key:         &uploadSession.Props.SavePath,
@@ -362,7 +362,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 
 	uploadSession.UploadID = *res.UploadId
 
-	// 为每个分片签名上传 URL
+	// sign an upload URL for each part
 	chunks := chunk.NewChunkGroup(file, handler.chunkSize, &backoff.ConstantBackoff{}, false, handler.l, "")
 	urls := make([]string, chunks.Num())
 	for chunks.Next() {
@@ -388,7 +388,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 		}
 	}
 
-	// 签名完成分片上传的请求URL
+	// sign the request URL that completes the multipart upload
 	signedReq, _ := handler.svc.CompleteMultipartUploadRequest(&s3.CompleteMultipartUploadInput{
 		Bucket:   &handler.policy.BucketName,
 		Key:      &file.Props.SavePath,
@@ -400,7 +400,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 		return nil, err
 	}
 
-	// 生成上传凭证
+	// generate the upload credential
 	return &fs.UploadCredential{
 		UploadID:    *res.UploadId,
 		UploadURLs:  urls,
@@ -410,7 +410,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 	}, nil
 }
 
-// Meta 获取文件信息
+// Meta gets file info
 func (handler *Driver) Meta(ctx context.Context, path string) (*MetaData, error) {
 	res, err := handler.svc.HeadObjectWithContext(ctx,
 		&s3.HeadObjectInput{
@@ -438,7 +438,7 @@ func (handler *Driver) Meta(ctx context.Context, path string) (*MetaData, error)
 
 }
 
-// CORS 创建跨域策略
+// CORS creates the CORS policy
 func (handler *Driver) CORS() error {
 	rule := s3.CORSRule{
 		AllowedMethods: aws.StringSlice([]string{
@@ -464,7 +464,7 @@ func (handler *Driver) CORS() error {
 	return err
 }
 
-// 取消上传凭证
+// cancel the upload credential
 func (handler *Driver) CancelToken(ctx context.Context, uploadSession *fs.UploadSession) error {
 	_, err := handler.svc.AbortMultipartUploadWithContext(ctx, &s3.AbortMultipartUploadInput{
 		UploadId: &uploadSession.UploadID,

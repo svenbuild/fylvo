@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ListDirectory 列出目录下内容
+// ListDirectory lists the folder contents
 func ListDirectory(c *gin.Context) {
 	service := ParametersFromContext[*explorer.ListFileService](c, explorer.ListFileParameterCtx{})
 	resp, err := service.List(c)

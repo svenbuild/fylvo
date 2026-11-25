@@ -9,7 +9,7 @@ const initialRect: OriginRectType = {
   L: 0,
   W: 0,
   H: 0,
-  // 图像填充方式
+  // image fill mode
   FIT: undefined,
 };
 
@@ -20,12 +20,12 @@ export default function useAnimationOrigin(
   speed: number,
   updateEasing: (pause: boolean) => void,
 ): [
-  // 动画状态
+  // animation state
   easingMode: EasingMode,
   originRect: OriginRectType,
 ] {
   const [originRect, updateOriginRect] = useState(initialRect);
-  // 动画状态
+  // animation state
   const [easingMode, updateEasingMode] = useState<EasingMode>(0);
   const initialTime = useRef<number>();
 
@@ -34,7 +34,7 @@ export default function useAnimationOrigin(
   });
 
   useEffect(() => {
-    // 记录初始打开的时间
+    // record the time of the initial open
     if (!initialTime.current) {
       initialTime.current = Date.now();
     }
@@ -42,12 +42,12 @@ export default function useAnimationOrigin(
       return;
     }
     handleUpdateOrigin(originRef, updateOriginRect);
-    // 打开动画处理
+    // open animation handling
     if (visible) {
-      // 小于最大允许动画时间，则执行缩放动画
+      // if below the maximum allowed animation time, run the scale animation
       if (Date.now() - initialTime.current < maxWaitAnimationTime) {
         updateEasingMode(1);
-        // 延时执行动画，保持 transition 生效
+        // delay the animation so the transition takes effect
         requestAnimationFrame(() => {
           updateEasingMode(2);
           requestAnimationFrame(() => handleToShape(3));
@@ -55,11 +55,11 @@ export default function useAnimationOrigin(
         setTimeout(fn.OK, speed);
         return;
       }
-      // 超出则不执行
+      // skip if exceeded
       updateEasingMode(4);
       return;
     }
-    // 关闭动画处理
+    // close animation handling
     handleToShape(5);
   }, [visible, loaded]);
 
@@ -72,7 +72,7 @@ export default function useAnimationOrigin(
 }
 
 /**
- * 更新缩略图位置信息
+ * update the thumbnail position info
  */
 function handleUpdateOrigin(
   originRef: MutableRefObject<HTMLElement | null> | undefined,
@@ -81,7 +81,7 @@ function handleUpdateOrigin(
   const element = originRef && originRef.current;
 
   if (element && element.nodeType === 1) {
-    // 获取触发时节点位置
+    // get the node position at trigger time
     const { top, left, width, height } = element.getBoundingClientRect();
     const isImage = element.tagName === "IMG";
     updateOriginRect({

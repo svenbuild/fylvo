@@ -8,19 +8,19 @@ import (
 func TestRandStringRunes(t *testing.T) {
 	asserts := assert.New(t)
 
-	// 0 长度字符
+	// 0-length string
 	randStr := RandStringRunes(0)
 	asserts.Len(randStr, 0)
 
-	// 16 长度字符
+	// 16-length string
 	randStr = RandStringRunes(16)
 	asserts.Len(randStr, 16)
 
-	// 32 长度字符
+	// 32-length string
 	randStr = RandStringRunes(32)
 	asserts.Len(randStr, 32)
 
-	//相同长度字符
+	//strings of the same length
 	sameLenStr1 := RandStringRunes(32)
 	sameLenStr2 := RandStringRunes(32)
 	asserts.NotEqual(sameLenStr1, sameLenStr2)

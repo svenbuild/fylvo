@@ -19,18 +19,18 @@ import (
 	"github.com/samber/lo"
 )
 
-// AddUserService 用户添加服务
+// AddUserService is the service for adding a user
 type AddUserService struct {
 	//User     model.User `json:"User" binding:"required"`
 	Password string `json:"password"`
 }
 
-// UserService 用户ID服务
+// UserService is the service for a user ID
 type UserService struct {
 	ID uint `uri:"id" json:"id" binding:"required"`
 }
 
-// UserBatchService 用户批量操作服务
+// UserBatchService is the service for batch user operations
 type UserBatchService struct {
 	ID []uint `json:"id" binding:"min=1"`
 }

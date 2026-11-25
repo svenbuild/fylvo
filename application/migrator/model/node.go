@@ -4,36 +4,36 @@ import (
 	"github.com/jinzhu/gorm"
 )
 
-// Node 从机节点信息模型
+// Node slave node info model
 type Node struct {
 	gorm.Model
-	Status       NodeStatus // 节点状态
-	Name         string     // 节点别名
-	Type         ModelType  // 节点状态
-	Server       string     // 服务器地址
-	SlaveKey     string     `gorm:"type:text"` // 主->从 通信密钥
-	MasterKey    string     `gorm:"type:text"` // 从->主 通信密钥
-	Aria2Enabled bool       // 是否支持用作离线下载节点
-	Aria2Options string     `gorm:"type:text"` // 离线下载配置
-	Rank         int        // 负载均衡权重
+	Status       NodeStatus // node status
+	Name         string     // node alias
+	Type         ModelType  // node status
+	Server       string     // server address
+	SlaveKey     string     `gorm:"type:text"` // master->slave communication key
+	MasterKey    string     `gorm:"type:text"` // slave->master communication key
+	Aria2Enabled bool       // whether it can be used as an offline download node
+	Aria2Options string     `gorm:"type:text"` // offline download config
+	Rank         int        // load balancing weight
 
-	// 数据库忽略字段
+	// fields ignored by the database
 	Aria2OptionsSerialized Aria2Option `gorm:"-"`
 }
 
-// Aria2Option 非公有的Aria2配置属性
+// Aria2Option non-public Aria2 config properties
 type Aria2Option struct {
-	// RPC 服务器地址
+	// RPC server address
 	Server string `json:"server,omitempty"`
-	// RPC 密钥
+	// RPC secret
 	Token string `json:"token,omitempty"`
-	// 临时下载目录
+	// temporary download folder
 	TempPath string `json:"temp_path,omitempty"`
-	// 附加下载配置
+	// extra download config
 	Options string `json:"options,omitempty"`
-	// 下载监控间隔
+	// download monitor interval
 	Interval int `json:"interval,omitempty"`
-	// RPC API 请求超时
+	// RPC API request timeout
 	Timeout int `json:"timeout,omitempty"`
 }
 

@@ -52,7 +52,7 @@ const EntityRow = ({
 
     dispatch(getEntityUrl(entity?.id ?? 0))
       .then((url) => {
-        // 直接下载文件：使用a标签的download属性强制下载
+        // download file directly: force download with the download attribute of the a tag
         const link = document.createElement("a");
         link.href = url;
         link.download = `entity-${entity?.id}`;

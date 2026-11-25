@@ -9,9 +9,9 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// ParamErrorMsg 根据Validator返回的错误信息给出错误提示
+// ParamErrorMsg builds an error message from the errors returned by the Validator
 func ParamErrorMsg(filed string, tag string) string {
-	// 未通过验证的表单域与中文对应
+	// map failed form fields to display names
 	fieldMap := map[string]string{
 		"UserName": "Email",
 		"Password": "Password",
@@ -20,7 +20,7 @@ func ParamErrorMsg(filed string, tag string) string {
 		"URL":      "URL",
 		"Nick":     "Nickname",
 	}
-	// 未通过的规则与中文对应
+	// map failed rules to display messages
 	tagMap := map[string]string{
 		"required": "cannot be empty",
 		"min":      "too short",
@@ -33,15 +33,15 @@ func ParamErrorMsg(filed string, tag string) string {
 	}
 	tagVal, findTag := tagMap[tag]
 	if findTag {
-		// 返回拼接出来的错误信息
+		// return the combined error message
 		return fieldVal + " " + tagVal
 	}
 	return ""
 }
 
-// ErrorResponse 返回错误消息
+// ErrorResponse returns an error message
 func ErrorResponse(err error) serializer.Response {
-	// 处理 Validator 产生的错误
+	// handle errors produced by the Validator
 	if ve, ok := err.(validator.ValidationErrors); ok {
 		for _, e := range ve {
 			return serializer.ParamErrDeprecated(

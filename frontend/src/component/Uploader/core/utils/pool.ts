@@ -45,7 +45,7 @@ export class Pool {
         (v) => v.uploader.task.dst == item.uploader.task.dst && v.uploader.task.file.name == item.uploader.task.name,
       ) > -1
     ) {
-      // 找到重名任务
+      // found a task with the same name
       item.reject(new ProcessingTaskDuplicatedError());
       this.release(item);
       return;

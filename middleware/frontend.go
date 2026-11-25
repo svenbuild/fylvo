@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// FrontendFileHandler 前端静态文件处理
+// FrontendFileHandler frontend static file handler
 func FrontendFileHandler(dep dependency.Dep) gin.HandlerFunc {
 	fs := dep.ServerStaticFS()
 	l := dep.Logger()
@@ -22,7 +22,7 @@ func FrontendFileHandler(dep dependency.Dep) gin.HandlerFunc {
 		return ignoreFunc
 	}
 
-	// 读取index.html
+	// read index.html
 	file, err := fs.Open("/index.html")
 	if err != nil {
 		l.Warning("Static file \"index.html\" does not exist, it might affect the display of the homepage.")
@@ -50,9 +50,9 @@ func FrontendFileHandler(dep dependency.Dep) gin.HandlerFunc {
 			return
 		}
 
-		// 不存在的路径和index.html均返回index.html
+		// paths that do not exist and index.html both return index.html
 		if (path == "/index.html") || (path == "/") || !fs.Exists("/", path) {
-			// 读取、替换站点设置
+			// read and replace the site settings
 			settingClient := dep.SettingProvider()
 			siteBasic := settingClient.SiteBasic(c)
 			pwaOpts := settingClient.PWA(c)
@@ -79,7 +79,7 @@ func FrontendFileHandler(dep dependency.Dep) gin.HandlerFunc {
 			c.Header("Cache-Control", "public, max-age=31536000")
 		}
 
-		// 存在的静态文件
+		// existing static files
 		fileServer.ServeHTTP(c.Writer, c.Request)
 		c.Abort()
 	}

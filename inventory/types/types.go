@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// UserSetting 用户其他配置
+// UserSetting other user settings
 type (
 	UserSetting struct {
 		ProfileOff          bool                     `json:"profile_off,omitempty"`
@@ -65,11 +65,11 @@ type (
 		Name string `json:"name,omitempty"`
 	}
 
-	// GroupSetting 用户组其他配置
+	// GroupSetting other group settings
 	GroupSetting struct {
-		CompressSize          int64                  `json:"compress_size,omitempty"` // 可压缩大小
+		CompressSize          int64                  `json:"compress_size,omitempty"` // compressible size
 		DecompressSize        int64                  `json:"decompress_size,omitempty"`
-		RemoteDownloadOptions map[string]interface{} `json:"remote_download_options,omitempty"` // 离线下载用户组配置
+		RemoteDownloadOptions map[string]interface{} `json:"remote_download_options,omitempty"` // offline download group settings
 		SourceBatchSize       int                    `json:"source_batch,omitempty"`
 		Aria2BatchSize        int                    `json:"aria2_batch,omitempty"`
 		MaxWalkedFiles        int                    `json:"max_walked_files,omitempty"`
@@ -77,37 +77,37 @@ type (
 		RedirectedSource      bool                   `json:"redirected_source,omitempty"`
 	}
 
-	// PolicySetting 非公有的存储策略属性
+	// PolicySetting non-public storage policy properties
 	PolicySetting struct {
-		// Upyun访问Token
+		// Upyun access token
 		Token string `json:"token"`
-		// 允许的文件扩展名
+		// allowed file extensions
 		FileType []string `json:"file_type"`
 		// IsFileTypeDenyList Whether above list is a deny list.
 		IsFileTypeDenyList bool `json:"is_file_type_deny_list,omitempty"`
-		// FileRegexp 文件扩展名正则表达式
+		// FileRegexp file extension regular expression
 		NameRegexp string `json:"file_regexp,omitempty"`
 		// IsNameRegexp Whether above regexp is a deny list.
 		IsNameRegexpDenyList bool `json:"is_name_regexp_deny_list,omitempty"`
-		// OauthRedirect Oauth 重定向地址
+		// OauthRedirect Oauth redirect URL
 		OauthRedirect string `json:"od_redirect,omitempty"`
 		// CustomProxy whether to use custom-proxy to get file content
 		CustomProxy bool `json:"custom_proxy,omitempty"`
-		// ProxyServer 反代地址
+		// ProxyServer reverse proxy address
 		ProxyServer string `json:"proxy_server,omitempty"`
 		// InternalProxy whether to use Cloudreve internal proxy to get file content
 		InternalProxy bool `json:"internal_proxy,omitempty"`
-		// OdDriver OneDrive 驱动器定位符
+		// OdDriver OneDrive drive locator
 		OdDriver string `json:"od_driver,omitempty"`
-		// Region 区域代码
+		// Region region code
 		Region string `json:"region,omitempty"`
-		// ServerSideEndpoint 服务端请求使用的 Endpoint，为空时使用 Policy.Server 字段
+		// ServerSideEndpoint endpoint used for server-side requests, falls back to the Policy.Server field when empty
 		ServerSideEndpoint string `json:"server_side_endpoint,omitempty"`
-		// 分片上传的分片大小
+		// part size for multipart uploads
 		ChunkSize int64 `json:"chunk_size,omitempty"`
-		// 每秒对存储端的 API 请求上限
+		// API request limit per second to the storage backend
 		TPSLimit float64 `json:"tps_limit,omitempty"`
-		// 每秒 API 请求爆发上限
+		// API request burst limit per second
 		TPSLimitBurst int `json:"tps_limit_burst,omitempty"`
 		// Set this to `true` to force the request to use path-style addressing,
 		// i.e., `http://s3.amazonaws.com/BUCKET/KEY `
@@ -157,7 +157,7 @@ type (
 		Provider            DownloaderProvider `json:"provider,omitempty"`
 		*QBittorrentSetting `json:"qbittorrent,omitempty"`
 		*Aria2Setting       `json:"aria2,omitempty"`
-		// 下载监控间隔
+		// download monitoring interval
 		Interval       int  `json:"interval,omitempty"`
 		WaitForSeeding bool `json:"wait_for_seeding,omitempty"`
 		// URLValidation controls SSRF policy applied to user-supplied URLs

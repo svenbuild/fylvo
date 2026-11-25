@@ -137,7 +137,7 @@ export default class UploadManager {
     }
   }
 
-  // 设定当前存储策略
+  // Set the current storage policy
   public setPolicy(p?: StoragePolicy, path?: string) {
     this.policy = p;
     this.currentPath = path;
@@ -163,7 +163,7 @@ export default class UploadManager {
     }
   }
 
-  // 选择文件
+  // Select files
   public select = (dst: string, type = SelectType.File): Promise<Base[]> => {
     return new Promise<Base[]>((resolve, reject) => {
       if (this.policy == undefined) {

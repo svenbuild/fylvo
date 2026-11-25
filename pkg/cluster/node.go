@@ -120,7 +120,7 @@ func (b *masterNode) PrepareUpload(ctx context.Context, args *fs.StatelessPrepar
 		return nil, err
 	}
 
-	// 处理列取结果
+	// handle the listing result
 	if resp.Code != 0 {
 		return nil, serializer.NewErrorFromResponse(resp)
 	}
@@ -150,7 +150,7 @@ func (b *masterNode) CompleteUpload(ctx context.Context, args *fs.StatelessCompl
 		return err
 	}
 
-	// 处理列取结果
+	// handle the listing result
 	if resp.Code != 0 {
 		return serializer.NewErrorFromResponse(resp)
 	}
@@ -177,7 +177,7 @@ func (b *masterNode) OnUploadFailed(ctx context.Context, args *fs.StatelessOnUpl
 		return err
 	}
 
-	// 处理列取结果
+	// handle the listing result
 	if resp.Code != 0 {
 		return serializer.NewErrorFromResponse(resp)
 	}
@@ -204,7 +204,7 @@ func (b *masterNode) CreateFile(ctx context.Context, args *fs.StatelessCreateFil
 		return err
 	}
 
-	// 处理列取结果
+	// handle the listing result
 	if resp.Code != 0 {
 		return serializer.NewErrorFromResponse(resp)
 	}
@@ -270,7 +270,7 @@ func (n *slaveNode) CreateTask(ctx context.Context, taskType string, state strin
 		return 0, err
 	}
 
-	// 处理列取结果
+	// handle the listing result
 	if resp.Code != 0 {
 		return 0, serializer.NewErrorFromResponse(resp)
 	}
@@ -295,7 +295,7 @@ func (n *slaveNode) GetTask(ctx context.Context, id int, clearOnComplete bool) (
 		return nil, err
 	}
 
-	// 处理列取结果
+	// handle the listing result
 	if resp.Code != 0 {
 		return nil, serializer.NewErrorFromResponse(resp)
 	}
@@ -326,7 +326,7 @@ func (b *slaveNode) CleanupFolders(ctx context.Context, folders ...string) error
 		return err
 	}
 
-	// 处理列取结果
+	// handle the listing result
 	if resp.Code != 0 {
 		return serializer.NewErrorFromResponse(resp)
 	}

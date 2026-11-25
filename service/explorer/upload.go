@@ -19,7 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CreateUploadSessionService 获取上传凭证服务
+// CreateUploadSessionService service to get the upload credential
 type (
 	CreateUploadSessionParameterCtx struct{}
 	CreateUploadSessionService      struct {
@@ -37,7 +37,7 @@ type (
 	}
 )
 
-// Create 创建新的上传会话
+// Create creates a new upload session
 func (service *CreateUploadSessionService) Create(c context.Context) (*UploadSessionResponse, error) {
 	// Fylvo: an upload into a connected storage goes straight on to its provider.
 	if uri, ok := connectedURI(service.Uri); ok {
@@ -103,14 +103,14 @@ func (service *CreateUploadSessionService) Create(c context.Context) (*UploadSes
 
 type (
 	UploadParameterCtx struct{}
-	// UploadService 本机及从机策略上传服务
+	// UploadService upload service for local and slave policies
 	UploadService struct {
 		ID    string `uri:"sessionId" binding:"required"`
 		Index int    `uri:"index" form:"index" binding:"min=0"`
 	}
 )
 
-// LocalUpload 处理本机文件分片上传
+// LocalUpload handles local file part uploads
 func (service *UploadService) LocalUpload(c *gin.Context) error {
 	dep := dependency.FromContext(c)
 	kv := dep.KV()
@@ -143,7 +143,7 @@ func (service *UploadService) LocalUpload(c *gin.Context) error {
 	return processChunkUpload(c, m, &uploadSession, service.Index, placeholder, fs.ModeOverwrite)
 }
 
-// SlaveUpload 处理从机文件分片上传
+// SlaveUpload handles slave file part uploads
 func (service *UploadService) SlaveUpload(c *gin.Context) error {
 	dep := dependency.FromContext(c)
 	kv := dep.KV()
@@ -166,7 +166,7 @@ func (service *UploadService) SlaveUpload(c *gin.Context) error {
 }
 
 func processChunkUpload(c *gin.Context, m manager.FileManager, session *fs.UploadSession, index int, file fs.File, mode fs.WriteMode) error {
-	// 取得并校验文件大小是否符合分片要求
+	// get the file size and check that it meets the part requirements
 	chunkSize := session.ChunkSize
 	isLastChunk := session.ChunkSize == 0 || int64(index+1)*chunkSize >= session.Props.Size
 	expectedLength := chunkSize
@@ -183,7 +183,7 @@ func processChunkUpload(c *gin.Context, m manager.FileManager, session *fs.Uploa
 		)
 	}
 
-	// 非首个分片时需要允许覆盖
+	// overwriting must be allowed for parts after the first
 	if index > 0 {
 		mode |= fs.ModeOverwrite
 	}
@@ -195,7 +195,7 @@ func processChunkUpload(c *gin.Context, m manager.FileManager, session *fs.Uploa
 		Mode:   mode,
 	}
 
-	// 执行上传
+	// run the upload
 	ctx := context.WithValue(c, cluster.SlaveNodeIDCtx{}, strconv.Itoa(session.Policy.NodeID))
 	err = m.Upload(ctx, req, session.Policy, session)
 	if err != nil {

@@ -40,13 +40,13 @@ type (
 		DisplayName string
 	}
 
-	// Handler 存储策略适配器
+	// Handler storage policy adapter
 	Handler interface {
-		// 上传文件, dst为文件存储路径，size 为文件大小。上下文关闭
-		// 时，应取消上传并清理临时文件
+		// uploads a file, dst is the storage path, size is the file size. When the context is
+		// closed, the upload should be canceled and temp files cleaned up
 		Put(ctx context.Context, file *fs.UploadRequest) error
 
-		// 删除一个或多个给定路径的文件，返回删除失败的文件路径列表及错误
+		// deletes one or more files by path, returns the paths that failed and the error
 		Delete(ctx context.Context, files ...string) ([]string, error)
 
 		// Open physical files. Only implemented if HandlerCapabilityInboundGet capability is set.
@@ -60,23 +60,23 @@ type (
 		// Thumb returns the URL for a thumbnail of given entity.
 		Thumb(ctx context.Context, expire *time.Time, ext string, e fs.Entity) (string, error)
 
-		// 获取外链/下载地址，
-		// url - 站点本身地址,
-		// isDownload - 是否直接下载
+		// gets the direct link / download URL,
+		// url - the site's own address,
+		// isDownload - whether to download directly
 		Source(ctx context.Context, e fs.Entity, args *GetSourceArgs) (string, error)
 
-		// Token 获取有效期为ttl的上传凭证和签名
+		// Token gets an upload credential and signature valid for ttl
 		Token(ctx context.Context, uploadSession *fs.UploadSession, file *fs.UploadRequest) (*fs.UploadCredential, error)
 
-		// CancelToken 取消已经创建的有状态上传凭证
+		// CancelToken cancels a stateful upload credential that was already created
 		CancelToken(ctx context.Context, uploadSession *fs.UploadSession) error
 
 		// CompleteUpload completes a previously created upload session.
 		CompleteUpload(ctx context.Context, session *fs.UploadSession) error
 
-		// List 递归列取远程端path路径下文件、目录，不包含path本身，
-		// 返回的对象路径以path作为起始根目录.
-		// recursive - 是否递归列出
+		// List recursively lists files and folders under path on the remote side, excluding path itself,
+		// returned object paths use path as the root.
+		// recursive - whether to list recursively
 		List(ctx context.Context, base string, onProgress ListProgressFunc, recursive bool) ([]fs.PhysicalObject, error)
 
 		// Capabilities returns the capabilities of this handler

@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-//// 实现 webdav.DeadPropsHolder 接口，不能在models.file里面定义
+//// implements the webdav.DeadPropsHolder interface, cannot be defined in models.file
 //func (file *FileDeadProps) DeadProps() (map[xml.Name]Property, error) {
 //	return map[xml.Name]Property{
 //		xml.Name{Space: "http://owncloud.org/ns", Local: "checksums"}: {

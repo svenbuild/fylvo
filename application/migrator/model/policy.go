@@ -4,9 +4,9 @@ import (
 	"github.com/jinzhu/gorm"
 )
 
-// Policy 存储策略
+// Policy storage policy
 type Policy struct {
-	// 表字段
+	// table fields
 	gorm.Model
 	Name               string
 	Type               string
@@ -23,36 +23,36 @@ type Policy struct {
 	IsOriginLinkEnable bool
 	Options            string `gorm:"type:text"`
 
-	// 数据库忽略字段
+	// fields ignored by the database
 	OptionsSerialized PolicyOption `gorm:"-"`
 	MasterID          string       `gorm:"-"`
 }
 
-// PolicyOption 非公有的存储策略属性
+// PolicyOption non-public storage policy properties
 type PolicyOption struct {
-	// Upyun访问Token
+	// Upyun access token
 	Token string `json:"token"`
-	// 允许的文件扩展名
+	// allowed file extensions
 	FileType []string `json:"file_type"`
 	// MimeType
 	MimeType string `json:"mimetype"`
-	// OauthRedirect Oauth 重定向地址
+	// OauthRedirect Oauth redirect URL
 	OauthRedirect string `json:"od_redirect,omitempty"`
-	// OdProxy Onedrive 反代地址
+	// OdProxy Onedrive reverse proxy URL
 	OdProxy string `json:"od_proxy,omitempty"`
-	// OdDriver OneDrive 驱动器定位符
+	// OdDriver OneDrive drive locator
 	OdDriver string `json:"od_driver,omitempty"`
-	// Region 区域代码
+	// Region region code
 	Region string `json:"region,omitempty"`
-	// ServerSideEndpoint 服务端请求使用的 Endpoint，为空时使用 Policy.Server 字段
+	// ServerSideEndpoint endpoint used for server-side requests, falls back to Policy.Server when empty
 	ServerSideEndpoint string `json:"server_side_endpoint,omitempty"`
-	// 分片上传的分片大小
+	// chunk size for chunked upload
 	ChunkSize uint64 `json:"chunk_size,omitempty"`
-	// 分片上传时是否需要预留空间
+	// whether to reserve space during chunked upload
 	PlaceholderWithSize bool `json:"placeholder_with_size,omitempty"`
-	// 每秒对存储端的 API 请求上限
+	// max API requests per second to the storage backend
 	TPSLimit float64 `json:"tps_limit,omitempty"`
-	// 每秒 API 请求爆发上限
+	// max API request burst per second
 	TPSLimitBurst int `json:"tps_limit_burst,omitempty"`
 	// Set this to `true` to force the request to use path-style addressing,
 	// i.e., `http://s3.amazonaws.com/BUCKET/KEY `

@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SiteConfig 获取站点全局配置
+// SiteConfig gets the global site config
 func SiteConfig(c *gin.Context) {
 	service := ParametersFromContext[*basic.GetSettingService](c, basic.GetSettingParamCtx{})
 
@@ -24,7 +24,7 @@ func SiteConfig(c *gin.Context) {
 	})
 }
 
-// Ping 状态检查页面
+// Ping status check page
 func Ping(c *gin.Context) {
 	version := constants.BackendVersion
 	if constants.IsProBool {
@@ -37,7 +37,7 @@ func Ping(c *gin.Context) {
 	})
 }
 
-// Captcha 获取验证码
+// Captcha gets the captcha
 func Captcha(c *gin.Context) {
 	c.JSON(200, serializer.Response{
 		Code: 0,
@@ -45,7 +45,7 @@ func Captcha(c *gin.Context) {
 	})
 }
 
-// Manifest 获取manifest.json
+// Manifest gets manifest.json
 func Manifest(c *gin.Context) {
 	settingClient := dependency.FromContext(c).SettingProvider()
 	siteOpts := settingClient.SiteBasic(c)

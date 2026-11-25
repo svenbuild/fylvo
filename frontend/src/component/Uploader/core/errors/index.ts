@@ -64,12 +64,12 @@ export class UploaderError implements Error {
   }
 }
 
-// 文件未通过存储策略验证
+// file failed storage policy validation
 export class FileValidateError extends UploaderError {
-  // 未通过验证的文件属性
+  // file property that failed validation
   public field: "size" | "suffix" | "suffix_denied" | "regexp";
 
-  // 对应的存储策略
+  // the matching storage policy
   public policy: StoragePolicy;
 
   constructor(message: string, field: "size" | "suffix" | "suffix_denied" | "regexp", policy: StoragePolicy) {
@@ -107,9 +107,9 @@ export class FileValidateError extends UploaderError {
   }
 }
 
-// 未知存储策略
+// unknown storage policy
 export class UnknownPolicyError extends UploaderError {
-  // 对应的存储策略
+  // the matching storage policy
   public policy: StoragePolicy;
 
   constructor(message: string, policy: StoragePolicy) {
@@ -118,7 +118,7 @@ export class UnknownPolicyError extends UploaderError {
   }
 }
 
-// 后端 API 出错
+// backend API error
 export class APIError extends UploaderError {
   private appError: AppError;
   constructor(
@@ -143,7 +143,7 @@ export class APIError extends UploaderError {
   }
 }
 
-// 无法创建上传会话
+// cannot create upload session
 export class CreateUploadSessionError extends APIError {
   constructor(response: Response<any>) {
     super(UploaderErrorName.FailedCreateUploadSession, "", response);
@@ -155,7 +155,7 @@ export class CreateUploadSessionError extends APIError {
   }
 }
 
-// 无法删除上传会话
+// cannot delete upload session
 export class DeleteUploadSessionError extends APIError {
   constructor(response: Response<any>) {
     super(UploaderErrorName.FailedDeleteUploadSession, "", response);
@@ -167,7 +167,7 @@ export class DeleteUploadSessionError extends APIError {
   }
 }
 
-// HTTP 请求出错
+// HTTP request error
 export class HTTPError extends UploaderError {
   public response?: any;
   constructor(
@@ -186,7 +186,7 @@ export class HTTPError extends UploaderError {
   }
 }
 
-// 本地分块上传失败
+// local chunk upload failed
 export class LocalChunkUploadError extends APIError {
   constructor(
     response: Response<any>,
@@ -203,7 +203,7 @@ export class LocalChunkUploadError extends APIError {
   }
 }
 
-// 从机分块上传失败
+// slave chunk upload failed
 export class SlaveChunkUploadError extends APIError {
   constructor(
     response: Response<any>,
@@ -220,7 +220,7 @@ export class SlaveChunkUploadError extends APIError {
   }
 }
 
-// 上传任务冲突
+// upload task conflict
 export class ProcessingTaskDuplicatedError extends UploaderError {
   constructor() {
     super(UploaderErrorName.ProcessingTaskDuplicated, "Processing task duplicated");
@@ -231,7 +231,7 @@ export class ProcessingTaskDuplicatedError extends UploaderError {
   }
 }
 
-// OneDrive 分块上传失败
+// OneDrive chunk upload failed
 export class OneDriveChunkError extends UploaderError {
   constructor(public response: OneDriveError) {
     super(UploaderErrorName.OneDriveChunkUploadFailed, response.error.message);
@@ -258,7 +258,7 @@ export class OneDriveChunkError extends UploaderError {
   }
 }
 
-// OneDrive 选择了空文件上传
+// OneDrive empty file selected for upload
 export class OneDriveEmptyFileSelected extends UploaderError {
   constructor() {
     super(UploaderErrorName.OneDriveEmptyFile, "empty file not supported");
@@ -269,7 +269,7 @@ export class OneDriveEmptyFileSelected extends UploaderError {
   }
 }
 
-// OneDrive 无法完成文件上传
+// OneDrive cannot complete the file upload
 export class OneDriveFinishUploadError extends APIError {
   constructor(response: Response<any>) {
     super(UploaderErrorName.FailedFinishOneDriveUpload, "", response);
@@ -281,7 +281,7 @@ export class OneDriveFinishUploadError extends APIError {
   }
 }
 
-// S3 类策略分块上传失败
+// S3 policy chunk upload failed
 export class S3LikeChunkError extends UploaderError {
   constructor(public response: Document) {
     super(UploaderErrorName.S3LikeChunkUploadFailed, response.getElementsByTagName("Message")[0].innerHTML);
@@ -294,7 +294,7 @@ export class S3LikeChunkError extends UploaderError {
   }
 }
 
-// OSS 完成传失败
+// OSS upload completion failed
 export class S3LikeFinishUploadError extends UploaderError {
   constructor(public response: Document) {
     super(UploaderErrorName.S3LikeChunkUploadFailed, response.getElementsByTagName("Message")[0].innerHTML);
@@ -326,7 +326,7 @@ export class ObsFinishUploadError extends UploaderError {
   }
 }
 
-// qiniu 分块上传失败
+// qiniu chunk upload failed
 export class QiniuChunkError extends UploaderError {
   constructor(public response: QiniuError) {
     super(UploaderErrorName.QiniuChunkUploadFailed, response.error);
@@ -339,7 +339,7 @@ export class QiniuChunkError extends UploaderError {
   }
 }
 
-// qiniu 完成传失败
+// qiniu upload completion failed
 export class QiniuFinishUploadError extends UploaderError {
   constructor(public response: QiniuError) {
     super(UploaderErrorName.FailedFinishQiniuUpload, response.error);
@@ -352,7 +352,7 @@ export class QiniuFinishUploadError extends UploaderError {
   }
 }
 
-// COS 上传失败
+// COS upload failed
 export class COSUploadError extends UploaderError {
   constructor(public response: Document) {
     super(UploaderErrorName.COSPostUploadFailed, response.getElementsByTagName("Message")[0].innerHTML);
@@ -366,7 +366,7 @@ export class COSUploadError extends UploaderError {
   }
 }
 
-// COS 无法完成上传回调
+// COS cannot complete the upload callback
 export class COSUploadCallbackError extends APIError {
   constructor(response: Response<any>) {
     super(UploaderErrorName.COSUploadCallbackFailed, "", response);
@@ -378,7 +378,7 @@ export class COSUploadCallbackError extends APIError {
   }
 }
 
-// Upyun 上传失败
+// Upyun upload failed
 export class UpyunUploadError extends UploaderError {
   constructor(public response: UpyunError) {
     super(UploaderErrorName.UpyunPostUploadFailed, response.message);
@@ -391,7 +391,7 @@ export class UpyunUploadError extends UploaderError {
   }
 }
 
-// S3 无法完成上传回调
+// S3 cannot complete the upload callback
 export class S3LikeUploadCallbackError extends APIError {
   constructor(response: Response<any>) {
     super(UploaderErrorName.S3LikeUploadCallbackFailed, "", response);
@@ -403,7 +403,7 @@ export class S3LikeUploadCallbackError extends APIError {
   }
 }
 
-// 无法解析响应
+// cannot parse the response
 export class TransformResponseError extends UploaderError {
   constructor(
     private response: string,

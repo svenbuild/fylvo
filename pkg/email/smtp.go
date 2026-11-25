@@ -13,7 +13,7 @@ import (
 	"github.com/wneessen/go-mail"
 )
 
-// SMTPPool SMTP协议发送邮件
+// SMTPPool sends mail over SMTP
 type SMTPPool struct {
 	// Deprecated
 	Config SMTPConfig
@@ -24,17 +24,17 @@ type SMTPPool struct {
 	l      logging.Logger
 }
 
-// SMTPConfig SMTP发送配置
+// SMTPConfig is the SMTP sending configuration
 type SMTPConfig struct {
-	Name       string // 发送者名
-	Address    string // 发送者地址
-	ReplyTo    string // 回复地址
-	Host       string // 服务器主机名
-	Port       int    // 服务器端口
-	User       string // 用户名
-	Password   string // 密码
-	Encryption bool   // 是否启用加密
-	Keepalive  int    // SMTPPool 连接保留时长
+	Name       string // sender name
+	Address    string // sender address
+	ReplyTo    string // reply-to address
+	Host       string // server host name
+	Port       int    // server port
+	User       string // user name
+	Password   string // password
+	Encryption bool   // whether encryption is enabled
+	Keepalive  int    // how long SMTPPool keeps a connection
 }
 
 type message struct {
@@ -58,7 +58,7 @@ func NewSMTPPool(config setting.Provider, logger logging.Logger) *SMTPPool {
 	return client
 }
 
-// NewSMTPClient 新建SMTP发送队列
+// NewSMTPClient creates a new SMTP send queue
 // Deprecated
 func NewSMTPClient(config SMTPConfig) *SMTPPool {
 	client := &SMTPPool{
@@ -72,13 +72,13 @@ func NewSMTPClient(config SMTPConfig) *SMTPPool {
 	return client
 }
 
-// Send 发送邮件
+// Send sends an email
 func (client *SMTPPool) Send(ctx context.Context, to, title, body string) error {
 	if !client.chOpen {
 		return fmt.Errorf("SMTP pool is closed")
 	}
 
-	// 忽略通过QQ登录的邮箱
+	// ignore mailboxes that log in through QQ
 	if strings.HasSuffix(to, "@login.qq.com") {
 		return nil
 	}
@@ -102,14 +102,14 @@ func (client *SMTPPool) Send(ctx context.Context, to, title, body string) error 
 	return nil
 }
 
-// Close 关闭发送队列
+// Close closes the send queue
 func (client *SMTPPool) Close() {
 	if client.ch != nil {
 		close(client.ch)
 	}
 }
 
-// Init 初始化发送队列
+// Init initializes the send queue
 func (client *SMTPPool) Init() {
 	go func() {
 		client.l.Info("Initializing and starting SMTP email pool...")
@@ -174,7 +174,7 @@ func (client *SMTPPool) Init() {
 				} else {
 					l.Info("Email sent to %q, title: %q.", m.to, m.subject)
 				}
-			// 长时间没有新邮件，则关闭SMTP连接
+			// no new mail for a long time, close the SMTP connection
 			case <-time.After(time.Duration(client.config.Keepalive) * time.Second):
 				if open {
 					if err := d.Close(); err != nil {

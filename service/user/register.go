@@ -22,14 +22,14 @@ import (
 // RegisterParameterCtx define key fore UserRegisterService
 type RegisterParameterCtx struct{}
 
-// UserRegisterService 管理用户注册的服务
+// UserRegisterService service for managing user registration
 type UserRegisterService struct {
 	UserName string `form:"email" json:"email" binding:"required,email"`
 	Password string `form:"password" json:"password" binding:"required,min=6,max=128"`
 	Language string `form:"language" json:"language"`
 }
 
-// Register 新用户注册
+// Register registers a new user
 func (service *UserRegisterService) Register(c *gin.Context) serializer.Response {
 	dep := dependency.FromContext(c)
 	settings := dep.SettingProvider()
@@ -97,17 +97,17 @@ func sendActivationEmail(ctx context.Context, dep dependency.Dep, newUser *ent.U
 		return serializer.NewError(serializer.CodeEncryptError, "Failed to sign the activation link", err)
 	}
 
-	// 取得签名
+	// get the signature
 	credential := activateURL.Query().Get("sign")
 
-	// 生成对用户访问的激活地址
+	// generate the activation URL for the user
 	finalURL := routes.MasterUserActivateUrl(base)
 	queries := finalURL.Query()
 	queries.Add("id", userID)
 	queries.Add("sign", credential)
 	finalURL.RawQuery = queries.Encode()
 
-	// 返送激活邮件
+	// send the activation email
 	title, body, err := email.NewActivationEmail(ctx, dep.SettingProvider(), newUser, finalURL.String())
 	if err != nil {
 		return serializer.NewError(serializer.CodeFailedSendEmail, "Failed to send activation email", err)
@@ -120,24 +120,24 @@ func sendActivationEmail(ctx context.Context, dep dependency.Dep, newUser *ent.U
 	return nil
 }
 
-// ActivateUser 激活用户
+// ActivateUser activates a user
 func ActivateUser(c *gin.Context) serializer.Response {
 	uid := hashid.FromContext(c)
 	dep := dependency.FromContext(c)
 	userClient := dep.UserClient()
 
-	// 查找待激活用户
+	// find the user to activate
 	inactiveUser, err := userClient.GetByID(c, uid)
 	if err != nil {
 		return serializer.ErrWithDetails(c, serializer.CodeUserNotFound, "User not fount", err)
 	}
 
-	// 检查状态
+	// check the status
 	if inactiveUser.Status != user.StatusInactive {
 		return serializer.ErrWithDetails(c, serializer.CodeUserCannotActivate, "This user cannot be activated", nil)
 	}
 
-	// 激活用户
+	// activate a user
 	activeUser, err := userClient.SetStatus(c, inactiveUser, user.StatusActive)
 	if err != nil {
 		return serializer.DBErr(c, "Failed to update user", err)

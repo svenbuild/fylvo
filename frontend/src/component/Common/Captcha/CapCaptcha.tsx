@@ -134,13 +134,13 @@ const CapCaptcha = ({ onStateChange, generation, fullWidth, ...rest }: CapProps 
       return;
     }
 
-    // 在加载 widget 脚本之前设置 WASM URL
+    // set the WASM URL before loading the widget script
     if (capAssetServer === "instance") {
       (window as any).CAP_CUSTOM_WASM_URL = `${capInstanceURL.replace(/\/$/, "")}/assets/cap_wasm_bg.wasm`;
     } else if (capAssetServer === "unpkg") {
       (window as any).CAP_CUSTOM_WASM_URL = CAP_WASM_UNPKG_URL;
     } else {
-      // jsdelivr - 默认CDN
+      // jsdelivr - default CDN
       (window as any).CAP_CUSTOM_WASM_URL = CAP_WASM_JSDELIVR_URL;
     }
 
@@ -160,14 +160,14 @@ const CapCaptcha = ({ onStateChange, generation, fullWidth, ...rest }: CapProps 
       script = document.createElement("script");
       script.id = scriptId;
 
-      // 根据配置选择静态资源源
+      // choose the static resource source based on the config
       let assetSource;
       if (capAssetServer === "instance") {
         assetSource = `${capInstanceURL.replace(/\/$/, "")}/assets/widget.js`;
       } else if (capAssetServer === "unpkg") {
         assetSource = CAP_WIDGET_UNPKG_URL;
       } else {
-        // jsdelivr - 默认CDN
+        // jsdelivr - default CDN
         assetSource = CAP_WIDGET_JSDELIVR_URL;
       }
 

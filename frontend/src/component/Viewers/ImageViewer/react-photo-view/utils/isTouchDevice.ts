@@ -1,5 +1,5 @@
 /**
- * 是否支持触摸设备
+ * Whether touch devices are supported
  */
 const isTouchDevice = typeof window !== "undefined" && "ontouchstart" in window;
 

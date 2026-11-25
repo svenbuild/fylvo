@@ -633,20 +633,20 @@ func IsAnonymousUser(u *ent.User) bool {
 	return u.ID == 0
 }
 
-// CheckPassword 根据明文校验密码
+// CheckPassword checks a password against its plain text
 func CheckPassword(u *ent.User, password string) error {
 	// Fylvo: passwords are stored with bcrypt, see fylvo_password.go.
 	if isBcrypt(u.Password) {
 		return checkBcrypt(u.Password, password)
 	}
 
-	// 根据存储密码拆分为 Salt 和 Digest
+	// split the stored password into Salt and Digest
 	passwordStore := strings.Split(u.Password, ":")
 	if len(passwordStore) != 2 && len(passwordStore) != 3 {
 		return ErrorUnknownPasswordType
 	}
 
-	// 兼容V2密码，升级后存储格式为: md5:$HASH:$SALT
+	// support V2 passwords, the format after upgrading is: md5:$HASH:$SALT
 	if len(passwordStore) == 3 {
 		if passwordStore[0] != "md5" {
 			return ErrorUnknownPasswordType
@@ -662,7 +662,7 @@ func CheckPassword(u *ent.User, password string) error {
 		}
 	}
 
-	//计算 Salt 和密码组合的SHA1摘要
+	//compute the SHA1 digest of Salt combined with the password
 	var hasher hash.Hash
 	if len(passwordStore[1]) == 64 {
 		hasher = sha256.New()

@@ -31,7 +31,7 @@ const (
 	twoFaEnableSessionKey = "2fa_init_"
 )
 
-// Init2FA 初始化二步验证
+// Init2FA initializes two-factor authentication
 func Init2FA(c *gin.Context) (string, error) {
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)
@@ -64,11 +64,11 @@ const (
 	FileAvatar     = "file"
 )
 
-// Get 获取用户头像
+// Get gets the user avatar
 func (service *GetAvatarService) Get(c *gin.Context) error {
 	dep := dependency.FromContext(c)
 	settings := dep.SettingProvider()
-	// 查找目标用户
+	// Look up the target user
 	uid := hashid.FromContext(c)
 	userClient := dep.UserClient()
 	user, err := userClient.GetByID(c, uid)
@@ -81,7 +81,7 @@ func (service *GetAvatarService) Get(c *gin.Context) error {
 		c.Header("Cache-Control", fmt.Sprintf("public, max-age=%d", settings.PublicResourceMaxAge(c)))
 	}
 
-	// 未设定头像时，返回404错误
+	// If no avatar is set, return a 404 error
 	if user.Avatar == "" {
 		c.Status(404)
 		return nil
@@ -89,7 +89,7 @@ func (service *GetAvatarService) Get(c *gin.Context) error {
 
 	avatarSettings := settings.Avatar(c)
 
-	// Gravatar 头像重定向
+	// Gravatar avatar redirect
 	if user.Avatar == GravatarAvatar {
 		gravatarRoot, err := url.Parse(avatarSettings.Gravatar)
 		if err != nil {
@@ -103,7 +103,7 @@ func (service *GetAvatarService) Get(c *gin.Context) error {
 		return nil
 	}
 
-	// 本地文件头像
+	// Local file avatar
 	if user.Avatar == FileAvatar {
 		avatarRoot := util.DataPath(avatarSettings.Path)
 
@@ -122,7 +122,7 @@ func (service *GetAvatarService) Get(c *gin.Context) error {
 	return nil
 }
 
-// Settings 获取用户设定
+// Settings gets user settings
 func GetUserSettings(c *gin.Context) (*UserSettings, error) {
 	dep := dependency.FromContext(c)
 	u := inventory.UserFromContext(c)
@@ -140,7 +140,7 @@ func GetUserSettings(c *gin.Context) (*UserSettings, error) {
 
 	return BuildUserSettings(u, passkeys, dep.UAParser(), grants), nil
 
-	// 用户组有效期
+	// User group validity period
 
 	//return serializer.Response{
 	//	Data: map[string]interface{}{

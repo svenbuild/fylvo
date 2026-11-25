@@ -30,11 +30,11 @@ func ProcessCallback(failedStatusCode int, generalResp bool) gin.HandlerFunc {
 	}
 }
 
-// QiniuCallbackAuth 七牛回调签名验证
+// QiniuCallbackAuth verifies the Qiniu callback signature
 func QiniuCallbackValidate(c *gin.Context) {
 	session := c.MustGet(manager.UploadSessionCtx).(*fs.UploadSession)
 
-	// 验证回调是否来自qiniu
+	// verify that the callback comes from qiniu
 	mac := qbox.NewMac(session.Policy.AccessKey, session.Policy.SecretKey)
 	ok, err := mac.VerifyCallback(c.Request)
 	if err != nil {
@@ -53,7 +53,7 @@ func QiniuCallbackValidate(c *gin.Context) {
 	c.Next()
 }
 
-// OSSCallbackValidate 阿里云OSS上传回调
+// OSSCallbackValidate handles the Aliyun OSS upload callback
 func OSSCallbackValidate(c *gin.Context) {
 	var callbackBody callback.UploadCallbackService
 	if err := c.ShouldBindJSON(&callbackBody); err == nil {
@@ -76,7 +76,7 @@ func OSSCallbackValidate(c *gin.Context) {
 	}
 }
 
-// UpyunCallbackAuth 又拍云回调签名验证
+// UpyunCallbackAuth verifies the Upyun callback signature
 func UpyunCallbackAuth(c *gin.Context) {
 	uploadSession := c.MustGet(manager.UploadSessionCtx).(*fs.UploadSession)
 	l := logging.FromContext(c)
@@ -90,7 +90,7 @@ func UpyunCallbackAuth(c *gin.Context) {
 	c.Next()
 }
 
-// OneDriveOAuth OneDrive 授权回调
+// OneDriveOAuth handles the OneDrive authorization callback
 func OneDriveOAuth(c *gin.Context) {
 	//var callbackBody callback.OauthService
 	//if err := c.ShouldBindQuery(&callbackBody); err == nil {
@@ -108,7 +108,7 @@ func OneDriveOAuth(c *gin.Context) {
 	//}
 }
 
-// GoogleDriveOAuth Google Drive 授权回调
+// GoogleDriveOAuth handles the Google Drive authorization callback
 func GoogleDriveOAuth(c *gin.Context) {
 	//var callbackBody callback.OauthService
 	//if err := c.ShouldBindQuery(&callbackBody); err == nil {

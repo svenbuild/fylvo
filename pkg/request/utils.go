@@ -11,7 +11,7 @@ var contentLengthHeaders = []string{
 	"X-Expected-Entity-Length", // DavFS on MacOS
 }
 
-// BlackHole 将客户端发来的数据放入黑洞
+// BlackHole discards the data sent by the client
 func BlackHole(r io.Reader) {
 	io.Copy(io.Discard, r)
 }

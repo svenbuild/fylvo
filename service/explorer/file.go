@@ -26,16 +26,16 @@ import (
 	"github.com/samber/lo"
 )
 
-// SingleFileService 对单文件进行操作的五福，path为文件完整路径
+// SingleFileService service for operating on a single file, path is the full file path
 type SingleFileService struct {
 	Path string `uri:"path" json:"path" binding:"required,min=1,max=65535"`
 }
 
-// FileIDService 通过文件ID对文件进行操作的服务
+// FileIDService service for operating on files by file ID
 type FileIDService struct {
 }
 
-// FileAnonymousGetService 匿名（外链）获取文件服务
+// FileAnonymousGetService service for getting a file anonymously (direct link)
 type FileAnonymousGetService struct {
 	ID   uint   `uri:"id" binding:"required,min=1"`
 	Name string `uri:"name" binding:"required"`
@@ -45,7 +45,7 @@ func init() {
 	gob.Register(ArchiveDownloadSession{})
 }
 
-// ArchiveService 文件流式打包下載服务
+// ArchiveService service for streaming a file archive download
 type (
 	ArchiveService struct {
 		ID string `uri:"sessionID" binding:"required"`
@@ -53,7 +53,7 @@ type (
 	ArchiveParamCtx struct{}
 )
 
-// DownloadArchived 通过预签名 URL 打包下载
+// DownloadArchived downloads an archive via a presigned URL
 func (service *ArchiveService) DownloadArchived(c *gin.Context) error {
 	dep := dependency.FromContext(c)
 	archiveSessionRaw, found := dep.KV().Get(ArchiveDownloadSessionPrefix + service.ID)
@@ -77,7 +77,7 @@ func (service *ArchiveService) DownloadArchived(c *gin.Context) error {
 	fm := manager.NewFileManager(dep, requester)
 	defer fm.Recycle()
 
-	// 开始打包
+	// start archiving
 	c.Header("Content-Disposition", "attachment;")
 	c.Header("Content-Type", "application/zip")
 
@@ -99,7 +99,7 @@ func (s *GetDirectLinkService) GetUris() []string {
 	return s.Uris
 }
 
-// Sources 批量获取对象的外链
+// Sources gets direct links for multiple objects
 func (s *GetDirectLinkService) Get(c *gin.Context) ([]DirectLinkResponse, error) {
 	dep := dependency.FromContext(c)
 	u := inventory.UserFromContext(c)
@@ -358,7 +358,7 @@ func (service *FileUpdateService) PutContent(c *gin.Context, ls fs.LockSession) 
 		// that stands still, as for every other save into a connected storage.
 		defer func() { _ = http.NewResponseController(c.Writer).SetReadDeadline(time.Now().Add(connectedIdle)) }()
 	}
-	// 取得文件大小
+	// get file size
 	rc, fileSize, err := request.SniffContentLength(c.Request)
 	if err != nil {
 		return nil, serializer.NewError(serializer.CodeParamErr, "invalid content length", err)

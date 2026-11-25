@@ -4,13 +4,13 @@ import (
 	"github.com/jinzhu/gorm"
 )
 
-// Task 任务模型
+// Task task model
 type Task struct {
 	gorm.Model
-	Status   int    // 任务状态
-	Type     int    // 任务类型
-	UserID   uint   // 发起者UID，0表示为系统发起
-	Progress int    // 进度
-	Error    string `gorm:"type:text"` // 错误信息
-	Props    string `gorm:"type:text"` // 任务属性
+	Status   int    // task status
+	Type     int    // task type
+	UserID   uint   // initiator UID, 0 means started by the system
+	Progress int    // progress
+	Error    string `gorm:"type:text"` // error message
+	Props    string `gorm:"type:text"` // task properties
 }

@@ -19,7 +19,7 @@ import TextIndentIncrease from "../../../Icons/TextIndentIncrease";
 
 const DND_TYPE = "storage-product-row";
 
-// 拖拽item类型
+// drag item type
 type DragItem = { index: number };
 
 export interface DraggableCustomPropsRowProps {
@@ -130,7 +130,7 @@ const DraggableCustomPropsRow = React.memo(
           isDragging: monitor.isDragging(),
         }),
       });
-      // 兼容ref为function和对象
+      // support refs that are functions or objects
       const setRowRef = (node: HTMLTableRowElement | null) => {
         if (typeof ref === "function") {
           ref(node);

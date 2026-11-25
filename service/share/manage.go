@@ -19,7 +19,7 @@ import (
 )
 
 type (
-	// ShareCreateService 创建新分享服务
+	// ShareCreateService service to create a new share
 	ShareCreateService struct {
 		Uri             string `json:"uri" binding:"required"`
 		IsPrivate       bool   `json:"is_private"`
@@ -78,7 +78,7 @@ func (service *BatchDeleteShareService) Delete(c *gin.Context) error {
 	return nil
 }
 
-// Upsert 创建或更新分享
+// Upsert creates or updates a share
 func (service *ShareCreateService) Upsert(c *gin.Context, existed int) (string, error) {
 	dep := dependency.FromContext(c)
 	user := inventory.UserFromContext(c)

@@ -87,10 +87,10 @@ const FileRow = ({
         }
 
         if (hasViewer) {
-          // 可预览文件：新窗口打开预览，窗口保持显示预览内容
+          // previewable file: open the preview in a new window, which keeps showing the preview
           window.open(url, "_blank");
         } else {
-          // 下载文件：使用a标签的download属性强制下载
+          // download file: force download with the download attribute of the a tag
           const link = document.createElement("a");
           link.href = url;
           link.download = file?.name || `file-${file?.id}`;

@@ -21,7 +21,7 @@ import (
 	"github.com/samber/lo"
 )
 
-// GeneralClient 通用 HTTP Client
+// GeneralClient general HTTP client
 var GeneralClient Client = NewClientDeprecated()
 
 const (
@@ -34,14 +34,14 @@ const (
 	LocalIP           = "localhost"
 )
 
-// Response 请求的响应或错误信息
+// Response response or error info of a request
 type Response struct {
 	Err      error
 	Response *http.Response
 	l        logging.Logger
 }
 
-// Client 请求客户端
+// Client request client
 type Client interface {
 	// Apply applies the given options to this client.
 	Apply(opts ...Option)
@@ -49,7 +49,7 @@ type Client interface {
 	Request(method, target string, body io.Reader, opts ...Option) *Response
 }
 
-// HTTPClient 实现 Client 接口
+// HTTPClient implements the Client interface
 type HTTPClient struct {
 	mu         sync.Mutex
 	options    *options
@@ -92,9 +92,9 @@ func (c *HTTPClient) Apply(opts ...Option) {
 	}
 }
 
-// Request 发送HTTP请求
+// Request sends an HTTP request
 func (c *HTTPClient) Request(method, target string, body io.Reader, opts ...Option) *Response {
-	// 应用额外设置
+	// apply extra options
 	c.mu.Lock()
 	options := c.options.clone()
 	c.mu.Unlock()
@@ -102,7 +102,7 @@ func (c *HTTPClient) Request(method, target string, body io.Reader, opts ...Opti
 		o.apply(&options)
 	}
 
-	// 创建请求客户端
+	// create the request client
 	client := &http.Client{
 		Timeout: options.timeout,
 		Jar:     options.cookieJar,
@@ -112,12 +112,12 @@ func (c *HTTPClient) Request(method, target string, body io.Reader, opts ...Opti
 		client.Transport = options.transport
 	}
 
-	// size为0时将body设为nil
+	// set body to nil when size is 0
 	if options.contentLength == 0 {
 		body = nil
 	}
 
-	// 确定请求URL
+	// determine the request URL
 	if options.endpoint != nil {
 		targetPath, err := url.Parse(target)
 		if err != nil {
@@ -128,7 +128,7 @@ func (c *HTTPClient) Request(method, target string, body io.Reader, opts ...Opti
 		target = targetURL.ResolveReference(targetPath).String()
 	}
 
-	// 创建请求
+	// create the request
 	var (
 		req *http.Request
 		err error
@@ -143,7 +143,7 @@ func (c *HTTPClient) Request(method, target string, body io.Reader, opts ...Opti
 		return &Response{Err: err}
 	}
 
-	// 添加请求相关设置
+	// add request related settings
 	if options.header != nil {
 		for k, v := range options.header {
 			req.Header.Add(k, strings.Join(v, " "))
@@ -171,7 +171,7 @@ func (c *HTTPClient) Request(method, target string, body io.Reader, opts ...Opti
 		req.ContentLength = options.contentLength
 	}
 
-	// 签名请求
+	// sign the request
 	if options.sign != nil {
 		ctx := options.ctx
 		if options.ctx == nil {
@@ -192,7 +192,7 @@ func (c *HTTPClient) Request(method, target string, body io.Reader, opts ...Opti
 		c.tpsLimiter.Limit(options.ctx, options.tpsLimiterToken, options.tps, options.tpsBurst)
 	}
 
-	// 发送请求
+	// send the request
 	resp, err := client.Do(req)
 
 	// Logging request
@@ -222,7 +222,7 @@ func (c *HTTPClient) Request(method, target string, body io.Reader, opts ...Opti
 	return &Response{Err: nil, Response: resp, l: options.logger}
 }
 
-// GetResponse 检查响应并获取响应正文
+// GetResponse checks the response and gets the response body
 func (resp *Response) GetResponse() (string, error) {
 	if resp.Err != nil {
 		return "", resp.Err
@@ -233,7 +233,7 @@ func (resp *Response) GetResponse() (string, error) {
 	return string(respBody), err
 }
 
-// GetResponseIgnoreErr 获取响应正文
+// GetResponseIgnoreErr gets the response body
 func (resp *Response) GetResponseIgnoreErr() (string, error) {
 	if resp.Response == nil {
 		return "", resp.Err
@@ -245,20 +245,20 @@ func (resp *Response) GetResponseIgnoreErr() (string, error) {
 	return string(respBody), resp.Err
 }
 
-// CheckHTTPResponse 检查请求响应HTTP状态码
+// CheckHTTPResponse checks the HTTP status code of the response
 func (resp *Response) CheckHTTPResponse(status ...int) *Response {
 	if resp.Err != nil {
 		return resp
 	}
 
-	// 检查HTTP状态码
+	// check the HTTP status code
 	if !lo.Contains(status, resp.Response.StatusCode) {
 		resp.Err = fmt.Errorf("Remote returns unexpected status code: %d", resp.Response.StatusCode)
 	}
 	return resp
 }
 
-// DecodeResponse 尝试解析为serializer.Response，并对状态码进行检查
+// DecodeResponse tries to parse as serializer.Response and check the status code
 func (resp *Response) DecodeResponse() (*serializer.Response, error) {
 	if resp.Err != nil {
 		return nil, resp.Err
@@ -281,21 +281,21 @@ func (resp *Response) DecodeResponse() (*serializer.Response, error) {
 	return &res, nil
 }
 
-// NopRSCloser 实现不完整seeker
+// NopRSCloser incomplete seeker implementation
 type NopRSCloser struct {
 	body   io.ReadCloser
 	status *rscStatus
 }
 
 type rscStatus struct {
-	// http.ServeContent 会读取一小块以决定内容类型，
-	// 但是响应body无法实现seek，所以此项为真时第一个read会返回假数据
+	// http.ServeContent reads a small chunk to detect the content type,
+	// but the response body cannot seek, so when this is true the first read returns fake data
 	IgnoreFirst bool
 
 	Size int64
 }
 
-// GetRSCloser 返回带有空seeker的RSCloser，供http.ServeContent使用
+// GetRSCloser returns an RSCloser with an empty seeker, for use by http.ServeContent
 func (resp *Response) GetRSCloser() (*NopRSCloser, error) {
 	if resp.Err != nil {
 		return nil, resp.Err
@@ -309,18 +309,18 @@ func (resp *Response) GetRSCloser() (*NopRSCloser, error) {
 	}, resp.Err
 }
 
-// SetFirstFakeChunk 开启第一次read返回空数据
-// TODO 测试
+// SetFirstFakeChunk makes the first read return empty data
+// TODO test
 func (instance NopRSCloser) SetFirstFakeChunk() {
 	instance.status.IgnoreFirst = true
 }
 
-// SetContentLength 设置数据流大小
+// SetContentLength sets the stream size
 func (instance NopRSCloser) SetContentLength(size int64) {
 	instance.status.Size = size
 }
 
-// Read 实现 NopRSCloser reader
+// Read implements the NopRSCloser reader
 func (instance NopRSCloser) Read(p []byte) (n int, err error) {
 	if instance.status.IgnoreFirst && len(p) == 512 {
 		return 0, io.EOF
@@ -328,14 +328,14 @@ func (instance NopRSCloser) Read(p []byte) (n int, err error) {
 	return instance.body.Read(p)
 }
 
-// Close 实现 NopRSCloser closer
+// Close implements the NopRSCloser closer
 func (instance NopRSCloser) Close() error {
 	return instance.body.Close()
 }
 
-// Seek 实现 NopRSCloser seeker, 只实现seek开头/结尾以便http.ServeContent用于确定正文大小
+// Seek implements the NopRSCloser seeker, only seeking to start/end so http.ServeContent can determine the body size
 func (instance NopRSCloser) Seek(offset int64, whence int) (int64, error) {
-	// 进行第一次Seek操作后，取消忽略选项
+	// after the first Seek, clear the ignore option
 	if instance.status.IgnoreFirst {
 		instance.status.IgnoreFirst = false
 	}

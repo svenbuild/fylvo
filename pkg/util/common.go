@@ -27,7 +27,7 @@ var (
 	RandomLowerCases = []rune("1234567890abcdefghijklmnopqrstuvwxyz")
 )
 
-// RandStringRunes 返回随机字符串
+// RandStringRunes returns a random string
 func RandStringRunes(n int) string {
 	b := make([]rune, n)
 	for i := range b {
@@ -56,10 +56,10 @@ func RandString(n int, variant []rune) string {
 	return string(b)
 }
 
-// IsInExtensionList 返回文件的扩展名是否在给定的列表范围内
+// IsInExtensionList returns whether the file extension is in the given list
 func IsInExtensionList(extList []string, fileName string) bool {
 	ext := Ext(fileName)
-	// 无扩展名时
+	// when there is no extension
 	if len(ext) == 0 {
 		return false
 	}
@@ -71,9 +71,9 @@ func IsInExtensionList(extList []string, fileName string) bool {
 	return false
 }
 
-// IsInExtensionList 返回文件的扩展名是否在给定的列表范围内
+// IsInExtensionList returns whether the file extension is in the given list
 func IsInExtensionListExt(extList []string, ext string) bool {
-	// 无扩展名时
+	// when there is no extension
 	if len(ext) == 0 {
 		return false
 	}
@@ -85,7 +85,7 @@ func IsInExtensionListExt(extList []string, ext string) bool {
 	return false
 }
 
-// ContainsString 返回list中是否包含
+// ContainsString returns whether list contains the item
 func ContainsString(s []string, e string) bool {
 	for _, a := range s {
 		if a == e {
@@ -95,7 +95,7 @@ func ContainsString(s []string, e string) bool {
 	return false
 }
 
-// Replace 根据替换表执行批量替换
+// Replace runs batch replacement from a replace table
 func Replace(table map[string]string, s string) string {
 	for key, value := range table {
 		s = strings.Replace(s, key, value, -1)
@@ -103,7 +103,7 @@ func Replace(table map[string]string, s string) string {
 	return s
 }
 
-// ReplaceMagicVar 动态替换字符串中的魔法变量
+// ReplaceMagicVar replaces magic variables in the string dynamically
 func ReplaceMagicVar(rawString string, fsSeparator string, pathAvailable bool, blobAvailable bool,
 	timeConst time.Time, userId int, originName string, originPath string, completeBlobPath string) string {
 	re := regexp.MustCompile(`\{[^{}]+\}`)
@@ -177,7 +177,7 @@ func ReplaceMagicVar(rawString string, fsSeparator string, pathAvailable bool, b
 	})
 }
 
-// SliceIntersect 求两个切片交集
+// SliceIntersect intersection of two slices
 func SliceIntersect(slice1, slice2 []string) []string {
 	m := make(map[string]int)
 	nn := make([]string, 0)
@@ -194,7 +194,7 @@ func SliceIntersect(slice1, slice2 []string) []string {
 	return nn
 }
 
-// SliceDifference 求两个切片差集
+// SliceDifference difference of two slices
 func SliceDifference(slice1, slice2 []string) []string {
 	m := make(map[string]int)
 	nn := make([]string, 0)

@@ -33,47 +33,47 @@ import { limitNumber } from "./utils/limitTarget";
 import { defaultEasing, defaultOpacity, defaultSpeed, horizontalOffset, maxMoveOffset } from "./variables";
 
 export interface IPhotoSliderProps extends PhotoProviderBase {
-  // 图片列表
+  // image list
   images: DataType[];
-  // 图片当前索引
+  // current image index
   index?: number;
-  // 索引改变回调
+  // index change callback
   onIndexChange?: (index: number) => void;
-  // 可见
+  // visible
   visible: boolean;
-  // 关闭回调
+  // close callback
   onClose: (evt?: React.MouseEvent | React.TouchEvent) => void;
-  // 关闭动画结束后回调
+  // callback after the close animation ends
   afterClose?: () => void;
   moreFiles?: boolean;
 }
 
 type PhotoSliderState = {
-  // 偏移量
+  // offset
   x: number;
-  // 图片处于触摸的状态
+  // image is being touched
   touched: boolean;
-  // 是否暂停 transition
+  // whether to pause the transition
   pause: boolean;
-  // Reach 开始时 x 坐标
+  // x coordinate when Reach starts
   lastCX: number | undefined;
-  // Reach 开始时 y 坐标
+  // y coordinate when Reach starts
   lastCY: number | undefined;
-  // 背景透明度
+  // background opacity
   bg: number | null | undefined;
-  // 上次关闭的背景透明度
+  // background opacity at the last close
   lastBg: number | null | undefined;
-  // 是否显示 overlay
+  // whether to show the overlay
   overlay: boolean;
-  // 是否为最小状态，可下拉关闭
+  // whether in the minimal state (can be pulled down to close)
   minimal: boolean;
-  // 缩放
+  // scale
   scale: number;
-  // 旋转
+  // rotation
   rotate: number;
-  // 缩放回调
+  // scale callback
   onScale?: (scale: number) => void;
-  // 旋转回调
+  // rotate callback
   onRotate?: (rotate: number) => void;
 };
 
@@ -148,22 +148,22 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
     onRotate,
   } = state;
 
-  // 受控 index
+  // controlled index
   const isControlled = props.hasOwnProperty("index");
   const index = isControlled ? controlledIndex : innerIndex;
   const onIndexChange = isControlled ? controlledIndexChange : updateInnerIndex;
-  // 内部虚拟 index
+  // internal virtual index
   const virtualIndexRef = useRef(index);
 
-  // 当前图片
+  // current image
   const imageLength = images.length;
   const currentImage: DataType | undefined = images[index];
 
-  // 是否开启
+  // whether enabled
   // noinspection SuspiciousTypeOfGuard
   const enableLoop = typeof loop === "boolean" ? loop : imageLength > loop;
 
-  // 显示动画处理
+  // show animation handling
   const [realVisible, activeAnimation, onAnimationEnd] = useAnimationVisible(visible, afterClose);
 
   useEffect(() => {
@@ -178,7 +178,7 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
   }, []);
 
   useIsomorphicLayoutEffect(() => {
-    // 显示弹出层，修正正确的指向
+    // show the popup layer, fix the correct target
     if (realVisible) {
       updateState({
         pause: true,
@@ -187,7 +187,7 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
       virtualIndexRef.current = index;
       return;
     }
-    // 关闭后清空状态
+    // reset state after closing
     updateState(initialState);
   }, [realVisible]);
 
@@ -198,20 +198,20 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
       }
       updateState({
         overlay: true,
-        // 记录当前关闭时的透明度
+        // remember the opacity at close time
         lastBg: bg,
       });
       onClose(evt);
     },
     changeIndex(nextIndex: number, isPause: boolean = false) {
-      // 当前索引
+      // current index
       const currentIndex = enableLoop ? virtualIndexRef.current + (nextIndex - index) : nextIndex;
       const max = imageLength - 1;
-      // 虚拟 index
-      // 非循环模式，限制区间
+      // virtual index
+      // non-loop mode, limit the range
       const limitIndex = limitNumber(currentIndex, 0, max);
       const nextVirtualIndex = enableLoop ? currentIndex : limitIndex;
-      // 单个屏幕宽度
+      // width of a single screen
       const singlePageWidth = dynamicInnerWidth + horizontalOffset;
 
       updateState({
@@ -223,7 +223,7 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
       });
 
       virtualIndexRef.current = nextVirtualIndex;
-      // 更新真实的 index
+      // update the real index
       const realLoopIndex = nextIndex < 0 ? max : nextIndex > max ? 0 : nextIndex;
       if (onIndexChange) {
         onIndexChange(enableLoop ? realLoopIndex : limitIndex);
@@ -296,7 +296,7 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
     const originOffsetClientX = clientX - lastCX;
     let offsetClientX = originOffsetClientX;
 
-    // 第一张和最后一张超出距离减半
+    // halve the overshoot distance for the first and last image
     if (
       !enableLoop &&
       ((index === 0 && originOffsetClientX > 0) || (index === imageLength - 1 && originOffsetClientX < 0))
@@ -324,18 +324,18 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
     const offsetClientX = clientX - (lastCX ?? clientX);
     const offsetClientY = clientY - (lastCY ?? clientY);
     let willClose = false;
-    // 下一张
+    // next image
     if (offsetClientX < -maxMoveOffset) {
       changeIndex(index + 1);
       return;
     }
-    // 上一张
+    // previous image
     if (offsetClientX > maxMoveOffset) {
       changeIndex(index - 1);
       return;
     }
     const singlePageWidth = dynamicInnerWidth + horizontalOffset;
-    // 当前偏移
+    // current offset
     const currentTranslateX = -singlePageWidth * virtualIndexRef.current;
 
     if (Math.abs(offsetClientY) > 100 && minimal && pullClosable) {
@@ -351,7 +351,7 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
       overlay: willClose ? true : overlay,
     });
   }
-  // 截取相邻的图片
+  // take the adjacent images
   const adjacentImages = useAdjacentImages(images, index, enableLoop);
   const currentFile = images[index]?.file;
   const displayOpt = useActionDisplayOpt(currentFile ? [currentFile] : []);
@@ -366,9 +366,9 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
   }
 
   const currentOverlayVisible = overlay && !activeAnimation;
-  // 关闭过程中使用下拉保存的透明度
+  // use the opacity saved from the pull-down while closing
   const currentOpacity = visible ? bg : lastBg;
-  // 覆盖物参数
+  // overlay parameters
   const overlayParams: OverlayRenderProps | undefined = onScale &&
     onRotate && {
       images,
@@ -383,7 +383,7 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
       onScale,
       onRotate,
     };
-  // 动画时间
+  // animation duration
   const currentSpeed = speedFn ? speedFn(activeAnimation) : defaultSpeed;
   const currentEasing = easingFn ? easingFn(activeAnimation) : defaultEasing;
   const slideSpeed = speedFn ? speedFn(3) : defaultSpeed + 200;
@@ -490,7 +490,7 @@ export default function PhotoSlider(props: IPhotoSliderProps) {
           </Box>
         )}
         {adjacentImages.map((item: DataType, currentIndex) => {
-          // 截取之前的索引位置
+          // index position before the cut
           const nextIndex =
             !enableLoop && index === 0 ? index + currentIndex : virtualIndexRef.current - 1 + currentIndex;
 

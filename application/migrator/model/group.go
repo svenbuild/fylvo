@@ -4,7 +4,7 @@ import (
 	"github.com/jinzhu/gorm"
 )
 
-// Group 用户组模型
+// Group is the user group model
 type Group struct {
 	gorm.Model
 	Name          string
@@ -15,21 +15,21 @@ type Group struct {
 	SpeedLimit    int
 	Options       string `json:"-" gorm:"size:4294967295"`
 
-	// 数据库忽略字段
+	// field ignored by the database
 	PolicyList        []uint      `gorm:"-"`
 	OptionsSerialized GroupOption `gorm:"-"`
 }
 
-// GroupOption 用户组其他配置
+// GroupOption holds other group settings
 type GroupOption struct {
-	ArchiveDownload  bool                   `json:"archive_download,omitempty"` // 打包下载
-	ArchiveTask      bool                   `json:"archive_task,omitempty"`     // 在线压缩
-	CompressSize     uint64                 `json:"compress_size,omitempty"`    // 可压缩大小
+	ArchiveDownload  bool                   `json:"archive_download,omitempty"` // archive download
+	ArchiveTask      bool                   `json:"archive_task,omitempty"`     // online compression
+	CompressSize     uint64                 `json:"compress_size,omitempty"`    // compressible size
 	DecompressSize   uint64                 `json:"decompress_size,omitempty"`
 	OneTimeDownload  bool                   `json:"one_time_download,omitempty"`
 	ShareDownload    bool                   `json:"share_download,omitempty"`
-	Aria2            bool                   `json:"aria2,omitempty"`         // 离线下载
-	Aria2Options     map[string]interface{} `json:"aria2_options,omitempty"` // 离线下载用户组配置
+	Aria2            bool                   `json:"aria2,omitempty"`         // offline download
+	Aria2Options     map[string]interface{} `json:"aria2_options,omitempty"` // offline download group settings
 	SourceBatchSize  int                    `json:"source_batch,omitempty"`
 	RedirectedSource bool                   `json:"redirected_source,omitempty"`
 	Aria2BatchSize   int                    `json:"aria2_batch,omitempty"`

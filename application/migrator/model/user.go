@@ -5,19 +5,19 @@ import (
 )
 
 const (
-	// Active 账户正常状态
+	// Active account in normal state
 	Active = iota
-	// NotActivicated 未激活
+	// NotActivicated not activated
 	NotActivicated
-	// Baned 被封禁
+	// Baned banned
 	Baned
-	// OveruseBaned 超额使用被封禁
+	// OveruseBaned banned for overuse
 	OveruseBaned
 )
 
-// User 用户模型
+// User user model
 type User struct {
-	// 表字段
+	// Table fields
 	gorm.Model
 	Email     string `gorm:"type:varchar(100);unique_index"`
 	Nick      string `gorm:"size:50"`
@@ -30,15 +30,15 @@ type User struct {
 	Options   string `json:"-" gorm:"size:4294967295"`
 	Authn     string `gorm:"size:4294967295"`
 
-	// 关联模型
+	// Related models
 	Group  Group  `gorm:"save_associations:false:false"`
 	Policy Policy `gorm:"PRELOAD:false,association_autoupdate:false"`
 
-	// 数据库忽略字段
+	// Fields ignored by the database
 	OptionsSerialized UserOption `gorm:"-"`
 }
 
-// UserOption 用户个性化配置字段
+// UserOption user personalization config fields
 type UserOption struct {
 	ProfileOff     bool   `json:"profile_off,omitempty"`
 	PreferredTheme string `json:"preferred_theme,omitempty"`

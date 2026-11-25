@@ -55,16 +55,16 @@ func bytesPerPixel(m color.Model, head []byte) int64 {
 // thumbnail generator. Extensions are lowercased and do not include the dot.
 var BuiltinSupportedExts = []string{"jpg", "jpeg", "png", "gif"}
 
-// Thumb 缩略图
+// Thumb is a thumbnail
 type Thumb struct {
 	src image.Image
 	ext string
 }
 
-// NewThumbFromFile 从文件数据获取新的Thumb对象，
-// 尝试通过文件名name解码图像
+// NewThumbFromFile creates a new Thumb from file data,
+// trying to decode the image by its file name
 func NewThumbFromFile(file io.Reader, ext string) (*Thumb, error) {
-	// 无扩展名时
+	// when there is no extension
 	if ext == "" {
 		return nil, fmt.Errorf("unknown image format: %w", ErrPassThrough)
 	}
@@ -103,19 +103,19 @@ func NewThumbFromFile(file io.Reader, ext string) (*Thumb, error) {
 	}, nil
 }
 
-// GetThumb 生成给定最大尺寸的缩略图
+// GetThumb generates a thumbnail within the given maximum size
 func (image *Thumb) GetThumb(width, height uint) {
 	//image.src = resize.Thumbnail(width, height, image.src, resize.Lanczos3)
 	image.src = Thumbnail(width, height, image.src)
 }
 
-// GetSize 获取图像尺寸
+// GetSize gets the image size
 func (image *Thumb) GetSize() (int, int) {
 	b := image.src.Bounds()
 	return b.Max.X, b.Max.Y
 }
 
-// Save 保存图像到给定路径
+// Save saves the image to the given path
 func (image *Thumb) Save(w io.Writer, encodeSetting *setting.ThumbEncode) (err error) {
 	switch encodeSetting.Format {
 	case "png":
@@ -170,7 +170,7 @@ func Resize(newWidth, newHeight uint, img image.Image) image.Image {
 	return dst
 }
 
-// CreateAvatar 创建头像
+// CreateAvatar creates an avatar
 func (image *Thumb) CreateAvatar(width int) {
 	image.src = Resize(uint(width), uint(width), image.src)
 }

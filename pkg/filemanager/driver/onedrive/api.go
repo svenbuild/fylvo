@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	// SmallFileSize 单文件上传接口最大尺寸
+	// SmallFileSize max size for the single-file upload API
 	SmallFileSize uint64 = 4 * 1024 * 1024
-	// ChunkSize 服务端中转分片上传分片大小
+	// ChunkSize chunk size for server-relayed chunked upload
 	ChunkSize uint64 = 10 * 1024 * 1024
-	// ListRetry 列取请求重试次数
+	// ListRetry retry count for list requests
 	ListRetry       = 1
 	chunkRetrySleep = time.Second * 5
 
@@ -31,7 +31,7 @@ const (
 
 type RetryCtx struct{}
 
-// GetSourcePath 获取文件的绝对路径
+// GetSourcePath gets the absolute path of the file
 func (info *FileInfo) GetSourcePath() string {
 	res, err := url.PathUnescape(info.ParentReference.Path)
 	if err != nil {
@@ -67,7 +67,7 @@ func (client *client) getRequestURL(api string, opts ...Option) string {
 	return base.String()
 }
 
-// ListChildren 根据路径列取子对象
+// ListChildren lists child objects by path
 func (client *client) ListChildren(ctx context.Context, path string) ([]FileInfo, error) {
 	var requestURL string
 	dst := strings.TrimPrefix(path, "/")
@@ -123,7 +123,7 @@ func (client *client) ListChildren(ctx context.Context, path string) ([]FileInfo
 	return allFiles, nil
 }
 
-// Meta 根据资源ID或文件路径获取文件元信息
+// Meta gets file metadata by resource ID or file path
 func (client *client) Meta(ctx context.Context, id string, path string) (*FileInfo, error) {
 	var requestURL string
 	if id != "" {
@@ -151,7 +151,7 @@ func (client *client) Meta(ctx context.Context, id string, path string) (*FileIn
 
 }
 
-// CreateUploadSession 创建分片上传会话
+// CreateUploadSession creates a chunked upload session
 func (client *client) CreateUploadSession(ctx context.Context, dst string, opts ...Option) (string, error) {
 	options := newDefaultOption()
 	for _, o := range opts {
@@ -184,7 +184,7 @@ func (client *client) CreateUploadSession(ctx context.Context, dst string, opts 
 	return uploadSession.UploadURL, nil
 }
 
-// GetSiteIDByURL 通过 SharePoint 站点 URL 获取站点ID
+// GetSiteIDByURL gets the site ID from a SharePoint site URL
 func (client *client) GetSiteIDByURL(ctx context.Context, siteUrl string) (string, error) {
 	siteUrlParsed, err := url.Parse(siteUrl)
 	if err != nil {
@@ -211,7 +211,7 @@ func (client *client) GetSiteIDByURL(ctx context.Context, siteUrl string) (strin
 	return siteInfo.ID, nil
 }
 
-// GetUploadSessionStatus 查询上传会话状态
+// GetUploadSessionStatus queries the upload session status
 func (client *client) GetUploadSessionStatus(ctx context.Context, uploadURL string) (*UploadSessionResponse, error) {
 	res, err := client.requestWithStr(ctx, "GET", uploadURL, "", 200)
 	if err != nil {
@@ -230,7 +230,7 @@ func (client *client) GetUploadSessionStatus(ctx context.Context, uploadURL stri
 	return &uploadSession, nil
 }
 
-// UploadChunk 上传分片
+// UploadChunk uploads a chunk
 func (client *client) UploadChunk(ctx context.Context, uploadURL string, content io.Reader, current *chunk.ChunkGroup) (*UploadSessionResponse, error) {
 	res, err := client.request(
 		ctx, "PUT", uploadURL, content,
@@ -261,9 +261,9 @@ func (client *client) UploadChunk(ctx context.Context, uploadURL string, content
 	return &uploadRes, nil
 }
 
-// Upload 上传文件
+// Upload uploads a file
 func (client *client) Upload(ctx context.Context, file *fs.UploadRequest) error {
-	// 决定是否覆盖文件
+	// decide whether to overwrite the file
 	overwrite := "fail"
 	if file.Mode&fs.ModeOverwrite == fs.ModeOverwrite {
 		overwrite = "replace"
@@ -272,14 +272,14 @@ func (client *client) Upload(ctx context.Context, file *fs.UploadRequest) error 
 	size := int(file.Props.Size)
 	dst := file.Props.SavePath
 
-	// 小文件，使用简单上传接口上传
+	// small file, use the simple upload API
 	if size <= int(SmallFileSize) {
 		_, err := client.SimpleUpload(ctx, dst, file, int64(size), WithConflictBehavior(overwrite))
 		return err
 	}
 
-	// 大文件，进行分片
-	// 创建上传会话
+	// large file, split into chunks
+	// create upload session
 	uploadURL, err := client.CreateUploadSession(ctx, dst, WithConflictBehavior(overwrite))
 	if err != nil {
 		return err
@@ -309,7 +309,7 @@ func (client *client) Upload(ctx context.Context, file *fs.UploadRequest) error 
 	return nil
 }
 
-// DeleteUploadSession 删除上传会话
+// DeleteUploadSession deletes an upload session
 func (client *client) DeleteUploadSession(ctx context.Context, uploadURL string) error {
 	_, err := client.requestWithStr(ctx, "DELETE", uploadURL, "", 204)
 	if err != nil {
@@ -319,7 +319,7 @@ func (client *client) DeleteUploadSession(ctx context.Context, uploadURL string)
 	return nil
 }
 
-// SimpleUpload 上传小文件到dst
+// SimpleUpload uploads a small file to dst
 func (client *client) SimpleUpload(ctx context.Context, dst string, body io.Reader, size int64, opts ...Option) (*UploadResult, error) {
 	options := newDefaultOption()
 	for _, o := range opts {
@@ -349,8 +349,8 @@ func (client *client) SimpleUpload(ctx context.Context, dst string, body io.Read
 	return &uploadRes, nil
 }
 
-// BatchDelete 并行删除给出的文件，返回删除失败的文件，及第一个遇到的错误。此方法将文件分为
-// 20个一组，调用Delete并行删除
+// BatchDelete deletes the given files in parallel, returns the files that failed and the first error. This splits the files into
+// groups of 20 and calls Delete in parallel
 func (client *client) BatchDelete(ctx context.Context, dst []string) ([]string, error) {
 	groupNum := len(dst)/20 + 1
 	finalRes := make([]string, 0, len(dst))
@@ -371,8 +371,8 @@ func (client *client) BatchDelete(ctx context.Context, dst []string) ([]string, 
 	return finalRes, err
 }
 
-// Delete 并行删除文件，返回删除失败的文件，及第一个遇到的错误，
-// 由于API限制，最多删除20个
+// Delete deletes files in parallel, returns the files that failed and the first error,
+// at most 20 due to API limits
 func (client *client) Delete(ctx context.Context, dst []string) ([]string, error) {
 	body := client.makeBatchDeleteRequestsBody(dst)
 	res, err := client.requestWithStr(ctx, "POST", client.getRequestURL("$batch",
@@ -390,7 +390,7 @@ func (client *client) Delete(ctx context.Context, dst []string) ([]string, error
 		return dst, decodeErr
 	}
 
-	// 取得删除失败的文件
+	// collect the files that failed to delete
 	failed := getDeleteFailed(&deleteRes)
 	if len(failed) != 0 {
 		return failed, ErrDeleteFile
@@ -408,7 +408,7 @@ func getDeleteFailed(res *BatchResponses) []string {
 	return failed
 }
 
-// makeBatchDeleteRequestsBody 生成批量删除请求正文
+// makeBatchDeleteRequestsBody builds the batch delete request body
 func (client *client) makeBatchDeleteRequestsBody(files []string) string {
 	req := BatchRequests{
 		Requests: make([]BatchRequest, len(files)),
@@ -428,7 +428,7 @@ func (client *client) makeBatchDeleteRequestsBody(files []string) string {
 	return string(res)
 }
 
-// GetThumbURL 获取给定尺寸的缩略图URL
+// GetThumbURL gets the thumbnail URL for the given size
 func (client *client) GetThumbURL(ctx context.Context, dst string) (string, error) {
 	dst = strings.TrimPrefix(dst, "/")
 	requestURL := client.getRequestURL("root:/"+dst+":/thumbnails/0") + "/large"
@@ -468,7 +468,7 @@ func sysError(err error) *RespError {
 }
 
 func (client *client) request(ctx context.Context, method string, url string, body io.Reader, option ...request.Option) (string, error) {
-	// 获取凭证
+	// get credential
 	err := client.UpdateCredential(ctx)
 	if err != nil {
 		return "", sysError(err)
@@ -487,7 +487,7 @@ func (client *client) request(ctx context.Context, method string, url string, bo
 		),
 	}
 
-	// 发送请求
+	// send request
 	res := client.httpClient.Request(
 		method,
 		url,
@@ -504,12 +504,12 @@ func (client *client) request(ctx context.Context, method string, url string, bo
 		return "", sysError(err)
 	}
 
-	// 解析请求响应
+	// parse the response
 	var (
 		errResp   RespError
 		decodeErr error
 	)
-	// 如果有错误
+	// if there is an error
 	if res.Response.StatusCode < 200 || res.Response.StatusCode >= 300 {
 		decodeErr = json.Unmarshal([]byte(respBody), &errResp)
 		if decodeErr != nil {
@@ -529,7 +529,7 @@ func (client *client) request(ctx context.Context, method string, url string, bo
 }
 
 func (client *client) requestWithStr(ctx context.Context, method string, url string, body string, expectedCode int) (string, error) {
-	// 发送请求
+	// send request
 	bodyReader := io.NopCloser(strings.NewReader(body))
 	return client.request(ctx, method, url, bodyReader,
 		request.WithContentLength(int64(len(body))),

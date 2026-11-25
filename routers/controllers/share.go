@@ -8,7 +8,7 @@ import (
 	"net/http"
 )
 
-// CreateShare 创建分享
+// CreateShare creates a share
 func CreateShare(c *gin.Context) {
 	service := ParametersFromContext[*share.ShareCreateService](c, share.ShareCreateParamCtx{})
 	uri, err := service.Upsert(c, 0)
@@ -20,7 +20,7 @@ func CreateShare(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: uri})
 }
 
-// EditShare 编辑分享
+// EditShare edits a share
 func EditShare(c *gin.Context) {
 	service := ParametersFromContext[*share.ShareCreateService](c, share.ShareCreateParamCtx{})
 	uri, err := service.Upsert(c, hashid.FromContext(c))
@@ -32,7 +32,7 @@ func EditShare(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: uri})
 }
 
-// GetShare 查看分享
+// GetShare views a share
 func GetShare(c *gin.Context) {
 	service := ParametersFromContext[*share.ShareInfoService](c, share.ShareInfoParamCtx{})
 	info, err := service.Get(c)
@@ -44,7 +44,7 @@ func GetShare(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: info})
 }
 
-// ListShare 列出分享
+// ListShare lists shares
 func ListShare(c *gin.Context) {
 	service := ParametersFromContext[*share.ListShareService](c, share.ListShareParamCtx{})
 	resp, err := service.List(c)
@@ -61,7 +61,7 @@ func ListShare(c *gin.Context) {
 	}
 }
 
-// DeleteShare 删除分享
+// DeleteShare deletes a share
 func DeleteShare(c *gin.Context) {
 	err := share.DeleteShare(c, hashid.FromContext(c))
 	if err != nil {

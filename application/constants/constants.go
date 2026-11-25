@@ -2,7 +2,7 @@ package constants
 
 // These values will be injected at build time, DO NOT EDIT.
 
-// BackendVersion 当前后端版本号
+// BackendVersion is the current backend version
 var BackendVersion = "4.14.0"
 
 // FylvoVersion is the Fylvo release (the git tag without "v"), shown in the admin panel and the
@@ -10,12 +10,12 @@ var BackendVersion = "4.14.0"
 // the embedded web app and the apps compare against it.
 var FylvoVersion = "dev"
 
-// IsPro 是否为Pro版本
+// IsPro tells whether this is the Pro version
 var IsPro = "false"
 
 var IsProBool = IsPro == "true"
 
-// LastCommit 最后commit id
+// LastCommit is the last commit id
 var LastCommit = "000000"
 
 const (

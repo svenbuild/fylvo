@@ -12,17 +12,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AddGroupService 用户组添加服务
+// AddGroupService is the service for adding a group
 type AddGroupService struct {
 	//Group model.Group `json:"group" binding:"required"`
 }
 
-// GroupService 用户组ID服务
+// GroupService is the service for a group ID
 type GroupService struct {
 	ID uint `uri:"id" json:"id" binding:"required"`
 }
 
-// Get 获取用户组详情
+// Get gets the group details
 func (service *GroupService) Get() serializer.Response {
 	//group, err := model.GetGroupByID(service.ID)
 	//if err != nil {
@@ -34,20 +34,20 @@ func (service *GroupService) Get() serializer.Response {
 	return serializer.Response{}
 }
 
-// Delete 删除用户组
+// Delete deletes a group
 func (service *GroupService) Delete() serializer.Response {
-	//// 查找用户组
+	//// find the group
 	//group, err := model.GetGroupByID(service.ID)
 	//if err != nil {
 	//	return serializer.ErrDeprecated(serializer.CodeGroupNotFound, "", err)
 	//}
 	//
-	//// 是否为系统用户组
+	//// check whether it is a system group
 	//if group.ID <= 3 {
 	//	return serializer.ErrDeprecated(serializer.CodeInvalidActionOnSystemGroup, "", err)
 	//}
 	//
-	//// 检查是否有用户使用
+	//// check whether any user uses it
 	//total := 0
 	//row := model.DB.Model(&model.User{}).Where("group_id = ?", service.ID).
 	//	Select("count(id)").Row()

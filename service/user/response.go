@@ -103,7 +103,7 @@ type BuiltinLoginResponse struct {
 	Token auth.Token `json:"token"`
 }
 
-// User 用户序列化器
+// User user serializer
 type User struct {
 	ID                  string                         `json:"id"`
 	Email               string                         `json:"email,omitempty"`
@@ -134,7 +134,7 @@ type storage struct {
 	Total uint64 `json:"total"`
 }
 
-// WebAuthnCredentials 外部验证器凭证
+// WebAuthnCredentials external authenticator credentials
 type WebAuthnCredentials struct {
 	ID          []byte `json:"id"`
 	FingerPrint string `json:"fingerprint"`
@@ -145,7 +145,7 @@ type PrepareLoginResponse struct {
 	PasswordEnabled bool `json:"password_enabled"`
 }
 
-// BuildWebAuthnList 构建设置页面凭证列表
+// BuildWebAuthnList builds the credential list for the settings page
 func BuildWebAuthnList(credentials []webauthn.Credential) []WebAuthnCredentials {
 	res := make([]WebAuthnCredentials, 0, len(credentials))
 	for _, v := range credentials {
@@ -159,7 +159,7 @@ func BuildWebAuthnList(credentials []webauthn.Credential) []WebAuthnCredentials 
 	return res
 }
 
-// BuildUser 序列化用户
+// BuildUser serializes a user
 func BuildUser(user *ent.User, idEncoder hashid.Encoder) User {
 	return User{
 		ID:                  hashid.EncodeUserID(idEncoder, user.ID),

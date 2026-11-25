@@ -12,14 +12,14 @@ import (
 	"github.com/samber/lo"
 )
 
-// AppError 应用错误，实现了error接口
+// AppError application error, implements the error interface
 type AppError struct {
 	Code     int
 	Msg      string
 	RawError error
 }
 
-// NewError 返回新的错误对象
+// NewError returns a new error object
 func NewError(code int, msg string, err error) AppError {
 	return AppError{
 		Code:     code,
@@ -28,7 +28,7 @@ func NewError(code int, msg string, err error) AppError {
 	}
 }
 
-// NewErrorFromResponse 从 serializer.Response 构建错误
+// NewErrorFromResponse builds an error from serializer.Response
 func NewErrorFromResponse(resp *Response) AppError {
 	return AppError{
 		Code:     resp.Code,
@@ -37,7 +37,7 @@ func NewErrorFromResponse(resp *Response) AppError {
 	}
 }
 
-// WithError 将应用error携带标准库中的error
+// WithError wraps a standard library error into the app error
 func (err *AppError) WithError(raw error) AppError {
 	return AppError{
 		Code:     err.Code,
@@ -46,7 +46,7 @@ func (err *AppError) WithError(raw error) AppError {
 	}
 }
 
-// Error 返回业务代码确定的可读错误信息
+// Error returns the readable error message set by the business code
 func (err AppError) Error() string {
 	if err.RawError != nil {
 		return fmt.Sprintf("%s: %s", err.Msg, err.RawError.Error())
@@ -66,162 +66,162 @@ func (err AppError) Unwrap() error {
 	return err.RawError
 }
 
-// 三位数错误编码为复用http原本含义
-// 五位数错误编码为应用自定义错误
-// 五开头的五位数错误编码为服务器端错误，比如数据库操作失败
-// 四开头的五位数错误编码为客户端错误，有时候是客户端代码写错了，有时候是用户操作错误
+// Three-digit error codes reuse the original HTTP meaning
+// Five-digit error codes are app-defined errors
+// Five-digit codes starting with 5 are server-side errors, e.g. a failed database operation
+// Five-digit codes starting with 4 are client errors, caused by a client bug or a user mistake
 const (
-	// CodeNotFullySuccess 未完全成功
+	// CodeNotFullySuccess not fully successful
 	CodeNotFullySuccess = 203
-	// CodeCheckLogin 未登录
+	// CodeCheckLogin not logged in
 	CodeCheckLogin = 401
-	// CodeNoPermissionErr 未授权访问
+	// CodeNoPermissionErr unauthorized access
 	CodeNoPermissionErr = 403
-	// CodeNotFound 资源未找到
+	// CodeNotFound resource not found
 	CodeNotFound = 404
-	// CodeConflict 资源冲突
+	// CodeConflict resource conflict
 	CodeConflict = 409
-	// CodeUploadFailed 上传出错
+	// CodeUploadFailed upload failed
 	CodeUploadFailed = 40002
-	// CodeCreateFolderFailed 目录创建失败
+	// CodeCreateFolderFailed failed to create folder
 	CodeCreateFolderFailed = 40003
-	// CodeObjectExist 对象已存在
+	// CodeObjectExist object already exists
 	CodeObjectExist = 40004
-	// CodeSignExpired 签名过期
+	// CodeSignExpired signature expired
 	CodeSignExpired = 40005
-	// CodePolicyNotAllowed 当前存储策略不允许
+	// CodePolicyNotAllowed not allowed by the current storage policy
 	CodePolicyNotAllowed = 40006
-	// CodeGroupNotAllowed 用户组无法进行此操作
+	// CodeGroupNotAllowed the user group cannot do this
 	CodeGroupNotAllowed = 40007
-	// CodeAdminRequired 非管理用户组
+	// CodeAdminRequired not an admin group
 	CodeAdminRequired = 40008
-	// CodeMasterNotFound 主机节点未注册
+	// CodeMasterNotFound master node not registered
 	CodeMasterNotFound = 40009
-	// CodeUploadSessionExpired 上传会话已过期
+	// CodeUploadSessionExpired upload session expired
 	CodeUploadSessionExpired = 40011
-	// CodeInvalidChunkIndex 无效的分片序号
+	// CodeInvalidChunkIndex invalid chunk index
 	CodeInvalidChunkIndex = 40012
-	// CodeInvalidContentLength 无效的正文长度
+	// CodeInvalidContentLength invalid content length
 	CodeInvalidContentLength = 40013
-	// CodePhoneRequired 未绑定手机
+	// CodePhoneRequired no phone number bound
 	CodePhoneRequired = 40010
-	// CodeBatchSourceSize 超出批量获取外链限制
+	// CodeBatchSourceSize exceeds the batch limit for direct links
 	CodeBatchSourceSize = 40014
-	// CodeBatchAria2Size 超出最大 Aria2 任务数量限制
+	// CodeBatchAria2Size exceeds the maximum number of Aria2 tasks
 	CodeBatchAria2Size = 40015
-	// CodeParentNotExist 父目录不存在
+	// CodeParentNotExist parent folder does not exist
 	CodeParentNotExist = 40016
-	// CodeUserBaned 用户不活跃
+	// CodeUserBaned user is not active
 	CodeUserBaned = 40017
-	// CodeUserNotActivated 用户不活跃
+	// CodeUserNotActivated user is not active
 	CodeUserNotActivated = 40018
-	// CodeFeatureNotEnabled 此功能未开启
+	// CodeFeatureNotEnabled this feature is not enabled
 	CodeFeatureNotEnabled = 40019
-	// CodeCredentialInvalid 凭证无效
+	// CodeCredentialInvalid invalid credential
 	CodeCredentialInvalid = 40020
-	// CodeUserNotFound 用户不存在
+	// CodeUserNotFound user does not exist
 	CodeUserNotFound = 40021
-	// Code2FACodeErr 二步验证代码错误
+	// Code2FACodeErr wrong two-factor code
 	Code2FACodeErr = 40022
-	// CodeLoginSessionNotExist 登录会话不存在
+	// CodeLoginSessionNotExist login session does not exist
 	CodeLoginSessionNotExist = 40023
-	// CodeInitializeAuthn 无法初始化 WebAuthn
+	// CodeInitializeAuthn cannot initialize WebAuthn
 	CodeInitializeAuthn = 40024
-	// CodeWebAuthnCredentialError WebAuthn 凭证无效
+	// CodeWebAuthnCredentialError WebAuthn invalid credential
 	CodeWebAuthnCredentialError = 40025
-	// CodeCaptchaError 验证码错误
+	// CodeCaptchaError wrong captcha
 	CodeCaptchaError = 40026
-	// CodeCaptchaRefreshNeeded 验证码需要刷新
+	// CodeCaptchaRefreshNeeded captcha needs a refresh
 	CodeCaptchaRefreshNeeded = 40027
-	// CodeFailedSendEmail 邮件发送失败
+	// CodeFailedSendEmail failed to send email
 	CodeFailedSendEmail = 40028
-	// CodeInvalidTempLink 临时链接无效
+	// CodeInvalidTempLink invalid temporary link
 	CodeInvalidTempLink = 40029
-	// CodeTempLinkExpired 临时链接过期
+	// CodeTempLinkExpired temporary link expired
 	CodeTempLinkExpired = 40030
-	// CodeEmailProviderBaned 邮箱后缀被禁用
+	// CodeEmailProviderBaned email domain is banned
 	CodeEmailProviderBaned = 40031
-	// CodeEmailExisted 邮箱已被使用
+	// CodeEmailExisted email already in use
 	CodeEmailExisted = 40032
-	// CodeEmailSent 邮箱已重新发送
+	// CodeEmailSent email was sent again
 	CodeEmailSent = 40033
-	// CodeUserCannotActivate 用户无法激活
+	// CodeUserCannotActivate user cannot be activated
 	CodeUserCannotActivate = 40034
-	// 存储策略不存在
+	// storage policy does not exist
 	CodePolicyNotExist = 40035
-	// 无法删除默认存储策略
+	// cannot delete the default storage policy
 	CodeDeleteDefaultPolicy = 40036
-	// 存储策略下还有文件
+	// storage policy still has files
 	CodePolicyUsedByFiles = 40037
-	// 存储策略绑定了用户组
+	// storage policy is bound to a user group
 	CodePolicyUsedByGroups = 40038
-	// 用户组不存在
+	// user group does not exist
 	CodeGroupNotFound = 40039
-	// 对系统用户组执行非法操作
+	// illegal operation on a system user group
 	CodeInvalidActionOnSystemGroup = 40040
-	// 用户组正在被使用
+	// user group is in use
 	CodeGroupUsedByUser = 40041
-	// 为初始用户更改用户组
+	// changing the group of the initial user
 	CodeChangeGroupForDefaultUser = 40042
-	// 对系统用户执行非法操作
+	// illegal operation on a system user
 	CodeInvalidActionOnDefaultUser = 40043
-	// 文件不存在
+	// file does not exist
 	CodeFileNotFound = 40044
-	// 列取文件失败
+	// failed to list files
 	CodeListFilesError = 40045
-	// 对系统节点进行非法操作
+	// illegal operation on a system node
 	CodeInvalidActionOnSystemNode = 40046
-	// 创建文件系统出错
+	// failed to create file system
 	CodeCreateFSError = 40047
-	// 创建任务出错
+	// failed to create task
 	CodeCreateTaskError = 40048
-	// 文件尺寸太大
+	// file is too large
 	CodeFileTooLarge = 40049
-	// 文件类型不允许
+	// file type not allowed
 	CodeFileTypeNotAllowed = 40050
-	// 用户容量不足
+	// not enough user quota
 	CodeInsufficientCapacity = 40051
-	// 对象名非法
+	// illegal object name
 	CodeIllegalObjectName = 40052
-	// 不支持对根目录执行此操作
+	// this operation is not supported on the root folder
 	CodeRootProtected = 40053
-	// 当前目录下已经有同名文件正在上传中
+	// a file with the same name is already being uploaded in this folder
 	CodeConflictUploadOngoing = 40054
-	// 文件信息不一致
+	// file information mismatch
 	CodeMetaMismatch = 40055
-	// 不支持该格式的压缩文件
+	// unsupported archive format
 	CodeUnsupportedArchiveType = 40056
-	// 可用存储策略发生变化
+	// available storage policies changed
 	CodePolicyChanged = 40057
-	// 分享链接无效
+	// invalid share link
 	CodeShareLinkNotFound = 40058
-	// 不能转存自己的分享
+	// cannot save your own share
 	CodeSaveOwnShare = 40059
-	// 从机无法向主机发送回调请求
+	// slave node cannot send callback requests to the master
 	CodeSlavePingMaster = 40060
-	// Cloudreve 版本不一致
+	// app version mismatch
 	CodeVersionMismatch = 40061
-	// 积分不足
+	// not enough credits
 	CodeInsufficientCredit = 40062
-	// 用户组冲突
+	// user group conflict
 	CodeGroupConflict = 40063
-	// 当前已处于此用户组中
+	// already in this user group
 	CodeGroupInvalid = 40064
-	// 兑换码无效
+	// invalid redeem code
 	CodeInvalidGiftCode = 40065
-	// 已绑定了对应账号
+	// account already bound
 	CodeOpenIDBindConflict = 40066
-	// 对应账号已被绑定其他账号
+	// the account is already bound to another account
 	CodeOpenIDBindOtherAccount = 40067
-	// 未绑定对应账号
+	// account not bound
 	CodeOpenIDNotLinked = 40068
-	// 密码不正确
+	// wrong password
 	CodeIncorrectPassword = 40069
-	// 分享无法预览
+	// share cannot be previewed
 	CodeDisabledSharePreview = 40070
-	// 签名无效
+	// invalid signature
 	CodeInvalidSign = 40071
-	// 管理员无法购买用户组
+	// admins cannot buy user groups
 	CodeFulfillAdminGroup = 40072
 	// Lock confliced
 	CodeLockConflict = 40073
@@ -251,37 +251,37 @@ const (
 	CodeAmountTooSmall = 40085
 	// CodeNodeUsedByStoragePolicy node used by storage policy
 	CodeNodeUsedByStoragePolicy = 40086
-	// CodeAnonymouseAccessDenied 匿名用户无法访问分享
+	// CodeAnonymouseAccessDenied anonymous users cannot access the share
 	CodeAnonymouseAccessDenied = 40088
 	// CodeInsufficientScope OAuth token scope insufficient
 	CodeInsufficientScope = 40089
-	// CodeDBError 数据库操作失败
+	// CodeDBError database operation failed
 	CodeDBError = 50001
-	// CodeEncryptError 加密失败
+	// CodeEncryptError encryption failed
 	CodeEncryptError = 50002
-	// CodeIOFailed IO操作失败
+	// CodeIOFailed IO operation failed
 	CodeIOFailed = 50004
-	// CodeInternalSetting 内部设置参数错误
+	// CodeInternalSetting invalid internal setting parameter
 	CodeInternalSetting = 50005
-	// CodeCacheOperation 缓存操作失败
+	// CodeCacheOperation cache operation failed
 	CodeCacheOperation = 50006
-	// CodeCallbackError 回调失败
+	// CodeCallbackError callback failed
 	CodeCallbackError = 50007
-	// 后台设置更新失败
+	// failed to update admin settings
 	CodeUpdateSetting = 50008
-	// 跨域策略添加失败
+	// failed to add CORS policy
 	CodeAddCORS = 50009
-	// 节点不可用
+	// node unavailable
 	CodeNodeOffline = 50010
-	// 文件元信息查询失败
+	// failed to query file metadata
 	CodeQueryMetaFailed = 50011
-	//CodeParamErr 各种奇奇怪怪的参数错误
+	//CodeParamErr various odd parameter errors
 	CodeParamErr = 40001
-	// CodeNotSet 未定错误，后续尝试从error中获取
+	// CodeNotSet undetermined error, taken from the error later if possible
 	CodeNotSet = -1
 )
 
-// DBErrDeprecated 数据库操作失败
+// DBErrDeprecated database operation failed
 func DBErr(c context.Context, msg string, err error) Response {
 	if msg == "" {
 		msg = "Database operation failed."
@@ -289,7 +289,7 @@ func DBErr(c context.Context, msg string, err error) Response {
 	return ErrWithDetails(c, CodeDBError, msg, err)
 }
 
-// DBErrDeprecated 数据库操作失败
+// DBErrDeprecated database operation failed
 func DBErrDeprecated(msg string, err error) Response {
 	if msg == "" {
 		msg = "Database operation failed."
@@ -297,7 +297,7 @@ func DBErrDeprecated(msg string, err error) Response {
 	return ErrDeprecated(CodeDBError, msg, err)
 }
 
-// ParamErr 各种参数错误
+// ParamErr various parameter errors
 func ParamErr(c context.Context, msg string, err error) Response {
 	if msg == "" {
 		msg = "Invalid parameters."
@@ -305,7 +305,7 @@ func ParamErr(c context.Context, msg string, err error) Response {
 	return ErrWithDetails(c, CodeParamErr, msg, err)
 }
 
-// ParamErrDeprecated 各种参数错误
+// ParamErrDeprecated various parameter errors
 // Deprecated
 func ParamErrDeprecated(msg string, err error) Response {
 	if msg == "" {
@@ -314,9 +314,9 @@ func ParamErrDeprecated(msg string, err error) Response {
 	return ErrDeprecated(CodeParamErr, msg, err)
 }
 
-// ErrDeprecated 通用错误处理
+// ErrDeprecated generic error handling
 func ErrDeprecated(errCode int, msg string, err error) Response {
-	// 底层错误是AppError，则尝试从AppError中获取详细信息
+	// if the underlying error is an AppError, try to get details from it
 	var appError AppError
 	if errors.As(err, &appError) {
 		errCode = appError.Code
@@ -328,14 +328,14 @@ func ErrDeprecated(errCode int, msg string, err error) Response {
 		Code: errCode,
 		Msg:  msg,
 	}
-	// 生产环境隐藏底层报错
+	// hide the underlying error in production
 	if err != nil && gin.Mode() != gin.ReleaseMode {
 		res.Error = err.Error()
 	}
 	return res
 }
 
-// ErrWithDetails 通用错误处理
+// ErrWithDetails generic error handling
 func ErrWithDetails(c context.Context, errCode int, msg string, err error) Response {
 	res := Response{
 		Code:          errCode,
@@ -343,7 +343,7 @@ func ErrWithDetails(c context.Context, errCode int, msg string, err error) Respo
 		CorrelationID: logging.CorrelationID(c).String(),
 	}
 
-	// 底层错误是AppError，则尝试从AppError中获取详细信息
+	// if the underlying error is an AppError, try to get details from it
 	var appError AppError
 	if errors.As(err, &appError) {
 		res.Code = appError.ErrCode()
@@ -372,7 +372,7 @@ func ErrWithDetails(c context.Context, errCode int, msg string, err error) Respo
 		}
 	}
 
-	// 生产环境隐藏底层报错
+	// hide the underlying error in production
 	if err != nil && gin.Mode() != gin.ReleaseMode {
 		res.Error = err.Error()
 	}

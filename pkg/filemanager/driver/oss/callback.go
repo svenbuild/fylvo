@@ -26,29 +26,29 @@ const (
 	pubKeyCacheKey    = "oss_public_key"
 )
 
-// GetPublicKey 从回调请求或缓存中获取OSS的回调签名公钥
+// GetPublicKey gets the OSS callback signing public key from the callback request or cache
 func GetPublicKey(r *http.Request, kv cache.Driver, client request.Client) ([]byte, error) {
 	var pubKey []byte
 
-	// 尝试从缓存中获取
+	// try to get it from the cache
 	pub, exist := kv.Get(pubKeyCacheKey)
 	if exist {
 		return pub.([]byte), nil
 	}
 
-	// 从请求中获取
+	// get it from the request
 	pubURL, err := base64.StdEncoding.DecodeString(r.Header.Get(pubKeyHeader))
 	if err != nil {
 		return pubKey, err
 	}
 
-	// 确保这个 public key 是由 OSS 颁发的
+	// make sure this public key was issued by OSS
 	if !strings.HasPrefix(string(pubURL), pubKeyPrefix) &&
 		!strings.HasPrefix(string(pubURL), pubKeyPrefixHttps) {
 		return pubKey, errors.New("public key url invalid")
 	}
 
-	// 获取公钥
+	// fetch the public key
 	body, err := client.Request("GET", string(pubURL), nil).
 		CheckHTTPResponse(200).
 		GetResponse()
@@ -56,7 +56,7 @@ func GetPublicKey(r *http.Request, kv cache.Driver, client request.Client) ([]by
 		return pubKey, err
 	}
 
-	// 写入缓存
+	// write to the cache
 	_ = kv.Set(pubKeyCacheKey, []byte(body), 86400*7)
 
 	return []byte(body), nil
@@ -65,7 +65,7 @@ func GetPublicKey(r *http.Request, kv cache.Driver, client request.Client) ([]by
 func getRequestMD5(r *http.Request) ([]byte, error) {
 	var byteMD5 []byte
 
-	// 获取请求正文
+	// get the request body
 	body, err := io.ReadAll(r.Body)
 	r.Body.Close()
 	if err != nil {
@@ -86,7 +86,7 @@ func getRequestMD5(r *http.Request) ([]byte, error) {
 	return byteMD5, nil
 }
 
-// VerifyCallbackSignature 验证OSS回调请求
+// VerifyCallbackSignature verifies the OSS callback request
 func VerifyCallbackSignature(r *http.Request, kv cache.Driver, client request.Client) error {
 	bytePublicKey, err := GetPublicKey(r, kv, client)
 	if err != nil {

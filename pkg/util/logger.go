@@ -8,26 +8,26 @@ import (
 )
 
 const (
-	// LevelError 错误
+	// LevelError error
 	LevelError = iota
-	// LevelWarning 警告
+	// LevelWarning warning
 	LevelWarning
-	// LevelInformational 提示
+	// LevelInformational info
 	LevelInformational
-	// LevelDebug 除错
+	// LevelDebug debug
 	LevelDebug
 )
 
 var GloablLogger *Logger
 var Level = LevelDebug
 
-// Logger 日志
+// Logger log
 type Logger struct {
 	level int
 	mu    sync.Mutex
 }
 
-// 日志颜色
+// log colors
 var colors = map[string]func(a ...interface{}) string{
 	"Warning": color.New(color.FgYellow).Add(color.Bold).SprintFunc(),
 	"Panic":   color.New(color.BgRed).Add(color.Bold).SprintFunc(),
@@ -36,7 +36,7 @@ var colors = map[string]func(a ...interface{}) string{
 	"Debug":   color.New(color.FgWhite).Add(color.Bold).SprintFunc(),
 }
 
-// 不同级别前缀与时间的间隔，保持宽度一致
+// spacing between level prefix and time, keeps the width consistent
 var spaces = map[string]string{
 	"Warning": "",
 	"Panic":   "  ",
@@ -45,9 +45,9 @@ var spaces = map[string]string{
 	"Debug":   "  ",
 }
 
-// Println 打印
+// Println print
 func (ll *Logger) Println(prefix string, msg string) {
-	// TODO Release时去掉
+	// TODO Release: remove
 	// color.NoColor = false
 
 	c := color.New()
@@ -64,7 +64,7 @@ func (ll *Logger) Println(prefix string, msg string) {
 	)
 }
 
-// Panic 极端错误
+// Panic fatal error
 func (ll *Logger) Panic(format string, v ...interface{}) {
 	if LevelError > ll.level {
 		return
@@ -74,7 +74,7 @@ func (ll *Logger) Panic(format string, v ...interface{}) {
 	panic(msg)
 }
 
-// Error 错误
+// Error error
 func (ll *Logger) Error(format string, v ...interface{}) {
 	if LevelError > ll.level {
 		return
@@ -83,7 +83,7 @@ func (ll *Logger) Error(format string, v ...interface{}) {
 	ll.Println("Error", msg)
 }
 
-// Warning 警告
+// Warning warning
 func (ll *Logger) Warning(format string, v ...interface{}) {
 	if LevelWarning > ll.level {
 		return
@@ -92,7 +92,7 @@ func (ll *Logger) Warning(format string, v ...interface{}) {
 	ll.Println("Warning", msg)
 }
 
-// Info 信息
+// Info info
 func (ll *Logger) Info(format string, v ...interface{}) {
 	if LevelInformational > ll.level {
 		return
@@ -101,7 +101,7 @@ func (ll *Logger) Info(format string, v ...interface{}) {
 	ll.Println("Info", msg)
 }
 
-// Debug 校验
+// Debug debug
 func (ll *Logger) Debug(format string, v ...interface{}) {
 	if LevelDebug > ll.level {
 		return
@@ -110,7 +110,7 @@ func (ll *Logger) Debug(format string, v ...interface{}) {
 	ll.Println("Debug", msg)
 }
 
-// Print GORM 的 Logger实现
+// Print GORM's Logger implementation
 //func (ll *Logger) Print(v ...interface{}) {
 //	if LevelDebug > ll.level {
 //		return
@@ -119,7 +119,7 @@ func (ll *Logger) Debug(format string, v ...interface{}) {
 //	ll.println(msg)
 //}
 
-// Log 返回日志对象
+// Log returns the logger
 func Log() *Logger {
 	if GloablLogger == nil {
 		l := Logger{

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { DataType } from "../types";
 
 /**
- * 截取相邻三张图片
+ * takes the three adjacent images
  */
 export default function useAdjacentImages(images: DataType[], index: number, loop: boolean) {
   return useMemo(() => {

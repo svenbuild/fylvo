@@ -6,7 +6,7 @@ import { useTheme } from "@mui/material/styles";
 
 export interface GeneralImagePreviewProps {
   src: string;
-  debounce?: number; // (可选) 防抖时间
+  debounce?: number; // (optional) debounce time
 }
 
 const GeneralImagePreview = ({ src, debounce = 0 }: GeneralImagePreviewProps) => {

@@ -25,7 +25,7 @@ var (
 	features = &boolset.BooleanSet{}
 )
 
-// Driver 远程存储策略适配器
+// Driver remote storage policy adapter
 type Driver struct {
 	Client       request.Client
 	Policy       *ent.StoragePolicy
@@ -54,7 +54,7 @@ func New(ctx context.Context, policy *ent.StoragePolicy, settings setting.Provid
 	}, nil
 }
 
-// List 列取文件
+// List list files
 func (handler *Driver) List(ctx context.Context, base string, onProgress driver.ListProgressFunc, recursive bool) ([]fs.PhysicalObject, error) {
 	res, err := handler.uploadClient.List(ctx, base, recursive)
 	if err != nil {
@@ -65,7 +65,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 	return res, nil
 }
 
-// Open 获取文件内容
+// Open gets the file content
 func (handler *Driver) Open(ctx context.Context, path string) (*os.File, error) {
 	return nil, errors.New("not implemented")
 }
@@ -74,15 +74,15 @@ func (handler *Driver) LocalPath(ctx context.Context, path string) string {
 	return ""
 }
 
-// Put 将文件流保存到指定目录
+// Put saves the file stream to the given path
 func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	defer file.Close()
 
 	return handler.uploadClient.Upload(ctx, file)
 }
 
-// Delete 删除一个或多个文件，
-// 返回未删除的文件，及遇到的最后一个错误
+// Delete deletes one or more files,
+// Returns the files that were not deleted and the last error encountered
 func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, error) {
 	failed, err := handler.uploadClient.DeleteFiles(ctx, files...)
 	if err != nil {
@@ -91,7 +91,7 @@ func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, e
 	return []string{}, nil
 }
 
-// Thumb 获取文件缩略图
+// Thumb gets the file thumbnail
 func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string, e fs.Entity) (string, error) {
 	serverURL, err := url.Parse(handler.Policy.Edges.Node.Server)
 	if err != nil {
@@ -107,7 +107,7 @@ func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string,
 	return signedThumbURL.String(), nil
 }
 
-// Source 获取外链URL
+// Source gets the external URL
 func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.GetSourceArgs) (string, error) {
 	server, err := url.Parse(handler.Policy.Edges.Node.Server)
 	if err != nil {
@@ -135,16 +135,16 @@ func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.Get
 	return internalProxyed.String(), nil
 }
 
-// Token 获取上传策略和认证Token
+// Token gets the upload policy and auth Token
 func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, file *fs.UploadRequest) (*fs.UploadCredential, error) {
 	siteURL := handler.settings.SiteURL(setting.UseFirstSiteUrl(ctx))
-	// 在从机端创建上传会话
+	// Create the upload session on the slave node
 	uploadSession.Callback = routes.MasterSlaveCallbackUrl(siteURL, types.PolicyTypeRemote, uploadSession.Props.UploadSessionID, uploadSession.CallbackSecret).String()
 	if err := handler.uploadClient.CreateUploadSession(ctx, uploadSession, false); err != nil {
 		return nil, err
 	}
 
-	// 获取上传地址
+	// Get the upload URL
 	uploadURL, sign, err := handler.uploadClient.GetUploadURL(ctx, uploadSession.Props.ExpireAt, uploadSession.Props.UploadSessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign upload url: %w", err)
@@ -166,7 +166,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 	}, nil
 }
 
-// 取消上传凭证
+// Cancels the upload credential
 func (handler *Driver) CancelToken(ctx context.Context, uploadSession *fs.UploadSession) error {
 	return handler.uploadClient.DeleteUploadSession(ctx, uploadSession.Props.UploadSessionID)
 }

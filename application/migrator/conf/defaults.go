@@ -1,6 +1,6 @@
 package conf
 
-// RedisConfig Redis服务器配置
+// RedisConfig is the Redis server config
 var RedisConfig = &redis{
 	Network:  "tcp",
 	Server:   "",
@@ -8,7 +8,7 @@ var RedisConfig = &redis{
 	DB:       "0",
 }
 
-// DatabaseConfig 数据库配置
+// DatabaseConfig is the database config
 var DatabaseConfig = &database{
 	Type:       "UNSET",
 	Charset:    "utf8",
@@ -17,7 +17,7 @@ var DatabaseConfig = &database{
 	UnixSocket: false,
 }
 
-// SystemConfig 系统公用配置
+// SystemConfig is the general system config
 var SystemConfig = &system{
 	Debug:       false,
 	Mode:        "master",
@@ -25,7 +25,7 @@ var SystemConfig = &system{
 	ProxyHeader: "",
 }
 
-// CORSConfig 跨域配置
+// CORSConfig is the CORS config
 var CORSConfig = &cors{
 	AllowOrigins:     []string{"UNSET"},
 	AllowMethods:     []string{"PUT", "POST", "GET", "OPTIONS"},
@@ -36,7 +36,7 @@ var CORSConfig = &cors{
 	Secure:           false,
 }
 
-// SlaveConfig 从机配置
+// SlaveConfig is the slave node config
 var SlaveConfig = &slave{
 	CallbackTimeout: 20,
 	SignatureTTL:    60,

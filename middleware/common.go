@@ -24,7 +24,7 @@ import (
 	"github.com/gofrs/uuid"
 )
 
-// HashID 将给定对象的HashID转换为真实ID
+// HashID converts the HashID of the given object to the real ID
 func HashID(IDType int) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		dep := dependency.FromContext(c)
@@ -44,7 +44,7 @@ func HashID(IDType int) gin.HandlerFunc {
 	}
 }
 
-// IsFunctionEnabled 当功能未开启时阻止访问
+// IsFunctionEnabled blocks access when the feature is not enabled
 func IsFunctionEnabled(check func(c *gin.Context) bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !check(c) {
@@ -57,7 +57,7 @@ func IsFunctionEnabled(check func(c *gin.Context) bool) gin.HandlerFunc {
 	}
 }
 
-// CacheControl 屏蔽客户端缓存
+// CacheControl disables client caching
 func CacheControl() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Cache-Control", "private, no-cache")
@@ -70,7 +70,7 @@ func Sandbox() gin.HandlerFunc {
 	}
 }
 
-// StaticResourceCache 使用静态资源缓存策略
+// StaticResourceCache uses the static resource cache policy
 func StaticResourceCache(dep dependency.Dep) gin.HandlerFunc {
 	settings := dep.SettingProvider()
 	return func(c *gin.Context) {

@@ -33,13 +33,13 @@ import (
 	cossdk "github.com/tencentyun/cos-go-sdk-v5"
 )
 
-// UploadPolicy 腾讯云COS上传策略
+// UploadPolicy Tencent COS upload policy
 type UploadPolicy struct {
 	Expiration string        `json:"expiration"`
 	Conditions []interface{} `json:"conditions"`
 }
 
-// MetaData 文件元信息
+// MetaData file metadata
 type MetaData struct {
 	Size        uint64
 	CallbackKey string
@@ -60,7 +60,7 @@ type (
 	}
 )
 
-// Driver 腾讯云COS适配器模板
+// Driver Tencent COS adapter template
 type Driver struct {
 	policy     *ent.StoragePolicy
 	client     *cossdk.Client
@@ -74,7 +74,7 @@ type Driver struct {
 }
 
 const (
-	// MultiPartUploadThreshold 服务端使用分片上传的阈值
+	// MultiPartUploadThreshold threshold above which the server uses multipart upload
 	MultiPartUploadThreshold int64 = 5 * (1 << 30) // 5GB
 
 	maxDeleteBatch        = 1000
@@ -130,19 +130,19 @@ func New(ctx context.Context, policy *ent.StoragePolicy, settings setting.Provid
 }
 
 func (handler *Driver) List(ctx context.Context, base string, onProgress driver.ListProgressFunc, recursive bool) ([]fs.PhysicalObject, error) {
-	// 初始化列目录参数
+	// Initialize the directory listing parameters
 	opt := &cossdk.BucketGetOptions{
 		Prefix:       strings.TrimPrefix(base, "/"),
 		EncodingType: "",
 		MaxKeys:      1000,
 	}
 
-	// 是否为递归列出
+	// Whether to list recursively
 	if !recursive {
 		opt.Delimiter = "/"
 	}
 
-	// 手动补齐结尾的slash
+	// Manually add the trailing slash
 	if opt.Prefix != "" {
 		opt.Prefix += "/"
 	}
@@ -161,18 +161,18 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 		}
 		objects = append(objects, res.Contents...)
 		commons = append(commons, res.CommonPrefixes...)
-		// 如果本次未列取完，则继续使用marker获取结果
+		// If listing is not finished, keep fetching results with the marker
 		marker = res.NextMarker
-		// marker 为空时结果列取完毕，跳出
+		// marker is empty: listing is done, break out
 		if marker == "" {
 			break
 		}
 	}
 
-	// 处理列取结果
+	// Handle the listing result
 	res := make([]fs.PhysicalObject, 0, len(objects)+len(commons))
 
-	// 处理目录
+	// Handle directories
 	for _, object := range commons {
 		rel, err := filepath.Rel(opt.Prefix, object)
 		if err != nil {
@@ -189,7 +189,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 	}
 	onProgress(len(commons))
 
-	// 处理文件
+	// Handle files
 	for _, object := range objects {
 		if strings.HasSuffix(object.Key, "/") && object.Size == 0 {
 			continue
@@ -213,7 +213,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 	return res, nil
 }
 
-// CORS 创建跨域策略
+// CORS creates the CORS policy
 func (handler Driver) CORS() error {
 	_, err := handler.client.Bucket.PutCORS(context.Background(), &cossdk.BucketPutCORSOptions{
 		Rules: []cossdk.BucketCORSRule{{
@@ -234,12 +234,12 @@ func (handler Driver) CORS() error {
 	return err
 }
 
-// Get 获取文件
+// Get gets a file
 func (handler *Driver) Open(ctx context.Context, path string) (*os.File, error) {
 	return nil, errors.New("not implemented")
 }
 
-// Put 将文件流保存到指定目录
+// Put saves the file stream to the given path
 func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	defer file.Close()
 
@@ -248,7 +248,7 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 		mimeType = handler.mime.TypeByName(file.Props.Uri.Name())
 	}
 
-	// 是否允许覆盖
+	// Whether overwriting is allowed
 	overwrite := file.Mode&fs.ModeOverwrite == fs.ModeOverwrite
 	opt := &cossdk.ObjectPutHeaderOptions{
 		ContentType: mimeType,
@@ -257,7 +257,7 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 		},
 	}
 
-	// 小文件直接上传
+	// Upload small files directly
 	if file.Props.Size < MultiPartUploadThreshold {
 		_, err := handler.client.Object.Put(ctx, file.Props.SavePath, file, &cossdk.ObjectPutOptions{
 			ObjectPutHeaderOptions: opt,
@@ -314,8 +314,8 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	return err
 }
 
-// Delete 删除一个或多个文件，
-// 返回未删除的文件，及遇到的最后一个错误
+// Delete deletes one or more files,
+// Returns the files that were not deleted and the last error encountered
 func (handler Driver) Delete(ctx context.Context, files ...string) ([]string, error) {
 	groups := lo.Chunk(files, maxDeleteBatch)
 	failed := make([]string, 0)
@@ -348,7 +348,7 @@ func (handler Driver) Delete(ctx context.Context, files ...string) ([]string, er
 	return failed, lastError
 }
 
-// Thumb 获取文件缩略图
+// Thumb gets the file thumbnail
 func (handler Driver) Thumb(ctx context.Context, expire *time.Time, ext string, e fs.Entity) (string, error) {
 	w, h := handler.settings.ThumbSize(ctx)
 	thumbParam := fmt.Sprintf("imageMogr2/thumbnail/%dx%d", w, h)
@@ -379,16 +379,16 @@ func (handler Driver) Thumb(ctx context.Context, expire *time.Time, ext string, 
 	return thumbURL.String(), nil
 }
 
-// Source 获取外链URL
+// Source gets the external URL
 func (handler Driver) Source(ctx context.Context, e fs.Entity, args *driver.GetSourceArgs) (string, error) {
-	// 添加各项设置
+	// Add the settings
 	options := urlOption{}
 
 	if args.Speed > 0 {
-		// Byte 转换为 bit
+		// Byte converted to bit
 		args.Speed *= 8
 
-		// COS对速度值有范围限制
+		// COS limits the range of the speed value
 		if args.Speed < 819200 {
 			args.Speed = 819200
 		}
@@ -408,7 +408,7 @@ func (handler Driver) Source(ctx context.Context, e fs.Entity, args *driver.GetS
 }
 
 func (handler Driver) signSourceURL(ctx context.Context, path string, expire *time.Time, options *urlOption) (string, error) {
-	// 公有空间不需要签名
+	// Public buckets need no signature
 	if !handler.policy.IsPrivate || (handler.policy.Settings.SourceAuth && handler.policy.Settings.CustomProxy) {
 		file, err := url.Parse(handler.policy.Server)
 		if err != nil {
@@ -417,7 +417,7 @@ func (handler Driver) signSourceURL(ctx context.Context, path string, expire *ti
 
 		file.Path = path
 
-		// 公有空间不支持设置响应header
+		// Public buckets cannot set the response header
 		if !handler.policy.IsPrivate {
 			options.ContentDescription = ""
 		}
@@ -448,11 +448,11 @@ func (handler Driver) signSourceURL(ctx context.Context, path string, expire *ti
 	return presignedURL.String(), nil
 }
 
-// Token 获取上传策略和认证Token
+// Token gets the upload policy and auth Token
 func (handler Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, file *fs.UploadRequest) (*fs.UploadCredential, error) {
-	// 生成回调地址
+	// Generate the callback URL
 	siteURL := handler.settings.SiteURL(setting.UseFirstSiteUrl(ctx))
-	// 在从机端创建上传会话
+	// Create the upload session on the slave node
 	uploadSession.ChunkSize = handler.chunkSize
 	uploadSession.Callback = routes.MasterSlaveCallbackUrl(siteURL, types.PolicyTypeCos, uploadSession.Props.UploadSessionID, uploadSession.CallbackSecret).String()
 
@@ -461,7 +461,7 @@ func (handler Driver) Token(ctx context.Context, uploadSession *fs.UploadSession
 		mimeType = handler.mime.TypeByName(file.Props.Uri.Name())
 	}
 
-	// 初始化分片上传
+	// Initialize multipart upload
 	opt := &cossdk.ObjectPutHeaderOptions{
 		ContentType: mimeType,
 		XOptionHeader: &http.Header{
@@ -477,7 +477,7 @@ func (handler Driver) Token(ctx context.Context, uploadSession *fs.UploadSession
 	}
 	uploadSession.UploadID = imur.UploadID
 
-	// 为每个分片签名上传 URL
+	// Sign each part's upload URL
 	chunks := chunk.NewChunkGroup(file, handler.chunkSize, &backoff.ConstantBackoff{}, false, handler.l, "")
 	urls := make([]string, chunks.Num())
 	ttl := time.Until(uploadSession.Props.ExpireAt)
@@ -512,7 +512,7 @@ func (handler Driver) Token(ctx context.Context, uploadSession *fs.UploadSession
 		}
 	}
 
-	// 签名完成分片上传的URL
+	// Sign the multipart upload completion URL
 	completeURL, err := handler.client.Object.GetPresignedURL(
 		ctx,
 		http.MethodPost,
@@ -541,7 +541,7 @@ func (handler Driver) Token(ctx context.Context, uploadSession *fs.UploadSession
 	}, nil
 }
 
-// 取消上传凭证
+// Cancels the upload credential
 func (handler *Driver) CancelToken(ctx context.Context, uploadSession *fs.UploadSession) error {
 	_, err := handler.client.Object.AbortMultipartUpload(ctx, uploadSession.Props.SavePath, uploadSession.UploadID)
 	return err
@@ -584,7 +584,7 @@ func (handler *Driver) Capabilities() *driver.Capabilities {
 	}
 }
 
-// Meta 获取文件信息
+// Meta gets file info
 func (handler Driver) Meta(ctx context.Context, path string) (*MetaData, error) {
 	res, err := handler.client.Object.Head(ctx, path, &cossdk.ObjectHeadOptions{})
 	if err != nil {

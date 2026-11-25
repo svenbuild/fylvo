@@ -39,8 +39,8 @@ const checkers: Array<Validator> = [
   },
 ];
 
-/* 将每个 Validator 执行
-   失败返回 Error
+/* Runs each Validator
+   returns an Error on failure
  */
 export function validate(file: File, policy: StoragePolicy) {
   checkers.forEach((c) => c(file, policy));

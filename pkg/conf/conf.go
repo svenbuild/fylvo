@@ -31,7 +31,7 @@ type ConfigProvider interface {
 func NewIniConfigProvider(configPath string, l logging.Logger) (ConfigProvider, error) {
 	if configPath == "" || !util.Exists(configPath) {
 		l.Info("Config file %q not found, creating a new one.", configPath)
-		// 创建初始配置文件
+		// create the initial config file
 		confContent := util.Replace(map[string]string{
 			"{SessionSecret}": util.RandStringRunesCrypto(64),
 		}, defaultConf)
@@ -40,7 +40,7 @@ func NewIniConfigProvider(configPath string, l logging.Logger) (ConfigProvider, 
 			return nil, fmt.Errorf("failed to create config file: %w", err)
 		}
 
-		// 写入配置文件
+		// write the config file
 		_, err = f.WriteString(confContent)
 		if err != nil {
 			return nil, fmt.Errorf("failed to write config file: %w", err)
@@ -81,7 +81,7 @@ func NewIniConfigProvider(configPath string, l logging.Logger) (ConfigProvider, 
 		}
 	}
 
-	// 映射数据库配置覆盖
+	// map the database config override
 	for _, key := range cfg.Section("OptionOverwrite").Keys() {
 		provider.optionOverwrite[key.Name()] = key.Value()
 	}
@@ -140,14 +140,14 @@ SessionSecret = {SessionSecret}
 HashIDSalt = {HashIDSalt}
 `
 
-// mapSection 将配置文件的 Section 映射到结构体上
+// mapSection maps a config file section onto a struct
 func mapSection(cfg *ini.File, section string, confStruct interface{}) error {
 	err := cfg.Section(section).MapTo(confStruct)
 	if err != nil {
 		return err
 	}
 
-	// 验证合法性
+	// validate
 	validate := validator.New()
 	err = validate.Struct(confStruct)
 	if err != nil {

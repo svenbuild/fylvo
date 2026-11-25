@@ -8,31 +8,31 @@ import type { PhotoRenderParams } from "./types";
 
 export interface PhotoViewProps {
   /**
-   * 图片地址
+   * Image URL
    */
   src?: string;
   /**
-   * 自定义渲染，优先级比 src 低
+   * Custom render, lower priority than src
    */
   render?: (props: PhotoRenderParams) => React.ReactNode;
   /**
-   * 自定义覆盖节点
+   * Custom overlay node
    */
   overlay?: React.ReactNode;
   /**
-   * 自定义渲染节点宽度
+   * Width of the custom rendered node
    */
   width?: number;
   /**
-   * 自定义渲染节点高度
+   * Height of the custom rendered node
    */
   height?: number;
   /**
-   * 子节点，一般为缩略图
+   * Child node, usually a thumbnail
    */
   children?: React.ReactElement;
   /**
-   * 触发的事件
+   * Trigger event
    */
   triggers?: ("onClick" | "onDoubleClick")[];
 }

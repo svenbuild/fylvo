@@ -1,4 +1,4 @@
-// 所有 Uploader 的基类
+// base class of all uploaders
 import axios, { CanceledError, CancelTokenSource } from "axios";
 import { EncryptionCipher, PolicyType } from "../../../../api/explorer.ts";
 import CrUri from "../../../../util/uri.ts";
@@ -89,7 +89,7 @@ export default abstract class Base {
 
   protected logger: Logger;
   protected subscriber: UploadHandlers;
-  // 用于取消请求
+  // used to cancel the request
   protected cancelToken: CancelTokenSource = CancelToken.source();
   // Fylvo: set by the user's cancel, apart from the token the chunk pool also cancels on errors.
   protected canceledByUser = false;

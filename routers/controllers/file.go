@@ -18,7 +18,7 @@ func DownloadArchive(c *gin.Context) {
 	}
 }
 
-// CreateArchive 创建文件压缩任务
+// CreateArchive creates a file archive task
 func CreateArchive(c *gin.Context) {
 	service := ParametersFromContext[*explorer.ArchiveWorkflowService](c, explorer.CreateArchiveParamCtx{})
 	resp, err := service.CreateCompressTask(c)
@@ -101,7 +101,7 @@ func ExtractArchive(c *gin.Context) {
 	}
 }
 
-// AnonymousPermLink 文件中转后的永久直链接
+// AnonymousPermLink permanent direct link of a relayed file
 func AnonymousPermLink(download bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		name := c.Param("name")
@@ -113,7 +113,7 @@ func AnonymousPermLink(download bool) gin.HandlerFunc {
 	}
 }
 
-// GetSource 获取文件的外链地址
+// GetSource gets the external link of a file
 func GetSource(c *gin.Context) {
 	service := ParametersFromContext[*explorer.GetDirectLinkService](c, explorer.GetDirectLinkParamCtx{})
 	res, err := service.Get(c)
@@ -144,7 +144,7 @@ func DeleteDirectLink(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// Thumb 获取文件缩略图
+// Thumb gets the file thumbnail
 func Thumb(c *gin.Context) {
 	service := ParametersFromContext[*explorer.FileThumbService](c, explorer.FileThumbParameterCtx{})
 	res, err := service.Get(c)
@@ -202,7 +202,7 @@ func CreateViewerSession(c *gin.Context) {
 	}
 }
 
-// PutContent 更新文件内容
+// PutContent updates file content
 func PutContent(c *gin.Context) {
 	service := ParametersFromContext[*explorer.FileUpdateService](c, explorer.FileUpdateParameterCtx{})
 	res, err := service.PutContent(c, nil)
@@ -216,7 +216,7 @@ func PutContent(c *gin.Context) {
 	c.JSON(200, serializer.Response{Data: res})
 }
 
-// FileUpload 本地策略文件上传
+// FileUpload file upload for the local policy
 func FileUpload(c *gin.Context) {
 	service := ParametersFromContext[*explorer.UploadService](c, explorer.UploadParameterCtx{})
 	// Fylvo: the chunks of an upload into a connected storage, before anything is looked up.
@@ -235,7 +235,7 @@ func FileUpload(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// DeleteUploadSession 删除上传会话
+// DeleteUploadSession deletes an upload session
 func DeleteUploadSession(c *gin.Context) {
 	service := ParametersFromContext[*explorer.DeleteUploadSessionService](c, explorer.DeleteUploadSessionParameterCtx{})
 	err := service.Delete(c)
@@ -248,7 +248,7 @@ func DeleteUploadSession(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// CreateUploadSession 创建上传会话
+// CreateUploadSession creates an upload session
 func CreateUploadSession(c *gin.Context) {
 	service := ParametersFromContext[*explorer.CreateUploadSessionService](c, explorer.CreateUploadSessionParameterCtx{})
 	resp, err := service.Create(c)
@@ -263,7 +263,7 @@ func CreateUploadSession(c *gin.Context) {
 	})
 }
 
-// CreateFile 创建空白文件
+// CreateFile creates an empty file
 func CreateFile(c *gin.Context) {
 	service := ParametersFromContext[*explorer.CreateFileService](c, explorer.CreateFileParameterCtx{})
 	resp, err := service.Create(c)
@@ -305,7 +305,7 @@ func MoveFile(c *gin.Context) {
 	c.JSON(200, serializer.Response{})
 }
 
-// Delete 删除文件或目录
+// Delete deletes a file or directory
 func Delete(c *gin.Context) {
 	service := ParametersFromContext[*explorer.DeleteFileService](c, explorer.DeleteFileParameterCtx{})
 	err := service.Delete(c)

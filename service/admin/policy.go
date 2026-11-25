@@ -31,12 +31,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PathTestService 本地路径测试服务
+// PathTestService local path test service
 type PathTestService struct {
 	Path string `json:"path" binding:"required"`
 }
 
-// SlaveTestService 从机测试服务
+// SlaveTestService slave test service
 type SlaveTestService struct {
 	Secret string `json:"secret" binding:"required"`
 	Server string `json:"server" binding:"required"`
@@ -50,20 +50,20 @@ type (
 	}
 )
 
-// AddPolicyService 存储策略添加服务
+// AddPolicyService storage policy add service
 type AddPolicyService struct {
 	//Policy model.Policy `json:"policy" binding:"required"`
 }
 
-// PolicyService 存储策略ID服务
+// PolicyService storage policy ID service
 type PolicyService struct {
 	ID     uint   `uri:"id" json:"id" binding:"required"`
 	Region string `json:"region"`
 }
 
-// Delete 删除存储策略
+// Delete deletes a storage policy
 func (service *SingleStoragePolicyService) Delete(c *gin.Context) error {
-	// 禁止删除默认策略
+	// deleting the default policy is not allowed
 	if service.ID == 1 {
 		return serializer.NewError(serializer.CodeDeleteDefaultPolicy, "", nil)
 	}
@@ -100,7 +100,7 @@ func (service *SingleStoragePolicyService) Delete(c *gin.Context) error {
 	return nil
 }
 
-// Test 从机响应ping
+// Test responds to ping on the slave
 func (service *SlavePingService) Test(c *gin.Context) error {
 	master, err := url.Parse(service.Callback)
 	if err != nil {
@@ -132,7 +132,7 @@ func (service *SlavePingService) Test(c *gin.Context) error {
 	return nil
 }
 
-// Test 测试从机通信
+// Test tests slave communication
 func (service *SlaveTestService) Test() serializer.Response {
 	//slave, err := url.Parse(service.Server)
 	//if err != nil {
@@ -141,7 +141,7 @@ func (service *SlaveTestService) Test() serializer.Response {
 	//
 	//controller, _ := url.Parse("/api/v3/slave/ping")
 	//
-	//// 请求正文
+	//// request body
 	//body := map[string]string{
 	//	"callback": model.GetSiteURL().String(),
 	//}
@@ -169,7 +169,7 @@ func (service *SlaveTestService) Test() serializer.Response {
 	return serializer.Response{}
 }
 
-// Test 测试本地路径
+// Test tests the local path
 func (service *PathTestService) Test() serializer.Response {
 	//policy := model.Policy{DirNameRule: service.Path}
 	//path := policy.GeneratePath(1, "/My File")
@@ -189,7 +189,7 @@ const (
 	policyTypeCondition = "policy_type"
 )
 
-// Policies 列出存储策略
+// Policies lists storage policies
 func (service *AdminListService) Policies(c *gin.Context) (*ListPolicyResponse, error) {
 	dep := dependency.FromContext(c)
 	storagePolicyClient := dep.StoragePolicyClient()
@@ -399,7 +399,7 @@ type (
 	GetOauthRedirectParamCtx struct{}
 )
 
-// GetOAuth 获取 OneDrive OAuth 地址
+// GetOAuth gets the OneDrive OAuth URL
 func (service *GetOauthRedirectService) GetOAuth(c *gin.Context) (string, error) {
 	dep := dependency.FromContext(c)
 	storagePolicyClient := dep.StoragePolicyClient()

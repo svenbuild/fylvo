@@ -34,13 +34,13 @@ import (
 	"github.com/samber/lo"
 )
 
-// UploadPolicy 阿里云OSS上传策略
+// UploadPolicy Aliyun OSS upload policy
 type UploadPolicy struct {
 	Expiration string        `json:"expiration"`
 	Conditions []interface{} `json:"conditions"`
 }
 
-// CallbackPolicy 回调策略
+// CallbackPolicy callback policy
 type CallbackPolicy struct {
 	CallbackURL      string `json:"callbackUrl"`
 	CallbackBody     string `json:"callbackBody"`
@@ -48,7 +48,7 @@ type CallbackPolicy struct {
 	CallbackSNI      bool   `json:"callbackSNI"`
 }
 
-// Driver 阿里云OSS策略适配器
+// Driver Aliyun OSS policy adapter
 type Driver struct {
 	policy *ent.StoragePolicy
 
@@ -72,7 +72,7 @@ const (
 	forbidOverwriteHeader = "x-oss-forbid-overwrite"
 	trafficLimitHeader    = "x-oss-traffic-limit"
 
-	// MultiPartUploadThreshold 服务端使用分片上传的阈值
+	// MultiPartUploadThreshold threshold above which the server uses multipart upload
 	MultiPartUploadThreshold int64 = 5 * (1 << 30) // 5GB
 )
 
@@ -100,7 +100,7 @@ func New(ctx context.Context, policy *ent.StoragePolicy, settings setting.Provid
 	return driver, driver.InitOSSClient(false)
 }
 
-// CORS 创建跨域策略
+// CORS creates the CORS policy
 func (handler *Driver) CORS() error {
 	_, err := handler.client.PutBucketCors(context.Background(), &oss.PutBucketCorsRequest{
 		Bucket: &handler.policy.BucketName,
@@ -125,13 +125,13 @@ func (handler *Driver) CORS() error {
 	return err
 }
 
-// InitOSSClient 初始化OSS鉴权客户端
+// InitOSSClient initializes the OSS auth client
 func (handler *Driver) InitOSSClient(forceUsePublicEndpoint bool) error {
 	if handler.policy == nil {
 		return errors.New("empty policy")
 	}
 
-	// 决定是否使用内网 Endpoint
+	// Decide whether to use the internal Endpoint
 	endpoint := handler.policy.Server
 	useCname := false
 	if handler.policy.Settings.ServerSideEndpoint != "" && !forceUsePublicEndpoint {
@@ -150,15 +150,15 @@ func (handler *Driver) InitOSSClient(forceUsePublicEndpoint bool) error {
 		WithRegion(handler.policy.Settings.Region).
 		WithUseCName(useCname)
 
-	// 初始化客户端
+	// Initialize the client
 	client := oss.NewClient(cfg)
 	handler.client = client
 	return nil
 }
 
-// List 列出OSS上的文件
+// List lists files on OSS
 func (handler *Driver) List(ctx context.Context, base string, onProgress driver.ListProgressFunc, recursive bool) ([]fs.PhysicalObject, error) {
-	// 列取文件
+	// List files
 	base = strings.TrimPrefix(base, "/")
 	if base != "" {
 		base += "/"
@@ -190,10 +190,10 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 		commons = append(commons, page.CommonPrefixes...)
 	}
 
-	// 处理列取结果
+	// Handle the listing result
 	res := make([]fs.PhysicalObject, 0, len(objects)+len(commons))
 
-	// 处理目录
+	// Handle directories
 	for _, object := range commons {
 		rel, err := filepath.Rel(base, *object.Prefix)
 		if err != nil {
@@ -209,7 +209,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 	}
 	onProgress(len(commons))
 
-	// 处理文件
+	// Handle files
 	for _, object := range objects {
 		if strings.HasSuffix(*object.Key, "/") && object.Size == 0 {
 			continue
@@ -232,16 +232,16 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 	return res, nil
 }
 
-// Get 获取文件
+// Get gets a file
 func (handler *Driver) Open(ctx context.Context, path string) (*os.File, error) {
 	return nil, errors.New("not implemented")
 }
 
-// Put 将文件流保存到指定目录
+// Put saves the file stream to the given path
 func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	defer file.Close()
 
-	// 凭证有效期
+	// Credential validity period
 	credentialTTL := handler.settings.UploadSessionTTL(ctx)
 
 	mimeType := file.Props.MimeType
@@ -249,12 +249,12 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 		mimeType = handler.mime.TypeByName(file.Props.Uri.Name())
 	}
 
-	// 是否允许覆盖
+	// Whether overwriting is allowed
 	overwrite := file.Mode&fs.ModeOverwrite == fs.ModeOverwrite
 	forbidOverwrite := oss.Ptr(strconv.FormatBool(!overwrite))
 	exipires := oss.Ptr(time.Now().Add(credentialTTL * time.Second).Format(time.RFC3339))
 
-	// 小文件直接上传
+	// Upload small files directly
 	if file.Props.Size < MultiPartUploadThreshold {
 		_, err := handler.client.PutObject(ctx, &oss.PutObjectRequest{
 			Bucket:          &handler.policy.BucketName,
@@ -266,7 +266,7 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 		return err
 	}
 
-	// 超过阈值时使用分片上传
+	// Use multipart upload above the threshold
 	imur, err := handler.client.InitiateMultipartUpload(ctx, &oss.InitiateMultipartUploadRequest{
 		Bucket:          &handler.policy.BucketName,
 		Key:             &file.Props.SavePath,
@@ -327,15 +327,15 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	return err
 }
 
-// Delete 删除一个或多个文件，
-// 返回未删除的文件
+// Delete deletes one or more files,
+// Returns the files that were not deleted
 func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, error) {
 	groups := lo.Chunk(files, maxDeleteBatch)
 	failed := make([]string, 0)
 	var lastError error
 	for index, group := range groups {
 		handler.l.Debug("Process delete group #%d: %v", index, group)
-		// 删除文件
+		// Delete files
 		delRes, err := handler.client.DeleteMultipleObjects(ctx, &oss.DeleteMultipleObjectsRequest{
 			Bucket: &handler.policy.BucketName,
 			Objects: lo.Map(group, func(v string, i int) oss.DeleteObject {
@@ -348,7 +348,7 @@ func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, e
 			continue
 		}
 
-		// 统计未删除的文件
+		// Collect the files that were not deleted
 		failed = append(
 			failed,
 			util.SliceDifference(files,
@@ -366,14 +366,14 @@ func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, e
 	return failed, lastError
 }
 
-// Thumb 获取文件缩略图
+// Thumb gets the file thumbnail
 func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string, e fs.Entity) (string, error) {
 	usePublicEndpoint := true
 	if forceUsePublicEndpoint, ok := ctx.Value(driver.ForceUsePublicEndpointCtx{}).(bool); ok {
 		usePublicEndpoint = forceUsePublicEndpoint
 	}
 
-	// 初始化客户端
+	// Initialize the client
 	if err := handler.InitOSSClient(usePublicEndpoint); err != nil {
 		return "", err
 	}
@@ -406,9 +406,9 @@ func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string,
 	return thumbURL, nil
 }
 
-// Source 获取外链URL
+// Source gets the external URL
 func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.GetSourceArgs) (string, error) {
-	// 初始化客户端
+	// Initialize the client
 	usePublicEndpoint := true
 	if forceUsePublicEndpoint, ok := ctx.Value(driver.ForceUsePublicEndpointCtx{}).(bool); ok {
 		usePublicEndpoint = forceUsePublicEndpoint
@@ -417,7 +417,7 @@ func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.Get
 		return "", err
 	}
 
-	// 添加各项设置
+	// Add the settings
 	req := &oss.GetObjectRequest{}
 	if args.IsDownload {
 		encodedFilename := url.PathEscape(args.DisplayName)
@@ -425,10 +425,10 @@ func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.Get
 			encodedFilename, encodedFilename))
 	}
 	if args.Speed > 0 {
-		// Byte 转换为 bit
+		// Byte converted to bit
 		args.Speed *= 8
 
-		// OSS对速度值有范围限制
+		// OSS limits the range of the speed value
 		if args.Speed < 819200 {
 			args.Speed = 819200
 		}
@@ -444,7 +444,7 @@ func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.Get
 }
 
 func (handler *Driver) signSourceURL(ctx context.Context, path string, expire *time.Time, req *oss.GetObjectRequest, forceSign bool) (string, error) {
-	// V4 Sign 最大过期时间为7天
+	// V4 Sign has a maximum expiry of 7 days
 	ttl := maxSignTTL
 	if expire != nil {
 		ttl = time.Until(*expire)
@@ -466,13 +466,13 @@ func (handler *Driver) signSourceURL(ctx context.Context, path string, expire *t
 		return "", err
 	}
 
-	// 将最终生成的签名URL域名换成用户自定义的加速域名（如果有）
+	// Replace the domain of the generated signed URL with the user's custom acceleration domain (if any)
 	finalURL, err := url.Parse(result.URL)
 	if err != nil {
 		return "", err
 	}
 
-	// 公有空间替换掉Key及不支持的头
+	// For public buckets, strip the key and unsupported headers
 	if !handler.policy.IsPrivate && !forceSign {
 		query := finalURL.Query()
 		query.Del("x-oss-credential")
@@ -486,20 +486,20 @@ func (handler *Driver) signSourceURL(ctx context.Context, path string, expire *t
 	return finalURL.String(), nil
 }
 
-// Token 获取上传策略和认证Token
+// Token gets the upload policy and auth Token
 func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, file *fs.UploadRequest) (*fs.UploadCredential, error) {
-	// 初始化客户端
+	// Initialize the client
 	if err := handler.InitOSSClient(true); err != nil {
 		return nil, err
 	}
 
-	// 生成回调地址
+	// Generate the callback URL
 	siteURL := handler.settings.SiteURL(setting.UseFirstSiteUrl(ctx))
-	// 在从机端创建上传会话
+	// Create the upload session on the slave node
 	uploadSession.ChunkSize = handler.chunkSize
 	uploadSession.Callback = routes.MasterSlaveCallbackUrl(siteURL, types.PolicyTypeOss, uploadSession.Props.UploadSessionID, uploadSession.CallbackSecret).String()
 
-	// 回调策略
+	// Callback policy
 	callbackPolicy := CallbackPolicy{
 		CallbackURL:      uploadSession.Callback,
 		CallbackBody:     `{"name":${x:fname},"source_name":${object},"size":${size},"pic_info":"${imageInfo.width},${imageInfo.height}"}`,
@@ -517,7 +517,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 		mimeType = handler.mime.TypeByName(file.Props.Uri.Name())
 	}
 
-	// 初始化分片上传
+	// Initialize multipart upload
 	imur, err := handler.client.InitiateMultipartUpload(ctx, &oss.InitiateMultipartUploadRequest{
 		Bucket:          &handler.policy.BucketName,
 		Key:             &file.Props.SavePath,
@@ -530,7 +530,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 	}
 	uploadSession.UploadID = *imur.UploadId
 
-	// 为每个分片签名上传 URL
+	// Sign each part's upload URL
 	chunks := chunk.NewChunkGroup(file, handler.chunkSize, &backoff.ConstantBackoff{}, false, handler.l, "")
 	urls := make([]string, chunks.Num())
 	ttl := time.Until(uploadSession.Props.ExpireAt)
@@ -560,7 +560,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 		}
 	}
 
-	// 签名完成分片上传的URL
+	// Sign the multipart upload completion URL
 	completeURL, err := handler.client.Presign(ctx, &oss.CompleteMultipartUploadRequest{
 		Bucket:   &handler.policy.BucketName,
 		Key:      &file.Props.SavePath,
@@ -590,7 +590,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 	}, nil
 }
 
-// 取消上传凭证
+// Cancels the upload credential
 func (handler *Driver) CancelToken(ctx context.Context, uploadSession *fs.UploadSession) error {
 	_, err := handler.client.AbortMultipartUpload(ctx, &oss.AbortMultipartUploadRequest{
 		Bucket:   &handler.policy.BucketName,

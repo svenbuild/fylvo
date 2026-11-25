@@ -22,7 +22,7 @@ func TestUpsertUserServiceValidateEmail(t *testing.T) {
 		{name: "surrounding whitespace", email: " user@example.com ", wantErr: true},
 		{name: "regular address", email: "admin@test.com"},
 		{name: "subaddress", email: "user+tag@example.co.uk"},
-		{name: "internationalized address", email: "用户@例子.公司"},
+		{name: "internationalized address", email: "jürgen@bücher.de"},
 	}
 
 	for _, test := range tests {

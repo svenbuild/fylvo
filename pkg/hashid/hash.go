@@ -6,14 +6,14 @@ import (
 )
 import "github.com/speps/go-hashids"
 
-// ID类型
+// ID type
 const (
-	ShareID  = iota // 分享
-	UserID          // 用户
-	FileID          // 文件ID
-	FolderID        // 目录ID
-	TagID           // 标签ID
-	PolicyID        // 存储策略ID
+	ShareID  = iota // Share
+	UserID          // User
+	FileID          // File ID
+	FolderID        // Folder ID
+	TagID           // Tag ID
+	PolicyID        // Storage policy ID
 	SourceLinkID
 	GroupID
 	EntityID
@@ -25,7 +25,7 @@ const (
 )
 
 var (
-	// ErrTypeNotMatch ID类型不匹配
+	// ErrTypeNotMatch ID type does not match
 	ErrTypeNotMatch = errors.New("mismatched ID type.")
 )
 

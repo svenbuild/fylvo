@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Option 发送请求的额外设置
+// Option extra settings for sending requests
 type Option interface {
 	apply(*options)
 }
@@ -57,28 +57,28 @@ func (o *options) clone() options {
 	return newOptions
 }
 
-// WithTransport 设置请求Transport
+// WithTransport sets the request Transport
 func WithTransport(transport *http.Transport) Option {
 	return optionFunc(func(o *options) {
 		o.transport = transport
 	})
 }
 
-// WithTimeout 设置请求超时
+// WithTimeout sets the request timeout
 func WithTimeout(t time.Duration) Option {
 	return optionFunc(func(o *options) {
 		o.timeout = t
 	})
 }
 
-// WithContext 设置请求上下文
+// WithContext sets the request context
 func WithContext(c context.Context) Option {
 	return optionFunc(func(o *options) {
 		o.ctx = c
 	})
 }
 
-// WithCredential 对请求进行签名
+// WithCredential signs the request
 func WithCredential(instance auth.Auth, ttl int64) Option {
 	return optionFunc(func(o *options) {
 		o.sign = instance
@@ -88,7 +88,7 @@ func WithCredential(instance auth.Auth, ttl int64) Option {
 	})
 }
 
-// WithHeader 设置请求Header
+// WithHeader sets the request header
 func WithHeader(header http.Header) Option {
 	return optionFunc(func(o *options) {
 		for k, v := range header {
@@ -97,7 +97,7 @@ func WithHeader(header http.Header) Option {
 	})
 }
 
-// WithoutHeader 设置清除请求Header
+// WithoutHeader removes a request header
 func WithoutHeader(header []string) Option {
 	return optionFunc(func(o *options) {
 		for _, v := range header {
@@ -107,14 +107,14 @@ func WithoutHeader(header []string) Option {
 	})
 }
 
-// WithContentLength 设置请求大小
+// WithContentLength sets the request size
 func WithContentLength(s int64) Option {
 	return optionFunc(func(o *options) {
 		o.contentLength = s
 	})
 }
 
-// WithMasterMeta 请求时携带主机信息
+// WithMasterMeta sends master info with the request
 func WithMasterMeta(siteID string, siteURL string) Option {
 	return optionFunc(func(o *options) {
 		o.masterMeta = true
@@ -130,7 +130,7 @@ func WithSlaveMeta(s int) Option {
 	})
 }
 
-// Endpoint 使用同一的请求Endpoint
+// Endpoint uses the same request endpoint
 func WithEndpoint(endpoint string) Option {
 	if !strings.HasSuffix(endpoint, "/") {
 		endpoint += "/"
@@ -142,7 +142,7 @@ func WithEndpoint(endpoint string) Option {
 	})
 }
 
-// WithTPSLimit 请求时使用全局流量限制
+// WithTPSLimit uses the global traffic limit for requests
 func WithTPSLimit(token string, tps float64, burst int) Option {
 	return optionFunc(func(o *options) {
 		o.tpsLimiterToken = token

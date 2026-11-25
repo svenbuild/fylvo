@@ -13,13 +13,13 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
 )
 
-// HMACAuth HMAC算法鉴权
+// HMACAuth HMAC algorithm authentication
 type HMACAuth struct {
 	SecretKey []byte
 }
 
-// Sign 对给定Body生成expires后失效的签名，expires为过期时间戳，
-// 填写为0表示不限制有效期
+// Sign generates a signature for the given body that expires at expires, a timestamp,
+// 0 means no expiry
 func (auth HMACAuth) Sign(body string, expires int64) string {
 	h := hmac.New(sha256.New, auth.SecretKey)
 	expireTimeStamp := strconv.FormatInt(expires, 10)
@@ -31,25 +31,25 @@ func (auth HMACAuth) Sign(body string, expires int64) string {
 	return base64.URLEncoding.EncodeToString(h.Sum(nil)) + ":" + expireTimeStamp
 }
 
-// Check 对给定Body和Sign进行鉴权，包括对expires的检查
+// Check verifies the given body and signature, including the expires check
 func (auth HMACAuth) Check(body string, sign string) error {
 	signSlice := strings.Split(sign, ":")
-	// 如果未携带expires字段
+	// if the expires field is missing
 	if signSlice[len(signSlice)-1] == "" {
 		return ErrExpiresMissing
 	}
 
-	// 验证是否过期
+	// check whether it has expired
 	expires, err := strconv.ParseInt(signSlice[len(signSlice)-1], 10, 64)
 	if err != nil {
 		return serializer.NewError(serializer.CodeInvalidSign, "sign expired", nil)
 	}
-	// 如果签名过期
+	// if the signature has expired
 	if expires < time.Now().Unix() && expires != 0 {
 		return ErrExpired
 	}
 
-	// 验证签名
+	// verify signature
 	if subtle.ConstantTimeCompare([]byte(auth.Sign(body, expires)), []byte(sign)) != 1 {
 		return serializer.NewError(serializer.CodeInvalidSign, "invalid sign", nil)
 	}

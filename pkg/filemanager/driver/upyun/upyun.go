@@ -35,7 +35,7 @@ import (
 )
 
 type (
-	// UploadPolicy 又拍云上传策略
+	// UploadPolicy Upyun upload policy
 	UploadPolicy struct {
 		Bucket             string `json:"bucket"`
 		SaveKey            string `json:"save-key"`
@@ -45,7 +45,7 @@ type (
 		ContentLengthRange string `json:"content-length-range,omitempty"`
 		AllowFileType      string `json:"allow-file-type,omitempty"`
 	}
-	// Driver 又拍云策略适配器
+	// Driver Upyun policy adapter
 	Driver struct {
 		policy *ent.StoragePolicy
 
@@ -84,22 +84,22 @@ func New(ctx context.Context, policy *ent.StoragePolicy, settings setting.Provid
 func (handler *Driver) List(ctx context.Context, base string, onProgress driver.ListProgressFunc, recursive bool) ([]fs.PhysicalObject, error) {
 	base = strings.TrimPrefix(base, "/")
 
-	// 用于接受SDK返回对象的chan
+	// Receives the objects returned by the SDK through a chan
 	objChan := make(chan *upyun.FileInfo)
 	objects := []*upyun.FileInfo{}
 
-	// 列取配置
+	// Listing config
 	listConf := &upyun.GetObjectsConfig{
 		Path:         "/" + base,
 		ObjectsChan:  objChan,
 		MaxListTries: 1,
 	}
-	// 递归列取时不限制递归次数
+	// No recursion limit when listing recursively
 	if recursive {
 		listConf.MaxListLevel = -1
 	}
 
-	// 启动一个goroutine收集列取的对象信
+	// Start a goroutine that collects the listed object info
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func(input chan *upyun.FileInfo, output *[]*upyun.FileInfo, wg *sync.WaitGroup) {
@@ -127,7 +127,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 
 	wg.Wait()
 
-	// 汇总处理列取结果
+	// Collect and handle the listing result
 	res := make([]fs.PhysicalObject, 0, len(objects))
 	for _, object := range objects {
 		res = append(res, fs.PhysicalObject{
@@ -147,11 +147,11 @@ func (handler *Driver) Open(ctx context.Context, path string) (*os.File, error) 
 	return nil, errors.New("not implemented")
 }
 
-// Put 将文件流保存到指定目录
+// Put saves the file stream to the given path
 func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	defer file.Close()
 
-	// 是否允许覆盖
+	// Whether overwriting is allowed
 	overwrite := file.Mode&fs.ModeOverwrite == fs.ModeOverwrite
 	if !overwrite {
 		if _, err := handler.up.GetInfo(file.Props.SavePath); err == nil {
@@ -175,8 +175,8 @@ func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	return err
 }
 
-// Delete 删除一个或多个文件，
-// 返回未删除的文件，及遇到的最后一个错误
+// Delete deletes one or more files,
+// Returns the files that were not deleted and the last error encountered
 func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, error) {
 	failed := make([]string, 0)
 	var lastErr error
@@ -200,7 +200,7 @@ func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, e
 	return failed, lastErr
 }
 
-// Thumb 获取文件缩略图
+// Thumb gets the file thumbnail
 func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string, e fs.Entity) (string, error) {
 	w, h := handler.settings.ThumbSize(ctx)
 	thumbParam := fmt.Sprintf("!/fwfh/%dx%d", w, h)
@@ -221,11 +221,11 @@ func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string,
 	return thumbURL, nil
 }
 
-// Source 获取外链URL
+// Source gets the external URL
 func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.GetSourceArgs) (string, error) {
 	query := url.Values{}
 
-	// 如果是下载文件URL
+	// If it is a download file URL
 	if args.IsDownload {
 		query.Add("_upd", args.DisplayName)
 	}
@@ -251,7 +251,7 @@ func (handler *Driver) signURL(ctx context.Context, path string, query *url.Valu
 	}
 
 	if !handler.policy.IsPrivate {
-		// 未开启Token防盗链时，直接返回
+		// If token anti-hotlinking is disabled, return directly
 		return sourceURL.String(), nil
 	}
 
@@ -268,7 +268,7 @@ func (handler *Driver) signURL(ctx context.Context, path string, query *url.Valu
 	signMd5 := fmt.Sprintf("%x", md5.Sum([]byte(signStr)))
 	finalSign := signMd5[12:20] + strconv.FormatInt(etime, 10)
 
-	// 将签名添加到URL中
+	// Add the signature to the URL
 	q := sourceURL.Query()
 	q.Add("_upt", finalSign)
 	sourceURL.RawQuery = q.Encode()
@@ -276,17 +276,17 @@ func (handler *Driver) signURL(ctx context.Context, path string, query *url.Valu
 	return sourceURL.String(), nil
 }
 
-// Token 获取上传策略和认证Token
+// Token gets the upload policy and auth Token
 func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, file *fs.UploadRequest) (*fs.UploadCredential, error) {
 	if _, err := handler.up.GetInfo(file.Props.SavePath); err == nil {
 		return nil, fs.ErrFileExisted
 	}
 
-	// 生成回调地址
+	// Generate the callback URL
 	siteURL := handler.settings.SiteURL(setting.UseFirstSiteUrl(ctx))
 	apiUrl := routes.MasterSlaveCallbackUrl(siteURL, types.PolicyTypeUpyun, uploadSession.Props.UploadSessionID, uploadSession.CallbackSecret).String()
 
-	// 上传策略
+	// Upload policy
 	putPolicy := UploadPolicy{
 		Bucket:             handler.policy.BucketName,
 		SaveKey:            file.Props.SavePath,
@@ -296,14 +296,14 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 		ContentLengthRange: fmt.Sprintf("0,%d", file.Props.Size),
 	}
 
-	// 生成上传凭证
+	// Generate the upload credential
 	policyJSON, err := json.Marshal(putPolicy)
 	if err != nil {
 		return nil, err
 	}
 	policyEncoded := base64.StdEncoding.EncodeToString(policyJSON)
 
-	// 生成签名
+	// Generate the signature
 	elements := []string{"POST", "/" + handler.policy.BucketName, policyEncoded}
 	signStr := sign(handler.policy.AccessKey, handler.policy.SecretKey, elements)
 
@@ -320,7 +320,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 	}, nil
 }
 
-// 取消上传凭证
+// Cancels the upload credential
 func (handler *Driver) CancelToken(ctx context.Context, uploadSession *fs.UploadSession) error {
 	return nil
 }
@@ -383,7 +383,7 @@ func ValidateCallback(c *gin.Context, session *fs.UploadSession) error {
 	return nil
 }
 
-// Sign 计算又拍云的签名头
+// Sign computes the Upyun signature header
 func sign(ak, sk string, elements []string) string {
 	password := fmt.Sprintf("%x", md5.Sum([]byte(sk)))
 	mac := hmac.New(sha1.New, []byte(password))

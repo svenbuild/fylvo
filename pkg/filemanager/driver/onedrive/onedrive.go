@@ -24,7 +24,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
 )
 
-// Driver OneDrive 适配器
+// Driver is the OneDrive adapter
 type (
 	Driver struct {
 		policy    *ent.StoragePolicy
@@ -51,7 +51,7 @@ func init() {
 	}, features)
 }
 
-// NewDriver 从存储策略初始化新的Driver实例
+// NewDriver creates a new Driver instance from the storage policy
 func New(ctx context.Context, policy *ent.StoragePolicy, settings setting.Provider,
 	config conf.ConfigProvider, l logging.Logger, cred credmanager.CredManager) (*Driver, error) {
 	chunkSize := policy.Settings.ChunkSize
@@ -71,13 +71,13 @@ func New(ctx context.Context, policy *ent.StoragePolicy, settings setting.Provid
 	}, nil
 }
 
-// List 列取项目
+// List lists items
 func (handler *Driver) List(ctx context.Context, base string, onProgress driver.ListProgressFunc, recursive bool) ([]fs.PhysicalObject, error) {
 	base = strings.TrimPrefix(base, "/")
-	// 列取子项目
+	// list child items
 	objects, _ := handler.client.ListChildren(ctx, base)
 
-	// 获取真实的列取起始根目录
+	// get the real root directory to start listing from
 	rootPath := base
 	if realBase, ok := ctx.Value(ListPathRealRootCtx{}).(string); ok {
 		rootPath = realBase
@@ -85,7 +85,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 		ctx = context.WithValue(ctx, ListPathRealRootCtx{}, base)
 	}
 
-	// 整理结果
+	// collect the results
 	res := make([]fs.PhysicalObject, 0, len(objects))
 	for _, object := range objects {
 		source := path.Join(base, object.Name)
@@ -105,7 +105,7 @@ func (handler *Driver) List(ctx context.Context, base string, onProgress driver.
 
 	onProgress(len(objects))
 
-	// 递归列取子目录
+	// list subdirectories recursively
 	if recursive {
 		for _, object := range objects {
 			if object.Folder != nil {
@@ -122,20 +122,20 @@ func (handler *Driver) Open(ctx context.Context, path string) (*os.File, error) 
 	return nil, errors.New("not implemented")
 }
 
-// Put 将文件流保存到指定目录
+// Put saves the file stream to the given location
 func (handler *Driver) Put(ctx context.Context, file *fs.UploadRequest) error {
 	defer file.Close()
 
 	return handler.client.Upload(ctx, file)
 }
 
-// Delete 删除一个或多个文件，
-// 返回未删除的文件，及遇到的最后一个错误
+// Delete removes one or more files,
+// returns the files that were not deleted and the last error encountered
 func (handler *Driver) Delete(ctx context.Context, files ...string) ([]string, error) {
 	return handler.client.BatchDelete(ctx, files)
 }
 
-// Thumb 获取文件缩略图
+// Thumb gets the file thumbnail
 func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string, e fs.Entity) (string, error) {
 	res, err := handler.client.GetThumbURL(ctx, e.Source())
 	if err != nil {
@@ -149,9 +149,9 @@ func (handler *Driver) Thumb(ctx context.Context, expire *time.Time, ext string,
 	return res, nil
 }
 
-// Source 获取外链URL
+// Source gets the external link URL
 func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.GetSourceArgs) (string, error) {
-	// 缓存不存在，重新获取
+	// cache miss, fetch again
 	res, err := handler.client.Meta(ctx, "", e.Source())
 	if err != nil {
 		return "", err
@@ -160,9 +160,9 @@ func (handler *Driver) Source(ctx context.Context, e fs.Entity, args *driver.Get
 	return res.DownloadURL, nil
 }
 
-// Token 获取上传会话URL
+// Token gets the upload session URL
 func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSession, file *fs.UploadRequest) (*fs.UploadCredential, error) {
-	// 生成回调地址
+	// generate the callback URL
 	siteURL := handler.settings.SiteURL(setting.UseFirstSiteUrl(ctx))
 	uploadSession.Callback = routes.MasterSlaveCallbackUrl(siteURL, types.PolicyTypeOd, uploadSession.Props.UploadSessionID, uploadSession.CallbackSecret).String()
 
@@ -171,7 +171,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 		return nil, err
 	}
 
-	// 监控回调及上传
+	// watch the callback and upload
 	//go handler.client.MonitorUpload(uploadURL, uploadSession.Key, fileInfo.SavePath, fileInfo.Size, ttl)
 
 	uploadSession.ChunkSize = handler.chunkSize
@@ -182,7 +182,7 @@ func (handler *Driver) Token(ctx context.Context, uploadSession *fs.UploadSessio
 	}, nil
 }
 
-// 取消上传凭证
+// cancel the upload credential
 func (handler *Driver) CancelToken(ctx context.Context, uploadSession *fs.UploadSession) error {
 	err := handler.client.DeleteUploadSession(ctx, uploadSession.UploadURL)
 	// Create empty placeholder file to stop upload
@@ -212,7 +212,7 @@ func (handler *Driver) CompleteUpload(ctx context.Context, session *fs.UploadSes
 	isSharePoint := strings.Contains(handler.policy.Settings.OdDriver, "sharepoint.com") ||
 		strings.Contains(handler.policy.Settings.OdDriver, "sharepoint.cn")
 	sizeMismatch := res.Size != session.Props.Size
-	// SharePoint 会对 Office 文档增加 meta data 导致文件大小不一致，这里增加 1 MB 宽容
+	// SharePoint adds metadata to Office documents, which makes file sizes differ, so allow 1 MB of tolerance here
 	// See: https://github.com/OneDrive/onedrive-api-docs/issues/935
 	if isSharePoint && sizeMismatch && (res.Size > session.Props.Size) && (res.Size-session.Props.Size <= 1048576) {
 		sizeMismatch = false

@@ -15,30 +15,30 @@ export default function useAnimationPosition(
   speed: number,
   updateEasing: (pause: boolean) => void,
 ) {
-  // 延迟更新 width/height
+  // delay updating width/height
   const [autoWidth, autoHeight, autoScale] = useTargetScale(width, height, scale, speed, updateEasing);
-  // 动画源处理
+  // animation source handling
   const [easingMode, originRect] = useAnimationOrigin(visible, originRef, loaded, speed, updateEasing);
 
-  // 计算动画位置
+  // compute the animation position
   const { T, L, W, H, FIT } = originRect;
-  // 偏移量，x: 0, y: 0 居中为初始
+  // offset, x: 0, y: 0 (centered) is the initial value
   const centerWidth = dynamicInnerWidth / 2;
   const centerHeight = innerHeight / 2;
   const offsetX = centerWidth - (width * scale) / 2;
   const offsetY = centerHeight - (height * scale) / 2;
-  // 缩略图状态
+  // thumbnail state
   const miniMode = easingMode < 3 || easingMode > 4;
-  // 有缩略图时，则为缩略图的位置，否则居中
+  // with a thumbnail, use the thumbnail position, otherwise center
   const translateX = miniMode ? (W ? L : centerWidth) : x + offsetX;
   const translateY = miniMode ? (W ? T : centerHeight) : y + offsetY;
 
-  // 最小值缩放
+  // minimum scale
   const minScale = W / (width * scale) || 0.01;
 
-  // 适应 objectFit 保持缩略图宽高比
+  // follow objectFit to keep the thumbnail aspect ratio
   const currentHeight = miniMode && FIT ? autoWidth * (H / W) : autoHeight;
-  // 初始加载情况无缩放
+  // no scaling on initial load
   const currentScale = easingMode === 0 ? autoScale : miniMode ? minScale : autoScale;
   const opacity = miniMode ? (FIT ? 1 : 0) : 1;
 

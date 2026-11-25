@@ -3,8 +3,8 @@ import type { ActiveAnimationType } from "../types";
 import useForkedVariable from "./useForkedVariable";
 
 /**
- * 动画关闭处理真实关闭状态
- * 通过 onAnimationEnd 回调实现 leaveCallback
+ * handles the real closed state after the close animation
+ * implements leaveCallback via the onAnimationEnd callback
  */
 export default function useAnimationVisible(
   visible: boolean | undefined,
@@ -14,9 +14,9 @@ export default function useAnimationVisible(
 
   const activeAnimation = useRef<ActiveAnimationType>(0);
 
-  // 可见状态分支
+  // visible state branch
   const [realVisible, modifyRealVisible] = useForkedVariable(visible, (modify) => {
-    // 可见状态：设置进入动画
+    // visible: set the enter animation
     if (visible) {
       modify(visible);
       activeAnimation.current = 1;
@@ -26,31 +26,31 @@ export default function useAnimationVisible(
   });
 
   function onAnimationEnd() {
-    // 动画结束后触发渲染
+    // trigger a render after the animation ends
     handleRender();
-    // 结束动画：设置隐藏状态
+    // end animation: set the hidden state
     if (activeAnimation.current === 2) {
       modifyRealVisible(false);
-      // 触发隐藏回调
+      // trigger the hide callback
       if (afterClose) {
         afterClose();
       }
     }
-    // 重置状态
+    // reset state
     activeAnimation.current = 0;
   }
 
   return [
     /**
-     * 真实可见状态
+     * real visible state
      */
     realVisible,
     /**
-     * 正在进行的动画
+     * animation in progress
      */
     activeAnimation.current,
     /**
-     * 动画结束后回调
+     * callback after the animation ends
      */
     onAnimationEnd,
   ];

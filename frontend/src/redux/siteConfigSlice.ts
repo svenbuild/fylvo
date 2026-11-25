@@ -124,15 +124,15 @@ const loadSiteConfigCache = (initial: SiteConfigSlice): SiteConfigSlice => {
       }
     } catch (e) {}
 
-    // // 检查是否有path参数
+    // // check whether there is a path parameter
     // const url = new URL(window.location.href);
     // const c = url.searchParams.get("path");
     // rawStore.navigator.path = c === null ? "/" : c;
-    // // 初始化用户个性配置
+    // // initialize user preferences
     // rawStore.siteConfig = initUserConfig(rawStore.siteConfig);
   });
 
-  // 更改站点标题
+  // change the site title
   document.title = initial["basic"].config.title ?? "";
 
   return initial;
