@@ -99,6 +99,10 @@ func connectedViewerSession(c *gin.Context, uri *fs.URI, s *CreateViewerSessionS
 		action = types.ViewerActionEdit
 	}
 	base := settings.SiteURL(setting.UseFirstSiteUrl(c))
+	if setting.IsCraftViewer(viewer) {
+		// A Craft editor runs in the browser and makes the calls on this server's own address.
+		base = &url.URL{}
+	}
 	src, err := wopi.ActionURL(action, viewer, util.Ext(session.Name), connectedWopiSrc(base, session.ID))
 	if err != nil {
 		req.m.CloseOffice(session)
@@ -107,13 +111,17 @@ func connectedViewerSession(c *gin.Context, uri *fs.URI, s *CreateViewerSessionS
 		}
 		return nil, serializer.NewError(serializer.CodeInternalSetting, "failed to generate wopi src", err)
 	}
+	wopiSrc := src.String()
+	if setting.IsCraftViewer(viewer) {
+		wopiSrc = connectedWopiSrc(base, session.ID)
+	}
 	return &ViewerSessionResponse{
 		Session: &manager.ViewerSession{
 			ID:          session.ID,
 			AccessToken: session.Token,
 			Expires:     session.Expires.Add(-connectedSessionPadding).UnixMilli(),
 		},
-		WopiSrc: src.String(),
+		WopiSrc: wopiSrc,
 		Edit:    &session.Edit,
 	}, nil
 }
@@ -203,6 +211,10 @@ func closeAfterOfficeBody(c *gin.Context) {
 // this server instead of the Office server.
 func officeAction(viewer *types.Viewer, ext string, action types.ViewerAction) bool {
 	src, err := wopi.ActionURL(action, viewer, ext, connectedWopiSrc(&url.URL{Scheme: "https", Host: "placeholder.invalid"}, "session"))
+	if err == nil && setting.IsCraftViewer(viewer) {
+		// A Craft editor is a page of this server; the token never goes to its address.
+		return src.Host == "" && strings.HasPrefix(src.Path, setting.CraftRoute)
+	}
 	return err == nil && (src.Scheme == "https" || src.Scheme == "http") && src.Hostname() != ""
 }
 

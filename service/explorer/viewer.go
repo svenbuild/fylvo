@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/cloudreve/Cloudreve/v4/application/constants"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/manager/entitysource"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/serializer"
+	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
 	"github.com/cloudreve/Cloudreve/v4/pkg/wopi"
 	"github.com/gin-gonic/gin"
 )
@@ -217,6 +219,12 @@ func (service *WopiService) PutContent(c *gin.Context, isPutRelative bool) error
 	if refuseViewSession(c, viewerSession) {
 		return nil
 	}
+	// Fylvo: a session opened for an older version only reads, whatever action it asked for.
+	if viewerSession.Version != "" {
+		c.Status(http.StatusForbidden)
+		c.Header(wopi.ServerErrorHeader, "read-only access")
+		return nil
+	}
 
 	// Make sure file exists and readable
 	file, err := m.Get(c, uri, dbfs.WithRequiredCapabilities(dbfs.NavigatorCapabilityUploadFile, dbfs.NavigatorCapabilityRenameFile), dbfs.WithNotRoot())
@@ -301,6 +309,9 @@ func (service *WopiService) PutContent(c *gin.Context, isPutRelative bool) error
 	subService := FileUpdateService{
 		Uri: fileUri,
 	}
+	if !isPutRelative {
+		subService.Previous = c.GetHeader(wopi.ExpectedVersionHeader)
+	}
 
 	res, err := subService.PutContent(c, lockSession)
 	if err != nil {
@@ -313,6 +324,9 @@ func (service *WopiService) PutContent(c *gin.Context, isPutRelative bool) error
 			case serializer.CodeNotFound:
 				c.Status(http.StatusNotFound)
 				c.Header(wopi.ServerErrorHeader, err.Error())
+			case serializer.CodeStaleVersion:
+				c.Status(http.StatusConflict)
+				c.Header(wopi.ServerErrorHeader, "document changed in storage")
 			case 0:
 				c.Status(http.StatusOK)
 			default:
@@ -520,7 +534,11 @@ func (s *CreateViewerSessionService) Create(c *gin.Context) (*ViewerSessionRespo
 	}
 
 	res := &ViewerSessionResponse{Session: viewerSession}
-	if targetViewer.Type == types.ViewerTypeWopi {
+	if setting.IsCraftViewer(targetViewer) {
+		// Fylvo: a Craft editor runs in the browser, which makes the WOPI calls itself, on
+		// this server's own address.
+		res.WopiSrc = routes.MasterWopiSrc(&url.URL{}, hashid.EncodeFileID(dep.HashIDEncoder(), viewerSession.File.ID())).String()
+	} else if targetViewer.Type == types.ViewerTypeWopi {
 		// For WOPI viewer, generate WOPI src
 		wopiSrc, err := wopi.GenerateWopiSrc(c, s.PreferredAction, targetViewer, viewerSession)
 		if err != nil {

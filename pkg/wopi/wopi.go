@@ -46,6 +46,9 @@ const (
 	ItemVersionHeader     = WopiHeaderPrefix + "ItemVersion"
 	SuggestedTargetHeader = WopiHeaderPrefix + "SuggestedTarget"
 	InvalidFileNameHeader = WopiHeaderPrefix + "InvalidFileNameError"
+	// ExpectedVersionHeader (Fylvo) names the version a save was made from; the save is
+	// refused with 409 when the file is at another version by then. The Craft editors send it.
+	ExpectedVersionHeader = "X-Fylvo-Expected-Version"
 
 	MethodLock           = "LOCK"
 	MethodUnlock         = "UNLOCK"

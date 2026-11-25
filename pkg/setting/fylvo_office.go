@@ -60,17 +60,3 @@ func officeViewers(base string) (*types.ViewerGroup, error) {
 
 	return &group, nil
 }
-
-// withOfficeViewers appends the office viewers if an office server is configured.
-func withOfficeViewers(groups []types.ViewerGroup) []types.ViewerGroup {
-	if officeURL == "" {
-		return groups
-	}
-
-	office, err := officeViewers(officeURL)
-	if err != nil {
-		return groups
-	}
-
-	return append(groups, *office)
-}
