@@ -87,7 +87,7 @@ import { downloadSingleFile } from "./download.ts";
 import { navigateReconcile, navigateToPath, refreshFileList, updateUserCapacity } from "./filemanager.ts";
 import { queueLoadShareInfo } from "./share.ts";
 import { loadSiteConfig } from "./site.ts";
-import { openViewer, openViewers, openWopiViewer, saveFile } from "./viewer.ts";
+import { openViewer, openViewers, openWopiViewer } from "./viewer.ts";
 import { loadBlankTemplate } from "../../util/craft.ts";
 import {
   connectedBatchSize,
@@ -1460,7 +1460,7 @@ export function createNew(index: number, type: string, viewer?: Viewer, template
           const written = await dispatch(sendUpdateFile(req, blank));
           dispatch(fileUpdated({ index: FileManagerIndex.main, value: [{ oldPath: uri, file: written }] }));
           newFile = written;
-        } catch (e) {
+        } catch {
           // The editor opens the empty file with the same blank document.
         }
       }

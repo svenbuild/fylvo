@@ -1,5 +1,5 @@
 import { Alert, Box, Button, Chip } from "@mui/material";
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getFileInfo } from "../../../api/api.ts";
 import { getConnectedOfficeState, inConnectedStorage } from "../../../api/connected.ts";
@@ -60,6 +60,9 @@ interface Session {
   closed: boolean;
 }
 
+// The page command API of an editor (window.<app>).
+type CraftApi = { execute?: (command: string, params: object) => Promise<unknown> };
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const CraftViewer = () => {
@@ -99,7 +102,7 @@ const CraftViewer = () => {
       const uri = getFileLinkedUri(file);
       const updated = await dispatch(getFileInfo({ uri }, true));
       dispatch(fileUpdated({ index: FileManagerIndex.main, value: [{ oldPath: uri, file: updated }] }));
-    } catch (e) {
+    } catch {
       // The list shows the new state on its next reload.
     }
   }, [dispatch, file]);
@@ -118,7 +121,7 @@ const CraftViewer = () => {
         let answer;
         try {
           answer = await s.client.put(bytes, s.lock, s.connected ? undefined : s.version);
-        } catch (e) {
+        } catch {
           answer = { status: 0 };
         }
         if (answer.status == 200) {
@@ -159,13 +162,15 @@ const CraftViewer = () => {
   // Asks the editor for its current state; it answers with a save message.
   const requestSave = useCallback(async () => {
     const s = sessionRef.current;
-    const api = (frameRef.current?.contentWindow as any)?.[s?.app ?? ""];
+    const api = (frameRef.current?.contentWindow as unknown as Record<string, CraftApi | undefined> | null)?.[
+      s?.app ?? ""
+    ];
     if (!s || !api?.execute) {
       return;
     }
     try {
       await api.execute("file.save", {});
-    } catch (e) {
+    } catch {
       // Nothing to save, or the editor is busy: the next change tries again.
     }
   }, []);
@@ -196,6 +201,9 @@ const CraftViewer = () => {
       s.lock = undefined;
     }
     setEdit(false);
+    // A late start opens nothing: the frame and the document are dropped.
+    pendingOpen.current = undefined;
+    setFrameSrc(undefined);
     setNotice({ key: "craft.editorFailed", severity: "error" });
     setLoaded(true);
   }, []);
@@ -218,7 +226,7 @@ const CraftViewer = () => {
       try {
         const target = new CrUri(file.path).parent().join(name).toString();
         return !!(await dispatch(saveFile(target, bytes, undefined, true)));
-      } catch (e) {
+      } catch {
         return false;
       }
     },
@@ -335,7 +343,7 @@ const CraftViewer = () => {
         return;
       }
       const again = await s.client.lock("LOCK", lock).catch(() => 0);
-      if (s.closed && again == 200) {
+      if ((s.closed || s.frozen) && again == 200) {
         s.client.lock("UNLOCK", lock).catch(() => undefined);
       } else if (again == 409) {
         setNotice({ key: "craft.lockLost", severity: "warning" });
@@ -349,7 +357,7 @@ const CraftViewer = () => {
       }
     };
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (s.unsaved || (s.dirty && s.edit)) {
+      if (s.unsaved || s.dirty) {
         e.preventDefault();
       }
     };
@@ -459,6 +467,12 @@ const CraftViewer = () => {
       await snapshot();
     }
     const bytes = s.unsaved;
+    if (!bytes && !s.dirty) {
+      // Nothing that is not stored (a connected storage has kept the copy already).
+      setClosing(false);
+      finishClose();
+      return;
+    }
     const copied = !!bytes && (await saveCopy(s.name, bytes));
     setClosing(false);
     if (!copied) {

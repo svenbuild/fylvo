@@ -14,7 +14,7 @@ export const loadBlankTemplate = async (name: string): Promise<ArrayBuffer | und
     // A document is a zip package ("PK"), not the web app's page.
     const head = bytes ? new Uint8Array(bytes, 0, Math.min(2, bytes.byteLength)) : undefined;
     return head && head[0] == 0x50 && head[1] == 0x4b ? bytes : undefined;
-  } catch (e) {
+  } catch {
     return undefined;
   }
 };
