@@ -217,8 +217,7 @@ var (
 // A file is a single file in the FS.
 // It implements fs.FileInfo and fs.DirEntry.
 type file struct {
-	// The compiler knows the layout of this struct.
-	// See cmd/compile/internal/staticdata's WriteEmbed.
+	// Fylvo: made by NewStaticFS from an entry of the embedded zip.
 	name    string
 	data    func() string // Fylvo: unpacked from the zip on first use
 	zip     *zip.File

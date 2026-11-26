@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"io"
+	"mime"
 	"net/http"
 	"path"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/cloudreve/Cloudreve/v4/application/dependency"
 	"github.com/cloudreve/Cloudreve/v4/pkg/util"
+	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
 )
 
@@ -89,11 +91,12 @@ func FrontendFileHandler(dep dependency.Dep) gin.HandlerFunc {
 	}
 }
 
-// FrontendGzipAssets sends the files below /assets/ to clients that take gzip as the embedded
-// zip holds them, instead of compressing them again on every request. It comes before the
-// gzip middleware; everything it does not serve goes on to FrontendFileHandler.
-func FrontendGzipAssets(dep dependency.Dep) gin.HandlerFunc {
-	zipped, ok := dep.ServerStaticFS().(interface {
+// FrontendGzipAssets sends the files below /assets/ that the embedded zip holds deflated: as
+// they are packed to clients that take gzip, instead of compressing them again on every
+// request, and unpacked to the others. It comes before the gzip middleware; everything it
+// does not serve goes on to FrontendFileHandler.
+func FrontendGzipAssets(staticFS static.ServeFileSystem) gin.HandlerFunc {
+	zipped, ok := staticFS.(interface {
 		OpenGzip(name string) (io.ReadSeeker, time.Time, bool)
 	})
 	if !ok {
@@ -105,24 +108,62 @@ func FrontendGzipAssets(dep dependency.Dep) gin.HandlerFunc {
 		r := c.Request
 		if !strings.HasPrefix(r.URL.Path, "/assets/") ||
 			(r.Method != http.MethodGet && r.Method != http.MethodHead) ||
-			!strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") ||
 			r.Header.Get("Range") != "" {
 			c.Next()
 			return
 		}
-		content, modTime, ok := zipped.OpenGzip(r.URL.Path)
-		if !ok {
+		contentType := assetType(path.Ext(r.URL.Path))
+		packed, modTime, ok := zipped.OpenGzip(r.URL.Path)
+		if !ok || contentType == "" {
 			c.Next()
 			return
 		}
-		size, _ := content.Seek(0, io.SeekEnd)
-		_, _ = content.Seek(0, io.SeekStart)
 		h := c.Writer.Header()
 		h.Set("Cache-Control", "public, max-age=31536000")
-		h.Set("Content-Encoding", "gzip")
+		h.Set("Content-Type", contentType)
 		h.Add("Vary", "Accept-Encoding")
-		h.Set("Content-Length", strconv.FormatInt(size, 10))
-		http.ServeContent(c.Writer, r, path.Base(r.URL.Path), modTime, content)
+		content := packed
+		if util.AcceptsGzip(r.Header.Get("Accept-Encoding")) {
+			h.Set("Content-Encoding", "gzip")
+		} else {
+			file, err := staticFS.Open(r.URL.Path)
+			if err != nil {
+				c.Next()
+				return
+			}
+			defer file.Close()
+			content = file
+		}
+		size, _ := content.Seek(0, io.SeekEnd)
+		_, _ = content.Seek(0, io.SeekStart)
+		http.ServeContent(&lengthOnSuccess{ResponseWriter: c.Writer, size: size}, r, "", modTime, content)
 		c.Abort()
 	}
+}
+
+// assetTypes are the types of the web app's files that Go does not know on every system.
+var assetTypes = map[string]string{
+	".woff2": "font/woff2",
+	".ttf":   "font/ttf",
+}
+
+func assetType(ext string) string {
+	if t, ok := assetTypes[ext]; ok {
+		return t
+	}
+	return mime.TypeByExtension(ext)
+}
+
+// lengthOnSuccess sets the length of the body when it is sent; http.ServeContent leaves it out
+// for an encoded body.
+type lengthOnSuccess struct {
+	http.ResponseWriter
+	size int64
+}
+
+func (w *lengthOnSuccess) WriteHeader(code int) {
+	if code == http.StatusOK {
+		w.Header().Set("Content-Length", strconv.FormatInt(w.size, 10))
+	}
+	w.ResponseWriter.WriteHeader(code)
 }

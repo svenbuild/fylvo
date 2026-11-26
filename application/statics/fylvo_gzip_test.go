@@ -4,20 +4,19 @@ import (
 	"compress/gzip"
 	"io"
 	"io/fs"
-	"strings"
 	"testing"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
 	"github.com/stretchr/testify/require"
 )
 
-// Every packed file of the web app comes out of Gzip as exactly what ReadFile gives.
+// Every deflated file of the web app comes out of Gzip as exactly what ReadFile gives.
 func TestGzipGivesTheFileContent(t *testing.T) {
 	embedded := NewStaticFS(logging.NewConsoleLogger(logging.LevelError)).(FS)
 	checked := 0
 	err := fs.WalkDir(embedded, ".", func(name string, d fs.DirEntry, err error) error {
 		require.NoError(t, err)
-		if d.IsDir() || !strings.HasSuffix(name, ".js") {
+		if d.IsDir() {
 			return nil
 		}
 		content, _, ok := embedded.Gzip(name)

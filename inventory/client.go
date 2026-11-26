@@ -176,10 +176,10 @@ func (d sqlite3Driver) Open(name string) (conn driver.Conn, err error) {
 	if err != nil {
 		return
 	}
-	// Fylvo: with the write-ahead log a commit writes the log once instead of syncing a
-	// journal and the database. The mode stays in the file.
+	// Fylvo: with the write-ahead log a commit syncs the log once instead of a journal and
+	// the database (FULL: a commit survives a power cut). The mode stays in the file.
 	_, err = conn.(sqlite3DriverConn).Exec(fmt.Sprintf("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = %d; "+
-		"PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;", sqliteBusyTimeout), nil)
+		"PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;", sqliteBusyTimeout), nil)
 	if err != nil {
 		_ = conn.Close()
 	}
