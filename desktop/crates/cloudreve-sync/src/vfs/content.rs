@@ -180,7 +180,8 @@ impl Contents {
                     };
                     cells.insert(row.key, Arc::new(Cell::new(file, state)));
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => lost.push(row.key),
+                // A file with unsent changes is lost only when it is gone; another error stops the mount.
+                Err(e) if row.changed == 0 || e.kind() == std::io::ErrorKind::NotFound => lost.push(row.key),
                 Err(e) => return Err(e).with_context(|| format!("open the cached file {}", row.key)),
             }
         }
