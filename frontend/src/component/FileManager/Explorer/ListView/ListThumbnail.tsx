@@ -3,7 +3,7 @@ import React, { memo, useCallback, useContext, useEffect, useState } from "react
 import { useInView } from "react-intersection-observer";
 import { TransitionGroup } from "react-transition-group";
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks.ts";
-import { fileIconClicked, loadFileThumb } from "../../../../redux/thunks/file.ts";
+import { cachedFileThumb, fileIconClicked, loadFileThumb } from "../../../../redux/thunks/file.ts";
 import CheckmarkCircle from "../../../Icons/CheckmarkCircle.tsx";
 import CheckUnchecked from "../../../Icons/CheckUnchecked.tsx";
 import { FmIndexContext } from "../../FmIndexContext.tsx";
@@ -97,7 +97,9 @@ const ListThumbnail = memo(({ file, isSelected, noThumb, showLock }: ListThumbna
   });
 
   // undefined: not loaded, null: no thumb
-  const [thumbSrc, setThumbSrc] = useState<string | undefined | null>(skipLoad ? null : undefined);
+  const [thumbSrc, setThumbSrc] = useState<string | undefined | null>(() =>
+    skipLoad ? null : dispatch(cachedFileThumb(0, file)),
+  );
   const [imageLoading, setImageLoading] = useState(true);
 
   useEffect(() => {

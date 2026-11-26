@@ -20,7 +20,13 @@ import { FileType, Metadata } from "../../../../api/explorer.ts";
 import { hoverSurface, selectedSurface } from "../../../../fylvoTheme.ts";
 import { bindDelayedHover } from "../../../../hooks/delayedHover.tsx";
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks.ts";
-import { fileClicked, fileDoubleClicked, loadFileThumb, openFileContextMenu } from "../../../../redux/thunks/file.ts";
+import {
+  cachedFileThumb,
+  fileClicked,
+  fileDoubleClicked,
+  loadFileThumb,
+  openFileContextMenu,
+} from "../../../../redux/thunks/file.ts";
 import { fileHovered, navigateReconcile } from "../../../../redux/thunks/filemanager.ts";
 import FileIcon from "../FileIcon.tsx";
 import FileSmallIcon from "../FileSmallIcon.tsx";
@@ -306,7 +312,9 @@ const GridFile = memo((props: FileBlockProps) => {
   });
 
   // undefined: not loaded, null: no thumb
-  const [thumbSrc, setThumbSrc] = useState<string | undefined | null>(noThumb ? null : undefined);
+  const [thumbSrc, setThumbSrc] = useState<string | undefined | null>(() =>
+    noThumb ? null : dispatch(cachedFileThumb(0, file)),
+  );
   const [imageLoading, setImageLoading] = useState(true);
 
   const onImgLoadError = useCallback(() => {
