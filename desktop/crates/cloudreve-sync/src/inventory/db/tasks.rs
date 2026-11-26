@@ -7,6 +7,7 @@ use crate::inventory::{NewTaskRecord, TaskRecord, TaskStatus, TaskUpdate};
 use anyhow::{Context, Result, anyhow};
 use chrono::Utc;
 use diesel::prelude::*;
+use diesel::sqlite::SqliteConnection;
 
 use crate::inventory::schema::task_queue::{self, dsl as task_queue_dsl};
 
@@ -202,63 +203,44 @@ impl InventoryDb {
     /// ordered by updated_at descending.
     pub fn query_recent_tasks(&self, drive_id: Option<&str>) -> Result<RecentTasks> {
         let mut conn = self.connection()?;
-
-        // Query active tasks (pending/running) - limit 25, order by updated_at desc
-        let active_statuses = vec![
-            TaskStatus::Pending.as_str().to_string(),
-            TaskStatus::Running.as_str().to_string(),
-        ];
-
-        let mut active_query = task_queue_dsl::task_queue
-            .filter(task_queue_dsl::status.eq_any(&active_statuses))
-            .into_boxed();
-
-        if let Some(drive) = drive_id {
-            active_query = active_query.filter(task_queue_dsl::drive_id.eq(drive));
-        }
-
-        let active_rows = active_query
-            .order(task_queue_dsl::updated_at.desc())
-            .limit(25)
-            .load::<TaskRow>(&mut conn)
+        let active = newest_tasks(&mut conn, &[TaskStatus::Pending, TaskStatus::Running], drive_id)
             .context("Failed to query active tasks")?;
-
-        let active_tasks: Vec<TaskRecord> = active_rows
-            .into_iter()
-            .map(TaskRecord::try_from)
-            .collect::<Result<Vec<_>>>()?;
-
-        // Query finished tasks (completed/failed/cancelled) - limit 25, order by updated_at desc
-        let finished_statuses = vec![
-            TaskStatus::Completed.as_str().to_string(),
-            TaskStatus::Failed.as_str().to_string(),
-            TaskStatus::Cancelled.as_str().to_string(),
-        ];
-
-        let mut finished_query = task_queue_dsl::task_queue
-            .filter(task_queue_dsl::status.eq_any(&finished_statuses))
-            .into_boxed();
-
-        if let Some(drive) = drive_id {
-            finished_query = finished_query.filter(task_queue_dsl::drive_id.eq(drive));
-        }
-
-        let finished_rows = finished_query
-            .order(task_queue_dsl::updated_at.desc())
-            .limit(25)
-            .load::<TaskRow>(&mut conn)
-            .context("Failed to query finished tasks")?;
-
-        let finished_tasks: Vec<TaskRecord> = finished_rows
-            .into_iter()
-            .map(TaskRecord::try_from)
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(RecentTasks {
-            active: active_tasks,
-            finished: finished_tasks,
-        })
+        let finished = newest_tasks(
+            &mut conn,
+            &[TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled],
+            drive_id,
+        )
+        .context("Failed to query finished tasks")?;
+        Ok(RecentTasks { active, finished })
     }
+}
+
+/// The 25 tasks with one of `statuses` updated last. One query per status, each answered from
+/// the index on (status, updated_at) without reading the other tasks.
+fn newest_tasks(
+    conn: &mut SqliteConnection,
+    statuses: &[TaskStatus],
+    drive_id: Option<&str>,
+) -> Result<Vec<TaskRecord>> {
+    const LIMIT: i64 = 25;
+    let mut rows = Vec::new();
+    for status in statuses {
+        let mut query = task_queue_dsl::task_queue
+            .filter(task_queue_dsl::status.eq(status.as_str()))
+            .into_boxed();
+        if let Some(drive) = drive_id {
+            query = query.filter(task_queue_dsl::drive_id.eq(drive));
+        }
+        rows.extend(
+            query
+                .order(task_queue_dsl::updated_at.desc())
+                .limit(LIMIT)
+                .load::<TaskRow>(conn)?,
+        );
+    }
+    rows.sort_by_key(|row| std::cmp::Reverse(row.updated_at));
+    rows.truncate(LIMIT as usize);
+    rows.into_iter().map(TaskRecord::try_from).collect()
 }
 
 /// Result of querying recent tasks
@@ -437,6 +419,27 @@ mod tests {
         assert!(db.change_task_status_if("t1", TaskStatus::Pending, TaskStatus::Cancelled).unwrap());
         assert!(!db.change_task_status_if("t1", TaskStatus::Pending, TaskStatus::Running).unwrap());
         assert_eq!(db.get_task_status("t1").unwrap(), Some(TaskStatus::Cancelled));
+    }
+
+    #[test]
+    fn recent_tasks_are_the_newest_of_all_their_statuses() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = InventoryDb::with_path(dir.path().join("meta.db")).unwrap();
+        let statuses = [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled, TaskStatus::Pending];
+        for i in 0..80 {
+            let mut task = NewTaskRecord::new(format!("t{i}"), if i % 5 == 0 { "e" } else { "d" }, "upload", format!("/S/{i}"));
+            task.status = statuses[i % 4];
+            task.updated_at = i as i64;
+            assert!(db.insert_task_if_not_exist(&task).unwrap());
+        }
+        let recent = db.query_recent_tasks(None).unwrap();
+        let finished: Vec<i64> = recent.finished.iter().map(|t| t.updated_at).collect();
+        let expected: Vec<i64> = (0..80).rev().filter(|i| i % 4 != 3).take(25).collect();
+        assert_eq!(finished, expected);
+        assert_eq!(recent.active.len(), 20);
+        let of_e = db.query_recent_tasks(Some("e")).unwrap();
+        assert!(of_e.finished.iter().chain(&of_e.active).all(|t| t.drive_id == "e"));
+        assert_eq!(of_e.finished.len() + of_e.active.len(), 16);
     }
 
     #[cfg_attr(not(windows), allow(dead_code))]
