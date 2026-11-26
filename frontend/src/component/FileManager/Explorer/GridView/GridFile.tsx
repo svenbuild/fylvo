@@ -440,7 +440,7 @@ const GridFile = memo((props: FileBlockProps) => {
           </Header>
           {showThumb && (
             <ThumbContainer>
-              <TransitionGroup style={{ height: "100%" }}>
+              <TransitionGroup appear={false} style={{ height: "100%" }}>
                 {thumbSrc && (
                   <Fade key={"image"}>
                     <ThumbBoxContainer>

@@ -129,7 +129,7 @@ const ListThumbnail = memo(({ file, isSelected, noThumb, showLock }: ListThumbna
 
   return (
     <ThumbSquare ref={ref} onClick={onIconClick}>
-      <TransitionGroup component={null}>
+      <TransitionGroup appear={false} component={null}>
         {thumbSrc && (
           <Fade key="image">
             <ThumbSquareLayer>
