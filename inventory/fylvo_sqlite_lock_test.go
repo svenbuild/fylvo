@@ -22,7 +22,7 @@ func openLikeServer(t *testing.T, mode string) *sql.DB {
 	require.NoError(t, err)
 	db.SetMaxIdleConns(50)
 	db.SetMaxOpenConns(1)
-	db.SetConnMaxLifetime(30 * time.Second)
+	db.SetConnMaxLifetime(time.Hour)
 	t.Cleanup(func() { db.Close() })
 	_, err = db.Exec("PRAGMA journal_mode=" + mode)
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestSQLiteQueryEndedByItsContextLeavesNoLock(t *testing.T) {
 				require.NoError(t, err, what)
 			}
 			write("on the same connection")
-			// The pool replaces the connection, as it does after 30 seconds.
+			// The pool replaces the connection, as it does after an hour.
 			db.SetMaxIdleConns(0)
 			db.SetConnMaxLifetime(time.Millisecond)
 			time.Sleep(20 * time.Millisecond)
@@ -76,4 +76,17 @@ func TestSQLiteConnectionsWaitForALock(t *testing.T) {
 	var foreignKeys int
 	require.NoError(t, db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys))
 	require.Equal(t, 1, foreignKeys)
+}
+
+// A new database is written with the write-ahead log, synced only at checkpoints.
+func TestSQLiteUsesTheWriteAheadLog(t *testing.T) {
+	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "fylvo.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	var mode string
+	require.NoError(t, db.QueryRow("PRAGMA journal_mode").Scan(&mode))
+	require.Equal(t, "wal", mode)
+	var synchronous int
+	require.NoError(t, db.QueryRow("PRAGMA synchronous").Scan(&synchronous))
+	require.Equal(t, 1, synchronous)
 }
