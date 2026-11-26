@@ -670,8 +670,9 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 		file := v4.Group("file")
 		file.Use(middleware.RequiredScopes(types.ScopeFilesRead))
 		{
-			// List files
+			// List files. Fylvo: the list of a big folder is a big JSON, sent compressed.
 			file.GET("",
+				gzip.Gzip(gzip.BestSpeed),
 				controllers.FromQuery[explorer.ListFileService](explorer.ListFileParameterCtx{}),
 				controllers.ListDirectory,
 			)
