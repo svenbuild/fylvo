@@ -2019,6 +2019,7 @@ dependencies = [
  "dirs 5.0.1",
  "file_icon_provider",
  "fylvo-update",
+ "gtk",
  "log",
  "reqwest 0.12.28",
  "rust-i18n",

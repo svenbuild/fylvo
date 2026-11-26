@@ -114,7 +114,12 @@ export default function DrivesSection() {
     if (confirm) {
       const ok = await ask(
         t(`settings.heldDeletion.confirmQuestion.${held.side}`, { count: held.count }),
-        { title: t("settings.heldDeletion.confirm"), kind: "warning" },
+        {
+          title: t("settings.heldDeletion.confirm"),
+          kind: "warning",
+          okLabel: t("settings.heldDeletion.confirm"),
+          cancelLabel: t("settings.cancel"),
+        },
       );
       if (!ok) return;
     }
@@ -139,6 +144,8 @@ export default function DrivesSection() {
     const confirmed = await ask(t("settings.deleteDriveConfirm", { name: driveName }), {
       title: t("settings.deleteDrive"),
       kind: "warning",
+      okLabel: t("settings.deleteDrive"),
+      cancelLabel: t("settings.cancel"),
     });
 
     if (!confirmed) return;

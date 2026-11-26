@@ -8,6 +8,8 @@
     "waitingTitle": "Sign in to continue",
     "waitingDescription": "Complete the sign-in process in your browser to connect your drive.",
     "reopenBrowser": "Open browser again",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied, paste it into your browser",
     "back": "Back",
     "finalSetupTitle": "Final step",
     "finalSetupDescription": "Choose an empty local folder where your Fylvo drive will appear.",

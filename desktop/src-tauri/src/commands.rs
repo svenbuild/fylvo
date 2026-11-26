@@ -53,6 +53,14 @@ fn get_url_with_lang(base_path: &str) -> String {
     }
 }
 
+/// A folder that is not there yet or has nothing in it (not a file, not one we cannot read).
+fn is_new_or_empty_folder(path: &std::path::Path) -> bool {
+    match std::fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+    }
+}
+
 /// Check if a directory is empty (has no files or subdirectories)
 #[tauri::command]
 pub async fn is_dir_empty(path: String) -> CommandResult<bool> {
@@ -107,6 +115,10 @@ pub async fn add_drive(
     // Validate local_path for new drives (not for reauthorization)
     if config.drive_id.is_none() && is_root_drive(&config.local_path) {
         return Err(t!("localPathCannotBeRootDrive").to_string());
+    }
+    // Fylvo: a new drive needs an empty folder (a typed path skips the check of the page).
+    if config.drive_id.is_none() && !is_new_or_empty_folder(std::path::Path::new(&config.local_path)) {
+        return Err(t!("folderNotEmpty").to_string());
     }
     // Fylvo: never a drive inside another drive's folder (or around it).
     if config.drive_id.is_none()
@@ -181,12 +193,19 @@ pub async fn add_drive(
         extra: Default::default(),
     };
 
-    // Add drive to manager
+    // Fylvo (Linux): a sync folder must exist when the drive starts (a missing one means it was
+    // removed while the app was off); a new one, like the suggested `~/Fylvo`, is made here.
+    #[cfg(target_os = "linux")]
+    if drive_config.mode == cloudreve_sync::DriveMode::Sync {
+        std::fs::create_dir_all(&drive_config.sync_path).map_err(|e| e.to_string())?;
+    }
+
+    // Add drive to manager (with the cause, e.g. a file system that cannot be synced)
     let id = app_state
         .drive_manager
         .add_drive(drive_config)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("{e:#}"))?;
 
     // Persist drive configurations
     app_state

@@ -228,7 +228,10 @@ pub(crate) fn keep_as_conflict_copy(backup: &Path, local: &Path) -> Option<PathB
 
 /// Whether a process of this user may still write to `path`: a handle open for writing or a
 /// shared writable mapping. Read-only handles (indexers, viewers) do not count. Unknown counts
-/// as yes. Other users' processes cannot write to the user's files (root is out of scope).
+/// as yes, except entries the kernel hides from us (permission denied): those belong to
+/// processes that are not dumpable or hold capabilities (`systemd --user`, `ssh-agent`, the
+/// compositor), never to an editor, and every real desktop has some. Other users' processes
+/// cannot write to the user's files (root is out of scope).
 pub(crate) fn may_be_written(path: &Path) -> bool {
     let Ok(target) = std::fs::symlink_metadata(path) else {
         return false;
@@ -263,7 +266,13 @@ pub(crate) fn may_be_written(path: &Path) -> bool {
 /// For one process: `Some(true)` if it may write to the file, `Some(false)` if not, `None` if
 /// its entries could not be read.
 fn process_may_write(pid_dir: &Path, target: &std::fs::Metadata) -> Option<bool> {
-    for fd in std::fs::read_dir(pid_dir.join("fd")).ok()?.flatten() {
+    let hidden = |e: &std::io::Error| e.kind() == std::io::ErrorKind::PermissionDenied;
+    let fds = match std::fs::read_dir(pid_dir.join("fd")) {
+        Ok(fds) => fds,
+        Err(e) if hidden(&e) => return Some(false),
+        Err(_) => return None,
+    };
+    for fd in fds.flatten() {
         // Following the link gives the open file itself, matched by device and inode.
         let Ok(open) = std::fs::metadata(fd.path()) else {
             continue;
@@ -280,7 +289,11 @@ fn process_may_write(pid_dir: &Path, target: &std::fs::Metadata) -> Option<bool>
             return Some(true);
         }
     }
-    let maps = std::fs::read_to_string(pid_dir.join("maps")).ok()?;
+    let maps = match std::fs::read_to_string(pid_dir.join("maps")) {
+        Ok(maps) => maps,
+        Err(e) if hidden(&e) => return Some(false),
+        Err(_) => return None,
+    };
     for line in maps.lines() {
         let fields: Vec<&str> = line.split_whitespace().collect();
         if let [_, perms, _, _, inode, ..] = fields.as_slice() {

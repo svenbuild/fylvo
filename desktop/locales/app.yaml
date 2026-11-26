@@ -701,3 +701,6 @@ vfsNotInDrive:
 pathOverlapsDrive:
   en-US: "This folder is inside another Fylvo folder or contains one. Please choose another folder."
   de: "Dieser Ordner liegt in einem anderen Fylvo-Ordner oder enthält einen. Bitte wählen Sie einen anderen Ordner."
+folderNotEmpty:
+  en-US: "This folder is not empty. Please choose an empty folder."
+  de: "Dieser Ordner ist nicht leer. Bitte wählen Sie einen leeren Ordner."

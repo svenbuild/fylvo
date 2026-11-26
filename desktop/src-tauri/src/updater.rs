@@ -140,8 +140,9 @@ pub fn start(app: AppHandle, drives: Arc<DriveManager>) {
     // A panic in the loop would otherwise end it without a trace.
     tauri::async_runtime::spawn(async move {
         // The loop never ends, so only a panic gets here.
-        let Err(e) = task.await;
-        tracing::error!(target: "updater", error = %e, "The updater stopped");
+        if let Err(e) = task.await {
+            tracing::error!(target: "updater", error = %e, "The updater stopped");
+        }
     });
 }
 

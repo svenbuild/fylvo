@@ -61,6 +61,8 @@ export interface PKCESession {
   siteIcon?: string;
   state?: string;
   callbackData?: OAuthCallbackData;
+  // The code can be exchanged once; kept for another try with another folder.
+  tokens?: TokenResponse;
 }
 
 interface AddDriveProps {
@@ -303,6 +305,18 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
     }
   };
 
+  const [linkCopied, setLinkCopied] = useState(false);
+  const handleCopyAuthorizeUrl = async () => {
+    if (!authorizeUrl) return;
+    try {
+      await navigator.clipboard.writeText(authorizeUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 3000);
+    } catch (error) {
+      console.error("Failed to copy the sign-in link:", error);
+    }
+  };
+
   const handleBack = () => {
     setAuthorizeUrl(null);
     setPageState("url_input");
@@ -343,11 +357,12 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
 
     let tokens: TokenResponse;
     try {
-      tokens = await exchangeTokens(
+      tokens = pkceSessionRef.current!.tokens ?? await exchangeTokens(
         pkceSessionRef.current!.siteUrl,
         pkceSessionRef.current!.callbackData!.code,
         pkceSessionRef.current!.codeVerifier
       );
+      pkceSessionRef.current!.tokens = tokens;
     } catch (error) {
       if (isValidationError(error)) {
         setError(t(`addDrive.errors.${error.type}`, error.params));
@@ -384,7 +399,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setError(t("addDrive.errors.addDriveFailed", { message }));
-      setPageState("url_input");
+      setPageState("final_setup");
       setSnackbarOpen(true);
     }
   }
@@ -573,6 +588,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
                       value={localPath}
                       onChange={(e) => {
                         setLocalPath(e.target.value);
+                        checkDirEmpty(e.target.value);
                         setFolderNotEmpty(false);
                       }}
                       onBlur={() => localPath && checkDirEmpty(localPath)}
@@ -657,6 +673,17 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
                   onClick={handleOpenAuthorizeUrl}
                 >
                   {t("addDrive.reopenBrowser")}
+                </Button>
+
+                {/* Fylvo: if no browser opens (xdg-open reports success either way), the link can
+                    be pasted into one by hand. */}
+                <Button
+                  variant="outlined"
+                  size="large"
+                  fullWidth
+                  onClick={handleCopyAuthorizeUrl}
+                >
+                  {linkCopied ? t("addDrive.linkCopied") : t("addDrive.copyLink")}
                 </Button>
 
                 <Button

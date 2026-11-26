@@ -8,6 +8,8 @@
     "waitingTitle": "Zum Fortfahren anmelden",
     "waitingDescription": "Schliessen Sie die Anmeldung in Ihrem Browser ab, um Ihr Laufwerk zu verbinden.",
     "reopenBrowser": "Browser erneut öffnen",
+    "copyLink": "Link kopieren",
+    "linkCopied": "Link kopiert, fügen Sie ihn in Ihren Browser ein",
     "back": "Zurück",
     "finalSetupTitle": "Letzter Schritt",
     "finalSetupDescription": "Wählen Sie einen leeren lokalen Ordner, in dem Ihr Fylvo-Laufwerk erscheint.",

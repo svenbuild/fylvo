@@ -343,6 +343,17 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// WebKitGTK 2.54 reads the screen DPI wrong under Wayland (`devicePixelRatio` -1/96, pages are
+/// laid out as a narrow strip). Setting the value again makes it read the right one.
+#[cfg(target_os = "linux")]
+fn refresh_screen_dpi() {
+    use gtk::prelude::GtkSettingsExt;
+    if let Some(settings) = gtk::Settings::default() {
+        let dpi = settings.gtk_xft_dpi();
+        settings.set_gtk_xft_dpi(if dpi > 0 { dpi } else { 96 * 1024 });
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize config manager first so i18n can read language setting
@@ -382,6 +393,9 @@ pub fn run() {
             #[cfg(desktop)]
             let _ = app.handle().plugin(tauri_plugin_positioner::init());
 
+            #[cfg(target_os = "linux")]
+            refresh_screen_dpi();
+
             // Setup system tray
             setup_tray(app)?;
 
@@ -390,8 +404,10 @@ pub fn run() {
             // Fylvo: on Linux this writes a desktop file and runs `xdg-mime`; without it (a
             // minimal system) the app still runs, the rpm and deb carry the handler anyway.
             #[cfg(target_os = "linux")]
-            if let Err(e) = app.deep_link().register("fylvo") {
-                tracing::warn!(target: "main", error = %e, "Failed to register fylvo:// links");
+            if std::env::var_os(linux::LAUNCHER_ENV).is_none() {
+                if let Err(e) = app.deep_link().register("fylvo") {
+                    tracing::warn!(target: "main", error = %e, "Failed to register fylvo:// links");
+                }
             }
 
             // Spawn async setup task - this runs in the background

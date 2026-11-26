@@ -18,10 +18,15 @@ pub struct Entry {
     pub arg: &'static str,
 }
 
-/// The program to start: the AppImage file itself when running from one (the path inside the
-/// mounted image changes at every start), else the installed binary.
+/// Set by a package whose program path changes with every update (Nix): the command to start
+/// the app by (`fylvo-desktop`); the package's own desktop file handles `fylvo://` links.
+pub const LAUNCHER_ENV: &str = "FYLVO_LAUNCHER";
+
+/// The program to start: the one the package names, the AppImage file itself when running from
+/// one (the path inside the mounted image changes at every start), else the installed binary.
 pub fn launcher() -> PathBuf {
-    std::env::var_os("APPIMAGE")
+    std::env::var_os(LAUNCHER_ENV)
+        .or_else(|| std::env::var_os("APPIMAGE"))
         .map(PathBuf::from)
         .or_else(|| std::env::current_exe().ok())
         .unwrap_or_else(|| PathBuf::from("fylvo-desktop"))

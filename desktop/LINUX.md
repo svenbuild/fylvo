@@ -12,6 +12,7 @@ design: [docs/linux-drive-plan.md](docs/linux-drive-plan.md) (drive) and
 | `Fylvo Desktop_<version>_amd64.AppImage` | any Linux (a single file) | silent, the app replaces itself |
 | `Fylvo Desktop-<version>-1.x86_64.rpm` | Fedora, openSUSE | the app installs it, the system asks for the admin password |
 | `Fylvo Desktop_<version>_amd64.deb` | Ubuntu, Debian, Mint | as rpm |
+| `desktop/nix/package.nix` | NixOS | with the system (`nixos-rebuild`) |
 
 On Fedora, the `.rpm` is the best choice (shows up in the app menu, `fylvo://` links work right away).
 
@@ -28,6 +29,18 @@ sudo apt install "./Fylvo Desktop_0.3.0_amd64.deb"
 **AppImage:** put the file into a folder you can write to (for example `~/Applications`, otherwise
 updates fail), make it executable (`chmod +x`, or in the file manager's properties) and start it.
 Ubuntu needs `sudo apt install libfuse2` once for AppImages.
+
+**NixOS:** use the package in `nix/package.nix`, not the AppImage. `appimage-run` starts
+AppImages in a sandbox that cannot mount the drive (no setuid `fusermount3`) and where links may
+not open in the browser. In `configuration.nix`:
+```nix
+environment.systemPackages = [
+  (pkgs.callPackage "${pkgs.fetchFromGitHub {
+    owner = "svenbuild"; repo = "fylvo"; rev = "<commit>"; hash = "<hash>";
+  }}/desktop/nix/package.nix" { })
+];
+```
+Nix updates it (a new `rev`), the app does not update itself.
 
 Then start Fylvo Desktop. The first time it opens "Add drive" by itself: enter the Fylvo address
 and sign in in the browser. Everything else is filled in: click **Finish**.
