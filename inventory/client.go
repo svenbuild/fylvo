@@ -138,12 +138,13 @@ func NewRawEntClient(l logging.Logger, config conf.ConfigProvider) (*ent.Client,
 	db.SetMaxIdleConns(50)
 	if confDBType == "sqlite" || confDBType == "UNSET" {
 		db.SetMaxOpenConns(1)
+		// Fylvo: a new SQLite connection starts with an empty cache and reads the schema
+		// again, which the first request after it waits for.
+		db.SetConnMaxLifetime(time.Hour)
 	} else {
 		db.SetMaxOpenConns(100)
+		db.SetConnMaxLifetime(time.Second * 30)
 	}
-
-	// Set timeout
-	db.SetConnMaxLifetime(time.Second * 30)
 
 	driverOpt := ent.Driver(client)
 
@@ -175,7 +176,10 @@ func (d sqlite3Driver) Open(name string) (conn driver.Conn, err error) {
 	if err != nil {
 		return
 	}
-	_, err = conn.(sqlite3DriverConn).Exec(fmt.Sprintf("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = %d;", sqliteBusyTimeout), nil)
+	// Fylvo: with the write-ahead log a commit writes the log once instead of syncing a
+	// journal and the database. The mode stays in the file.
+	_, err = conn.(sqlite3DriverConn).Exec(fmt.Sprintf("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = %d; "+
+		"PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;", sqliteBusyTimeout), nil)
 	if err != nil {
 		_ = conn.Close()
 	}
