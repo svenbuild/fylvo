@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useEffect } from "react";
+import { memo, useCallback, useContext, useEffect, useRef } from "react";
 import { useDrag, useDrop } from "react-dnd";
 import { getEmptyImage } from "react-dnd-html5-backend";
 import { FileResponse, FileType } from "../../../api/explorer.ts";
@@ -99,10 +99,13 @@ export const useFileDrag = ({ file, includeSelected, dropUri }: UseFileDragProps
     // eslint-disable-next-line
   }, []);
 
+  // Fylvo: not when a file appears (thousands at once in a large folder), only when a drag starts or ends.
+  const wasDragging = useRef(false);
   useEffect(() => {
-    if (isDragging) {
-      // addEventListenerForWindow();
+    if (!isDragging && !wasDragging.current) {
+      return;
     }
+    wasDragging.current = isDragging;
     dispatch(
       setDragging({
         dragging: isDragging,
