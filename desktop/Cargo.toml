@@ -7,3 +7,9 @@ members = [
     "crates/fylvo-update",
     "src-tauri",
 ]
+
+# Smaller and faster app: the whole program optimized as one, without symbols.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
