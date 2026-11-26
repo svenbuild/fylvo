@@ -260,7 +260,10 @@ func (d *dependency) WebAuthn(ctx context.Context) (*webauthn.WebAuthn, error) {
 	return webauthn.New(wConfig)
 }
 
+// Fylvo: made on first use (only the settings and passkey pages need it), it takes 10 MB.
 func (d *dependency) UAParser() *uaparser.Parser {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.parser != nil {
 		return d.parser
 	}
