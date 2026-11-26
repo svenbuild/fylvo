@@ -6,6 +6,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import okhttp3.ConnectionPool
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.HttpUrl
@@ -107,6 +108,7 @@ class ApiClient(private val session: SessionManager) {
         }
 
         val client = OkHttpClient.Builder()
+            .connectionPool(connectionPool)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(if (kind == Kind.EDIT) 300L else 60L, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
@@ -177,7 +179,7 @@ class ApiClient(private val session: SessionManager) {
     private fun bareService(baseUrl: String): ApiService =
         Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).addInterceptor(userAgent).followRedirects(false).build())
+            .client(OkHttpClient.Builder().connectionPool(connectionPool).connectTimeout(15, TimeUnit.SECONDS).addInterceptor(userAgent).followRedirects(false).build())
             .addConverterFactory(EnvelopeConverterFactory(json))
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
@@ -203,6 +205,9 @@ class ApiClient(private val session: SessionManager) {
         val userAgent = Interceptor { chain ->
             chain.proceed(chain.request().newBuilder().header("User-Agent", USER_AGENT).build())
         }
+
+        /** Fylvo: one pool for every client of the app, so API calls and previews reuse their connections. */
+        val connectionPool = ConnectionPool()
 
         /** "https://host:port" with the scheme's default port filled in. */
         fun originOf(url: HttpUrl): String = "${url.scheme}://${url.host.lowercase()}:${url.port}"

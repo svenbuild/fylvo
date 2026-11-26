@@ -22,6 +22,15 @@ object SecretBox {
     private const val IV_BYTES = 12
     private const val TAG_BITS = 128
 
+    /**
+     * Stored value to plain text. Every request reads the access token; without this each read
+     * was a Keystore round trip. Only the latest values are kept (a new token is a new entry).
+     */
+    private val opened = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** Drops the plain values kept in memory (session end). */
+    fun forget() = opened.clear()
+
     fun encrypt(plain: String): String {
         if (plain.isEmpty()) return ""
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -32,12 +41,16 @@ object SecretBox {
 
     fun decrypt(stored: String): String? {
         if (stored.isEmpty()) return ""
+        opened[stored]?.let { return it }
         return runCatching {
             val data = Base64.decode(stored, Base64.NO_WRAP)
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(TAG_BITS, data, 0, IV_BYTES))
             String(cipher.doFinal(data, IV_BYTES, data.size - IV_BYTES), Charsets.UTF_8)
-        }.getOrNull()
+        }.getOrNull()?.also {
+            if (opened.size >= 8) opened.clear()
+            opened[stored] = it
+        }
     }
 
     @Synchronized

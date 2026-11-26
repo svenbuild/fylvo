@@ -117,14 +117,14 @@ class FylvoApp : Application(), ImageLoaderFactory {
     /** Fylvo 1.6: pictures of accounts; follows no redirect (never to a third-party service). */
     val avatarLoader: ImageLoader by lazy {
         ImageLoader.Builder(this)
-            .okHttpClient { OkHttpClient.Builder().followRedirects(false).addInterceptor(ApiClient.userAgent).build() }
+            .okHttpClient { OkHttpClient.Builder().connectionPool(ApiClient.connectionPool).followRedirects(false).addInterceptor(ApiClient.userAgent).build() }
             .build()
     }
 
     /** Fylvo: previews and the image viewer name the app to the server like every other request. */
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient {
-            OkHttpClient.Builder().addInterceptor(ApiClient.userAgent)
+            OkHttpClient.Builder().connectionPool(ApiClient.connectionPool).addInterceptor(ApiClient.userAgent)
                 // Fylvo 1.6: pictures of connected storages are kept by version (30 days).
                 .addNetworkInterceptor(io.github.svenbuild.fylvo.android.data.ConnectedThumbs.keepLonger)
                 .build()

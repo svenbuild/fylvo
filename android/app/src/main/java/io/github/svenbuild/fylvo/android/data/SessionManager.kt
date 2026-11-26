@@ -138,6 +138,7 @@ class SessionManager(private val context: Context) {
     suspend fun clear() {
         endGeneration()
         context.sessionStore.edit { it.clear() }
+        SecretBox.forget()
         notifyDocumentsRoots()
     }
 
@@ -154,6 +155,7 @@ class SessionManager(private val context: Context) {
             it.remove(Keys.accessExpiresAt)
             it.remove(Keys.userNick)
         }
+        SecretBox.forget()
         notifyDocumentsRoots()
     }
 }
