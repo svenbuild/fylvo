@@ -22,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +48,18 @@ data class RowSwipe(
     val star: StarState,
     val onSwipe: (SwipeAction) -> Unit,
 )
+
+/**
+ * Fylvo: [swipe] as the same object while its actions stay, only so the row compares equal between
+ * redraws and is skipped; a swipe runs the newest handler (see rememberActions).
+ */
+@Composable
+fun rememberSwipe(swipe: RowSwipe?): RowSwipe? {
+    val latest = rememberUpdatedState(swipe)
+    return remember(swipe?.right, swipe?.left, swipe?.star, swipe == null) {
+        swipe?.copy(onSwipe = { action -> latest.value?.onSwipe?.invoke(action) })
+    }
+}
 
 /**
  * Fylvo: a row that can be swiped left or right. The action runs once when the row snaps past the

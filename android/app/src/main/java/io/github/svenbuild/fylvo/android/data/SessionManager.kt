@@ -65,22 +65,43 @@ class SessionManager(private val context: Context) {
     }
 
     val serverUrl: Flow<String> = context.sessionStore.data.map { it[Keys.serverUrl] ?: "" }
-    val accessToken: Flow<String> = context.sessionStore.data.map { it.secret(Keys.accessToken) }
+    val accessToken: Flow<String> = context.sessionStore.data.map { secret(Keys.accessToken) }
     val userEmail: Flow<String> = context.sessionStore.data.map { it[Keys.userEmail] ?: "" }
     val userNick: Flow<String> = context.sessionStore.data.map { it[Keys.userNick] ?: "" }
     val userId: Flow<String> = context.sessionStore.data.map { it[Keys.userId] ?: "" }
     val isLoggedIn: Flow<Boolean> = context.sessionStore.data.map {
-        it.secret(Keys.refreshToken).isNotEmpty() && !it[Keys.serverUrl].isNullOrEmpty()
+        secret(Keys.refreshToken).isNotEmpty() && !it[Keys.serverUrl].isNullOrEmpty()
     }
 
+    /**
+     * Fylvo: the latest decrypted value per key (stored value and plain text; a new stored value
+     * replaces the old one). Every request reads the access token, which was a Keystore round trip
+     * each time. Cleared when the session ends or its tokens change; [secretsGeneration] is read before the stored value,
+     * so a read that began before the session ended never puts its value back.
+     */
+    private val secrets = HashMap<String, Pair<String, String>>()
+    private var secretsGeneration = 0L
+
     /** Decrypted value, or "" when missing or no longer decryptable. */
-    private fun Preferences.secret(key: Preferences.Key<String>): String =
-        this[key]?.let { SecretBox.decrypt(it) } ?: ""
+    private suspend fun secret(key: Preferences.Key<String>): String {
+        val generation = synchronized(secrets) { secretsGeneration }
+        val stored = context.sessionStore.data.first()[key] ?: return ""
+        synchronized(secrets) {
+            secrets[key.name]?.let { (sealed, plain) -> if (sealed == stored) return plain }
+        }
+        val plain = SecretBox.decrypt(stored) ?: return ""
+        synchronized(secrets) { if (generation == secretsGeneration) secrets[key.name] = stored to plain }
+        return plain
+    }
+
+    private fun forgetSecrets() = synchronized(secrets) {
+        secretsGeneration++
+        secrets.clear()
+    }
 
     suspend fun serverUrlNow(): String = serverUrl.first()
     suspend fun accessTokenNow(): String = accessToken.first()
-    suspend fun refreshTokenNow(): String =
-        context.sessionStore.data.first().secret(Keys.refreshToken)
+    suspend fun refreshTokenNow(): String = secret(Keys.refreshToken)
     suspend fun accessExpiresAtNow(): Long =
         context.sessionStore.data.first()[Keys.accessExpiresAt] ?: 0L
 
@@ -106,6 +127,7 @@ class SessionManager(private val context: Context) {
             it[Keys.userNick] = nick
             it[Keys.userId] = userId
         }
+        forgetSecrets()
         generationCounter.incrementAndGet()
         ended = false
         notifyDocumentsRoots()
@@ -133,11 +155,13 @@ class SessionManager(private val context: Context) {
             it[Keys.refreshToken] = refreshSealed
             it[Keys.accessExpiresAt] = accessExpiresAt
         }
+        forgetSecrets()
     }
 
     suspend fun clear() {
         endGeneration()
         context.sessionStore.edit { it.clear() }
+        forgetSecrets()
         notifyDocumentsRoots()
     }
 
@@ -154,6 +178,7 @@ class SessionManager(private val context: Context) {
             it.remove(Keys.accessExpiresAt)
             it.remove(Keys.userNick)
         }
+        forgetSecrets()
         notifyDocumentsRoots()
     }
 }

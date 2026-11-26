@@ -197,9 +197,9 @@ fun SearchResults(
                         selected = false,
                         subtitle = state.searchSnippets[file.path]?.let { io.github.svenbuild.fylvo.android.util.SearchQuery.snippet(it).first.take(120) }
                             ?: "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
-                        actions = actionsFor(file),
+                        actions = rememberActions(actionsFor(file)),
                         edit = state.editOf(file),
-                        swipe = swipeFor(file),
+                        swipe = rememberSwipe(swipeFor(file)),
                     )
                 }
                 if (state.searchLoadingMore) {

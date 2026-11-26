@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
@@ -74,7 +75,20 @@ data class FileActions(
     val longPressOnRow: Boolean,
 )
 
-/** Fylvo: tap and long press of a row or tile, and its selected state for TalkBack. */
+/**
+ * Fylvo: [actions] as the same object while its label stays; a tap runs the newest handlers. The
+ * handlers are new lambdas at every recomposition of the screen, which made every visible row
+ * draw again for any change of the screen (progress, a loaded page, the scroll direction).
+ */
+@Composable
+fun rememberActions(actions: FileActions): FileActions {
+    val latest = rememberUpdatedState(actions)
+    return remember(actions.longPressLabel, actions.longPressOnRow) {
+        actions.copy(onOpen = { latest.value.onOpen() }, onLongPress = { latest.value.onLongPress() })
+    }
+}
+
+/** Tap and long press of a row or tile, and its selected state for TalkBack. */
 @OptIn(ExperimentalFoundationApi::class)
 private fun Modifier.fileClicks(actions: FileActions, selectionState: String?): Modifier =
     if (actions.longPressOnRow) {
