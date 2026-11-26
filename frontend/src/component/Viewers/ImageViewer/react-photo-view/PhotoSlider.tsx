@@ -15,7 +15,7 @@ import Download from "../../../Icons/Download.tsx";
 import ImageEdit from "../../../Icons/ImageEdit.tsx";
 import Info from "../../../Icons/Info.tsx";
 import MoreHorizontal from "../../../Icons/MoreHorizontal.tsx";
-import { editorSupportedExt } from "../ImageEditor.tsx";
+import { editorSupportedExt } from "../editorExt.ts";
 import ArrowLeft from "./components/ArrowLeft";
 import ArrowRight from "./components/ArrowRight";
 import SlidePortal from "./components/SlidePortal";

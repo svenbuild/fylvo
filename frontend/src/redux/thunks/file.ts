@@ -213,15 +213,26 @@ export function loadFileThumb(index: number, file: FileResponse): AppThunk<Promi
 
 const connectedThumbLoads = new Map<string, Promise<string | null>>();
 
-function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string | null>> {
-  return async (dispatch, getState) => {
-    const { fileManager } = getState();
-    const cache = fileManager[index].tree[file.path]?.thumb;
-    // Fylvo: a thumbnail belongs to one version of the file (its address stays the same for a day).
+// Fylvo: the thumbnail already known for this version of the file (its address stays the same for a
+// day), null when it has none, undefined when it must be asked for. A row that appears again (while
+// scrolling) shows it at once.
+export function cachedFileThumb(index: number, file: FileResponse): AppThunk<string | null | undefined> {
+  return (_dispatch, getState) => {
+    const cache = getState().fileManager[index].tree[file.path]?.thumb;
     if (cache && cache.entity == file.primary_entity) {
       if (!cache.expires || dayjs(cache.expires).isAfter(dayjs())) {
         return cache.failed ? null : cache.src;
       }
+    }
+    return undefined;
+  };
+}
+
+function loadThumb(index: number, file: FileResponse): AppThunk<Promise<string | null>> {
+  return async (dispatch, getState) => {
+    const cached = dispatch(cachedFileThumb(index, file));
+    if (cached !== undefined) {
+      return cached;
     }
 
     const connected = inConnectedStorage(file.path);

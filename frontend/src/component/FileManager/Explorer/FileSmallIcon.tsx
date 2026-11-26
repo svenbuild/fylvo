@@ -32,8 +32,10 @@ const FileSmallIcon = memo(({ selected, variant, loading, file, ignoreHovered }:
   );
   const iconSize = variant === "list" ? 16 : 18;
   const showCheckbox = selected || (hovered && !ignoreHovered);
+  // Fylvo: no fade when the file appears (rows come and go while scrolling); changes still fade.
   return (
     <TransitionGroup
+      appear={false}
       onClick={onIconClick}
       style={{ position: "relative", display: "grid", placeItems: "center", flexShrink: 0, width: 24, height: 24 }}
     >

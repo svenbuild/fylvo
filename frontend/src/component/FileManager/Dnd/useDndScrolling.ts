@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { throttle } from "lodash";
+import throttle from "lodash/throttle";
 
 const threshold = 0.1;
 

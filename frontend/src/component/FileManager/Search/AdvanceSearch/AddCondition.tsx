@@ -19,7 +19,7 @@ import TextCaseTitle from "../../../Icons/TextCaseTitle.tsx";
 import { CascadingSubmenu } from "../../ContextMenu/CascadingMenu.tsx";
 import { DenseDivider, SquareMenuItem } from "../../ContextMenu/ContextMenu.tsx";
 import { customPropsMetadataPrefix } from "../../Sidebar/CustomProps/CustomProps.tsx";
-import { Condition, ConditionType } from "./ConditionBox.tsx";
+import { Condition, ConditionType } from "./Condition.ts";
 
 export interface AddConditionProps {
   onConditionAdd: (condition: Condition) => void;

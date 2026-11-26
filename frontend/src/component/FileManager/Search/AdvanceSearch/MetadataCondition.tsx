@@ -1,6 +1,6 @@
 import { Box } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { Condition } from "./ConditionBox.tsx";
+import { Condition } from "./Condition.ts";
 import { FilledTextField } from "../../../Common/StyledComponents.tsx";
 
 export const MetadataCondition = ({

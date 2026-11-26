@@ -1,7 +1,7 @@
 import { Autocomplete, Chip } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { FilledTextField } from "../../../Common/StyledComponents.tsx";
-import { Condition } from "./ConditionBox.tsx";
+import { Condition } from "./Condition.ts";
 
 export const TagCondition = ({
   condition,

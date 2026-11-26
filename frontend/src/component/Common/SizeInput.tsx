@@ -9,7 +9,7 @@ import {
   Select,
   styled,
 } from "@mui/material";
-import { parseInt } from "lodash";
+import parseInt from "lodash/parseInt";
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppDispatch } from "../../redux/hooks.ts";

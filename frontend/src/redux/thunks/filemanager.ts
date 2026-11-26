@@ -6,7 +6,7 @@ import { AppError } from "../../api/request.ts";
 import { ListViewColumnSetting } from "../../component/FileManager/Explorer/ListView/Column.tsx";
 import { FileManagerIndex } from "../../component/FileManager/FileManager.tsx";
 import { getPaginationState } from "../../component/FileManager/Pagination/PaginationFooter.tsx";
-import { Condition, ConditionType } from "../../component/FileManager/Search/AdvanceSearch/ConditionBox.tsx";
+import { Condition, ConditionType } from "../../component/FileManager/Search/AdvanceSearch/Condition.ts";
 import { MinPageSize } from "../../component/FileManager/TopBar/ViewOptionPopover.tsx";
 import { SelectType } from "../../component/Uploader/core";
 import { Task } from "../../component/Uploader/core/types.ts";

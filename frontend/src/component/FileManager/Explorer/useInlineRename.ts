@@ -3,6 +3,7 @@ import React, { useCallback, useContext, useEffect, useRef, useState } from "rea
 import { useHotkeys } from "react-hotkeys-hook";
 import { FileType } from "../../../api/explorer.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
+import { AppThunk } from "../../../redux/store.ts";
 import { fileDoubleClicked, inlineRenameSubmit } from "../../../redux/thunks/file.ts";
 import { DefaultCloseAction } from "../../Common/Snackbar/snackbar.tsx";
 import { getActionOpt } from "../ContextMenu/useActionDisplayOpt.ts";
@@ -16,19 +17,69 @@ export interface UseInlineRenameOptions {
   isTouch: boolean;
 }
 
+// Fylvo: how many cards or rows of each file are drawn now, by file manager (see renameSelected).
+const drawn = new Map<string, number>();
+export const inlineRenameDrawn = (fmIndex: number, path: string) => !!drawn.get(`${fmIndex}|${path}`);
+
+// Fylvo: a rename being typed into a card that is no longer drawn (scrolled out of the grid or
+// list); the card takes it up again when it is drawn again.
+let draft: { key: string; value: string } | undefined;
+
+// True while such a rename waits for its card: the keys of the file manager are left alone then,
+// as they were while the field had the focus. Dropped when the selection moved on.
+export function inlineRenameAway(fmIndex: number, cancel = false): AppThunk<boolean> {
+  return (_dispatch, getState) => {
+    if (!draft || !draft.key.startsWith(`${fmIndex}|`) || drawn.get(draft.key)) {
+      return false;
+    }
+    const selected = Object.keys(getState().fileManager[fmIndex].selected);
+    if (!cancel && selected.length == 1 && `${fmIndex}|${selected[0]}` == draft.key) {
+      return true;
+    }
+    draft = undefined;
+    return false;
+  };
+}
+
 export function useInlineRename({ file, isSelected, uploading, isTouch }: UseInlineRenameOptions) {
   const dispatch = useAppDispatch();
   const fmIndex = useContext(FmIndexContext);
+  const key = `${fmIndex}|${file.path}`;
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState("");
-  const renameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    drawn.set(key, (drawn.get(key) ?? 0) + 1);
+    return () => {
+      const count = (drawn.get(key) ?? 1) - 1;
+      if (count > 0) {
+        drawn.set(key, count);
+      } else {
+        drawn.delete(key);
+      }
+    };
+  }, [key]);
 
   const isSoleSelected = useAppSelector(
     (state) =>
       !!state.fileManager[fmIndex].selected[file.path] && Object.keys(state.fileManager[fmIndex].selected).length === 1,
   );
+
+  // A draft is taken up only while its file is still the only one selected.
+  const resumed = useRef(draft?.key == key && isSoleSelected);
+  if (draft?.key == key && !resumed.current) {
+    draft = undefined;
+  }
+  const [isEditing, setIsEditing] = useState(() => resumed.current);
+  const [editValue, setEditValue] = useState(() => (resumed.current ? draft?.value ?? "" : ""));
+
+  useEffect(() => {
+    if (isEditing) {
+      draft = { key, value: editValue };
+    } else if (draft?.key == key) {
+      draft = undefined;
+    }
+  }, [isEditing, editValue, key]);
+  const renameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Clear rename timer on unmount
   useEffect(() => {
@@ -42,7 +93,11 @@ export function useInlineRename({ file, isSelected, uploading, isTouch }: UseInl
   // Auto-focus and select text when entering edit mode
   useEffect(() => {
     if (isEditing && inputRef.current) {
-      inputRef.current.focus();
+      inputRef.current.focus({ preventScroll: resumed.current });
+      if (resumed.current) {
+        resumed.current = false;
+        return;
+      }
       const lastDot = file.type == FileType.folder ? 0 : file.name.lastIndexOf(".");
       inputRef.current.setSelectionRange(0, lastDot > 0 ? lastDot : file.name.length);
     }

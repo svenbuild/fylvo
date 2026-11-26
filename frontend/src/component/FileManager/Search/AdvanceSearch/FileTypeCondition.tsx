@@ -4,7 +4,7 @@ import { SquareMenuItem } from "../../ContextMenu/ContextMenu.tsx";
 import { FileType } from "../../../../api/explorer.ts";
 import Document from "../../../Icons/Document.tsx";
 import Folder from "../../../Icons/Folder.tsx";
-import { Condition } from "./ConditionBox.tsx";
+import { Condition } from "./Condition.ts";
 import { DenseSelect } from "../../../Common/StyledComponents.tsx";
 
 export const FileTypeCondition = ({

@@ -53,8 +53,6 @@ const editorTheme = (theme: Theme) => {
   };
 };
 
-export const editorSupportedExt = ["jpg", "jpeg", "png", "webp"];
-
 const ImageEditor = () => {
   const theme = useTheme();
   const { t, i18n } = useTranslation();

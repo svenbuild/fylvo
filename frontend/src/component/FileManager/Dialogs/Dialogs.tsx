@@ -1,5 +1,4 @@
 import DeleteConfirmation from "./DeleteConfirmation.tsx";
-import DesktopMountSetup from "./DesktopMountSetup.tsx";
 import AggregatedErrorDetail from "../../Dialogs/AggregatedErrorDetail.tsx";
 import LockConflictDetails from "./LockConflictDetails.tsx";
 import Rename from "./Rename.tsx";
@@ -15,7 +14,6 @@ import Photopea from "../../Viewers/Photopea/Photopea.tsx";
 import OpenWith from "./OpenWith.tsx";
 import Wopi from "../../Viewers/Wopi.tsx";
 import CraftViewer from "../../Viewers/Craft/CraftViewer.tsx";
-import ArchivePreview from "../../Viewers/ArchivePreview/ArchivePreview.tsx";
 import CodeViewer from "../../Viewers/CodeViewer/CodeViewer.tsx";
 import DrawIOViewer from "../../Viewers/DrawIO/DrawIOViewer.tsx";
 import MarkdownViewer from "../../Viewers/MarkdownEditor/MarkdownViewer.tsx";
@@ -23,17 +21,38 @@ import VideoViewer from "../../Viewers/Video/VideoViewer.tsx";
 import PdfViewer from "../../Viewers/PdfViewer.tsx";
 import CustomViewer from "../../Viewers/CustomViewer.tsx";
 import EpubViewer from "../../Viewers/EpubViewer/EpubViewer.tsx";
-import ExcalidrawViewer from "../../Viewers/Excalidraw/ExcalidrawViewer.tsx";
 import CreateNew from "./CreateNew.tsx";
 import { useAppSelector } from "../../../redux/hooks.ts";
-import CreateArchive from "./CreateArchive.tsx";
-import ExtractArchive from "./ExtractArchive.tsx";
-import CreateRemoteDownload from "./CreateRemoteDownload.tsx";
-import AdvanceSearch from "../Search/AdvanceSearch/AdvanceSearch.tsx";
-import React from "react";
-import ColumnSetting from "../Explorer/ListView/ColumnSetting.tsx";
+import React, { Component, lazy, ReactNode, Suspense } from "react";
 import DirectLinks from "./DirectLinks/DirectLinks.tsx";
-import DirectLinksControl from "./DirectLinksControl.tsx";
+
+// Fylvo: dialogs that only open on demand load their code then, not with the file manager.
+const CreateArchive = lazy(() => import("./CreateArchive.tsx"));
+const ExtractArchive = lazy(() => import("./ExtractArchive.tsx"));
+const CreateRemoteDownload = lazy(() => import("./CreateRemoteDownload.tsx"));
+const AdvanceSearch = lazy(() => import("../Search/AdvanceSearch/AdvanceSearch.tsx"));
+const ColumnSetting = lazy(() => import("../Explorer/ListView/ColumnSetting.tsx"));
+const ExcalidrawViewer = lazy(() => import("../../Viewers/Excalidraw/ExcalidrawViewer.tsx"));
+const DirectLinksControl = lazy(() => import("./DirectLinksControl.tsx"));
+const ArchivePreview = lazy(() => import("../../Viewers/ArchivePreview/ArchivePreview.tsx"));
+const DesktopMountSetup = lazy(() => import("./DesktopMountSetup.tsx"));
+
+// A dialog whose code failed to load shows nothing; the file manager stays.
+class LoadFailed extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+const LazyDialog = ({ children }: { children: ReactNode }) => (
+  <LoadFailed>
+    <Suspense fallback={null}>{children}</Suspense>
+  </LoadFailed>
+);
 
 const Dialogs = () => {
   const showCreateArchive = useAppSelector((state) => state.globalState.createArchiveDialogOpen);
@@ -73,16 +92,52 @@ const Dialogs = () => {
       <PdfViewer />
       <CustomViewer />
       <EpubViewer />
-      {showCreateArchive != undefined && <CreateArchive />}
-      {showExtractArchive != undefined && <ExtractArchive />}
-      {showRemoteDownload != undefined && <CreateRemoteDownload />}
-      {showAdvancedSearch != undefined && <AdvanceSearch />}
-      {showListViewColumnSetting != undefined && <ColumnSetting />}
+      {showCreateArchive != undefined && (
+        <LazyDialog>
+          <CreateArchive />
+        </LazyDialog>
+      )}
+      {showExtractArchive != undefined && (
+        <LazyDialog>
+          <ExtractArchive />
+        </LazyDialog>
+      )}
+      {showRemoteDownload != undefined && (
+        <LazyDialog>
+          <CreateRemoteDownload />
+        </LazyDialog>
+      )}
+      {showAdvancedSearch != undefined && (
+        <LazyDialog>
+          <AdvanceSearch />
+        </LazyDialog>
+      )}
+      {showListViewColumnSetting != undefined && (
+        <LazyDialog>
+          <ColumnSetting />
+        </LazyDialog>
+      )}
       {directLink != undefined && <DirectLinks />}
-      {excalidrawViewer != undefined && <ExcalidrawViewer />}
-      {directLinkManagement != undefined && <DirectLinksControl />}
-      {archivePreview != undefined && <ArchivePreview />}
-      {desktopMountSetup != undefined && <DesktopMountSetup />}
+      {excalidrawViewer != undefined && (
+        <LazyDialog>
+          <ExcalidrawViewer />
+        </LazyDialog>
+      )}
+      {directLinkManagement != undefined && (
+        <LazyDialog>
+          <DirectLinksControl />
+        </LazyDialog>
+      )}
+      {archivePreview != undefined && (
+        <LazyDialog>
+          <ArchivePreview />
+        </LazyDialog>
+      )}
+      {desktopMountSetup != undefined && (
+        <LazyDialog>
+          <DesktopMountSetup />
+        </LazyDialog>
+      )}
     </>
   );
 };

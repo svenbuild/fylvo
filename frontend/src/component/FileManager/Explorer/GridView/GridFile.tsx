@@ -20,7 +20,13 @@ import { FileType, Metadata } from "../../../../api/explorer.ts";
 import { hoverSurface, selectedSurface } from "../../../../fylvoTheme.ts";
 import { bindDelayedHover } from "../../../../hooks/delayedHover.tsx";
 import { useAppDispatch, useAppSelector } from "../../../../redux/hooks.ts";
-import { fileClicked, fileDoubleClicked, loadFileThumb, openFileContextMenu } from "../../../../redux/thunks/file.ts";
+import {
+  cachedFileThumb,
+  fileClicked,
+  fileDoubleClicked,
+  loadFileThumb,
+  openFileContextMenu,
+} from "../../../../redux/thunks/file.ts";
 import { fileHovered, navigateReconcile } from "../../../../redux/thunks/filemanager.ts";
 import FileIcon from "../FileIcon.tsx";
 import FileSmallIcon from "../FileSmallIcon.tsx";
@@ -306,8 +312,11 @@ const GridFile = memo((props: FileBlockProps) => {
   });
 
   // undefined: not loaded, null: no thumb
-  const [thumbSrc, setThumbSrc] = useState<string | undefined | null>(noThumb ? null : undefined);
-  const [imageLoading, setImageLoading] = useState(true);
+  const [thumbSrc, setThumbSrc] = useState<string | undefined | null>(() =>
+    noThumb ? null : dispatch(cachedFileThumb(0, file)),
+  );
+  // Fylvo: a preview known from before (drawn again while scrolling) shows at once, without fading in.
+  const [imageLoading, setImageLoading] = useState(!thumbSrc);
 
   const onImgLoadError = useCallback(() => {
     setImageLoading(false);
@@ -439,8 +448,9 @@ const GridFile = memo((props: FileBlockProps) => {
             )}
           </Header>
           {showThumb && (
-            <ThumbContainer>
-              <TransitionGroup style={{ height: "100%" }}>
+            // Fylvo: watched also when a known preview or icon shows at once (see cachedFileThumb).
+            <ThumbContainer ref={isLoadingIndicator ? undefined : ref}>
+              <TransitionGroup appear={false} style={{ height: "100%" }}>
                 {thumbSrc && (
                   <Fade key={"image"}>
                     <ThumbBoxContainer>
@@ -456,11 +466,7 @@ const GridFile = memo((props: FileBlockProps) => {
                 )}
                 {(thumbSrc === undefined || (thumbSrc && imageLoading)) && (
                   <Fade key={"loading"}>
-                    <ThumbLoadingPlaceholder
-                      ref={isLoadingIndicator ? undefined : ref}
-                      variant={"rectangular"}
-                      height={"100%"}
-                    />
+                    <ThumbLoadingPlaceholder variant={"rectangular"} height={"100%"} />
                   </Fade>
                 )}
                 {thumbSrc === null && (

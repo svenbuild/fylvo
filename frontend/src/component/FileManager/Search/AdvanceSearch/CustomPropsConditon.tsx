@@ -2,7 +2,7 @@ import { Box } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { CustomProps } from "../../../../api/explorer.ts";
 import { getPropsContent } from "../../Sidebar/CustomProps/CustomPropsItem.tsx";
-import { Condition } from "./ConditionBox.tsx";
+import { Condition } from "./Condition.ts";
 
 export const CustomPropsConditon = ({
   condition,

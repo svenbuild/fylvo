@@ -52,6 +52,9 @@ export const useFileDrag = ({ file, includeSelected, dropUri }: UseFileDragProps
       includeSelected,
     },
     end: (item, monitor) => {
+      // Fylvo: here and not in the effect below: a card scrolled out of the grid during the drag
+      // is gone, but this still runs.
+      dispatch(setDragging({ dragging: false, draggingWithSelected: !!includeSelected }));
       // Ignore NoOpDropUri
       const target = monitor.getDropResult<DropResult>();
       if (!item || !target || !target.uri || target.uri == NoOpDropUri) {
@@ -99,16 +102,11 @@ export const useFileDrag = ({ file, includeSelected, dropUri }: UseFileDragProps
     // eslint-disable-next-line
   }, []);
 
+  // Fylvo: only when a drag starts, not when a file appears (thousands at once in a large folder).
   useEffect(() => {
     if (isDragging) {
-      // addEventListenerForWindow();
+      dispatch(setDragging({ dragging: true, draggingWithSelected: !!includeSelected }));
     }
-    dispatch(
-      setDragging({
-        dragging: isDragging,
-        draggingWithSelected: !!includeSelected,
-      }),
-    );
   }, [isDragging]);
 
   return [drag, drop, isActive, isDragging] as const;

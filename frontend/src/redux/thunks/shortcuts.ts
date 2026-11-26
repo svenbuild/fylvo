@@ -5,6 +5,7 @@ import { inConnectedStorage } from "../../api/connected.ts";
 import { FileResponse, Metadata } from "../../api/explorer.ts";
 import { DefaultCloseAction } from "../../component/Common/Snackbar/snackbar.tsx";
 import { getActionOpt } from "../../component/FileManager/ContextMenu/useActionDisplayOpt.ts";
+import { inlineRenameDrawn } from "../../component/FileManager/Explorer/useInlineRename.ts";
 import CrUri, { CrUriPrefix, Filesystem } from "../../util/uri.ts";
 import { ContextMenuTypes, Layouts } from "../fileManagerSlice.ts";
 import { setFileClipboard } from "../globalStateSlice.ts";
@@ -144,7 +145,13 @@ export function renameSelected(index: number, inline: boolean): AppThunk {
       hint("cannotRename");
       return;
     }
-    if (!inline || getState().fileManager[index].layout == Layouts.gallery) {
+    // Fylvo: a drawn card renames itself (useInlineRename); the grid and the list draw only the
+    // rows near the visible part.
+    if (
+      !inline ||
+      !inlineRenameDrawn(index, files[0].path) ||
+      getState().fileManager[index].layout == Layouts.gallery
+    ) {
       dispatch(renameFile(index, files[0]));
     }
   };
