@@ -13,7 +13,8 @@ import { DefaultCloseAction } from "../../../Common/Snackbar/snackbar.tsx";
 import DraggableDialog from "../../../Dialogs/DraggableDialog.tsx";
 import { FileManagerIndex } from "../../FileManager.tsx";
 import AddCondition from "./AddCondition.tsx";
-import ConditionBox, { Condition, ConditionType } from "./ConditionBox.tsx";
+import ConditionBox from "./ConditionBox.tsx";
+import { Condition, ConditionType } from "./Condition.ts";
 import { inConnectedStorage } from "../../../../api/connected.ts";
 
 const searchParamToConditions = (search_params: SearchParam, base: string): Condition[] => {

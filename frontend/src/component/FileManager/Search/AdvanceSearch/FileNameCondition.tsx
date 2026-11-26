@@ -1,7 +1,7 @@
 import { Autocomplete, Box, Chip, FormControlLabel, styled } from "@mui/material";
 import { useTranslation } from "react-i18next";
 import { FilledTextField, StyledCheckbox } from "../../../Common/StyledComponents.tsx";
-import { Condition } from "./ConditionBox.tsx";
+import { Condition } from "./Condition.ts";
 
 export const StyledBox = styled(Box)(({ theme }) => ({
   padding: `${theme.spacing(1)} ${theme.spacing(2)}`,

@@ -1,6 +1,6 @@
 import { PathSelectorForm } from "../../../Common/Form/PathSelectorForm.tsx";
 import { defaultPath } from "../../../../hooks/useNavigation.tsx";
-import { Condition } from "./ConditionBox.tsx";
+import { Condition } from "./Condition.ts";
 
 export const SearchBaseCondition = ({
   condition,

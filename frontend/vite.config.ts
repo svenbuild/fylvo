@@ -113,7 +113,9 @@ export default defineConfig({
             ],
             mermaid: ["node_modules/mermaid", "node_modules/katex"],
             leaflet: ["node_modules/leaflet", "node_modules/react-leaflet"],
-            react: ["node_modules/react", "node_modules/react-dom"],
+            // Only React itself: a looser pattern would also pull every react-* package (image
+            // editor, e-book reader...) and their dependencies into the first load.
+            react: ["node_modules/react/", "node_modules/react-dom/", "node_modules/scheduler/"],
             mapbox: ["node_modules/mapbox-gl"],
           };
 

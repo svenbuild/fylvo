@@ -1,6 +1,6 @@
 import { Box } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import { Condition } from "./ConditionBox.tsx";
+import { Condition } from "./Condition.ts";
 import { DateTimePicker, LocalizationProvider } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import dayjs from "dayjs";
