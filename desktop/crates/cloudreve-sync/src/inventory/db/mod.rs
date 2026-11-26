@@ -91,6 +91,8 @@ impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for Pragmas {
 fn run_migrations(database_url: &str) -> Result<()> {
     let mut conn = SqliteConnection::establish(database_url)
         .with_context(|| format!("Failed to open inventory database at {}", database_url))?;
+    conn.batch_execute("PRAGMA busy_timeout = 5000;")
+        .context("Failed to set the busy timeout of the inventory database")?;
     conn.run_pending_migrations(MIGRATIONS)
         .map_err(|err| anyhow!("Failed to run inventory database migrations: {err}"))?;
     Ok(())
