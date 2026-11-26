@@ -447,7 +447,8 @@ const GridFile = memo((props: FileBlockProps) => {
             )}
           </Header>
           {showThumb && (
-            <ThumbContainer>
+            // Fylvo: watched also when a known preview or icon shows at once (see cachedFileThumb).
+            <ThumbContainer ref={isLoadingIndicator ? undefined : ref}>
               <TransitionGroup appear={false} style={{ height: "100%" }}>
                 {thumbSrc && (
                   <Fade key={"image"}>
@@ -464,11 +465,7 @@ const GridFile = memo((props: FileBlockProps) => {
                 )}
                 {(thumbSrc === undefined || (thumbSrc && imageLoading)) && (
                   <Fade key={"loading"}>
-                    <ThumbLoadingPlaceholder
-                      ref={isLoadingIndicator ? undefined : ref}
-                      variant={"rectangular"}
-                      height={"100%"}
-                    />
+                    <ThumbLoadingPlaceholder variant={"rectangular"} height={"100%"} />
                   </Fade>
                 )}
                 {thumbSrc === null && (

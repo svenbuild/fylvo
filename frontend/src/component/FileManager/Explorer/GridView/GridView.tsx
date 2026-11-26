@@ -8,8 +8,10 @@ import DndWrappedFile from "../../Dnd/DndWrappedFile.tsx";
 import { FmIndexContext } from "../../FmIndexContext.tsx";
 import GridFile from "./GridFile.tsx";
 import { CrUriPrefix } from "../../../../util/uri.ts";
+import { AreaCandidate, AreaLayout } from "../../../../hooks/areaSelection.ts";
 
 export interface GridViewProps {
+  layoutRef?: AreaLayout;
   [key: string]: any;
 }
 
@@ -19,9 +21,15 @@ export interface FmFile extends FileResponse {
   placeholder?: boolean;
 }
 
+// A card and its place in the file list (none for the "loading" placeholders).
+interface Cell {
+  element: JSX.Element;
+  index?: number;
+}
+
 interface listComponents {
-  Folders?: JSX.Element[];
-  Files: JSX.Element[];
+  Folders?: Cell[];
+  Files: Cell[];
 }
 
 const gridGap = 8;
@@ -32,14 +40,14 @@ function columnCount(width: number, minWidth: number) {
   return Math.max(1, Math.floor((width + gridGap) / (minWidth + gridGap)));
 }
 
-type GridRow = { title: string; first: boolean } | { cells: JSX.Element[]; last: boolean };
+type GridRow = { title: string; first: boolean } | { cells: Cell[]; last: boolean; section: number };
 
-function addSection(rows: GridRow[], title: string | undefined, cells: JSX.Element[], columns: number) {
+function addSection(rows: GridRow[], title: string | undefined, cells: Cell[], columns: number, section: number) {
   if (title !== undefined) {
     rows.push({ title, first: rows.length == 0 });
   }
   for (let i = 0; i < cells.length; i += columns) {
-    rows.push({ cells: cells.slice(i, i + columns), last: i + columns >= cells.length });
+    rows.push({ cells: cells.slice(i, i + columns), last: i + columns >= cells.length, section });
   }
 }
 
@@ -54,7 +62,7 @@ function scrollParentOf(element: HTMLElement | null) {
 
 export const loadingPlaceHolderNumb = 3;
 
-const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
+const GridView = React.forwardRef(({ layoutRef, ...rest }: GridViewProps, ref) => {
   const { t } = useTranslation("application");
   const fmIndex = useContext(FmIndexContext);
   const files = useAppSelector((state) => state.fileManager[fmIndex].list?.files);
@@ -72,29 +80,35 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
           if (!list.Folders) {
             list.Folders = [];
           }
-          list.Folders.push(
-            <Box key={file.id} sx={{ minWidth: 0 }}>
-              <DndWrappedFile
-                component={GridFile}
-                search={search_params}
-                index={index}
-                showThumb={mixedType}
-                file={file}
-              />
-            </Box>,
-          );
+          list.Folders.push({
+            index,
+            element: (
+              <Box key={file.id} sx={{ minWidth: 0 }}>
+                <DndWrappedFile
+                  component={GridFile}
+                  search={search_params}
+                  index={index}
+                  showThumb={mixedType}
+                  file={file}
+                />
+              </Box>
+            ),
+          });
         } else {
-          list.Files.push(
-            <Box key={file.id} sx={{ minWidth: 0 }}>
-              <DndWrappedFile
-                component={GridFile}
-                search={search_params}
-                index={index}
-                showThumb={showThumb}
-                file={file}
-              />
-            </Box>,
-          );
+          list.Files.push({
+            index,
+            element: (
+              <Box key={file.id} sx={{ minWidth: 0 }}>
+                <DndWrappedFile
+                  component={GridFile}
+                  search={search_params}
+                  index={index}
+                  showThumb={showThumb}
+                  file={file}
+                />
+              </Box>
+            ),
+          });
         }
       });
 
@@ -102,21 +116,23 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
       if (pagination && pagination.next_token) {
         for (let i = 0; i < loadingPlaceHolderNumb; i++) {
           const id = `loadingPlaceholder-${pagination.next_token}-${i}`;
-          const loadingPlaceholder = (
-            <Box key={id} sx={{ minWidth: 0 }}>
-              <DndWrappedFile
-                component={GridFile}
-                showThumb={list.Files.length > 0 ? showThumb : mixedType}
-                file={{
-                  ...files[0],
-                  path: `${CrUriPrefix}${id}`,
-                  id: id,
-                  first: i == 0,
-                  placeholder: true,
-                }}
-              />
-            </Box>
-          );
+          const loadingPlaceholder = {
+            element: (
+              <Box key={id} sx={{ minWidth: 0 }}>
+                <DndWrappedFile
+                  component={GridFile}
+                  showThumb={list.Files.length > 0 ? showThumb : mixedType}
+                  file={{
+                    ...files[0],
+                    path: `${CrUriPrefix}${id}`,
+                    id: id,
+                    first: i == 0,
+                    placeholder: true,
+                  }}
+                />
+              </Box>
+            ),
+          };
           const _ =
             list.Files.length > 0 ? list.Files.push(loadingPlaceholder) : list.Folders?.push(loadingPlaceholder);
         }
@@ -135,6 +151,8 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
       return;
     }
     setScrollParent(scrollParentOf(box));
+    const style = getComputedStyle(box);
+    setWidth(box.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
     const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
     observer.observe(box);
     return () => observer.disconnect();
@@ -144,13 +162,92 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
   const rows = useMemo(() => {
     const rows: GridRow[] = [];
     if (list.Folders && list.Folders.length > 0) {
-      addSection(rows, t("fileManager.folders"), list.Folders, columns);
+      addSection(rows, t("fileManager.folders"), list.Folders, columns, 0);
     }
     if (list.Files.length > 0) {
-      addSection(rows, mixedType ? undefined : t("fileManager.files"), list.Files, columns);
+      addSection(rows, mixedType ? undefined : t("fileManager.files"), list.Files, columns, 1);
     }
     return rows;
   }, [list, columns, mixedType, t]);
+
+  // Fylvo: where every card is, also the ones not drawn, for the area selection (useAreaSelection):
+  // places in the scrolled content of the scroll parent. Rows of a kind have the same height; the
+  // heights are taken from the rows drawn now (or earlier), the drawn rows anchor the positions.
+  const heights = useRef<{ title?: number; titleGap?: number; cards: number[] }>({ cards: [] });
+  const layout = useCallback((): AreaCandidate[][] => {
+    const box = boxRef.current;
+    if (!box || !scrollParent) {
+      return [];
+    }
+    const parentBox = scrollParent.getBoundingClientRect();
+    const known = heights.current;
+    let anchor: { row: number; top: number } | undefined;
+    box.querySelectorAll<HTMLElement>("[data-index]").forEach((item) => {
+      const rowIndex = Number(item.dataset.index);
+      const row = rows[rowIndex];
+      if (!row) {
+        return;
+      }
+      if ("title" in row) {
+        const gap = parseFloat(getComputedStyle(item.firstElementChild ?? item).paddingTop);
+        known.title = item.offsetHeight - (row.first ? 0 : gap);
+        if (!row.first) {
+          known.titleGap = gap;
+        }
+      } else {
+        const card = item.querySelector("[data-rect-id]");
+        if (card) {
+          known.cards[row.section] = card.getBoundingClientRect().height;
+        }
+      }
+      anchor ??= { row: rowIndex, top: scrollParent.scrollTop + item.getBoundingClientRect().top - parentBox.top };
+    });
+    if (!anchor) {
+      return [];
+    }
+
+    const tops: number[] = [];
+    let y = 0;
+    rows.forEach((row) => {
+      tops.push(y);
+      if ("title" in row) {
+        y += (known.title ?? 0) + (row.first ? 0 : known.titleGap ?? 0);
+      } else {
+        y += (known.cards[row.section] ?? known.cards[1 - row.section] ?? 0) + (row.last ? 0 : gridGap);
+      }
+    });
+    const shift = anchor.top - tops[anchor.row];
+    const left = box.getBoundingClientRect().left - parentBox.left + parseFloat(getComputedStyle(box).paddingLeft);
+    const cellWidth = (width - (columns - 1) * gridGap) / columns;
+    const result: AreaCandidate[][] = [];
+    rows.forEach((row, rowIndex) => {
+      if ("title" in row) {
+        return;
+      }
+      const top = tops[rowIndex] + shift;
+      const height = known.cards[row.section] ?? known.cards[1 - row.section] ?? 0;
+      const cells: AreaCandidate[] = [];
+      row.cells.forEach((cell, column) => {
+        if (cell.index !== undefined) {
+          const x = left + column * (cellWidth + gridGap);
+          cells.push({ index: String(cell.index), x, y: top, right: x + cellWidth, bottom: top + height });
+        }
+      });
+      if (cells.length > 0) {
+        result.push(cells);
+      }
+    });
+    return result;
+  }, [rows, scrollParent, width, columns]);
+  useLayoutEffect(() => {
+    if (!layoutRef) {
+      return;
+    }
+    layoutRef.current = layout;
+    return () => {
+      layoutRef.current = undefined;
+    };
+  }, [layout, layoutRef]);
 
   const setRefs = useCallback(
     (element: HTMLElement | null) => {
@@ -179,7 +276,6 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
           // Fylvo: the first rows come with the first render, not one measuring pass later.
           initialItemCount={Math.min(rows.length, 10)}
           data={rows}
-          computeItemKey={(_index, row) => ("title" in row ? `title-${row.title}` : `row-${row.cells[0].key}`)}
           itemContent={(_index, row) =>
             "title" in row ? (
               <Typography
@@ -200,7 +296,7 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
                   pb: row.last ? 0 : `${gridGap}px`,
                 }}
               >
-                {row.cells}
+                {row.cells.map((cell) => cell.element)}
               </Box>
             )
           }

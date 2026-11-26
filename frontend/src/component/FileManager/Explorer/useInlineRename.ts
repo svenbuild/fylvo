@@ -16,9 +16,26 @@ export interface UseInlineRenameOptions {
   isTouch: boolean;
 }
 
+// Fylvo: how many cards or rows of each file are drawn now, by file manager (see renameSelected).
+const drawn = new Map<string, number>();
+export const inlineRenameDrawn = (fmIndex: number, path: string) => !!drawn.get(`${fmIndex}|${path}`);
+
 export function useInlineRename({ file, isSelected, uploading, isTouch }: UseInlineRenameOptions) {
   const dispatch = useAppDispatch();
   const fmIndex = useContext(FmIndexContext);
+
+  useEffect(() => {
+    const key = `${fmIndex}|${file.path}`;
+    drawn.set(key, (drawn.get(key) ?? 0) + 1);
+    return () => {
+      const count = (drawn.get(key) ?? 1) - 1;
+      if (count > 0) {
+        drawn.set(key, count);
+      } else {
+        drawn.delete(key);
+      }
+    };
+  }, [fmIndex, file.path]);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");

@@ -1,7 +1,7 @@
 import { Box, useMediaQuery, useTheme } from "@mui/material";
 import React, { RefCallback, useCallback, useContext, useEffect, useMemo } from "react";
 import { CSSTransition, SwitchTransition } from "react-transition-group";
-import { useAreaSelection } from "../../../hooks/areaSelection.ts";
+import { AreaLayout, useAreaSelection } from "../../../hooks/areaSelection.ts";
 import { useAppDispatch, useAppSelector } from "../../../redux/hooks.ts";
 import { ConfigLoadState } from "../../../redux/siteConfigSlice.ts";
 import { openEmptyContextMenu } from "../../../redux/thunks/filemanager.ts";
@@ -95,10 +95,12 @@ const Explorer = () => {
 
   const enableAreaSelection = index == ExplorerPage.GridView;
 
+  const gridLayout: AreaLayout = React.useRef(undefined);
   const [handleMouseDown, handleMouseUp, handleMouseMove] = useAreaSelection(
     selectContainerRef,
     fmIndex,
     enableAreaSelection,
+    gridLayout,
   );
 
   const onContextMenu = useCallback(
@@ -145,7 +147,7 @@ const Explorer = () => {
               index == ExplorerPage.ListView ||
               index == ExplorerPage.GalleryView ||
               index == ExplorerPage.Empty) && <ConnectedIncomplete sx={{ px: 2, pt: 1 }} />}
-            {index == ExplorerPage.GridView && <GridView />}
+            {index == ExplorerPage.GridView && <GridView layoutRef={gridLayout} />}
             {index == ExplorerPage.SingleFileView && <SingleFileView />}
             {index == ExplorerPage.Empty && <EmptyFileList />}
             {index == ExplorerPage.ListView && <ListView />}

@@ -75,18 +75,52 @@ const Dialogs = () => {
       <PdfViewer />
       <CustomViewer />
       <EpubViewer />
-      <Suspense fallback={null}>
-        {showCreateArchive != undefined && <CreateArchive />}
-        {showExtractArchive != undefined && <ExtractArchive />}
-        {showRemoteDownload != undefined && <CreateRemoteDownload />}
-        {showAdvancedSearch != undefined && <AdvanceSearch />}
-        {showListViewColumnSetting != undefined && <ColumnSetting />}
-        {directLink != undefined && <DirectLinks />}
-        {excalidrawViewer != undefined && <ExcalidrawViewer />}
-        {directLinkManagement != undefined && <DirectLinksControl />}
-        {archivePreview != undefined && <ArchivePreview />}
-        {desktopMountSetup != undefined && <DesktopMountSetup />}
-      </Suspense>
+      {showCreateArchive != undefined && (
+        <Suspense fallback={null}>
+          <CreateArchive />
+        </Suspense>
+      )}
+      {showExtractArchive != undefined && (
+        <Suspense fallback={null}>
+          <ExtractArchive />
+        </Suspense>
+      )}
+      {showRemoteDownload != undefined && (
+        <Suspense fallback={null}>
+          <CreateRemoteDownload />
+        </Suspense>
+      )}
+      {showAdvancedSearch != undefined && (
+        <Suspense fallback={null}>
+          <AdvanceSearch />
+        </Suspense>
+      )}
+      {showListViewColumnSetting != undefined && (
+        <Suspense fallback={null}>
+          <ColumnSetting />
+        </Suspense>
+      )}
+      {directLink != undefined && <DirectLinks />}
+      {excalidrawViewer != undefined && (
+        <Suspense fallback={null}>
+          <ExcalidrawViewer />
+        </Suspense>
+      )}
+      {directLinkManagement != undefined && (
+        <Suspense fallback={null}>
+          <DirectLinksControl />
+        </Suspense>
+      )}
+      {archivePreview != undefined && (
+        <Suspense fallback={null}>
+          <ArchivePreview />
+        </Suspense>
+      )}
+      {desktopMountSetup != undefined && (
+        <Suspense fallback={null}>
+          <DesktopMountSetup />
+        </Suspense>
+      )}
     </>
   );
 };

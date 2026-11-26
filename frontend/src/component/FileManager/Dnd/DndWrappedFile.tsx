@@ -1,4 +1,4 @@
-import { memo, useCallback, useContext, useEffect, useRef } from "react";
+import { memo, useCallback, useContext, useEffect } from "react";
 import { useDrag, useDrop } from "react-dnd";
 import { getEmptyImage } from "react-dnd-html5-backend";
 import { FileResponse, FileType } from "../../../api/explorer.ts";
@@ -52,6 +52,9 @@ export const useFileDrag = ({ file, includeSelected, dropUri }: UseFileDragProps
       includeSelected,
     },
     end: (item, monitor) => {
+      // Fylvo: here and not in the effect below: a card scrolled out of the grid during the drag
+      // is gone, but this still runs.
+      dispatch(setDragging({ dragging: false, draggingWithSelected: !!includeSelected }));
       // Ignore NoOpDropUri
       const target = monitor.getDropResult<DropResult>();
       if (!item || !target || !target.uri || target.uri == NoOpDropUri) {
@@ -99,19 +102,11 @@ export const useFileDrag = ({ file, includeSelected, dropUri }: UseFileDragProps
     // eslint-disable-next-line
   }, []);
 
-  // Fylvo: not when a file appears (thousands at once in a large folder), only when a drag starts or ends.
-  const wasDragging = useRef(false);
+  // Fylvo: only when a drag starts, not when a file appears (thousands at once in a large folder).
   useEffect(() => {
-    if (!isDragging && !wasDragging.current) {
-      return;
+    if (isDragging) {
+      dispatch(setDragging({ dragging: true, draggingWithSelected: !!includeSelected }));
     }
-    wasDragging.current = isDragging;
-    dispatch(
-      setDragging({
-        dragging: isDragging,
-        draggingWithSelected: !!includeSelected,
-      }),
-    );
   }, [isDragging]);
 
   return [drag, drop, isActive, isDragging] as const;

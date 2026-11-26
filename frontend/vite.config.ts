@@ -37,7 +37,6 @@ export default defineConfig({
           "**/AdminBundle-*",
           "**/ImageEditor-*",
           "**/Epub-*",
-          "**/AdapterDayjs-*",
           "**/pdfjs/**",
           "pdfviewer.html",
           "static/craft-blank/**",
