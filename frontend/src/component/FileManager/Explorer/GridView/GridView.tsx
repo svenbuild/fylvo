@@ -176,6 +176,8 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
         <Virtuoso
           customScrollParent={scrollParent}
           increaseViewportBy={200}
+          // Fylvo: the first rows come with the first render, not one measuring pass later.
+          initialItemCount={Math.min(rows.length, 10)}
           data={rows}
           computeItemKey={(_index, row) => ("title" in row ? `title-${row.title}` : `row-${row.cells[0].key}`)}
           itemContent={(_index, row) =>
