@@ -223,6 +223,12 @@ async function imagePreview(browser) {
   await idle(page);
   const before = { ...stats };
   await name.click({ count: 2 });
+  // The first time, the app asks which viewer opens the file.
+  const viewer = await page.waitForSelector("::-p-text(Image Viewer)", { timeout: 5000 }).catch(() => null);
+  if (viewer) {
+    await viewer.click();
+    await (await page.waitForSelector("::-p-text(Just once)")).click();
+  }
   await page.waitForSelector(".PhotoView-Portal", { timeout: 60000 });
   await idle(page);
   await page.close();
