@@ -27,13 +27,13 @@ let draft: { key: string; value: string } | undefined;
 
 // True while such a rename waits for its card: the keys of the file manager are left alone then,
 // as they were while the field had the focus. Dropped when the selection moved on.
-export function inlineRenameAway(fmIndex: number): AppThunk<boolean> {
+export function inlineRenameAway(fmIndex: number, cancel = false): AppThunk<boolean> {
   return (_dispatch, getState) => {
     if (!draft || !draft.key.startsWith(`${fmIndex}|`) || drawn.get(draft.key)) {
       return false;
     }
     const selected = Object.keys(getState().fileManager[fmIndex].selected);
-    if (selected.length == 1 && `${fmIndex}|${selected[0]}` == draft.key) {
+    if (!cancel && selected.length == 1 && `${fmIndex}|${selected[0]}` == draft.key) {
       return true;
     }
     draft = undefined;
@@ -58,7 +58,16 @@ export function useInlineRename({ file, isSelected, uploading, isTouch }: UseInl
     };
   }, [key]);
 
-  const resumed = useRef(draft?.key == key);
+  const isSoleSelected = useAppSelector(
+    (state) =>
+      !!state.fileManager[fmIndex].selected[file.path] && Object.keys(state.fileManager[fmIndex].selected).length === 1,
+  );
+
+  // A draft is taken up only while its file is still the only one selected.
+  const resumed = useRef(draft?.key == key && isSoleSelected);
+  if (draft?.key == key && !resumed.current) {
+    draft = undefined;
+  }
   const [isEditing, setIsEditing] = useState(() => resumed.current);
   const [editValue, setEditValue] = useState(() => (resumed.current ? draft?.value ?? "" : ""));
 
@@ -72,11 +81,6 @@ export function useInlineRename({ file, isSelected, uploading, isTouch }: UseInl
   const renameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const isSoleSelected = useAppSelector(
-    (state) =>
-      !!state.fileManager[fmIndex].selected[file.path] && Object.keys(state.fileManager[fmIndex].selected).length === 1,
-  );
-
   // Clear rename timer on unmount
   useEffect(() => {
     return () => {
@@ -89,7 +93,7 @@ export function useInlineRename({ file, isSelected, uploading, isTouch }: UseInl
   // Auto-focus and select text when entering edit mode
   useEffect(() => {
     if (isEditing && inputRef.current) {
-      inputRef.current.focus();
+      inputRef.current.focus({ preventScroll: resumed.current });
       if (resumed.current) {
         resumed.current = false;
         return;

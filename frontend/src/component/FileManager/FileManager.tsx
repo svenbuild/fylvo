@@ -74,7 +74,7 @@ export const FileManager = ({ index = 0, initialPath, skipRender }: FileManagerP
         e.isComposing ||
         target.isContentEditable ||
         target.closest("input, textarea, select") ||
-        dispatch(inlineRenameAway(index))
+        dispatch(inlineRenameAway(index, e.key == "Escape"))
       ) {
         return;
       }
