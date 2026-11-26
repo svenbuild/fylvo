@@ -674,10 +674,10 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 			// List files. Fylvo: the list of a big folder is a big JSON, sent compressed.
 			file.GET("",
 				gzip.Gzip(gzip.BestSpeed, gzip.WithCustomShouldCompressFn(func(c *gin.Context) bool {
-					if util.AcceptsGzip(c.Request.Header.Get("Accept-Encoding")) {
+					if util.AcceptsEncoding(util.AcceptEncoding(c.Request), "gzip") {
 						return true // the gzip middleware adds Vary
 					}
-					c.Header("Vary", "Accept-Encoding")
+					util.VaryByEncoding(c.Writer.Header())
 					return false
 				})),
 				controllers.FromQuery[explorer.ListFileService](explorer.ListFileParameterCtx{}),

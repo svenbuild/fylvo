@@ -221,6 +221,7 @@ type file struct {
 	name    string
 	data    func() string // Fylvo: unpacked from the zip on first use
 	zip     *zip.File
+	gzip    func() string // Fylvo: the deflated data as gzip stream, nil if stored
 	modTime time.Time
 }
 

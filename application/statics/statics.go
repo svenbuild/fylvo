@@ -136,6 +136,9 @@ func NewStaticFS(l logging.Logger) fs.FS {
 				return fmt.Errorf("cannot find %q", path)
 			}
 			f.zip = zf
+			if zf.Method == zip.Deflate {
+				f.gzip = sync.OnceValue(func() string { return gzipStream(zf) })
+			}
 			// Fylvo: unpacked when first read, most files are sent as they are packed (Gzip).
 			f.data = sync.OnceValue(func() string {
 				rc, err := zf.Open()

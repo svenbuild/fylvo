@@ -118,11 +118,3 @@ func TestCraftFilesRefuses(t *testing.T) {
 	missing := CraftFiles(filepath.Join(t.TempDir(), "none"))
 	assert.Equal(t, http.StatusNotFound, craftRequest(missing, http.MethodGet, "/craft/wordcraft/", "").Code)
 }
-
-func TestAcceptsEncoding(t *testing.T) {
-	assert.True(t, acceptsEncoding("gzip, deflate, br, zstd", "br"))
-	assert.True(t, acceptsEncoding("GZIP;q=0.5", "gzip"))
-	assert.False(t, acceptsEncoding("gzip;q=0", "gzip"))
-	assert.False(t, acceptsEncoding("deflate", "gzip"))
-	assert.False(t, acceptsEncoding("", "br"))
-}

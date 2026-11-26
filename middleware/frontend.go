@@ -91,10 +91,10 @@ func FrontendFileHandler(dep dependency.Dep) gin.HandlerFunc {
 	}
 }
 
-// FrontendGzipAssets sends the files below /assets/ that the embedded zip holds deflated: as
-// they are packed to clients that take gzip, instead of compressing them again on every
-// request, and unpacked to the others. It comes before the gzip middleware; everything it
-// does not serve goes on to FrontendFileHandler.
+// FrontendGzipAssets sends the files below /assets/: the ones the embedded zip holds deflated
+// as they are packed to clients that take gzip, instead of compressing them again on every
+// request, and every file as it is to clients that do not take gzip or ask for a range. It
+// comes before the gzip middleware; the rest goes on to FrontendFileHandler.
 func FrontendGzipAssets(staticFS static.ServeFileSystem) gin.HandlerFunc {
 	zipped, ok := staticFS.(interface {
 		OpenGzip(name string) (io.ReadSeeker, time.Time, bool)
@@ -106,37 +106,48 @@ func FrontendGzipAssets(staticFS static.ServeFileSystem) gin.HandlerFunc {
 	}
 	return func(c *gin.Context) {
 		r := c.Request
-		if !strings.HasPrefix(r.URL.Path, "/assets/") ||
-			(r.Method != http.MethodGet && r.Method != http.MethodHead) ||
-			r.Header.Get("Range") != "" {
-			c.Next()
-			return
-		}
-		contentType := assetType(path.Ext(r.URL.Path))
-		packed, modTime, ok := zipped.OpenGzip(r.URL.Path)
-		if !ok || contentType == "" {
+		name := r.URL.Path
+		if !strings.HasPrefix(name, "/assets/") || path.Clean(name) != name ||
+			(r.Method != http.MethodGet && r.Method != http.MethodHead) {
 			c.Next()
 			return
 		}
 		h := c.Writer.Header()
-		h.Set("Cache-Control", "public, max-age=31536000")
-		h.Set("Content-Type", contentType)
-		h.Add("Vary", "Accept-Encoding")
-		content := packed
-		if util.AcceptsGzip(r.Header.Get("Accept-Encoding")) {
-			h.Set("Content-Encoding", "gzip")
-		} else {
-			file, err := staticFS.Open(r.URL.Path)
-			if err != nil {
+		if util.AcceptsEncoding(util.AcceptEncoding(r), "gzip") && r.Header.Get("Range") == "" {
+			contentType := assetType(path.Ext(name))
+			packed, modTime, ok := zipped.OpenGzip(name)
+			if !ok || contentType == "" {
 				c.Next()
 				return
 			}
-			defer file.Close()
-			content = file
+			h.Set("Cache-Control", "public, max-age=31536000")
+			h.Set("Content-Type", contentType)
+			h.Set("Content-Encoding", "gzip")
+			util.VaryByEncoding(h)
+			size, _ := packed.Seek(0, io.SeekEnd)
+			_, _ = packed.Seek(0, io.SeekStart)
+			http.ServeContent(&lengthOnSuccess{ResponseWriter: c.Writer, size: size}, r, "", modTime, packed)
+			c.Abort()
+			return
 		}
-		size, _ := content.Seek(0, io.SeekEnd)
-		_, _ = content.Seek(0, io.SeekStart)
-		http.ServeContent(&lengthOnSuccess{ResponseWriter: c.Writer, size: size}, r, "", modTime, content)
+
+		file, err := staticFS.Open(name)
+		if err != nil {
+			c.Next()
+			return
+		}
+		defer file.Close()
+		info, err := file.Stat()
+		if err != nil || info.IsDir() {
+			c.Next()
+			return
+		}
+		h.Set("Cache-Control", "public, max-age=31536000")
+		if contentType := assetType(path.Ext(name)); contentType != "" {
+			h.Set("Content-Type", contentType)
+		}
+		util.VaryByEncoding(h)
+		http.ServeContent(c.Writer, r, path.Base(name), info.ModTime(), file)
 		c.Abort()
 	}
 }

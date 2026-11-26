@@ -114,9 +114,9 @@ server for both and open the ports to your network: `FYLVO_URL=http://192.168.1.
 
 Everything Fylvo keeps is in the folder `~/fylvo`: your files and the database in `data/`, the
 settings in `.env`. Back up the whole folder. Stop Fylvo for the copy, so the database is
-consistent; it takes as long as copying your files. The database writes recent changes to
-`fylvo.db-wal` and `fylvo.db-shm` next to `fylvo.db`, so a copy must include them (or be made
-while Fylvo is stopped, as below), and `data/` must be on a local disk, not on NFS or SMB.
+consistent; it takes as long as copying your files. Recent changes may also be in the `-wal`
+and `-shm` files next to the database (`fylvo.db`, or `cloudreve.db` on older installs);
+copying the whole folder includes them. Keep `data/` on a local disk, not on NFS or SMB.
 
 ```bash
 bash -euc '

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/cloudreve/Cloudreve/v4/pkg/setting"
+	"github.com/cloudreve/Cloudreve/v4/pkg/util"
 	"github.com/gin-gonic/gin"
 )
 
@@ -82,7 +83,7 @@ func CraftFiles(dir string) gin.HandlerFunc {
 			return
 		}
 
-		file, encoding := openCraftFile(root, name, c.GetHeader("Accept-Encoding"))
+		file, encoding := openCraftFile(root, name, util.AcceptEncoding(c.Request))
 		if file == nil {
 			c.Status(http.StatusNotFound)
 			return
@@ -137,10 +138,10 @@ func CraftFiles(dir string) gin.HandlerFunc {
 func openCraftFile(root *os.Root, name, acceptEncoding string) (*os.File, string) {
 	type form struct{ suffix, encoding string }
 	var tries []form
-	if acceptsEncoding(acceptEncoding, "br") {
+	if util.AcceptsEncoding(acceptEncoding, "br") {
 		tries = append(tries, form{".br", "br"})
 	}
-	if acceptsEncoding(acceptEncoding, "gzip") {
+	if util.AcceptsEncoding(acceptEncoding, "gzip") {
 		tries = append(tries, form{".gz", "gzip"})
 	}
 	tries = append(tries, form{"", ""}, form{".gz", "gunzip"})
@@ -153,18 +154,6 @@ func openCraftFile(root *os.Root, name, acceptEncoding string) (*os.File, string
 		}
 	}
 	return nil, ""
-}
-
-// acceptsEncoding tells whether an Accept-Encoding header takes the encoding.
-func acceptsEncoding(header, encoding string) bool {
-	for _, part := range strings.Split(header, ",") {
-		token, params, _ := strings.Cut(part, ";")
-		if strings.EqualFold(strings.TrimSpace(token), encoding) {
-			q := strings.ReplaceAll(strings.TrimSpace(params), " ", "")
-			return q != "q=0" && q != "q=0.0" && q != "q=0.00" && q != "q=0.000"
-		}
-	}
-	return false
 }
 
 func craftType(name string) string {

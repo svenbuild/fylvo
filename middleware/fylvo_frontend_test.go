@@ -81,8 +81,28 @@ func TestFrontendGzipAssets(t *testing.T) {
 	require.Equal(t, http.StatusPreconditionFailed, w.Code)
 	require.Empty(t, w.Header().Get("Content-Length"))
 
-	// A range and a file that is not there go on.
-	require.Equal(t, http.StatusTeapot, do(http.MethodGet, "gzip", "Range", "bytes=0-10").Code)
+	// A range is part of the file as it is, also for a client that takes gzip.
+	w = do(http.MethodGet, "gzip", "Range", "bytes=0-10")
+	require.Equal(t, http.StatusPartialContent, w.Code)
+	require.Empty(t, w.Header().Get("Content-Encoding"))
+	require.Equal(t, "bytes 0-10/"+strconv.Itoa(len(plain)), w.Header().Get("Content-Range"))
+	require.Equal(t, plain[:11], w.Body.Bytes())
+
+	// Vary is added once, next to the one of CORS.
+	cors := gin.New()
+	cors.Use(func(c *gin.Context) { c.Header("Vary", "Origin") }, FrontendGzipAssets(staticFS))
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Header.Add("Accept-Encoding", "br")
+	req.Header.Add("Accept-Encoding", "gzip")
+	w = httptest.NewRecorder()
+	cors.ServeHTTP(w, req)
+	require.Equal(t, "gzip", w.Header().Get("Content-Encoding"))
+	require.Equal(t, []string{"Origin", "Accept-Encoding"}, w.Header().Values("Vary"))
+
+	// A path with dots and a file that is not there go on.
+	target = "/assets/../index.html"
+	require.Equal(t, http.StatusTeapot, do(http.MethodGet, "gzip").Code)
 	target = "/assets/missing.js"
 	require.Equal(t, http.StatusTeapot, do(http.MethodGet, "gzip").Code)
+	require.Equal(t, http.StatusTeapot, do(http.MethodGet, "").Code)
 }
