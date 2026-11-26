@@ -14,6 +14,7 @@ import (
 	"github.com/cloudreve/Cloudreve/v4/pkg/filemanager/fs"
 	"github.com/cloudreve/Cloudreve/v4/pkg/hashid"
 	"github.com/cloudreve/Cloudreve/v4/pkg/logging"
+	"github.com/cloudreve/Cloudreve/v4/pkg/util"
 	"github.com/cloudreve/Cloudreve/v4/pkg/webdav"
 	"github.com/cloudreve/Cloudreve/v4/routers/controllers"
 	adminsvc "github.com/cloudreve/Cloudreve/v4/service/admin"
@@ -211,7 +212,9 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 	/*
 		static resources
 	*/
-	// Fylvo: the Craft editors come compressed already (middleware.CraftFiles).
+	// Fylvo: the Craft editors come compressed already (middleware.CraftFiles), so do the
+	// files of the web app (middleware.FrontendGzipAssets).
+	r.Use(middleware.FrontendGzipAssets(dep.ServerStaticFS()))
 	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/api/", fylvosetting.CraftRoute})))
 	r.Use(middleware.SharePreview(dep))
 	if dir := fylvosetting.CraftDir(); dir != "" {
@@ -668,8 +671,15 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 		file := v4.Group("file")
 		file.Use(middleware.RequiredScopes(types.ScopeFilesRead))
 		{
-			// List files
+			// List files. Fylvo: the list of a big folder is a big JSON, sent compressed.
 			file.GET("",
+				gzip.Gzip(gzip.BestSpeed, gzip.WithCustomShouldCompressFn(func(c *gin.Context) bool {
+					if util.AcceptsEncoding(util.AcceptEncoding(c.Request), "gzip") {
+						return true // the gzip middleware adds Vary
+					}
+					util.VaryByEncoding(c.Writer.Header())
+					return false
+				})),
 				controllers.FromQuery[explorer.ListFileService](explorer.ListFileParameterCtx{}),
 				controllers.ListDirectory,
 			)

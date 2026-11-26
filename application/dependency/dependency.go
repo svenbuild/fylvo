@@ -191,6 +191,7 @@ type dependency struct {
 	taskRegistry          queue.TaskRegistry
 	webauthn              *webauthn.WebAuthn
 	parser                *uaparser.Parser
+	parserOnce            sync.Once
 	cron                  *cron.Cron
 	masterEncryptKeyVault encrypt.MasterEncryptKeyVault
 	eventHub              eventhub.EventHub
@@ -260,12 +261,11 @@ func (d *dependency) WebAuthn(ctx context.Context) (*webauthn.WebAuthn, error) {
 	return webauthn.New(wConfig)
 }
 
+// Fylvo: made on first use (only the settings and passkey pages need it), it takes 10 MB.
 func (d *dependency) UAParser() *uaparser.Parser {
-	if d.parser != nil {
-		return d.parser
-	}
-
-	d.parser = uaparser.NewFromSaved()
+	d.parserOnce.Do(func() {
+		d.parser = uaparser.NewFromSaved()
+	})
 	return d.parser
 }
 

@@ -90,7 +90,6 @@ func (s *server) Start() error {
 		s.dbClient = s.dep.DBClient()
 		// TODO: make sure all dep is initialized before server start.
 		s.dep.LockSystem()
-		s.dep.UAParser()
 		// Fylvo: the activity log writer, before any request can record.
 		s.activity = activity.Start(inventory.NewActivityClient(s.dbClient), s.logger)
 

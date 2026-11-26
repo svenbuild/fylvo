@@ -17,15 +17,13 @@ import (
 // replaced it, every write of the new one was refused with "database is locked".
 
 // openLikeServer opens a SQLite file the way NewRawEntClient does.
-func openLikeServer(t *testing.T, mode string) *sql.DB {
+func openLikeServer(t *testing.T) *sql.DB {
 	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "fylvo.db"))
 	require.NoError(t, err)
 	db.SetMaxIdleConns(50)
 	db.SetMaxOpenConns(1)
-	db.SetConnMaxLifetime(30 * time.Second)
+	db.SetConnMaxLifetime(time.Hour)
 	t.Cleanup(func() { db.Close() })
-	_, err = db.Exec("PRAGMA journal_mode=" + mode)
-	require.NoError(t, err)
 	_, err = db.Exec("CREATE TABLE a (id INTEGER PRIMARY KEY, v TEXT)")
 	require.NoError(t, err)
 	_, err = db.Exec(`INSERT INTO a (v) WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < 20000)
@@ -35,40 +33,36 @@ func openLikeServer(t *testing.T, mode string) *sql.DB {
 }
 
 func TestSQLiteQueryEndedByItsContextLeavesNoLock(t *testing.T) {
-	for _, mode := range []string{"DELETE", "WAL"} {
-		t.Run(mode, func(t *testing.T) {
-			db := openLikeServer(t, mode)
-			// Contexts that end at every moment of a query, also just as it has its first row.
-			for i := 0; i < 1500; i++ {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Duration(i%40)*50*time.Microsecond)
-				rows, err := db.QueryContext(ctx, "SELECT v FROM a ORDER BY v LIMIT 1")
-				if err == nil {
-					for rows.Next() {
-					}
-					rows.Close()
-				}
-				cancel()
+	db := openLikeServer(t)
+	// Contexts that end at every moment of a query, also just as it has its first row.
+	for i := 0; i < 1500; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(i%40)*50*time.Microsecond)
+		rows, err := db.QueryContext(ctx, "SELECT v FROM a ORDER BY v LIMIT 1")
+		if err == nil {
+			for rows.Next() {
 			}
-
-			write := func(what string) {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_, err := db.ExecContext(ctx, "INSERT INTO a (v) VALUES (?)", what)
-				require.NoError(t, err, what)
-			}
-			write("on the same connection")
-			// The pool replaces the connection, as it does after 30 seconds.
-			db.SetMaxIdleConns(0)
-			db.SetConnMaxLifetime(time.Millisecond)
-			time.Sleep(20 * time.Millisecond)
-			write("on a new connection")
-		})
+			rows.Close()
+		}
+		cancel()
 	}
+
+	write := func(what string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := db.ExecContext(ctx, "INSERT INTO a (v) VALUES (?)", what)
+		require.NoError(t, err, what)
+	}
+	write("on the same connection")
+	// The pool replaces the connection, as it does after an hour.
+	db.SetMaxIdleConns(0)
+	db.SetConnMaxLifetime(time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
+	write("on a new connection")
 }
 
 // Every connection waits for a lock held by someone else instead of failing at once.
 func TestSQLiteConnectionsWaitForALock(t *testing.T) {
-	db := openLikeServer(t, "DELETE")
+	db := openLikeServer(t)
 	var timeout int
 	require.NoError(t, db.QueryRow("PRAGMA busy_timeout").Scan(&timeout))
 	require.Equal(t, sqliteBusyTimeout, timeout)
@@ -76,4 +70,17 @@ func TestSQLiteConnectionsWaitForALock(t *testing.T) {
 	var foreignKeys int
 	require.NoError(t, db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys))
 	require.Equal(t, 1, foreignKeys)
+}
+
+// A new database is written with the write-ahead log, synced at every commit.
+func TestSQLiteUsesTheWriteAheadLog(t *testing.T) {
+	db, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "fylvo.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+	var mode string
+	require.NoError(t, db.QueryRow("PRAGMA journal_mode").Scan(&mode))
+	require.Equal(t, "wal", mode)
+	var synchronous int
+	require.NoError(t, db.QueryRow("PRAGMA synchronous").Scan(&synchronous))
+	require.Equal(t, 2, synchronous)
 }
