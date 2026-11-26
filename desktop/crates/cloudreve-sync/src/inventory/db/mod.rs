@@ -2,6 +2,8 @@ mod drive_props;
 mod file_metadata;
 mod tasks;
 mod upload_sessions;
+#[cfg(test)]
+mod bench;
 
 pub use tasks::RecentTasks;
 
