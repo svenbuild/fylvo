@@ -76,7 +76,7 @@ class SessionManager(private val context: Context) {
     /**
      * Fylvo: the latest decrypted value per key (stored value and plain text; a new stored value
      * replaces the old one). Every request reads the access token, which was a Keystore round trip
-     * each time. Cleared when the session ends; [secretsGeneration] is read before the stored value,
+     * each time. Cleared when the session ends or its tokens change; [secretsGeneration] is read before the stored value,
      * so a read that began before the session ended never puts its value back.
      */
     private val secrets = HashMap<String, Pair<String, String>>()
@@ -101,8 +101,7 @@ class SessionManager(private val context: Context) {
 
     suspend fun serverUrlNow(): String = serverUrl.first()
     suspend fun accessTokenNow(): String = accessToken.first()
-    suspend fun refreshTokenNow(): String =
-        secret(Keys.refreshToken)
+    suspend fun refreshTokenNow(): String = secret(Keys.refreshToken)
     suspend fun accessExpiresAtNow(): Long =
         context.sessionStore.data.first()[Keys.accessExpiresAt] ?: 0L
 
@@ -128,6 +127,7 @@ class SessionManager(private val context: Context) {
             it[Keys.userNick] = nick
             it[Keys.userId] = userId
         }
+        forgetSecrets()
         generationCounter.incrementAndGet()
         ended = false
         notifyDocumentsRoots()
@@ -155,6 +155,7 @@ class SessionManager(private val context: Context) {
             it[Keys.refreshToken] = refreshSealed
             it[Keys.accessExpiresAt] = accessExpiresAt
         }
+        forgetSecrets()
     }
 
     suspend fun clear() {
