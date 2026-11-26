@@ -1117,10 +1117,10 @@ impl Mount {
             return Ok(HashMap::new());
         }
 
-        let mut targets: Vec<(PathBuf, String)> = Vec::with_capacity(paths.len());
+        let mut targets: Vec<String> = Vec::with_capacity(paths.len());
         for path in paths {
             match path.to_str() {
-                Some(path_str) => targets.push((path.clone(), path_str.to_string())),
+                Some(path_str) => targets.push(path_str.to_string()),
                 None => {
                     tracing::warn!(
                         target: "drive::sync",
@@ -1138,16 +1138,12 @@ impl Mount {
 
         let inventory = self.inventory.clone();
         let entries = task::spawn_blocking(move || -> Result<HashMap<PathBuf, FileMetadata>> {
-            let mut results = HashMap::with_capacity(targets.len());
-            for (path_buf, path_str) in targets {
-                match inventory.query_by_path(&path_str)? {
-                    Some(entry) => {
-                        results.insert(path_buf, entry);
-                    }
-                    None => {}
-                }
-            }
-            Ok(results)
+            let targets: Vec<&str> = targets.iter().map(String::as_str).collect();
+            Ok(inventory
+                .query_by_paths(&targets)?
+                .into_iter()
+                .map(|entry| (PathBuf::from(&entry.local_path), entry))
+                .collect())
         })
         .await??;
 
