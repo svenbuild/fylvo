@@ -57,9 +57,10 @@ func TestFrontendGzipAssets(t *testing.T) {
 	unpacked, err := io.ReadAll(zr)
 	require.NoError(t, err)
 	require.Equal(t, plain, unpacked)
+	require.Empty(t, w.Header().Get("Accept-Ranges"))
 	modified := w.Header().Get("Last-Modified")
 
-	for _, encoding := range []string{"gzip;q=0", ""} {
+	for _, encoding := range []string{"gzip;q=0", "gzip; Q=0", ""} {
 		w = do(http.MethodGet, encoding)
 		require.Equal(t, http.StatusOK, w.Code, encoding)
 		require.Empty(t, w.Header().Get("Content-Encoding"), encoding)

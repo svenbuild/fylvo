@@ -115,8 +115,12 @@ func FrontendGzipAssets(staticFS static.ServeFileSystem) gin.HandlerFunc {
 		h := c.Writer.Header()
 		if util.AcceptsEncoding(util.AcceptEncoding(r), "gzip") && r.Header.Get("Range") == "" {
 			contentType := assetType(path.Ext(name))
+			if contentType == "" {
+				c.Next()
+				return
+			}
 			packed, modTime, ok := zipped.OpenGzip(name)
-			if !ok || contentType == "" {
+			if !ok {
 				c.Next()
 				return
 			}
@@ -172,7 +176,9 @@ type lengthOnSuccess struct {
 	size int64
 }
 
+// No ranges of the packed file: a range is always served from the file as it is.
 func (w *lengthOnSuccess) WriteHeader(code int) {
+	w.Header().Del("Accept-Ranges")
 	if code == http.StatusOK {
 		w.Header().Set("Content-Length", strconv.FormatInt(w.size, 10))
 	}

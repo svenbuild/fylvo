@@ -23,7 +23,7 @@ func AcceptsEncoding(header, encoding string) bool {
 		}
 		weight := 1.0
 		for _, param := range strings.Split(params, ";") {
-			if value, ok := strings.CutPrefix(strings.ReplaceAll(param, " ", ""), "q="); ok {
+			if value, ok := strings.CutPrefix(strings.ToLower(strings.Join(strings.Fields(param), "")), "q="); ok {
 				weight, _ = strconv.ParseFloat(value, 64)
 			}
 		}
