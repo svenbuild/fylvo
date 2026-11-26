@@ -3,8 +3,10 @@ package hashid
 import (
 	"context"
 	"errors"
+
+	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/speps/go-hashids"
 )
-import "github.com/speps/go-hashids"
 
 // ID type
 const (
@@ -42,7 +44,13 @@ type (
 
 type hashEncoder struct {
 	h *hashids.HashID
+	// Fylvo: encoding is slow (it shuffles the alphabet for every number) and a listing
+	// encodes the same IDs again and again.
+	cache *lru.Cache[[2]int, string]
 }
+
+// encodeCacheSize is how many encoded (ID, type) pairs are kept.
+const encodeCacheSize = 32768
 
 func New(salt string) (Encoder, error) {
 	hd := hashids.NewData()
@@ -52,14 +60,26 @@ func New(salt string) (Encoder, error) {
 		return nil, err
 	}
 
-	return &hashEncoder{h: h}, nil
+	cache, err := lru.New[[2]int, string](encodeCacheSize)
+	if err != nil {
+		return nil, err
+	}
+	return &hashEncoder{h: h, cache: cache}, nil
 }
 
 func (e *hashEncoder) Encode(v []int) (string, error) {
+	if len(v) != 2 {
+		return e.h.Encode(v)
+	}
+	key := [2]int{v[0], v[1]}
+	if id, ok := e.cache.Get(key); ok {
+		return id, nil
+	}
 	id, err := e.h.Encode(v)
 	if err != nil {
 		return "", err
 	}
+	e.cache.Add(key, id)
 	return id, nil
 }
 
