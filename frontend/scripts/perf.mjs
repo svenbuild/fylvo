@@ -92,10 +92,8 @@ async function newPage(browser, layout) {
 async function heap(page) {
   const cdp = await page.createCDPSession();
   await cdp.send("HeapProfiler.collectGarbage");
-  const { metrics } = await cdp.send("Performance.getMetrics").catch(async () => {
-    await cdp.send("Performance.enable");
-    return cdp.send("Performance.getMetrics");
-  });
+  await cdp.send("Performance.enable");
+  const { metrics } = await cdp.send("Performance.getMetrics");
   const m = Object.fromEntries(metrics.map((x) => [x.name, x.value]));
   return { heapMB: +(m.JSHeapUsedSize / 1048576).toFixed(1), domNodes: m.Nodes };
 }
