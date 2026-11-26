@@ -23,7 +23,7 @@ import CustomViewer from "../../Viewers/CustomViewer.tsx";
 import EpubViewer from "../../Viewers/EpubViewer/EpubViewer.tsx";
 import CreateNew from "./CreateNew.tsx";
 import { useAppSelector } from "../../../redux/hooks.ts";
-import React, { lazy, Suspense } from "react";
+import React, { Component, lazy, ReactNode, Suspense } from "react";
 import DirectLinks from "./DirectLinks/DirectLinks.tsx";
 
 // Fylvo: dialogs that only open on demand load their code then, not with the file manager.
@@ -36,6 +36,23 @@ const ExcalidrawViewer = lazy(() => import("../../Viewers/Excalidraw/ExcalidrawV
 const DirectLinksControl = lazy(() => import("./DirectLinksControl.tsx"));
 const ArchivePreview = lazy(() => import("../../Viewers/ArchivePreview/ArchivePreview.tsx"));
 const DesktopMountSetup = lazy(() => import("./DesktopMountSetup.tsx"));
+
+// A dialog whose code failed to load shows nothing; the file manager stays.
+class LoadFailed extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+const LazyDialog = ({ children }: { children: ReactNode }) => (
+  <LoadFailed>
+    <Suspense fallback={null}>{children}</Suspense>
+  </LoadFailed>
+);
 
 const Dialogs = () => {
   const showCreateArchive = useAppSelector((state) => state.globalState.createArchiveDialogOpen);
@@ -76,50 +93,50 @@ const Dialogs = () => {
       <CustomViewer />
       <EpubViewer />
       {showCreateArchive != undefined && (
-        <Suspense fallback={null}>
+        <LazyDialog>
           <CreateArchive />
-        </Suspense>
+        </LazyDialog>
       )}
       {showExtractArchive != undefined && (
-        <Suspense fallback={null}>
+        <LazyDialog>
           <ExtractArchive />
-        </Suspense>
+        </LazyDialog>
       )}
       {showRemoteDownload != undefined && (
-        <Suspense fallback={null}>
+        <LazyDialog>
           <CreateRemoteDownload />
-        </Suspense>
+        </LazyDialog>
       )}
       {showAdvancedSearch != undefined && (
-        <Suspense fallback={null}>
+        <LazyDialog>
           <AdvanceSearch />
-        </Suspense>
+        </LazyDialog>
       )}
       {showListViewColumnSetting != undefined && (
-        <Suspense fallback={null}>
+        <LazyDialog>
           <ColumnSetting />
-        </Suspense>
+        </LazyDialog>
       )}
       {directLink != undefined && <DirectLinks />}
       {excalidrawViewer != undefined && (
-        <Suspense fallback={null}>
+        <LazyDialog>
           <ExcalidrawViewer />
-        </Suspense>
+        </LazyDialog>
       )}
       {directLinkManagement != undefined && (
-        <Suspense fallback={null}>
+        <LazyDialog>
           <DirectLinksControl />
-        </Suspense>
+        </LazyDialog>
       )}
       {archivePreview != undefined && (
-        <Suspense fallback={null}>
+        <LazyDialog>
           <ArchivePreview />
-        </Suspense>
+        </LazyDialog>
       )}
       {desktopMountSetup != undefined && (
-        <Suspense fallback={null}>
+        <LazyDialog>
           <DesktopMountSetup />
-        </Suspense>
+        </LazyDialog>
       )}
     </>
   );

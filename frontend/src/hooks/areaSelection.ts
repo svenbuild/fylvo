@@ -212,10 +212,14 @@ export function useAreaSelection(
     rafIdRef.current = requestAnimationFrame(() => {
       rafIdRef.current = null;
       if (mouseMoving.current) {
+        // Fylvo: the layout learns the heights of rows drawn while the box grows (see GridView).
+        if (layout?.current && container.current) {
+          updateCandidate(container.current);
+        }
         processSelection();
       }
     });
-  }, [processSelection]);
+  }, [container, layout, processSelection, updateCandidate]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLElement>) => {

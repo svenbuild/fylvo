@@ -315,7 +315,8 @@ const GridFile = memo((props: FileBlockProps) => {
   const [thumbSrc, setThumbSrc] = useState<string | undefined | null>(() =>
     noThumb ? null : dispatch(cachedFileThumb(0, file)),
   );
-  const [imageLoading, setImageLoading] = useState(true);
+  // Fylvo: a preview known from before (drawn again while scrolling) shows at once, without fading in.
+  const [imageLoading, setImageLoading] = useState(!thumbSrc);
 
   const onImgLoadError = useCallback(() => {
     setImageLoading(false);

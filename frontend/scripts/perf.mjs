@@ -214,6 +214,21 @@ async function filesPage(browser, layout) {
   return { first, files: list.files, loadAllMs, ...mem, ...scroll, selectMs };
 }
 
+// What opening the first image of the folder (double click in the list) loads on top of the page.
+async function imagePreview(browser) {
+  const page = await newPage(browser, "list");
+  const stats = await track(page);
+  await page.goto(filesUrl);
+  const name = await page.waitForSelector("::-p-text(.jpg)", { timeout: 60000 });
+  await idle(page);
+  const before = { ...stats };
+  await name.click({ count: 2 });
+  await page.waitForSelector(".PhotoView-Portal", { timeout: 60000 });
+  await idle(page);
+  await page.close();
+  return { jsBytes: stats.jsBytes - before.jsBytes, jsFiles: stats.jsFiles - before.jsFiles };
+}
+
 const median = (values) => {
   const v = [...values].sort((a, b) => a - b);
   return v[Math.floor(v.length / 2)];
@@ -239,6 +254,7 @@ for (let i = 0; i < runs; i++) {
     log("login done");
     collect(all, "list.", await filesPage(browser, "list"));
     collect(all, "grid.", await filesPage(browser, "grid"));
+    collect(all, "image.", await imagePreview(browser));
   } finally {
     await browser.close();
   }

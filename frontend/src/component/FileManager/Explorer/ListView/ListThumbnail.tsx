@@ -100,7 +100,8 @@ const ListThumbnail = memo(({ file, isSelected, noThumb, showLock }: ListThumbna
   const [thumbSrc, setThumbSrc] = useState<string | undefined | null>(() =>
     skipLoad ? null : dispatch(cachedFileThumb(0, file)),
   );
-  const [imageLoading, setImageLoading] = useState(true);
+  // Fylvo: a preview known from before (drawn again while scrolling) shows at once, without fading in.
+  const [imageLoading, setImageLoading] = useState(!thumbSrc);
 
   useEffect(() => {
     if (!inView || skipLoad) {

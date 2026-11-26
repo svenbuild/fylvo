@@ -1,4 +1,5 @@
 import { Box, Stack, useMediaQuery, useTheme } from "@mui/material";
+import { inlineRenameAway } from "./Explorer/useInlineRename.ts";
 import React, { useCallback, useEffect, useRef } from "react";
 import useNavigation from "../../hooks/useNavigation.tsx";
 import { clearSelected } from "../../redux/fileManagerSlice.ts";
@@ -72,7 +73,8 @@ export const FileManager = ({ index = 0, initialPath, skipRender }: FileManagerP
         index != FileManagerIndex.main ||
         e.isComposing ||
         target.isContentEditable ||
-        target.closest("input, textarea, select")
+        target.closest("input, textarea, select") ||
+        dispatch(inlineRenameAway(index))
       ) {
         return;
       }
