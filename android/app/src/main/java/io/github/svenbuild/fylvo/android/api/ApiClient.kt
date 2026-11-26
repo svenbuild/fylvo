@@ -110,7 +110,7 @@ class ApiClient(private val session: SessionManager) {
 
         val client = baseClient.newBuilder()
             .dispatcher(Dispatcher())
-            // Fylvo: edit uploads never resend by themselves, so they never take an idle connection the server may have closed.
+            // Fylvo: edit uploads never take a connection idled by other traffic.
             .apply { if (kind == Kind.EDIT) connectionPool(ConnectionPool()) }
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(if (kind == Kind.EDIT) 300L else 60L, TimeUnit.SECONDS)
@@ -216,7 +216,9 @@ class ApiClient(private val session: SessionManager) {
          * token refresh must never wait for a free slot of the refresh call's dispatcher. Lazy: not
          * built on the main thread at app start.
          */
-        val baseClient: OkHttpClient by lazy { OkHttpClient() }
+        val baseClient: OkHttpClient by lazy {
+            OkHttpClient.Builder().connectionPool(ConnectionPool(10, 5, TimeUnit.MINUTES)).build()
+        }
 
         /** "https://host:port" with the scheme's default port filled in. */
         fun originOf(url: HttpUrl): String = "${url.scheme}://${url.host.lowercase()}:${url.port}"
