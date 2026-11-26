@@ -110,7 +110,7 @@ internal fun FileList(
                         onToggle = if (selectable.isEmpty()) null else ({ viewModel.toggleGroup(group) }),
                     )
                 }
-                items(group, key = ::fileKey) { file ->
+                items(group, key = ::fileKey, contentType = { FILE_ITEM }) { file ->
                     FileListItem(
                         file = file,
                         thumbUrl = rememberThumbUrl(viewModel, file),
@@ -120,8 +120,8 @@ internal fun FileList(
                         downloading = file.path in state.downloading,
                         offline = state.isOffline(file),
                         edit = state.editOf(file),
-                        actions = actionsFor(file),
-                        swipe = swipeFor(file),
+                        actions = rememberActions(actionsFor(file)),
+                        swipe = rememberSwipe(swipeFor(file)),
                         subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
                     )
                 }
@@ -129,7 +129,7 @@ internal fun FileList(
             if (state.loadingMore) item { LoadingMoreRow() }
             return@LazyColumn
         }
-        items(state.files, key = ::fileKey) { file ->
+        items(state.files, key = ::fileKey, contentType = { FILE_ITEM }) { file ->
             FileListItem(
                 file = file,
                 thumbUrl = rememberThumbUrl(viewModel, file),
@@ -139,8 +139,8 @@ internal fun FileList(
                 downloading = file.path in state.downloading,
                 offline = state.isOffline(file),
                 edit = state.editOf(file),
-                actions = actionsFor(file),
-                swipe = swipeFor(file),
+                actions = rememberActions(actionsFor(file)),
+                swipe = rememberSwipe(swipeFor(file)),
                 subtitle = if (state.inTrash) {
                     trashSubtitle.format(formatDate(file.updatedAt), file.restoreUri?.let { CrUri.displayName(it) } ?: unknown)
                 } else {
@@ -197,7 +197,7 @@ internal fun FileGrid(
         if (state.uploadsHere.isNotEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "uploads") { UploadsCard(state.uploadsHere) { id -> viewModel.cancelUpload(uploadContext, id) } }
         }
-        items(state.files, key = ::fileKey) { file ->
+        items(state.files, key = ::fileKey, contentType = { FILE_ITEM }) { file ->
             FileGridItem(
                 file = file,
                 thumbUrl = rememberThumbUrl(viewModel, file),
@@ -205,7 +205,7 @@ internal fun FileGrid(
                 selected = file.path in state.selected,
                 downloadProgress = state.downloading[file.path],
                 downloading = file.path in state.downloading,
-                actions = actionsFor(file),
+                actions = rememberActions(actionsFor(file)),
                 gallery = gallery,
                 offline = state.isOffline(file),
                 edit = state.editOf(file),
@@ -252,6 +252,9 @@ private fun DayHeader(label: String, allSelected: Boolean, onToggle: (() -> Unit
 }
 
 // ---- display order and drag selection ---------------------------------------
+
+/** Content type of file rows and tiles (the lists also hold headers, the upload card and a loading row). */
+private const val FILE_ITEM = "file"
 
 /** Key of a file's row or tile in the lazy lists. */
 internal fun fileKey(file: FileObject): String = file.id + file.path

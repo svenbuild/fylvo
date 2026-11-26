@@ -107,9 +107,9 @@ fun FavoritesPage(
                             thumbUrl = rememberThumbUrl(viewModel, file),
                             selecting = false,
                             selected = false,
-                            actions = actionsFor(file),
+                            actions = rememberActions(actionsFor(file)),
                             subtitle = "${fileSubtitle(file)} · ${CrUri.parentDisplayName(file.path)}",
-                            swipe = swipeFor(file),
+                            swipe = rememberSwipe(swipeFor(file)),
                         )
                     }
                 }
