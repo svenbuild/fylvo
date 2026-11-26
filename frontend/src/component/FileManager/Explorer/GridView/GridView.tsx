@@ -125,7 +125,7 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
     return list;
   }, [files, mixedType, pagination, showThumb]);
   const theme = useTheme();
-  const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
+  const isMdUp = useMediaQuery(theme.breakpoints.up("md"), { noSsr: true });
   const boxRef = useRef<HTMLElement | null>(null);
   const [scrollParent, setScrollParent] = useState<HTMLElement>();
   const [width, setWidth] = useState(0);
@@ -185,7 +185,7 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
                 variant="caption"
                 color="text.secondary"
                 fontWeight={600}
-                sx={{ display: "block", mb: 1, pt: row.first ? 0 : 2 }}
+                sx={{ display: "block", pb: 1, pt: row.first ? 0 : 2 }}
               >
                 {row.title}
               </Typography>
