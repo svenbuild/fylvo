@@ -7,6 +7,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.HttpUrl
@@ -107,8 +108,10 @@ class ApiClient(private val session: SessionManager) {
             response
         }
 
-        val client = OkHttpClient.Builder()
-            .connectionPool(connectionPool)
+        val client = baseClient.newBuilder()
+            .dispatcher(Dispatcher())
+            // Fylvo: edit uploads never resend by themselves, so they never take an idle connection the server may have closed.
+            .apply { if (kind == Kind.EDIT) connectionPool(ConnectionPool()) }
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(if (kind == Kind.EDIT) 300L else 60L, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
@@ -179,7 +182,7 @@ class ApiClient(private val session: SessionManager) {
     private fun bareService(baseUrl: String): ApiService =
         Retrofit.Builder()
             .baseUrl(baseUrl)
-            .client(OkHttpClient.Builder().connectionPool(connectionPool).connectTimeout(15, TimeUnit.SECONDS).addInterceptor(userAgent).followRedirects(false).build())
+            .client(baseClient.newBuilder().dispatcher(Dispatcher()).connectTimeout(15, TimeUnit.SECONDS).addInterceptor(userAgent).followRedirects(false).build())
             .addConverterFactory(EnvelopeConverterFactory(json))
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
@@ -206,8 +209,14 @@ class ApiClient(private val session: SessionManager) {
             chain.proceed(chain.request().newBuilder().header("User-Agent", USER_AGENT).build())
         }
 
-        /** Fylvo: one pool for every client of the app, so API calls and previews reuse their connections. */
-        val connectionPool = ConnectionPool()
+        /**
+         * Fylvo: every client of the app is derived from this one (newBuilder), so they share its
+         * connection pool and TLS setup and reuse each other's connections to the server. Each
+         * keeps its own dispatcher as before: a request waiting in the session interceptor for a
+         * token refresh must never wait for a free slot of the refresh call's dispatcher. Lazy: not
+         * built on the main thread at app start.
+         */
+        val baseClient: OkHttpClient by lazy { OkHttpClient() }
 
         /** "https://host:port" with the scheme's default port filled in. */
         fun originOf(url: HttpUrl): String = "${url.scheme}://${url.host.lowercase()}:${url.port}"

@@ -1,2 +1,2 @@
 Lio/github/svenbuild/fylvo/android/**;
-HSPLio/github/svenbuild/fylvo/android/**->**(**)
+HSPLio/github/svenbuild/fylvo/android/**;->**(**)**

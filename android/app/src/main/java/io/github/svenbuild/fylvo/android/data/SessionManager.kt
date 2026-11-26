@@ -73,9 +73,30 @@ class SessionManager(private val context: Context) {
         it.secret(Keys.refreshToken).isNotEmpty() && !it[Keys.serverUrl].isNullOrEmpty()
     }
 
+    /**
+     * Fylvo: the latest decrypted value per key (stored value and plain text). Every request reads
+     * the access token, which was a Keystore round trip each time. Cleared when the session ends;
+     * [secretsGeneration] keeps a decrypt that was still running then from putting its value back.
+     */
+    private val secrets = HashMap<String, Pair<String, String>>()
+    private var secretsGeneration = 0L
+
     /** Decrypted value, or "" when missing or no longer decryptable. */
-    private fun Preferences.secret(key: Preferences.Key<String>): String =
-        this[key]?.let { SecretBox.decrypt(it) } ?: ""
+    private fun Preferences.secret(key: Preferences.Key<String>): String {
+        val stored = this[key] ?: return ""
+        val generation = synchronized(secrets) {
+            secrets[key.name]?.let { (sealed, plain) -> if (sealed == stored) return plain }
+            secretsGeneration
+        }
+        val plain = SecretBox.decrypt(stored) ?: return ""
+        synchronized(secrets) { if (generation == secretsGeneration) secrets[key.name] = stored to plain }
+        return plain
+    }
+
+    private fun forgetSecrets() = synchronized(secrets) {
+        secretsGeneration++
+        secrets.clear()
+    }
 
     suspend fun serverUrlNow(): String = serverUrl.first()
     suspend fun accessTokenNow(): String = accessToken.first()
@@ -138,7 +159,7 @@ class SessionManager(private val context: Context) {
     suspend fun clear() {
         endGeneration()
         context.sessionStore.edit { it.clear() }
-        SecretBox.forget()
+        forgetSecrets()
         notifyDocumentsRoots()
     }
 
@@ -155,7 +176,7 @@ class SessionManager(private val context: Context) {
             it.remove(Keys.accessExpiresAt)
             it.remove(Keys.userNick)
         }
-        SecretBox.forget()
+        forgetSecrets()
         notifyDocumentsRoots()
     }
 }

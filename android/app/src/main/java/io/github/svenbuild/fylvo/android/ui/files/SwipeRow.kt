@@ -49,7 +49,10 @@ data class RowSwipe(
     val onSwipe: (SwipeAction) -> Unit,
 )
 
-/** Fylvo: [swipe] as the same object while its actions stay; a swipe runs the newest handler (see rememberActions). */
+/**
+ * Fylvo: [swipe] as the same object while its actions stay, only so the row compares equal between
+ * redraws and is skipped; a swipe runs the newest handler (see rememberActions).
+ */
 @Composable
 fun rememberSwipe(swipe: RowSwipe?): RowSwipe? {
     val latest = rememberUpdatedState(swipe)
