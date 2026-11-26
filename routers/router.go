@@ -211,7 +211,9 @@ func initMasterRouter(dep dependency.Dep) *gin.Engine {
 	/*
 		static resources
 	*/
-	// Fylvo: the Craft editors come compressed already (middleware.CraftFiles).
+	// Fylvo: the Craft editors come compressed already (middleware.CraftFiles), so do the
+	// files of the web app (middleware.FrontendGzipAssets).
+	r.Use(middleware.FrontendGzipAssets(dep))
 	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/api/", fylvosetting.CraftRoute})))
 	r.Use(middleware.SharePreview(dep))
 	if dir := fylvosetting.CraftDir(); dir != "" {

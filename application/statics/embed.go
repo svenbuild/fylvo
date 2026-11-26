@@ -129,6 +129,7 @@
 package statics
 
 import (
+	"archive/zip"
 	"errors"
 	"io"
 	"io/fs"
@@ -219,8 +220,8 @@ type file struct {
 	// The compiler knows the layout of this struct.
 	// See cmd/compile/internal/staticdata's WriteEmbed.
 	name    string
-	data    string
-	hash    [16]byte // truncated SHA256 hash
+	data    func() string // Fylvo: unpacked from the zip on first use
+	zip     *zip.File
 	modTime time.Time
 }
 
@@ -229,8 +230,13 @@ var (
 	_ fs.DirEntry = (*file)(nil)
 )
 
-func (f *file) Name() string               { _, elem, _ := split(f.name); return elem }
-func (f *file) Size() int64                { return int64(len(f.data)) }
+func (f *file) Name() string { _, elem, _ := split(f.name); return elem }
+func (f *file) Size() int64 {
+	if f.zip == nil {
+		return 0
+	}
+	return int64(f.zip.UncompressedSize64)
+}
 func (f *file) ModTime() time.Time         { return f.modTime }
 func (f *file) IsDir() bool                { _, _, isDir := split(f.name); return isDir }
 func (f *file) Sys() any                   { return nil }
@@ -337,7 +343,7 @@ func (f FS) ReadFile(name string) ([]byte, error) {
 	if !ok {
 		return nil, &fs.PathError{Op: "read", Path: name, Err: errors.New("is a directory")}
 	}
-	return []byte(ofile.f.data), nil
+	return []byte(ofile.f.data()), nil
 }
 
 // An openFile is a regular file open for reading.
@@ -354,13 +360,14 @@ func (f *openFile) Close() error               { return nil }
 func (f *openFile) Stat() (fs.FileInfo, error) { return f.f, nil }
 
 func (f *openFile) Read(b []byte) (int, error) {
-	if f.offset >= int64(len(f.f.data)) {
+	data := f.f.data()
+	if f.offset >= int64(len(data)) {
 		return 0, io.EOF
 	}
 	if f.offset < 0 {
 		return 0, &fs.PathError{Op: "read", Path: f.f.name, Err: fs.ErrInvalid}
 	}
-	n := copy(b, f.f.data[f.offset:])
+	n := copy(b, data[f.offset:])
 	f.offset += int64(n)
 	return n, nil
 }
@@ -372,9 +379,9 @@ func (f *openFile) Seek(offset int64, whence int) (int64, error) {
 	case 1:
 		offset += f.offset
 	case 2:
-		offset += int64(len(f.f.data))
+		offset += f.f.Size()
 	}
-	if offset < 0 || offset > int64(len(f.f.data)) {
+	if offset < 0 || offset > f.f.Size() {
 		return 0, &fs.PathError{Op: "seek", Path: f.f.name, Err: fs.ErrInvalid}
 	}
 	f.offset = offset

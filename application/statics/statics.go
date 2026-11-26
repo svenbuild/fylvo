@@ -3,7 +3,6 @@ package statics
 import (
 	"archive/zip"
 	"bufio"
-	"crypto/sha256"
 	"debug/buildinfo"
 	_ "embed"
 	"encoding/json"
@@ -19,6 +18,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,7 +28,8 @@ const StaticFolder = "statics"
 var zipContent string
 
 type GinFS struct {
-	FS http.FileSystem
+	FS     http.FileSystem
+	zipped FS
 }
 
 type version struct {
@@ -62,8 +63,10 @@ func NewServerStaticFS(l logging.Logger, statics fs.FS, isPro bool) (static.Serv
 			return nil, fmt.Errorf("failed to initialize static resources: %w", err)
 		}
 
+		zipped, _ := statics.(FS)
 		staticFS = &GinFS{
-			FS: http.FS(embedFS),
+			FS:     http.FS(embedFS),
+			zipped: zipped,
 		}
 	}
 	// Check the static resource version
@@ -107,6 +110,11 @@ func NewStaticFS(l logging.Logger) fs.FS {
 		l.Panic("Static resource is not a valid zip file: %s", err)
 	}
 
+	entries := make(map[string]*zip.File, len(zipReader.File))
+	for _, zf := range zipReader.File {
+		entries[zf.Name] = zf
+	}
+
 	var files []file
 	modTime := getBuildTime()
 	err = fs.WalkDir(zipReader, ".", func(path string, d fs.DirEntry, err error) error {
@@ -123,24 +131,25 @@ func NewStaticFS(l logging.Logger) fs.FS {
 			f.name = path + "/"
 		} else {
 			f.name = path
-
-			rc, err := zipReader.Open(path)
-			if err != nil {
-				return fmt.Errorf("canot open %q: %w", path, err)
+			zf := entries[path]
+			if zf == nil {
+				return fmt.Errorf("cannot find %q", path)
 			}
-			defer rc.Close()
-
-			data, err := io.ReadAll(rc)
-			if err != nil {
-				return fmt.Errorf("cannot read %q: %w", path, err)
-			}
-
-			f.data = string(data)
-
-			hash := sha256.Sum256(data)
-			for i := range f.hash {
-				f.hash[i] = ^hash[i]
-			}
+			f.zip = zf
+			// Fylvo: unpacked when first read, most files are sent as they are packed (Gzip).
+			f.data = sync.OnceValue(func() string {
+				rc, err := zf.Open()
+				if err != nil {
+					l.Error("Cannot open static file %q: %s", path, err)
+					return ""
+				}
+				defer rc.Close()
+				data, err := io.ReadAll(rc)
+				if err != nil {
+					l.Error("Cannot read static file %q: %s", path, err)
+				}
+				return string(data)
+			})
 		}
 		files = append(files, f)
 		return nil
