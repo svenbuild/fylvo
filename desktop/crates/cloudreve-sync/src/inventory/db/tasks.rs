@@ -203,15 +203,18 @@ impl InventoryDb {
     /// ordered by updated_at descending.
     pub fn query_recent_tasks(&self, drive_id: Option<&str>) -> Result<RecentTasks> {
         let mut conn = self.connection()?;
-        let active = newest_tasks(&mut conn, &[TaskStatus::Pending, TaskStatus::Running], drive_id)
-            .context("Failed to query active tasks")?;
-        let finished = newest_tasks(
-            &mut conn,
-            &[TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled],
-            drive_id,
-        )
-        .context("Failed to query finished tasks")?;
-        Ok(RecentTasks { active, finished })
+        // One read transaction: a task that changes status between the queries is seen once.
+        conn.transaction(|conn| {
+            let active = newest_tasks(conn, &[TaskStatus::Pending, TaskStatus::Running], drive_id)
+                .context("Failed to query active tasks")?;
+            let finished = newest_tasks(
+                conn,
+                &[TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled],
+                drive_id,
+            )
+            .context("Failed to query finished tasks")?;
+            Ok(RecentTasks { active, finished })
+        })
     }
 }
 

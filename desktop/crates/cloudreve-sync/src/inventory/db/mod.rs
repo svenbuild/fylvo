@@ -77,13 +77,13 @@ impl InventoryDb {
     }
 }
 
-/// A write ahead log: one sync of the disk per change instead of several (as in `vfs/store.rs`).
+/// A write ahead log: one sync of the disk per change instead of several, still durable at a power cut.
 #[derive(Debug)]
 struct Pragmas;
 
 impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for Pragmas {
     fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
-        conn.batch_execute("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")
+        conn.batch_execute("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;")
             .map_err(diesel::r2d2::Error::QueryError)
     }
 }

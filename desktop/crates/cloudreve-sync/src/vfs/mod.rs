@@ -88,12 +88,20 @@ pub(crate) fn free_space(path: &Path) -> u64 {
 }
 
 /// Every cached file stays open: allow as many open files as the system lets this user have
-/// (the usual soft limit of 1024 is reached by a cache of small files).
+/// (the usual soft limit of 1024 is reached by a cache of small files). An unlimited hard limit
+/// is capped at the kernel's default `fs.nr_open`.
 fn raise_open_file_limit() {
+    const KERNEL_MAX: libc::rlim_t = 1_048_576;
     let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
-    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } == 0 && limit.rlim_cur < limit.rlim_max {
-        limit.rlim_cur = limit.rlim_max;
-        unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &limit) };
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } != 0 {
+        return;
+    }
+    let wanted = limit.rlim_max.min(KERNEL_MAX);
+    if limit.rlim_cur < wanted {
+        limit.rlim_cur = wanted;
+        if unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &limit) } != 0 {
+            tracing::warn!(target: "vfs", "Could not raise the open file limit");
+        }
     }
 }
 

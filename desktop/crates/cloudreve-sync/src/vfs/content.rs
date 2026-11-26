@@ -180,7 +180,8 @@ impl Contents {
                     };
                     cells.insert(row.key, Arc::new(Cell::new(file, state)));
                 }
-                Err(_) => lost.push(row.key),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => lost.push(row.key),
+                Err(e) => return Err(e).with_context(|| format!("open the cached file {}", row.key)),
             }
         }
         // Files no row knows (a crash between creating and recording) are removed.
