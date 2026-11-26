@@ -111,11 +111,9 @@ async function loginPage(browser) {
 // The scrolling element of the file view, looked up once per page (the lookup itself is slow).
 const scrollerOf = () => {
   if (!window.__scroller?.isConnected) {
-    window.__scroller =
-      document.querySelector("[data-virtuoso-scroller]") ||
-      [...document.querySelectorAll("div")].find(
-        (d) => d.scrollHeight > d.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(d).overflowY),
-      );
+    window.__scroller = [...document.querySelectorAll("[data-virtuoso-scroller], div")].find(
+      (d) => d.scrollHeight > d.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(d).overflowY),
+    );
   }
   return window.__scroller;
 };
@@ -133,12 +131,14 @@ function watchList(page) {
   return state;
 }
 
-// Scrolls the file view to the end until the files are loaded and shown.
+// Scrolls the file view down with the mouse wheel (like a fast flick, one wheel step every 50 ms)
+// until the files are loaded and shown.
 async function loadAll(page, list) {
+  await page.mouse.move(900, 500);
   const start = Date.now();
   while (!list.done && Date.now() - start < 600000) {
-    await page.evaluate(`(${scrollerOf})().scrollTop = 1e9`);
-    await new Promise((r) => setTimeout(r, 30));
+    await page.mouse.wheel({ deltaY: 800 });
+    await new Promise((r) => setTimeout(r, 50));
   }
   // Two frames after the last page: it is drawn.
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
