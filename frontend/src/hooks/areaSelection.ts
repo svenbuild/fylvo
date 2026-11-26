@@ -97,12 +97,15 @@ export function useAreaSelection(container: React.RefObject<HTMLElement>, explor
     [],
   );
 
-  const updateCandidate = useCallback((containerElement: HTMLElement) => {
-    const rows: Candidates[][] = [];
+  // Fylvo: the grid only shows the rows near the visible part, so files met while the box grows
+  // (scrolling) are kept here, by their place in the scrolled content.
+  const candidateMap = useRef(new Map<string, Candidates>());
+  const updateCandidate = useCallback((containerElement: HTMLElement, reset: boolean) => {
+    if (reset) {
+      candidateMap.current.clear();
+    }
     const containerBox = containerElement.getBoundingClientRect();
     const scrollTop = containerElement.scrollTop;
-    let currentY = -Infinity;
-    let currentRow: Candidates[] = [];
 
     const elements = containerElement.querySelectorAll("[data-rect-id]");
     for (let i = 0; i < elements.length; i++) {
@@ -111,26 +114,26 @@ export function useAreaSelection(container: React.RefObject<HTMLElement>, explor
         const rectId = el.getAttribute(dataRectId);
         if (rectId) {
           const rect = el.getBoundingClientRect();
-          const y = scrollTop + rect.y - containerBox.y;
-          if (y > currentY) {
-            currentY = y;
-            if (currentRow.length > 0) {
-              rows.push(currentRow);
-            }
-            currentRow = [];
-          }
-          currentRow.push({
+          candidateMap.current.set(rectId, {
             index: rectId,
             x: rect.x - containerBox.x,
-            y,
+            y: scrollTop + rect.y - containerBox.y,
             bottom: scrollTop + rect.bottom - containerBox.y,
             right: rect.right - containerBox.x,
           });
         }
       }
     }
-    if (currentRow.length > 0) {
-      rows.push(currentRow);
+
+    const rows: Candidates[][] = [];
+    const sorted = [...candidateMap.current.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+    for (const candidate of sorted) {
+      const row = rows[rows.length - 1];
+      if (row && row[0].y == candidate.y) {
+        row.push(candidate);
+      } else {
+        rows.push([candidate]);
+      }
     }
     selectCandidates.current = rows;
   }, []);
@@ -193,11 +196,12 @@ export function useAreaSelection(container: React.RefObject<HTMLElement>, explor
     }
     rafIdRef.current = requestAnimationFrame(() => {
       rafIdRef.current = null;
-      if (mouseMoving.current) {
+      if (mouseMoving.current && container.current) {
+        updateCandidate(container.current, false);
         processSelection();
       }
     });
-  }, [processSelection]);
+  }, [container, processSelection, updateCandidate]);
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLElement>) => {
@@ -255,7 +259,7 @@ export function useAreaSelection(container: React.RefObject<HTMLElement>, explor
       elementsCacheRef.current = null;
 
       const pos = getPosition(containerElement, e.clientX, e.clientY);
-      updateCandidate(containerElement);
+      updateCandidate(containerElement, true);
       drawAreaRef.current = {
         start: pos,
         end: pos,
@@ -282,7 +286,7 @@ export function useAreaSelection(container: React.RefObject<HTMLElement>, explor
   // Update candidates when file list changes during drag
   useEffect(() => {
     if (mouseMoving.current && container.current) {
-      updateCandidate(container.current);
+      updateCandidate(container.current, false);
       scheduleSelectionUpdate();
     }
   }, [fileList, container, updateCandidate, scheduleSelectionUpdate]);
@@ -299,12 +303,17 @@ export function useAreaSelection(container: React.RefObject<HTMLElement>, explor
       if (!document.body.contains(selectionBoxElement)) {
         containerElement.appendChild(selectionBoxElement);
       }
+      // Rows shown while scrolling with the wheel during the drag become candidates as well (once
+      // drawn, so a frame later).
+      const onScroll = () => requestAnimationFrame(() => updateCandidate(containerElement, false));
+      containerElement.addEventListener("scroll", onScroll, { passive: true });
+      return () => containerElement.removeEventListener("scroll", onScroll);
     } else {
       if (containerElement.contains(selectionBoxElement)) {
         containerElement.removeChild(selectionBoxElement);
       }
     }
-  }, [mouseDown, container]);
+  }, [mouseDown, container, updateCandidate]);
 
   // Update box styling when theme changes
   useEffect(() => {

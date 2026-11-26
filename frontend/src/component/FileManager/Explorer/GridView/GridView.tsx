@@ -1,5 +1,6 @@
-import { Box, Stack, styled, Typography } from "@mui/material";
-import React, { useContext, useMemo } from "react";
+import { Box, Typography, useMediaQuery, useTheme } from "@mui/material";
+import React, { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Virtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 import { FileResponse, FileType } from "../../../../api/explorer.ts";
 import { useAppSelector } from "../../../../redux/hooks.ts";
@@ -23,16 +24,33 @@ interface listComponents {
   Files: JSX.Element[];
 }
 
-const AutoFillGrid = styled(Box)(({ theme }) => ({
-  [theme.breakpoints.down("md")]: {
-    gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 144px), 1fr))",
-  },
-  [theme.breakpoints.up("md")]: {
-    gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))",
-  },
-  gap: 8,
-  display: "grid",
-}));
+const gridGap = 8;
+
+// Fylvo: the grid shows only the rows near the visible part (a folder can hold thousands of files).
+// The rows are cut to as many columns as `repeat(auto-fill, minmax(<min>, 1fr))` would make.
+function columnCount(width: number, minWidth: number) {
+  return Math.max(1, Math.floor((width + gridGap) / (minWidth + gridGap)));
+}
+
+type GridRow = { title: string; first: boolean } | { cells: JSX.Element[]; last: boolean };
+
+function addSection(rows: GridRow[], title: string | undefined, cells: JSX.Element[], columns: number) {
+  if (title !== undefined) {
+    rows.push({ title, first: rows.length == 0 });
+  }
+  for (let i = 0; i < cells.length; i += columns) {
+    rows.push({ cells: cells.slice(i, i + columns), last: i + columns >= cells.length });
+  }
+}
+
+function scrollParentOf(element: HTMLElement | null) {
+  for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
+    if (/auto|scroll/.test(getComputedStyle(parent).overflowY)) {
+      return parent;
+    }
+  }
+  return undefined;
+}
 
 export const loadingPlaceHolderNumb = 3;
 
@@ -106,38 +124,86 @@ const GridView = React.forwardRef(({ ...rest }: GridViewProps, ref) => {
     }
     return list;
   }, [files, mixedType, pagination, showThumb]);
+  const theme = useTheme();
+  const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
+  const boxRef = useRef<HTMLElement | null>(null);
+  const [scrollParent, setScrollParent] = useState<HTMLElement>();
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box) {
+      return;
+    }
+    setScrollParent(scrollParentOf(box));
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
+
+  const columns = columnCount(width, isMdUp ? 168 : Math.min(width, 144));
+  const rows = useMemo(() => {
+    const rows: GridRow[] = [];
+    if (list.Folders && list.Folders.length > 0) {
+      addSection(rows, t("fileManager.folders"), list.Folders, columns);
+    }
+    if (list.Files.length > 0) {
+      addSection(rows, mixedType ? undefined : t("fileManager.files"), list.Files, columns);
+    }
+    return rows;
+  }, [list, columns, mixedType, t]);
+
+  const setRefs = useCallback(
+    (element: HTMLElement | null) => {
+      boxRef.current = element;
+      if (typeof ref == "function") {
+        ref(element);
+      } else if (ref) {
+        ref.current = element;
+      }
+    },
+    [ref],
+  );
+
   return (
     <Box
-      ref={ref}
+      ref={setRefs}
       {...rest}
       sx={{
         p: { xs: 1.5, sm: 2 },
       }}
     >
-      <Stack spacing={2}>
-        {list.Folders && list.Folders.length > 0 && (
-          <Box>
-            <Typography component="h2" variant="caption" color="text.secondary" fontWeight={600} sx={{ mb: 1 }}>
-              {t("fileManager.folders")}
-            </Typography>
-            <AutoFillGrid>
-              {list.Folders.map((f) => f)}
-            </AutoFillGrid>
-          </Box>
-        )}
-        {list.Files.length > 0 && (
-          <Box>
-            {!mixedType && (
-              <Typography component="h2" variant="caption" color="text.secondary" fontWeight={600} sx={{ mb: 1 }}>
-                {t("fileManager.files")}
+      {scrollParent && width > 0 && (
+        <Virtuoso
+          customScrollParent={scrollParent}
+          increaseViewportBy={200}
+          data={rows}
+          computeItemKey={(_index, row) => ("title" in row ? `title-${row.title}` : `row-${row.cells[0].key}`)}
+          itemContent={(_index, row) =>
+            "title" in row ? (
+              <Typography
+                component="h2"
+                variant="caption"
+                color="text.secondary"
+                fontWeight={600}
+                sx={{ display: "block", mb: 1, pt: row.first ? 0 : 2 }}
+              >
+                {row.title}
               </Typography>
-            )}
-            <AutoFillGrid>
-              {list.Files.map((f) => f)}
-            </AutoFillGrid>
-          </Box>
-        )}
-      </Stack>
+            ) : (
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                  gap: `${gridGap}px`,
+                  pb: row.last ? 0 : `${gridGap}px`,
+                }}
+              >
+                {row.cells}
+              </Box>
+            )
+          }
+        />
+      )}
     </Box>
   );
 });

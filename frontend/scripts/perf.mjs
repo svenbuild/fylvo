@@ -108,11 +108,17 @@ async function loginPage(browser) {
   return { readyMs, ...stats };
 }
 
-const scrollerOf = () =>
-  document.querySelector("[data-virtuoso-scroller]") ||
-  [...document.querySelectorAll("main div, div")].find(
-    (d) => d.scrollHeight > d.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(d).overflowY),
-  );
+// The scrolling element of the file view, looked up once per page (the lookup itself is slow).
+const scrollerOf = () => {
+  if (!window.__scroller?.isConnected) {
+    window.__scroller =
+      document.querySelector("[data-virtuoso-scroller]") ||
+      [...document.querySelectorAll("div")].find(
+        (d) => d.scrollHeight > d.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(d).overflowY),
+      );
+  }
+  return window.__scroller;
+};
 
 // Watches the list requests: done when enough files came or there is no further page.
 function watchList(page) {
