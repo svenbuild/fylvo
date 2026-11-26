@@ -25,6 +25,9 @@ pub struct DriveManager {
     pub(super) command_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<ManagerCommand>>>>,
     pub(super) processor_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub(super) event_broadcaster: Arc<EventBroadcaster>,
+    /// Fylvo: drives of the config that failed to start; kept in the config so a later save does
+    /// not drop them.
+    failed: Mutex<Vec<DriveConfig>>,
 }
 
 impl DriveManager {
@@ -52,6 +55,7 @@ impl DriveManager {
             command_rx: Arc::new(Mutex::new(Some(command_rx))),
             processor_handle: Arc::new(Mutex::new(None)),
             event_broadcaster: event_broadcaster,
+            failed: Mutex::new(Vec::new()),
         })
     }
 
@@ -97,6 +101,7 @@ impl DriveManager {
                 }
                 Err(e) => {
                     tracing::error!(target: "drive", drive_id = %config.id, error = ?e, "Failed to add drive, skipping");
+                    self.failed.lock().await.push(config.clone());
                     // crate::utils::toast::send_warning_toast(
                     //     &t!("driveLoadFailed"),
                     //     &format!("{}: {}", config.name, e),
@@ -128,6 +133,7 @@ impl DriveManager {
             let config = mount.get_config().await;
             new_state.drives.push(config);
         }
+        new_state.drives.extend(self.failed.lock().await.iter().cloned());
 
         let content =
             serde_json::to_string_pretty(&new_state).context("Failed to serialize drive state")?;
