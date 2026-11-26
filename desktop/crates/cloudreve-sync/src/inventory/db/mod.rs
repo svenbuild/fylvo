@@ -2,12 +2,15 @@ mod drive_props;
 mod file_metadata;
 mod tasks;
 mod upload_sessions;
+#[cfg(test)]
+mod bench;
 
 pub use tasks::RecentTasks;
 
 use anyhow::{Context, Result, anyhow};
 use diesel::Connection;
-use diesel::r2d2::{ConnectionManager, Pool, PooledConnection};
+use diesel::connection::SimpleConnection;
+use diesel::r2d2::{ConnectionManager, CustomizeConnection, Pool, PooledConnection};
 use diesel::sqlite::SqliteConnection;
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use dirs::home_dir;
@@ -51,6 +54,7 @@ impl InventoryDb {
         let manager = ConnectionManager::<SqliteConnection>::new(database_url);
         let pool = Pool::builder()
             .max_size(1)
+            .connection_customizer(Box::new(Pragmas))
             .build(manager)
             .context("Failed to build inventory database connection pool")?;
 
@@ -73,9 +77,22 @@ impl InventoryDb {
     }
 }
 
+/// A write ahead log: one sync of the disk per change instead of several, still durable at a power cut.
+#[derive(Debug)]
+struct Pragmas;
+
+impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for Pragmas {
+    fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
+        conn.batch_execute("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;")
+            .map_err(diesel::r2d2::Error::QueryError)
+    }
+}
+
 fn run_migrations(database_url: &str) -> Result<()> {
     let mut conn = SqliteConnection::establish(database_url)
         .with_context(|| format!("Failed to open inventory database at {}", database_url))?;
+    conn.batch_execute("PRAGMA busy_timeout = 5000;")
+        .context("Failed to set the busy timeout of the inventory database")?;
     conn.run_pending_migrations(MIGRATIONS)
         .map_err(|err| anyhow!("Failed to run inventory database migrations: {err}"))?;
     Ok(())

@@ -1,4 +1,4 @@
-import { Suspense, useMemo } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import {
   ThemeProvider,
   CssBaseline,
@@ -9,9 +9,11 @@ import { Routes, Route, HashRouter } from "react-router-dom";
 import "@fontsource-variable/inter";
 import "./i18n";
 import { createAppTheme } from "./theme";
-import AddDrive from "./pages/AddDrive";
-import Popup from "./pages/popup";
-import Settings from "./pages/settings";
+
+// Each window loads only the code of its own page.
+const AddDrive = lazy(() => import("./pages/AddDrive"));
+const Popup = lazy(() => import("./pages/popup"));
+const Settings = lazy(() => import("./pages/settings"));
 
 function LoadingFallback() {
   return (

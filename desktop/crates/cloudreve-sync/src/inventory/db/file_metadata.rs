@@ -117,6 +117,21 @@ impl InventoryDb {
         row.map(FileMetadata::try_from).transpose()
     }
 
+    /// The rows of these local paths (those that have one), in few queries.
+    pub fn query_by_paths(&self, paths: &[&str]) -> Result<Vec<FileMetadata>> {
+        let mut conn = self.connection()?;
+        let mut rows = Vec::new();
+        for part in paths.chunks(500) {
+            rows.extend(
+                file_metadata_dsl::file_metadata
+                    .filter(file_metadata_dsl::local_path.eq_any(part))
+                    .load::<FileMetadataRow>(&mut conn)
+                    .context("Failed to query inventory metadata by paths")?,
+            );
+        }
+        rows.into_iter().map(FileMetadata::try_from).collect()
+    }
+
     /// Query file metadata by id
     pub fn query_by_id(&self, id: i64) -> Result<Option<FileMetadata>> {
         let mut conn = self.connection()?;
@@ -560,6 +575,21 @@ mod tests {
         assert!(!db.has_rows_at_or_under(native(r"C:\S\Foto")).unwrap());
         assert!(db.rename_path(native(r"C:\S\fotos"), native(r"C:\S\Fotos")).is_err());
         assert!(db.query_by_path(native(r"C:\S\fotos\b\c.jpg")).unwrap().is_some());
+    }
+
+    #[test]
+    fn rows_are_found_for_many_paths_at_once() {
+        let (_dir, db) = db();
+        let drive = Uuid::new_v4();
+        let paths: Vec<String> = (0..1200).map(|i| format!("/S/{i}.txt")).collect();
+        for path in paths.iter().step_by(2) {
+            add(&db, drive, path);
+        }
+        let mut asked: Vec<&str> = paths.iter().map(String::as_str).collect();
+        asked.push("/S/none.txt");
+        let found = db.query_by_paths(&asked).unwrap();
+        assert_eq!(found.len(), 600);
+        assert!(found.iter().all(|row| paths.iter().step_by(2).any(|p| *p == row.local_path)));
     }
 
     #[test]

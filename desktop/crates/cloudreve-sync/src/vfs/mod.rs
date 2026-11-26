@@ -87,6 +87,24 @@ pub(crate) fn free_space(path: &Path) -> u64 {
     stat.f_bavail as u64 * stat.f_frsize as u64
 }
 
+/// Every cached file stays open: allow as many open files as the system lets this user have
+/// (the usual soft limit of 1024 is reached by a cache of small files). An unlimited hard limit
+/// is capped at the kernel's default `fs.nr_open`.
+fn raise_open_file_limit() {
+    const KERNEL_MAX: libc::rlim_t = 1_048_576;
+    let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } != 0 {
+        return;
+    }
+    let wanted = limit.rlim_max.min(KERNEL_MAX);
+    if limit.rlim_cur < wanted {
+        limit.rlim_cur = wanted;
+        if unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &limit) } != 0 {
+            tracing::warn!(target: "vfs", "Could not raise the open file limit");
+        }
+    }
+}
+
 /// What eviction and the settings need to know of a cached file.
 struct CellInfo {
     key: String,
@@ -187,6 +205,7 @@ impl VirtualDrive {
         inventory: Arc<InventoryDb>,
     ) -> Result<Arc<Self>> {
         prepare_mount_point(mount_point)?;
+        raise_open_file_limit();
         let data_dir = data_dir(id);
         std::fs::create_dir_all(&data_dir).context("create the drive's data folder")?;
         let store = store::Store::open(&data_dir.join("index.db"))?;
