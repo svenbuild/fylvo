@@ -104,6 +104,9 @@ export default defineConfig({
               "commonjsHelpers",
               "commonjs-dynamic-modules",
               "__vite-browser-external",
+              // Small helpers many chunks share; elsewhere they tie the image editor to Excalidraw.
+              "node_modules/tslib",
+              "node_modules/@babel/runtime",
             ],
             monaco: ["monaco-editor"],
             codemirror: ["@codemirror"],
