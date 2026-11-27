@@ -182,7 +182,7 @@ impl Contents {
                 }
                 Err(e) => {
                     if row.changed != 0 {
-                        tracing::warn!(target: "vfs", key = %row.key, error = %e, "A changed cached file cannot be opened, its change is dropped");
+                        tracing::warn!(target: "vfs", path = %row.path, error = %e, "A changed cached file cannot be opened, its change is dropped");
                     }
                     lost.push(row.key)
                 }
