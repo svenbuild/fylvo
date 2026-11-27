@@ -159,7 +159,6 @@ impl Contents {
         std::fs::create_dir_all(&dir).context("create the content folder")?;
         let mut cells = HashMap::new();
         let mut lost = Vec::new();
-        let mut kept = std::collections::HashSet::new();
         for row in rows {
             match open_file(&dir.join(&row.key), false) {
                 Ok(file) => {
@@ -181,18 +180,11 @@ impl Contents {
                     };
                     cells.insert(row.key, Arc::new(Cell::new(file, state)));
                 }
-                // A file with unsent changes is lost only when it is gone; a clean one also when it
-                // cannot be opened, except for too many open files. Otherwise the file and its row
-                // stay for the next start, without a cell.
-                Err(e)
-                    if e.kind() == std::io::ErrorKind::NotFound
-                        || (row.changed == 0 && !matches!(e.raw_os_error(), Some(libc::EMFILE | libc::ENFILE))) =>
-                {
-                    lost.push(row.key)
-                }
                 Err(e) => {
-                    tracing::warn!(target: "vfs", key = %row.key, error = %e, "A cached file cannot be opened, kept for the next start");
-                    kept.insert(row.key);
+                    if row.changed != 0 {
+                        tracing::warn!(target: "vfs", key = %row.key, error = %e, "A changed cached file cannot be opened, its change is dropped");
+                    }
+                    lost.push(row.key)
                 }
             }
         }
@@ -200,7 +192,7 @@ impl Contents {
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if !cells.contains_key(&name) && !kept.contains(&name) {
+                if !cells.contains_key(&name) {
                     let _ = std::fs::remove_file(entry.path());
                 }
             }
@@ -441,26 +433,5 @@ mod tests {
         assert_eq!(lost, vec!["c-gone".to_string()]);
         assert!(contents.get("c-a-b").is_some());
         assert!(!folder.join("w-stray").exists());
-    }
-
-    #[test]
-    fn a_changed_file_that_cannot_be_opened_is_kept() {
-        let dir = tempfile::tempdir().unwrap();
-        let folder = dir.path().join("content");
-        std::fs::create_dir_all(folder.join("w-unreadable")).unwrap();
-        let row = ContentRow {
-            key: "w-unreadable".into(),
-            file_id: "a".into(),
-            version: "b".into(),
-            remote_len: 1,
-            chunks: vec![1],
-            last_used: 0,
-            changed: 1,
-            path: "x".into(),
-        };
-        let (contents, lost) = Contents::load(folder.clone(), vec![row]).unwrap();
-        assert!(lost.is_empty());
-        assert!(contents.get("w-unreadable").is_none());
-        assert!(folder.join("w-unreadable").exists());
     }
 }

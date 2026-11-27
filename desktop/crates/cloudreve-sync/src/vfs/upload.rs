@@ -429,10 +429,6 @@ pub(crate) fn restore(drive: &Arc<Drive>) {
     let rows = drive.store.load_changes().unwrap_or_default();
     for row in rows {
         let Some(cell) = drive.contents.get(&row.key) else {
-            if drive.info.data_dir.join("content").join(&row.key).exists() {
-                tracing::warn!(target: "vfs", path = %row.path, "The content of a change cannot be opened, kept for later");
-                continue;
-            }
             tracing::warn!(target: "vfs", path = %row.path, "A recorded change has no content, dropped");
             let _ = drive.store.delete_change(&row.path);
             continue;
